@@ -109,7 +109,6 @@ namespace Setting
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replica_offset;
-    extern const SettingsSnappyMode snappy_mode;
 }
 
 namespace ErrorCodes
@@ -632,7 +631,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         /// If limit is exceeded we will fallback to synchronous insert
         /// to avoid buffering of huge amount of data in memory.
 
-        auto read_buf = getReadBufferFromASTInsertQuery(query, query_context->getSettingsRef()[Setting::snappy_mode]);
+        auto read_buf = getReadBufferFromASTInsertQuery(query, query_context);
 
         LimitReadBuffer limit_buf(
             *read_buf,
@@ -684,6 +683,17 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
 AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushQueryWithBlock(
     ASTPtr query, Block && block, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker)
 {
+    /// The flush copies queued blocks into full columns with `insertRangeFrom`, whose `assert_cast` would misread a
+    /// wrapped column (`Sparse`, `Replicated`, ...) at any nesting depth. Every producer materializes before queuing.
+    /// An insert without data queues a block without columns.
+    for (const auto & elem : block)
+        if (elem.column && elem.column->convertToFullIfWrapped().get() != elem.column.get())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Async insert block column '{}' must be materialized before queuing, but has a "
+                "non-default serialization representation: {}",
+                elem.name, elem.column->dumpStructure());
+
     query = query->clone();
     preprocessInsertQuery(query, query_context);
     return pushDataChunk(std::move(query), std::move(block), std::move(query_context), std::move(queued_data_tracker));
@@ -1652,14 +1662,15 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     InsertData::EntryPtr current_entry;
     String current_exception;
 
-    auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
-    std::shared_ptr<ISimpleTransform> adding_defaults_transform;
+    auto create_format = [&] { return getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr); };
+    StreamingFormatExecutor::TransformCreator create_adding_defaults_transform;
 
     if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_context->hasInsertionTableColumnsDescription())
     {
-        const auto & columns = *insert_context->getInsertionTableColumnsDescription();
-        if (columns.hasDefaults())
-            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, insert_context);
+        auto columns = insert_context->getInsertionTableColumnsDescription();
+        if (columns->hasDefaults())
+            create_adding_defaults_transform = [columns, shared_header = std::make_shared<const Block>(header), insert_context](IInputFormat & format)
+            { return std::make_shared<AddingDefaultsTransform>(shared_header, *columns, format, insert_context); };
     }
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
@@ -1677,11 +1688,11 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
     StreamingFormatExecutor executor(
         header,
-        format,
+        std::move(create_format),
         std::move(on_error),
         data->size_in_bytes,
         data->entries.size(),
-        std::move(adding_defaults_transform),
+        std::move(create_adding_defaults_transform),
         [query_status = insert_context->getProcessListElement()] { return query_status && query_status->isKilled(); });
 
     auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);

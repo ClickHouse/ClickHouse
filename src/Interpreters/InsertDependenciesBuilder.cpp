@@ -4,6 +4,7 @@
 
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/Common/SQLSecurityDefs.h>
 #include <Processors/ForkProcessor.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
@@ -204,11 +205,11 @@ class ViewErrorsRegistry
             value = value_;
             return true;
         }
-        bool isSet() const
+        [[nodiscard]] bool isSet() const
         {
             return is_set.test();
         }
-        T get() const
+        [[nodiscard]] T get() const
         {
             if (is_set.test())
                 return value;
@@ -248,7 +249,7 @@ public:
         view_errors.try_emplace(view_id);
     }
 
-    const ViewErrors & getErrors(const StorageIDMaybeEmpty & view_id) const
+    [[nodiscard]] const ViewErrors & getErrors(const StorageIDMaybeEmpty & view_id) const
     {
         return view_errors.at(view_id);
     }
@@ -258,7 +259,7 @@ public:
         return view_errors.at(view_id);
     }
 
-    std::exception_ptr getFinalError(const StorageIDMaybeEmpty & view_id, bool ignore_global) const
+    [[nodiscard]] std::exception_ptr getFinalError(const StorageIDMaybeEmpty & view_id, bool ignore_global) const
     {
         const auto & errors = getErrors(view_id);
         if (auto e = errors.current_exception.get())
@@ -555,7 +556,8 @@ public:
         StorageID inner_id_, StoragePtr inner_storage_, StorageMetadataPtr inner_metadata_,
         ContextPtr context_,
         ContextMutablePtr query_context_,
-        bool async_insert_)
+        bool async_insert_,
+        bool deduplicate_blocks_in_view_)
         : ExceptionKeepingTransform(input_header, output_header)
         , select_query(select_query_)
         , source_id(source_id_)
@@ -570,6 +572,7 @@ public:
         , context(context_)
         , query_context(query_context_)
         , async_insert(async_insert_)
+        , deduplicate_blocks_in_view(deduplicate_blocks_in_view_)
     {
     }
 
@@ -618,6 +621,7 @@ private:
     ContextMutablePtr query_context;
     bool written_columns_recorded = false;
     bool async_insert = false;
+    bool deduplicate_blocks_in_view = false;
 
     struct State
     {
@@ -755,10 +759,18 @@ private:
         /// Squashing is needed here because the materialized view query can generate a lot of blocks
         /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
         /// and two-level aggregation is triggered).
+        /// Deduplication of async inserts supports only one view block per source block
+        /// (see `DeduplicationInfo::setViewBlockNumber`), so in that case the whole view output
+        /// is squashed into one block: unreachable minimums make the squashing emit only on finish.
+        /// Below the minimums the result is the same single block anyway. The memory cap is not applied
+        /// either: splitting would only turn the insert into a `NOT_IMPLEMENTED` failure, so a view output
+        /// that does not fit is left to the memory limits of the query and the server.
+        bool squash_into_single_block = async_insert && deduplicate_blocks_in_view;
         pipeline.addTransform(std::make_shared<SquashingTransform>(
             pipeline.getSharedHeader(),
-            settings[Setting::min_insert_block_size_rows],
-            capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], settings),
+            squash_into_single_block ? std::numeric_limits<size_t>::max() : settings[Setting::min_insert_block_size_rows],
+            squash_into_single_block ? std::numeric_limits<size_t>::max()
+                                     : capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], settings),
             settings[Setting::max_insert_block_size],
             settings[Setting::max_insert_block_size_bytes],
             squash_with_strict_limits)
@@ -1377,9 +1389,11 @@ std::pair<ContextPtr, ContextPtr> InsertDependenciesBuilder::createSelectInsertC
 {
     const auto & current = path.current();
 
+    const auto & metadata = metadata_snapshots.at(current);
     auto parent_select_context = select_contexts.at(path.parent(2));
-    auto select_context = metadata_snapshots.at(current)->getSQLSecurityOverriddenContext(parent_select_context);
-    select_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());
+    auto select_context = metadata->getSQLSecurityOverriddenContext(parent_select_context);
+    if (metadata->sql_security_type != SQLSecurityType::DEFINER && metadata->sql_security_type != SQLSecurityType::NONE)
+        select_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());
     // Processing of blocks for MVs is done block by block, and there will
     // be no parallel reading after (plus it is not a costless operation)
     select_context->setSetting("parallelize_output_from_storages", Field{false});
@@ -1584,6 +1598,15 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         const auto select_context = metadata->getSQLSecurityOverriddenContext(init_context);
         const auto insert_context = metadata->getSQLSecurityOverriddenContext(init_context);
 
+        if ((metadata->sql_security_type == SQLSecurityType::DEFINER || metadata->sql_security_type == SQLSecurityType::NONE)
+            && init_context->hasQueryContext())
+        {
+            auto insert_query = make_intrusive<ASTInsertQuery>();
+            insert_query->table_id = inner_table_;
+            init_context->getQueryContext()->addSQLSecurityOverriddenBody(root_view_, select_context, insert_query);
+            init_context->getQueryContext()->addSQLSecurityOverriddenBody(root_view_, insert_context, insert_query);
+        }
+
         root_view = root_view_;
         inner_tables[root_view] = inner_table_;
         select_queries[root_view] = init_query;
@@ -1622,8 +1645,8 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
         dependent_views[current] = {};
 
-        if (init_context->hasQueryContext())
-            init_context->getQueryContext()->addViewAccessInfo(current.getFullTableName());
+        if (const auto & source_writer_context = insert_contexts.at(path.parent(2)); source_writer_context->hasQueryContext())
+            source_writer_context->getQueryContext()->addViewAccessInfo(current.getFullTableName());
 
         return true;
     }
@@ -1632,6 +1655,10 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         /// the last case is a regular table
         /// at the first iteration it is the init_table_id most likely
         /// the following iterations will be for inner tables of materialized views
+
+        const auto & writer_context = current == init_table_id ? init_context : insert_contexts.at(parent);
+        if (writer_context->hasQueryContext())
+            writer_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});
 
         if (current == init_table_id)
         {
@@ -1771,7 +1798,8 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
             inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
             select_context,
             query_context,
-            async_insert);
+            async_insert,
+            deduplicate_blocks_in_dependent_materialized_views);
 
         executing_inner_query->setRuntimeData(thread_groups.at(view_id));
 
@@ -1787,7 +1815,8 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
             inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
             select_context,
             query_context,
-            async_insert);
+            async_insert,
+            deduplicate_blocks_in_dependent_materialized_views);
 
         executing_inner_query->setRuntimeData(thread_groups.at(view_id));
 
@@ -1958,6 +1987,14 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
 
         chain = Chain::concat(std::move(chain), createSelect(child_view_id));
         chain = Chain::concat(std::move(chain), createSink(child_view_id));
+
+        /// Only a view that is pushed to has a child row.
+        const auto sql_security = metadata_snapshots.at(child_view_id)->sql_security_type;
+        const auto & parent_select_context = select_contexts.at(view_id);
+        if ((sql_security == SQLSecurityType::DEFINER || sql_security == SQLSecurityType::NONE) && parent_select_context->hasQueryContext())
+            parent_select_context->getQueryContext()->addSQLSecurityOverriddenBody(
+                child_view_id, select_contexts.at(child_view_id), select_queries.at(child_view_id));
+
         chain = Chain::concat(std::move(chain), createPostSink(child_view_id));
 
         output_view_chains_headers.push_back(chain.getOutputHeader());
