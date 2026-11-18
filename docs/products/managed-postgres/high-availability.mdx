@@ -20,7 +20,7 @@ With two standbys, two replica nodes are provisioned alongside your primary. Bot
 
 This configuration uses **synchronous replication** where the primary waits for acknowledgement from at least one standby before confirming writes. This provides stronger durability guarantees than asynchronous replication. Because both standbys are full replicas, your database maintains full throughput and keeps a ready failover target even through an extended availability zone failure.
 
-### 1 Standby Synchronous {#one-standby-synchronous}
+### 1 Standby Synchronous (Preview) {#one-standby-synchronous}
 
 With one standby plus a lightweight WAL listener, the standby is the same size as the primary and can take over if the primary fails.
 
