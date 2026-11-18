@@ -3154,6 +3154,31 @@ FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(
     };
 }
 
+/// Converts the rows of `source` that are not NULL and expands the result back, so a NULL row holds the column default.
+static ColumnPtr convertRowsWithoutNulls(
+    const FunctionCast::WrapperType & wrapper,
+    ColumnsWithTypeAndName & nested_args,
+    const ColumnNullable & source,
+    const DataTypePtr & nested_type,
+    size_t input_rows_count,
+    size_t rows_with_nulls)
+{
+    const auto & null_map = source.getNullMapData();
+    const size_t rows_without_nulls = input_rows_count - rows_with_nulls;
+
+    IColumn::Filter not_null(input_rows_count);
+    for (size_t row = 0; row < input_rows_count; ++row)
+        not_null[row] = !null_map[row];
+
+    for (auto & column : nested_args)
+        column.column = column.column->filter(not_null, rows_without_nulls);
+
+    auto filtered_res = wrapper(nested_args, nested_type, nullptr, rows_without_nulls);
+    auto mutable_res = IColumn::mutate(std::move(filtered_res));
+    mutable_res->expand(not_null, /* inverted */ false);
+    return wrapInNullable(std::move(mutable_res), source.getNullMapColumnPtr());
+}
+
 FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
     const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check, bool report_failures_as_null) const
 {
@@ -3179,12 +3204,12 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
 
     auto wrapper = prepareImpl(from_nested_type, to_nested_type, requested_result_is_nullable);
 
+    /// The element conversions of a Tuple do not all read its null map, so they would convert the placeholders of its NULL rows.
+    const bool exclude_source_nulls = source_is_nullable && !nested_types_equal
+        && (cast_type == CastType::accurate || isTuple(from_nested_type));
+
     if (result_is_nullable)
     {
-        /// The element conversions of a Tuple do not all read its null map, so they would convert the placeholders of its NULL rows.
-        bool exclude_source_nulls = source_is_nullable && !nested_types_equal
-            && (cast_type == CastType::accurate || isTuple(from_nested_type));
-
         return [wrapper, source_is_nullable, exclude_source_nulls]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
         {
@@ -3219,21 +3244,7 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
                     return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
 
                 if (rows_with_nulls != 0)
-                {
-                    const size_t rows_without_nulls = input_rows_count - rows_with_nulls;
-
-                    IColumn::Filter not_null(input_rows_count);
-                    for (size_t row = 0; row < input_rows_count; ++row)
-                        not_null[row] = !null_map[row];
-
-                    for (auto & column : tmp_args)
-                        column.column = column.column->filter(not_null, rows_without_nulls);
-
-                    auto filtered_res = wrapper(tmp_args, nested_type, nullptr, rows_without_nulls);
-                    auto mutable_res = IColumn::mutate(std::move(filtered_res));
-                    mutable_res->expand(not_null, /* inverted */ false);
-                    return wrapInNullable(std::move(mutable_res), nullable_column.getNullMapColumnPtr());
-                }
+                    return convertRowsWithoutNulls(wrapper, tmp_args, nullable_column, nested_type, input_rows_count, rows_with_nulls);
             }
 
             /// Perform the requested conversion.
@@ -3251,7 +3262,7 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
     {
         /// Conversion from Nullable to non-Nullable.
 
-        return [wrapper, skip_not_null_check, report_failures_as_null]
+        return [wrapper, skip_not_null_check, report_failures_as_null, exclude_source_nulls]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
         {
             auto tmp_args = createBlockWithNestedColumns(arguments);
@@ -3271,6 +3282,14 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
 
                 if (!memoryIsZero(null_map.data(), 0, null_map.size()))
                     throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type");
+            }
+
+            if (report_failures_as_null && exclude_source_nulls)
+            {
+                const auto & nullable_column = assert_cast<const ColumnNullable &>(*arguments.front().column);
+                const size_t rows_with_nulls = countBytesInFilter(nullable_column.getNullMapData().data(), 0, input_rows_count);
+                if (rows_with_nulls != 0)
+                    return convertRowsWithoutNulls(wrapper, tmp_args, nullable_column, nested_type, input_rows_count, rows_with_nulls);
             }
 
             const ColumnNullable * nullable_source = typeid_cast<const ColumnNullable *>(arguments.front().column.get());
