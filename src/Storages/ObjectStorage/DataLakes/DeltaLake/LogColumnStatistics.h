@@ -35,7 +35,7 @@ public:
     /// Returns false for a file without a valid `numRecords`, which leaves the read without a row estimate.
     bool addFile(const TableSnapshot::DataFileStatistics & file);
 
-    bool hasDeletionVectors() const { return has_deletion_vectors; }
+    [[nodiscard]] bool hasDeletionVectors() const { return has_deletion_vectors; }
 
     /// Sets the rows of `estimate`, without the rows that deletion vectors delete, and its estimator.
     void finalize(DB::DataLakeReadEstimate & estimate);

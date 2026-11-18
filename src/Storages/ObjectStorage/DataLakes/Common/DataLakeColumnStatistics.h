@@ -56,7 +56,7 @@ public:
     static bool canBeTarget(const IDataType & nested_type);
 
     void addTarget(Target target);
-    const std::vector<Target> & getTargets() const { return targets; }
+    [[nodiscard]] const std::vector<Target> & getTargets() const { return targets; }
 
     /// Adds a data file with `rows` rows; `file_metrics` is aligned with the targets.
     void addFile(UInt64 rows, const std::vector<ColumnMetrics> & file_metrics);
