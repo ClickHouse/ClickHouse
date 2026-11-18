@@ -147,6 +147,7 @@ static struct InitFiu
     REGULAR(distributed_cache_wait_gap_buffered_on_seek) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
+    PAUSEABLE_ONCE(file_cache_slru_pause_promotion_before_downgrade) \
     PAUSEABLE(file_segment_pause_before_write) \
     PAUSEABLE(remote_fs_gather_pause_in_read) \
     PAUSEABLE(plain_object_storage_pause_on_file_copy) \
@@ -412,6 +413,7 @@ static struct InitFiu
     REGULAR(rmt_merge_selecting_task_max_part_size) \
     REGULAR(merge_tree_load_statistics_throw) \
     REGULAR(merge_tree_load_outdated_parts_retryable_error) \
+    REGULAR(merge_tree_load_outdated_parts_schedule_error) \
     PAUSEABLE(merge_tree_load_outdated_parts_pause) \
     ONCE(merge_tree_load_part_io_error) \
     REGULAR(restore_part_inject_no_space_error) \

@@ -2,6 +2,7 @@
 
 #include "config.h"
 
+#include <Disks/DiskFromAST.h>
 #include <IO/WriteBuffer.h>
 #include <IO/VarInt.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
@@ -58,16 +59,16 @@ namespace DataLakeStorageSetting
     extern const DataLakeStorageSettingsDatabaseDataLakeCatalogType storage_catalog_type;
     extern const DataLakeStorageSettingsString object_storage_endpoint;
     extern const DataLakeStorageSettingsString storage_aws_access_key_id;
-    extern const DataLakeStorageSettingsString storage_aws_secret_access_key;
+    extern const DataLakeStorageSettingsSecretString storage_aws_secret_access_key;
     extern const DataLakeStorageSettingsString storage_region;
     extern const DataLakeStorageSettingsString storage_aws_role_arn;
     extern const DataLakeStorageSettingsString storage_aws_role_session_name;
     extern const DataLakeStorageSettingsString storage_catalog_url;
     extern const DataLakeStorageSettingsString storage_warehouse;
-    extern const DataLakeStorageSettingsString storage_catalog_credential;
+    extern const DataLakeStorageSettingsSecretString storage_catalog_credential;
 
     extern const DataLakeStorageSettingsString storage_auth_scope;
-    extern const DataLakeStorageSettingsString storage_auth_header;
+    extern const DataLakeStorageSettingsSecretString storage_auth_header;
     extern const DataLakeStorageSettingsString storage_oauth_server_uri;
     extern const DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
 }
@@ -491,9 +492,14 @@ public:
         if (!Context::getGlobalContextInstance()->getAllowedDisksForTableEngines().contains(disk_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not allowed for usage in storage engines. The list of allowed disks is defined by server setting `allowed_disks_for_table_engines`", disk_name);
 
+        auto disk = context->getDisk(disk_name);
+        /// The setting allows a disk by name, which may be a custom disk built for another session or against an older
+        /// `remote_url_allow_hosts`. A replayed definition uses the disk of its own stored definition, so it is exempt.
+        if (!this->is_replayed_definition)
+            DiskFromAST::ensureDiskIsAllowed(disk, context, /* check_remote_hosts */ true);
+
         BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
         this->source_disk_name = disk_name;
-        auto disk = context->getDisk(disk_name);
         /// The table works through a private copy of the disk's object storage: the decorators
         /// (e.g. `CachedObjectStorage`), connection settings and the disk's IO scheduling resources
         /// stay in effect for the table, while per-table setting updates (see `update`) cannot

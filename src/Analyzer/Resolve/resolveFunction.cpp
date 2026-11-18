@@ -1794,7 +1794,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (is_special_function_dict_get)
             {
-                scope.context->getExternalDictionariesLoader().assertDictionaryStructureExists(identifier.getFullName(), scope.context);
+                /// Check access before reading the dictionary definition, so that a user without access learns nothing
+                /// about the dictionary.
+                const auto & external_loader = scope.context->getExternalDictionariesLoader();
+                (void)external_loader.getDictionaryStructure(external_loader.resolveDictionaryCheckingAccess(identifier.getFullName(), scope.context));
             }
             else
             {
@@ -3366,11 +3369,20 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// `randConstant(), randConstant()` shares. What separates two calls is their arguments, which
         /// the hash still covers: `randConstant(1)` and `randConstant(2)` keep their own values, and that
         /// is the documented way to ask for two different constants in one query.
+        ///
+        /// Server-constant functions (`hostName`, `tcpPort`, `serverUUID`, ...) capture
+        /// `context->isDistributed()` when they are built, and it decides whether they are folded to a
+        /// constant (see `FunctionConstantBase::isSuitableForConstantFolding`). A sub-SELECT over
+        /// `clusterAllReplicas` and the outer query disagree on it, so a base shared between them makes
+        /// the shard query and the local plan disagree on the header. Hence for them the flag is a part
+        /// of the key. Other functions (`randConstant`, `now64`, ...) do not depend on it and must keep
+        /// a single value for the whole query, so they are shared regardless of the flag.
         if (function && !function->isDeterministic() && !function->isStateful()
             && function->isDeterministicInScopeOfQuery())
         {
             auto hash = function_node_ptr->getTreeHash({ .compare_aliases = false });
-            function_base_cache = &functions_cache[hash];
+            bool distributed = function->isServerConstant() && scope.context->isDistributed();
+            function_base_cache = &functions_cache[{hash, distributed}];
         }
     }
 
