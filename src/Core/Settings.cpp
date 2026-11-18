@@ -10891,11 +10891,11 @@ Makes `hash`, `parallel_hash` and `grace_hash` joins on a single `String` or `Nu
 
 Because the hash table is smaller, a join reaches `max_bytes_in_join` and `max_bytes_before_external_join` later.
 
-The setting does not apply to `FixedString` or `LowCardinality(Nullable(String))` keys, to tables with the `Join` engine, or to `joinGet`. A join on a `LowCardinality(String)` key may use the key's dictionary instead. A join whose hash table fits in the L2 cache of the CPU is not affected either, see `min_rows_for_packed_string_keys_in_hash_join`.
+The setting does not apply to `FixedString` or `LowCardinality(Nullable(String))` keys, to tables with the `Join` engine, or to `joinGet`. A join on a `LowCardinality(String)` key may use the key's dictionary instead. A join whose hash table fits in the L2 cache of the CPU keeps exact keys, unless `min_rows_for_packed_string_keys_in_hash_join` is 0.
 )", 0, \
         {"26.11", false, true, "New setting to make hash joins on a single `String` key faster and use less memory."}) \
     DECLARE(UInt64, min_rows_for_packed_string_keys_in_hash_join, 100'000, R"(
-A hash join packs its `String` keys (see `enable_packed_string_keys_in_hash_join`) only when the hash table with exact keys would be larger than about the L2 cache of the CPU. The size of the table is the number of right-side rows times the size of a cell, which is 32 bytes, plus the average length of the key. Smaller joins gain little from packed keys, and can be slower.
+A hash join packs its `String` keys (see `enable_packed_string_keys_in_hash_join`) only when the hash table with exact keys would be larger than about the L2 cache of the CPU, or when this setting is 0. The size of the table is the number of right-side rows times the size of a cell. A cell takes 32 bytes plus the average length of the key. Smaller joins gain little from packed keys, and can be slower.
 
 A packed key of more than 15 bytes is hashed for every row of the left side. A join with a runtime filter that passes mostly the rows with a match (see `enable_join_runtime_filters`) hashes only the rows that match, so it needs no minimum. Without such a filter, this setting is the minimum number of right-side rows. It applies to keys of more than 15 bytes, and to keys of unknown length, because their length counts as long. The length is known from the `basic` column statistics of the key. `MergeTree` tables collect them by default, see `auto_statistics_types`.
 
