@@ -242,6 +242,41 @@ def test_symlinked_metadata_path_in_storage_policy(start_cluster):
         node.query("SYSTEM RELOAD CONFIG")
 
 
+def test_plain_rewritable_compatibility_prefix_in_storage_policy(start_cluster):
+    node = cluster.instances["node1"]
+    invalid_policy_path = "/etc/clickhouse-server/config.d/duplicate_plain_rewritable_policy.xml"
+
+    # Loads the storage policies before the invalid configuration is added, so that it is applied by a reload.
+    assert (
+        node.query(
+            "SELECT count() FROM system.storage_policies "
+            "WHERE policy_name = 'plain_rewritable_compat_prefix_alias'"
+        )
+        == "0\n"
+    )
+
+    node.copy_file_to_container(
+        os.path.join(SCRIPT_DIR, "configs/duplicate_plain_rewritable_policy.xml"),
+        invalid_policy_path,
+    )
+    # As above: the reload succeeds, the error is logged and the policy is not applied.
+    try:
+        node.query("SYSTEM RELOAD CONFIG")
+        assert node.wait_for_log_line(
+            "Disks `plain_rewritable_compat_a` and `plain_rewritable_compat_b` .* resolve to the same storage namespace"
+        )
+        assert (
+            node.query(
+                "SELECT count() FROM system.storage_policies "
+                "WHERE policy_name = 'plain_rewritable_compat_prefix_alias'"
+            )
+            == "0\n"
+        )
+    finally:
+        node.exec_in_container(["rm", "-f", invalid_policy_path])
+        node.query("SYSTEM RELOAD CONFIG")
+
+
 def test_encrypted_path_prefix_of_table_path(start_cluster):
     node = cluster.instances["node1"]
 
@@ -277,12 +312,13 @@ def test_table_path_alias_on_reload(start_cluster):
     # The disk added by the reload is not in the policy while the reload is rejected, and it sees the
     # directory of the table, so the orphaned parts check would refuse to attach the table.
     node.query(
-        "CREATE TABLE table_path_alias_on_reload (x UInt64) ENGINE = MergeTree ORDER BY x "
+        "CREATE TABLE table_path_alias_on_reload (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x "
         "SETTINGS storage_policy = 'reload_policy', search_orphaned_parts_disks = 'none'"
     )
-    node.query("INSERT INTO table_path_alias_on_reload VALUES (1)")
+    node.query("INSERT INTO table_path_alias_on_reload VALUES (1, 1)")
     # A mutation record, so that the attach below can be paused while it loads the mutations.
-    node.query("ALTER TABLE table_path_alias_on_reload UPDATE x = x WHERE 1 SETTINGS mutations_sync = 1")
+    # A column of the sorting key cannot be updated, so it updates another one.
+    node.query("ALTER TABLE table_path_alias_on_reload UPDATE y = y WHERE 1 SETTINGS mutations_sync = 1")
 
     def reload_is_rejected():
         # `SYSTEM RELOAD CONFIG` reloads the storage configuration before it returns.
