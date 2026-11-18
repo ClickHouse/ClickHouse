@@ -227,8 +227,10 @@ namespace Net
         /// both. Lowers `timeout`. A negative `timeout` waits without a limit, a zero one only checks.
 
         virtual int sendNow(const void * buffer, int length);
-        /// Returns the bytes sent, 0 when nothing fits, or -1 when a send error is held.
-        /// Waits only for the send throttler.
+        /// Returns the bytes accepted, 0 when nothing fits, or -1 when a send error is held.
+        /// Waits only for the send throttler. After 0, repeat with the same data and at least the
+        /// same length. A TLS socket can hold accepted bytes; the next call on it sends them, also
+        /// a wait for data.
 
         virtual int receiveNow(void * buffer, int length);
         /// Returns the bytes received, 0 when nothing has arrived, or -1 at the end of the stream.
