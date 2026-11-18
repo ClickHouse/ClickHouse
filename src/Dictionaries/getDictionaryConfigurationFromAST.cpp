@@ -17,6 +17,7 @@
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Poco/String.h>
 #include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/IPAddressDictionaryConfiguration.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/DNSResolver.h>
@@ -247,6 +248,31 @@ void buildLayoutConfiguration(
                 param->formatForErrorMessage());
         }
 
+        if (pair->value_omitted)
+        {
+            if (layout->layout_type != "ip_trie" || pair->first != "radix_prefix")
+            {
+                throw DB::Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Dictionary layout parameter '{}' of layout '{}' must have a value",
+                    pair->first,
+                    layout->layout_type);
+            }
+
+            /// The SQL parser only accepts an omitted value immediately before the closing bracket.
+            if (param != layout->parameters->children.back())
+            {
+                throw DB::Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Dictionary layout parameter '{}' without a value must be the last parameter",
+                    pair->first);
+            }
+
+            AutoPtr<Element> parameter_without_value(doc->createElement(pair->first));
+            layout_type_element->appendChild(parameter_without_value);
+            continue;
+        }
+
         const ASTLiteral * value_literal = pair->second->as<ASTLiteral>();
         if (!value_literal)
         {
@@ -285,6 +311,19 @@ void buildLayoutConfiguration(
                 "Dictionary layout parameter value must be an UInt64, Float64, String, or a collection of (key, value) pairs, "
                 "got '{}' instead",
                 value_field.getTypeName());
+        }
+
+        /// Checked here, so that an invalid size is rejected by the CREATE query rather than at the first use of the dictionary.
+        if (layout->layout_type == "ip_trie" && pair->first == "radix_prefix")
+        {
+            if (value_field.getType() != Field::Types::UInt64)
+            {
+                throw DB::Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Parameter 'radix_prefix' of a dictionary of layout 'ip_trie' must be one of 8, 14, 16, 18, 20, 22, 24, got {}",
+                    applyVisitor(FieldVisitorToString(), value_field));
+            }
+            checkIPTrieRadixPrefix(value_field.safeGet<::UInt64>());
         }
 
         if (is_ssd_cache_layout)
@@ -593,6 +632,9 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
     for (const auto & child : children)
     {
         const ASTPair * pair = child->as<const ASTPair>();
+        if (pair->value_omitted)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary source parameter '{}' must have a value", pair->first);
+
         AutoPtr<Element> current_xml_element(doc->createElement(pair->first));
         root->appendChild(current_xml_element);
 

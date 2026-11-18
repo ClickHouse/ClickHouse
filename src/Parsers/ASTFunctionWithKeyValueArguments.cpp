@@ -6,6 +6,7 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/SecretArguments.h>
 
 namespace DB
@@ -36,6 +37,8 @@ void ASTPair::writeJSON(WriteBuffer & out) const
     JSONObjectWriter w(out, "Pair");
     w.writeString("first", first);
     w.writeBool("second_with_brackets", second_with_brackets);
+    if (value_omitted)
+        w.writeBool("value_omitted", true);
     w.writeChild("second", second);
 }
 
@@ -50,10 +53,19 @@ void ASTPair::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'first' in ASTPair during AST JSON deserialization");
 
     second_with_brackets = r.getBool("second_with_brackets");
+    value_omitted = r.getBool("value_omitted");
 
     auto child = r.readChild("second");
     if (!child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'second' in ASTPair during AST JSON deserialization");
+
+    if (value_omitted)
+    {
+        const auto * literal = child->as<ASTLiteral>();
+        if (!literal || !literal->value.isNull())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "An omitted ASTPair value must be a NULL literal during AST JSON deserialization");
+    }
 
     /// `ParserKeyValuePair` puts the value in brackets exactly when it is a list of pairs.
     const auto * list = child->as<ASTExpressionList>();
@@ -61,16 +73,25 @@ void ASTPair::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'second_with_brackets' of ASTPair must be set exactly when 'second' is a list during AST JSON deserialization");
     if (list)
+    {
+        if (list->getSeparator() != '\0')
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'second' of ASTPair must use the NUL separator during AST JSON deserialization");
         for (const auto & element : list->children)
             if (!element || !element->as<ASTPair>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "'second' of ASTPair must contain only key-value pairs during AST JSON deserialization");
+    }
     set(second, child);
 }
 
 void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << Poco::toUpper(first) << " ";
+    ostr << Poco::toUpper(first);
+    if (value_omitted)
+        return;
+
+    ostr << " ";
 
     if (second_with_brackets)
         ostr << "(";
@@ -114,6 +135,8 @@ void ASTPair::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) cons
     hash_state.update(first.size());
     hash_state.update(first);
     hash_state.update(second_with_brackets);
+    if (value_omitted)
+        hash_state.update(value_omitted);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -164,6 +187,9 @@ void ASTFunctionWithKeyValueArguments::readJSON(const Poco::JSON::Object & json)
     elements = r.readChildOfType<ASTExpressionList>("elements");
     if (!elements)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'elements' in ASTFunctionWithKeyValueArguments during AST JSON deserialization");
+    if (elements->as<ASTExpressionList &>().getSeparator() != '\0')
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'elements' of ASTFunctionWithKeyValueArguments must use the NUL separator during AST JSON deserialization");
     for (const auto & element : elements->children)
         if (!element || !element->as<ASTPair>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
