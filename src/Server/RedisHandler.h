@@ -26,6 +26,7 @@ namespace DB
 
 class EnabledQuota;
 class ProcessListEntry;
+class QueryStatus;
 class Session;
 class TCPServer;
 
@@ -75,6 +76,9 @@ private:
     /// Accounts a failed data command against the `errors` quota of the user.
     void accountError();
 
+    /// Accounts the profile events of a finished data command against the quotas of the user over profile events.
+    void accountProfileEvents();
+
     /// Reads the binding of the selected Redis database from the live server configuration. It is read
     /// for every request, so that `SYSTEM RELOAD CONFIG` is visible to already connected clients.
     RedisProtocol::MapDescription getMapDescription(UInt32 db_) const;
@@ -109,6 +113,9 @@ private:
     /// The quota of the current data command and the time it has been running for. The quota is unset
     /// for the commands that do not read data (and are not accounted, as `PING`).
     std::shared_ptr<const EnabledQuota> command_quota;
+    /// The entry of the current data command in the process list, which holds its profile events.
+    std::shared_ptr<QueryStatus> command_status;
+    UInt64 command_normalized_query_hash = 0;
     Stopwatch command_watch;
     UInt64 command_elapsed_accounted_ns = 0;
     bool authenticated = false;

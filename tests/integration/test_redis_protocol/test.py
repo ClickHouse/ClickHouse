@@ -612,6 +612,51 @@ def test_quota_applies_to_commands(started_cluster):
                 client.get("Alice")
         finally:
             client.close()
+        node.query("DROP QUOTA redis_quota")
+
+        # The commands of one kind share a normalized query hash, whatever their keys are.
+        node.query("CREATE QUOTA redis_quota FOR INTERVAL 1 hour MAX queries_per_normalized_hash = 2 TO quota_user")
+        client = Redis(host=started_cluster.get_instance_ip("node"), port=server_port, username="quota_user", password="secret")
+        try:
+            assert client.select(1)
+            assert client.get("Alice") == b"Smith"
+            assert client.get("Bob") == b"Johnson"
+            with pytest.raises(exceptions.ResponseError, match="Quota .* has been exceeded"):
+                client.get("Charlie")
+            # A command of another kind has its own normalized query hash.
+            assert client.mget("Alice") == [b"Smith"]
+        finally:
+            client.close()
+        node.query("DROP QUOTA redis_quota")
+
+        # The quotas over profile events apply: a quota exhausted by SQL queries rejects the commands,
+        # and the commands consume it themselves.
+        # A query that crosses the limit still finishes, so the second one exhausts the quota. A query
+        # without `FROM` is exempt from quotas, so the queries read the table.
+        node.query("CREATE QUOTA redis_quota FOR INTERVAL 1 hour MAX Query = 1 TO quota_user")
+        for _ in range(2):
+            node.query("SELECT count() FROM default.name_surname_map", user="quota_user", password="secret")
+        client = Redis(host=started_cluster.get_instance_ip("node"), port=server_port, username="quota_user", password="secret")
+        try:
+            with pytest.raises(exceptions.ResponseError, match="Quota .* has been exceeded"):
+                client.select(1)
+        finally:
+            client.close()
+        node.query("DROP QUOTA redis_quota")
+
+        node.query("CREATE QUOTA redis_quota FOR INTERVAL 1 hour MAX Query = 2 TO quota_user")
+        client = Redis(host=started_cluster.get_instance_ip("node"), port=server_port, username="quota_user", password="secret")
+        try:
+            assert client.select(1)
+            assert client.get("Alice") == b"Smith"
+            assert client.get("Bob") == b"Johnson"
+            with pytest.raises(exceptions.ResponseError, match="Quota .* has been exceeded"):
+                client.get("Charlie")
+        finally:
+            client.close()
+        assert "QUOTA_EXCEEDED" in node.query_and_get_error(
+            "SELECT count() FROM default.name_surname_map", user="quota_user", password="secret"
+        )
     finally:
         node.query("DROP QUOTA IF EXISTS redis_quota")
         node.query("DROP USER IF EXISTS quota_user")

@@ -35,9 +35,17 @@
 #include <Storages/IStorage.h>
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+
+namespace ProfileEvents
+{
+    extern const Event Query;
+    extern const Event SelectQuery;
+}
 
 namespace DB
 {
@@ -148,13 +156,16 @@ void RedisHandler::serveConnection()
 
         bool keep_connection = true;
         command_quota.reset();
+        command_status.reset();
         try
         {
             keep_connection = processRequest(req);
+            accountProfileEvents();
         }
         catch (const Poco::Exception & exc)
         {
             accountError();
+            accountProfileEvents();
 
             /// Sending (a part of) the reply has failed, so the connection is unusable: let `run` close it.
             if (out->isCanceled())
@@ -226,24 +237,38 @@ RedisHandler::CommandScope RedisHandler::prepareQueryContext(const String & comm
     /// Attach the command to a query, as `executeQuery` does: otherwise the memory limits of the user
     /// (`max_memory_usage`, `max_memory_usage_for_user`) would not apply to the lookup results, and a
     /// small request repeating a key with a large value could exhaust the memory of the server.
+    /// The arguments of a command are literals (keys) or names of columns (fields), so all the commands
+    /// of one kind share a normalized query hash, as the SQL queries that differ only in literals do.
+    const String query_text = "Redis " + command_name;
+    command_normalized_query_hash = sipHash64(query_text);
+
     CommandScope scope;
     scope.query_scope = QueryScope::create(query_context);
     scope.process_list_entry = query_context->getProcessList().insert(
-        "Redis " + command_name, /*normalized_query_hash=*/ 0, /*ast=*/ nullptr, query_context,
+        query_text, command_normalized_query_hash, /*ast=*/ nullptr, query_context,
         clock_gettime_ns(CLOCK_MONOTONIC), /*is_internal=*/ false);
     query_context->setProcessListElement(scope.process_list_entry->getQueryStatus());
+
+    /// As `InterpreterFactory` does for a `SELECT`, in the thread group of the command, so that they are
+    /// charged against the quotas over profile events of the user (see `accountProfileEvents`).
+    ProfileEvents::increment(ProfileEvents::Query);
+    ProfileEvents::increment(ProfileEvents::SelectQuery);
 
     command_watch.restart();
     command_elapsed_accounted_ns = 0;
 
     /// Account the command against the quota of the user, as `executeQuery` does for a `SELECT`.
     /// From here on, a failure of the command is accounted as an error (see `accountError`).
+    /// From here on, the profile events of the command are charged when it finishes (see `accountProfileEvents`).
     command_quota = query_context->getQuota();
+    command_status = scope.process_list_entry->getQueryStatus();
     if (command_quota)
     {
-        command_quota->usedForQuery(/*normalized_query_hash=*/ 0, QuotaType::QUERY_SELECTS, 1);
-        command_quota->usedForQuery(/*normalized_query_hash=*/ 0, QuotaType::QUERIES, 1);
-        command_quota->usedForQuery(/*normalized_query_hash=*/ 0, QuotaType::ERRORS, 0, /*check_exceeded=*/ true);
+        command_quota->usedForQuery(command_normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
+        command_quota->usedForQuery(command_normalized_query_hash, QuotaType::QUERIES, 1);
+        command_quota->usedForQuery(command_normalized_query_hash, QuotaType::ERRORS, 0, /*check_exceeded=*/ true);
+        command_quota->checkExceededProfileEvents(command_normalized_query_hash);
+        command_quota->usedPerNormalizedHash(command_normalized_query_hash);
     }
 
     return scope;
@@ -271,7 +296,7 @@ void RedisHandler::accountResult(const Block & result_block)
     {
         const UInt64 elapsed_ns = command_watch.elapsedNanoseconds();
         command_quota->usedForQuery(
-            /*normalized_query_hash=*/ 0,
+            command_normalized_query_hash,
             {{QuotaType::RESULT_ROWS, result_block.rows()},
              {QuotaType::RESULT_BYTES, result_block.bytes()},
              {QuotaType::EXECUTION_TIME, elapsed_ns - command_elapsed_accounted_ns}});
@@ -284,7 +309,19 @@ void RedisHandler::accountError()
     /// As `executeQuery` does for a failed query. Only data commands are accounted, so `PING` or a
     /// failed `AUTH` does not touch the quota.
     if (command_quota)
-        command_quota->usedForQuery(/*normalized_query_hash=*/ 0, QuotaType::ERRORS, 1, /*check_exceeded=*/ false);
+        command_quota->usedForQuery(command_normalized_query_hash, QuotaType::ERRORS, 1, /*check_exceeded=*/ false);
+}
+
+void RedisHandler::accountProfileEvents()
+{
+    /// As `executeQuery` does when a query finishes, successfully or not. The command has already done
+    /// its work, so it is not rejected: the quota, if now exhausted, rejects the following commands.
+    if (command_quota && command_status && command_quota->hasProfileEventLimits())
+    {
+        auto info = command_status->getInfo(/*get_thread_list=*/ false, /*get_profile_events=*/ true);
+        command_quota->usedProfileEvents(command_normalized_query_hash, {info.profile_counters.get()}, /*check_exceeded=*/ false);
+    }
+    command_status.reset();
 }
 
 bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
