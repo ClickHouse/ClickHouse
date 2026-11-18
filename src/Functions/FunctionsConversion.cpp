@@ -2244,19 +2244,33 @@ DataTypePtr getPromotedTypeForDynamic(const DataTypePtr & type, const FormatSett
     return promoted;
 }
 
+/// A value under a NULL can be anything (a Native column carries it as is), so the scans below skip NULL
+/// rows: a hidden value must not decide a conversion for the real values. `null_map` marks the NULL rows of
+/// `column`; it comes from an enclosing Nullable (for an array element) or is null when there are none.
+
 /// True if the DateTime64 values in rows [begin, end) fit DateTime64(9), the type their promotion casts to.
 /// A later value would saturate there, while the parser keeps its text as a String. Expects no LowCardinality,
 /// see recursiveRemoveLowCardinality.
-bool fitsIntoMaxScaleDateTime64(const IColumn & column, const IDataType & type, size_t begin, size_t end)
+bool fitsIntoMaxScaleDateTime64(const IColumn & column, const IDataType & type, size_t begin, size_t end, const NullMap * null_map = nullptr)
 {
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
-        return fitsIntoMaxScaleDateTime64(assert_cast<const ColumnNullable &>(column).getNestedColumn(), *nullable_type->getNestedType(), begin, end);
+    {
+        const auto & column_nullable = assert_cast<const ColumnNullable &>(column);
+        return fitsIntoMaxScaleDateTime64(column_nullable.getNestedColumn(), *nullable_type->getNestedType(), begin, end, &column_nullable.getNullMapData());
+    }
 
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
     {
         const auto & column_array = assert_cast<const ColumnArray &>(column);
         const auto & offsets = column_array.getOffsets();
-        return fitsIntoMaxScaleDateTime64(column_array.getData(), *array_type->getNestedType(), offsets[begin - 1], offsets[end - 1]);
+        for (size_t row = begin; row < end; ++row)
+        {
+            if (null_map && (*null_map)[row])
+                continue;
+            if (!fitsIntoMaxScaleDateTime64(column_array.getData(), *array_type->getNestedType(), offsets[row - 1], offsets[row]))
+                return false;
+        }
+        return true;
     }
 
     constexpr UInt32 promoted_scale = 9;
@@ -2270,6 +2284,8 @@ bool fitsIntoMaxScaleDateTime64(const IColumn & column, const IDataType & type, 
     const auto & data = assert_cast<const DataTypeDateTime64::ColumnType &>(column).getData();
     for (size_t i = begin; i < end; ++i)
     {
+        if (null_map && (*null_map)[i])
+            continue;
         if (data[i].value > max_value || data[i].value < min_value)
             return false;
     }
@@ -2282,33 +2298,55 @@ bool fitsIntoMaxScaleDateTime64(const IColumn & column, const IDataType & type)
 }
 
 template <typename T>
-bool hasNonFiniteValues(const IColumn & column)
+bool hasNonFiniteValues(const IColumn & column, size_t begin, size_t end, const NullMap * null_map)
 {
-    for (const auto & value : assert_cast<const ColumnVector<T> &>(column).getData())
+    const auto & data = assert_cast<const ColumnVector<T> &>(column).getData();
+    for (size_t i = begin; i < end; ++i)
     {
-        if (!isFinite(value))
+        if (null_map && (*null_map)[i])
+            continue;
+        if (!isFinite(data[i]))
             return true;
     }
     return false;
 }
 
-/// True if a floating-point column holds inf or nan. JSON text writes them as strings, so the parser
-/// infers String for them, while a CAST keeps the float type.
-bool hasNonFiniteFloats(const IColumn & column, const IDataType & type)
+/// True if a floating-point column holds inf or nan in rows [begin, end). JSON text writes them as strings,
+/// so the parser infers String for them, while a CAST keeps the float type.
+bool hasNonFiniteFloats(const IColumn & column, const IDataType & type, size_t begin, size_t end, const NullMap * null_map = nullptr)
 {
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
-        return hasNonFiniteFloats(assert_cast<const ColumnNullable &>(column).getNestedColumn(), *nullable_type->getNestedType());
+    {
+        const auto & column_nullable = assert_cast<const ColumnNullable &>(column);
+        return hasNonFiniteFloats(column_nullable.getNestedColumn(), *nullable_type->getNestedType(), begin, end, &column_nullable.getNullMapData());
+    }
 
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
-        return hasNonFiniteFloats(assert_cast<const ColumnArray &>(column).getData(), *array_type->getNestedType());
+    {
+        const auto & column_array = assert_cast<const ColumnArray &>(column);
+        const auto & offsets = column_array.getOffsets();
+        for (size_t row = begin; row < end; ++row)
+        {
+            if (null_map && (*null_map)[row])
+                continue;
+            if (hasNonFiniteFloats(column_array.getData(), *array_type->getNestedType(), offsets[row - 1], offsets[row]))
+                return true;
+        }
+        return false;
+    }
 
     switch (type.getTypeId())
     {
-        case TypeIndex::BFloat16: return hasNonFiniteValues<BFloat16>(column);
-        case TypeIndex::Float32: return hasNonFiniteValues<Float32>(column);
-        case TypeIndex::Float64: return hasNonFiniteValues<Float64>(column);
+        case TypeIndex::BFloat16: return hasNonFiniteValues<BFloat16>(column, begin, end, null_map);
+        case TypeIndex::Float32: return hasNonFiniteValues<Float32>(column, begin, end, null_map);
+        case TypeIndex::Float64: return hasNonFiniteValues<Float64>(column, begin, end, null_map);
         default: return false;
     }
+}
+
+bool hasNonFiniteFloats(const IColumn & column, const IDataType & type)
+{
+    return hasNonFiniteFloats(column, type, 0, column.size());
 }
 
 /// With read_datetime_number_as_raw_value the parser reads an integer as raw DateTime64 ticks and
@@ -2527,9 +2565,10 @@ struct ObjectConversionPlan
     /// New SKIP exact paths (in destination but not in source).
     UnorderedSetWithMemoryTracking<String> new_skip_paths;
 
-    /// New SKIP REGEXP patterns (in destination but not in source), compiled once for all blocks.
-    /// Shared so that the plan stays copyable inside the conversion wrapper.
-    VectorWithMemoryTracking<std::shared_ptr<const re2::RE2>> new_skip_regexps;
+    /// All destination SKIP REGEXP patterns, compiled once for all blocks. Every one is applied, even a
+    /// pattern already in the source type, because its match mode is a setting rather than part of the type,
+    /// so the source may have been filtered under another mode. Shared so the plan stays copyable.
+    VectorWithMemoryTracking<std::shared_ptr<const re2::RE2>> skip_regexps;
 
     /// Whether max_dynamic_paths or max_dynamic_types changed.
     bool dynamic_limits_changed = false;
@@ -2553,13 +2592,13 @@ struct ObjectConversionPlan
             && removed_typed_paths.empty()
             && changed_typed_paths.empty()
             && new_skip_paths.empty()
-            && new_skip_regexps.empty()
+            && skip_regexps.empty()
             && !dynamic_limits_changed;
     }
 
     [[nodiscard]] bool hasNewSkipRules() const
     {
-        return !new_skip_paths.empty() || !new_skip_regexps.empty();
+        return !new_skip_paths.empty() || !skip_regexps.empty();
     }
 };
 
@@ -2624,14 +2663,11 @@ ObjectConversionPlan buildObjectConversionPlan(
             plan.new_leaf_typed_paths.insert(path);
     }
 
-    const auto & src_regexps = src_type.getPathRegexpsToSkip();
-    const auto & dst_regexps = dst_type.getPathRegexpsToSkip();
-    UnorderedSetWithMemoryTracking<String> src_regexp_set(src_regexps.begin(), src_regexps.end());
-    for (const auto & regexp : dst_regexps)
-    {
-        if (!src_regexp_set.contains(regexp))
-            plan.new_skip_regexps.push_back(std::make_shared<const re2::RE2>(regexp));
-    }
+    /// Apply every destination regexp, including one already in the source type: its match mode is a
+    /// setting, so the source may have been filtered under another mode (see shouldSkip). A true
+    /// self-conversion is handled earlier by the identity wrapper, so this does not re-filter a no-op cast.
+    for (const auto & regexp : dst_type.getPathRegexpsToSkip())
+        plan.skip_regexps.push_back(std::make_shared<const re2::RE2>(regexp));
 
     return plan;
 }
@@ -3123,7 +3159,7 @@ ColumnPtr convertObjectColumns(
             return partial ? RE2::PartialMatch(piece, *regexp) : RE2::FullMatch(piece, *regexp);
         };
 
-        for (const auto & regexp : plan.new_skip_regexps)
+        for (const auto & regexp : plan.skip_regexps)
         {
             if (matchesRegexp({}, regexp))
                 return true;

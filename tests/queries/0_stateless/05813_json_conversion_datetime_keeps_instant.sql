@@ -47,6 +47,12 @@ SELECT j.d, dynamicType(j.d) FROM (SELECT CAST('{"d":"2026-01-01 00:00:00"}'::JS
 SELECT toUnixTimestamp(j.d::DateTime), dynamicType(j.d) FROM (SELECT CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d LowCardinality(DateTime('Asia/Tokyo'))), 'JSON') AS j) SETTINGS allow_suspicious_low_cardinality_types = 1;
 -- A DateTime64 outside DateTime64(9) becomes a String; the other rows of the block keep their instants.
 SELECT toString(j.d) AS d, dynamicType(j.d) FROM (SELECT CAST(json::JSON(d DateTime64(3, 'Asia/Tokyo')), 'JSON') AS j FROM values('json String', ('{"d":"2026-01-01 00:00:00.000"}'), ('{"d":"2300-01-01 00:00:00.000"}'))) ORDER BY d;
+-- The value under a NULL array element is arbitrary and must not decide the array's conversion. The Native
+-- block has elements [2026-01-01 00:00:00, NULL], the second with a hidden out-of-range tick; the present
+-- element keeps its instant 1767193200.
+SELECT toUnixTimestamp64Milli(arrayElement((j::JSON).d::Array(Nullable(DateTime64(3))), 1))
+FROM format(Native, 'j JSON(d Array(Nullable(DateTime64(3, ''Asia/Tokyo''))))',
+    unhex('0101016a344a534f4e2864204172726179284e756c6c61626c65284461746554696d65363428332c2027417369612f546f6b796f2729292929030000000000000000020000000000000000018045ec749b01000080d9d9b0e5080000'));
 
 SELECT '-- dynamic value into a new typed path';
 SELECT toUnixTimestamp(CAST('{"d":"2026-01-01 00:00:00"}'::JSON, 'JSON(d DateTime(''Asia/Tokyo''))').d);

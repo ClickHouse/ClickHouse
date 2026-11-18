@@ -181,6 +181,20 @@ FROM format(Native, 'j JSON(a Nullable(UInt8))', unhex('0101016a174a534f4e286120
 SETTINGS json_use_optimized_type_conversion = {{ optimized }}, input_format_null_as_default = 1;
 {% endfor %}
 
+-- A SKIP REGEXP match mode is a setting, not part of the type, so a regexp inherited from the source type
+-- is applied again under the conversion's mode. Here `secret_key` is kept on insert under full match and
+-- dropped on conversion under partial match.
+{% for optimized in [1, 0] -%}
+INSERT INTO results
+SELECT {{ optimized }}, 'inherited regexp under a different match mode', toString(j::JSON(b Int64, SKIP REGEXP 'secret'))
+FROM (SELECT CAST('{"secret_key":1,"b":2}' AS JSON(SKIP REGEXP 'secret')) AS j SETTINGS type_json_use_partial_match_to_skip_paths_by_regexp = 0)
+SETTINGS json_use_optimized_type_conversion = {{ optimized }}, type_json_use_partial_match_to_skip_paths_by_regexp = 1;
+INSERT INTO results
+SELECT {{ optimized }}, 'inherited regexp under a different match mode in shared data', toString(j::JSON(max_dynamic_paths = 0, SKIP REGEXP 'secret'))
+FROM (SELECT CAST('{"secret_key":1,"b":2}' AS JSON(max_dynamic_paths = 0, SKIP REGEXP 'secret')) AS j SETTINGS type_json_use_partial_match_to_skip_paths_by_regexp = 0)
+SETTINGS json_use_optimized_type_conversion = {{ optimized }}, type_json_use_partial_match_to_skip_paths_by_regexp = 1;
+{% endfor %}
+
 -- JSON text writes inf and nan as strings, so the parser infers String for them.
 {{ check("removed Float64 with inf and nan", "JSON(a Float64)", "JSON", ['{"a": "inf"}', '{"a": "-inf"}', '{"a": "nan"}', '{"a": 1.5}']) }}
 {{ check("removed Float64 with inf to shared data", "JSON(max_dynamic_paths = 0, a Float64)", "JSON(max_dynamic_paths = 0)", ['{"a": "inf"}']) }}
