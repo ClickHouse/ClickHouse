@@ -220,12 +220,21 @@ void ASTDictionarySettings::readJSON(const Poco::JSON::Object & json)
             /// instead of being coerced into a setting name.
             JSONObjectReader setting_reader(*obj);
             String setting_name = setting_reader.getString("name");
+            /// An empty name is back-quoted to an empty identifier, which `ParserIdentifier` rejects,
+            /// so it would format a `SETTINGS(...)` clause no parser accepts.
+            if (setting_name.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'name' at index {} in 'changes' array during AST JSON deserialization", i);
             auto value_obj = obj->getObject("value");
             if (!value_obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'value' object at index {} in 'changes' array during AST JSON deserialization", i);
             changes.emplace_back(setting_name, JSONObjectReader::readFieldFromObject(*value_obj));
         }
     }
+
+    /// `ParserDictionarySettings` requires at least one `name = value` pair, and `formatImpl` prints
+    /// the clause unconditionally, so an empty list would format a parser-impossible `SETTINGS()`.
+    if (changes.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'changes' in `DictionarySettings` during AST JSON deserialization");
 }
 
 void ASTDictionarySettings::formatImpl(WriteBuffer & ostr,
@@ -240,7 +249,6 @@ void ASTDictionarySettings::formatImpl(WriteBuffer & ostr,
         if (it != changes.begin())
             ostr << ", ";
 
-        /// The parser reads the name with `ParserSetQuery::parseNameValuePair`, as for the `SET` query.
         formatSettingName(it->name, ostr);
         ostr << " = " << applyVisitor(FieldVisitorToString(), it->value);
     }

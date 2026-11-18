@@ -1534,97 +1534,115 @@ std::string ReadManager::collectDeadlockDiagnostics()
 ReadManager::ReadResult ReadManager::read()
 {
     Task task;
+    while (true)
     {
-        std::unique_lock lock(delivery_mutex);
-
-        while (true)
         {
-            bool thread_pool_was_idle = parser_shared_resources->parsing_runner.isIdle();
+            std::unique_lock lock(delivery_mutex);
 
-            if (exception)
-                std::rethrow_exception(copyMutableException(exception));
-
-            /// If `preserve_order`, only deliver chunks from `first_incomplete_row_group`.
-            /// This ensures that row groups are delivered in order. Within a row group, row
-            /// subgroups are read and added to `delivery_queue` in order.
-            size_t first_inc = first_incomplete_row_group.load(std::memory_order_relaxed);
-            bool can_deliver = !delivery_queue.empty() &&
-                (!reader.options.format.parquet.preserve_order ||
-                 delivery_queue.top().row_group_idx == first_inc);
-
-            LOG_TEST(getLog(), "read: delivery_queue.size()={} first_incomplete={} thread_pool_idle={} can_deliver={}",
-                      delivery_queue.size(), first_inc, thread_pool_was_idle, can_deliver);
-
-            if (can_deliver)
+            while (true)
             {
-                task = delivery_queue.top();
-                delivery_queue.pop();
-                LOG_TEST(getLog(), "read: delivering task rg={} sg={}",
-                          task.row_group_idx, task.row_subgroup_idx);
-                break;
-            }
+                bool thread_pool_was_idle = parser_shared_resources->parsing_runner.isIdle();
 
-            if (first_incomplete_row_group.load(std::memory_order_relaxed) == reader.row_groups.size())
-            {
-                /// All done. Check for memory accounting leaks.
-                /// First join the threads because they might still be decrementing memory_usage.
-                lock.unlock();
-                shutdown->shutdown();
-                lock.lock();
+                if (exception)
+                    std::rethrow_exception(copyMutableException(exception));
 
-                for (const RowGroup & row_group : reader.row_groups)
+                /// If `preserve_order`, only deliver chunks from `first_incomplete_row_group`.
+                /// This ensures that row groups are delivered in order. Within a row group, row
+                /// subgroups are read and added to `delivery_queue` in order.
+                size_t first_inc = first_incomplete_row_group.load(std::memory_order_relaxed);
+                bool can_deliver = !delivery_queue.empty() &&
+                    (!reader.options.format.parquet.preserve_order ||
+                     delivery_queue.top().row_group_idx == first_inc);
+
+                LOG_TEST(getLog(), "read: delivery_queue.size()={} first_incomplete={} thread_pool_idle={} can_deliver={}",
+                          delivery_queue.size(), first_inc, thread_pool_was_idle, can_deliver);
+
+                if (can_deliver)
                 {
-                    chassert(row_group.stage.load(std::memory_order_relaxed) == ReadStage::Deallocated);
-                    chassert(row_group.delivery_ptr.load(std::memory_order_relaxed) == row_group.subgroups.size());
-                    for (const RowSubgroup & subgroup : row_group.subgroups)
-                        chassert(subgroup.stage.load(std::memory_order_relaxed) == ReadStage::Deallocated);
-                    for (size_t i = 0; i < stages.size(); ++i)
+                    task = delivery_queue.top();
+                    delivery_queue.pop();
+                    LOG_TEST(getLog(), "read: delivering task rg={} sg={}",
+                              task.row_group_idx, task.row_subgroup_idx);
+                    break;
+                }
+
+                if (first_incomplete_row_group.load(std::memory_order_relaxed) == reader.row_groups.size())
+                {
+                    /// All done. Check for memory accounting leaks.
+                    /// First join the threads because they might still be decrementing memory_usage.
+                    lock.unlock();
+                    shutdown->shutdown();
+                    lock.lock();
+
+                    for (const RowGroup & row_group : reader.row_groups)
                     {
-                        size_t mem = stages[i].memory_usage.load(std::memory_order_relaxed);
-                        size_t batches = stages[i].batches_in_progress.load(std::memory_order_relaxed);
-                        size_t unsched = 0;
-                        for (const auto & tasks : stages[i].row_group_tasks_to_schedule)
-                            unsched += tasks.size();
-                        if (mem != 0 || batches != 0 || unsched != 0)
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Leak in memory or task accounting in parquet reader: got {} bytes, {} batches, {} tasks in stage {}", mem, batches, unsched, i);
+                        chassert(row_group.stage.load(std::memory_order_relaxed) == ReadStage::Deallocated);
+                        chassert(row_group.delivery_ptr.load(std::memory_order_relaxed) == row_group.subgroups.size());
+                        for (const RowSubgroup & subgroup : row_group.subgroups)
+                            chassert(subgroup.stage.load(std::memory_order_relaxed) == ReadStage::Deallocated);
+                        for (size_t i = 0; i < stages.size(); ++i)
+                        {
+                            size_t mem = stages[i].memory_usage.load(std::memory_order_relaxed);
+                            size_t batches = stages[i].batches_in_progress.load(std::memory_order_relaxed);
+                            size_t unsched = 0;
+                            for (const auto & tasks : stages[i].row_group_tasks_to_schedule)
+                                unsched += tasks.size();
+                            if (mem != 0 || batches != 0 || unsched != 0)
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Leak in memory or task accounting in parquet reader: got {} bytes, {} batches, {} tasks in stage {}", mem, batches, unsched, i);
+                        }
                     }
+                    if (size_t n = column_data_read_ahead_count.load(std::memory_order_relaxed))
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Leak in parquet reader: {} column data read-ahead slots are held", n);
+                    return {};
                 }
-                if (size_t n = column_data_read_ahead_count.load(std::memory_order_relaxed))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Leak in parquet reader: {} column data read-ahead slots are held", n);
-                return {};
-            }
 
-            if (parser_shared_resources->parsing_runner.isManual())
-            {
-                /// Pump the manual executor.
-                lock.unlock();
-                /// Note: the executor can be shared among multiple files, so we may execute someone
-                /// else's task, and someone else may execute our task.
-                /// Hence the thread_pool_was_idle check.
-                if (!parser_shared_resources->parsing_runner.runTaskInline() && thread_pool_was_idle)
+                if (parser_shared_resources->parsing_runner.isManual())
                 {
-                    std::string diagnostics = collectDeadlockDiagnostics();
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in Parquet::ReadManager (single-threaded). {}", diagnostics);
+                    /// Pump the manual executor.
+                    lock.unlock();
+                    /// Note: the executor can be shared among multiple files, so we may execute someone
+                    /// else's task, and someone else may execute our task.
+                    /// Hence the thread_pool_was_idle check.
+                    if (!parser_shared_resources->parsing_runner.runTaskInline() && thread_pool_was_idle)
+                    {
+                        std::string diagnostics = collectDeadlockDiagnostics();
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in Parquet::ReadManager (single-threaded). {}", diagnostics);
+                    }
+                    lock.lock();
                 }
-                lock.lock();
-            }
-            else if (thread_pool_was_idle)
-            {
-                /// Task scheduling code is complicated and error-prone. In particular it's easy to
-                /// have a bug where tasks stop getting scheduled under some conditions
-                /// (see is_privileged_task). So we specifically check for getting stuck.
-                LOG_DEBUG(getLog(), "read: DEADLOCK DETECTED - thread pool idle, collecting diagnostics");
-                lock.unlock();
-                std::string diagnostics = collectDeadlockDiagnostics();
-                LOG_DEBUG(getLog(), "read: DEADLOCK diagnostics: {}", diagnostics);
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in Parquet::ReadManager (thread pool).");
-            }
-            else
-            {
-                /// Wait for progress. Re-check parsing_runner.isIdle() every few seconds.
-                delivery_cv.wait_for(lock, std::chrono::seconds(10));
+                else if (thread_pool_was_idle)
+                {
+                    /// Task scheduling code is complicated and error-prone. In particular it's easy to
+                    /// have a bug where tasks stop getting scheduled under some conditions
+                    /// (see is_privileged_task). So we specifically check for getting stuck.
+                    LOG_DEBUG(getLog(), "read: DEADLOCK DETECTED - thread pool idle, collecting diagnostics");
+                    lock.unlock();
+                    std::string diagnostics = collectDeadlockDiagnostics();
+                    LOG_DEBUG(getLog(), "read: DEADLOCK diagnostics: {}", diagnostics);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in Parquet::ReadManager (thread pool).");
+                }
+                else
+                {
+                    /// Wait for progress. Re-check parsing_runner.isIdle() every few seconds.
+                    delivery_cv.wait_for(lock, std::chrono::seconds(10));
+                }
             }
         }
+
+        /// TopN dynamic filtering, the last check: the row group may have been read while the threshold was still
+        /// loose, and the threshold has tightened since, as the sorting transforms consumed the chunks delivered
+        /// before. This matters for row groups served from the columns cache, which are ready almost at once, so
+        /// all of them pass the checks before reading while the first chunks are still being sorted.
+        RowGroup & row_group_to_deliver = reader.row_groups.at(task.row_group_idx);
+        if (!reader.format_filter_info || !reader.format_filter_info->top_k_filter
+            || !reader.topKShouldSkipRowGroup(row_group_to_deliver))
+            break;
+
+        if (!row_group_to_deliver.skipped_by_top_k.exchange(true))
+            ProfileEvents::increment(ProfileEvents::ParquetTopKSkippedRowGroups);
+        MemoryUsageDiff diff(ReadStage::Deliver);
+        finishRowSubgroupStage(task.row_group_idx, task.row_subgroup_idx, ReadStage::Deliver, /*step_idx=*/ 0, diff);
+        flushMemoryUsageDiff(std::move(diff));
     }
 
     RowGroup & row_group = reader.row_groups.at(task.row_group_idx);
