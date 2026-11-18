@@ -9945,7 +9945,7 @@ The manifest header schema is only a copy of the table schema at the time the ma
         {"26.10", true, true, "The change was backported to 26.8 and is recorded there."}, \
         {"26.8", false, true, "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.8 restores the previous strict behavior."}) \
     DECLARE(Bool, optimize_distinct_in_order, true, R"(
-Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement
+Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement. It is not applied to a `FINAL` read that uses vertical `FINAL` (see `enable_vertical_final`), unless a `LIMIT` lets the `DISTINCT` stop reading early or the read is already in order for another reason, such as `ORDER BY`.
 )", 0) \
     DECLARE(Bool, optimize_limit_by_in_order, true, R"(
 Optimize `SELECT ... LIMIT N BY <cols>` queries when `<cols>` (in any order) form a prefix of the table's sorting key, or become one after `WHERE col = const` fixes leading columns. With this enabled the source reads data in primary-key order, so rows with equal values of the `BY` columns arrive adjacent to each other within each stream. When the data arrives in a single sorted stream, `LIMIT BY` filters it in streaming mode with O(1) memory, instead of building a hash table of every distinct combination of `BY` columns seen. When the sorted data arrives in multiple streams and the same `BY` values can appear in more than one of them, each stream is first prefiltered in streaming mode down to at most `LIMIT + OFFSET` rows per group, then the streams are combined and a final hash-based `LIMIT BY` deduplicates groups that span several streams. That final pass still keeps an entry for every distinct combination of `BY` columns, but it only processes the prefiltered rows.
@@ -10017,6 +10017,12 @@ The total number of bytes to read is estimated based on the collected statistics
 )", 0, \
         {"26.1", 0, 1_MiB, "Better default value derived from testing results"}, \
         {"25.12", 0, 0, "New setting"}) \
+    DECLARE(Bool, automatic_parallel_replicas_ignore_thresholds, false, R"(
+For testing of the automatic parallel replicas cost model - ignore the cap on how many threads a read can usefully occupy (derived from `merge_tree_min_bytes_per_task_for_remote_reading`), which otherwise clamps both sides of the comparison to the same value for a read too small to occupy `max_threads`, so that the comparison collapses to `0 > output_bytes / replicas` and the query is decided before the cost model is consulted.
+
+It deliberately does NOT touch `automatic_parallel_replicas_min_bytes_per_replica`: set that to 0 to disable that gate, which is what it is for. Nor does it change read task sizing, or suppress the recollection of statistics that have drifted - a decision made on stale statistics is not a decision made by the cost model.
+)", 0, \
+        {"26.11", false, false, "New setting: for testing, ignore the reading-thread cap of the automatic parallel replicas cost model so that small reads are decided by the comparison rather than short-circuited by the cap."}) \
     DECLARE(NonZeroUInt64, max_parallel_replicas, 1000, R"(
 The maximum number of replicas for each shard when executing a query.
 
