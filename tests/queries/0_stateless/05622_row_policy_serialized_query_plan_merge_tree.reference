@@ -10,4 +10,9 @@ Distributed table
 7
 the policy and FINAL
 1	1
+the policy has a subquery
+0
+3
+6
+2
 parallel replicas choose the same reading mode

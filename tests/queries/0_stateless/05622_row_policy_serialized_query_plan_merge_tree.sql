@@ -34,6 +34,17 @@ CREATE ROW POLICY policy_final_05622 ON t_final_05622 FOR SELECT USING y < 5 TO 
 SELECT x, y FROM cluster('test_shard_localhost', currentDatabase(), t_final_05622) FINAL SETTINGS apply_row_policy_after_final = 0;
 SELECT x, y FROM cluster('test_shard_localhost', currentDatabase(), t_final_05622) FINAL SETTINGS apply_row_policy_after_final = 1;
 
+SELECT 'the policy has a subquery';
+DROP TABLE IF EXISTS t_in_05622;
+CREATE TABLE t_in_05622 (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_in_05622 SELECT number FROM numbers(10);
+
+DROP ROW POLICY IF EXISTS policy_in_05622 ON t_in_05622;
+CREATE ROW POLICY policy_in_05622 ON t_in_05622 FOR SELECT USING x IN (SELECT number * 3 FROM numbers(3)) TO CURRENT_USER;
+
+SELECT x FROM cluster('test_shard_localhost', currentDatabase(), t_in_05622) ORDER BY x;
+SELECT count() FROM cluster('test_shard_localhost', currentDatabase(), t_in_05622) WHERE x IN (SELECT number FROM numbers(4));
+
 SELECT 'parallel replicas choose the same reading mode';
 DROP TABLE IF EXISTS t_key_05622;
 CREATE TABLE t_key_05622 (a String, b UInt64) ENGINE = MergeTree ORDER BY (a, b) SETTINGS index_granularity = 1;
@@ -48,9 +59,11 @@ SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_repli
     automatic_parallel_replicas_mode = 0;
 
 DROP ROW POLICY policy_key_05622 ON t_key_05622;
+DROP ROW POLICY policy_in_05622 ON t_in_05622;
 DROP ROW POLICY policy_final_05622 ON t_final_05622;
 DROP ROW POLICY policy_05622 ON t_05622;
 DROP TABLE t_key_05622;
+DROP TABLE t_in_05622;
 DROP TABLE t_final_05622;
 DROP TABLE t_dist_05622;
 DROP TABLE t_05622;
