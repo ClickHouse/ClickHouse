@@ -32,7 +32,6 @@
 #include <algorithm>
 #include <atomic>
 #include <memory>
-#include <numeric>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -78,10 +77,7 @@ struct SharedState
     std::vector<std::optional<uint32_t>> filter_aliases;
 
     std::shared_ptr<const GPU::GPUCompressedLayout> layout;
-    std::shared_ptr<GPU::GPUGroupingDecision> decision;
-    /// Whether the groups of the lanes are merged by parts of their keys, each part on its own, see `GPUSplitLanes`;
-    /// otherwise all into one lane, see `GPUMergeGroups`.
-    bool merge_by_parts = false;
+    /// The parts the groups of the lanes are split into by the keys, each merged on its own, see `GPUSplitLanes`.
     size_t num_parts = 1;
 
     std::atomic<size_t> next_part{0};
@@ -136,9 +132,8 @@ bool readsFixedWidthOnly(const SharedState & state)
 /// A piece smaller than this is not split: a reader gathers about a batch of rows before the device groups them.
 constexpr size_t min_rows_to_split = 1UL << 20;
 
-/// Splits the parts into at least `min_pieces` pieces of ranges of marks, the largest in two each time, so that as many
-/// readers as there are have rows to read however few parts the table has: a table of one part after a merge was read
-/// by one reader. A piece of several ranges is split between its ranges, one of one range at its middle mark.
+/// Splits the parts into at least `min_pieces` pieces of mark ranges, the largest in two each time, so that every reader
+/// has rows to read however few parts there are.
 void splitPartsAmongReaders(std::vector<PartToRead> & parts, size_t min_pieces)
 {
     /// No parts are left of a read whose indexes leave no marks.
@@ -202,12 +197,13 @@ void splitPartsAmongReaders(std::vector<PartToRead> & parts, size_t min_pieces)
         parts.push_back({.part = std::move(piece.part), .ranges = std::move(piece.ranges)});
 }
 
-/// Readers of parts on a remote disk, such as S3: a reader there waits for each response most of the
-/// time, and the read is bound by how many requests are in flight rather than by the link to the
-/// device. Over cold TPC-H SF100 on S3 on an A10G, with 8 readers against 16, Q6 took 5.7 s against
-/// 2.6 s, Q12 5.8 s against 2.7 s and Q14 5.5 s against 3.1 s. A reader holds about a batch of rows
-/// of each column on the device: Q1, of seven columns, took 16 GiB of the device with 16 readers.
-constexpr size_t remote_disk_readers = 16;
+/// Readers of parts on a remote disk: the read is bound by requests in flight. Over cold TPC-H SF100 on S3 on an A10G,
+/// 32 readers against 16 took Q1 from 4.5 s to 3.8 s and Q6 from 2.6 s to 2.1 s; 48 gained little more.
+constexpr size_t remote_disk_readers = 32;
+
+/// Of a part on a remote disk, the bytes a stream reads at a time, at least: each read is a request in flight, and a
+/// reader reads a stream as long as its columns, so that larger reads take fewer of them for the same bytes.
+constexpr size_t remote_read_buffer_bytes = 4UL << 20;
 
 /// The lanes that group the batches, at most: as Sirius runs 4 to 8 tasks on a device at once, enough that one waiting
 /// for the device leaves it to the others, and few, as each keeps groups of its own.
@@ -271,14 +267,12 @@ std::vector<GPU::GPUDerivedValue> derivedValuesOf(const std::vector<DerivedColum
     return result;
 }
 
-/// The read is a pipeline of processors, each a stage of the device side, see `GPUAccumulator.h`:
+/// The read is a pipeline of processors, see `GPUAccumulator.h`:
 ///
-///     GPUCompressedBlocks ×N  ->  GPUUpload ×N  ->  resize N -> L  ->  GPUGrouping ×L  ->  resize L -> 1  ->  GPUMergeGroups
+///     GPUCompressedBlocks ×N -> GPUUpload ×N -> resize N -> L -> GPUGrouping ×L -> resize L -> 1 -> GPUSplitLanes
+///         -> resize 1 -> P -> GPUMergePart ×P
 ///
-/// The chunks between them have no columns: they carry a chunk info, staged blocks or a batch on the device or the
-/// groups of a lane. A source and its uploader are a stream each, the lanes take the batches of any stream, as the
-/// resize hands them over, and the groups of the lanes are merged at the end. A read that collects the rows its `WHERE`
-/// keeps has no merge: each lane emits the rows it collected.
+/// Chunks between them carry only a chunk info. Without aggregates there is no merge: each lane emits the rows it kept.
 
 /// The rows a lane collects on the device before it sends them to the host.
 constexpr size_t collect_flush_rows = 1UL << 20;
@@ -360,16 +354,24 @@ protected:
             if (auto batch = stager.takeSealed())
                 return chunkOf(std::move(batch));
 
-            if (!reader && !openNextPart())
-                return {};
-
-            if (!reader->readNext(*feed))
+            if (!current)
             {
-                const size_t rows = reader->rowsRead();
-                progress(rows, feed->bytes);
+                /// The next part is opened while this one is read, and its first pieces are read in the background.
+                current = ahead ? std::move(ahead) : openNextPart();
+                if (!current)
+                    return {};
+                current->reader->prefetchStart();
+                ahead = openNextPart();
+                if (ahead)
+                    ahead->reader->prefetchStart();
+            }
+
+            if (!current->reader->readNext(*current->feed))
+            {
+                const size_t rows = current->reader->rowsRead();
+                progress(rows, current->feed->bytes);
                 stager.finishPart(rows);
-                reader.reset();
-                feed.reset();
+                current.reset();
             }
         }
     }
@@ -430,19 +432,26 @@ private:
         const IMergeTreeDataPart & part;
     };
 
+    /// A part opened: the feed before the reader, which reads into it.
+    struct OpenPart
+    {
+        std::unique_ptr<Feed> feed;
+        std::unique_ptr<MergeTreeCompressedColumnsReader> reader;
+    };
+
     /// Opens the next part no source took yet, in the layout's order of columns: the keys, the values, then the columns
     /// of the `WHERE` that are not aliases. The rows of all the ranges of a part are read as the rows of one part.
-    bool openNextPart()
+    std::optional<OpenPart> openNextPart()
     {
         const size_t part_index = state->next_part.fetch_add(1);
         if (part_index >= state->parts.size())
-            return false;
+            return std::nullopt;
 
         const PartToRead & part_to_read = state->parts[part_index];
         const IMergeTreeDataPart & part = *part_to_read.part;
         const GPU::GPUCompressedLayout & layout = *state->layout;
 
-        feed = std::make_unique<Feed>(*this, part);
+        auto feed = std::make_unique<Feed>(*this, part);
         std::vector<NameAndTypePair> columns;
         size_t column_index = 0;
         const auto add_column = [&](const NameAndTypePair & column)
@@ -466,9 +475,9 @@ private:
                 add_column(filter_columns[i]);
         }
 
-        reader = std::make_unique<MergeTreeCompressedColumnsReader>(
+        auto reader = std::make_unique<MergeTreeCompressedColumnsReader>(
             part, columns, state->reader_settings, expandsOnDevice(state->decompression), part_to_read.ranges);
-        return true;
+        return OpenPart{.feed = std::move(feed), .reader = std::move(reader)};
     }
 
     /// The rows of the chunk are about the rows staged, at least one, so that the pipeline keeps the chunk that ends a
@@ -491,9 +500,9 @@ private:
     const QueryStatusPtr query_status;
     const std::shared_ptr<GPU::GPUStagedBatchPool> pool;
     GPU::GPUBlockStager stager;
-    /// Of the part being read: the feed before the reader, which reads into it.
-    std::unique_ptr<Feed> feed;
-    std::unique_ptr<MergeTreeCompressedColumnsReader> reader;
+    /// The part being read, and the next one, opened ahead.
+    std::optional<OpenPart> current;
+    std::optional<OpenPart> ahead;
 };
 
 /// Sends the staged blocks of one stream to the device and expands them there: a batch on the device per chunk.
@@ -565,14 +574,15 @@ Chunk chunkOfGroups(const SharedState & state, const Block & header, GPU::GPUGro
     return Chunk(std::move(result_columns), num_groups);
 }
 
-std::shared_ptr<GPU::GPUGroupingLane> makeLane(const SharedState & state, std::shared_ptr<GPU::GPUGroupingDecision> decision)
+std::shared_ptr<GPU::GPUGroupingLane> makeLane(const SharedState & state, size_t num_parts)
 {
     return std::make_shared<GPU::GPUGroupingLane>(
-        state.layout,
+        state.layout->keys,
+        state.layout->values,
         groupByAggregatesOf(state.columns, state.derived, state.aggregates),
         derivedValuesOf(state.derived),
         state.filter ? std::optional(state.filter->expression) : std::nullopt,
-        std::move(decision));
+        num_parts);
 }
 
 /// A lane: groups the batches it takes on a CUDA stream of its own, and then emits its groups, for the merge. Of a read
@@ -583,10 +593,8 @@ public:
     GPUGroupingTransform(SharedStatePtr state_, SharedHeader output_header)
         : IAccumulatingTransform(emptyHeader(), std::move(output_header))
         , state(std::move(state_))
-        , lane(makeLane(*state, state->decision))
+        , lane(makeLane(*state, state->num_parts))
     {
-        if (state->merge_by_parts)
-            lane->splitIntoParts(state->num_parts);
     }
 
     String getName() const override { return "GPUGrouping"; }
@@ -610,9 +618,6 @@ protected:
 
         if (state->collect)
             return takeCollected();
-
-        if (state->merge_by_parts)
-            lane->partition(state->num_parts);
 
         Chunk chunk(Columns{}, 1);
         chunk.getChunkInfos().add(std::make_shared<LaneGroupsInfo>(lane));
@@ -641,68 +646,6 @@ private:
 
     const SharedStatePtr state;
     const std::shared_ptr<GPU::GPUGroupingLane> lane;
-    bool generated = false;
-};
-
-/// Merges the groups of the lanes, keeps those the `HAVING` keeps, and sends them to the host.
-class GPUMergeGroupsTransform : public IAccumulatingTransform
-{
-public:
-    GPUMergeGroupsTransform(SharedStatePtr state_, SharedHeader output_header)
-        : IAccumulatingTransform(emptyHeader(), std::move(output_header)), state(std::move(state_))
-    {
-    }
-
-    String getName() const override { return "GPUMergeGroups"; }
-
-protected:
-    void consume(Chunk chunk) override { lanes.push_back(infoOrThrow<LaneGroupsInfo>(chunk, getName())->lane); }
-
-    Chunk generate() override
-    {
-        if (generated)
-            return {};
-        generated = true;
-
-        if (lanes.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation without lanes");
-
-        /// Into the lane with the most groups, grown once for the groups of all: one grown for each lane merged into it
-        /// would insert the groups so far again each time.
-        std::vector<size_t> groups(lanes.size(), 0);
-        bool streaming = false;
-        for (size_t i = 0; i < lanes.size(); ++i)
-        {
-            if (const auto lane_groups = lanes[i]->numGroups())
-            {
-                groups[i] = *lane_groups;
-                streaming = true;
-            }
-        }
-        const size_t largest = static_cast<size_t>(std::ranges::max_element(groups) - groups.begin());
-        std::swap(lanes.front(), lanes[largest]);
-        std::swap(groups.front(), groups[largest]);
-        if (streaming && groups.front() != 0)
-            lanes.front()->reserveGroups(std::accumulate(groups.begin(), groups.end(), size_t{0}));
-
-        GPU::GPUGroupingLane & first = *lanes.front();
-        for (size_t i = 1; i < lanes.size(); ++i)
-            first.absorb(*lanes[i]);
-        lanes.resize(1);
-
-        const size_t num_groups = first.finalize();
-
-        /// No row came to the device, and an aggregation without keys emits its results over none, which the `HAVING`
-        /// above evaluates.
-        if (num_groups == 0 && state->result_over_no_rows)
-            return Chunk(*state->result_over_no_rows, 1);
-
-        return chunkOfGroups(*state, getOutputPort().getHeader(), first, num_groups);
-    }
-
-private:
-    const SharedStatePtr state;
-    std::vector<std::shared_ptr<GPU::GPUGroupingLane>> lanes;
     bool generated = false;
 };
 
@@ -766,10 +709,18 @@ protected:
         const auto info = infoOrThrow<LanePartInfo>(chunk, getName());
         chunk.clear();
 
-        const auto merged = makeLane(*state, std::make_shared<GPU::GPUGroupingDecision>());
+        const auto merged = makeLane(*state, 1);
         for (const auto & lane : *info->lanes)
             merged->absorbPart(*lane, info->part);
         const size_t num_groups = merged->finalize();
+
+        /// No row came to the device, and an aggregation without keys, of one part, emits its results over none, which
+        /// the `HAVING` above evaluates.
+        if (num_groups == 0 && state->result_over_no_rows)
+        {
+            chunk = Chunk(*state->result_over_no_rows, 1);
+            return;
+        }
         chunk = chunkOfGroups(*state, getOutputPort().getHeader(), *merged, num_groups);
     }
 
@@ -838,6 +789,8 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
     state->storage_snapshot = storage_snapshot;
     state->context = context;
     state->reader_settings = MergeTreeReaderSettings::createFromContext(context);
+    auto & remote_buffer_size = state->reader_settings.read_settings.remote_fs_settings.buffer_size;
+    remote_buffer_size = std::max(remote_buffer_size, remote_read_buffer_bytes);
     state->decompression = decompression;
     state->batch_bytes = batch_bytes;
     state->num_readers = num_readers != 0 ? num_readers : automaticReaders(*state);
@@ -864,16 +817,12 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
     const DataTypes filter_types = typesOf(filterColumnsOf(*state));
     state->layout = std::make_shared<const GPU::GPUCompressedLayout>(
         typesOf(keys), argumentTypesOf(columns), collect, filter_types, state->filter_aliases, batch_bytes);
-    state->decision = std::make_shared<GPU::GPUGroupingDecision>();
 
     const size_t num_sources = std::max<size_t>(1, std::min(state->num_readers, state->parts.size()));
     const size_t num_lanes = std::min(num_sources, max_lanes);
 
-    /// With keys, the lanes merge by parts of their keys, as many as there are lanes, unless an `avg` is among the
-    /// aggregates, whose partial results do not combine: then into one lane.
-    state->merge_by_parts = !collect && !keys.empty()
-        && std::ranges::none_of(aggregates, [](const AggregateToCompute & aggregate) { return aggregate.aggregation == GPU::GPUAggregationKind::Mean; });
-    state->num_parts = num_lanes;
+    /// With keys, the lanes split their groups into as many parts as there are lanes; without, the one group is one part.
+    state->num_parts = keys.empty() ? 1 : num_lanes;
 
     Pipes sources;
     sources.reserve(num_sources);
@@ -885,17 +834,12 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
     pipe.resize(num_lanes);
     const SharedHeader lane_header = collect ? getOutputHeader() : emptyHeader();
     pipe.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUGroupingTransform>(state, lane_header); });
-    if (state->merge_by_parts)
+    if (!collect)
     {
         pipe.resize(1);
         pipe.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUSplitLanesTransform>(state); });
         pipe.resize(state->num_parts);
         pipe.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUMergePartTransform>(state, getOutputHeader()); });
-    }
-    else if (!collect)
-    {
-        pipe.resize(1);
-        pipe.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUMergeGroupsTransform>(state, getOutputHeader()); });
     }
 
     for (const auto & processor : pipe.getProcessors())

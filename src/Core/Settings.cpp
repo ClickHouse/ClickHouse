@@ -11473,10 +11473,9 @@ is work per byte rather than per block, and two threads no longer keep up with t
 with four columns of a part in flight eight readers lost what they gained: grouping by two keys took
 1.37 s with four readers and 1.78 s with eight. So with 0 the query gets two readers when the
 columns are expanded on the device, and a quarter of the CPU cores, at least two, when they are
-expanded on the host. Parts on a remote disk, such as S3, get 16 readers either way: a reader there
-waits for responses most of the time, and over S3 TPC-H Q6 took 5.7 s with eight readers and 2.6 s
-with sixteen. A reader holds about a batch of rows of each column on the device, so that TPC-H Q1,
-of seven columns, took 16 GiB of the device with sixteen readers.
+expanded on the host. Parts on a remote disk, such as S3, get 32 readers either way: a reader there
+waits for responses most of the time, and over S3 TPC-H Q6 took 5.7 s with eight readers, 2.6 s
+with sixteen and 2.1 s with 32.
 
 Each reader holds a part's compressed blocks in pinned memory and its expanded columns on the
 device while they are grouped, so more readers take more of both.

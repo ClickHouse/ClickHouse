@@ -80,6 +80,10 @@ public:
     bool readNext(Consumer & consumer);
     size_t rowsRead() const { return rows_read; }
 
+    /// Of a part on a remote disk with `remote_filesystem_read_prefetch`: starts the first range and prefetches the first
+    /// piece of each column, for a part opened ahead. Reading prefetches the next piece of a column after each one.
+    void prefetchStart();
+
     /// The stream of `column` of a wide part at `substream_path`, read by its `ranges`, every mark where there are none.
     static std::unique_ptr<MergeTreeReaderStream> openStream(
         const IMergeTreeDataPart & part,
@@ -106,6 +110,7 @@ private:
 
     const IMergeTreeDataPart & part;
     const MarkRanges ranges;
+    const bool prefetches;
     std::vector<std::unique_ptr<ColumnReader>> readers;
 
     size_t next_range = 0;

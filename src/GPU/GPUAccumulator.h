@@ -38,23 +38,9 @@ namespace DB::GPU
 class GPUAccumulator
 {
 public:
-    GPUAccumulator(
-        const IDataType & argument_type,
-        const IDataType & result_type,
-        GPUAggregationKind aggregation_,
-        size_t batch_bytes_,
-        std::optional<GPUCodec> codec = {});
+    GPUAccumulator(const IDataType & argument_type, const IDataType & result_type, GPUAggregationKind aggregation_, size_t batch_bytes_);
 
     void add(const IColumn & column);
-
-    std::span<char> reserveRaw(size_t max_bytes);
-    void commitRaw(size_t bytes);
-
-    /// A compressed block of method `method`, which the device expands with the accumulator's codec, see `deviceCodecOf`.
-    void addBlock(UInt8 method, std::string_view payload, size_t decompressed_bytes);
-
-    /// Of a column of values of varying width: a compressed block of the sizes of its rows, whose bytes come through `addBlock`.
-    void addSizesBlock(UInt8 method, std::string_view payload, size_t decompressed_bytes);
 
     Field finalize();
 
@@ -62,9 +48,6 @@ public:
 
 private:
     static constexpr size_t max_batch_rows = (1UL << 31) - 1;
-
-    ColumnUploadPipe & plainPipeOrThrow();
-    CompressedUploadPipe & compressedPipeOrThrow();
 
     void reduceBatchOnDevice();
 
@@ -75,77 +58,18 @@ private:
     const size_t batch_bytes;
 
     std::unique_ptr<CudfReduction> reduction;
-    std::unique_ptr<IUploadPipe> pipe;
+    ColumnUploadPipe pipe;
 };
 
 
-/// A `GROUP BY` on the device over plain columns: the columns of each batch are staged on the host and sent to the
-/// device, which groups them through the `CudfGroupBy`. Over compressed blocks, see `GPUGroupingLane`.
+/// The device side of a GPU read over compressed columns, see `ReadFromGPUCompressedColumns`:
 ///
-/// Without keys, the aggregates are of every row, as one group, which there is none of where no row is grouped.
-class GroupByGPUAccumulator
-{
-public:
-    GroupByGPUAccumulator(
-        const DataTypes & key_types,
-        const DataTypes & value_types,
-        std::vector<GPUGroupByAggregate> aggregates_,
-        size_t batch_bytes);
-
-    GroupByGPUAccumulator(const GroupByGPUAccumulator &) = delete;
-    GroupByGPUAccumulator & operator=(const GroupByGPUAccumulator &) = delete;
-
-    void add(const Columns & key_columns, const Columns & value_columns);
-
-    /// Returns the number of groups.
-    size_t finalize();
-
-    /// After `finalize`: keeps the groups for which `expression` holds over the keys and the aggregates' results that
-    /// `columns` names, the keys first and then the aggregates. Returns the number of groups kept.
-    size_t filterGroups(const GPUExpression & expression, const std::vector<uint32_t> & columns);
-
-    /// After `finalize`: into a column of the keys each, and a column of the result of each aggregate.
-    void copyGroupsTo(MutableColumns & key_columns, MutableColumns & aggregate_columns);
-
-private:
-    static constexpr size_t max_batch_rows = (1UL << 31) - 1;
-
-    size_t stagedRows() const { return value_pipes.front().stagedRows(); }
-    size_t stagedVariableBytes() const;
-
-    void sendBatchToDevice();
-
-    void groupBatch(const std::vector<DeviceColumnView> & keys, const std::vector<DeviceColumnView> & value_columns);
-
-    const std::vector<GPUElementType> group_keys;
-    const std::vector<GPUElementType> key_element_types;
-    const std::vector<GPUElementType> values;
-    const std::vector<GPUGroupByAggregate> aggregates;
-    const size_t batch_rows;
-
-    std::vector<ColumnUploadPipe> key_pipes;
-    std::vector<ColumnUploadPipe> value_pipes;
-
-    StreamPtr group_stream;
-    std::unique_ptr<CudfGroupBy> group_by;
-
-    std::optional<size_t> num_groups;
-};
-
-/// The device side of a GPU read over the compressed blocks of the columns of parts. The read is a pipeline of
-/// processors, see `ReadFromGPUCompressedColumns`:
+///     source -> GPUBlockStager (pinned) -> GPUBatchUploader (H2D, nvcomp) -> GPUGroupingLane ×L -> merge by parts
 ///
-///     source (reads a part)      -> GPUBlockStager      stages blocks in pinned memory   -> GPUStagedBatch
-///     upload                     -> GPUBatchUploader    H2D, nvcomp, tails of columns    -> GPUDeviceBatch
-///     group (a few "lanes")      -> GPUGroupingLane     `WHERE`, `CudfGroupBy` per lane
-///     merge                      -> GPUGroupingLane::absorb, finalize, `HAVING`, D2H
-///
-/// Each uploader and each lane has a CUDA stream of its own. A batch is handed from one to the other through events,
-/// see `GPUDeviceBatch::moveTo`, so that no thread waits for the other's stream.
+/// Uploaders and lanes have streams of their own; a batch moves between them through events, see `GPUDeviceBatch::moveTo`.
 
-/// The columns a GPU read brings, and how they are numbered: the keys, the values, the columns of the `WHERE`, and then
-/// the sizes of each `String` column, see `sizesColumnOf`. A column of the `WHERE` that is also a key or a value is not
-/// read again, see `isAliased`: its place stays empty.
+/// The columns a GPU read brings: keys, values, columns of the `WHERE` (not read again if also a key or a value, see
+/// `isAliased`), then the sizes of each `String` column.
 class GPUCompressedLayout
 {
 public:
@@ -227,9 +151,8 @@ private:
     std::vector<std::unique_ptr<GPUStagedBatch>> free_batches;
 };
 
-/// Stages the blocks that a reader reads into batches, on the reader's thread. A batch is sealed once every column has
-/// `batch_rows` rows, or a column fills its pinned memory, or a block cannot follow the ones staged, or a part ends;
-/// sealed batches are taken with `takeSealed`.
+/// Stages the blocks a reader reads into batches. A batch is sealed when every column has `batch_rows` rows, a column
+/// fills its pinned memory, a block cannot follow the staged ones, or a part ends.
 class GPUBlockStager
 {
 public:
@@ -278,6 +201,10 @@ public:
 
     /// A key, a value or a column of the `WHERE` that is not aliased, as the layout numbers them.
     DeviceColumnView column(size_t column) const;
+    std::vector<DeviceColumnView> keys() const;
+    std::vector<DeviceColumnView> values() const;
+    /// Of each column of the `WHERE`, those aliased read as the key or value they are.
+    std::vector<DeviceFixedColumn> filterColumns() const;
 
     /// Makes `stream` wait for the batch, and frees the batch's memory in the order of `stream` from now on.
     void moveTo(cuda::stream_ref stream);
@@ -297,9 +224,8 @@ private:
     size_t num_rows = 0;
 };
 
-/// Sends the staged batches of one reader to the device and expands them there, on a CUDA stream of its own. The blocks
-/// of the columns end at different rows: a batch on the device has the rows that every column has, and the rest of each
-/// column waits on the device for the next one.
+/// Sends the staged batches of one reader to the device and expands them, on a stream of its own. A batch has the rows
+/// every column has; the rest of each column waits on the device for the next one.
 class GPUBatchUploader
 {
 public:
@@ -324,70 +250,81 @@ private:
     size_t part_rows_sent = 0;
 };
 
-/// How all the lanes of a `GROUP BY` reduce their batches, so that they merge: decided by the first batch any of them
-/// groups, see `CudfGroupBy::decided`.
-struct GPUGroupingDecision
-{
-    std::mutex mutex;
-    std::optional<bool> reduce_runs;
-};
-
 /// A lane of a `GROUP BY` on the device: a CUDA stream and the groups of the batches it took. Without aggregates, it
 /// collects the rows the `WHERE` keeps instead.
 class GPUGroupingLane
 {
 public:
+    /// The partial results of the groups are split by the keys into `num_parts` parts, which lanes of one part merge,
+    /// see `absorbPart`. Without aggregates, it collects the rows the `WHERE` keeps instead.
     GPUGroupingLane(
-        std::shared_ptr<const GPUCompressedLayout> layout_,
+        std::vector<GPUElementType> keys_,
+        std::vector<GPUElementType> values_,
         std::vector<GPUGroupByAggregate> aggregates_,
         std::vector<GPUDerivedValue> derived_,
         std::optional<GPUExpression> filter_,
-        std::shared_ptr<GPUGroupingDecision> decision_);
+        size_t num_parts);
 
     GPUGroupingLane(const GPUGroupingLane &) = delete;
     GPUGroupingLane & operator=(const GPUGroupingLane &) = delete;
 
-    void add(GPUDeviceBatch batch);
+    cuda::stream_ref stream() const { return cuda::stream_ref{lane_stream.get()}; }
 
-    /// Without aggregates: the rows collected so far, and then copied to columns of `types` on the host.
-    size_t collectedRows() const { return group_by->collectedRows(); }
+    void add(GPUDeviceBatch batch);
+    /// Columns there in the order of `stream`, until it is done with them.
+    void add(const std::vector<DeviceColumnView> & key_columns, const std::vector<DeviceColumnView> & value_columns,
+        const std::vector<DeviceFixedColumn> & filter_columns);
+
+    size_t collectedRows() const { return collector->collectedRows(); }
+    /// The rows collected so far, copied to columns of `types` on the host.
     MutableColumns takeCollected(const DataTypes & types);
 
-    /// How many groups the lane holds so far; nothing of a lane that does not group through `streaming_groupby`, as one
-    /// that collects rows or reduces the runs of sorted keys does not. Waits for the device.
-    std::optional<size_t> numGroups() const;
-    /// Makes room for `groups` in all at once, see `CudfGroupBy::reserveGroups`.
-    void reserveGroups(size_t groups);
-    /// Merges the groups of `other` into this lane's.
-    void absorb(GPUGroupingLane & other);
-
-    /// Before the first batch: reduces each batch into partial results split by the keys into `num_parts` parts, see
-    /// `CudfGroupBy::splitIntoParts`.
-    void splitIntoParts(size_t num_parts) { group_by->splitIntoParts(num_parts); }
-    /// Instead of `finalize`: splits the lane's groups by a hash of the keys into `num_parts` parts, see
-    /// `CudfGroupBy::partition`. Returns the number of groups.
-    size_t partition(size_t num_parts);
-    /// Of a lane that took no batch: takes part `part` of `other`, to merge at `finalize`.
+    /// Of a lane of one part, which took no batch: takes part `part` of `other`, which takes no more.
     void absorbPart(const GPUGroupingLane & other, size_t part);
     /// Returns the number of groups.
     size_t finalize();
-    /// After `finalize`: keeps the groups for which `expression` holds, see `GroupByGPUAccumulator::filterGroups`.
     size_t filterGroups(const GPUExpression & expression, const std::vector<uint32_t> & columns);
     void copyGroupsTo(MutableColumns & key_columns, MutableColumns & aggregate_columns);
 
 private:
-    const std::shared_ptr<const GPUCompressedLayout> layout;
+    const std::vector<GPUElementType> keys;
+    const std::vector<GPUElementType> values;
     const std::vector<GPUDerivedValue> derived;
     const std::vector<GPUGroupByAggregate> aggregates;
     const std::optional<GPUExpression> filter;
-    const std::shared_ptr<GPUGroupingDecision> decision;
 
     /// Before the groups, which are of its order.
-    StreamPtr stream = createStream();
+    StreamPtr lane_stream = createStream();
     std::unique_ptr<CudfGroupBy> group_by;
-    /// Whether this lane reduces its batches as `decision` says.
-    bool decided = false;
+    std::unique_ptr<CudfRowCollector> collector;
     std::optional<size_t> num_groups;
+};
+
+/// A `GROUP BY` on the device over plain columns, which the CPU read: they are staged and sent to the device a batch at a
+/// time, and grouped by a `GPUGroupingLane`. Over compressed blocks, see `GPUBlockStager`.
+class GroupByGPUAccumulator
+{
+public:
+    GroupByGPUAccumulator(const DataTypes & key_types, const DataTypes & value_types, std::vector<GPUGroupByAggregate> aggregates_, size_t batch_bytes);
+
+    void add(const Columns & key_columns, const Columns & value_columns);
+
+    /// Returns the number of groups.
+    size_t finalize();
+    size_t filterGroups(const GPUExpression & expression, const std::vector<uint32_t> & columns) { return lane.filterGroups(expression, columns); }
+    void copyGroupsTo(MutableColumns & key_columns, MutableColumns & aggregate_columns) { lane.copyGroupsTo(key_columns, aggregate_columns); }
+
+private:
+    static constexpr size_t max_batch_rows = (1UL << 31) - 1;
+
+    size_t stagedRows() const { return value_pipes.front().stagedRows(); }
+    size_t stagedVariableBytes() const;
+    void sendBatchToDevice();
+
+    const size_t batch_rows;
+    std::vector<ColumnUploadPipe> key_pipes;
+    std::vector<ColumnUploadPipe> value_pipes;
+    GPUGroupingLane lane;
 };
 
 }

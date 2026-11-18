@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeCompressedColumnsReader.h>
 
+#include <Common/Priority.h>
+
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -109,6 +111,16 @@ struct MergeTreeCompressedColumnsReader::ColumnReader
         }
     }
 
+    /// Reads the next piece of its streams in the background, if it does not already: a read buffer of a remote disk then
+    /// has it once the consumer asks for it, rather than waiting for the request then.
+    void prefetch() const
+    {
+        if (!done)
+            stream->getDataBuffer()->prefetch(Priority{});
+        if (sizes_stream && !sizes_done)
+            sizes_stream->getDataBuffer()->prefetch(Priority{});
+    }
+
     /// Of a column of varying width, the rows the bytes read make were every row as long as the average one.
     size_t rowsRead() const
     {
@@ -152,6 +164,7 @@ MergeTreeCompressedColumnsReader::MergeTreeCompressedColumnsReader(
     const MarkRanges & ranges_)
     : part(part_)
     , ranges(ranges_)
+    , prefetches(part_.isStoredOnRemoteDisk() && settings.read_settings.remote_fs_settings.prefetch)
 {
     readers.reserve(columns.size());
     for (const auto & column : columns)
@@ -239,6 +252,16 @@ bool MergeTreeCompressedColumnsReader::readNext(Consumer & consumer)
         rows_read += *range_rows;
         range_rows.reset();
     }
+}
+
+void MergeTreeCompressedColumnsReader::prefetchStart()
+{
+    if (!prefetches)
+        return;
+    if (!range_rows && !startNextRange())
+        return;
+    for (const auto & reader : readers)
+        reader->prefetch();
 }
 
 bool MergeTreeCompressedColumnsReader::startNextRange()
@@ -387,6 +410,11 @@ bool MergeTreeCompressedColumnsReader::readPiece(Consumer & consumer)
             if (column.range_bytes && column.bytes_read == *column.range_bytes)
                 column.finishBytes();
         }
+
+        /// The column read gets its next piece in the background while the others are read and the consumer stages this
+        /// one, so that a reader has a request in flight for each of its columns rather than one at a time.
+        if (prefetches)
+            column.prefetch();
 
         consumer.checkCancelled();
     }

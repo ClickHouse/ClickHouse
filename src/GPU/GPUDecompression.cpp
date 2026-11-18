@@ -160,12 +160,18 @@ constexpr size_t scratch_alignment = 8;
 
 }
 
+namespace
+{
+
+/// What nvcomp expands the blocks to.
 size_t expandedBytesOf(std::span<const CompressedBlock> blocks)
 {
     size_t total = 0;
     for (const CompressedBlock & block : blocks)
         total += block.decompressed_bytes;
     return total;
+}
+
 }
 
 size_t valueBytesOf(std::span<const CompressedBlock> blocks, std::span<const BitPackingBlock> packed)
@@ -239,82 +245,6 @@ GPUCodec stageCompressedBlock(
     packed.push_back({.first_block = first_block, .num_blocks = blocks.size() - first_block, .unpacked_bytes = decompressed_bytes});
     appendHostBytes(staged, inner.substr(header_bytes));
     return *codec;
-}
-
-void SyncDecompressor::decompress(
-    GPUCodec codec,
-    std::string_view host_compressed,
-    std::span<const CompressedBlock> blocks,
-    std::span<const BitPackingBlock> packed,
-    char * device_destination)
-{
-    size_t compressed_total = 0;
-    for (const CompressedBlock & block : blocks)
-        compressed_total = std::max(compressed_total, block.offset + block.compressed_bytes);
-
-    if (compressed_total > host_compressed.size())
-        throw Exception(
-            ErrorCodes::GPU_ERROR,
-            "The compressed blocks reach {} bytes into a staging buffer of {}",
-            compressed_total,
-            host_compressed.size());
-
-    if (blocks.empty())
-        return;
-
-    waitOnFailure(GPUResources::get().decompression, [&]
-    {
-        device_compressed.clear();
-        device_compressed.append(host_compressed.substr(0, compressed_total));
-
-        const CompressedPiece piece{
-            .device_compressed = device_compressed.data(),
-            .compressed_bytes = compressed_total,
-            .blocks = blocks,
-            .packed = packed,
-        };
-        batch.launch(codec, std::span<const CompressedPiece>(&piece, 1), device_destination);
-    });
-    batch.waitAndCheck();
-}
-
-AsyncDecompressor::AsyncDecompressor(AsyncDecompressor && other) noexcept
-    : batch(std::move(other.batch))
-    , in_flight(std::exchange(other.in_flight, false))
-{
-}
-
-AsyncDecompressor::~AsyncDecompressor()
-{
-    if (!in_flight)
-        return;
-
-    try
-    {
-        batch.wait();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
-void AsyncDecompressor::launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * device_destination, cudaEvent_t destination_ready)
-{
-    if (in_flight)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A decompression was launched while the last one was not waited for");
-
-    batch.launch(codec, pieces, device_destination, destination_ready);
-    in_flight = true;
-}
-
-void AsyncDecompressor::wait()
-{
-    if (!in_flight)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A decompression was waited for without being launched");
-
-    in_flight = false;
-    batch.waitAndCheck();
 }
 
 DecompressionBatch::DecompressionBatch(cuda::stream_ref stream_)

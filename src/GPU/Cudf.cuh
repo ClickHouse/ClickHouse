@@ -1,13 +1,17 @@
 #pragma once
 
+#include <GPU/GPUExpression.cuh>
 #include <GPU/GPUResources.cuh>
 #include <GPU/GPUTypes.cuh>
 
 #include <cudf/column/column.hpp>
 #include <cudf/column/column_view.hpp>
+#include <cudf/table/table.hpp>
+#include <cudf/table/table_view.hpp>
 #include <cudf/types.hpp>
 #include <cudf/utilities/error.hpp>
 
+#include <rmm/device_buffer.hpp>
 #include <rmm/error.hpp>
 
 #include <cuda/stream_ref>
@@ -23,12 +27,9 @@
 namespace DB::GPU
 {
 
-/// The message of a `std::logic_error` or a `std::runtime_error` of the standard library this code is compiled with,
-/// libstdc++, read without its `what`. The binary holds two standard libraries, whose `what` of these two has the same
-/// symbol, and the linker keeps the one of libc++, which reads the message where the exceptions of libc++ keep it: a
-/// `cudf::logic_error` or a `cudf::cuda_error`, which do not have a `what` of their own, would make it read past them.
-/// In libstdc++ these two keep the message as a reference-counted string, a pointer to its characters, right after the
-/// pointer to their virtual functions.
+/// The message of a libstdc++ `std::logic_error` or `std::runtime_error`, read without `what`: the linker keeps the
+/// libc++ `what` of the same symbol, which reads past a libstdc++ exception. libstdc++ keeps the message pointer right
+/// after the vtable pointer.
 template <typename StandardException>
 __host__ const char * messageOf(const StandardException & exception)
 {
@@ -40,11 +41,8 @@ __host__ const char * messageOf(const StandardException & exception)
     return *reinterpret_cast<const char * const *>(reinterpret_cast<const char *>(&exception) + sizeof(void *));
 }
 
-/// Runs `body`, and rethrows what cuDF or rmm throw as a ClickHouse exception that says what was being done. The
-/// exceptions of cuDF and rmm are caught by their types, and their messages read: by the `what` of rmm's own, by
-/// `messageOf` of cuDF's. Of any other exception, `what` is not read: the binary holds two standard libraries, and an
-/// exception of the other one is not safe to look into. What the device reports is said instead, as a fault on it is
-/// what such an exception usually comes of.
+/// Runs `body` and rethrows what cuDF or rmm throw as a ClickHouse exception saying what was being done. Of other
+/// exceptions `what` is not read, as they may be of the other standard library; the device's last error is said instead.
 template <typename Body>
 __host__ auto guarded(const std::string & doing, Body && body)
 {
@@ -88,6 +86,20 @@ __host__ cudf::column_view columnViewOf(const DeviceVariableColumn & column);
 __host__ void checkNoNulls(const cudf::column_view & column);
 
 __host__ DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUElementType expected_type);
+
+/// A column of a fixed width as `type`, by its bits, of a column that is checked elsewhere to be as wide: cuDF sums unsigned
+/// integers into signed ones.
+__host__ DeviceFixedColumn deviceViewByBits(const cudf::column_view & column, GPUElementType type);
+
+/// Evaluates `filter`, a predicate, over `inputs` of `rows` rows into `mask`, a bit per row, and returns how many of the
+/// rows it leaves out.
+__host__ cudf::size_type evaluateMask(
+    const GPUExpression & filter, const GPUExpressionInputs & inputs, size_t rows, rmm::device_buffer & mask, cuda::stream_ref stream);
+
+/// The rows of `table` that `mask`, a bit per row, keeps, of which it leaves out `left_out`. `all_true` is filled with as
+/// many `true` bytes as there are rows, the values of the column whose nulls are what the mask leaves out.
+__host__ std::unique_ptr<cudf::table> keptRows(
+    const cudf::table_view & table, const cudf::bitmask_type * mask, cudf::size_type left_out, rmm::device_buffer & all_true, cuda::stream_ref stream);
 
 struct DeviceVariableColumnOfCudf
 {
