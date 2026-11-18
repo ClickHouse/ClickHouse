@@ -168,10 +168,6 @@
     "source": "/guides/oss/deployment-and-scaling/monitoring/prometheus-metrics"
   },
   {
-    "destination": "/integrations/go",
-    "source": "/integrations/language-clients/go/index"
-  },
-  {
     "destination": "/concepts/features/connect-to-clickhouse/drivers/odbc",
     "source": "/interfaces/odbc/index"
   },
@@ -5014,6 +5010,10 @@
   {
     "destination": "/integrations/connectors/data-ingestion/AWS/glue",
     "source": "/integrations/glue"
+  },
+  {
+    "destination": "/integrations/language-clients/go/index",
+    "source": "/integrations/go"
   },
   {
     "destination": "/integrations/language-clients/go/index",

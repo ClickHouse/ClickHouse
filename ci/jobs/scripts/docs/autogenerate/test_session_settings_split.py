@@ -39,16 +39,16 @@ def expect_exception(exception_type, message, callback):
         )
 
 
-def assert_slug_aliases():
+def assert_index_aliases():
     with tempfile.TemporaryDirectory() as temp:
         docs = Path(temp)
-        quoted_page = docs / "integrations/clickpipes/networking/index.mdx"
+        go_page = docs / "integrations/language-clients/go/index.mdx"
         trailing_page = docs / "development/index.mdx"
-        quoted_page.parent.mkdir(parents=True)
+        go_page.parent.mkdir(parents=True)
         trailing_page.parent.mkdir(parents=True)
-        quoted_page.write_text(
-            "---\nslug: \"/integrations/clickpipes/networking\"\n---\n"
-            "\n## Networking {#networking}\n",
+        go_page.write_text(
+            "---\nslug: /integrations/go\n---\n"
+            "\n## Connection details {#connection-details}\n",
             encoding="utf-8",
         )
         trailing_page.write_text(
@@ -60,15 +60,13 @@ def assert_slug_aliases():
         lychee.dump_inputs = lambda docs_root: []
         mirror = docs / "lychee-mirror"
         lychee.build_tree(str(docs), str(mirror))
-        assert lychee.page_slug('---\nslug: "/quoted"\n---\n') == "/quoted"
-        assert lychee.page_slug("---\nslug: /development/\n---\n") == "/development"
-        assert lychee.page_slug("---\nslug: /\n---\n") == "/"
-        assert (mirror / "integrations/clickpipes/networking.mdx").read_text(
+        assert (mirror / "integrations/language-clients/go.mdx").read_text(
             encoding="utf-8"
-        ) == '<a id="networking"></a>\n'
+        ) == '<a id="connection-details"></a>\n'
         assert (mirror / "development.mdx").read_text(
             encoding="utf-8"
         ) == '<a id="development"></a>\n'
+        assert not (mirror / "integrations/go.mdx").exists()
 
 
 def generated_page(names, body_h1=None):
@@ -134,9 +132,20 @@ def setting_names(mod, content):
 def main():
     mod = load_module()
     mod.SESSION_SETTINGS_PREFIX_GROUP_MIN = 2
-    assert_slug_aliases()
+    assert_index_aliases()
 
     repo_root = HERE.parents[4]
+    redirects = json.loads((repo_root / "docs/_site/redirects.json").read_text(
+        encoding="utf-8"
+    ))
+    redirects_by_source = {
+        redirect["source"]: redirect["destination"]
+        for redirect in redirects
+    }
+    assert redirects_by_source["/integrations/go"] == \
+        "/integrations/language-clients/go/index"
+    assert "/integrations/language-clients/go/index" not in redirects_by_source
+
     for family_name in mod.SETTINGS_SPLIT_FAMILIES:
         routing = mod._settings_routing_from_disk(
             repo_root / "docs", repo_root, family_name
