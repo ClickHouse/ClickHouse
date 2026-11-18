@@ -719,9 +719,6 @@ std::map<String, Documentation> ParserBackupQuery::getDocumentation() const
     documentation["BACKUP"] =
     {
         .description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudOnlyBadge } from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
-
 Introduced in: v21.10.0
 
 Creates a backup of tables, views, dictionaries, databases or all databases, and writes it to a destination. [`RESTORE`](/reference/statements/restore) restores objects from such a backup. For backup strategies and walkthroughs per destination, see [Backup and restore](/concepts/features/backup-restore/overview).

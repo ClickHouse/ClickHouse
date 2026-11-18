@@ -3183,9 +3183,6 @@ ALTER TABLE [db].table MATERIALIZE STATISTICS [IF EXISTS] (column list)
     documentation["ALTER TABLE ... UNLOCK SNAPSHOT"] =
     {
         .description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudOnlyBadge } from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
-
 Introduced in: v25.3.0
 
 <ExperimentalBadge/>
