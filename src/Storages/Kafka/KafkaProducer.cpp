@@ -160,7 +160,11 @@ void KafkaProducer::finish()
         catch (cppkafka::HandleException & e)
         {
             if (e.get_error() == RD_KAFKA_RESP_ERR__TIMED_OUT)
+            {
+                if (shutdown_called)
+                    throw Exception(ErrorCodes::ABORTED, "Table is detached");
                 continue;
+            }
 
             ProfileEvents::increment(ProfileEvents::KafkaProducerErrors);
             throw;

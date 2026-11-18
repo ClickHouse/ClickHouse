@@ -20,10 +20,11 @@ cleanup()
     trap - EXIT INT TERM
     set +e
 
-    for table in drop detach keeper; do
+    for table in drop detach keeper down; do
         $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${name}_${table}" 2>/dev/null
     done
     $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS ${name}" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS ${name}_down" 2>/dev/null
     timeout 10 rpk topic delete "$topic" --brokers "$broker" > /dev/null 2>&1
 
     exit $exit_code
@@ -41,16 +42,22 @@ $CLICKHOUSE_CLIENT -q "
         kafka_broker_list = '${broker}', kafka_topic_list = '${topic}', kafka_group_name = '${name}', kafka_format = 'JSONEachRow',
         \`kafka.queue_buffering_max_messages\` = '1', \`kafka.linger_ms\` = '60000'"
 
-# $1: case name, $2: statement that shuts the table down, $3: extra CREATE clause, $4: extra client settings for CREATE
+# Nothing listens on port 1, so the final flush of an INSERT waits until the messages time out.
+$CLICKHOUSE_CLIENT -q "
+    CREATE NAMED COLLECTION ${name}_down AS
+        kafka_broker_list = '127.0.0.1:1', kafka_topic_list = '${topic}', kafka_group_name = '${name}', kafka_format = 'JSONEachRow',
+        \`kafka.message_timeout_ms\` = '60000'"
+
+# $1: case name, $2: statement that shuts the table down, $3: extra CREATE clause, $4: extra client settings for CREATE, $5: named collection
 insert_and_shut_down()
 {
     local table="${name}_$1"
     local query_id="${name}_$1_insert"
 
-    $CLICKHOUSE_CLIENT $4 -q "CREATE TABLE ${table} (x UInt64) ENGINE = Kafka(${name}) $3"
+    $CLICKHOUSE_CLIENT $4 -q "CREATE TABLE ${table} (x UInt64) ENGINE = Kafka(${5:-$name}) $3"
     $CLICKHOUSE_CLIENT --query_id "$query_id" -q "INSERT INTO ${table} SETTINGS async_insert = 0 VALUES (1), (2)" > "${CLICKHOUSE_TMP}/${table}.out" 2>&1 &
     for _ in {1..300}; do
-        [ "$($CLICKHOUSE_CLIENT -q "SELECT ProfileEvents['KafkaMessagesProduced'] FROM system.processes WHERE query_id = '$query_id'")" = 1 ] && break
+        [ "$($CLICKHOUSE_CLIENT -q "SELECT ProfileEvents['KafkaMessagesProduced'] >= 1 FROM system.processes WHERE query_id = '$query_id'")" = 1 ] && break
         sleep 0.1
     done
     $CLICKHOUSE_CLIENT -q "$2 TABLE ${table}"
@@ -62,3 +69,4 @@ insert_and_shut_down drop DROP
 insert_and_shut_down detach DETACH
 $CLICKHOUSE_CLIENT -q "ATTACH TABLE ${name}_detach"
 insert_and_shut_down keeper DROP "SETTINGS kafka_keeper_path = '/clickhouse/test/${name}', kafka_replica_name = 'r1'" "--allow_kafka_offsets_storage_in_keeper 1"
+insert_and_shut_down down DROP "" "" "${name}_down"
