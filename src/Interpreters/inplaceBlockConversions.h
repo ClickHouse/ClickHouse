@@ -56,8 +56,8 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
 /// itself or through the defaults of the columns it reads. Two reads of a part that lacks such a column fill it with
 /// different values. A subcolumn is filled together with its column. A read fills a column from its default only in some
 /// parts, such as the ones that lack it, which `is_filled_from_default_in_some_part` tells for a column of storage: the
-/// defaults of the others are not looked at, so that reading the stored values does not need what their defaults need,
-/// such as privileges.
+/// defaults of the others are not looked at, so that a column that every part stores, such as one with
+/// `DEFAULT generateUUIDv4()`, is not taken as one.
 NameSet getNonDeterministicDefaults(
     const Names & column_names,
     const ColumnsDescription & columns,
