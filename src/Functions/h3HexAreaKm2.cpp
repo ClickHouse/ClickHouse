@@ -18,6 +18,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ARGUMENT_OUT_OF_BOUND;
 extern const int ILLEGAL_COLUMN;
 }
@@ -38,9 +39,16 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(UInt8) -> Float64";
+        const auto * arg = arguments[0].get();
+        if (!WhichDataType(arg).isUInt8())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt8",
+                arg->getName(), 1, getName());
+
+        return std::make_shared<DataTypeFloat64>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -80,8 +88,7 @@ public:
                     getName(),
                     MAX_H3_RES);
 
-            double res = 0;
-            getHexagonAreaAvgKm2(resolution, &res);
+            Float64 res = getHexagonAreaAvgKm2(resolution);
             dst_data[row] = res;
         }
 
@@ -109,9 +116,9 @@ Returns average hexagon area in square kilometers at the given [H3](#h3-index) r
             "Get hexagon area at resolution 13",
             "SELECT h3HexAreaKm2(13) AS area",
             R"(
-┌───────────────────area─┐
-│ 0.00004387026794728296 │
-└────────────────────────┘
+┌──────area─┐
+│ 0.0000439 │
+└───────────┘
             )"
         }
     };

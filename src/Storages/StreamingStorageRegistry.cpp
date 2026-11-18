@@ -4,8 +4,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Common/SipHash.h>
-#include <Common/ThreadPool.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/setThreadName.h>
 
@@ -118,7 +116,7 @@ void StreamingStorageRegistry::unregisterTable(const StorageID & storage, bool i
     LOG_TRACE(log, "Unregistered table: {}", storage.getNameForLogs());
 }
 
-void StreamingStorageRegistry::renameTable(const StorageID & from, const StorageID & to, bool if_exists)
+void StreamingStorageRegistry::renameTable(const StorageID & from, const StorageID & to)
 {
     std::lock_guard lock(mutex);
     if (shutdown_called)
@@ -129,15 +127,7 @@ void StreamingStorageRegistry::renameTable(const StorageID & from, const Storage
     /// intermediate name collisions.
     auto from_it = storages.find(from);
     if (from_it == storages.end())
-    {
-        if (if_exists)
-        {
-            LOG_DEBUG(log, "Table {} is not registered, nothing to rename", from.getNameForLogs());
-            return;
-        }
-
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table with storage id {} is not registered", from.getNameForLogs());
-    }
 
     storages.erase(from_it);
     storages.emplace(to);
@@ -260,18 +250,11 @@ void ObjectStorageQueueMetadataFactory::remove(
 std::unordered_map<std::string, ObjectStorageQueueMetadataFactory::FilesMetadataPtr> ObjectStorageQueueMetadataFactory::getAll()
 {
     std::unordered_map<std::string, ObjectStorageQueueMetadataFactory::FilesMetadataPtr> result;
-    std::lock_guard lock(mutex);
     for (const auto & [key, metadata] : metadata_by_path)
     {
         result.emplace(key, metadata.metadata);
     }
     return result;
-}
-
-bool ObjectStorageQueueMetadataFactory::isRegistered(const std::string & key)
-{
-    std::lock_guard lock(mutex);
-    return metadata_by_path.contains(key);
 }
 
 }

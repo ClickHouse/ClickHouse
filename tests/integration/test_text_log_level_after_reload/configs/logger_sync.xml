@@ -1,5 +1,0 @@
-<clickhouse>
-    <logger>
-        <async>false</async>
-    </logger>
-</clickhouse>
