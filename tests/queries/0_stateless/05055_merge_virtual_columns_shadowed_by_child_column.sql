@@ -5,6 +5,9 @@
 -- one of the child's `ALIAS` columns - and it used to win over the name the child-pruning filter in
 -- `getSelectedTables` matches, so `WHERE _table = '<child>'` silently returned no rows.
 
+-- The children have physical columns named like the virtual columns.
+SET allow_reserved_column_names = 1;
+
 DROP TABLE IF EXISTS 05045_child;
 DROP TABLE IF EXISTS 05045_m;
 DROP TABLE IF EXISTS 05045_alias_child;

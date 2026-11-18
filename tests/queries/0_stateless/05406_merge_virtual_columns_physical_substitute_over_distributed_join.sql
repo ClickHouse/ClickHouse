@@ -2,6 +2,9 @@
 -- `JOIN` or `ARRAY JOIN` over a `Distributed` child whose substitute is a physical `_table` or `_database`,
 -- the substitute must stay the child's column, not be replaced by the `Merge` virtual column constant.
 
+-- The children have physical columns named like the virtual columns.
+SET allow_reserved_column_names = 1;
+
 DROP TABLE IF EXISTS m;
 DROP TABLE IF EXISTS dist_t;
 DROP TABLE IF EXISTS dist_d;

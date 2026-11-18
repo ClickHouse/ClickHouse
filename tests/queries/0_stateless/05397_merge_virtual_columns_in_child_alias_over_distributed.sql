@@ -2,6 +2,9 @@
 -- that table's own physical `_table`/`_database` column, not from the `Merge` virtual column of the
 -- same name, which carries the matched child's name.
 
+-- The children have physical columns named like the virtual columns.
+SET allow_reserved_column_names = 1;
+
 DROP TABLE IF EXISTS str_child;
 DROP TABLE IF EXISTS str_dist;
 DROP TABLE IF EXISTS str_m;

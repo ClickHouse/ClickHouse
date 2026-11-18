@@ -8,6 +8,9 @@
 -- returned no rows, and a filter on the underlying table's name returned rows the pruning was
 -- supposed to drop.
 
+-- The children have physical columns named like the virtual columns.
+SET allow_reserved_column_names = 1;
+
 DROP TABLE IF EXISTS t_leaf;
 DROP TABLE IF EXISTS t_dist;
 DROP TABLE IF EXISTS m_over_dist;
