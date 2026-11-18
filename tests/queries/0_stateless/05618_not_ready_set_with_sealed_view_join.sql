@@ -40,6 +40,11 @@ SET join_algorithm = 'hash';
 SET max_bytes_before_external_join = 0;
 SET max_bytes_ratio_before_external_join = 0;
 SET use_query_condition_cache = 0;
+-- The rows read by the query tell which path was taken, so keep them exact: the injected split of
+-- ranges into intersecting and non-intersecting reads one more row of `t_outer_sv`, and with parallel
+-- replicas the main query is not planned locally where the speculative in-place build happens.
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
+SET enable_parallel_replicas = 0;
 
 -- Without runtime filters the physical `JoinStep` is cloned and the deferred build recovers.
 SET enable_join_runtime_filters = 0;
@@ -73,10 +78,11 @@ SYSTEM DISABLE FAILPOINT prepared_sets_build_ordered_set_inplace_fail;
 
 -- The subquery reads 20 + 1000 rows. The main query reads 10 rows of `t_outer_sv` when primary key
 -- analysis has the set, and all 1000 rows when the speculative build was abandoned, in which case the
--- deferred build also reads the subquery once more.
+-- deferred build also reads the subquery once more. The body of the `SQL SECURITY NONE` view is also logged
+-- as a child query with the same `log_comment`, so only the initial queries are selected.
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, read_rows FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05618_clone', '05618_clone_recovered', '05618_runtime_filters', '05618_partial_merge')
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query AND log_comment IN ('05618_clone', '05618_clone_recovered', '05618_runtime_filters', '05618_partial_merge')
 ORDER BY event_time_microseconds;
 
 DROP VIEW v_sealed_join;
