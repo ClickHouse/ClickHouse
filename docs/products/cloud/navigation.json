@@ -178,13 +178,7 @@
                     "products/cloud/guides/security/connectivity/private-networking/azure-privatelink"
                   ]
                 },
-                {
-                  "group": "Organization network connectivity",
-                  "hidden": true,
-                  "pages": [
-                    "products/cloud/guides/security/connectivity/org-network-connectivity"
-                  ]
-                }
+                "products/cloud/guides/security/connectivity/org-network-connectivity"
               ]
             },
             {
