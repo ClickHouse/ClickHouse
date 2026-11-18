@@ -1459,6 +1459,16 @@ struct PartRangesReadInfo
 
 }
 
+/// The expression of the first `prefix_size` sorting key columns. It keeps its input columns.
+static ExpressionActionsPtr getSortingKeyPrefixExpression(const StorageMetadataPtr & metadata, size_t prefix_size, const ContextPtr & context)
+{
+    auto order_key_prefix_ast = metadata->getSortingKey().expression_list_ast->clone();
+    order_key_prefix_ast->children.resize(prefix_size);
+
+    auto syntax_result = TreeRewriter(context).analyze(order_key_prefix_ast, metadata->getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
+    return std::make_shared<ExpressionActions>(ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActionsDAG(false));
+}
+
 Pipe ReadFromMergeTree::readByLayers(
     const RangesInDataParts & parts_with_ranges,
     SplitPartsByRanges split_parts,
@@ -1480,16 +1490,21 @@ Pipe ReadFromMergeTree::readByLayers(
 
     if (reader_settings.read_in_order)
     {
+        /// Only the prefix of the sorting key that the streams of a layer are merged by and the layers are filtered by
+        /// is computed, so that the other sorting key columns are not read.
+        size_t prefix_size = input_order_info->used_prefix_of_sorting_key_size;
+        for (const auto & border : split_parts.borders)
+            prefix_size = std::max(prefix_size, border.size());
+        auto sorting_expr = getSortingKeyPrefixExpression(storage_snapshot->metadata, prefix_size, context);
+        const auto sorting_key_prefix_columns = sorting_expr->getRequiredColumns();
+
         /// `PREWHERE` runs before the sorting expression added below and may have removed an input
         /// column that the sorting key needs. Prohibit removing those inputs; the sorting expression
         /// keeps them, and they are dropped when the pipe header is converted to the step header.
         /// Same reasoning as in `spreadMarkRangesAmongStreamsWithOrder`.
         if (query_info.prewhere_info || query_info.row_level_filter)
         {
-            NameSet sorting_key_columns;
-            for (const auto & column : storage_snapshot->metadata->getSortingKey().expression->getRequiredColumnsWithTypes())
-                sorting_key_columns.insert(column.name);
-
+            NameSet sorting_key_columns(sorting_key_prefix_columns.begin(), sorting_key_prefix_columns.end());
             restorePrewhereInputs(query_info.row_level_filter.get(), query_info.prewhere_info.get(), sorting_key_columns);
         }
 
@@ -1497,7 +1512,7 @@ Pipe ReadFromMergeTree::readByLayers(
         in_order_column_names_to_read = column_names;
 
         /// Add columns needed to calculate the sorting expression
-        for (const auto & column_name : storage_snapshot->metadata->getColumnsRequiredForSortingKey())
+        for (const auto & column_name : sorting_key_prefix_columns)
         {
             if (column_names_set.contains(column_name))
                 continue;
@@ -1505,7 +1520,6 @@ Pipe ReadFromMergeTree::readByLayers(
             in_order_column_names_to_read.push_back(column_name);
             column_names_set.insert(column_name);
         }
-        auto sorting_expr = storage_snapshot->metadata->getSortingKey().expression;
         const auto & sorting_columns = storage_snapshot->metadata->getSortingKey().column_names;
         std::vector<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags(); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `KeyDescription::reverse_flags` is std::vector
 
@@ -2496,11 +2510,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     if (need_preliminary_merge || output_each_partition_through_separate_port)
     {
         size_t prefix_size = input_order_info->used_prefix_of_sorting_key_size;
-        auto order_key_prefix_ast = storage_snapshot->metadata->getSortingKey().expression_list_ast->clone();
-        order_key_prefix_ast->children.resize(prefix_size);
-
-        auto syntax_result = TreeRewriter(context).analyze(order_key_prefix_ast, storage_snapshot->metadata->getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
-        auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActionsDAG(false);
+        auto sorting_key_expr = getSortingKeyPrefixExpression(storage_snapshot->metadata, prefix_size, context);
         const auto & sorting_columns = storage_snapshot->metadata->getSortingKey().column_names;
         std::vector<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags(); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `KeyDescription::reverse_flags` is std::vector
 
@@ -2516,8 +2526,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             else
                 sort_description.emplace_back(sorting_columns[i], input_order_info->direction);
         }
-
-        auto sorting_key_expr = std::make_shared<ExpressionActions>(std::move(sorting_key_prefix_expr));
 
         auto merge_streams = [&](Pipe & pipe)
         {
