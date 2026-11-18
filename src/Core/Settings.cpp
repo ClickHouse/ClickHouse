@@ -2798,7 +2798,7 @@ Only `SELECT` queries executed with the analyzer (`enable_analyzer = 1`, the def
 
 Enabling this setting makes the captured query collect per-processor timings, which is the same instrumentation [`log_processors_profiles`](/reference/settings/session-settings/log#log_processors_profiles) uses, so it is not free. Queries that are not captured are unaffected.
 
-That cost is decided before the query runs, so a captured query pays it even where its row is dropped afterwards by [`log_queries_min_type`](/reference/settings/session-settings/log#log_queries_min_type) or [`log_queries_min_query_duration_ms`](/reference/settings/session-settings/log#log_queries_min_query_duration_ms) — neither is knowable that early. A query answered from the [query cache](/reference/statements/select#query-cache) executes no plan and so has none to store.
+That cost is decided before the query runs, so a captured query pays it even where its row is dropped afterwards by [`log_queries_min_type`](/reference/settings/session-settings/log#log_queries_min_type) or [`log_queries_min_query_duration_ms`](/reference/settings/session-settings/log#log_queries_min_query_duration_ms) — neither is knowable that early. A query answered from the [query cache](/concepts/features/performance/caches/query-cache) executes no plan and so has none to store.
 
 It also causes step descriptions produced by plan optimizations (for example merged expressions) to be retained rather than discarded, which makes them visible in `system.processors_profile_log.plan_step_description` as well.
 
@@ -2806,7 +2806,7 @@ See also:
 
 - [`system.query_log`](/reference/system-tables/query_log)
 - [`EXPLAIN PLAN`](/reference/statements/explain#explain-plan)
-)", BETA, \
+)", EXPERIMENTAL, \
         {"26.11", false, false, "New setting to capture the query plan actually executed, together with per-step runtime statistics."}) \
     DECLARE(DistributedProductMode, distributed_product_mode, DistributedProductMode::DENY, R"(
 Changes the behaviour of [distributed subqueries](/reference/statements/in).
@@ -3346,7 +3346,7 @@ A query decides how much text its own plan contains: a large `IN` list, a long a
 A plan that does not fit is not stored truncated, because half a document is not a plan. The column holds the reason instead, as `{"Error": ...}`.
 
 `0` means no limit.
-)", 0, \
+)", EXPERIMENTAL, \
         {"26.11", 1048576, 1048576, "New setting to bound the size of the query plan stored in `system.query_log`. The limit is kept under `compatibility` with earlier versions: the column itself is new, so there is no earlier behaviour to restore, and it guards a server resource."}) \
     \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
@@ -7227,19 +7227,25 @@ see https://iceberg.apache.org/docs/1.5.2/configuration/.
 )", 0, \
         {"26.9", 10 * 1024 * 1024, 384 * 1024 * 1024, "Aligned with how the Iceberg `rewrite_data_files` procedure derives `min-file-size-bytes`: 0.75 of the target file size (512 MiB). Compaction now selects files below 384 MiB instead of below 10 MiB."}, \
         {"26.5", 10_MiB, 10_MiB, "New setting"}) \
-    DECLARE(UInt64, iceberg_data_file_size_upper_threshold_compaction, 512_MiB * 9 / 5, R"(
-Data files larger than this are selected for compaction.
-
-The default is `1.8` of the documented default of the Iceberg table property `write.target-file-size-bytes`
-(512 MiB), which is how the `rewrite_data_files` procedure derives its `max-file-size-bytes` option,
-see https://iceberg.apache.org/docs/1.5.2/configuration/.
+    DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 100, R"(
+Max number of data files merged by one compaction merge of an Iceberg table, the same as `max_parts_to_merge_at_once` for `MergeTree`.
+A merge reads all its input files at once, so its memory grows with the number of inputs.
 )", 0, \
-        {"26.9", 10ULL * 1024 * 1024 * 1024, 512ULL * 1024 * 1024 * 9 / 5, "Aligned with how the Iceberg `rewrite_data_files` procedure derives `max-file-size-bytes`: 1.8 of the target file size (512 MiB)."}, \
-        {"26.5", 10_GiB, 10_GiB, "New setting"}) \
-    DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(
-Threshold for compaction data files in iceberg.
-)", 0, \
+        {"26.11", 1000, 100, "The same as `max_parts_to_merge_at_once` for `MergeTree`: a merge reads all its inputs at once, and the selection of merges keeps the candidate ranges of every partition."}, \
         {"26.5", 1000, 1000, "New setting"}) \
+    DECLARE(UInt64, iceberg_compaction_max_bytes_to_merge, 150_GiB, R"(
+Max total size of the data files merged by one compaction merge of an Iceberg table, the sum of their sizes in the object storage.
+The same as `max_bytes_to_merge_at_max_space_in_pool` for `MergeTree`: when the background pool has fewer free entries than
+`number_of_free_entries_in_pool_to_lower_max_size_of_merge`, the limit is lowered down to `max_bytes_to_merge_at_min_space_in_pool`
+(both from the `merge_tree` section of the config).
+The files of a partition that do not fit are merged by the next merges. Does not apply to a merge that applies position delete files.
+)", 0, \
+        {"26.11", 150_GiB, 150_GiB, "New setting. Limits the total size of the files of a compaction merge, the same way as `max_bytes_to_merge_at_max_space_in_pool` does for `MergeTree`."}) \
+    DECLARE(UInt64, iceberg_compaction_max_rows_to_merge, std::numeric_limits<UInt64>::max(), R"(
+Max total number of rows of the data files merged by one compaction merge of an Iceberg table.
+The files of a partition that do not fit are merged by the next merges. Does not apply to a merge that applies position delete files.
+)", 0, \
+        {"26.11", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting. Restores the limit on the total number of rows of the files of a compaction merge, which was decided by `iceberg_compaction_max_rows_in_data_file` before."}) \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
 
@@ -7286,7 +7292,8 @@ Minimum time of delay between 2 background compaction operations.
 )", 0, \
         {"26.5", 60 * 60 * 3, 60 * 60 * 3, "New setting"}) \
     DECLARE(Seconds, iceberg_compaction_data_cleanup, 60 * 60 * 3, R"(
-The time after which the data will be deleted.
+With `enable_cleanup_old_data_files_compaction`, the time after which a snapshot of an Iceberg table that a newer one replaced is
+expired, together with the files that only it references. The longer of this and `iceberg_outdated_snapshot_lifetime_seconds` applies.
 )", 0, \
         {"26.5", 60 * 60 * 3, 60 * 60 * 3, "New setting"}) \
     DECLARE(UInt64, iceberg_compaction_commit_batch_size, 100, R"(
@@ -8766,6 +8773,12 @@ Whether to use only prewhere columns size to determine reading task size.
 Hard lower limit on the task size (even when the number of granules is low and the number of available threads is high we won't allocate smaller tasks
 )", 0, \
         {"24.10", 8, 8, "New setting"}) \
+    DECLARE(UInt64, merge_tree_read_end_tasks_per_stream, 32, R"(
+Makes the tasks at the end of a `MergeTree` read 1/N of one thread's share of the data (not smaller than
+`merge_tree_min_read_task_size`), so that all threads finish at about the same time. Larger values balance the
+threads better but add per-task overhead. 0 disables it.
+)", 0, \
+        {"26.11", 0, 32, "New setting: the tasks at the end of a `MergeTree` read are smaller, so that all threads finish at about the same time."}) \
     DECLARE(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, R"(
 Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
 )", 0) \
@@ -10617,26 +10630,6 @@ snapshot with its own manifest, so an `INSERT` writes exactly one manifest only 
 `ALTER TABLE ... DROP PARTITION` cannot drop a partition whose manifest is shared with other partitions.
 )", 0, \
         {"26.11", false, false, "New setting."}) \
-    DECLARE(UInt64, iceberg_compaction_max_rows_in_data_file, std::numeric_limits<UInt64>::max(), R"(
-Max rows of an iceberg parquet data file produced by compaction. Defaults to the maximum, so the size limit
-`iceberg_compaction_max_bytes_in_data_file` alone decides how much data goes into an output file, the same way
-Iceberg has no row-count counterpart of `write.target-file-size-bytes`.
-)", 0, \
-        {"26.9", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."}, \
-        {"26.7", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."}) \
-    DECLARE(UInt64, iceberg_compaction_max_bytes_in_data_file, 512_MiB, R"(
-Max bytes of an iceberg parquet data file produced by compaction.
-
-The default mirrors the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB),
-see https://iceberg.apache.org/docs/1.5.2/configuration/. The limit is compared against the size of the file
-written so far, that is, the compressed size, the same measure as `iceberg_data_file_size_lower_threshold_compaction`,
-so a file can exceed it by what the writer still buffers, such as incomplete Parquet row groups and the ones being
-encoded. Keep it above
-`iceberg_data_file_size_lower_threshold_compaction`, otherwise every output file stays below the lower threshold
-and is selected for compaction again.
-)", 0, \
-        {"26.9", std::numeric_limits<UInt64>::max(), 512 * 1024 * 1024, "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit. The default is aligned with the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB), see https://iceberg.apache.org/docs/1.5.2/configuration/. Previously compaction merged all eligible files of a partition into a single output file."}, \
-        {"26.7", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."}) \
     DECLARE(UInt64, iceberg_insert_max_partitions, 100, R"(
 Max allowed partitions count per one insert operation for Iceberg table engine.
 )", 0, \
@@ -10665,6 +10658,11 @@ When disabled, the legacy `StringHashTable`-based method (the default before 26.
 All servers participating in a distributed query must agree on this value: with `distributed_aggregation_memory_efficient`, two-level bucket numbers depend on the key hash, which differs between the two methods, so servers disagreeing on this setting may split the same key into different buckets and produce an incorrectly merged result. To guarantee agreement, the initiator always sends its effective value with the secondary queries (even when it comes only from server/profile defaults), overriding the remote servers' own defaults.
 )", 0, \
         {"26.8", false, true, "New setting to toggle the `PackedStringRef`-based hash table for single-`String`-key GROUP BY. previous_value=false so `compatibility` with versions before 26.8 restores the legacy `StringHashTable`-based method, including its two-level bucketing."}) \
+    DECLARE(Bool, enable_fixed_and_packed_string_keys_in_aggregation, true, R"(
+Use a dedicated hash table for `GROUP BY` with fixed-width keys of up to 16 bytes in total and one non-nullable `String` key. Any of these keys can be `LowCardinality`. A key with an empty string is stored by its fixed-width values alone, in cells as narrow as fixed-width keys; the other keys are stored as the fixed-width values and a packed reference to the string, which keeps strings of up to 11 bytes inline, or of up to 15 bytes when the fixed-width values take at most 4 bytes. A `GROUP BY` without aggregate functions stores the keys alone, with no room for aggregate states, so it uses less memory.
+When disabled, the serialized method is used.
+)", 0, \
+        {"26.11", false, true, "New setting to use a dedicated hash table for `GROUP BY` with fixed-width keys of up to 16 bytes in total and one non-nullable `String` key. When disabled, the serialized method is used."}) \
     DECLARE(Bool, enable_parallel_blocks_marshalling, true, "Affects only distributed queries. If enabled, blocks will be (de)serialized and (de)compressed on pipeline threads (i.e. with higher parallelism that what we have by default) before/after sending to the initiator.", 0, \
         {"25.6", "false", "true", "A new setting"}) \
     DECLARE(Bool, enable_parallel_single_level_merge, true, R"(
@@ -11398,11 +11396,13 @@ Allow to execute `insert` queries into iceberg.
         {"26.2", false, false, "Insert into iceberg was moved to Beta. This also applies to the alias `allow_experimental_insert_into_iceberg`."}, \
         {"25.7", false, false, "New setting."}) \
     DECLARE_WITH_ALIAS(Bool, enable_cleanup_old_data_files_compaction, false, R"(
-Allow to clean up old data files during Iceberg compaction.
+Allow to clean up old data files of Iceberg tables with background compaction.
 
-The cleanup runs `iceberg_compaction_data_cleanup` after a compaction. It expires the snapshots the compaction made obsolete, the same
-way as `expire_snapshots`: removes them from the table metadata and deletes the files that no other snapshot references. For a table
-of the format version 1 or behind a transactional catalog it only deletes the files, and the snapshots stay in the metadata.
+A background task of the table expires the snapshots that a newer one replaced longer than `iceberg_compaction_data_cleanup` ago,
+except those that branches and tags reference, the same way as `expire_snapshots`: removes them from the table metadata and deletes
+the files that no other snapshot references. It also drops the metadata files replaced as long ago from the metadata log and deletes
+them, unless a transactional catalog writes the metadata of the table. The snapshots that a query on any replica is reading stay
+until a later run. Does nothing for a table of the format version 1.
 )", EXPERIMENTAL, allow_experimental_cleanup_old_data_files_compaction, \
         {"26.11", false, false, "Added an alias for setting `allow_experimental_cleanup_old_data_files_compaction`."}, \
         {"26.5", false, false, "New setting"}) \
@@ -11798,6 +11798,12 @@ Enable table function `eval`.
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
+    MAKE_OBSOLETE(M, UInt64, iceberg_compaction_max_rows_in_data_file, std::numeric_limits<UInt64>::max(), \
+        {"26.11", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "Obsolete: a compaction merge of Iceberg data files writes one output file, without a limit on its size."}) \
+    MAKE_OBSOLETE(M, UInt64, iceberg_compaction_max_bytes_in_data_file, 512_MiB, \
+        {"26.11", 512 * 1024 * 1024, 512 * 1024 * 1024, "Obsolete: a compaction merge of Iceberg data files writes one output file, without a limit on its size."}) \
+    MAKE_OBSOLETE(M, UInt64, iceberg_data_file_size_upper_threshold_compaction, 512_MiB * 9 / 5, \
+        {"26.11", 512ULL * 1024 * 1024 * 9 / 5, 512ULL * 1024 * 1024 * 9 / 5, "Obsolete: compaction no longer splits big data files, because a compaction merge writes one output file without a limit on its size."}) \
     MAKE_OBSOLETE(M, Bool, enable_optimize_predicate_expression, true, \
         {"18.12.17", 0, 1, "Optimize predicates to subqueries by default"}) \
     MAKE_OBSOLETE(M, Bool, parallel_replicas_only_with_analyzer, true, \
