@@ -94,3 +94,16 @@ Description: Projection has been analyzed and will be applied during reading
 1
 1000
 1001
+-- patch of the source of a DEFAULT projection column not stored in the part
+1
+-- patch, mutation on the fly, patch of the same rows
+7	7	11
+107	7	111
+307	7	11
+407	7	11
+7	7	11
+107	7	111
+307	7	11
+407	7	11
+19	309
+19	309

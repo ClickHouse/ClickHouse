@@ -47,10 +47,9 @@ public:
 
     /// Whether the patch parts or mutations of `part` make its projection part unsafe for filtering.
     /// The projection part keeps the old values, so it is unsafe when a change touches a column the
-    /// projection uses (or a MATERIALIZED column computed from one), or may restore a deleted row.
+    /// projection uses (or a column computed from one), or may restore a deleted row.
     /// A plain delete is safe: the projection only returns extra rows, which the read drops.
-    bool changesProjectionColumns(
-        const MergeTreeData::DataPartPtr & part, const ProjectionDescription & projection, const Names & filter_column_names);
+    bool changesProjectionColumns(const MergeTreeData::DataPartPtr & part, const ProjectionDescription & projection);
 
 private:
     const ReadFromMergeTree & reading;

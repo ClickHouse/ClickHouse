@@ -450,8 +450,7 @@ ColumnsChangedOnFlyByPart::ColumnsChangedOnFlyByPart(const ReadFromMergeTree & r
 
 ColumnsChangedOnFlyByPart::~ColumnsChangedOnFlyByPart() = default;
 
-bool ColumnsChangedOnFlyByPart::changesProjectionColumns(
-    const MergeTreeData::DataPartPtr & part, const ProjectionDescription & projection, const Names & filter_column_names)
+bool ColumnsChangedOnFlyByPart::changesProjectionColumns(const MergeTreeData::DataPartPtr & part, const ProjectionDescription & projection)
 {
     if (!has_data_changes)
         return false;
@@ -482,16 +481,22 @@ bool ColumnsChangedOnFlyByPart::changesProjectionColumns(
         materialized_column_dependencies
             = std::make_unique<MaterializedColumnDependencies>(reading.getStorageMetadata()->getColumns(), reading.getContext());
 
-    /// A column counts as changed if it is updated, or if it is MATERIALIZED and computed from an updated column.
+    /// A column the part does not store yet (added by `ALTER ADD COLUMN`) is computed by the read from its
+    /// default expression after the patches are applied, so any updated column may change it.
+    const bool updates_data_columns = std::ranges::any_of(updated_columns, [](const String & name) { return name != RowExistsColumn::name; });
+    const auto & table_columns = reading.getStorageMetadata()->getColumns();
+
+    /// A column counts as changed if it is updated, if it is MATERIALIZED and computed from an updated column,
+    /// or if the part does not store it.
     auto is_changed = [&](const String & name)
     {
         return updated_columns.contains(name)
-            || !materialized_column_dependencies->findColumnsToRecalculate(name, updated_columns).empty();
+            || !materialized_column_dependencies->findColumnsToRecalculate(name, updated_columns).empty()
+            || (updates_data_columns && table_columns.hasPhysical(name) && !part->tryGetColumn(name));
     };
 
     return std::ranges::any_of(projection.required_columns, is_changed)
-        || std::ranges::any_of(projection.sample_block, [&](const auto & column) { return is_changed(column.name); })
-        || std::ranges::any_of(filter_column_names, is_changed);
+        || std::ranges::any_of(projection.sample_block, [&](const auto & column) { return is_changed(column.name); });
 }
 
 /// Projection candidate analysis is an optional optimization: when the filter does not constrain
@@ -665,7 +670,7 @@ void filterPartsAndCollectProjectionCandidates(
                 *it->second, *part_with_ranges.data_part, projection, parent_metadata, filter_required_columns)
             && !partHasPendingMetadataMutationsOnColumns(
                 reading.getMutationsSnapshot(), part_with_ranges.data_part, projection, filter_required_columns)
-            && !columns_changed_on_fly.changesProjectionColumns(part_with_ranges.data_part, projection, filter_required_columns))
+            && !columns_changed_on_fly.changesProjectionColumns(part_with_ranges.data_part, projection))
         {
             RangesInDataPart projection_part(
                 it->second,

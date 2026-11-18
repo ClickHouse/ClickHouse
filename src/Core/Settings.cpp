@@ -7029,7 +7029,7 @@ Enables using projections to filter part ranges even when projections are not se
 )", 0, \
         {"25.6", false, true, "New setting"}) \
     DECLARE(Bool, optimize_use_projection_filtering_with_patch_parts, false, R"(
-Allows using projections to filter the data read from a table that has patch parts (from lightweight updates and deletes) or mutations applied on the fly, for example projections that store `_part_offset`. The data is still read from the table, with the patches applied. A data part whose patches or mutations change a column the projection depends on is read without the projection.
+Allows projections, for example those that store `_part_offset`, to filter the data read from a table that has patch parts (from lightweight updates and deletes) or data mutations applied on the fly. The data is still read from the table, with the patches applied. A data part whose patches or mutations change a column the projection depends on is read without the projection.
 
 Requires `optimize_use_projection_filtering`. When disabled, projections are not used at all while the table has patch parts or mutations applied on the fly.
 )", 0, \

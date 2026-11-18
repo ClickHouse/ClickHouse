@@ -274,3 +274,59 @@ ALTER TABLE t_lw_proj_patch DELETE WHERE k < 1000 SETTINGS mutations_sync = 0;
 SELECT k FROM t_lw_proj_patch WHERE k < 5000 ORDER BY k LIMIT 2 SETTINGS max_threads = 1, max_block_size = 16, apply_mutations_on_fly = 1;
 
 DROP TABLE t_lw_proj_patch;
+
+-- A column added by ALTER ADD COLUMN and not stored in the part is computed from its DEFAULT expression
+-- after the patches are applied, so a patch of its source column changes it.
+CREATE TABLE t_lw_proj_patch (id UInt64, a UInt64)
+ENGINE = MergeTree ORDER BY id
+SETTINGS
+    enable_block_number_column = 1,
+    enable_block_offset_column = 1,
+    index_granularity = 16,
+    min_bytes_for_wide_part = 0,
+    min_rows_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0;
+
+INSERT INTO t_lw_proj_patch SELECT number, number FROM numbers(2000);
+ALTER TABLE t_lw_proj_patch ADD COLUMN x UInt64 DEFAULT a * 10;
+ALTER TABLE t_lw_proj_patch ADD PROJECTION p_x INDEX x TYPE basic;
+ALTER TABLE t_lw_proj_patch MATERIALIZE PROJECTION p_x SETTINGS mutations_sync = 2;
+SYSTEM STOP MERGES t_lw_proj_patch;
+
+SELECT '-- patch of the source of a DEFAULT projection column not stored in the part';
+UPDATE t_lw_proj_patch SET a = 5000 WHERE id = 5;
+SELECT
+    (SELECT groupArray((id, a, x)) FROM t_lw_proj_patch WHERE x = 50000)
+    = (SELECT groupArray((id, a, x)) FROM t_lw_proj_patch WHERE x = 50000 SETTINGS optimize_use_projections = 0);
+
+DROP TABLE t_lw_proj_patch;
+
+-- The projection index with patch parts and a mutation applied on the fly in the same read:
+-- the patches are read after the first reader that reads columns, here a mutation step.
+CREATE TABLE t_lw_proj_patch
+(
+    id UInt64,
+    k UInt64,
+    v UInt64,
+    PROJECTION p_k INDEX k TYPE basic
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS
+    enable_block_number_column = 1,
+    enable_block_offset_column = 1,
+    index_granularity = 16;
+
+SYSTEM STOP MERGES t_lw_proj_patch;
+INSERT INTO t_lw_proj_patch SELECT number, number % 100, number FROM numbers(2000);
+
+SELECT '-- patch, mutation on the fly, patch of the same rows';
+UPDATE t_lw_proj_patch SET v = 1 WHERE k = 7;
+ALTER TABLE t_lw_proj_patch UPDATE v = v + 10 WHERE k = 7 SETTINGS mutations_sync = 0;
+UPDATE t_lw_proj_patch SET v = v + 100 WHERE id = 107;
+ALTER TABLE t_lw_proj_patch DELETE WHERE id = 207 SETTINGS mutations_sync = 0;
+SELECT id, k, v FROM t_lw_proj_patch WHERE k = 7 ORDER BY id LIMIT 4 SETTINGS apply_mutations_on_fly = 1;
+SELECT id, k, v FROM t_lw_proj_patch WHERE k = 7 ORDER BY id LIMIT 4 SETTINGS apply_mutations_on_fly = 1, optimize_use_projections = 0;
+SELECT count(), sum(v) FROM t_lw_proj_patch WHERE k = 7 SETTINGS apply_mutations_on_fly = 1;
+SELECT count(), sum(v) FROM t_lw_proj_patch WHERE k = 7 SETTINGS apply_mutations_on_fly = 1, optimize_use_projections = 0;
+
+DROP TABLE t_lw_proj_patch;
