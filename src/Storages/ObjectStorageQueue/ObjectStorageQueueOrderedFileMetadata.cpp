@@ -1148,15 +1148,22 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     /// Read watermarks only for buckets represented in this listing. Keep reads separate
     /// per bucket so their size does not grow with the number of relevant buckets.
     std::vector<Bucket> file_buckets;
-    file_buckets.reserve(paths.size());
     std::set<Bucket> relevant_buckets;
-    for (const auto & path : paths)
+    if (use_buckets_for_processing)
     {
-        const Bucket bucket = use_buckets_for_processing
-            ? getBucketForPathImpl(path, buckets_num, bucketing_mode, partitioning_mode, parser)
-            : 0;
-        file_buckets.push_back(bucket);
-        relevant_buckets.insert(bucket);
+        file_buckets.reserve(paths.size());
+        for (const auto & path : paths)
+        {
+            const Bucket bucket = getBucketForPathImpl(path, buckets_num, bucketing_mode, partitioning_mode, parser);
+            file_buckets.push_back(bucket);
+            relevant_buckets.insert(bucket);
+        }
+    }
+    else
+    {
+        /// Without buckets all files belong to bucket 0.
+        file_buckets.assign(paths.size(), 0);
+        relevant_buckets.insert(0);
     }
 
     /// When partitioning is not used, consider PartitionKey an empty string.
