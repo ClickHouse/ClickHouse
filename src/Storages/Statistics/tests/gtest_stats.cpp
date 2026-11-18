@@ -279,6 +279,18 @@ ColumnStatisticsPtr createTestStats(
     return MergeTreeStatisticsFactory::instance().get(desc);
 }
 
+ColumnStatisticsPtr buildInt32Stats(const std::vector<StatisticsType> & types, size_t total)
+{
+    const auto data_type = std::make_shared<DataTypeInt32>();
+    MutableColumnPtr column = data_type->createColumn();
+    for (size_t i = 0; i < total; ++i)
+        column->insert(static_cast<Int32>(i));
+
+    auto stats = createTestStats(types, data_type);
+    stats->build(std::move(column));
+    return stats;
+}
+
 /// Build a `Nullable(Int32)` column with `total` rows where every `null_every`-th row is NULL.
 /// Non-NULL row `i` carries value `static_cast<Int32>(i)`. Returns built statistics.
 ColumnStatisticsPtr buildNullableInt32Stats(
@@ -301,6 +313,245 @@ ColumnStatisticsPtr buildNullableInt32Stats(
     return stats;
 }
 
+}
+
+TEST(Statistics, ColumnStatsOriginsTransformationsAndPartialCoverage)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto measured_stats = buildInt32Stats({StatisticsType::Basic, StatisticsType::Uniq}, 100);
+    ConditionSelectivityEstimatorBuilder measured_builder(getContext().context);
+    measured_builder.addStatistics("k", measured_stats);
+    measured_builder.addStatistics("j", measured_stats);
+    measured_builder.incrementRowCount(100);
+    auto measured_estimator = measured_builder.getEstimator();
+
+    const auto measured_profile = measured_estimator->estimateRelationProfile(/*metadata=*/nullptr);
+    const auto & measured = measured_profile.column_stats.at("k");
+    EXPECT_EQ(measured.ndv_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+    EXPECT_EQ(measured.range_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+    EXPECT_FALSE(measured.ndv_provenance.has(PartialStatisticsCoverage));
+    EXPECT_FALSE(measured.range_provenance.has(PartialStatisticsCoverage));
+
+    auto basic_stats = buildInt32Stats({StatisticsType::Basic}, 100);
+    ConditionSelectivityEstimatorBuilder basic_builder(getContext().context);
+    basic_builder.addStatistics("k", basic_stats);
+    basic_builder.incrementRowCount(100);
+    const auto basic_profile = basic_builder.getEstimator()->estimateRelationProfile(/*metadata=*/nullptr);
+    const auto & basic = basic_profile.column_stats.at("k");
+    EXPECT_EQ(basic.ndv_provenance.origin, ColumnStatsOrigin::SyntheticFallback);
+    EXPECT_EQ(basic.range_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+
+    ConditionSelectivityEstimatorBuilder partial_builder(getContext().context);
+    partial_builder.addStatistics("k", measured_stats);
+    partial_builder.incrementRowCount(1000);
+    const auto partial_profile = partial_builder.getEstimator()->estimateRelationProfile(/*metadata=*/nullptr);
+    const auto & partial = partial_profile.column_stats.at("k");
+    EXPECT_EQ(partial.ndv_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+    EXPECT_EQ(partial.range_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+    EXPECT_TRUE(partial.ndv_provenance.has(PartialStatisticsCoverage));
+    EXPECT_TRUE(partial.range_provenance.has(PartialStatisticsCoverage));
+
+    /// The predicate reaches the estimator as an `ActionsDAG` node, as in `estimateRowsFor`.
+    ContextPtr context = getContext().context;
+    ParserExpressionWithOptionalAlias parser(false);
+    ASTPtr ast = parseQuery(parser, "k < 90 AND j < 50", 1000, 1000, 1000);
+    const auto int32_type = std::make_shared<DataTypeInt32>();
+    auto syntax_result = TreeRewriter(context).analyze(ast, NamesAndTypesList{{"k", int32_type}, {"j", int32_type}});
+    ActionsDAG dag = ExpressionAnalyzer(ast, syntax_result, context).getActionsDAG(/*add_aliases=*/false, /*remove_unused_result=*/false);
+    const auto * predicate = &dag.findInOutputs(ast->getColumnName());
+    const auto filtered_profile = measured_estimator->estimateRelationProfile(nullptr, predicate);
+    const auto & filtered = filtered_profile.column_stats.at("k");
+    EXPECT_TRUE(filtered.ndv_provenance.has(RowSubset));
+    EXPECT_TRUE(filtered.range_provenance.has(RowSubset));
+    EXPECT_TRUE(filtered.ndv_provenance.has(EstimatedRowCountClamp));
+}
+
+TEST(Statistics, SummaryWithoutBoundsMakesRangePartial)
+{
+    /// Data lake files summarized by their rows, bounds and NULL counts, as Iceberg manifests give them. A file with a
+    /// NULL count but without bounds has non-NULL values outside the bounds merged with it, unless all its rows are NULL.
+    const auto nullable_int64 = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>());
+    const auto int64 = std::make_shared<DataTypeInt64>();
+
+    /// Values 0..99, with bounds.
+    auto bounded = [](const DataTypePtr & type)
+    { return ColumnStatistics::createBasicFromSummary(type, 100, Field(Int64(0)), Field(Int64(99)), 0); };
+    /// E.g. values 1000..1099, without bounds.
+    auto unbounded = [](const DataTypePtr & type, UInt64 nulls)
+    { return ColumnStatistics::createBasicFromSummary(type, 100, Field{}, Field{}, nulls); };
+
+    auto merge_files = [](const std::vector<ColumnStatisticsPtr> & files)
+    {
+        ConditionSelectivityEstimatorBuilder builder(getContext().context);
+        for (const auto & file : files)
+        {
+            builder.addStatistics("k", file);
+            builder.incrementRowCount(file->getNumRows());
+        }
+        return builder.getEstimator()->estimateRelationProfile(/*metadata=*/nullptr).column_stats.at("k");
+    };
+
+    auto expect_partial_range = [](const ColumnStats & k)
+    {
+        /// The range is kept as measured, for diagnostics, but gives no guarantee.
+        ASSERT_TRUE(k.min_value && k.max_value);
+        EXPECT_EQ(k.min_value->safeGet<Int64>(), 0);
+        EXPECT_EQ(k.max_value->safeGet<Int64>(), 99);
+        EXPECT_EQ(k.range_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+        EXPECT_TRUE(k.range_provenance.has(PartialStatisticsCoverage));
+        EXPECT_FALSE(k.valueRange(ValueRangeGuarantee::Exact));
+        EXPECT_FALSE(k.valueRange(ValueRangeGuarantee::Superset));
+        EXPECT_FALSE(k.valueRange(ValueRangeGuarantee::Representative));
+        /// A data lake can derive the distinct count from the bounds, so it gives no guarantee either.
+        EXPECT_TRUE(k.ndv_provenance.has(PartialStatisticsCoverage));
+    };
+
+    /// Both files have all their rows counted, so only the bounds tell that the second file's values are missing.
+    expect_partial_range(merge_files({bounded(nullable_int64), unbounded(nullable_int64, /*nulls=*/0)}));
+    expect_partial_range(merge_files({unbounded(nullable_int64, /*nulls=*/0), bounded(nullable_int64)}));
+    expect_partial_range(merge_files({bounded(nullable_int64), unbounded(nullable_int64, /*nulls=*/99)}));
+    /// A non-Nullable column has a value in every row, whatever the NULL count says.
+    expect_partial_range(merge_files({bounded(int64), unbounded(int64, /*nulls=*/100)}));
+
+    /// An all-NULL file has no values to miss, so the range stays exact.
+    const auto with_all_null_file = merge_files({bounded(nullable_int64), unbounded(nullable_int64, /*nulls=*/100)});
+    EXPECT_FALSE(with_all_null_file.range_provenance.has(PartialStatisticsCoverage));
+    EXPECT_FALSE(with_all_null_file.ndv_provenance.has(PartialStatisticsCoverage));
+    const auto exact = with_all_null_file.valueRange(ValueRangeGuarantee::Exact);
+    ASSERT_TRUE(exact);
+    EXPECT_EQ(exact->min.safeGet<Int64>(), 0);
+    EXPECT_EQ(exact->max.safeGet<Int64>(), 99);
+    ASSERT_TRUE(exact->null_fraction);
+    EXPECT_DOUBLE_EQ(*exact->null_fraction, 0.5);
+    EXPECT_TRUE(with_all_null_file.valueRange(ValueRangeGuarantee::Representative));
+
+    /// Files with bounds cover all values, and so do statistics built from a column.
+    EXPECT_TRUE(merge_files({bounded(nullable_int64), bounded(nullable_int64)}).valueRange(ValueRangeGuarantee::Exact));
+    const auto built = buildNullableInt32Stats({StatisticsType::Basic}, /*total=*/100, /*null_every=*/1);
+    EXPECT_TRUE(built->getEstimate().min_max_covers_all_values);
+}
+
+TEST(Statistics, SummaryWithoutNullCountLeavesNullFractionUnknown)
+{
+    /// Data lake files summarized by their rows, bounds and NULL counts, as Iceberg manifests give them. A file with
+    /// bounds but without a NULL count (no `null_value_counts`) may hold any number of NULLs: the NULL fraction is
+    /// unknown, also when merged with files that have a NULL count, while the bounds still cover every value.
+    const auto nullable_int64 = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>());
+    const auto int64 = std::make_shared<DataTypeInt64>();
+
+    /// 100 rows with values in [10, 19], e.g. 90 of them NULL.
+    auto narrow = [](const DataTypePtr & type, std::optional<UInt64> nulls)
+    { return ColumnStatistics::createBasicFromSummary(type, 100, Field(Int64(10)), Field(Int64(19)), nulls); };
+    /// 100 rows with values in [0, 99], 50 of them NULL.
+    auto wide = [](const DataTypePtr & type)
+    { return ColumnStatistics::createBasicFromSummary(type, 100, Field(Int64(0)), Field(Int64(99)), 50); };
+
+    auto merge_files = [](const std::vector<ColumnStatisticsPtr> & files)
+    {
+        ConditionSelectivityEstimatorBuilder builder(getContext().context);
+        for (const auto & file : files)
+        {
+            builder.addStatistics("k", file);
+            builder.incrementRowCount(file->getNumRows());
+        }
+        return builder.getEstimator()->estimateRelationProfile(/*metadata=*/nullptr).column_stats.at("k");
+    };
+
+    /// The range keeps every guarantee, with an unknown NULL fraction.
+    auto expect_exact_range_without_null_fraction = [](const ColumnStats & k, Int64 min, Int64 max)
+    {
+        EXPECT_FALSE(k.null_fraction);
+        EXPECT_FALSE(k.range_provenance.has(PartialStatisticsCoverage));
+        EXPECT_FALSE(k.ndv_provenance.has(PartialStatisticsCoverage));
+        for (const auto guarantee : {ValueRangeGuarantee::Exact, ValueRangeGuarantee::Representative})
+        {
+            const auto range = k.valueRange(guarantee);
+            ASSERT_TRUE(range);
+            EXPECT_EQ(range->min.safeGet<Int64>(), min);
+            EXPECT_EQ(range->max.safeGet<Int64>(), max);
+            EXPECT_FALSE(range->null_fraction);
+        }
+    };
+
+    /// The summary keeps the structure of a NULL count, so that it merges with the files that have one, but marks it.
+    const auto estimate = narrow(nullable_int64, std::nullopt)->getEstimate();
+    EXPECT_TRUE(estimate.min_max_covers_all_values);
+    EXPECT_FALSE(estimate.null_count_covers_all_rows);
+
+    expect_exact_range_without_null_fraction(merge_files({narrow(nullable_int64, std::nullopt)}), 10, 19);
+    /// A file with a NULL count does not hide the NULLs that the other one does not count, in either order.
+    expect_exact_range_without_null_fraction(merge_files({narrow(nullable_int64, std::nullopt), wide(nullable_int64)}), 0, 99);
+    expect_exact_range_without_null_fraction(merge_files({wide(nullable_int64), narrow(nullable_int64, std::nullopt)}), 0, 99);
+
+    /// With every NULL counted, the fraction is known: (90 + 50) / 200.
+    const auto counted = merge_files({narrow(nullable_int64, 90), wide(nullable_int64)});
+    EXPECT_FALSE(counted.range_provenance.has(PartialStatisticsCoverage));
+    const auto counted_range = counted.valueRange(ValueRangeGuarantee::Exact);
+    ASSERT_TRUE(counted_range);
+    ASSERT_TRUE(counted_range->null_fraction);
+    EXPECT_DOUBLE_EQ(*counted_range->null_fraction, 0.7);
+
+    /// A non-Nullable column has no NULLs to count, so a missing NULL count misses none.
+    EXPECT_TRUE(narrow(int64, std::nullopt)->getEstimate().null_count_covers_all_rows);
+    EXPECT_TRUE(merge_files({narrow(int64, std::nullopt), wide(int64)}).valueRange(ValueRangeGuarantee::Exact));
+
+    /// Without bounds either, the rows may hold values outside the merged bounds: only a known count of all rows
+    /// being NULL rules them out.
+    const auto without_metrics = ColumnStatistics::createBasicFromSummary(nullable_int64, 100, Field{}, Field{}, std::nullopt);
+    EXPECT_FALSE(without_metrics->getEstimate().min_max_covers_all_values);
+    const auto with_file_without_metrics = merge_files({wide(nullable_int64), without_metrics});
+    EXPECT_TRUE(with_file_without_metrics.range_provenance.has(PartialStatisticsCoverage));
+    EXPECT_FALSE(with_file_without_metrics.null_fraction);
+
+    /// Statistics built from a column count every NULL.
+    const auto built = buildNullableInt32Stats({StatisticsType::Basic}, /*total=*/100, /*null_every=*/2);
+    EXPECT_TRUE(built->getEstimate().null_count_covers_all_rows);
+}
+
+TEST(Statistics, DeletedRowsDoNotHideFilesWithoutStatistics)
+{
+    /// Deleted rows, e.g. of Iceberg position deletes, leave the rows of the relation, while the statistics still count
+    /// them. A file without statistics leaves the coverage partial however many rows are deleted.
+    tryRegisterFunctions();
+
+    const auto int64 = std::make_shared<DataTypeInt64>();
+    /// Values 0..199, with bounds.
+    const auto bounded = ColumnStatistics::createBasicFromSummary(int64, 200, Field(Int64(0)), Field(Int64(199)), 0);
+
+    auto merge_files = [&](UInt64 rows_without_statistics, UInt64 deleted_rows)
+    {
+        ConditionSelectivityEstimatorBuilder builder(getContext().context);
+        builder.addStatistics("k", bounded);
+        builder.incrementRowCount(bounded->getNumRows());
+        builder.incrementRowCount(rows_without_statistics);
+        builder.subtractDeletedRows(deleted_rows);
+        return builder.getEstimator();
+    };
+
+    /// 100 rows of a file without statistics and 100 deleted rows: the live rows are as many as the counted ones.
+    const auto with_unmeasured_file = merge_files(/*rows_without_statistics=*/100, /*deleted_rows=*/100)->estimateRelationProfile(nullptr);
+    EXPECT_EQ(with_unmeasured_file.rows, 200);
+    auto partial = with_unmeasured_file.column_stats.at("k");
+    EXPECT_TRUE(partial.ndv_provenance.has(PartialStatisticsCoverage));
+    EXPECT_TRUE(partial.range_provenance.has(PartialStatisticsCoverage));
+    /// The read records the deleted rows as a row subset; the range still misses the values of the other file.
+    partial.addTransformation(RowSubset);
+    EXPECT_FALSE(partial.valueRange(ValueRangeGuarantee::Superset));
+
+    /// Deleted rows alone leave the remaining values within the bounds.
+    const auto deletes_only_estimator = merge_files(/*rows_without_statistics=*/0, /*deleted_rows=*/100);
+    const auto deletes_only = deletes_only_estimator->estimateRelationProfile(nullptr);
+    EXPECT_EQ(deletes_only.rows, 100);
+    auto enclosing = deletes_only.column_stats.at("k");
+    EXPECT_FALSE(enclosing.ndv_provenance.has(PartialStatisticsCoverage));
+    EXPECT_FALSE(enclosing.range_provenance.has(PartialStatisticsCoverage));
+    enclosing.addTransformation(RowSubset);
+    EXPECT_TRUE(enclosing.valueRange(ValueRangeGuarantee::Superset));
+
+    /// Selectivities are shares of the live rows: half of the values, half of the 100 live rows.
+    EXPECT_NEAR(static_cast<Float64>(estimateRowsFor(deletes_only_estimator, "k < 100", {{"k", int64}})), 50.0, 1.0);
 }
 
 TEST(Statistics, NullableEstimatorWithBasic)
@@ -650,6 +901,8 @@ TEST(Statistics, StructureEqualsConsidersDataType)
 
 TEST(Statistics, BasicDefaultCountNonNullable)
 {
+    tryRegisterAggregateFunctions();
+
     auto data_type = std::make_shared<DataTypeInt32>();
     MutableColumnPtr col = data_type->createColumn();
     /// 10 rows, 4 of them equal to the default (0).
@@ -757,6 +1010,8 @@ TEST(Statistics, BasicDefaultCountNullableIsNullCount)
 
 TEST(Statistics, BasicDefaultCountRoundTrip)
 {
+    tryRegisterAggregateFunctions();
+
     auto data_type = std::make_shared<DataTypeInt32>();
     MutableColumnPtr col = data_type->createColumn();
     for (Int64 i = 0; i < 8; ++i)
@@ -861,6 +1116,85 @@ TEST(Statistics, BasicDefaultCountRoundTrip)
     }
 }
 
+/// `basic` statistics written before the sum was tracked have no `ExactSum` bit. They must not report a sum, must not
+/// gain one when a mutation re-serializes them, and must stay compatible with new ones for the selectivity estimator.
+TEST(Statistics, BasicSumMissingFromOlderStatistics)
+{
+    tryRegisterAggregateFunctions();
+
+    auto data_type = std::make_shared<DataTypeInt64>();
+    MutableColumnPtr col = data_type->createColumn();
+    col->insert(Field(std::numeric_limits<Int64>::max()));
+    col->insert(Field(Int64(1)));
+    auto fresh = createTestStats({StatisticsType::Basic}, data_type);
+    fresh->build(std::move(col));
+    /// `max + 1` wraps around to the minimum, as in `sum`, which computes the statistics' sum.
+    ASSERT_EQ(fresh->getEstimate().estimated_sum, Field(std::numeric_limits<Int64>::min()));
+
+    String older_payload;
+    {
+        WriteBufferFromString buf(older_payload);
+        writeIntBinary(static_cast<UInt64>(2), buf); /// `row_count`
+        writeIntBinary(static_cast<UInt8>(1 | 4), buf); /// `NumericMinMax | DefaultCount`
+        writeFieldBinary(Field(Int64(1)), buf);
+        writeFieldBinary(Field(std::numeric_limits<Int64>::max()), buf);
+        writeIntBinary(static_cast<UInt64>(0), buf); /// `default_count`
+        buf.finalize();
+    }
+    String older_file;
+    {
+        WriteBufferFromString buf(older_file);
+        writeIntBinary(static_cast<UInt16>(4), buf); /// `StatisticsFileVersion::V4`
+        writeIntBinary(static_cast<UInt64>(1ULL << static_cast<UInt8>(StatisticsType::Basic)), buf);
+        writeStringBinary(data_type->getName(), buf);
+        writeIntBinary(static_cast<UInt64>(2), buf); /// `rows`
+        writeIntBinary(static_cast<UInt64>(older_payload.size()), buf);
+        buf.write(older_payload.data(), older_payload.size());
+        buf.finalize();
+    }
+
+    ReadBufferFromString older_buf(older_file);
+    auto older = ColumnStatistics::deserialize(older_buf, data_type);
+    EXPECT_FALSE(older->hasSum());
+    EXPECT_TRUE(fresh->structureEquals(*older));
+
+    WriteBufferFromOwnString reserialized;
+    older->serialize(reserialized);
+    ReadBufferFromString reserialized_buf(reserialized.str());
+    EXPECT_FALSE(ColumnStatistics::deserialize(reserialized_buf, data_type)->hasSum());
+
+    auto merged = fresh->cloneEmpty();
+    merged->merge(fresh);
+    EXPECT_EQ(merged->getEstimate().estimated_sum, Field(std::numeric_limits<Int64>::min()));
+    merged->merge(older);
+    EXPECT_FALSE(merged->hasSum());
+}
+
+/// The sum is written with the size that `getSerializedSize` declares for every type that tracks it, and read back.
+TEST(Statistics, BasicSumRoundTrip)
+{
+    tryRegisterAggregateFunctions();
+
+    for (const auto * type_name : {"Int8", "UInt16", "Int32", "UInt64", "Int128", "UInt256", "Bool", "Decimal32(2)", "Decimal256(4)"})
+    {
+        auto data_type = DataTypeFactory::instance().get(type_name);
+        MutableColumnPtr col = data_type->createColumn();
+        col->insert(convertFieldToType(Field(UInt64(1)), *data_type));
+        col->insert(convertFieldToType(Field(UInt64(1)), *data_type));
+        col->insertDefault();
+        auto stats = createTestStats({StatisticsType::Basic}, data_type);
+        stats->build(std::move(col));
+        ASSERT_TRUE(stats->hasSum()) << type_name;
+
+        WriteBufferFromOwnString buf;
+        stats->serialize(buf);
+        ReadBufferFromString read_buf(buf.str());
+        auto read_stats = ColumnStatistics::deserialize(read_buf, data_type);
+        ASSERT_TRUE(read_stats->hasSum()) << type_name;
+        EXPECT_EQ(read_stats->getEstimate().estimated_sum, stats->getEstimate().estimated_sum) << type_name;
+    }
+}
+
 /// The selectivity estimator accumulates the statistics of the parts into a copy made by `cloneEmpty`. The copy
 /// must keep the structure of `basic` statistics deserialized from an older format without a default-value count:
 /// otherwise it gets a fabricated exact count of zero defaults, and the following parts with the same old statistics
@@ -868,6 +1202,7 @@ TEST(Statistics, BasicDefaultCountRoundTrip)
 TEST(Statistics, BasicWithoutDefaultCountCloneEmpty)
 {
     tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
 
     auto data_type = std::make_shared<DataTypeInt32>();
     constexpr UInt8 numeric_min_max = 1u << 0;
@@ -957,6 +1292,8 @@ TEST(Statistics, BasicDefaultCountArray)
 /// of the type mask -- the reverted `NullCount` -- must be skipped rather than parsed as `Basic`.
 TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
 {
+    tryRegisterAggregateFunctions();
+
     auto data_type = std::make_shared<DataTypeInt32>();
 
     auto lengthPrefixed = [](WriteBuffer & out, const String & stat_payload)

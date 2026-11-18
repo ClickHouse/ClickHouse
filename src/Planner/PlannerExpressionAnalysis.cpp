@@ -1,4 +1,5 @@
 #include <memory>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <optional>
 #include <stack>
 #include <Planner/PlannerExpressionAnalysis.h>
@@ -82,7 +83,8 @@ std::optional<FilterAnalysisResult> analyzeFilter(
     result.correlated_subtrees = std::move(correlated_subtrees);
 
     const auto * output = result.filter_actions->dag.getOutputs().at(0);
-    if (output->column && ConstantFilterDescription(*output->column).always_true)
+    /// `arrayJoin` changes the number of rows, so the step is needed even if the filter is always true.
+    if (output->column && ConstantFilterDescription(*output->column).always_true && !result.filter_actions->dag.hasArrayJoin())
         return {};
 
     result.filter_column_name = output->result_name;
@@ -952,7 +954,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     /// Keep source-constant INPUTs (`source_constants`) so `project`/`removeUnusedActions` does not
     /// fold-and-drop them; they must keep flowing as required inputs to stay in the stream at
     /// distributed stage boundaries. Literals and re-creatable alias constants stay foldable.
-    std::unordered_set<const ActionsDAG::Node *> keep_inputs;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> keep_inputs;
     if (!source_constants.empty())
         for (const auto * input : project_names_actions->dag.getInputs())
             if (input->column && source_constants.contains(input->result_name))
