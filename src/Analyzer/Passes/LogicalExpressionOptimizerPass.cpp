@@ -178,11 +178,26 @@ static bool isTwoArgumentsFromDifferentSides(const FunctionNode & node_function,
            (first_src->isEqual(rhs_join) && second_src->isEqual(lhs_join));
 }
 
-static void insertIfNotPresentInSet(QueryTreeNodePtrWithHashSet& set, QueryTreeNodes &nodes, QueryTreeNodePtr node)
+/// Keys of one common-expression extraction, each computed once: hashing a column also hashes its whole source.
+class CommonExpressionKeys
 {
-    const auto [_, inserted] = set.emplace(node);
-    if (inserted)
-        nodes.push_back(std::move(node));
+public:
+    const QueryTreeNodePtrWithHash & operator()(const QueryTreeNodePtr & node)
+    {
+        auto it = keys.find(node);
+        if (it == keys.end())
+            it = keys.emplace(node, QueryTreeNodePtrWithHash(node)).first;
+        return it->second;
+    }
+
+private:
+    std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtrWithHash> keys;
+};
+
+static void insertIfNotPresentInSet(QueryTreeNodePtrWithHashSet & set, QueryTreeNodes & nodes, const QueryTreeNodePtrWithHash & key)
+{
+    if (set.insert(key).second)
+        nodes.push_back(key.node);
 }
 
 static bool isImpliedIndexHint(const QueryTreeNodePtr & node)
@@ -194,6 +209,19 @@ static bool isImpliedIndexHint(const QueryTreeNodePtr & node)
     return index_hint && index_hint->isImplied();
 }
 
+/// Appends the arguments of `node`, lifting those of nested functions with the same name, recursively.
+static void collectFlattenedLogicalArguments(const FunctionNode & node, const String & function_name, QueryTreeNodes & result)
+{
+    for (const auto & argument : node.getArguments().getNodes())
+    {
+        auto * maybe_function = argument->as<FunctionNode>();
+        if (maybe_function && maybe_function->getFunctionName() == function_name)
+            collectFlattenedLogicalArguments(*maybe_function, function_name, result);
+        else
+            result.push_back(argument);
+    }
+}
+
 // Returns the flattened AND/OR node if the passed-in node can be flattened. Doesn't modify the passed-in node.
 static std::shared_ptr<FunctionNode> getFlattenedLogicalExpression(const FunctionNode & node, const ContextPtr & context)
 {
@@ -202,39 +230,18 @@ static std::shared_ptr<FunctionNode> getFlattenedLogicalExpression(const Functio
         return nullptr;
 
     const auto & arguments = node.getArguments().getNodes();
-    QueryTreeNodes new_arguments;
-
-    bool flattened_anything = false;
-
-    for (const auto & argument : arguments)
+    bool flattened_anything = std::ranges::any_of(arguments, [&](const QueryTreeNodePtr & argument)
     {
-        auto * maybe_function = argument->as<FunctionNode>();
-        // If the nested function is not the same, just use it as is
-        if (!maybe_function || maybe_function->getFunctionName() != function_name)
-        {
-            new_arguments.push_back(argument);
-            continue;
-        }
-
-        flattened_anything = true;
-
-        // If the nested function is the same, just lift the its or its flattened form's arguments
-        auto maybe_flattened = getFlattenedLogicalExpression(*maybe_function, context);
-        if (maybe_flattened)
-        {
-            auto & flattened_arguments = maybe_flattened->getArguments().getNodes();
-            std::move(flattened_arguments.begin(), flattened_arguments.end(), std::back_inserter(new_arguments));
-        }
-        else
-        {
-            const auto & nested_arguments = maybe_function->getArguments().getNodes();
-            std::copy(nested_arguments.begin(), nested_arguments.end(), std::back_inserter(new_arguments));
-        }
-    }
+        const auto * maybe_function = argument->as<FunctionNode>();
+        return maybe_function && maybe_function->getFunctionName() == function_name;
+    });
 
     // Nothing has changed, let's no create a flattened node
-    if (!flattened_anything && new_arguments.size() == arguments.size())
+    if (!flattened_anything)
         return {};
+
+    QueryTreeNodes new_arguments;
+    collectFlattenedLogicalArguments(node, function_name, new_arguments);
 
     auto flattened = std::make_shared<FunctionNode>(function_name);
 
@@ -399,7 +406,7 @@ struct ComparisonFilterInfo
     ComparisonFunction function;
     QueryTreeNodePtr original_node;          /// Original query tree node of this comparison.
     std::optional<Field> converted_value;    /// Constant converted to the column type.
-    size_t original_index = 0;               /// Position in the original AND argument list (for stable ordering).
+    size_t original_index = 0;               /// Slot in the AND argument list: its own position, or the earliest one of the filters it replaced.
     /// (e.g. for an Int32 column, `i < 3.5` is internally rewritten to `i <= 3`, with
     /// `function = LESS_OR_EQUALS` and `converted_value = 3`).  In that case `original_node`
     /// still references the old literal (3.5) and any later rebuild must substitute it with
@@ -877,14 +884,20 @@ static void rebuildComparisonNode(ComparisonFilterInfo & filter, const ContextPt
     filter.original_node = std::move(new_node);
 }
 
+/// NOLINTNEXTLINE(bugprone-return-const-ref-from-parameter)
+static const QueryTreeNodePtr & getComparisonFilterExpressionNode(const QueryTreeNodePtr & expression) { return expression; }
+static const QueryTreeNodePtr & getComparisonFilterExpressionNode(const QueryTreeNodePtrWithHash & expression) { return expression.node; }
+
 /// Insert a new comparison filter for `expression` into `filter_map`.
 /// Performs type conversion; with `enable_pruning` also boundary folding and comparison against
 /// every existing filter for the expression, otherwise only against the first `equals` seen.
 /// Returns ALWAYS_FALSE if a contradiction is found, ALWAYS_TRUE if the condition holds
 /// for the column type or is implied by existing filters, or ADDED otherwise.
+/// `expression` is a precomputed key, or a node that is hashed only when `filter_map` is accessed.
+template <typename Expression>
 static AddComparisonFilterResult addComparisonFilter(
     ComparisonFilterMap & filter_map,
-    const QueryTreeNodePtr & expression,
+    const Expression & expression,
     ComparisonFilterInfo new_filter,
     bool enable_pruning,
     const ContextPtr & context)
@@ -899,7 +912,7 @@ static AddComparisonFilterResult addComparisonFilter(
     }
 
     /// Step 1: convert the constant to the column's type for uniform comparison.
-    const auto & raw_type = expression->getResultType();
+    const auto & raw_type = getComparisonFilterExpressionNode(expression)->getResultType();
     auto expr_type = removeLowCardinality(raw_type);
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
@@ -942,6 +955,12 @@ static AddComparisonFilterResult addComparisonFilter(
         return result;
     }
 
+    /// A filter that replaces others takes the earliest of their slots, ahead of the operands they may guard.
+    auto take_slot = [&new_filter](const ComparisonFilterInfo & removed)
+    {
+        new_filter.original_index = std::min(new_filter.original_index, removed.original_index);
+    };
+
     /// Step 3: compare against the existing equals/range filters.
     auto & range_filters = filters.range_filters;
     for (size_t i = 0; i < range_filters.size(); ++i)
@@ -950,6 +969,7 @@ static AddComparisonFilterResult addComparisonFilter(
         switch (result)
         {
         case ValueComparisonResult::PRUNE_LEFT:
+            take_slot(range_filters[i]);
             range_filters.erase(range_filters.begin() + static_cast<std::ptrdiff_t>(i));
             --i;
             break;
@@ -978,6 +998,7 @@ static AddComparisonFilterResult addComparisonFilter(
         case ValueComparisonResult::STRENGTHEN_RIGHT:
             new_filter.function = strengthenComparison(new_filter.function);
             rebuildComparisonNode(new_filter, context);
+            take_slot(range_filters[i]);
             range_filters.erase(range_filters.begin() + static_cast<std::ptrdiff_t>(i));
             --i;
             break;
@@ -990,6 +1011,12 @@ static AddComparisonFilterResult addComparisonFilter(
 
     auto & not_equals_filters = filters.not_equals_filters;
     Field key = canonicalizeNotEqualsKey(*new_filter.converted_value);
+    auto erase_not_equals = [&](auto first, auto last)
+    {
+        for (auto it = first; it != last; ++it)
+            take_slot(it->second);
+        not_equals_filters.erase(first, last);
+    };
 
     /// notEquals interact only through exact duplicates: one lookup replaces the pairwise scan,
     /// which was quadratic for long `x != c1 AND x != c2 ...` chains.
@@ -1008,7 +1035,7 @@ static AddComparisonFilterResult addComparisonFilter(
         /// `expr = c AND expr != c` is always false; any other `expr != v` is implied.
         if (not_equals_filters.contains(key))
             return AddComparisonFilterResult::ALWAYS_FALSE;
-        not_equals_filters.clear();
+        erase_not_equals(not_equals_filters.begin(), not_equals_filters.end());
     }
     else
     {
@@ -1016,27 +1043,29 @@ static AddComparisonFilterResult addComparisonFilter(
         {
         case ComparisonFunction::LESS:
             /// `expr < c` makes `expr != v` redundant for all v >= c; similar below.
-            not_equals_filters.erase(not_equals_filters.lower_bound(key), not_equals_filters.end());
+            erase_not_equals(not_equals_filters.lower_bound(key), not_equals_filters.end());
             break;
         case ComparisonFunction::LESS_OR_EQUALS:
-            not_equals_filters.erase(not_equals_filters.upper_bound(key), not_equals_filters.end());
+            erase_not_equals(not_equals_filters.upper_bound(key), not_equals_filters.end());
             /// `expr != c AND expr <= c` tightens to `expr < c`.
             if (auto it = not_equals_filters.find(key); it != not_equals_filters.end())
             {
                 new_filter.function = strengthenComparison(new_filter.function);
                 rebuildComparisonNode(new_filter, context);
+                take_slot(it->second);
                 not_equals_filters.erase(it);
             }
             break;
         case ComparisonFunction::GREATER:
-            not_equals_filters.erase(not_equals_filters.begin(), not_equals_filters.upper_bound(key));
+            erase_not_equals(not_equals_filters.begin(), not_equals_filters.upper_bound(key));
             break;
         case ComparisonFunction::GREATER_OR_EQUALS:
-            not_equals_filters.erase(not_equals_filters.begin(), not_equals_filters.lower_bound(key));
+            erase_not_equals(not_equals_filters.begin(), not_equals_filters.lower_bound(key));
             if (auto it = not_equals_filters.find(key); it != not_equals_filters.end())
             {
                 new_filter.function = strengthenComparison(new_filter.function);
                 rebuildComparisonNode(new_filter, context);
+                take_slot(it->second);
                 not_equals_filters.erase(it);
             }
             break;
@@ -1185,7 +1214,8 @@ static bool hasArrayJoinOutside(const QueryTreeNodePtrWithHashSet & nodes, const
 // Optimize disjuctions by extracting common expressions in disjuncts.
 // Example: A or B or (B and C)
 // Result: A or B
-static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressionsInDisjunction(const QueryTreeNodes & disjuncts, const ContextPtr & context)
+static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressionsInDisjunction(
+    const QueryTreeNodes & disjuncts, CommonExpressionKeys & keys, const ContextPtr & context)
 {
     std::vector<QueryTreeNodePtrWithHashSet> disjunct_sets;
     disjunct_sets.reserve(disjuncts.size());
@@ -1196,12 +1226,12 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
         auto * disjunct_function = disjunct->as<FunctionNode>();
         if (disjunct_function != nullptr && disjunct_function->getFunctionName() == "and")
         {
-            auto & arguments = disjunct_function->getArguments();
-            std::copy(arguments.begin(), arguments.end(), std::inserter(disjunct_set, disjunct_set.end()));
+            for (const auto & argument : disjunct_function->getArguments())
+                disjunct_set.insert(keys(argument));
         }
         else
         {
-            disjunct_set.insert(disjunct);
+            disjunct_set.insert(keys(disjunct));
         }
         disjunct_sets.emplace_back(std::move(disjunct_set));
     }
@@ -1285,10 +1315,11 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
     if (or_argument_nodes.size() < 2)
         return {};
 
+    CommonExpressionKeys keys;
     bool first_argument = true;
     QueryTreeNodePtrWithHashSet common_exprs_set;
     QueryTreeNodes common_exprs;
-    QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> flattened_ands;
+    std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr> flattened_ands;
 
     for (auto & maybe_and_node : or_argument_nodes)
     {
@@ -1296,7 +1327,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
         if (!and_node || and_node->getFunctionName() != "and")
         {
             // There are no common expressions, but we can try to optimize disjuncts
-            return tryExtractCommonExpressionsInDisjunction(or_argument_nodes, context);
+            return tryExtractCommonExpressionsInDisjunction(or_argument_nodes, keys, context);
         }
 
         auto flattened_and_node = getFlattenedLogicalExpression(*and_node, context);
@@ -1312,7 +1343,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
             common_exprs.reserve(current_arguments.size());
 
             for (auto & and_argument : current_arguments)
-                insertIfNotPresentInSet(common_exprs_set, common_exprs, and_argument);
+                insertIfNotPresentInSet(common_exprs_set, common_exprs, keys(and_argument));
 
             first_argument = false;
         }
@@ -1323,11 +1354,11 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
 
             for (auto & and_argument : and_node->getArguments())
             {
-                auto it = common_exprs_set.find(and_argument);
+                auto it = common_exprs_set.find(keys(and_argument));
                 if (it == common_exprs_set.end())
                     continue;
                 /// A factored hint stays implied only if every copy is, so keep a copy that is not.
-                insertIfNotPresentInSet(new_common_exprs_set, new_common_exprs, isImpliedIndexHint(and_argument) ? it->node : and_argument);
+                insertIfNotPresentInSet(new_common_exprs_set, new_common_exprs, keys(isImpliedIndexHint(and_argument) ? it->node : and_argument));
             }
 
             common_exprs_set = std::move(new_common_exprs_set);
@@ -1336,7 +1367,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
             if (common_exprs.empty())
             {
                 // There are no common expressions, but we can try to optimize disjuncts
-                return tryExtractCommonExpressionsInDisjunction(or_argument_nodes, context);
+                return tryExtractCommonExpressionsInDisjunction(or_argument_nodes, keys, context);
             }
         }
     }
@@ -1347,10 +1378,10 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
     QueryTreeNodes new_or_arguments;
     bool has_completely_extracted_and_expression = false;
 
-    for (auto & or_argument : or_argument_nodes)
+    for (const auto & original_or_argument : or_argument_nodes)
     {
-        if (auto it = flattened_ands.find(or_argument); it != flattened_ands.end())
-            or_argument = it->second;
+        auto it = flattened_ands.find(original_or_argument);
+        const auto & or_argument = it != flattened_ands.end() ? it->second : original_or_argument;
 
         // Avoid changing the original tree, it might be used later
         const auto & and_node = or_argument->as<FunctionNode &>();
@@ -1362,7 +1393,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
             and_arguments.begin(),
             and_arguments.end(),
             std::back_inserter(filtered_and_arguments),
-            [&common_exprs_set](const QueryTreeNodePtr & ptr) { return !common_exprs_set.contains(ptr); });
+            [&common_exprs_set, &keys](const QueryTreeNodePtr & ptr) { return !common_exprs_set.contains(keys(ptr)); });
 
         if (filtered_and_arguments.empty())
         {
@@ -1371,7 +1402,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
         }
         else if (filtered_and_arguments.size() == 1)
         {
-            insertIfNotPresentInSet(new_or_arguments_set, new_or_arguments, std::move(filtered_and_arguments.front()));
+            insertIfNotPresentInSet(new_or_arguments_set, new_or_arguments, keys(filtered_and_arguments.front()));
         }
         else
         {
@@ -1380,7 +1411,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
             new_and_node->getArguments().getNodes() = std::move(filtered_and_arguments);
             resolveOrdinaryFunctionNodeByName(*new_and_node, "and", context);
 
-            insertIfNotPresentInSet(new_or_arguments_set, new_or_arguments, std::move(new_and_node));
+            insertIfNotPresentInSet(new_or_arguments_set, new_or_arguments, keys(new_and_node));
         }
     }
 
@@ -1397,7 +1428,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
     // The complete elimination is handled above, so at this point we can be sure there are at least 2 arguments.
     chassert(new_or_arguments.size() >= 2);
 
-    if (auto optimized_disjunction =  tryExtractCommonExpressionsInDisjunction(new_or_arguments, context))
+    if (auto optimized_disjunction =  tryExtractCommonExpressionsInDisjunction(new_or_arguments, keys, context))
     {
         auto new_disjunction_node = optimized_disjunction->new_node ? optimized_disjunction->new_node : optimized_disjunction->common_expressions[0];
         return CommonExpressionExtractionResult{ .new_node = std::move(new_disjunction_node), .common_expressions = std::move(common_exprs) };
@@ -1415,6 +1446,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
 /// Rebuild the root of a logical operator as an `and` over `arguments`, converted to `result_type`.
 /// A lone argument is still wrapped in `and(arg, 1)`, because the plain `_CAST(arg, UInt8)` below
 /// would map values like `0.5` to `0` where the enclosing operator read them as true.
+/// Returns nullptr when the result is not `Nothing` but `result_type` is: no value converts to `Nothing`.
 static QueryTreeNodePtr buildAndNodeWithResultType(QueryTreeNodes arguments, const DataTypePtr & result_type, const ContextPtr & context)
 {
     if (arguments.size() == 1 && arguments.front()->getResultType()->equals(*result_type))
@@ -1430,7 +1462,11 @@ static QueryTreeNodePtr buildAndNodeWithResultType(QueryTreeNodes arguments, con
 
     QueryTreeNodePtr result = std::move(and_function_node);
     if (!result->getResultType()->equals(*result_type))
+    {
+        if (isNothing(result_type))
+            return nullptr;
         result = buildCastFunction(result, result_type, context);
+    }
     return result;
 }
 
@@ -1446,7 +1482,8 @@ static void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const Cont
         if (result.new_node != nullptr)
             new_root_arguments.push_back(std::move(result.new_node));
 
-        node = buildAndNodeWithResultType(std::move(new_root_arguments), node->getResultType(), context);
+        if (auto new_node = buildAndNodeWithResultType(std::move(new_root_arguments), node->getResultType(), context))
+            node = std::move(new_node);
     }
 }
 
@@ -1460,7 +1497,7 @@ static void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const Con
 
     auto insert_possible_new_top_level_arg = [&new_top_level_arguments_set, &new_top_level_arguments](QueryTreeNodePtr node_to_insert)
     {
-        insertIfNotPresentInSet(new_top_level_arguments_set, new_top_level_arguments, std::move(node_to_insert));
+        insertIfNotPresentInSet(new_top_level_arguments_set, new_top_level_arguments, QueryTreeNodePtrWithHash(std::move(node_to_insert)));
     };
     auto extracted_something = false;
 
@@ -1484,7 +1521,8 @@ static void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const Con
     if (!extracted_something)
         return;
 
-    node = buildAndNodeWithResultType(std::move(new_top_level_arguments), node->getResultType(), context);
+    if (auto new_node = buildAndNodeWithResultType(std::move(new_top_level_arguments), node->getResultType(), context))
+        node = std::move(new_node);
 }
 
 static void tryOptimizeCommonExpressions(QueryTreeNodePtr & node, FunctionNode& function_node, const ContextPtr & context)
@@ -1778,14 +1816,17 @@ public:
     /// Work budget of the compare-chain traversal, in nodes hashed by getTreeHash (its dominant cost).
     const size_t and_compare_chain_max_hash_work = 0;
     const size_t and_compare_chain_hash_work_start = 0;
+    /// Hash work of lookups by keys tryOptimizeAndCompareChain already computed, counted as if each lookup hashed again.
+    size_t and_compare_chain_reused_hash_work = 0;
 
     /// True once this query has hashed more than `and_compare_chain_max_hash_work` nodes (across all
     /// getTreeHash calls) since this visitor started. Used by tryOptimizeAndCompareChain to back off.
     /// A budget of 0 means unlimited, so the optimization is never stopped early.
-    bool andCompareChainHashBudgetExceeded() const
+    [[nodiscard]] bool andCompareChainHashBudgetExceeded() const
     {
         return and_compare_chain_max_hash_work != 0
-            && getTreeHashWorkCounter() - and_compare_chain_hash_work_start > and_compare_chain_max_hash_work;
+            && getTreeHashWorkCounter() - and_compare_chain_hash_work_start + and_compare_chain_reused_hash_work
+                > and_compare_chain_max_hash_work;
     }
 
     /// `and` nodes the compare chain appended conjuncts to, with their state before the first append.
@@ -1842,6 +1883,9 @@ public:
         return result;
     }
 
+    /// Shared nodes (identifier resolve cache) are rewritten once, after their arguments, and every reference reuses the result.
+    std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr> visited_nodes;
+
     /// a conjunct over these can't leave ON, and full_sorting_merge rejects it there
     TableExpressionNodes preserved_join_tables;
     /// the join evaluates an input-less conjunct of ON with its left side
@@ -1849,7 +1893,7 @@ public:
 
     /// Whether the join may evaluate `node` with a preserved side: it reads a column of `preserved_join_tables` (constant folding in the
     /// join can drop every other column), or no column outside lambda and `indexHint` arguments, as the join evaluates that on the left.
-    bool mayReadPreservedJoinTables(const QueryTreeNodePtr & node) const
+    [[nodiscard]] bool mayReadPreservedJoinTables(const QueryTreeNodePtr & node) const
     {
         if (preserved_join_tables.empty())
             return false;
@@ -1896,6 +1940,12 @@ public:
 
     bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
+        if (auto it = visited_nodes.find(child); it != visited_nodes.end())
+        {
+            child = it->second;
+            return false;
+        }
+
         /// a subquery is a separate query, the sides of a join around it do not apply
         if (isQueryOrUnionNode(child))
         {
@@ -1943,9 +1993,11 @@ public:
             auto * function_node = node->as<FunctionNode>();
             if (function_node && function_node->getFunctionName() == "and" && getSettings()[Setting::optimize_and_compare_chain])
                 tryOptimizeAndCompareChain(node);
-            return;
         }
+    }
 
+    void rewriteFunction(QueryTreeNodePtr & node)
+    {
         auto * function_node = node->as<FunctionNode>();
 
         if (!function_node)
@@ -1972,6 +2024,11 @@ public:
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
+        auto original_node = node;
+        if (mode == Mode::OTHER_REWRITES)
+            rewriteFunction(node);
+        visited_nodes.emplace(std::move(original_node), node);
+
         if (mode == Mode::JOIN_ON_AND_COMPARE_CHAIN)
             return;
 
@@ -2353,6 +2410,28 @@ private:
         const size_t arguments_size_before = function_node.getArguments().getNodes().size();
         const auto function_before = function_node.getFunctionOrThrow();
 
+        /// Hashing an operand walks the table expression it reads from, so each operand is hashed once per call;
+        /// every later lookup by its key is still charged that hash work against the budget.
+        struct OperandKey
+        {
+            QueryTreeNodePtrWithHash key;
+            size_t hash_work; /// nodes `getTreeHash` visited to compute `key`
+        };
+        std::unordered_map<const IQueryTreeNode *, OperandKey> operand_keys;
+        auto key_of = [&](const QueryTreeNodePtr & operand) -> const QueryTreeNodePtrWithHash &
+        {
+            auto it = operand_keys.find(operand.get());
+            if (it == operand_keys.end())
+            {
+                const size_t hash_work_before = getTreeHashWorkCounter();
+                QueryTreeNodePtrWithHash key(operand);
+                it = operand_keys.emplace(operand.get(), OperandKey{std::move(key), getTreeHashWorkCounter() - hash_work_before}).first;
+            }
+            else
+                and_compare_chain_reused_hash_work += it->second.hash_work;
+            return it->second.key;
+        };
+
         enum CompareType
         {
             less = 0,
@@ -2385,14 +2464,13 @@ private:
         /// this AND and could not remove e.g. `x < 3` derived for `(x < 2 AND x < y) AND y < 3`.
         ComparisonFilterMap derived_conjunct_filters;
 
-        auto flattened_and_node = getFlattenedLogicalExpression(function_node, getContext());
-        const auto & arguments = flattened_and_node ? flattened_and_node->getArguments().getNodes()
-                                                    : function_node.getArguments().getNodes();
+        QueryTreeNodes arguments;
+        collectFlattenedLogicalArguments(function_node, function_node.getFunctionName(), arguments);
 
         for (const auto & argument : arguments)
         {
             /// Building these maps inserts every comparison operand into QueryTreeNodePtrWithHash
-            /// containers, and each insert computes a full getTreeHash. A single very large AND chain
+            /// containers, and each insert is charged a full getTreeHash. A single very large AND chain
             /// could hash its whole operand set here before any later (DFS) budget check, so honor the
             /// budget while collecting too -- aborting now only forgoes the optimization (nothing has
             /// been appended to the AND yet), never changes results.
@@ -2432,7 +2510,7 @@ private:
                 chassert(comparison_func);
                 auto normalized = lhs_constant ? flipComparisonFunction(*comparison_func) : *comparison_func;
                 ComparisonFilterInfo seed_filter{constant_node, normalized, argument, {}, 0};
-                addComparisonFilter(derived_conjunct_filters, expression_node, std::move(seed_filter), true, getContext());
+                addComparisonFilter(derived_conjunct_filters, key_of(expression_node), std::move(seed_filter), true, getContext());
             }
 
             /// Comparisons with a constant never cross sources.
@@ -2457,62 +2535,62 @@ private:
             if (function_name == "less")
             {
                 if (rhs->as<ConstantNode>())
-                    greater_constants.insert(rhs);
-                greater_pairs[rhs].push_back({lhs, CompareType::less, comparison_domain, crosses_source});
+                    greater_constants.insert(key_of(rhs));
+                greater_pairs[key_of(rhs)].push_back({lhs, CompareType::less, comparison_domain, crosses_source});
                 if (lhs->as<ConstantNode>())
-                    less_constants.insert(lhs);
-                less_pairs[lhs].push_back({rhs, CompareType::greater, comparison_domain, crosses_source});
+                    less_constants.insert(key_of(lhs));
+                less_pairs[key_of(lhs)].push_back({rhs, CompareType::greater, comparison_domain, crosses_source});
             }
             else if (function_name == "greater")
             {
                 if (lhs->as<ConstantNode>())
-                    greater_constants.insert(lhs);
-                greater_pairs[lhs].push_back({rhs, CompareType::less, comparison_domain, crosses_source});
+                    greater_constants.insert(key_of(lhs));
+                greater_pairs[key_of(lhs)].push_back({rhs, CompareType::less, comparison_domain, crosses_source});
                 if (rhs->as<ConstantNode>())
-                    less_constants.insert(rhs);
-                less_pairs[rhs].push_back({lhs, CompareType::greater, comparison_domain, crosses_source});
+                    less_constants.insert(key_of(rhs));
+                less_pairs[key_of(rhs)].push_back({lhs, CompareType::greater, comparison_domain, crosses_source});
             }
             else if (function_name == "lessOrEquals")
             {
                 if (rhs->as<ConstantNode>())
-                    greater_constants.insert(rhs);
-                greater_pairs[rhs].push_back({lhs, CompareType::lessOrEquals, comparison_domain, crosses_source});
+                    greater_constants.insert(key_of(rhs));
+                greater_pairs[key_of(rhs)].push_back({lhs, CompareType::lessOrEquals, comparison_domain, crosses_source});
                 if (lhs->as<ConstantNode>())
-                    less_constants.insert(lhs);
-                less_pairs[lhs].push_back({rhs, CompareType::greaterOrEquals, comparison_domain, crosses_source});
+                    less_constants.insert(key_of(lhs));
+                less_pairs[key_of(lhs)].push_back({rhs, CompareType::greaterOrEquals, comparison_domain, crosses_source});
             }
             else if (function_name == "greaterOrEquals")
             {
                 if (lhs->as<ConstantNode>())
-                    greater_constants.insert(lhs);
-                greater_pairs[lhs].push_back({rhs, CompareType::lessOrEquals, comparison_domain, crosses_source});
+                    greater_constants.insert(key_of(lhs));
+                greater_pairs[key_of(lhs)].push_back({rhs, CompareType::lessOrEquals, comparison_domain, crosses_source});
                 if (rhs->as<ConstantNode>())
-                    less_constants.insert(rhs);
-                less_pairs[rhs].push_back({lhs, CompareType::greaterOrEquals, comparison_domain, crosses_source});
+                    less_constants.insert(key_of(rhs));
+                less_pairs[key_of(rhs)].push_back({lhs, CompareType::greaterOrEquals, comparison_domain, crosses_source});
             }
             else if (function_name == "equals")
             {
                 if (rhs->as<ConstantNode>())
                 {
-                    greater_constants.insert(rhs);
-                    greater_pairs[rhs].push_back({lhs, CompareType::equals, comparison_domain, crosses_source});
-                    less_constants.insert(rhs);
-                    less_pairs[rhs].push_back({lhs, CompareType::equals, comparison_domain, crosses_source});
+                    greater_constants.insert(key_of(rhs));
+                    greater_pairs[key_of(rhs)].push_back({lhs, CompareType::equals, comparison_domain, crosses_source});
+                    less_constants.insert(key_of(rhs));
+                    less_pairs[key_of(rhs)].push_back({lhs, CompareType::equals, comparison_domain, crosses_source});
                 }
                 else if (lhs->as<ConstantNode>())
                 {
-                    greater_constants.insert(lhs);
-                    greater_pairs[lhs].push_back({rhs, CompareType::equals, comparison_domain, crosses_source});
-                    less_constants.insert(lhs);
-                    less_pairs[lhs].push_back({rhs, CompareType::equals, comparison_domain, crosses_source});
+                    greater_constants.insert(key_of(lhs));
+                    greater_pairs[key_of(lhs)].push_back({rhs, CompareType::equals, comparison_domain, crosses_source});
+                    less_constants.insert(key_of(lhs));
+                    less_pairs[key_of(lhs)].push_back({rhs, CompareType::equals, comparison_domain, crosses_source});
                 }
                 else
                 {
                     /// Bidirection, needs to record visited
-                    greater_pairs[lhs].push_back({rhs, CompareType::equals, comparison_domain, crosses_source});
-                    greater_pairs[rhs].push_back({lhs, CompareType::equals, comparison_domain, crosses_source});
-                    less_pairs[lhs].push_back({rhs, CompareType::equals, comparison_domain, crosses_source});
-                    less_pairs[rhs].push_back({lhs, CompareType::equals, comparison_domain, crosses_source});
+                    greater_pairs[key_of(lhs)].push_back({rhs, CompareType::equals, comparison_domain, crosses_source});
+                    greater_pairs[key_of(rhs)].push_back({lhs, CompareType::equals, comparison_domain, crosses_source});
+                    less_pairs[key_of(lhs)].push_back({rhs, CompareType::equals, comparison_domain, crosses_source});
+                    less_pairs[key_of(rhs)].push_back({lhs, CompareType::equals, comparison_domain, crosses_source});
                 }
             }
         }
@@ -2524,26 +2602,63 @@ private:
         QueryTreeNodePtrWithHashMap<std::unordered_set<const ConstantNode *>> equal_funcs;
 
         /// Conjuncts already present in the AND, used to keep this optimization idempotent: a derived
-        /// transitive conjunct is appended only if an equal one is not already there. The identifier
-        /// resolve cache can hand the same node to several use sites, and the pass visitor is not
-        /// deduplicating, so a shared AND would otherwise accumulate the same derived conjunct once per
-        /// visit and desync from a singly-referenced copy (e.g. a GROUP BY key matched by formatted name).
+        /// transitive conjunct is appended only if an equal one is not already there.
         /// `indexHint(X)` is not interchangeable with plain `X`: a hint dedupes only hint-destined
         /// derivations, while contradictions and cross-source conjuncts must still materialize.
-        QueryTreeNodePtrWithHashSet existing_plain_conjuncts;
-        QueryTreeNodePtrWithHashSet existing_hint_conjuncts;
+        /// A derived conjunct is `comparison(operand, constant)`, so conjuncts of that shape are indexed by operand and
+        /// constant; a bucket then holds only conjuncts that differ in the comparison.
+        using ConjunctIndex = QueryTreeNodePtrWithHashMap<QueryTreeNodePtrWithHashMap<QueryTreeNodes>>;
+        ConjunctIndex existing_plain_conjuncts;
+        ConjunctIndex existing_hint_conjuncts;
+        auto constant_of = [](const QueryTreeNodePtr & conjunct) -> const QueryTreeNodePtr &
+        {
+            return conjunct->as<FunctionNode &>().getArguments().getNodes()[1];
+        };
+        /// Hashing a whole conjunct also visits the comparison node and its parameter and argument lists.
+        static constexpr size_t comparison_node_hash_work = 3;
+        auto contains_conjunct = [&](const ConjunctIndex & index, const QueryTreeNodePtr & operand, const QueryTreeNodePtr & conjunct)
+        {
+            and_compare_chain_reused_hash_work += comparison_node_hash_work;
+            auto it = index.find(key_of(operand));
+            if (it == index.end())
+                return false;
+            auto bucket = it->second.find(constant_of(conjunct));
+            return bucket != it->second.end()
+                && std::ranges::any_of(bucket->second, [&](const auto & existing) { return existing->isEqual(*conjunct); });
+        };
+        auto insert_conjunct = [&](ConjunctIndex & index, const QueryTreeNodePtr & operand, const QueryTreeNodePtr & conjunct)
+        {
+            and_compare_chain_reused_hash_work += comparison_node_hash_work;
+            auto & bucket = index[key_of(operand)][constant_of(conjunct)];
+            if (std::ranges::any_of(bucket, [&](const auto & existing) { return existing->isEqual(*conjunct); }))
+                return false;
+            bucket.push_back(conjunct);
+            return true;
+        };
+        auto index_conjunct = [&](ConjunctIndex & index, const QueryTreeNodePtr & conjunct)
+        {
+            const auto * conjunct_function = conjunct->as<FunctionNode>();
+            if (!conjunct_function)
+                return;
+            auto comparison = toComparisonFunction(conjunct_function->getFunctionName());
+            const auto & conjunct_arguments = conjunct_function->getArguments().getNodes();
+            if (!comparison || *comparison == ComparisonFunction::NOT_EQUALS || conjunct_arguments.size() != 2
+                || !conjunct_arguments[1]->as<ConstantNode>())
+                return;
+            insert_conjunct(index, conjunct_arguments[0], conjunct);
+        };
         for (const auto & argument : function_node.getArguments().getNodes())
         {
-            /// emplace computes getTreeHash for each conjunct; respect the budget here as well.
+            /// Indexing charges the hash of each conjunct's operand; respect the budget here as well.
             if (andCompareChainHashBudgetExceeded())
                 return;
             /// Derived conjuncts sit in the AND wrapped in `indexHint`; compare by the inner node.
             const auto * argument_function = argument->as<FunctionNode>();
             if (argument_function && argument_function->getFunctionName() == "indexHint"
                 && argument_function->getArguments().getNodes().size() == 1)
-                existing_hint_conjuncts.emplace(argument_function->getArguments().getNodes().front());
+                index_conjunct(existing_hint_conjuncts, argument_function->getArguments().getNodes().front());
             else
-                existing_plain_conjuncts.emplace(argument);
+                index_conjunct(existing_plain_conjuncts, argument);
         }
 
         /// Step 2: populate from constants, to generate new comparing pair with constant in one side
@@ -2554,7 +2669,7 @@ private:
                   CompareType type,
                   ComparisonOrderDomain domain)
         {
-            if (auto it = pairs.find(current); it != pairs.end())
+            if (auto it = pairs.find(key_of(current)); it != pairs.end())
             {
                 for (const auto & left : it->second)
                 {
@@ -2565,7 +2680,7 @@ private:
                         continue;
 
                     const auto path_domain = domain.isValid() ? domain : left.domain;
-                    auto & visited_domains = visited[left.node];
+                    auto & visited_domains = visited[key_of(left.node)];
                     if (std::find(visited_domains.begin(), visited_domains.end(), path_domain) != visited_domains.end())
                         continue;
                     visited_domains.push_back(path_domain);
@@ -2574,7 +2689,7 @@ private:
 
                     /// Non-sense to have both sides as constant, and no repeat of equal function
                     if (constant && !left.node->as<ConstantNode>()
-                        && (compare_type != CompareType::equals || equal_funcs[left.node].insert(constant).second))
+                        && (compare_type != CompareType::equals || equal_funcs[key_of(left.node)].insert(constant).second))
                     {
                         String compare_function_name;
                         if (compare_type == CompareType::less)
@@ -2603,8 +2718,8 @@ private:
                         /// A bound that may read the preserved side of an outer join can't leave ON, so it is derived only
                         /// to expose a contradiction with a conjunct already written on that expression.
                         const bool reads_preserved = mayReadPreservedJoinTables(left.node);
-                        if (!existing_plain_conjuncts.contains(QueryTreeNodePtr(and_node))
-                            && (!reads_preserved || derived_conjunct_filters.contains(left.node)))
+                        if (!contains_conjunct(existing_plain_conjuncts, left.node, and_node)
+                            && (!reads_preserved || derived_conjunct_filters.contains(key_of(left.node))))
                         {
                             /// Do not append a derived conjunct implied by an existing or already-derived
                             /// one; contradictions are appended so the next pass folds the AND to `false`.
@@ -2612,10 +2727,10 @@ private:
                             chassert(derived_func);
                             ComparisonFilterInfo derived_filter{constant, *derived_func, and_node, {}, 0};
                             auto add_result = addComparisonFilter(
-                                derived_conjunct_filters, left.node, std::move(derived_filter), true, getContext());
+                                derived_conjunct_filters, key_of(left.node), std::move(derived_filter), true, getContext());
                             if (add_result == AddComparisonFilterResult::ALWAYS_FALSE)
                             {
-                                existing_plain_conjuncts.emplace(and_node);
+                                insert_conjunct(existing_plain_conjuncts, left.node, and_node);
                                 function_node.getArguments().getNodes().push_back(and_node);
                             }
                             else if (add_result != AddComparisonFilterResult::ALWAYS_TRUE && !reads_preserved)
@@ -2624,10 +2739,10 @@ private:
                                 {
                                     /// Derived across a join: the only conjunct pushable to the other
                                     /// side (e.g. it shrinks a hash join build side), keep it executable.
-                                    existing_plain_conjuncts.emplace(and_node);
+                                    insert_conjunct(existing_plain_conjuncts, left.node, and_node);
                                     function_node.getArguments().getNodes().push_back(and_node);
                                 }
-                                else if (!join_left_side_preserved && existing_hint_conjuncts.emplace(and_node).second)
+                                else if (!join_left_side_preserved && insert_conjunct(existing_hint_conjuncts, left.node, and_node))
                                 {
                                     /// Within one source it filters nothing beyond the original chain,
                                     /// so add it as `indexHint`: it still prunes, but does not execute.
