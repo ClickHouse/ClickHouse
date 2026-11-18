@@ -150,3 +150,26 @@ SELECT count() FROM t_prewhere_cost_lc_cast WHERE toLowCardinality(s) = 'k1' AND
 SELECT count() FROM t_prewhere_cost_lc_cast WHERE toLowCardinality(s) = 'k1' AND w < 3000000000 SETTINGS allow_reorder_prewhere_conditions = 0;
 
 DROP TABLE t_prewhere_cost_lc_cast;
+
+DROP TABLE IF EXISTS t_prewhere_cost_join;
+DROP TABLE IF EXISTS t_prewhere_cost_join_attr;
+CREATE TABLE t_prewhere_cost_join_attr (k LowCardinality(String), v LowCardinality(String)) ENGINE = Join(ANY, LEFT, k) SETTINGS join_use_nulls = 0;
+INSERT INTO t_prewhere_cost_join_attr SELECT concat('v', toString(number)), concat('w', toString(number)) FROM numbers(30);
+CREATE TABLE t_prewhere_cost_join (lc LowCardinality(String) CODEC(NONE), w UInt32 CODEC(NONE))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = 'basic, uniq_v2';
+INSERT INTO t_prewhere_cost_join SELECT concat('v', toString(cityHash64(number, 9) % 30)), toUInt32(cityHash64(number, 10)) FROM numbers(200000);
+OPTIMIZE TABLE t_prewhere_cost_join FINAL;
+
+SELECT '-- a function that does not run on the dictionary is charged for its values';
+SELECT position(explain, 'less(') > 0 AND position(explain, 'less(') < position(explain, 'joinGet(')
+FROM (
+    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_join WHERE joinGet('t_prewhere_cost_join_attr', 'v', lc) = 'w1' AND w < 3000000000
+    SETTINGS min_marks_per_part_to_load_statistics = 0
+) WHERE explain LIKE '%Prewhere filter column%';
+
+SELECT count() FROM t_prewhere_cost_join WHERE joinGet('t_prewhere_cost_join_attr', 'v', lc) = 'w1' AND w < 3000000000;
+SELECT count() FROM t_prewhere_cost_join WHERE joinGet('t_prewhere_cost_join_attr', 'v', lc) = 'w1' AND w < 3000000000 SETTINGS allow_reorder_prewhere_conditions = 0;
+
+DROP TABLE t_prewhere_cost_join;
+DROP TABLE t_prewhere_cost_join_attr;

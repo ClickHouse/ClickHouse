@@ -11,6 +11,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
@@ -77,7 +78,7 @@ double approximateBytesPerValueForType(const IDataType & type)
 }
 
 /// Adds the bytes per row produced by the functions in `node` that depend on a column, each node once.
-/// A function with a `LowCardinality` argument and result runs on the dictionary and produces only an index per row.
+/// A function that the default `LowCardinality` implementation runs on the dictionary produces only an index per row.
 bool addBytesPerRowOfFunctions(
     const ActionsDAG::Node & node, UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool> & visited, double & bytes)
 {
@@ -93,7 +94,10 @@ bool addBytesPerRowOfFunctions(
 
     if (depends_on_column && node.type == ActionsDAG::ActionType::FUNCTION)
     {
-        const bool runs_on_dictionary = node.result_type->lowCardinality()
+        const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get());
+        const IFunction * function = adaptor ? adaptor->getFunction().get() : nullptr;
+        const bool runs_on_dictionary = node.result_type->lowCardinality() && function
+            && function->useDefaultImplementationForLowCardinalityColumns() && function->isDeterministicInScopeOfQuery()
             && std::ranges::any_of(node.children, [](const ActionsDAG::Node * child) { return child->result_type->lowCardinality(); });
         bytes += runs_on_dictionary ? 1 : approximateBytesPerValueForType(*removeLowCardinality(node.result_type));
     }
