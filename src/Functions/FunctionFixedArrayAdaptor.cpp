@@ -17,29 +17,29 @@ class ExecutableFunctionFixedArrayAdaptor final : public IExecutableFunction
 public:
     explicit ExecutableFunctionFixedArrayAdaptor(ExecutableFunctionPtr function_) : function(std::move(function_)) {}
 
-    String getName() const override { return function->getName(); }
+    [[nodiscard]] String getName() const override { return function->getName(); }
 
 protected:
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return execute(arguments, result_type, input_rows_count, false);
     }
 
-    ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return execute(arguments, result_type, input_rows_count, true);
     }
 
     /// The default implementations are applied by the wrapped function to the converted arguments.
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    bool useDefaultImplementationForSparseColumns() const override { return false; }
-    bool useDefaultImplementationForReplicatedColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForSparseColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForReplicatedColumns() const override { return false; }
 
 private:
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+    [[nodiscard]] ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
     {
         auto converted = FunctionBaseFixedArrayAdaptor::convertArguments(arguments);
         return function->execute(converted ? *converted : arguments, result_type, input_rows_count, dry_run);

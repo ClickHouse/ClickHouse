@@ -18,9 +18,9 @@ namespace ErrorCodes
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
-SerializationFixedArray::SerializationFixedArray(const SerializationPtr & nested_, size_t n_)
+SerializationFixedArray::SerializationFixedArray(const SerializationPtr & nested_, const DataTypePtr & nested_type_, size_t n_)
     : nested(nested_)
-    , array_serialization(std::static_pointer_cast<const SerializationArray>(SerializationArray::create(nested_)))
+    , array_serialization(std::static_pointer_cast<const SerializationArray>(SerializationArray::create(nested_, nested_type_)))
     , n(n_)
     , nested_supports_pooling(nested_->supportsPooling())
 {
@@ -35,11 +35,11 @@ UInt128 SerializationFixedArray::getHash(const SerializationPtr & nested_, size_
     return hash.get128();
 }
 
-SerializationPtr SerializationFixedArray::create(const SerializationPtr & nested_, size_t n_)
+SerializationPtr SerializationFixedArray::create(const SerializationPtr & nested_, const DataTypePtr & nested_type_, size_t n_)
 {
     if (!nested_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationFixedArray(nested_, n_));
-    return ISerialization::pooled(getHash(nested_, n_), [&] { return new SerializationFixedArray(nested_, n_); });
+        return std::shared_ptr<ISerialization>(new SerializationFixedArray(nested_, nested_type_, n_));
+    return ISerialization::pooled(getHash(nested_, n_), [&] { return new SerializationFixedArray(nested_, nested_type_, n_); });
 }
 
 
@@ -162,9 +162,9 @@ DataTypePtr SerializationFixedArray::SubcolumnCreator::create(const DataTypePtr 
     return std::make_shared<DataTypeFixedArray>(n, prev);
 }
 
-SerializationPtr SerializationFixedArray::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
+SerializationPtr SerializationFixedArray::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr & prev_type) const
 {
-    return SerializationFixedArray::create(prev, n);
+    return SerializationFixedArray::create(prev, prev_type, n);
 }
 
 ColumnPtr SerializationFixedArray::SubcolumnCreator::create(const ColumnPtr & prev) const

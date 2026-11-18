@@ -113,7 +113,7 @@ public:
     /// The functions that map every element to a new one (`arrayMap`) return `FixedArray` of the same size.
     static constexpr bool keeps_fixed_array_size = requires { Impl::keeps_fixed_array_size; };
 
-    bool useDefaultImplementationForFixedArray() const override { return false; }
+    [[nodiscard]] [[nodiscard]] bool useDefaultImplementationForFixedArray() const override { return false; }
 
     void getLambdaArgumentTypes(DataTypes & arguments) const override
     {
@@ -125,7 +125,7 @@ public:
         arguments[0] = arguments_without_fixed_array[0];
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto return_type = getReturnTypeForArrays(removeFixedArrayFromArguments(arguments));
         if (auto size = getSizeOfFixedArrayResult(arguments))
@@ -144,7 +144,7 @@ private:
     }
 
     /// The result is `FixedArray` if the function keeps the size and all the arrays are `FixedArray` of the same size.
-    std::optional<size_t> getSizeOfFixedArrayResult(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] [[nodiscard]] std::optional<size_t> getSizeOfFixedArrayResult(const ColumnsWithTypeAndName & arguments) const
     {
         if constexpr (!keeps_fixed_array_size)
             return {};
@@ -395,14 +395,18 @@ public:
 private:
     [[nodiscard]] ColumnPtr executeImplCommon(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
     {
-        auto result = executeForArrays(removeFixedArrayFromArguments(arguments), dry_run);
-
         /// Only the functions that keep the size return `FixedArray` instead of `Array`. The result type of other
         /// functions can also be `FixedArray`, e.g. `arrayLast` for `FixedArray(M, FixedArray(N, T))` returns an element,
         /// and then the result column is already a `ColumnFixedArray`.
-        if (auto size = getSizeOfFixedArrayResult(arguments))
+        auto size = getSizeOfFixedArrayResult(arguments);
+        DataTypePtr result_type_for_arrays = result_type;
+        if (size)
+            result_type_for_arrays = std::make_shared<DataTypeArray>(assert_cast<const DataTypeFixedArray &>(*result_type).getNestedType());
+
+        auto result = executeForArrays(removeFixedArrayFromArguments(arguments), result_type_for_arrays, dry_run);
+
+        if (size)
         {
-            chassert(typeid_cast<const DataTypeFixedArray *>(result_type.get()));
             const auto & result_array = assert_cast<const ColumnArray &>(*result);
             chassert(result_array.size() == input_rows_count);
             return ColumnFixedArray::create(result_array.getDataPtr(), *size);
@@ -410,7 +414,7 @@ private:
         return result;
     }
 
-    [[nodiscard]] ColumnPtr executeForArrays(const ColumnsWithTypeAndName & arguments, bool dry_run) const
+    [[nodiscard]] ColumnPtr executeForArrays(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, bool dry_run) const
     {
         if (arguments.size() == 1 + num_fixed_params)
         {

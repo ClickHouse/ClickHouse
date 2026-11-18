@@ -74,7 +74,7 @@ struct EinsumSpec
     VectorWithMemoryTracking<size_t> contracted;
     VectorWithMemoryTracking<char> letters;
 
-    size_t numIndices() const { return letters.size(); }
+    [[nodiscard]] size_t numIndices() const { return letters.size(); }
 };
 
 EinsumSpec parseEinsumSpec(std::string_view str)
@@ -261,8 +261,8 @@ struct TensorRows
 
     static constexpr UInt64 unknown_size = std::numeric_limits<UInt64>::max();
 
-    size_t row(size_t i) const { return is_const ? 0 : i; }
-    const UInt64 * rowDims(size_t i) const { return dims.data() + row(i) * rank; }
+    [[nodiscard]] size_t row(size_t i) const { return is_const ? 0 : i; }
+    [[nodiscard]] const UInt64 * rowDims(size_t i) const { return dims.data() + row(i) * rank; }
 };
 
 TensorRows getTensorRows(const ColumnPtr & column, size_t rank, size_t input_rows_count, size_t argument_index, std::string_view function_name)
@@ -680,7 +680,7 @@ private:
     /// if and only if the tensor does not have it.
     static bool isUsed(const StridedTensor<T> & tensor, size_t index) { return tensor.strides[index] != 0; }
 
-    size_t product(const VectorWithMemoryTracking<size_t> & indices) const
+    [[nodiscard]] size_t product(const VectorWithMemoryTracking<size_t> & indices) const
     {
         size_t res = 1;
         for (size_t index : indices)
@@ -688,7 +688,7 @@ private:
         return res;
     }
 
-    VectorWithMemoryTracking<size_t> contiguousStrides(const VectorWithMemoryTracking<size_t> & indices) const
+    [[nodiscard]] VectorWithMemoryTracking<size_t> contiguousStrides(const VectorWithMemoryTracking<size_t> & indices) const
     {
         VectorWithMemoryTracking<size_t> strides(sizes.size(), 0);
         size_t stride = 1;
@@ -701,7 +701,7 @@ private:
     }
 
     /// Whether the tensor already has the layout of a contiguous tensor with `indices`.
-    bool isContiguous(const StridedTensor<T> & tensor, const VectorWithMemoryTracking<size_t> & indices) const
+    [[nodiscard]] bool isContiguous(const StridedTensor<T> & tensor, const VectorWithMemoryTracking<size_t> & indices) const
     {
         auto expected = contiguousStrides(indices);
         for (size_t index = 0; index < sizes.size(); ++index)
@@ -879,15 +879,15 @@ public:
     static constexpr auto name = "einsum";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionEinsum>(); }
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isHigherOrderFunction() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isHigherOrderFunction() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     /// The tensors are processed directly, the sizes of FixedArray determine the type of the result.
-    bool useDefaultImplementationForFixedArray() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForFixedArray() const override { return false; }
 
     void getLambdaArgumentTypes(DataTypes & arguments) const override
     {
@@ -921,12 +921,12 @@ public:
         arguments[1] = std::make_shared<DataTypeFunction>(element_types);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         return analyze(arguments).result_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         EinsumSignature signature = analyze(arguments);
         size_t first_tensor = signature.has_combiner ? 2 : 1;
@@ -954,7 +954,7 @@ public:
     }
 
 private:
-    EinsumSignature analyze(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] EinsumSignature analyze(const ColumnsWithTypeAndName & arguments) const
     {
         if (arguments.size() < 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -1066,7 +1066,7 @@ private:
 
     /// The products of numbers. `T` is the type of the result, `ComputeT` is the type in which it is calculated.
     template <typename T, typename ComputeT>
-    ColumnPtr executeNumeric(
+    [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] ColumnPtr executeNumeric(
         const EinsumSignature & signature,
         const VectorWithMemoryTracking<TensorRows> & tensors,
         size_t input_rows_count) const
@@ -1116,7 +1116,7 @@ private:
     /** The generic implementation: the elements of the tensors are gathered for blocks of terms,
       * then the combiner is applied to them (if any), and the results are summed over the contracted indices (if any).
       */
-    ColumnPtr executeGeneric(
+    [[nodiscard]] ColumnPtr executeGeneric(
         const EinsumSignature & signature,
         const ColumnsWithTypeAndName & arguments,
         const VectorWithMemoryTracking<TensorRows> & tensors,

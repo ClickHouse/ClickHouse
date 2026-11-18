@@ -24,11 +24,11 @@ private:
     size_t n;
     bool nested_supports_pooling;
 
-    SerializationFixedArray(const SerializationPtr & nested_, size_t n_);
+    SerializationFixedArray(const SerializationPtr & nested_, const DataTypePtr & nested_type_, size_t n_);
 
 public:
     static UInt128 getHash(const SerializationPtr & nested_, size_t n_);
-    static SerializationPtr create(const SerializationPtr & nested_, size_t n_);
+    static SerializationPtr create(const SerializationPtr & nested_, const DataTypePtr & nested_type_, size_t n_);
     bool supportsPooling() const override { return nested_supports_pooling; }
 
     const SerializationPtr & getNestedSerialization() const { return nested; }
@@ -97,9 +97,9 @@ public:
 
         explicit SubcolumnCreator(size_t n_) : n(n_) {}
 
-        DataTypePtr create(const DataTypePtr & prev) const override;
-        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
-        ColumnPtr create(const ColumnPtr & prev) const override;
+        [[nodiscard]] [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override;
+        [[nodiscard]] [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
+        [[nodiscard]] [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override;
     };
 };
 
