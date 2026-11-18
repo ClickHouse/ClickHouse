@@ -52,7 +52,7 @@ struct ConditionList
     std::vector<const ActionsDAG::Node *> existing_nodes;
     std::vector<ConditionList> subconditions;
 
-    bool assumedTrue() const
+    [[nodiscard]] bool assumedTrue() const
     {
         return existing_nodes.empty() &&
             (subconditions.empty() || (subconditions.size() == 1 && subconditions.front().assumedTrue()));

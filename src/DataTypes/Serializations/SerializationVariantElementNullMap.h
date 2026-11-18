@@ -101,9 +101,9 @@ public:
             ColumnVariant::Discriminator local_variant_discriminator_,
             size_t num_variants_ = 0);
 
-        DataTypePtr create(const DataTypePtr & prev) const override;
-        ColumnPtr create(const ColumnPtr & prev) const override;
-        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
+        [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override;
+        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override;
+        [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
     };
 private:
     [[noreturn]] static void throwNoSerialization()

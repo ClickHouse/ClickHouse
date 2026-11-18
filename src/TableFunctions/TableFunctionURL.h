@@ -45,9 +45,7 @@ public:
     NameSet getVirtualsToCheckBeforeUsingStructureHint() const override;
     bool hasStaticStructure() const override;
     bool hasUnreplicatedTableDataOnDisk() const override;
-    void setPartitionBy(const ASTPtr & partition_by_) override;
 
-    /// `skip_not_overridable`: do not add a key that the named collection does not allow to override.
     static void updateStructureAndFormatArgumentsIfNeeded(
         ASTs & args,
         const String & structure_,
@@ -55,14 +53,14 @@ public:
         const ContextPtr & context,
         bool with_structure,
         bool is_replayed_definition = false,
-        bool skip_not_overridable = false)
+        bool replace_not_overridable = false)
     {
         if (auto collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, nullptr, is_replayed_definition))
         {
             /// In case of named collection, just add key-value pairs "format='...', structure='...'"
             /// at the end of arguments to override existed format and structure with "auto" values.
             addInferredFormatAndStructureToNamedCollectionArgs(
-                args, *collection, format_, structure_, with_structure, skip_not_overridable);
+                args, *collection, format_, structure_, with_structure, /* skip_not_overridable= */ !replace_not_overridable);
         }
         else
         {
@@ -102,9 +100,8 @@ protected:
     String delegate_function_uri;
     /// Whether the URL argument was a relative reference resolved against the `url_base` setting.
     bool is_relative_url = false;
-    /// Whether the named collection locks `structure`: the nodes of a cluster without a secret then infer it,
-    /// so the initiator does as well.
-    bool structure_not_overridable = false;
+    /// Whether the structure is a `NOT OVERRIDABLE` "auto" of a named collection, so it is sent only to the nodes of a cluster with a secret.
+    bool is_structure_not_overridable = false;
 
 private:
     /// Build `delegate` for a non-URL scheme target by constructing and parsing the delegate

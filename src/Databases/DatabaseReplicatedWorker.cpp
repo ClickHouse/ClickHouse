@@ -1,4 +1,5 @@
 #include <Databases/DatabaseReplicatedWorker.h>
+#include <base/scope_guard.h>
 #include <base/sleep.h>
 
 #include <filesystem>
@@ -20,6 +21,7 @@
 #include <Parsers/ASTRenameQuery.h>
 
 #include <algorithm>
+#include <IO/ReadHelpers.h>
 
 namespace fs = std::filesystem;
 
@@ -54,6 +56,7 @@ namespace FailPoints
     extern const char database_replicated_delay_recovery[];
     extern const char database_replicated_delay_entry_execution[];
     extern const char database_replicated_stop_entry_execution[];
+    extern const char database_replicated_pause_before_initial_query_execution[];
 }
 
 namespace
@@ -202,7 +205,33 @@ void DatabaseReplicatedDDLWorker::shutdown()
     active_node_holder.reset();
     active_node_holder_zookeeper.reset();
 
+    /// Waiters in `tryEnqueueAndExecuteEntry` and `waitForReplicaToProcessAllEntries` (which may outlive the
+    /// shutdown, holding a reference to this worker) check `stop_flag` under `mutex`. Taking it before notifying
+    /// guarantees that each of them either sees the flag or receives the notification.
+    {
+        std::lock_guard lock{mutex};
+        for (const auto & event : log_ptr_waiters)
+            event->set();
+    }
     wait_current_task_change.notify_all();
+}
+
+void DatabaseReplicatedDDLWorker::stopInitialQueries()
+{
+    {
+        std::lock_guard lock{mutex};
+        initial_queries_stopped = true;
+    }
+    wait_current_task_change.notify_all();
+}
+
+void DatabaseReplicatedDDLWorker::waitForForegroundTasks()
+{
+    std::unique_lock lock{mutex};
+    chassert(stop_flag || initial_queries_stopped);
+    if (foreground_tasks)
+        LOG_TRACE(log, "Waiting for {} admitted initial queries", foreground_tasks);
+    foreground_tasks_finished.wait(lock, [&] { return foreground_tasks == 0; });
 }
 
 void DatabaseReplicatedDDLWorker::initializeReplication()
@@ -407,19 +436,31 @@ bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeo
             return zookeeper->expired() || current_task >= max_log || stop_flag;
         });
 
-        if (!processed)
+        if (!processed || stop_flag)
             return false;
     }
 
-    /// Lets now wait for max_log_ptr to be processed
-    Coordination::Stat stat;
+    /// Lets now wait for max_log_ptr to be processed.
+    /// The event is set either by the watch or by `shutdown`, so a stopped worker does not wait for the whole timeout.
     auto event_ptr = std::make_shared<Poco::Event>();
+    {
+        std::lock_guard lock{mutex};
+        if (stop_flag)
+            return false;
+        log_ptr_waiters.insert(event_ptr);
+    }
+    SCOPE_EXIT({
+        std::lock_guard lock{mutex};
+        log_ptr_waiters.erase(event_ptr);
+    });
+
+    Coordination::Stat stat;
     auto new_log = zookeeper->get(our_log_ptr_path, &stat, event_ptr);
 
     if (new_log == toString(max_log_ptr))
         return true;
 
-    return event_ptr->tryWait(timeout_ms);
+    return event_ptr->tryWait(timeout_ms) && !stop_flag;
 }
 
 
@@ -526,9 +567,9 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
         {
             chassert(zookeeper->expired() || current_task <= entry_name);
 
-            if (zookeeper->expired() || stop_flag)
+            if (zookeeper->expired() || stop_flag || initial_queries_stopped)
             {
-                LOG_TRACE(log, "Not enqueueing query: {}", stop_flag ? "replication stopped" : "ZooKeeper session expired");
+                LOG_TRACE(log, "Not enqueueing query: {}", zookeeper->expired() ? "ZooKeeper session expired" : "replication stopped");
                 throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "ZooKeeper session expired or replication stopped, try again");
             }
 
@@ -544,7 +585,20 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
         if (!processed)
             throw Exception(ErrorCodes::UNFINISHED, "Timeout: Cannot enqueue query on this replica, "
                             "most likely because replica is busy with previous queue entries");
+
+        /// The predicate above has checked `stop_flag` and `initial_queries_stopped` under `mutex`,
+        /// so `waitForForegroundTasks` will wait for this query.
+        ++foreground_tasks;
     }
+
+    SCOPE_EXIT({
+        std::lock_guard lock{mutex};
+        --foreground_tasks;
+        if (foreground_tasks == 0)
+            foreground_tasks_finished.notify_all();
+    });
+
+    FailPointInjection::pauseFailPoint(FailPoints::database_replicated_pause_before_initial_query_execution);
 
     if (entry.parent_table_uuid.has_value() && !checkParentTableExists(entry.parent_table_uuid.value()))
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Parent table doesn't exist");

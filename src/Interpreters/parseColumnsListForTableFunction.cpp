@@ -281,6 +281,30 @@ NameSet getStorageColumnsReadByDefault(const ColumnsDescription & columns, const
     return storage_reads;
 }
 
+void removeMisboundDefaultsFromStructureHint(
+    ColumnsDescription & structure_hint, const NameToNameSetMap & insertion_columns_by_hint_column, const ColumnsDescription & insertion_columns)
+{
+    std::unordered_map<String, NameSet> reads;
+    for (const auto & column : structure_hint)
+        if (column.default_desc.expression)
+            reads.emplace(column.name, getStorageColumnsReadByDefault(structure_hint, column));
+
+    NameSet removed;
+    for (const auto & [name, required] : reads)
+    {
+        if (std::ranges::any_of(required, [&](const String & read)
+            {
+                auto it = insertion_columns_by_hint_column.find(read);
+                return it != insertion_columns_by_hint_column.end() && !it->second.contains(read)
+                    && insertion_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, read);
+            }))
+            removed.insert(name);
+    }
+
+    for (const auto & name : removed)
+        structure_hint.modify(name, [](ColumnDescription & column) { column.default_desc = {}; });
+}
+
 String getStructureToSend(const ColumnsDescription & columns, const ColumnsDescription * insertion_columns)
 {
     const auto names = columns.getAll().getNameSet();
@@ -328,38 +352,6 @@ String getStructureToSend(const ColumnsDescription & columns, const ColumnsDescr
         }
     }
     return buf.str();
-}
-
-void removeMisboundDefaultsFromStructureHint(
-    ColumnsDescription & structure_hint, const NameToNameSetMap & insertion_columns_by_hint_column, const ColumnsDescription & insertion_columns)
-{
-    std::unordered_map<String, NameSet> reads;
-    for (const auto & column : structure_hint)
-        if (column.default_desc.expression)
-            reads.emplace(column.name, getStorageColumnsReadByDefault(structure_hint, column));
-
-    NameSet removed;
-    for (const auto & [name, required] : reads)
-    {
-        if (std::ranges::any_of(required, [&](const String & read)
-            {
-                auto it = insertion_columns_by_hint_column.find(read);
-                return it != insertion_columns_by_hint_column.end() && !it->second.contains(read)
-                    && insertion_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, read);
-            }))
-            removed.insert(name);
-    }
-
-    for (bool changed = !removed.empty(); changed;)
-    {
-        changed = false;
-        for (const auto & [name, required] : reads)
-            if (!removed.contains(name) && std::ranges::any_of(required, [&](const String & read) { return removed.contains(read); }))
-                changed |= removed.insert(name).second;
-    }
-
-    for (const auto & name : removed)
-        structure_hint.modify(name, [](ColumnDescription & column) { column.default_desc = {}; });
 }
 
 }

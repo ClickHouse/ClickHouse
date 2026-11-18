@@ -50,29 +50,28 @@ public:
 
     StorageHDFSConfiguration() = default;
 
-    ObjectStorageType getType() const override { return type; }
-    std::string getTypeName() const override { return type_name; }
-    std::string getEngineName() const override { return engine_name; }
+    [[nodiscard]] ObjectStorageType getType() const override { return type; }
+    [[nodiscard]] std::string getTypeName() const override { return type_name; }
+    [[nodiscard]] std::string getEngineName() const override { return engine_name; }
 
-    bool supportsPartialPathPrefix() const override { return false; }
+    [[nodiscard]] bool supportsPartialPathPrefix() const override { return false; }
 
     /// Unlike s3 and azure, which are object storages,
     /// hdfs is a filesystem, so it cannot list files by partial prefix,
     /// only by directory.
     /// Therefore in the below methods we use supports_partial_prefix=false.
-    Path getRawPath() const override { return path; }
+    [[nodiscard]] Path getRawPath() const override { return path; }
     void setRawPath(const Path & p) override { path = p; }
-    const String & getRawURI() const override { return url; }
+    [[nodiscard]] const String & getRawURI() const override { return url; }
+    /// The raw URI is only the authority, so grants never filter paths, and any path is checked as the authority.
+    [[nodiscard]] String getURIForAccessCheck(const String & /*write_path*/) const override { return url; }
 
-    const Paths & getPaths() const override { return paths; }
-    void setPaths(const Paths & paths_) override
-    {
-        paths = paths_;
-    }
+    [[nodiscard]] String getNamespace() const override { return ""; }
+    [[nodiscard]] String getDataSourceDescription() const override { return url; }
 
-    String getNamespace() const override { return ""; }
-    String getDataSourceDescription() const override { return url; }
-    StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
+    /// The object storages created from now on reject writes and removals.
+    void setReadOnly() { read_only = true; }
+    [[nodiscard]] StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
     void check(ContextPtr context) override;
 
@@ -86,6 +85,13 @@ public:
         bool with_structure,
         bool skip_not_overridable) override;
 
+protected:
+    const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return paths; }
+    void setPathsImpl(const Paths & paths_) override TSA_REQUIRES(paths_mutex)
+    {
+        paths = paths_;
+    }
+
 private:
     void initializeFromParsedArguments(const HDFSStorageParsedArguments & parsed_arguments);
     void setURL(const std::string & url_);
@@ -95,7 +101,8 @@ private:
 
     String url;
     Path path;
-    Paths paths;
+    Paths paths TSA_GUARDED_BY(paths_mutex);
+    bool read_only = false;
 };
 }
 

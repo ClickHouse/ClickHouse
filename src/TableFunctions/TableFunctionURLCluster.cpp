@@ -60,9 +60,7 @@ StoragePtr TableFunctionURLCluster::getStorage(
         format,
         compression_method,
         StorageID(getDatabaseName(), table_name),
-        columns.empty() || (structure_not_overridable && !send_not_overridable)
-            ? getActualTableStructure(context, true)
-            : columns,
+        is_structure_not_overridable && !send_not_overridable ? ColumnsDescription{} : columns,
         ConstraintsDescription{},
         configuration,
         send_not_overridable);

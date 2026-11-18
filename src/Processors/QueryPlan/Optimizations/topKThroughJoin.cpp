@@ -145,6 +145,8 @@ bool joinDefeatsReadInOrderThroughJoin(const IQueryPlanStep & step)
     }
     if (const auto * logical = typeid_cast<const JoinStepLogical *>(&step))
     {
+        if (logical->getPlannedAlgorithm() == JoinAlgorithm::FULL_SORTING_MERGE)
+            return true;
         return std::ranges::any_of(logical->getJoinSettings().join_algorithms, [](JoinAlgorithm a)
         {
             return a == JoinAlgorithm::PARTIAL_MERGE
@@ -469,9 +471,12 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     join_node->children[preserved_idx] = &new_limit_node;
 
-    /// Re-run optimizations on the modified subtree so the inserted Sort+Limit can
+    /// Re-run optimizations down to the inserted Limit so it can
     /// be picked up by tryOptimizeTopK / tryPushDownLimit etc.
-    return 3;
+    size_t depth = 2;
+    for (const auto * node = parent_node; node != join_node; node = node->children.front())
+        ++depth;
+    return depth;
 }
 
 }
