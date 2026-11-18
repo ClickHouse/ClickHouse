@@ -733,8 +733,8 @@ void StorageMaterializedView::checkTableSizeBelowDropLimit(ContextPtr query_cont
 
     for (const StorageID & inner_id : to_check)
     {
-        /// On a race (e.g. `SYSTEM RESTART REPLICA` detached the inner table),
-        /// `dropInnerTableIfAny` is a no-op too, so we mirror its tolerance.
+        /// The guard makes a `SYSTEM RESTART REPLICA` of the inner table finish first, as its drop does.
+        auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(inner_id.database_name, inner_id.table_name, nullptr);
         if (auto inner = DatabaseCatalog::instance().tryGetTable(inner_id, getContext()))
             inner->checkTableSizeBelowDropLimit(query_context);
     }

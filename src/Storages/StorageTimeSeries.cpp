@@ -379,6 +379,22 @@ Strings StorageTimeSeries::getInnerTableNames(ViewTarget::Kind target_kind) cons
 }
 
 
+std::vector<StorageID> StorageTimeSeries::getInnerTableIDs(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool with_not_attached) const
+{
+    if (auto inner_table_id = tryGetTargetTableID(target_kind, local_context))
+        return {inner_table_id};
+
+    std::vector<StorageID> inner_table_ids;
+    if (with_not_attached)
+    {
+        auto table_id = getStorageID();
+        for (const auto & name : getInnerTableNames(target_kind))
+            inner_table_ids.emplace_back(table_id.database_name, name);
+    }
+    return inner_table_ids;
+}
+
+
 StorageID StorageTimeSeries::getTargetTableID(ViewTarget::Kind target_kind, const ContextPtr & local_context) const
 {
     return getTargetTable(target_kind, local_context)->getStorageID();
@@ -514,24 +530,12 @@ void StorageTimeSeries::dropInnerTables(bool sync, ContextPtr local_context, boo
     if (!hasInnerTables())
         return;
 
-    auto table_id = getStorageID();
     for (auto target_kind : getTargetKinds())
     {
         if (isInnerTable(target_kind))
         {
-            std::vector<StorageID> inner_table_ids;
-            if (auto inner_table_id = tryGetTargetTableID(target_kind, local_context))
-            {
-                inner_table_ids.push_back(std::move(inner_table_id));
-            }
             /// A table that is not attached, e.g. during `SYSTEM RESTART REPLICA`, is guarded by every name it may have.
-            else if (need_ddl_guard)
-            {
-                for (const auto & name : getInnerTableNames(target_kind))
-                    inner_table_ids.emplace_back(table_id.database_name, name);
-            }
-
-            for (const auto & inner_table_id : inner_table_ids)
+            for (const auto & inner_table_id : getInnerTableIDs(target_kind, local_context, /* with_not_attached= */ need_ddl_guard))
                 InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id,
                                                        sync, /* ignore_sync_setting= */ true, need_ddl_guard);
         }
@@ -548,8 +552,13 @@ void StorageTimeSeries::checkTableSizeBelowDropLimit(ContextPtr query_context) c
         if (!isInnerTable(target_kind))
             continue;
 
-        if (auto inner_table = tryGetTargetTable(target_kind, query_context))
-            inner_table->checkTableSizeBelowDropLimit(query_context);
+        for (const auto & inner_table_id : getInnerTableIDs(target_kind, query_context, /* with_not_attached= */ true))
+        {
+            /// The guard makes a `SYSTEM RESTART REPLICA` of the inner table finish first, as its drop does.
+            auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(inner_table_id.database_name, inner_table_id.table_name, nullptr);
+            if (auto inner_table = DatabaseCatalog::instance().tryGetTable(inner_table_id, query_context))
+                inner_table->checkTableSizeBelowDropLimit(query_context);
+        }
     }
 }
 
