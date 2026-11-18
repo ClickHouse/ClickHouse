@@ -3,7 +3,9 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/String.h>
+#include <Poco/URI.h>
 #include <algorithm>
 #include <cctype>
 
@@ -50,6 +52,37 @@ void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) con
             if (re2::RE2::FullMatch(normalized_name, *header_regex))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
                                                         "see <http_forbid_headers>", entry.name);
+    }
+}
+
+void HTTPHeaderFilter::checkBasicCredentials(const Poco::Net::HTTPBasicCredentials & credentials) const
+{
+    if (credentials.getUsername().empty())
+        return;
+
+    checkAuthorizationHeader("Basic authentication credentials, for example the userinfo of a URL, are sent in this header");
+}
+
+void HTTPHeaderFilter::checkURIUserInfo(const Poco::URI & uri) const
+{
+    if (uri.getUserInfo().empty())
+        return;
+
+    checkAuthorizationHeader("The userinfo of the URL is sent in this header as Basic authentication credentials");
+}
+
+void HTTPHeaderFilter::checkAuthorizationHeader(const std::string & reason) const
+{
+    /// A forbidden header is matched by name, and a Base64 value has no CR or LF, so a placeholder value suffices.
+    HTTPHeaderEntries entries{{"Authorization", "Basic"}};
+    try
+    {
+        checkAndNormalizeHeaders(entries);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(reason);
+        throw;
     }
 }
 
