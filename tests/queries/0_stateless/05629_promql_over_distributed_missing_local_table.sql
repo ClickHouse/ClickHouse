@@ -74,6 +74,16 @@ SELECT count() FROM t_saved_replicas SETTINGS skip_unavailable_shards = 1, skip_
 DESCRIBE cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain)) SETTINGS use_hedged_requests = 0;
 SELECT count() FROM cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain)) SETTINGS use_hedged_requests = 0;
 
+SELECT '--- a timeSeriesSelector inside cluster() is not looked up on the initiator, a shard without the table is left out or skipped';
+SELECT count() FROM cluster('test_cluster_one_shard_local_and_remote_replica', timeSeriesSelector('ts_local', 'm', 0, 140, 'timestamp_and_value'))
+SETTINGS prefer_localhost_replica = 1, serialize_query_plan = 0;
+SELECT count() FROM cluster('test_cluster_two_shards_different_databases_with_local', timeSeriesSelector('ts_local', 'm', 0, 140, 'timestamp_and_value'))
+SETTINGS skip_unavailable_shards = 1, serialize_query_plan = 0;
+SELECT count() FROM cluster('test_cluster_two_shards_different_databases_with_local', timeSeriesSelector('ts_local', 'm', 0, 140, 'timestamp_and_value'))
+SETTINGS serialize_query_plan = 0; -- { serverError UNKNOWN_TABLE }
+SELECT count() FROM cluster('test_cluster_two_shards_different_databases_with_local', timeSeriesSelector('ts_local', 'm', 0, 140, 'timestamp_and_value'))
+SETTINGS skip_unavailable_shards = 1, skip_unavailable_shards_mode = 'unavailable', serialize_query_plan = 0; -- { serverError UNKNOWN_TABLE }
+
 SELECT '--- custom-key parallel replicas ask the local replica as a remote one, so its missing table is an error';
 -- `FORMAT Null`: rows sent before the error must not reach the output.
 SELECT x FROM cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain))

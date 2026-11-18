@@ -201,9 +201,10 @@ void SelectStreamFactory::createForShard(
 
         if (table_func_ptr)
         {
-            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
             try
             {
+                /// `get` parses the arguments, which may find no table.
+                TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
                 main_table_storage = table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName());
             }
             catch (const Exception & e)

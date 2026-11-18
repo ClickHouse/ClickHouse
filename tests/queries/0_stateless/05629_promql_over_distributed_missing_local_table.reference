@@ -23,5 +23,8 @@ x	UInt8
 1
 x	UInt8					
 1
+--- a timeSeriesSelector inside cluster() is not looked up on the initiator, a shard without the table is left out or skipped
+1
+1
 --- custom-key parallel replicas ask the local replica as a remote one, so its missing table is an error
 3
