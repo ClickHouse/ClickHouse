@@ -1,4 +1,5 @@
 #include <Processors/Port.h>
+#include <Formats/FormatSettings.h>
 #include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>

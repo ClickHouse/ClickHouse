@@ -78,9 +78,9 @@ struct AggregatingTransformParams
     {
     }
 
-    Block getHeader() const { return params.getHeader(header, final); }
+    [[nodiscard]] Block getHeader() const { return params.getHeader(header, final); }
 
-    Block getCustomHeader(bool final_) const { return params.getHeader(header, final_); }
+    [[nodiscard]] Block getCustomHeader(bool final_) const { return params.getHeader(header, final_); }
 
     /// Per-part partial aggregate cache (MergeTree, use_partial_aggregate_cache).
     std::shared_ptr<PartialAggregateCache> partial_aggregate_cache;
