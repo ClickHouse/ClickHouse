@@ -273,6 +273,16 @@ joinKeyRows(ConstNullMapPtr null_map, const JoinCommon::JoinMask & join_mask, co
         {
             if (rows.skips_rows && !prefetches)
             {
+                /// A probe resumed for the rest of its block, which it can be after every few rows, packs per row rather
+                /// than count the rest again.
+                if constexpr (std::is_same_v<Selector, ScatteredBlock::Selector::Range>)
+                {
+                    if (selector.first != 0)
+                    {
+                        rows.asks_few_rows = true;
+                        return rows;
+                    }
+                }
                 size_t joined_rows = 0;
                 if constexpr (std::is_same_v<Selector, ScatteredBlock::Selector>)
                     joined_rows = selector.isContinuousRange() ? countJoinedRows(null_map, join_mask, selector.getRange())
