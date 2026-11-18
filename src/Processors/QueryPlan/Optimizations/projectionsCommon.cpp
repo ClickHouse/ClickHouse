@@ -380,7 +380,7 @@ static bool projectionPartHasRequiredColumns(
 }
 
 /// A normal projection part has at most one row per visible parent row, so one not smaller than a parent with `_row_exists`
-/// holds deleted rows, unless the mask has no zero (e.g. after `UPDATE _row_exists = 1`); then reading the parent is only slower.
+/// holds deleted rows, unless the mask has no zero (e.g. after `UPDATE _row_exists = 1`).
 static bool projectionPartKeepsDeletedRows(
     const IMergeTreeDataPart & projection_part, const IMergeTreeDataPart & parent_part, const ProjectionDescription & projection)
 {
