@@ -1,12 +1,11 @@
 #pragma once
 
+#include <Common/DequeWithMemoryTracking.h>
 #include <Interpreters/Squashing.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/IInflatingTransform.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
-
-#include <deque>
 
 namespace DB
 {
@@ -103,7 +102,7 @@ private:
     size_t held_bytes = 0;
     /// Rows that left this transform in combined chunks.
     size_t squashed_rows_sent = 0;
-    std::deque<Chunk> ready_chunks;
+    DequeWithMemoryTracking<Chunk> ready_chunks;
 };
 
 }
