@@ -41,6 +41,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include "config.h"
 
@@ -52,6 +53,7 @@ namespace Setting
     extern const SettingsBool allow_simdjson;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
     extern const SettingsBool json_extract_named_tuples_as_objects;
+    extern const SettingsBool json_extract_use_cast_string_to_date_time_mode;
 }
 
 namespace ErrorCodes
@@ -158,6 +160,7 @@ public:
             }
 
             String error;
+            const bool trivial_default = result_type->isDefaultInsertTrivial();
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (!col_json_const)
@@ -178,9 +181,14 @@ public:
                         added_to_column = impl.insertResultToColumn(*to, element, last_key, format_settings, error);
                 }
 
-                /// We add default value (=null or zero) if something goes wrong, we don't throw exceptions in these JSON functions.
+                /// We add the default of the result type if something goes wrong, we don't throw exceptions in these JSON functions.
                 if (!added_to_column)
-                    to->insertDefault();
+                {
+                    if (trivial_default)
+                        to->insertDefault();
+                    else
+                        result_type->insertDefaultInto(*to);
+                }
             }
             return to;
         }
@@ -242,6 +250,9 @@ public:
                         "Function {} with JSON type input supports only constant string path arguments",
                         String(TName::name));
                 }
+
+                if (format_settings.json.json_type_escape_dots_in_keys)
+                    key = escapeDotInJSONKey(key);
 
                 if (!path.empty())
                     path += '.';
@@ -623,15 +634,15 @@ public:
         format_settings.null_as_default = false;
     }
 
-    String getName() const override { return Name::name; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override
+    [[nodiscard]] String getName() const override { return Name::name; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override
     {
         return !functionForcesTheReturnType<Impl>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (null_presence.has_null_constant)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
@@ -684,7 +695,7 @@ public:
 
 private:
 
-    ColumnPtr
+    [[nodiscard]] ColumnPtr
     chooseAndRunJSONParser(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
 #if USE_SIMDJSON
@@ -781,7 +792,9 @@ public:
     {
         /// Extracting a string JSON value into a DateTime/DateTime64 column is a string-to-type
         /// cast, so we honour `cast_string_to_date_time_mode` (rather than `date_time_input_format`).
-        format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
+        /// Before 26.8 it followed `date_time_input_format`, which `compatibility` restores.
+        if (context->getSettingsRef()[Setting::json_extract_use_cast_string_to_date_time_mode])
+            format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
 
         /// Not a format setting: it governs these functions, so it is applied here rather than in
         /// `getFormatSettings`, which would also reach the `JSON` data type.
