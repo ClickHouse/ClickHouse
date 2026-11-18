@@ -120,7 +120,12 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
 
     auto where_child = r.readExpressionChild("where_expr");
     if (where_child)
+    {
+        /// `ParserTTLElement` accepts `WHERE` only after `DELETE`, the only mode that applies it.
+        if (mode != TTLMode::DELETE)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'where_expr' is only valid for TTL DELETE during AST JSON deserialization");
         setWhere(std::move(where_child));
+    }
 
     auto arr = r.getArray("group_by_key");
     if (arr)

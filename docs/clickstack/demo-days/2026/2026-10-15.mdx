@@ -1,0 +1,144 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-10-15
+title: 'Demo days - 2026-10-15'
+sidebarTitle: '2026-10-15'
+description: 'ClickStack demo days for 2026-10-15'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Validating webhook body templates before they save {#validating-webhook-body-templates-before-they-save}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Previously, you could save a Generic or incident.io webhook with a broken body template and get no warning. Every alert delivery would then fail, with the error only appearing in ClickStack's traces and server logs. A common cause was JSON-escaping quotes inside a Handlebars expression, such as `{{#if (eq state \"ALERT\")}}`: valid JSON, but an invalid template.
+
+The webhook form now checks the template as you edit and shows errors below the editor, including the line and column, such as `Template error on line 1, column 29`. It waits until you've stopped typing for 300 ms, so it won't complain halfway through a `{{ … }}` expression. Empty bodies are skipped because they use the service's default template, as are Slack bodies, which aren't rendered. Below the editor, you'll also find the supported variables, including `{{alertId}}`, `{{status}}`, `{{value}}`, and `{{groupKey}}`, each with a short description.
+
+The same validation now runs server-side across the internal API, external API v2, and MCP `clickstack_save_webhook` tool. Invalid templates return a 400 on create, update, or test, with the Handlebars error and its line and column. Tests fail before anything is sent. Validation checks that the template compiles; it doesn't render the result or check whether the output is valid JSON.
+
+For automated workflows, the new `POST /api/v2/webhooks/validate` endpoint lets Terraform check webhook configurations at plan time. Like `POST /api/v2/dashboards/validate`, it validates without saving. It runs the same URL and body checks as create and always returns 200 with `{ valid, errors, normalized }`. Name uniqueness isn't checked.
+
+**Related PRs:** [#3350](https://github.com/hyperdxio/hyperdx/pull/3350) Show webhook body template compile errors in the editor, [#3365](https://github.com/hyperdxio/hyperdx/pull/3365) Reject webhook body templates that don't compile, add /api/v2/webhooks/validate
+
+## Auto-detecting a PromQL source during onboarding {#auto-detecting-a-promql-source-during-onboarding}
+
+*Demo by [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=96" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+When a connection has no sources, ClickStack looks for OpenTelemetry tables and automatically creates Logs, Traces, Metrics, and Sessions sources. With PromQL enabled (`NEXT_PUBLIC_ENABLE_PROMQL=true`), it now creates a PromQL source too if it finds a ClickHouse `TimeSeries` table.
+
+Detection looks for tables with `engine = 'TimeSeries'`, ignoring the inner MergeTree tables they create. If there's more than one candidate, it checks in this order:
+
+- `prometheus.metrics`, the table used in the [ClickHouse Prometheus docs](https://clickhouse.com/docs/concepts/features/interfaces/prometheus#create-a-timeseries-table).
+- `metrics_ts` in the same database as the OpenTelemetry tables, created by the collector's PromQL migration.
+- `metrics_ts` in any database.
+
+If there's only one `TimeSeries` table, ClickStack uses it regardless of its name.
+
+Connections with only a `TimeSeries` table now get a PromQL source without being sent to manual setup. If detection or PromQL source creation fails, the other sources stay in place.
+
+**Related PRs:** [#3310](https://github.com/hyperdxio/hyperdx/pull/3310) Auto-detect a PromQL source during onboarding, [#3311](https://github.com/hyperdxio/hyperdx/pull/3311) Provision a PromQL source in the dev default sources
+
+## Series limits and minimum granularity for PromQL charts {#series-limits-and-minimum-granularity-for-promql-charts}
+
+*Demo by [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=176" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+PromQL line and stacked bar charts now have the same **Series Limit** display setting as builder and raw SQL charts. Previously, they capped rendered series at 250 in the browser, with an option to load the rest, but the setting was hidden and wasn't saved with the tile. 
+
+The limit is applied in the browser, just as it is for raw SQL charts. Prometheus's own `limit` parameter returns a subset sorted by labels rather than the top series by value, and the ClickHouse table-function fallback ignores it. The hidden-series hint also gives PromQL-specific advice: narrow your label matchers or add `sum by (...)`, rather than using `GROUP BY` or `WHERE`.
+
+PromQL sources now have a **Minimum auto granularity** setting too, matching metric sources. This sets the smallest bucket size auto granularity can choose for line, number, table, pie, and bar charts, including their generated PromQL previews. `$__rate_interval` also uses this value as the scrape interval, falling back to 15s when it's unset. Explicit tile granularity settings are unchanged.
+
+**Related PRs:** [#3292](https://github.com/hyperdxio/hyperdx/pull/3292) Support minimum auto granularity on PromQL sources, [#3294](https://github.com/hyperdxio/hyperdx/pull/3294) Support series limit on PromQL time charts
+
+## Source-level access control for PromQL sources {#source-level-access-control-for-promql-sources}
+
+*Demo by [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=301" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+**This feature applies to Managed ClickStack only.**
+
+Role-based access control now applies to PromQL sources, just as it does to logs, traces, and metrics. A fine-grained source role can grant **Read** access to one PromQL source while restricting another.
+
+Every `/v1/prometheus/*` route now checks **Read** access to the source, returning 403 `RBAC_PERMISSION_DENIED` when it's missing. If the caller's source access rules hide the source entirely, the response is 404 `Source not found`, matching the sources API. This change doesn't add ClickHouse-side role enforcement: in ClickStack Cloud, PromQL queries already use the user's own token.
+
+## Ad hoc filters for dashboards {#ad-hoc-filters-for-dashboards}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=401" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Dashboards now have an **Ad hoc keys and values** filter type alongside the existing variables and filters. Each ad hoc filter uses one or more ClickHouse sources, such as logs and traces, or a Prometheus source to suggest available keys and values. By default, conditions apply to every tile using those sources, but you can limit which sources they apply to. The feature is behind `NEXT_PUBLIC_ENABLE_ADHOC_FILTERS`, with about half of the planned work complete.
+
+Click the filter's input in the dashboard filter bar to choose a key, an operator, and a value, with suggestions for both keys and values. SQL sources support equals, not equals, regex, not regex, `LIKE`, and `NOT LIKE`. PromQL sources use Prometheus labels rather than column keys. Applied conditions appear as pills you can edit, switch to exclusions, or clear. Selections are stored in the URL and can be saved as part of the dashboard's default filter state.
+
+How conditions reach a tile depends on its type:
+
+- Builder tiles use the existing `filter` configuration property, so you don't need to add a variable to your `WHERE` clause.
+- Raw SQL tiles use `$__filters`. Your query needs to include this macro, and you'll see a warning if it's missing. With no conditions applied, it expands to `1 = 1`.
+- PromQL tiles use the same parser library as Grafana to add conditions as label matchers to every metric selector.
+
+You can see the applied conditions in the generated SQL and PromQL previews.
+
+You can also filter directly from **search tiles**. Hover over a cell to open the same copy, filter, and exclude options as the search page. Filtering adds the value to the relevant ad hoc filter; clicking the same value again removes it. Open a row in the side panel, and its filter buttons apply to the dashboard too. For now, click-to-filter is available only on search tiles.
+
+When importing a dashboard, you can remap both the sources an ad hoc filter queries and those it applies to. The external API and MCP don't support ad hoc filters yet.
+
+**Related PRs:** [#3335](https://github.com/hyperdxio/hyperdx/pull/3335) Add schemas and types for adhoc dashboard filters, [#3317](https://github.com/hyperdxio/hyperdx/pull/3317) Extract FilterPill, add filter editor components, [#3341](https://github.com/hyperdxio/hyperdx/pull/3341) Add UI for configuring adhoc dashboard filters, [#3343](https://github.com/hyperdxio/hyperdx/pull/3343) Render adhoc dashboard filter inputs, [#3366](https://github.com/hyperdxio/hyperdx/pull/3366) Broadcast adhoc dashboard filter conditions, [#3367](https://github.com/hyperdxio/hyperdx/pull/3367) Support source remapping during ad hoc filter import, [#3380](https://github.com/hyperdxio/hyperdx/pull/3380) Support click-to-adhoc-filter on search tiles
+
+## Moving SELECT and ORDER BY into the results table {#moving-select-and-order-by-into-the-results-table}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=636" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+**This is exploratory work, with no commitment to ship it.**
+
+The search page currently puts `SELECT` and `ORDER BY` next to `WHERE`, even though they only affect the results table. Switch to Event Patterns or Event Deltas, and they're still there, but changing them does nothing. Users we've spoken to also didn't realize `SELECT` was where they could choose columns. They were looking for column and sort controls.
+
+This prototype moves both into the results table toolbar as **Columns** and **Sort**, hiding them in Event Deltas and Event Patterns. **Columns** lists your current `SELECT` items, with options to drag them into order or remove them. Pick a suggestion or type an expression such as `upper(Body) as message`, then click **Add**. A **SQL** tab lets you edit the full `SELECT` directly.
+
+**Sort** lists each `ORDER BY` field and its direction, including tuples such as `(toDateTime(Timestamp), Timestamp) DESC`. You can edit the raw clause under **SQL** too. Expressions the controls can't split, such as `Timestamp DESC NULLS LAST`, open in the SQL tab. Changes in the controls build the SQL for you, and you can still write it yourself.
+
+**Apply** updates the clause and runs the search, **Cancel** discards your changes, and **Reset to default** restores the source default. Table actions for resetting widths, wrapping lines, viewing generated SQL, and exporting CSV move to icon buttons on the right of the toolbar.
+
+That also gives the search form a little more room. The source sits on the left of the first line, with **Update** and **Alerts** on the right. The `WHERE` clause gets its own full-width line alongside Live Tail, the refresh interval, and **Run**.
+
+The PR is still a draft, and we'd love to hear how this feels to use.
+
+**Related PRs:** [#3387](https://github.com/hyperdxio/hyperdx/pull/3387) Edit search columns and sort from the results table (open)
+
+## A usable search page on a phone {#a-usable-search-page-on-a-phone}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=843" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Opening an alert on your phone should let you get straight to the logs. Previously, the filter sidebar couldn't shrink below 200px, the query row didn't wrap, and results were clipped inside a `100vh` frame. You couldn't even scroll to the logs.
+
+The search page now switches to a compact layout below 900px, where the navigation already collapses. Filters start closed and open in a drawer through **Show filters**, leaving the full width for the log table. `SELECT` and `ORDER BY` sit behind a **Columns** toggle, while the search box stays visible. The histogram stays too, shortened to 72px, with results scrolling in the space below the toolbar. Opening the filter drawer won't change your desktop preference, and widening the window past 900px restores the desktop layout.
+
+The compact-viewport hook and responsive side panel live in `packages/app/src/components/CompactViewport/`, ready for other pages to reuse. Search is the first to use them. This landed before the columns-and-sort prototype covered in this post, which would move `SELECT` and `ORDER BY` into the results table at every screen width.
+
+**Related PRs:** [#3376](https://github.com/hyperdxio/hyperdx/pull/3376) Keep saved search usable on a phone
+
+## Streaming filter keys and values into the sidebar {#streaming-filter-keys-and-values-into-the-sidebar}
+
+*Demo by [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=899" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Previously, the search page's filter sidebar showed a single spinner until every filter query finished. The queries already streamed their results, but you still had to wait for the slowest one before you could use any filters.
+
+Now, keys appear first with individual loading indicators, and values fill in as each query returns. The queries themselves haven't changed; the sidebar just shows results as they arrive. It's particularly noticeable over longer time ranges, such as a two-day search.
+
+We've also fixed the sidebar forgetting where you left it. Filter groups are removed from the DOM when they scroll out of view to keep the browser responsive. Previously, scrolling back meant finding expanded groups collapsed and loaded distributions gone. Both now stay as you left them.
+
+**Related PRs:** [#3348](https://github.com/hyperdxio/hyperdx/pull/3348) Stream filter keys and value results to UI, [#3377](https://github.com/hyperdxio/hyperdx/pull/3377) Persist filter expand state upon scrolling

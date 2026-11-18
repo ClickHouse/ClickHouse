@@ -1,4 +1,5 @@
 #include <Analyzer/Utils.h>
+#include <Formats/FormatSettings.h>
 
 #include <Core/Settings.h>
 
@@ -9,9 +10,13 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromMemory.h>
 
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -36,6 +41,7 @@
 #include <Columns/validateColumnType.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/SipHash.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 
@@ -49,6 +55,8 @@
 #include <Storages/IStorage.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <TableFunctions/ITableFunction.h>
 #include <Interpreters/castColumn.h>
 
 #include <Analyzer/ArrayJoinNode.h>
@@ -76,9 +84,11 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsDistributedProductMode distributed_product_mode;
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
+    extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsBool transform_null_in;
 }
 
@@ -611,11 +621,17 @@ static ASTPtr convertIntoTableExpressionAST(
 
         const auto & sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();
         if (sample_size_ratio.has_value())
+        {
             result_table_expression->sample_size = make_intrusive<ASTSampleRatio>(*sample_size_ratio);
+            result_table_expression->children.push_back(result_table_expression->sample_size);
+        }
 
         const auto & sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
         if (sample_offset_ratio.has_value())
+        {
             result_table_expression->sample_offset = make_intrusive<ASTSampleRatio>(*sample_offset_ratio);
+            result_table_expression->children.push_back(result_table_expression->sample_offset);
+        }
 
         const auto & stream_settings = table_expression_modifiers->getStreamSettings();
         if (stream_settings.has_value())
@@ -953,6 +969,14 @@ TableExpressionNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tr
     return result;
 }
 
+bool isGlobalJoin(const JoinNode & join_node, const Settings & settings)
+{
+    const auto distributed_product_mode = settings[Setting::distributed_product_mode];
+    return join_node.getLocality() == JoinLocality::Global
+        || distributed_product_mode == DistributedProductMode::GLOBAL
+        || (distributed_product_mode != DistributedProductMode::LOCAL && settings[Setting::prefer_global_in_and_join]);
+}
+
 namespace
 {
 
@@ -975,7 +999,7 @@ public:
         has_function = function_node->getFunctionName() == function_name;
     }
 
-    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
+    [[nodiscard]] bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
     {
         if (has_function)
             return false;
@@ -984,7 +1008,7 @@ public:
         return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
     }
 
-    bool hasFunction() const
+    [[nodiscard]] bool hasFunction() const
     {
         return has_function;
     }
@@ -1224,6 +1248,31 @@ QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node)
         ConstantValue{column_const->getPtr(), std::move(result_type)}, cast_node, is_deterministic);
 }
 
+ColumnPtr tryGetScalarConstantColumn(const QueryTreeNodePtr & node, const ContextPtr & context)
+{
+    const auto * get_scalar_function_node = node->as<FunctionNode>();
+    if (!get_scalar_function_node || get_scalar_function_node->getFunctionName() != "__getScalar")
+        return nullptr;
+
+    const auto * get_scalar_const_arg = get_scalar_function_node->getArguments().getNodes().at(0)->as<ConstantNode>();
+    if (!get_scalar_const_arg || !context->hasQueryContext())
+        return nullptr;
+
+    auto query_context = context->getQueryContext();
+    auto scalar_string = fieldToString(get_scalar_const_arg->getValue());
+    if (!query_context->hasScalar(scalar_string))
+        return nullptr;
+
+    auto scalar = query_context->getScalar(scalar_string);
+    const auto & scalar_column = scalar.getByPosition(0).column;
+    /// The column comes from the scalars map while the type comes from the resolved node, and the
+    /// two disagree when the overload resolver wrapped the node's result type (a Nullable name).
+    if (scalar_column->size() != 1 || !columnMatchesType(*scalar_column, *get_scalar_function_node->getResultType()))
+        return nullptr;
+
+    return ColumnConst::create(scalar_column, 1);
+}
+
 void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const String & function_name, const ContextPtr & context)
 {
     auto function = FunctionFactory::instance().get(function_name, context);
@@ -1295,7 +1344,7 @@ namespace
 class CollectPrewhereTableExpressionVisitor : public ConstInDepthQueryTreeVisitor<CollectPrewhereTableExpressionVisitor>
 {
 public:
-    const TableExpressionNodePtr & getTableExpression() const
+    [[nodiscard]] const TableExpressionNodePtr & getTableExpression() const
     {
         return table_expression;
     }
@@ -1795,6 +1844,33 @@ String decimalFieldToText(const Field & field)
     return wb.str();
 }
 
+/// `String -> Decimal` rejects more digits than the precision of the type, while the type holds every value of
+/// its native integer, so a value beyond the precision is sent as that integer.
+template <typename T>
+ASTPtr makeDecimalLiteralASTImpl(const Field & field, const IDataType & type)
+{
+    using NativeType = typename T::NativeType;
+    const NativeType raw = field.safeGet<DecimalField<T>>().getValue().value;
+    const NativeType bound = DecimalUtils::scaleMultiplier<NativeType>(getDecimalPrecision(type));
+    if (raw > -bound && raw < bound)
+        return makeASTFunction("_CAST", make_intrusive<ASTLiteral>(decimalFieldToText(field)), make_intrusive<ASTLiteral>(type.getName()));
+
+    auto native = makeASTFunction("_CAST", make_intrusive<ASTLiteral>(toString(raw)), make_intrusive<ASTLiteral>(String(TypeName<NativeType>)));
+    return makeASTFunction("reinterpret", std::move(native), make_intrusive<ASTLiteral>(type.getName()));
+}
+
+ASTPtr makeDecimalLiteralAST(const Field & field, const IDataType & type)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Decimal32: return makeDecimalLiteralASTImpl<Decimal32>(field, type);
+        case Field::Types::Decimal64: return makeDecimalLiteralASTImpl<Decimal64>(field, type);
+        case Field::Types::Decimal128: return makeDecimalLiteralASTImpl<Decimal128>(field, type);
+        case Field::Types::Decimal256: return makeDecimalLiteralASTImpl<Decimal256>(field, type);
+        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a decimal field");
+    }
+}
+
 ASTPtr makeASTFunctionFromList(std::string_view name, ASTs children)
 {
     auto function = make_intrusive<ASTFunction>();
@@ -1864,9 +1940,7 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
         case TypeIndex::Decimal128:
         case TypeIndex::Decimal256:
             /// Reconstruct with the value's exact decimal type so it stays a valid Variant member.
-            return makeASTFunction(
-                "_CAST", make_intrusive<ASTLiteral>(decimalFieldToText((*column)[row])),
-                make_intrusive<ASTLiteral>(type->getName()));
+            return makeDecimalLiteralAST((*column)[row], *type);
         case TypeIndex::QBit:
         {
             /// A QBit `Field` is its tuple of bit planes, which does not cast back to QBit. The bit patterns of its elements do,
@@ -2103,6 +2177,134 @@ bool verifyMaterializedCTESubqueryMatchesStorage(
     }
 
     return true;
+}
+
+bool isInsertedDataOfTableFunction(const StoragePtr & storage, const StorageID & storage_id, const ContextPtr & context)
+{
+    auto view_source = context->getViewSource();
+    return view_source && storage == view_source && !context->isViewInnerQuery()
+        && storage_id.database_name == ITableFunction::getDatabaseName()
+        && !DatabaseCatalog::instance().isDatabaseExist(storage_id.database_name);
+}
+
+
+namespace
+{
+
+bool findPathInAST(const IAST & node, const IAST * target, std::vector<size_t> & path)
+{
+    if (&node == target)
+        return true;
+    for (size_t i = 0; i < node.children.size(); ++i)
+    {
+        path.push_back(i);
+        if (findPathInAST(*node.children[i], target, path))
+            return true;
+        path.pop_back();
+    }
+    return false;
+}
+
+/// The `SELECT` a query node was built from, if there is one with a `FROM`.
+const ASTSelectQuery * getScopeSelect(const IAST * scope_ast)
+{
+    /// A subquery's node keeps the union around its `SELECT`, which is the scope when it is the only one.
+    if (const auto * select_with_union = scope_ast ? scope_ast->as<ASTSelectWithUnionQuery>() : nullptr;
+        select_with_union && select_with_union->list_of_selects && select_with_union->list_of_selects->children.size() == 1)
+        scope_ast = select_with_union->list_of_selects->children.front().get();
+
+    const auto * select = scope_ast ? scope_ast->as<ASTSelectQuery>() : nullptr;
+    if (!select || !select->tables())
+        return nullptr;
+    return select;
+}
+
+/// The whole `SELECT` is hashed, with the role of each clause and its flags, so `WHERE` and `PREWHERE` over the
+/// same condition differ. A shallow copy without the `SETTINGS` clause leaves the query itself untouched.
+SipHash hashScopeSelect(const ASTSelectQuery & select)
+{
+    SipHash hash;
+    ASTSelectQuery scope_without_settings(select);
+    scope_without_settings.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+    scope_without_settings.updateTreeHash(hash, /*ignore_aliases=*/false);
+    return hash;
+}
+
+}
+
+TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree)
+{
+    TableOccurrences result;
+    std::unordered_map<UInt128, size_t> counts;
+    std::vector<const IQueryTreeNode *> stack{tree.get()};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!node)
+            continue;
+
+        /// Walked by hand rather than with `extractTableExpressions`: an unresolved query, such as the argument
+        /// of a `view` table function, has an identifier for its join tree, and that is not an error here.
+        /// A scope without a `SELECT` to identify its tables by records none of them, and its subqueries are its children.
+        const auto * query_node = node->as<QueryNode>();
+        if (const auto * scope_select = query_node ? getScopeSelect(query_node->getOriginalAST().get()) : nullptr)
+        {
+            /// Taken at the first table found in this scope, and then for all of them.
+            std::optional<SipHash> scope_hash;
+            std::vector<const IQueryTreeNode *> join_tree{query_node->getJoinTreeNode().get()};
+            while (!join_tree.empty())
+            {
+                const auto * table_expression = join_tree.back();
+                join_tree.pop_back();
+                if (!table_expression)
+                    continue;
+
+                if (const auto * join_node = table_expression->as<JoinNode>())
+                {
+                    join_tree.push_back(join_node->getLeftTableExpressionNode().get());
+                    join_tree.push_back(join_node->getRightTableExpressionNode().get());
+                }
+                else if (const auto * cross_join_node = table_expression->as<CrossJoinNode>())
+                {
+                    for (const auto & cross_joined : cross_join_node->getTableExpressions())
+                        join_tree.push_back(cross_joined.get());
+                }
+                else if (const auto * array_join_node = table_expression->as<ArrayJoinNode>())
+                {
+                    join_tree.push_back(array_join_node->getTableExpressionNode().get());
+                }
+                else if (table_expression->getNodeType() == QueryTreeNodeType::TABLE)
+                {
+                    const auto & table_expression_ast = table_expression->getOriginalAST();
+                    std::vector<size_t> path;
+                    if (!table_expression_ast || !findPathInAST(*scope_select->tables(), table_expression_ast.get(), path))
+                        continue;
+
+                    if (!scope_hash)
+                        scope_hash = hashScopeSelect(*scope_select);
+                    /// Every table of one scope shares its hash: in `FROM d, t AS a, t AS b` both reads of `t` would get one
+                    /// identity, be counted twice and never be paired. The path to the table under `FROM` tells them
+                    /// apart, and it is the same in both builds: it is taken in the AST, which passes reordering the
+                    /// join tree do not touch.
+                    SipHash hash = *scope_hash;
+                    hash.update(path.size());
+                    for (size_t index : path)
+                        hash.update(index);
+                    const auto identity = hash.get128();
+
+                    ++counts[identity];
+                    result.identity_by_ast.emplace(table_expression_ast, identity);
+                }
+            }
+        }
+
+        for (const auto & child : node->getChildren())
+            stack.push_back(child.get());
+    }
+
+    std::erase_if(result.identity_by_ast, [&](const auto & table) { return counts.at(table.second) != 1; });
+    return result;
 }
 
 }
