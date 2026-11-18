@@ -48,6 +48,7 @@ namespace ErrorCodes
     extern const int KEEPER_EXCEPTION;
     extern const int NO_ZOOKEEPER;
     extern const int REQUIRED_PASSWORD;
+    extern const int S3_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int LOGICAL_ERROR;
 }
@@ -230,14 +231,35 @@ IcebergRESTResponse makeNoSuchWarehouseError(const String & name)
 
 /// A staged table has no metadata file yet, so `metadata_location` is empty.
 IcebergRESTResponse makeLoadTableResult(
-    const std::optional<String> & metadata_location, const Poco::JSON::Object::Ptr & metadata)
+    const std::optional<String> & metadata_location,
+    const Poco::JSON::Object::Ptr & metadata,
+    const std::optional<VendedCredentials> & credentials)
 {
     Poco::JSON::Object result;
     if (metadata_location)
         result.set("metadata-location", *metadata_location);
     result.set("metadata", metadata);
-    /// TODO: Add credential vending yet. For now, clients use their own storage credentials.
-    result.set("config", Poco::JSON::Object());
+
+    /// Spec has two fields for vended credentials. Same S3 properties go to both.
+    /// Without credentials, both are absent. ClickHouse client reads an empty `config` as empty keys.
+    if (credentials)
+    {
+        /// Older field: top-level `config`.
+        Poco::JSON::Object config;
+        for (const auto & [key, value] : credentials->config)
+            config.set(key, value);
+        result.set("config", config);
+
+        /// Newer field: `storage-credentials`. One entry with table location and a copy of `config`.
+        Poco::JSON::Object storage_credential;
+        storage_credential.set("prefix", credentials->prefix);
+        storage_credential.set("config", config);
+
+        Poco::JSON::Array storage_credentials;
+        storage_credentials.add(storage_credential);
+        result.set("storage-credentials", storage_credentials);
+    }
+
     return makeJSON(result, Poco::Net::HTTPResponse::HTTP_OK);
 }
 
@@ -445,7 +467,7 @@ IcebergRESTResponse IcebergRESTCatalogService::handleExternalRequestImpl(
             fmt::format("Unknown prefix: {}", prefix));
     }
 
-    const RoutedRequest routed{*warehouse, *match, uri, request.body, user_context};
+    const RoutedRequest routed{*warehouse, *match, uri, request.body, user_context, request.vend_credentials};
     switch (match->route->operation)
     {
         case IcebergRESTOperation::ListNamespaces:
@@ -538,6 +560,12 @@ IcebergRESTResponse IcebergRESTCatalogService::convertCurrentExceptionToIcebergE
         status = Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
         type = "ServiceUnavailableException";
         message = "Catalog storage is unavailable";
+    }
+    /// STS or S3 refused a request.
+    else if (code == ErrorCodes::S3_ERROR)
+    {
+        type = "ServiceFailureException";
+        message = "Storage request failed";
     }
     /// The catalog is healthy, the client should retry the request.
     else if (code == ErrorCodes::ICEBERG_CATALOG_CONCURRENT_UPDATE)
@@ -831,9 +859,13 @@ IcebergRESTResponse IcebergRESTCatalogService::handleCreateTable(const RoutedReq
         /// A best-effort check. The create commit registers the table and fails if it exists by then.
         if (request.warehouse.tableExists(ns, name))
             return makeConflictError("TableAlreadyExistsException", fmt::format("Table already exists: {}.{}", joinNamespace(ns), name));
+        const auto credentials = vendCredentialsIfRequested(request, ns, name, location, VendedAccessLevel::ReadWrite);
         LOG_INFO(log, "Staged table {}.{} at {}", joinNamespace(ns), name, location);
-        return makeLoadTableResult(std::nullopt, metadata);
+        return makeLoadTableResult(std::nullopt, metadata, credentials);
     }
+
+    /// Vend before the write, so that an STS error leaves no table behind.
+    const auto credentials = vendCredentialsIfRequested(request, ns, name, location, VendedAccessLevel::ReadWrite);
 
     using CreateTableResult = IcebergRESTCatalogWarehouse::CreateTableResult;
     const auto created = writeAndRegisterTable(request.warehouse, ns, name, pointer, metadata, compression_method);
@@ -846,7 +878,30 @@ IcebergRESTResponse IcebergRESTCatalogService::handleCreateTable(const RoutedReq
 
     LOG_INFO(log, "Created table {}.{} at {}", joinNamespace(ns), name, pointer.metadata_location);
     /// Answer from memory. The table is registered, so a failed read-back must not turn into a 500.
-    return makeLoadTableResult(pointer.metadata_location, metadata);
+    return makeLoadTableResult(pointer.metadata_location, metadata, credentials);
+}
+
+std::optional<VendedCredentials> IcebergRESTCatalogService::vendCredentialsIfRequested(
+    const RoutedRequest & request,
+    const IcebergNamespaceName & ns,
+    const String & table,
+    const String & location,
+    VendedAccessLevel access) const
+{
+    if (!request.vend_credentials)
+        return std::nullopt;
+
+    auto credentials = request.warehouse.vendCredentials(location, access);
+    LOG_INFO(
+        log,
+        "Vended {} credentials for table {}.{} at {} to user {}, they expire at {} ms",
+        access == VendedAccessLevel::ReadOnly ? "read-only" : "read-write",
+        joinNamespace(ns),
+        table,
+        location,
+        request.user_context.getUserName(),
+        credentials.config.at("s3.session-token-expires-at-ms"));
+    return credentials;
 }
 
 IcebergRESTResponse IcebergRESTCatalogService::handleLoadTable(const RoutedRequest & request) const
@@ -860,7 +915,11 @@ IcebergRESTResponse IcebergRESTCatalogService::handleLoadTable(const RoutedReque
     if (!pointer)
         return makeNoSuchTableError(ns, table);
 
-    return makeLoadTableResult(pointer->metadata_location, readTableMetadata(request.warehouse, *pointer));
+    const auto metadata = readTableMetadata(request.warehouse, *pointer);
+    /// Clients write data files with credentials from load table, so these allow writes.
+    const auto access = request.user_context.getSettingsRef()[Setting::readonly] ? VendedAccessLevel::ReadOnly : VendedAccessLevel::ReadWrite;
+    const auto credentials = vendCredentialsIfRequested(request, ns, table, metadata->getValue<String>("location"), access);
+    return makeLoadTableResult(pointer->metadata_location, metadata, credentials);
 }
 
 IcebergRESTResponse IcebergRESTCatalogService::handleTableExists(const RoutedRequest & request) const
