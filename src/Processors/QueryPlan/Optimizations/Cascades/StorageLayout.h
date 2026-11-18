@@ -34,15 +34,15 @@ public:
     /// values for equal arguments.
     static std::shared_ptr<const StorageLayoutFunction> tryCreate(const KeyDescription & partition_key, size_t component_index);
 
-    const ActionsDAG & getActionsDAG() const { return dag; }
+    [[nodiscard]] const ActionsDAG & getActionsDAG() const { return dag; }
     /// The argument columns of the table, in the order used to compare two functions.
-    const Names & getArgumentNames() const { return argument_names; }
-    const DataTypes & getArgumentTypes() const { return argument_types; }
+    [[nodiscard]] const Names & getArgumentNames() const { return argument_names; }
+    [[nodiscard]] const DataTypes & getArgumentTypes() const { return argument_types; }
 
-    bool equals(const StorageLayoutFunction & other) const;
-    UInt64 getHash() const { return structure_hash; }
+    [[nodiscard]] bool equals(const StorageLayoutFunction & other) const;
+    [[nodiscard]] UInt64 getHash() const { return structure_hash; }
     /// For example `moduloLegacy(cityHash64(#0), 16)`.
-    String dump() const;
+    [[nodiscard]] String dump() const;
 
 private:
     StorageLayoutFunction() = default;
