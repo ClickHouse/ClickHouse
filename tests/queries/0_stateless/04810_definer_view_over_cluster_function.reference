@@ -1,20 +1,20 @@
---- DEFINER / s3Cluster ---
+--- DEFINER / s3Cluster / enable_analyzer=1 ---
 cannot be nested inside another distributed query
---- DEFINER / urlCluster ---
+--- DEFINER / urlCluster / enable_analyzer=1 ---
 cannot be nested inside another distributed query
---- DEFINER / fileCluster ---
+--- DEFINER / fileCluster / enable_analyzer=1 ---
 cannot be nested inside another distributed query
---- NONE / s3Cluster ---
+--- NONE / s3Cluster / enable_analyzer=1 ---
 cannot be nested inside another distributed query
---- NONE / urlCluster ---
+--- NONE / urlCluster / enable_analyzer=1 ---
 cannot be nested inside another distributed query
---- NONE / fileCluster ---
+--- NONE / fileCluster / enable_analyzer=1 ---
 cannot be nested inside another distributed query
---- INVOKER / s3Cluster ---
+--- INVOKER / s3Cluster / enable_analyzer=1 ---
 cannot be nested inside another distributed query
---- INVOKER / urlCluster ---
+--- INVOKER / urlCluster / enable_analyzer=1 ---
 cannot be nested inside another distributed query
---- INVOKER / fileCluster ---
+--- INVOKER / fileCluster / enable_analyzer=1 ---
 cannot be nested inside another distributed query
 --- local read of a DEFINER view still works ---
 1

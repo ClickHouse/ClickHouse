@@ -3,11 +3,12 @@ slug: /cloud/managed-postgres/monitoring/query-insights
 sidebarTitle: 'クエリインサイト'
 title: 'Postgres のクエリインサイト'
 description: 'ClickHouse Managed Postgres 向けのステートメント単位のテレメトリーです。データベースで実行されるすべてのクエリパターンを影響度順に表示し、それぞれが遅い理由を示す診断カウンターを確認できます'
-keywords: ['Managed Postgres', 'クエリインサイト', 'pg_stat_ch', '遅いクエリ', 'p99 レイテンシ', 'クエリパターン', 'Postgres パフォーマンス', 'temp blocks', '並列ワーカー', 'wal', '待機イベント', 'ロック待機', 'ブロックされたセッション']
+keywords: ['Managed Postgres', 'クエリインサイト', 'pg_stat_ch', '遅いクエリ', 'p99 レイテンシ', 'クエリパターン', 'Postgres パフォーマンス', 'temp blocks', '並列ワーカー', 'wal']
 doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.query-insights-beta" />
 
@@ -16,7 +17,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 パターンを影響度順にランク付けします。これにより、&quot;p99 がじわじわ悪化している&quot; という状態から &quot;このパターン
 はディスクにスピルしている&quot; という原因特定まで、Cloud Console を離れることなく行えます。
 
-ステートメントごとのデータは [`pg_stat_ch`](https://github.com/clickhouse/pg_stat_ch) から取得されます。これは、
+データは [`pg_stat_ch`](https://github.com/clickhouse/pg_stat_ch) から取得されます。これは、
 ステートメントごとのカウンターを
 ClickHouse Cloud にストリーミングするオープンソースの Postgres 拡張機能です。テレメトリーは
 データベースを出る前に Postgres 内で正規化されます。リテラルは取り除かれてプレースホルダーに置き換えられるため、
@@ -28,25 +29,24 @@ ClickHouse Cloud にストリーミングするオープンソースの Postgres
 
 Cloud Console で ClickHouse Managed Postgres インスタンスを開き、左側のサイドバーで
 **クエリインサイト** をクリックします。ページは、実際に使う順に
-5 つの領域に分かれています。
+4 つの領域に分かれています。
 
 * データベースのヘルスチェックを 1 画面で確認できる **概要**。
 * データベースで実行されたすべてのクエリパターンを、気になる観点で
   ソートして順位付けできる **低速クエリパターン** テーブル。
 * 個々の実行を新しい順に一覧表示する **最近のクエリ** パネル。
-* アクティブなセッションが待機に費やした時間を待機イベントごとに順位付けする
-  **Waits** テーブル。
 * 単一のパターンに関するすべてのカウンターを集約する **詳細フライアウト**。
 
-上部の **期間** セレクターを使用すると、直近 15 分、1 時間、1 日、
+上部の **Time period** セレクターを使用すると、直近 15 分、1 時間、1 日、
 1 週間、または 1 か月に切り替えられます。集約バケットのサイズは自動的に
 調整され、直近 15 分または 1 時間では 1 分、直近 1 日では 5 分、直近 1 週間
 または 1 か月では 1 時間になるため、チャートの応答性を維持できます。
 
-## 概要 {#overview}
+<div id="overview">
+  ## 概要
+</div>
 
-概要は、9つのパネルを3×3に配置したグリッドです。最初の2行には
-クエリアクティビティに関するパネルが並んでいます。
+概要は、6つのパネルを3×2に配置したグリッドです。
 
 | パネル                 | 表示内容                                                                     |
 | ------------------- | ------------------------------------------------------------------------ |
@@ -54,7 +54,7 @@ Cloud Console で ClickHouse Managed Postgres インスタンスを開き、左�
 | **クエリレイテンシ**        | 平均、p50、p95、p99 を1つのチャートにまとめて表示し、中央値に対してテールがいつ乖離するかを確認できます。               |
 | **操作の内訳**           | ワークロードが実際に `SELECT`、`INSERT`、`UPDATE`、その他の操作でどのように構成されているかを示すドーナツチャートです。 |
 | **返された / 影響を受けた行数** | その時間枠でワークロードが処理した合計行数です。                                                 |
-| **バッファヒット率**        | 共有ブロックのヒット数と読み取り数の比率を示すドーナツチャートで、凡例には合計 CPU時間も表示されます。                   |
+| **バッファヒット率**        | 共有ブロックのヒット数と読み取り数の比率を示すドーナツチャートで、凡例には合計 CPU 時間も表示されます。                   |
 | **エラー**             | エラーの総数を、時間の経過に沿って表示します。                                                  |
 
 この1画面で、データベースが健全かどうかを判断できます。健全なインスタンスには
@@ -62,51 +62,15 @@ Cloud Console で ClickHouse Managed Postgres インスタンスを開き、左�
 アプリケーショントラフィックに応じて増減すること、エラー率が横ばいまたはゼロであること、そして
 各パーセンタイルのレイテンシが互いに近い値で推移していることです。
 
-<div className="ch-image-lg">
+<Image img="/images/managed-postgres/monitoring/query-insights-overview.webp" alt="6つの統計カードを表示したクエリインサイトの概要: 1秒あたりのクエリ数、クエリレイテンシのパーセンタイル、操作内訳のドーナツ、返された行数のエリアチャート、95.2 パーセントのバッファヒット率ドーナツ、エラーの縦棒チャート" size="lg" border />
 
-<Frame>
-
-![6つの統計カードを表示したクエリインサイトの概要: 1秒あたりのクエリ数、クエリレイテンシのパーセンタイル、操作内訳のドーナツ、返された行数のエリアチャート、95.2 パーセントのバッファヒット率ドーナツ、エラーの縦棒チャート](/images/managed-postgres/monitoring/query-insights-overview.webp)
-
-</Frame>
-
+<div id="slow-patterns">
+  ## 低速クエリパターン
 </div>
-
-### 待機チャート {#wait-charts}
-
-3 行目には、[30 秒ごとに取得されるサンプル](#how-waits)に基づき、プライマリ上のアクティブなセッションが何を待機していたかが表示されます。
-
-| パネル                              | 表示内容                                                                                                      |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| **Active sessions by wait type** | アクティブなセッションの平均数を待機タイプごとに積み上げて表示します。**CPU** は、待機イベントなしでアクティブな状態を表します。棒にカーソルを合わせると、各タイプの内訳となる待機イベントが表示されます。 |
-| **Lock wait time**               | 各時間間隔でサンプリングされた、ブロック中のセッションにおけるロック待機の経過時間の p50、p95、最大値です。                                                 |
-| **Blocked sessions**             | ロックによってブロックされているセッションの平均数です。                                                                              |
-
-**Lock wait time** が上昇する一方で、**Blocked sessions** がゼロを上回ったままになっていないかを確認してください。これは、ロック競合が継続していることを示している可能性があります。いずれかの待機チャートをクリックすると、[Waits](#waits) テーブルが開きます。
-
-<div className="ch-image-lg">
-
-<Frame>
-
-![待機タイプごとに積み上げたアクティブなセッション、p50・p95・最大値のロック待機時間、ブロックされたセッションの推移を示す待機チャート](/images/managed-postgres/monitoring/query-insights-wait-charts.webp)
-
-</Frame>
-
-</div>
-
-## 低速クエリパターン {#slow-patterns}
 
 概要で問題の兆候が見つかったら、調査はパターンテーブルから始まります。正規化されたクエリパターンごとに1行が表示され、リテラル値は取り除かれているため、同じステートメントの実行は同じ行に集約されます。
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Database、User、Operation、Calls、Errors、Avg latency、P95、Max latency、Total runtime、Rows returned、Cache hit の各カラムを備え、正規化されたクエリごとに1行を表示する低速クエリパターンテーブル](/images/managed-postgres/monitoring/query-insights-patterns.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managed-postgres/monitoring/query-insights-patterns.webp" alt="Database、User、Operation、Calls、Errors、Avg latency、P95、Max latency、Total runtime、Rows returned、Cache hit の各カラムを備え、正規化されたクエリごとに1行を表示する低速クエリパターンテーブル" size="lg" border />
 
 <div id="sort">
   ### 気になる観点でソートする
@@ -158,15 +122,7 @@ Cloud Console で ClickHouse Managed Postgres インスタンスを開き、左�
 ストリームを確認したいときに使用します。たとえば、修正が反映されたことを
 確認したり、エラーが発生した正確な瞬間を特定したりするのに役立ちます。
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Database、User、Operation、Application のフィルタードロップダウンと、Time、Operation、Query、Duration、Rows、Database、User、Blks read のカラムを備えた Recent Queries テーブル](/images/managed-postgres/monitoring/query-insights-recent-queries.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managed-postgres/monitoring/query-insights-recent-queries.webp" alt="Database、User、Operation、Application のフィルタードロップダウンと、Time、Operation、Query、Duration、Rows、Database、User、Blks read のカラムを備えた Recent Queries テーブル" size="lg" border />
 
 デフォルトで表示されるカラムは、Time、Operation、Query、Duration、Rows、
 Database、User、Blks read です。Application、Blks hit、CPU user、
@@ -177,29 +133,6 @@ CPU time でソートできます。
 
 任意の行をクリックすると、パターン テーブルと同じ詳細フライアウトが開き、
 その単一実行のパターンに絞り込んだ内容が表示されます。
-
-## Waits {#waits}
-
-**Waits** を展開するか、[待機チャート](#wait-charts)をクリックすると、選択した期間の平均アクティブセッション数の多い順に並んだ待機イベントを確認できます。
-
-<div className="ch-image-lg">
-
-<Frame>
-
-![平均アクティブセッション数の順に待機イベントを並べた Waits テーブル。Wait event、Wait type、Avg active sessions、Share of load の各カラムを表示](/images/managed-postgres/monitoring/query-insights-waits.webp)
-
-</Frame>
-
-</div>
-
-| カラム                     | 表示内容                                                                                        |
-| ----------------------- | ------------------------------------------------------------------------------------------- |
-| **Wait event**          | `type:event` 形式の待機イベント (例: `Lock:relation`、`IO:WalSync`) 。**CPU** は、待機イベントがなくアクティブな状態を表します。 |
-| **Wait type**           | 待機イベントの種別。**Active sessions by wait type** の色分けに対応しています。                                    |
-| **Avg active sessions** | 選択した期間中に、この待機イベントの状態にあったセッションの平均数。                                                          |
-| **Share of load**       | **CPU** を含む全平均アクティブセッションのうち、この待機イベントが占める割合。                                                 |
-
-個々のイベントの説明については、[Postgres 待機イベントリファレンス](https://www.postgresql.org/docs/current/monitoring-stats.html#WAIT-EVENT-TABLE)を参照してください。
 
 <div id="detail">
   ## 詳細フライアウト
@@ -223,25 +156,9 @@ patterns または 最近のクエリ テーブル内の任意の行をクリッ
 * **最近の実行** — 同じパターンの個々の実行で、
   実行ごとのカウンターを表示します。
 
-<div className="ch-image-md">
+<Image img="/images/managed-postgres/monitoring/query-insights-detail-aggregate.webp" alt="クエリ詳細フライアウト。クエリパターンのコードブロックと、合計呼び出し回数、レイテンシーのパーセンタイル、合計ランタイム、返された行数、cache ヒット率、読み取られたブロック数、ヒットしたブロック数、CPU 時間、WAL バイト数、エラーを含む 13 個の統計カードから成る集計リソース使用量グリッドを表示" size="md" border />
 
-<Frame>
-
-![クエリ詳細フライアウト。クエリパターンのコードブロックと、合計呼び出し回数、レイテンシーのパーセンタイル、合計ランタイム、返された行数、cache ヒット率、読み取られたブロック数、ヒットしたブロック数、CPU 時間、WAL バイト数、エラーを含む 13 個の統計カードから成る集計リソース使用量グリッドを表示](/images/managed-postgres/monitoring/query-insights-detail-aggregate.webp)
-
-</Frame>
-
-</div>
-
-<div className="ch-image-md">
-
-<Frame>
-
-![続きのクエリ詳細フライアウト。データベース、ユーザー、操作、アプリケーションを含むクエリコンテキストセクションと、timestamp、OK ステータス、サーバーロール、ホスト ID、および duration、行数、cache ヒット、CPU、共有ブロック読み取り数、共有ブロックヒット数の実行ごとのカウンターを含む最近の実行カードを表示](/images/managed-postgres/monitoring/query-insights-detail-recent.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managed-postgres/monitoring/query-insights-detail-recent.webp" alt="続きのクエリ詳細フライアウト。データベース、ユーザー、操作、アプリケーションを含むクエリコンテキストセクションと、timestamp、OK ステータス、サーバーロール、ホスト ID、および duration、行数、cache ヒット、CPU、共有ブロック読み取り数、共有ブロックヒット数の実行ごとのカウンターを含む最近の実行カードを表示" size="md" border />
 
 <div id="counters">
   ### 実行ごとのカウンター
@@ -262,11 +179,13 @@ patterns または 最近のクエリ テーブル内の任意の行をクリッ
 
 遅いパターンの診断に必要な情報が、1 か所、1 つの画面にまとまっています。
 
-## クエリインサイト API {#api}
+<div id="api">
+  ## クエリインサイト API
+</div>
 
-ステートメント単位のテレメトリーは、
+同じテレメトリーは、
 [ClickHouse Cloud OpenAPI](/ja/products/managed-postgres/openapi#query-insights) を通じて
-利用することもできます。
+プログラムからも利用できます。
 [低速クエリパターン](#slow-patterns) テーブルは
 [list slow query patterns](/ja/products/cloud/api-reference/postgres/slow-query-patterns-get-list)
 エンドポイントに対応し、[詳細フライアウト](#detail) は
@@ -296,15 +215,11 @@ patterns または 最近のクエリ テーブル内の任意の行をクリッ
 では、共有メモリのリングバッファに対して非ブロッキングの try-lock を使用します。負荷が高い
 場合は、Postgres にバックプレッシャーをかける代わりに、拡張機能がカウンターを増やしてイベントを破棄します。
 
-### Waitsはサンプリングで取得される {#how-waits}
-
-[待機チャート](#wait-charts)と[Waits](#waits)テーブルは、プライマリで30秒ごとに収集されるサンプルに基づいています。短時間の待機はサンプル間で完結してしまうと表示されないことがあるため、これらのビューは継続的な待機やロック競合の特定に最も適しています。
-
 <div id="how-raw-events">
   ### 集計ではなく生のイベント
 </div>
 
-`pg_stat_ch` は、実行された各ステートメント (トップレベルとネストの両方) ごとに、サンプリングの対象となる 1 件の生のイベントを出力します。クエリのパーセンタイル、ランキング、内訳は、このイベントストリームをもとに ClickHouse 上で算出されます。
+`pg_stat_ch` は、実行された各ステートメント (トップレベルとネストの両方) ごとに、サンプリングの対象となる 1 件の生のイベントを出力します。UI のパーセンタイル、ランキング、内訳はすべて、同じイベントストリームに対する ClickHouse クエリです。
 
 <div id="how-engine">
   ### お客様が利用しているのと同じエンジン
@@ -324,7 +239,9 @@ Insights のバックエンドは [ClickHouse Cloud](/ja/products/cloud/getting-
 ClickHouse に送信できます。ソースコードと issue は
 [github.com/clickhouse/pg&#95;stat&#95;ch](https://github.com/clickhouse/pg_stat_ch) にあります。
 
-## 関連ページ {#related}
+<div id="related">
+  ## 関連ページ
+</div>
 
 * [監視ダッシュボード](/ja/products/managed-postgres/monitoring/dashboard) — 組み込みのリソースおよびアクティビティのチャート
 * [Prometheus エンドポイント](/ja/products/managed-postgres/monitoring/prometheus) — ホストレベルのメトリクスを独自のオブザーバビリティスタックに取り込めます

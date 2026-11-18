@@ -19,7 +19,7 @@ select splitByRegexp(']', 'a]b]c');
 select splitByRegexp('{', 'a{b{c');
 select splitByRegexp('}', 'a}b}c');
 select splitByRegexp('|', 'a|b|c');
-select splitByRegexp('\\', 'a\\b\\c'); -- { serverError CANNOT_COMPILE_REGEXP }
+select splitByRegexp('\\', 'a\\b\\c');
 
 SELECT 'AST Fuzzer failure';
 SELECT splitByRegexp(materialize(1), NULL, 3) -- { serverError ILLEGAL_COLUMN }

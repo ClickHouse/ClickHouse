@@ -29,12 +29,14 @@ public:
     void pushTask(OptimizationTaskPtr task);
     GroupPtr getGroup(GroupId group_id);
 
+    void updateBestPlan(GroupExpressionPtr expression);
     void deriveStatistics(GroupId group_id);
 
     /// Costs the expression (local operator cost plus inputs' best subtree costs), stores the cost
     /// on it and offers it to the group as a best-implementation candidate. Statistics must be
-    /// derived first. An expression with an input that has no implementation gets no cost.
-    void costAndUpdateBest(GroupExpressionPtr expression);
+    /// derived first. With `prune_against_best` the expression is dropped early (cost not stored)
+    /// when the group already holds a cheaper best for the same properties; returns false then.
+    bool costAndUpdateBest(GroupExpressionPtr expression, bool prune_against_best);
 
     /// Fast-path costing: if all inputs already have best implementations,
     /// compute the expression's cost directly and update the group's best plan.
@@ -47,12 +49,12 @@ public:
 
     LoggerPtr log = getLogger("CascadesOptimizer");
 
-    [[nodiscard]] const std::vector<OptimizationRulePtr> & getTransformationRules() const { return transformation_rules; }
-    [[nodiscard]] const std::vector<OptimizationRulePtr> & getImplementationRules() const { return implementation_rules; }
-    [[nodiscard]] const std::vector<OptimizationRulePtr> & getEnforcerRules() const { return enforcer_rules; }
+    const std::vector<OptimizationRulePtr> & getTransformationRules() const { return transformation_rules; }
+    const std::vector<OptimizationRulePtr> & getImplementationRules() const { return implementation_rules; }
+    const std::vector<OptimizationRulePtr> & getEnforcerRules() const { return enforcer_rules; }
 
     Memo & getMemo() { return memo; }
-    [[nodiscard]] const Memo & getMemo() const { return memo; }
+    const Memo & getMemo() const { return memo; }
 
 private:
     void addRule(OptimizationRulePtr rule);

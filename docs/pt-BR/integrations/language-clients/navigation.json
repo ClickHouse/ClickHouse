@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "Início",
+      "group": "Página inicial",
       "icon": "house",
       "pages": [
         "pt-BR/integrations/language-clients/index"
@@ -39,5 +39,6 @@
       ]
     }
   ],
+  "icon": "/images/icons/icon-language-clients.svg",
   "item": "Clientes por linguagem"
 }

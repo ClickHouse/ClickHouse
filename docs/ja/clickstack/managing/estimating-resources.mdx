@@ -11,7 +11,9 @@ import ResourceEstimation from '/snippets/ja/_resource_estimation.mdx';
 
 <ResourceEstimation />
 
-## 環境に合わせたサイジング前提の調整 {#refining-sizing-assumptions}
+<div id="refining-sizing-assumptions">
+  ## 環境に合わせたサイジング前提の調整
+</div>
 
 このモデルは、検索、ダッシュボード、アラートを含むすべてのクエリタイプを合算した、ClickStack からの継続的な平均 1 QPS を前提としています。
 
@@ -21,7 +23,9 @@ import ResourceEstimation from '/snippets/ja/_resource_estimation.mdx';
 
 これは、クエリ分布が比較的均等であることを前提としています。より負荷の高い過去データ参照やアーカイブクエリに偏ったワークロードでは、必要なコンピュートが大きく異なる可能性があるため、負荷テストで検証する必要があります。今後は、クエリ分布パターンの違いに応じてクエリ用コンピュートを外挿できる、より柔軟なサイジングモデルを導入する予定です。
 
-### 計算例 {#worked-example}
+<div id="worked-example">
+  ### 計算例
+</div>
 
 **要件:** 月間 1.5 PB の取り込み、5 QPS、3 か月保持。
 
@@ -62,7 +66,9 @@ import ResourceEstimation from '/snippets/ja/_resource_estimation.mdx';
 | 月間ストレージ (圧縮後)  | 150 TB    |
 | 3 か月保持のストレージ   | 450 TB    |
 
-## オブザーバビリティ ワークロードの分離 {#isolating-workloads}
+<div id="isolating-workloads">
+  ## オブザーバビリティ ワークロードの分離
+</div>
 
 リアルタイムのアプリケーション分析など、すでに他のワークロードをサポートしている**既存の ClickHouse Cloud サービス**に ClickStack を追加する場合は、オブザーバビリティ トラフィックを分離することを強く推奨します。
 
@@ -74,7 +80,5 @@ ClickStack 専用の**子サービス**を作成するには、[**Managed Wareho
 * 必要に応じて、サービス間で同じ基盤データセットを共有する
 
 このアプローチにより、既存のワークロードへの影響を避けつつ、オブザーバビリティ データの増加に合わせて ClickStack を独立してスケールできます。
-
-同じ機能を使用して、上記で見積もった取り込みコンピュートとクエリ用コンピュートを別々のサービスとしてプロビジョニングし、それぞれを個別にスケールすることもできます。[読み取りワークロードと書き込みワークロードの分離](/ja/clickstack/managing/isolating-read-write)のガイドを参照してください。
 
 大規模なデプロイメントやカスタム サイジングのガイダンスが必要な場合は、より正確な見積もりについてサポートにお問い合わせください。

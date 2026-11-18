@@ -1,4 +1,0 @@
---- one byte too many for the tagged type ---
-tagged as JSON but row 0 has 1 trailing byte(s)
---- tag without the ClickHouse type name is not acted on ---
-while converting column `j` from type String to type JSON

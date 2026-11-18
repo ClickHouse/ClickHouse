@@ -48,8 +48,7 @@
   * - The core transform is a swappable kernel: a portable scalar FWHT and a NEON + ILP kernel for
   *   float32 on AArch64. Both perform exactly the same butterflies in the same stage order, so
   *   they are bit-for-bit identical; the kernel can be selected for testing with the environment
-  *   variable CLICKHOUSE_RHT_KERNEL = "scalar" | "neon" | "avx2" (default: neon on AArch64,
-  *   avx2 on x86 with AVX2 support, scalar elsewhere).
+  *   variable CLICKHOUSE_RHT_KERNEL = "scalar" | "neon" (default: neon on AArch64, scalar elsewhere).
   * - When the length is 2^k * m with m in {12, 20} (orders with a Hadamard matrix), the transform
   *   is the exact Kronecker product H_(2^k) (x) H_m applied without padding, so the output keeps the
   *   input dimension. H_m is built once via the Paley construction. See kroneckerFactorFor / kronecker*.
@@ -86,20 +85,20 @@ public:
     static constexpr auto name = "randomHadamardTransform";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRandomHadamardTransform>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    String getName() const override { return name; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
     /// The transform of a constant vector is a constant: with all arguments constant the default
     /// implementation runs the transform on a single row and wraps the result in a `ColumnConst`,
     /// instead of repeating it for every row of the block. This also lets the analyzer fold the
     /// whole call to a literal, which matters for a vector search where the query vector is a
     /// constant rotated the same way as the stored vectors.
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     /// 'seed' and 'output_dims' are read as scalars, so they must stay constant even when the vector is not.
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty() || arguments.size() > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -129,7 +128,7 @@ public:
         return std::make_shared<DataTypeArray>(array_type->getNestedType());
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         UInt64 seed = 0;
         size_t fixed_out_dims = 0; /// 0 means "full" (= m)
@@ -182,7 +181,7 @@ private:
         auto & result_offsets = result_offsets_column->getData();
         result_offsets.resize(rows);
 
-#if defined(__aarch64__) || defined(__AVX2__)
+#if defined(__aarch64__)
         [[maybe_unused]] const FwhtKernel kernel = selectKernel();
 #endif
 
@@ -304,16 +303,6 @@ private:
                     }
                     else
                         kroneckerScalar<Compute>(buffer.data(), kron_blocks, kron_m, hm);
-#elif defined(__AVX2__)
-                    if constexpr (std::is_same_v<Compute, float>)
-                    {
-                        if (kernel == FwhtKernel::Avx2)
-                            kroneckerAvx2(buffer.data(), kron_blocks, kron_m, hm);
-                        else
-                            kroneckerScalar<Compute>(buffer.data(), kron_blocks, kron_m, hm);
-                    }
-                    else
-                        kroneckerScalar<Compute>(buffer.data(), kron_blocks, kron_m, hm);
 #else
                     kroneckerScalar<Compute>(buffer.data(), kron_blocks, kron_m, hm);
 #endif
@@ -330,17 +319,6 @@ private:
                     }
                     else
                         fwhtScalar(buffer.data(), working_dim);
-#elif defined(__AVX2__)
-                    if constexpr (std::is_same_v<Compute, float>)
-                    {
-                        if (kernel == FwhtKernel::Avx2)
-                            fwhtAvx2(buffer.data(), working_dim);
-                        else
-                            fwhtScalar(buffer.data(), working_dim);
-                    }
-                    else
-                        fwhtScalar(buffer.data(), working_dim);
-
 #else
                     fwhtScalar(buffer.data(), working_dim);
 #endif
