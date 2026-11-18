@@ -4,7 +4,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
-#include <Processors/Formats/Impl/PuffinBlockInputFormat.h>
+#include <Processors/Formats/Impl/Puffin/PuffinBlockInputFormat.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Common/Exception.h>
 

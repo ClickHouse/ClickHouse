@@ -75,8 +75,8 @@ private:
     public:
         /// `bytes` is the size of the added columns estimated by `getBlockSizeForGranularity`.
         void add(MutableColumns && columns, size_t bytes);
-        size_t size() const;
-        size_t bytes() const { return accumulated_bytes; }
+        [[nodiscard]] size_t size() const;
+        [[nodiscard]] size_t bytes() const { return accumulated_bytes; }
         Columns releaseColumns();
     private:
         MutableColumns accumulated_columns;

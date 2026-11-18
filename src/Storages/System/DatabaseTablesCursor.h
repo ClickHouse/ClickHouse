@@ -41,21 +41,21 @@ public:
     void skipCurrentDatabase();
 
     /// The accessors below are valid only after `advanceToNextDatabase` returned true.
-    const String & getDatabaseName() const
+    [[nodiscard]] const String & getDatabaseName() const
     {
         chassert(database);
         return database_name;
     }
 
-    const DatabasePtr & getDatabase() const
+    [[nodiscard]] const DatabasePtr & getDatabase() const
     {
         chassert(database);
         return database;
     }
 
-    bool hasTablesIterator() const { return tables_it != nullptr; }
+    [[nodiscard]] bool hasTablesIterator() const { return tables_it != nullptr; }
     void setTablesIterator(DatabaseTablesIteratorPtr tables_it_);
-    IDatabaseTablesIterator & getTablesIterator() const;
+    [[nodiscard]] IDatabaseTablesIterator & getTablesIterator() const;
 
 private:
     ColumnPtr database_names;
