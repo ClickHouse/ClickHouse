@@ -353,7 +353,6 @@ MERGE_QUEUE_SPECIAL_BUILD_TYPES = (
     BuildTypes.AMD_ILLUMOS,
     BuildTypes.PPC64LE,
     BuildTypes.AMD_COMPAT,
-    BuildTypes.AMD_MUSL,
     BuildTypes.RISCV64,
     BuildTypes.S390X,
     BuildTypes.LOONGARCH64,
@@ -692,11 +691,6 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_COMPAT,
             provides=[ArtifactNames.CH_AMD_COMPAT],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
-        ),
-        Job.ParamSet(
-            parameter=BuildTypes.AMD_MUSL,
-            provides=[ArtifactNames.CH_AMD_MUSL],
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(

@@ -3851,7 +3851,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
         const auto sorting_queue_strategy
             = !global_ctx->merge_may_reduce_rows
-                && !global_ctx->projection
                 && (*merge_tree_settings)[MergeTreeSetting::merge_use_batch_sorting_queue]
             ? SortingQueueStrategy::Batch
             : SortingQueueStrategy::Default;
