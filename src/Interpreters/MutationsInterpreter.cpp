@@ -423,10 +423,11 @@ std::vector<UInt64> countDeletedRowsByCommands(
         return deleted_rows_by_command;
     }
 
-    /// With several commands, the rows are counted only if every condition is a literal, e.g. `WHERE 1` or `WHERE 0`: the first true
-    /// one deletes all rows. The conditions are not evaluated, so that counting cannot fail the mutation.
+    /// With several commands, the rows are counted only if the conditions up to the first true one are literals, e.g. `WHERE 0` or
+    /// `WHERE 1`: the first true one deletes all rows, and the commands after it delete none, whatever their conditions are. The conditions
+    /// are not evaluated, so that counting cannot fail the mutation.
     std::optional<size_t> first_deleting_command;
-    for (size_t i = 0; i < commands.size(); ++i)
+    for (size_t i = 0; i < commands.size() && !first_deleting_command; ++i)
     {
         const auto alter = commands[i].ast();
         const auto * literal = (alter->partition || alter->partitions) ? nullptr : typeid_cast<const ASTLiteral *>(alter->predicate);
@@ -448,9 +449,9 @@ std::vector<UInt64> countDeletedRowsByCommands(
             default: return deleted_rows_by_command;
         }
     }
-    if (first_deleting_command) {
+
+    if (first_deleting_command)
         deleted_rows_by_command[*first_deleting_command] = source_part->rows_count;
-    }
     return deleted_rows_by_command;
 }
 

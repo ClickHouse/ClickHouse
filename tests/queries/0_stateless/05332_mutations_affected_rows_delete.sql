@@ -275,3 +275,14 @@ ALTER TABLE t_not_literal DELETE WHERE materialize(1), DELETE WHERE 0 SETTINGS m
 SELECT command, affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_not_literal' ORDER BY toUInt64(extract(mutation_id, '\\d+')), command;
 SELECT count() FROM t_not_literal;
 DROP TABLE t_not_literal;
+
+-- 23. Several literal conditions delete all rows of the part together: the rows are counted for the first true one, and the commands
+-- after it, whatever their conditions are, report 0
+SELECT '-- first true literal';
+DROP TABLE IF EXISTS t_first_literal;
+CREATE TABLE t_first_literal (id UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_first_literal SELECT number FROM numbers(10);
+ALTER TABLE t_first_literal DELETE WHERE 0, DELETE WHERE 1, DELETE WHERE 1, DELETE WHERE id = 5 SETTINGS mutations_sync = 1;
+SELECT command, affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_first_literal';
+SELECT count() FROM t_first_literal;
+DROP TABLE t_first_literal;
