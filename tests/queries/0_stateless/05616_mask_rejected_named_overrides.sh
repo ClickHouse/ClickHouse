@@ -145,7 +145,7 @@ $CLICKHOUSE_CLIENT -m -q "
     -- Neither the query nor the exception message keeps the secret.
     SELECT replaceAll(query, '_${DB}', ''), position(query, '${SECRET}') = 0, position(exception, '${SECRET}') = 0
     FROM system.query_log
-    WHERE current_database = currentDatabase() AND type = 'ExceptionBeforeStart'
+    WHERE current_database = currentDatabase() AND type = 'ExceptionBeforeStart' AND is_initial_query
     ORDER BY event_time_microseconds;
 "
 

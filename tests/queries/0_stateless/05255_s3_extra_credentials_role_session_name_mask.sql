@@ -1,5 +1,6 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, long
 -- no-fasttest: the S3 table engine is not available in the fast test build.
+-- long: many statements, each with an S3 request; repeated runs in the flaky check exceed the time limit.
 
 -- role_session_name inside extra_credentials(...) can act as a shared secret: a role's trust policy
 -- can require a specific value through the sts:RoleSessionName condition, and the ClickHouse Cloud
