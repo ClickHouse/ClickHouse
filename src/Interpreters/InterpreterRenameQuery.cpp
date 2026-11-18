@@ -78,29 +78,26 @@ BlockIO InterpreterRenameQuery::execute()
 
     auto & database_catalog = DatabaseCatalog::instance();
 
-    /// A RENAME or EXCHANGE between two databases moves a table out of its database. DROP DATABASE holds
-    /// this lock exclusively while it prepares its tables for shutdown and drops them, so refuse such a
-    /// move while a drop runs (and make the drop wait for moves in progress). Otherwise the drop could
-    /// shut down a table that has already moved to another database and survives there, read-only.
-    /// A rename inside one database does not remove tables from it, so it is not affected.
+    /// DROP DATABASE holds this lock exclusively while it prepares its tables for shutdown and drops them.
+    /// A RENAME or EXCHANGE must not change the set of tables of a database in the meantime: a table moved
+    /// to another database would still be shut down by the drop and stay read-only there, and an exchange
+    /// would make the drop remove the wrong table. So refuse the rename while a drop runs, and make the drop
+    /// wait for renames in progress. The lock is only tried, so this cannot deadlock with the drop.
     std::vector<std::shared_lock<SharedMutex>> drop_database_locks;
     if (!rename.database)
     {
-        std::set<String> databases_losing_tables;
+        std::set<String> involved_databases;
         for (const auto & description : descriptions)
         {
-            if (description.from_database_name != description.to_database_name)
-            {
-                databases_losing_tables.insert(description.from_database_name);
-                databases_losing_tables.insert(description.to_database_name);
-            }
+            involved_databases.insert(description.from_database_name);
+            involved_databases.insert(description.to_database_name);
         }
 
-        for (const auto & database_name : databases_losing_tables)
+        for (const auto & database_name : involved_databases)
         {
             auto lock = database_catalog.tryGetLockForRestartReplica(database_name);
             if (!lock)
-                throw Exception(ErrorCodes::UNFINISHED, "Cannot move tables between databases: database {} is being dropped", backQuoteIfNeed(database_name));
+                throw Exception(ErrorCodes::UNFINISHED, "Cannot rename or exchange tables: database {} is being dropped", backQuoteIfNeed(database_name));
             drop_database_locks.push_back(std::move(*lock));
         }
     }
