@@ -1185,34 +1185,31 @@ QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node)
 }
 
 /// Whether a hash join on a single `String` key packs the keys, see `enable_packed_string_keys_in_hash_join`.
-/// `right_key_avg_bytes` is `ColumnStats::avg_bytes` of the right key, 0 if unknown. It reads the L2 cache size of this host,
-/// so each host decides for itself. Without the average size or the rows, `sender_estimated_small_right_side` decides first,
-/// then `rhs_size_estimation` against `min_rows_for_packed_string_keys_in_hash_join`. With no estimate the keys are packed.
+/// Exact keys are cheaper while their hash table fits in the L2 cache of this host, so each host decides for itself.
+/// A packed key of more than 15 bytes is hashed for every probe row, which the table size does not account for. A runtime
+/// filter leaves only the probe rows that hit, so without one the join also needs `min_rows_for_packed_string_keys_in_hash_join`
+/// rows. The same holds for a key of unknown length: `right_key_avg_bytes` is `ColumnStats::avg_bytes` of the right key,
+/// 0 if unknown. The rows are the optimizer's estimate, else this host's estimate of its read. With neither, the keys are
+/// packed unless the sender of the plan estimated the right side small. A minimum of 0 packs every join.
 static bool shouldPackStringJoinKeys(const JoinAlgorithmParams & params, Float64 right_key_avg_bytes)
 {
+    if (params.min_rows_for_packed_string_keys_in_hash_join == 0)
+        return true;
+
     const auto rows = params.rhs_size_estimation ? params.rhs_size_estimation : params.local_rhs_rows_estimation;
-    if (right_key_avg_bytes > 0 && rows)
-    {
-        /// Exact keys are cheaper while their hash table fits in the L2 cache. A cell has 32 bytes: the pointer, the length,
-        /// the saved hash and the row reference. The real table is larger.
-        constexpr size_t exact_key_cell_bytes = 32;
-        const Float64 avg_key_length = std::max<Float64>(right_key_avg_bytes - sizeof(ColumnString::Offset), 0);
-        const Float64 exact_table_bytes = static_cast<Float64>(*rows) * (exact_key_cell_bytes + avg_key_length);
-        const bool exact_table_exceeds_cache = exact_table_bytes > static_cast<Float64>(getL2CacheSize());
+    if (!rows)
+        return !params.sender_estimated_small_right_side;
 
-        /// A packed long key is hashed for every probe row, which the table size does not account for. A runtime filter
-        /// leaves only the probe rows that hit, so without one the join also needs the minimum number of rows.
-        if (avg_key_length > UnhashedPackedStringRef::MAX_SMALL_LEN)
-        {
-            const bool enough_rows = *rows >= params.min_rows_for_packed_string_keys_in_hash_join;
-            return exact_table_exceeds_cache && (params.runtime_filter_keeps_matching_rows || enough_rows);
-        }
-        return exact_table_exceeds_cache;
-    }
+    /// A cell holds the key, its saved hash and the row reference. The map is never full, so the real table is larger.
+    constexpr size_t exact_key_cell_bytes = sizeof(HashJoin::JoinHashMapWithSavedHash<std::string_view, RowRefList>::cell_type);
+    const bool key_length_known = right_key_avg_bytes > 0;
+    const Float64 avg_key_length = std::max<Float64>(right_key_avg_bytes - sizeof(ColumnString::Offset), 0);
+    const Float64 exact_table_bytes = static_cast<Float64>(*rows) * (exact_key_cell_bytes + avg_key_length);
+    const bool keys_are_hashed
+        = (!key_length_known || avg_key_length > UnhashedPackedStringRef::MAX_SMALL_LEN) && !params.runtime_filter_keeps_matching_rows;
 
-    if (params.sender_estimated_small_right_side)
-        return false;
-    return !params.rhs_size_estimation || *params.rhs_size_estimation >= params.min_rows_for_packed_string_keys_in_hash_join;
+    return exact_table_bytes > static_cast<Float64>(getL2CacheSize())
+        && (!keys_are_hashed || *rows >= params.min_rows_for_packed_string_keys_in_hash_join);
 }
 
 static std::shared_ptr<IJoin> tryCreateJoin(

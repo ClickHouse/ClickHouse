@@ -4,9 +4,8 @@
 -- join on a single `String` key counts the inline keys in `JoinPackedStringKeysInline` and the hashed ones in
 -- `JoinPackedStringKeysHashed`. A shard may have no row estimate, so `min_rows_for_packed_string_keys_in_hash_join` is 0.
 
--- The tables have no `basic` statistics, which would let a shard decide from the size of its hash table.
-CREATE TABLE t_left (k String) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
-CREATE TABLE t_right (k String) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
+CREATE TABLE t_left (k String) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE t_right (k String) ENGINE = MergeTree ORDER BY k;
 -- Half of the keys are stored inline, the other half as hashes.
 INSERT INTO t_left SELECT if(number % 2 = 0, toString(number), concat('a key longer than 15 bytes ', toString(number))) FROM numbers(1000);
 INSERT INTO t_right SELECT k FROM t_left;

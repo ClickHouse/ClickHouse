@@ -7,10 +7,11 @@
     </settings>
 
     <!--
-        Hash joins on a single String key with `basic` column statistics on the right key. The join chooses the layout of the keys
+        Hash joins on a single String key, mostly with `basic` column statistics on the right key. The join chooses the layout of the keys
         (`enable_packed_string_keys_in_hash_join`) from its hash table size: the keys are packed when the hash table with exact keys is
-        larger than the L2 cache (2 MiB on the CI runners). Keys of more than 15 bytes also need `min_rows_for_packed_string_keys_in_hash_join`
-        (100000) rows, unless the join has a runtime filter, which an INNER join gets and a LEFT join does not.
+        larger than the L2 cache (2 MiB on the CI runners). A key of more than 15 bytes, or of unknown length because the table has no
+        statistics, is hashed for every left row when packed, so then the join also needs `min_rows_for_packed_string_keys_in_hash_join`
+        (100000) rows, unless it has a runtime filter, which an INNER join gets and a LEFT join does not.
         The right table is the build side and its key of row `id` is made from `id`. A probe row hits when its hit rate says so and takes
         `id = intHash64(number + 1) % build_rows`; a miss takes a larger `id`. Every `id` is a UInt64, so `sipHash128` hashes the same
         type on both sides. A probe table has a key column for each build size and hit rate, and a view repeats it to lengthen the probe side.
@@ -18,6 +19,7 @@
 
     <create_query>CREATE TABLE psk_stats_build_short_10k (k String STATISTICS(basic), v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = ''</create_query>
     <create_query>CREATE TABLE psk_stats_build_short_80k (k String STATISTICS(basic), v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = ''</create_query>
+    <create_query>CREATE TABLE psk_stats_build_short_80k_mem (k String, v UInt64) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE psk_stats_build_short_200k (k String STATISTICS(basic), v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = ''</create_query>
     <create_query>CREATE TABLE psk_stats_build_64_8k (k String STATISTICS(basic), v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = ''</create_query>
     <create_query>CREATE TABLE psk_stats_build_64_60k (k String STATISTICS(basic), v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = ''</create_query>
@@ -40,6 +42,7 @@
     <fill_query>INSERT INTO psk_stats_build_256_30k SELECT substring(repeat(hex(sipHash128(number)), 8), 1, 256), number FROM numbers_mt(30000) SETTINGS materialize_statistics_on_insert = 1</fill_query>
     <fill_query>OPTIMIZE TABLE psk_stats_build_short_10k FINAL</fill_query>
     <fill_query>OPTIMIZE TABLE psk_stats_build_short_80k FINAL</fill_query>
+    <fill_query>INSERT INTO psk_stats_build_short_80k_mem SELECT k, v FROM psk_stats_build_short_80k</fill_query>
     <fill_query>OPTIMIZE TABLE psk_stats_build_short_200k FINAL</fill_query>
     <fill_query>OPTIMIZE TABLE psk_stats_build_64_8k FINAL</fill_query>
     <fill_query>OPTIMIZE TABLE psk_stats_build_64_60k FINAL</fill_query>
@@ -103,6 +106,8 @@
     <query>SELECT count(), sum(r.v) FROM psk_stats_probe_short_long AS l INNER JOIN psk_stats_build_short_10k AS r ON l.k_10k_50 = r.k FORMAT Null</query>
     <!-- 2. Short keys, 80K build rows, INNER: larger than the cache, packed keys although below the minimum of 100K rows. -->
     <query>SELECT count(), sum(r.v) FROM psk_stats_probe_short_long AS l INNER JOIN psk_stats_build_short_80k AS r ON l.k_80k_50 = r.k FORMAT Null</query>
+    <!-- 2a. The same 80K build rows in a Memory table, which has no statistics, INNER: the key length is unknown, and the runtime filter lets the join pack the keys. -->
+    <query>SELECT count(), sum(r.v) FROM psk_stats_probe_short_long AS l INNER JOIN psk_stats_build_short_80k_mem AS r ON l.k_80k_50 = r.k FORMAT Null</query>
     <!-- 3. Short keys, 80K build rows, LEFT: packed keys. -->
     <query>SELECT count(), sum(r.v) FROM psk_stats_probe_short_long AS l LEFT JOIN psk_stats_build_short_80k AS r ON l.k_80k_50 = r.k FORMAT Null</query>
     <!-- 4. Short keys, 200K build rows, INNER: packed keys. -->
@@ -136,6 +141,7 @@
 
     <drop_query>DROP TABLE IF EXISTS psk_stats_build_short_10k</drop_query>
     <drop_query>DROP TABLE IF EXISTS psk_stats_build_short_80k</drop_query>
+    <drop_query>DROP TABLE IF EXISTS psk_stats_build_short_80k_mem</drop_query>
     <drop_query>DROP TABLE IF EXISTS psk_stats_build_short_200k</drop_query>
     <drop_query>DROP TABLE IF EXISTS psk_stats_build_64_8k</drop_query>
     <drop_query>DROP TABLE IF EXISTS psk_stats_build_64_60k</drop_query>

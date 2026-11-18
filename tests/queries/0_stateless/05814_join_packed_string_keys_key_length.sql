@@ -1,10 +1,11 @@
 -- Tags: distributed
 
 -- A hash join on a single `String` key packs the keys (see `enable_packed_string_keys_in_hash_join`) or compares them exactly.
--- Without the `basic` statistics of the right key, `min_rows_for_packed_string_keys_in_hash_join` decides. With them, the keys are
--- packed only when the hash table with exact keys is larger than the L2 cache. Long keys also need that many rows, unless the join
--- has a runtime filter that passes mostly the rows with a match, which an `INNER` join gets and a `LEFT` join does not.
--- The cache size differs between machines, so the right sides are far from it: 1000 rows take 35 to 65 KB, 1000000 rows 38 to 65 MB.
+-- The keys are packed only when the hash table with exact keys is larger than the L2 cache. A key of more than 15 bytes is hashed
+-- for every left row, so then the right side also needs `min_rows_for_packed_string_keys_in_hash_join` rows, unless the join has a
+-- runtime filter that passes mostly the rows with a match, which an `INNER` join gets and a `LEFT` join does not. A key without the
+-- `basic` statistics has an unknown length, which counts as long. A minimum of 0 packs every join.
+-- The cache size differs between machines, so the right sides are far from it: 1000 rows take 32 to 65 KB, 1000000 rows 32 to 65 MB.
 -- A join with packed keys counts the keys it inserts in `JoinPackedStringKeysInline` and `JoinPackedStringKeysHashed`,
 -- a join with exact keys counts none.
 -- The choice is made on the host that runs the join. A shard of a `Distributed` table plans the join itself, from its own statistics.
@@ -46,7 +47,7 @@ INSERT INTO long_big_stats SELECT concat('a key longer than 15 bytes ', toString
 INSERT INTO long_big_plain SELECT k FROM long_big_stats;
 INSERT INTO long_big_nullable_stats SELECT k FROM long_big_stats;
 
--- A small hash table: exact keys with the statistics, also with `min_rows_for_packed_string_keys_in_hash_join = 0`.
+-- A small hash table: exact keys, unless the minimum is 0.
 SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l INNER JOIN short_small_stats AS r ON l.k = r.k
 FORMAT Null SETTINGS log_comment = '05814:short_small_stats:default';
 SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l INNER JOIN short_small_stats AS r ON l.k = r.k
@@ -64,14 +65,21 @@ FORMAT Null SETTINGS log_comment = '05814:long_small_plain:default';
 SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l INNER JOIN long_small_plain AS r ON l.k = r.k
 FORMAT Null SETTINGS min_rows_for_packed_string_keys_in_hash_join = 0, log_comment = '05814:long_small_plain:min_rows_0';
 
--- A large hash table: packed keys with the statistics, long keys only with the minimum or a runtime filter.
+-- A large hash table: packed keys of known short length. Keys of unknown or long length need the minimum or a runtime filter.
 SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l INNER JOIN short_big_stats AS r ON l.k = r.k
 FORMAT Null SETTINGS min_rows_for_packed_string_keys_in_hash_join = 100000000, log_comment = '05814:short_big_stats:min_rows_large';
 SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l INNER JOIN short_big_plain AS r ON l.k = r.k
 FORMAT Null SETTINGS min_rows_for_packed_string_keys_in_hash_join = 100000000, log_comment = '05814:short_big_plain:min_rows_large';
 SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l INNER JOIN short_big_plain AS r ON l.k = r.k
 FORMAT Null SETTINGS log_comment = '05814:short_big_plain:default';
--- A `LEFT` join and a join without the filter keep exact keys below the minimum.
+-- The statistics tell that the keys are short, so a `LEFT` join packs them. Without them the length is unknown and counts as long.
+SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l LEFT JOIN short_big_stats AS r ON l.k = r.k
+FORMAT Null SETTINGS min_rows_for_packed_string_keys_in_hash_join = 100000000, log_comment = '05814:short_big_stats:left:min_rows_large';
+SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l LEFT JOIN short_big_plain AS r ON l.k = r.k
+FORMAT Null SETTINGS min_rows_for_packed_string_keys_in_hash_join = 100000000, log_comment = '05814:short_big_plain:left:min_rows_large';
+SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l LEFT JOIN short_big_plain AS r ON l.k = r.k
+FORMAT Null SETTINGS log_comment = '05814:short_big_plain:left:default';
+-- Long keys of a `LEFT` join, and of a join without the filter, stay exact below the minimum.
 SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l INNER JOIN long_big_stats AS r ON l.k = r.k
 FORMAT Null SETTINGS log_comment = '05814:long_big_stats:inner:default';
 SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l INNER JOIN long_big_stats AS r ON l.k = r.k
@@ -130,9 +138,9 @@ CREATE TABLE l_local (k String) ENGINE = MergeTree ORDER BY tuple() SETTINGS aut
 CREATE TABLE l_dist AS l_local ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), l_local);
 INSERT INTO l_local SELECT toString(number) FROM numbers(10);
 
--- Each shard decides for itself. Without statistics the minimum decides: above the rows of the right side it keeps exact keys, at
--- 0 it packs them. With the statistics, a shard packs the short keys of the large table and keeps exact keys for the small one.
--- It packs long keys when its own runtime filter is on the left side.
+-- Each shard decides for itself, from its own statistics, its own estimate of the right side and its own runtime filter. It packs
+-- the keys of the large table, unless they are long or of unknown length and it has no runtime filter below the minimum, and
+-- keeps exact keys for the small table unless the minimum is 0.
 SELECT count() FROM l_dist AS l INNER JOIN short_big_stats AS r ON l.k = r.k
 FORMAT Null SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0, min_rows_for_packed_string_keys_in_hash_join = 100000000, log_comment = '05814:shards:short_big_stats:min_rows_large';
 SELECT count() FROM l_dist AS l INNER JOIN short_big_plain AS r ON l.k = r.k
