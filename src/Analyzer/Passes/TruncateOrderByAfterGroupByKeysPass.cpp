@@ -9,10 +9,10 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/Utils.h>
-#include <Analyzer/WindowFunctionsUtils.h>
 #include <Common/checkStackSize.h>
 #include <Core/Settings.h>
 #include <Core/SortDescription.h>
+#include <Interpreters/Context.h>
 
 #include <algorithm>
 
@@ -124,30 +124,27 @@ public:
         }
 
         /// Remove only the elements that are functions of the keys, and those that cannot be calculated: a part of it is already replaced
-        /// by another pass, it has a correlated subquery, or it is a window function over the results of an aggregation on shards.
-        const bool has_unsupported_window_functions = getSettings()[Setting::distributed_group_by_no_merge] == 2;
+        /// by another pass, or it has a correlated subquery.
         const auto is_removed = [&](const QueryTreeNodePtr & sort_elem)
         {
             const auto & expression = sort_elem->as<SortNode &>().getExpression();
             return isFunctionOfKeys(expression, columns_of_merged_keys) || !canBeCalculatedFromKeys(expression, group_by_nodes)
-                || containsCorrelatedSubquery(expression) || (has_unsupported_window_functions && hasWindowFunctionNodes(expression));
+                || containsCorrelatedSubquery(expression);
         };
         order_by_nodes.erase(
             std::remove_if(order_by_nodes.begin() + truncate_after, order_by_nodes.end(), is_removed), order_by_nodes.end());
 
+        /// A positional argument keeps the aliases that the projection loses, so a remote server can find different definitions of them.
         for (size_t i = truncate_after; i < order_by_nodes.size(); ++i)
-        {
-            auto & expression = order_by_nodes[i]->as<SortNode &>().getExpression();
-            expression = cloneWithoutAliases(expression);
-        }
+            removeAliasesRecursive(order_by_nodes[i]->as<SortNode &>().getExpression());
     }
 
 private:
     /// `arrayJoin` in the projection and in ORDER BY is checked above.
     [[nodiscard]] bool canHaveSeveralRowsPerGroup(const QueryNode & query) const
     {
-        /// The groups of different shards are not merged.
-        if (getSettings()[Setting::distributed_group_by_no_merge])
+        /// The groups of different shards or replicas are not merged.
+        if (getSettings()[Setting::distributed_group_by_no_merge] || getContext()->canUseParallelReplicasCustomKey())
             return true;
 
         return (query.hasHaving() && hasFunctionNode(query.getHaving(), "arrayJoin"))

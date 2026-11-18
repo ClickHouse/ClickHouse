@@ -100,9 +100,6 @@ SortDescription commonPrefix(const SortDescription & lhs, const SortDescription 
     return res;
 }
 
-/// Values that comparison declares equal while hash equality - the equality of `GROUP BY`, `DISTINCT`,
-/// `LIMIT BY` and `IN` - keeps apart: `-0.0` and `0.0`, and the `NaN` payloads. `Dynamic`, `Variant`
-/// and `Object` are only known at run time and may hold such a value.
 bool comparisonCanMergeDistinctValues(const IDataType & type)
 {
     auto is_ambiguous = [](const IDataType & subtype)
