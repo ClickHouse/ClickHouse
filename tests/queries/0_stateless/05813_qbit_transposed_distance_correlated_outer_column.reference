@@ -1,0 +1,23 @@
+exists
+2
+scalar
+1	1
+2	9
+3	2
+union
+2
+two levels down
+2
+in and not in
+1
+2
+3
+nullable and quantized
+2
+outer and correlated use
+1	0
+3	1
+1
+1
+only the inner column is rewritten
+1
