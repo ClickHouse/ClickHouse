@@ -394,7 +394,7 @@ public:
     {
     }
 
-    String getName() const override { return "ReadFromSystemIcebergFiles"; }
+    [[nodiscard]] String getName() const override { return "ReadFromSystemIcebergFiles"; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override
     {

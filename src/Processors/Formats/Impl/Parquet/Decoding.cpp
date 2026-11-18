@@ -635,9 +635,7 @@ struct PlainBooleanDecoder : public PageDecoder
         bool direct = converter->isTrivial();
         if (direct)
         {
-            size_t pass_count = 0;
-            for (size_t i = 0; i < num_values; ++i)
-                pass_count += filter[filter_offset + i];
+            size_t pass_count = countBytesInFilter(filter, filter_offset, filter_offset + num_values);
             auto to_span = col.insertRawUninitialized(pass_count);
             to = to_span.data();
         }
@@ -723,8 +721,9 @@ struct PlainStringDecoder : public PageDecoder
     {
         for (size_t i = 0; i < num_values; ++i)
         {
+            requireRemainingBytes(4);
             UInt32 x = 0;
-            memcpy(&x, data, 4); /// omitting range check because input is padded
+            memcpy(&x, data, 4);
             size_t len = 4 + size_t(x);
             requireRemainingBytes(len);
             data += len;
@@ -737,11 +736,7 @@ struct PlainStringDecoder : public PageDecoder
         {
             /// Fast path for directly appending to ColumnString.
             auto & col_str = assert_cast<ColumnString &>(col);
-            size_t to_reserve = filter ? 0 : num_values;
-            for (size_t i = 0; filter && i < num_values; ++i)
-                to_reserve += filter[filter_offset + i];
-            if (!filter)
-                to_reserve = num_values;
+            size_t to_reserve = filter ? countBytesInFilter(filter, filter_offset, filter_offset + num_values) : num_values;
             col_str.reserve(col_str.size() + to_reserve);
 
             const StringValueFilter * active_value_filter = value_filter && value_filter->isEnabled() ? value_filter : nullptr;
@@ -751,8 +746,9 @@ struct PlainStringDecoder : public PageDecoder
 
             for (size_t i = 0; i < num_values; ++i)
             {
+                requireRemainingBytes(4);
                 UInt32 x = 0;
-                memcpy(&x, data, 4); /// omitting range check because input is padded
+                memcpy(&x, data, 4);
                 size_t len = 4 + size_t(x);
                 requireRemainingBytes(len);
                 if (!filter || filter[filter_offset + i])
@@ -799,17 +795,10 @@ struct PlainStringDecoder : public PageDecoder
             if (filter)
             {
                 PaddedPODArray<char> chars_buf;
-                size_t num_pass = 0;
-                for (size_t i = 0; i < num_values; ++i)
-                    num_pass += filter[filter_offset + i];
+                size_t num_pass = countBytesInFilter(filter, filter_offset, filter_offset + num_values);
                 if (num_pass == 0)
                 {
-                    for (size_t i = 0; i < num_values; ++i)
-                    {
-                        UInt32 x = 0;
-                        memcpy(&x, data, 4);
-                        data += 4 + size_t(x);
-                    }
+                    skip(num_values);
                     return;
                 }
                 chars_buf.reserve(num_pass * 32); // rough estimate
@@ -817,6 +806,7 @@ struct PlainStringDecoder : public PageDecoder
                 size_t offset = 0;
                 for (size_t i = 0; i < num_values; ++i)
                 {
+                    requireRemainingBytes(4);
                     UInt32 x = 0;
                     memcpy(&x, data, 4);
                     size_t len = 4 + size_t(x);
@@ -839,8 +829,9 @@ struct PlainStringDecoder : public PageDecoder
             size_t offset = 0;
             for (size_t i = 0; i < num_values; ++i)
             {
+                requireRemainingBytes(4);
                 UInt32 x = 0;
-                memcpy(&x, data, 4); /// omitting range check because input is padded
+                memcpy(&x, data, 4);
                 size_t len = 4 + size_t(x);
                 requireRemainingBytes(len);
                 offset += len;
@@ -1024,9 +1015,7 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
             return;
         }
         size_t value_size = converter->input_size;
-        size_t pass_count = 0;
-        for (size_t i = 0; i < num_values; ++i)
-            pass_count += filter[filter_offset + i];
+        size_t pass_count = countBytesInFilter(filter, filter_offset, filter_offset + num_values);
         if (pass_count == 0)
         {
             skip(num_values);
@@ -1245,9 +1234,7 @@ struct DeltaLengthByteArrayDecoder : public PageDecoder
         {
             PaddedPODArray<char> chars_buf;
             IColumn::Offsets out_offsets;
-            size_t num_pass = 0;
-            for (size_t i = 0; i < num_values; ++i)
-                num_pass += filter[filter_offset + i];
+            size_t num_pass = countBytesInFilter(filter, filter_offset, filter_offset + num_values);
             if (num_pass == 0)
             {
                 idx += num_values;
@@ -1329,9 +1316,7 @@ struct DeltaByteArrayDecoder : public PageDecoder
             size_t pass_count = num_values;
             if (filter)
             {
-                pass_count = 0;
-                for (size_t i = 0; i < num_values; ++i)
-                    pass_count += filter[filter_offset + i];
+                pass_count = countBytesInFilter(filter, filter_offset, filter_offset + num_values);
                 if (pass_count == 0)
                 {
                     decodeImpl<true, true>(num_values, nullptr, nullptr, nullptr, 0, nullptr);
@@ -1385,9 +1370,7 @@ struct DeltaByteArrayDecoder : public PageDecoder
                     string_converter->convertColumn(std::span(reinterpret_cast<char *>(col_str->getChars().data()), col_str->getChars().size()), col_str->getOffsets().data(), /*separator_bytes*/ 0, num_values, col);
                 return;
             }
-            size_t pass_count = 0;
-            for (size_t i = 0; i < num_values; ++i)
-                pass_count += filter[filter_offset + i];
+            size_t pass_count = countBytesInFilter(filter, filter_offset, filter_offset + num_values);
             if (pass_count == 0)
             {
                 decodeImpl<true, false>(num_values, nullptr, nullptr, nullptr, 0, nullptr);
@@ -1524,9 +1507,7 @@ struct ByteStreamSplitDecoder : public PageDecoder
             decodeNoFilter(num_values, col, num_streams);
             return;
         }
-        size_t pass_count = 0;
-        for (size_t i = 0; i < num_values; ++i)
-            pass_count += filter[filter_offset + i];
+        size_t pass_count = countBytesInFilter(filter, filter_offset, filter_offset + num_values);
         if (pass_count == 0)
         {
             skip(num_values);
@@ -1757,6 +1738,9 @@ void Dictionary::reset()
     string_value_filter_mask.clear();
     string_value_filter_mask.shrink_to_fit();
     string_value_filter = nullptr;
+    string_value_filter_rows_checked = 0;
+    string_value_filter_rows_replaced = 0;
+    string_value_filter_bytes_skipped = 0;
 }
 
 bool Dictionary::isInitialized() const
@@ -2065,7 +2049,7 @@ void Dictionary::appendIndexes(const UInt32 * indexes, size_t n, IColumn & out, 
                 }
                 /// Report the observed selectivity to the shared filter, so that a non-selective
                 /// filter disables itself for all readers, same as in the non-dictionary paths.
-                string_value_filter->updateStatsWithoutPerValueChecks(n, values_replaced, bytes_skipped);
+                accountStringValueFilterRows(n, values_replaced, bytes_skipped);
                 break;
             }
             for (size_t i = 0; i < n; ++i)
@@ -2129,10 +2113,10 @@ void Dictionary::appendRepeated(size_t idx, size_t n, IColumn & out)
                 if (!string_value_filter_mask[idx])
                 {
                     c.insertManyDefaults(n);
-                    string_value_filter->updateStatsWithoutPerValueChecks(n, n, len * n);
+                    accountStringValueFilterRows(n, n, len * n);
                     break;
                 }
-                string_value_filter->updateStatsWithoutPerValueChecks(n, 0, 0);
+                accountStringValueFilterRows(n, 0, 0);
             }
             c.reserve(c.size() + n);
             for (size_t i = 0; i < n; ++i)
@@ -2144,6 +2128,26 @@ void Dictionary::appendRepeated(size_t idx, size_t n, IColumn & out)
             break;
         case Mode::Uninitialized: chassert(false);
     }
+}
+
+void Dictionary::accountStringValueFilterRows(size_t checked, size_t replaced, size_t bytes_skipped)
+{
+    string_value_filter_rows_checked += checked;
+    string_value_filter_rows_replaced += replaced;
+    string_value_filter_bytes_skipped += bytes_skipped;
+    if (string_value_filter_rows_checked >= StringValueFilter::MAX_VALUES_BETWEEN_STATS_UPDATES)
+        flushStringValueFilterStats();
+}
+
+void Dictionary::flushStringValueFilterStats()
+{
+    if (!string_value_filter_rows_checked)
+        return;
+    string_value_filter->updateStatsWithoutPerValueChecks(
+        string_value_filter_rows_checked, string_value_filter_rows_replaced, string_value_filter_bytes_skipped);
+    string_value_filter_rows_checked = 0;
+    string_value_filter_rows_replaced = 0;
+    string_value_filter_bytes_skipped = 0;
 }
 
 void memcpyIntoColumn(const char * data, size_t num_values, size_t value_size, IColumn & col)
@@ -2523,6 +2527,15 @@ void BigEndianDecimalFixedSizeConverter<T>::convertColumn(std::span<const char> 
     auto to_bytes = col.insertRawUninitialized(num_values);
     chassert(to_bytes.size() == num_values * sizeof(T));
     T * to = reinterpret_cast<T *>(to_bytes.data());
+    if constexpr (sizeof(T) <= 8)
+    {
+        if (input_size == sizeof(T))
+        {
+            for (size_t i = 0; i < num_values; ++i)
+                to[i] = unalignedLoadBigEndian<T>(from_bytes + i * sizeof(T));
+            return;
+        }
+    }
     for (size_t i = 0; i < num_values; ++i)
     {
         to[i] = helper.convertPaddedValue(from_bytes);

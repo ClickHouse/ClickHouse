@@ -316,7 +316,7 @@ std::optional<std::string> ClickStackUIRequestHandler::getResourcePath(const std
     std::string decoded;
     try
     {
-        Poco::URI::decode(std::string(path), decoded);
+        Poco::URI::decode(path, decoded);
     }
     catch (const Poco::URISyntaxException &)
     {
