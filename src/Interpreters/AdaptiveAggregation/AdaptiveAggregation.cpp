@@ -57,8 +57,10 @@ size_t adaptiveSpillMinBytes(const Aggregator::Params & params)
 /// Growing set states also retain distinct arguments, even when their group keys repeat. Their estimated
 /// payload is added to the per-key state cost. Switching in the middle of a stream retains the staged records
 /// as well as the new table, so the estimated state cost gets the same hysteresis as the calibrated bound of
-/// cheap states: both are multiplied by `adaptive_thaw_state_cost_multiplier`. Multiplication by the record
-/// count avoids division, and 128-bit products accommodate streams of billions of records without overflow.
+/// cheap states: both are multiplied by `adaptive_thaw_state_cost_multiplier`. The only producer of an
+/// aggregation weighs both once, because nothing merges its table on the ordinary path (see
+/// `adaptive_thaw_lone_producer_state_cost_multiplier`). Multiplication by the record count avoids division,
+/// and 128-bit products accommodate streams of billions of records without overflow.
 bool Aggregator::adaptiveStagingRepeats(const AdaptiveAggregationProducer & adaptive) const
 {
     if (!params.adaptiveMayThaw())
@@ -75,8 +77,12 @@ bool Aggregator::adaptiveStagingRepeats(const AdaptiveAggregationProducer & adap
     const UInt128 state_bytes = static_cast<UInt128>(retained_bytes_per_key) * distinct
         + static_cast<UInt128>(adaptive_state_bytes_per_distinct_input) * frozen.getEstimatedDistinctInputCount();
 
+    const size_t state_cost_multiplier = adaptive.session->producers == 1
+        ? adaptive_thaw_lone_producer_state_cost_multiplier
+        : adaptive_thaw_state_cost_multiplier;
+
     return static_cast<UInt128>(frozen.staged_records - distinct) * frozen.staged_bytes
-        > state_bytes * frozen.staged_records * adaptive_thaw_state_cost_multiplier;
+        > state_bytes * frozen.staged_records * state_cost_multiplier;
 }
 
 void Aggregator::accountStagedBatch(

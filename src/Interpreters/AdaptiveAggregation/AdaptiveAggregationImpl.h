@@ -122,9 +122,24 @@ constexpr size_t adaptive_parallel_merge_max_work = 1'000'000;
 /// at most ~ 275 (fixed-width arguments up to repeat ~ 12.5, count streams far below).
 /// `adaptive_thaw_min_staged_records` is the evidence floor of a thread before it may thaw. It is
 /// in records rather than bytes because the repeat estimate's confidence comes from sampled observations.
+///
+/// The only producer of an aggregation weighs the state cost once
+/// (`adaptive_thaw_lone_producer_state_cost_multiplier`), so its bound for cheap states is 75 bytes. For
+/// several producers the factor of four also stands for the merge of their ordinary path: every thread's
+/// table keeps a state for a key, and the merge of the tables pays for each of them. The ordinary path of a
+/// lone producer has no merge: its table is the result. So a repeated record only adds a second pass over
+/// what one in-place update does, and it is waste once the repeats outweigh the state itself. A count record
+/// of a `UInt64` key (9 bytes and the cost per record) thaws past 5.4 records per key instead of 18.6, and a
+/// record with one 8-byte argument past 4.1 instead of 13.5.
+/// The bound of 75 splits the measured shapes of one stream on one thread. Every shape that repeats its keys
+/// 9 times or more crosses it: staging them takes 1.1 to 2.2 times as long as an ordinary table, from 200
+/// thousand to 10 million keys. The streams that are faster frozen stay below it although they repeat: `hits`
+/// grouped by the minute and `UserID` opens with 3.1 records of 22 bytes per key (47 bytes) and settles at
+/// 1.75 over 52 million keys, where staging is 1.2 times faster.
 constexpr UInt64 adaptive_thaw_sample_mask = 0xFF;
 constexpr size_t adaptive_thaw_min_staged_records = 65'536;
 constexpr size_t adaptive_thaw_state_cost_multiplier = 4;
+constexpr size_t adaptive_thaw_lone_producer_state_cost_multiplier = 1;
 constexpr size_t adaptive_thaw_staged_share_inverse = 4;
 
 /// The thaw weighs every staged record at its bytes plus this fixed cost, for the lookup of its group that the merge
