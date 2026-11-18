@@ -355,6 +355,19 @@ static bool queryReadsDataFromClient(const ASTPtr & ast)
     return input_function != nullptr;
 }
 
+/// Whether `ast` contains an `EXPLAIN ANALYZE`, anywhere in the tree (it can also be a subquery, e.g.
+/// `SELECT * FROM (EXPLAIN ANALYZE SELECT ...)`). Unlike the other kinds of `EXPLAIN`, it runs its inner
+/// query to completion while its interpreter builds the result, before the pipeline is pulled.
+static bool containsExplainAnalyze(const IAST & ast)
+{
+    if (const auto * explain = ast.as<ASTExplainQuery>(); explain && explain->getKind() == ASTExplainQuery::Analyze)
+        return true;
+    for (const auto & child : ast.children)
+        if (child && containsExplainAnalyze(*child))
+            return true;
+    return false;
+}
+
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
 {
     if (settings[Setting::max_ast_depth])
@@ -3248,6 +3261,14 @@ static BlockIO executeQueryImpl(
                     "The query was rewritten by a query rule into a statement that does not return rows, "
                     "which is not allowed here");
         }
+
+        /// The query is only described (its result header is read, and the pipeline is never run), so a rewrite
+        /// must not produce a statement that does its work while it is being built, which a cancelled pipeline
+        /// cannot undo.
+        if (flags.rewritten_query_is_only_described && !applied_rewrite_rules.empty() && containsExplainAnalyze(*out_ast))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The query was rewritten by a query rule into a statement with `EXPLAIN ANALYZE`, "
+                "which is not allowed when only the result structure of the query is requested");
     }
     catch (...)
     {

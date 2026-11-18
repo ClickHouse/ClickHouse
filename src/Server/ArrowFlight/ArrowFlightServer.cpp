@@ -870,7 +870,7 @@ arrow::Status ArrowFlightServer::GetSchema(
                 clearQueryRulesIfSynthesized(query_context, sql_is_synthesized);
                 QueryScope query_scope = QueryScope::create(query_context);
 
-                auto [ast, block_io] = executeQuery(sql, query_context, QueryFlags{ .rewritten_query_must_return_rows = true }, QueryProcessingStage::Complete);
+                auto [ast, block_io] = executeQuery(sql, query_context, QueryFlags{ .rewritten_query_must_return_rows = true, .rewritten_query_is_only_described = true }, QueryProcessingStage::Complete);
 
                 bool query_finished = false;
                 bool handling_exception = false;

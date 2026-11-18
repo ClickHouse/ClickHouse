@@ -1037,10 +1037,10 @@ Block MySQLHandler::describePreparedStatement(const String & statement, ResultCo
     /// Build the query the same way its execution does (with the settings, the access checks, the limits and an entry
     /// in the process list), but don't run it: only the header of its result is needed here.
     QueryResultDetails result_details;
-    /// A query rule must not turn the described query into a statement that is executed right away (e.g. DDL),
-    /// because preparing a statement must not have side effects.
+    /// A query rule must not turn the described query into a statement that is executed right away (e.g. DDL or
+    /// `EXPLAIN ANALYZE`), because preparing a statement must not have side effects.
     BlockIO io = executeQuery(query, query_context,
-        QueryFlags{.rewritten_query_must_return_rows = true, .collect_result_column_origins = true},
+        QueryFlags{.rewritten_query_must_return_rows = true, .rewritten_query_is_only_described = true, .collect_result_column_origins = true},
         QueryProcessingStage::Complete, &result_details).second;
     Block header = io.pipeline.getHeader();
     result_column_origins = std::move(result_details.result_column_origins);

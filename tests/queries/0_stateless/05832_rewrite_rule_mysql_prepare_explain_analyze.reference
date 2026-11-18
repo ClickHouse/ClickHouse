@@ -1,0 +1,2 @@
+EXPLAIN ANALYZE: refused: EXPLAIN ANALYZE
+EXPLAIN: num_columns=1
