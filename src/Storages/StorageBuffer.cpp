@@ -1007,7 +1007,9 @@ size_t StorageBuffer::flushBufferedRowsBeforeShutdown()
     size_t buffers_flushed = 0;
     for (auto & buffer : buffers)
     {
-        if (flushBuffer(buffer, /*check_thresholds=*/ false, /*locked=*/ false))
+        /// An empty buffer does not count, otherwise the caller would never see a pass that moves nothing.
+        auto lock = buffer.lockForReading();
+        if (buffer.data.rows() && flushBuffer(buffer, /*check_thresholds=*/ false, /*locked=*/ true))
             ++buffers_flushed;
     }
     return buffers_flushed;
