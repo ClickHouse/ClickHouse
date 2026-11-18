@@ -15,6 +15,8 @@ namespace DB
 ///   - `String` / `FixedString` columns:
 ///       sum of byte lengths over non-NULL rows (`string_total_bytes`); the average length is
 ///       `string_total_bytes / non_null_string_count`, which merges trivially across parts.
+///   - integer and `Decimal` columns without `Nullable` or `LowCardinality`: the state of the `sum`
+///       aggregate function over the values, like `uniq_v2` statistics keep the state of `uniqCombined64`
 ///   - any supported column type:
 ///       `default_count` (number of rows equal to the *type's* default value seen by `build`).
 ///       "Default" here is the type-intrinsic default (`IColumn::isDefaultAt` / `IDataType::getDefault`),
@@ -33,6 +35,7 @@ class StatisticsBasic : public IStatistics
 {
 public:
     StatisticsBasic(const SingleStatisticsDescription & description, const DataTypePtr & data_type_);
+    ~StatisticsBasic() override;
 
     void build(const ColumnPtr & column) override;
     /// A NULL bound leaves min/max unknown; `null_count` counts only for a column whose default is NULL.
@@ -43,28 +46,30 @@ public:
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
-    std::optional<UInt64> getSerializedSize() const override;
+    [[nodiscard]] std::optional<UInt64> getSerializedSize() const override;
 
-    std::optional<Float64> estimateLess(const Field & val) const override;
-    std::optional<Float64> estimateEqual(const Field & val) const override;
-    String getNameForLogs() const override;
-    size_t allocatedBytes() const override;
+    [[nodiscard]] std::optional<Float64> estimateLess(const Field & val) const override;
+    [[nodiscard]] std::optional<Float64> estimateEqual(const Field & val) const override;
+    [[nodiscard]] String getNameForLogs() const override;
+    [[nodiscard]] size_t allocatedBytes() const override;
 
-    bool isCompatibleWith(const IStatistics & other) const override;
+    [[nodiscard]] bool isCompatibleWith(const IStatistics & other) const override;
     void copyStructureFrom(const IStatistics & other) override;
 
-    bool hasNumericMinMax() const { return tracks_numeric; }
-    bool hasStringLengthAvg() const { return tracks_string; }
-    bool hasNullCount() const { return is_nullable && has_default_count; }
-    bool hasDefaultCount() const { return has_default_count; }
+    [[nodiscard]] bool hasNumericMinMax() const { return tracks_numeric; }
+    [[nodiscard]] bool hasStringLengthAvg() const { return tracks_string; }
+    [[nodiscard]] bool hasNullCount() const { return is_nullable && has_default_count; }
+    [[nodiscard]] bool hasDefaultCount() const { return has_default_count; }
+    [[nodiscard]] bool hasSum() const { return sum != nullptr; }
 
-    const Field & getMin() const { return min; }
-    const Field & getMax() const { return max; }
-    UInt64 getStringTotalBytes() const { return string_total_bytes; }
-    Int64 getStringLengthAvg() const;
-    UInt64 getNullCount() const { return (is_nullable && has_default_count) ? default_count : 0; }
-    UInt64 getDefaultCount() const { return default_count; }
-    UInt64 getRowCount() const { return row_count; }
+    [[nodiscard]] const Field & getMin() const { return min; }
+    [[nodiscard]] const Field & getMax() const { return max; }
+    [[nodiscard]] UInt64 getStringTotalBytes() const { return string_total_bytes; }
+    [[nodiscard]] Int64 getStringLengthAvg() const;
+    [[nodiscard]] UInt64 getNullCount() const { return (is_nullable && has_default_count) ? default_count : 0; }
+    [[nodiscard]] UInt64 getDefaultCount() const { return default_count; }
+    [[nodiscard]] UInt64 getRowCount() const { return row_count; }
+    [[nodiscard]] Field getSum() const;
 
 private:
     Field min; /// null Field means "not initialized" (e.g. all values seen so far were NULL)
@@ -80,6 +85,12 @@ private:
     bool tracks_string = false;
     bool is_nullable = false;    /// column's type default is NULL (Nullable, LowCardinality(Nullable), Variant, Dynamic, ...)
     bool has_default_count = true; /// true unless deserialized from older code that did not write a default-value count
+
+    /// The state of `sum` over the values, allocated only for the types of `canStatisticsTrackSum`, because the parts
+    /// keep the statistics of every column in memory. Null also when deserialized from older code that did not write
+    /// the sum, or merged with such statistics.
+    struct Sum;
+    std::unique_ptr<Sum> sum;
 };
 
 bool basicStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);

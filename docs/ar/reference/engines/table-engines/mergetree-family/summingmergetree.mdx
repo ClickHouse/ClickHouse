@@ -13,9 +13,7 @@ doc_type: 'reference'
 
 نوصي باستخدام هذا المحرك إلى جانب `MergeTree`. خزّن البيانات الكاملة في جدول `MergeTree`، واستخدم `SummingMergeTree` لتخزين البيانات المجمَّعة، على سبيل المثال عند إعداد التقارير. ويساعدك هذا النهج على تجنب فقدان بيانات قيّمة بسبب تكوين غير صحيح للمفتاح الأساسي.
 
-<div id="creating-a-table">
-  ## إنشاء جدول
-</div>
+## إنشاء جدول {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -32,22 +30,16 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 للاطلاع على وصف معلمات الطلب، راجع [وصف الطلب](/ar/reference/statements/create/table).
 
-<div id="parameters-of-summingmergetree">
-  ### معلمات SummingMergeTree
-</div>
+### معلمات SummingMergeTree {#parameters-of-summingmergetree}
 
-<div id="columns">
-  #### الأعمدة
-</div>
+#### الأعمدة {#columns}
 
 `columns` - عبارة عن `tuple` يحتوي على أسماء الأعمدة التي ستُجمَّع قيمها. معلمة اختيارية.
 يجب أن تكون الأعمدة من نوع بيانات رقمي، وألا تكون ضمن القسم أو مفتاح الترتيب.
 
 إذا لم يتم تحديد `columns`، فسيُجمِّع ClickHouse القيم في جميع الأعمدة ذات نوع البيانات الرقمي غير الموجودة ضمن مفتاح الترتيب.
 
-<div id="query-clauses">
-  ### بنود الاستعلام
-</div>
+### بنود الاستعلام {#query-clauses}
 
 عند إنشاء جدول `SummingMergeTree`، تكون [البنود](/ar/reference/engines/table-engines/mergetree-family/mergetree) نفسها مطلوبة، كما هو الحال عند إنشاء جدول `MergeTree`.
 
@@ -72,9 +64,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
   * `columns` — tuple تضم أسماء الأعمدة التي ستُجمع قيمها. هذه معلمة اختيارية. للاطلاع على الوصف، راجع النص أعلاه.
 </details>
 
-<div id="usage-example">
-  ## مثال على الاستخدام
-</div>
+## مثال على الاستخدام {#usage-example}
 
 ضع في الاعتبار الجدول التالي:
 
@@ -107,35 +97,27 @@ SELECT key, sum(value) FROM summtt GROUP BY key
 └─────┴────────────┘
 ```
 
-<div id="data-processing">
-  ## معالجة البيانات
-</div>
+## معالجة البيانات {#data-processing}
 
 عند إدخال البيانات في جدول، تُحفَظ كما هي. ويُجري ClickHouse عمليات دمج لأجزاء البيانات المُدخلة بشكل دوري، وعندها تُجمَع الصفوف التي لها المفتاح الأساسي نفسه وتُستبدَل بصف واحد في كل جزء بيانات ناتج.
 
 يمكن لـ ClickHouse دمج أجزاء البيانات بحيث قد تحتوي أجزاء البيانات الناتجة المختلفة على صفوف لها المفتاح الأساسي نفسه، أي إن الجمع سيكون غير مكتمل. لذلك، يجب استخدام دالة التجميع [`sum()`](/ar/reference/functions/aggregate-functions/sum) وعبارة `GROUP BY` في الاستعلام كما هو موضح في المثال أعلاه.
 
-<div id="common-rules-for-summation">
-  ### القواعد العامة للجمع
-</div>
+### القواعد العامة للجمع {#common-rules-for-summation}
 
-تُجمع القيم في الأعمدة ذات نوع البيانات الرقمي. وتُحدَّد مجموعة الأعمدة بواسطة المعلمة `columns`.
+تُجمع القيم في الأعمدة ذات نوع البيانات الرقمي. وتُحدَّد مجموعة الأعمدة بواسطة المعلمة `columns`.
 
-إذا كانت القيم تساوي 0 في جميع الأعمدة المخصّصة للجمع، يُحذف الصف.
+إذا كانت القيم تساوي 0 في جميع الأعمدة المخصّصة للجمع، يُحذف الصف أثناء عملية الدمج. أما الاستعلام الذي يستخدم المُعدِّل [FINAL](/ar/reference/statements/select/from#final-modifier) فيجمع الصفوف دون أن يحذف مثل هذه الصفوف، وبذلك لا تتوقف مجموعة الصفوف التي يُعيدها على الأعمدة التي يقرؤها الاستعلام. لاحظ أن `FINAL` لا يدمج [البنية المتداخلة](#nested-structures) التي ينتهي اسمها بـ `Map` بالطريقة نفسها التي تتم بها عملية الدمج إلا إذا قرأ الاستعلام جميع أعمدة تلك البنية.
 
 إذا لم يكن العمود ضمن المفتاح الأساسي ولم تُجمع قيمه، فتُختار قيمة عشوائية من القيم الموجودة.
 
 لا تُجمع القيم في الأعمدة الموجودة ضمن المفتاح الأساسي.
 
-<div id="the-summation-in-the-aggregatefunction-columns">
-  ### الجمع في أعمدة AggregateFunction
-</div>
+### الجمع في أعمدة AggregateFunction {#the-summation-in-the-aggregatefunction-columns}
 
 في الأعمدة من [النوع AggregateFunction](/ar/reference/data-types/aggregatefunction)، يتصرف ClickHouse كما يتصرف محرك [AggregatingMergeTree](/ar/reference/engines/table-engines/mergetree-family/aggregatingmergetree)، إذ يجري التجميع وفقًا للدالة.
 
-<div id="nested-structures">
-  ### البُنى المتداخلة
-</div>
+### البُنى المتداخلة {#nested-structures}
 
 يمكن أن يتضمن الجدول بُنى بيانات متداخلة تُعالَج بطريقة خاصة.
 
@@ -206,18 +188,16 @@ ARRAY JOIN
 
 بالنسبة إلى بنية البيانات المتداخلة، لا تحتاج إلى تحديد أعمدتها ضمن tuple الأعمدة المخصّص للجمع.
 
-<div id="tuple-element-aggregation">
-  ### تجميع عناصر Tuple
-</div>
+### تجميع عناصر Tuple {#tuple-element-aggregation}
 
-عندما يكون الإعداد `allow_tuple_element_aggregation` ممكّنًا، تُسطَّح أعمدة `Tuple` تكراريًا بحيث يُجمَع كل عنصر طرفي فيها على حدة. يتيح لك ذلك تخزين عدة مقاييس في عمود `Tuple` واحد وجمعها عنصرًا بعنصر أثناء عمليات الدمج.
+عندما يكون الإعداد `allow_tuple_element_aggregation` ممكّنًا، تُسطَّح أعمدة `Tuple` تكراريًا بحيث يُجمَع كل عنصر طرفي فيها على حدة. يتيح لك ذلك تخزين عدة مقاييس في عمود `Tuple` واحد وجمعها عنصرًا بعنصر أثناء عمليات الدمج.
 
 تنطبق القواعد نفسها على الأعمدة الفرعية المسطّحة كما تنطبق على الأعمدة العادية:
 
 * لا تُجمع إلا الأعمدة الفرعية الرقمية.
 * تُستثنى من الجمع الأعمدة الفرعية التابعة لـ `Tuple` ضمن مفتاح الفرز أو مفتاح التقسيم.
 * إذا تم تحديد `columns`، فلن تُجمع إلا الأعمدة الفرعية التابعة لأعمدة `Tuple` المُدرجة.
-* إذا أصبحت جميع الأعمدة الفرعية الرقمية في صف ما تساوي صفرًا بعد الجمع، فسيُحذف الصف.
+* إذا أصبحت جميع الأعمدة الفرعية الرقمية في صف ما تساوي صفرًا بعد الجمع، فسيُحذف الصف أثناء عملية الدمج (لكن ليس عند تنفيذ استعلام يستخدم `FINAL`).
 
 <Note>
   هذا الإعداد غير قابل للتغيير ويجب تحديده عند إنشاء الجدول.
@@ -252,9 +232,7 @@ SELECT key, metrics.impressions, metrics.clicks, metrics.nested.conversions FROM
 └─────┴─────────────────────┴────────────────┴────────────────────────────┘
 ```
 
-<div id="related-content">
-  ## محتوى مرتبط
-</div>
+## محتوى مرتبط {#related-content}
 
 * مدونة: [استخدام مبدِّلات التجميع في ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
 
