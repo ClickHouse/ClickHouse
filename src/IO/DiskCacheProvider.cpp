@@ -211,7 +211,8 @@ ChainedBuffers DiskCacheReader::read(ByteRange subrange)
 
     const auto read_range = readSegmentInto(result, segment(), sub_in_object, object_file_offset,
         local_throttler, anchors);
-    if (counts_hits)
+    /// The temporary-cache mode does not count a read of a temporary file segment: it leaves the cache at its last release.
+    if (counts_hits || !segment().isTemporary())
         segment().markRead(read_range.offset, read_range.size);
     return result;
 }
@@ -342,6 +343,8 @@ ChainedBuffers DiskCacheWriter::read(ByteRange subrange)
 
 void DiskCacheWriter::markReadFromCache(ByteRange range)
 {
+    if (cache_settings.cache_temporarily && segment().isTemporary())
+        return;
     const auto [before, after] = range.subtract(own_fill);
     segment().markRead(before.offset, before.size);
     segment().markRead(after.offset, after.size);

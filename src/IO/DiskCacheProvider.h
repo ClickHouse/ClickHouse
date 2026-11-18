@@ -47,7 +47,6 @@ private:
     ReaderAnchorCache * anchors = nullptr;
     /// Whether this reader served any bytes; the destructor then bumps the segment's cache priority.
     bool served = false;
-    /// False in the temporary-cache mode: a read is neither a cache hit nor a read in the cache efficiency.
     bool counts_hits = true;
     LoggerPtr log = getLogger("DiskCacheReader");
 };
@@ -75,6 +74,7 @@ public:
 private:
     bool tryWriteToSegment(FileSegment & file_segment, char * data, size_t size, size_t offset);
     /// Marks `range` (object-local) as read from the cache, except `own_fill`: filling the cache is not a read from it.
+    /// In the temporary-cache mode marks nothing in a temporary file segment, as `DiskCacheReader` does.
     void markReadFromCache(ByteRange range);
 
     /// Our holder always carries exactly one segment (see the constructor); assert it on each access.

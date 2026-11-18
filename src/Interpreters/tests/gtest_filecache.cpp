@@ -5425,10 +5425,11 @@ TEST_F(FileCacheTest, DiskCacheProviderTemporaryModeDropsUnusedSegments)
     EXPECT_TRUE(cached(written_by_normal_writer));
 }
 
-
-TEST_F(FileCacheTest, DiskCacheProviderTemporaryModeReadsNotCountedInEfficiency)
+TEST_F(FileCacheTest, DiskCacheProviderTemporaryModeEfficiency)
 {
-    /// The temporary-cache mode counts no cache hit, so its reads do not count in the cache efficiency either.
+    /// In the temporary-cache mode a read of a temporary file segment does not count in the cache efficiency: the segment
+    /// leaves the cache at its last release. A read of a file segment that stays in the cache counts, through a reader
+    /// and through a writer.
     ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
     FileCacheSettings settings;
@@ -5448,30 +5449,62 @@ TEST_F(FileCacheTest, DiskCacheProviderTemporaryModeReadsNotCountedInEfficiency)
     DiskCacheProvider temporary(cache, temporary_settings);
     DiskCacheProvider regular(cache, FilesystemCacheSettings{});
 
-    const StoredObject object("temporary_mode_efficiency", "", data.size());
-    {
-        auto cells = regular.resolve(object, 0, ByteRange{0, data.size()});
-        CacheWriter & writer = *cells.back().writer;
-        auto role = writer.takeFillRole();
-        ASSERT_TRUE(role);
-        EXPECT_EQ(writer.write(bytesAt(0, data), role), data.size());
-    }
-    auto active_bytes = [&]
+    auto active_bytes = [&](const StoredObject & object)
     {
         auto infos = cache->tryGetFileSegmentInfos(FileCacheKey::fromPath(object.remote_path), FileCache::getCommonOrigin().user_id);
         EXPECT_EQ(infos.size(), 1);
         return infos.at(0).efficiency.value().active_bytes;
     };
-    /// Filling the cache is not a read from it.
-    ASSERT_EQ(active_bytes(), 0);
-
-    auto read = [&](DiskCacheProvider & provider)
+    auto resolve_writer = [&](DiskCacheProvider & provider, const StoredObject & object)
     {
         auto cells = provider.resolve(object, 0, ByteRange{0, data.size()});
+        EXPECT_TRUE(cells.back().writer);
+        return cells;
+    };
+    /// Fills the object through `provider`; the returned cells hold its file segment.
+    auto fill = [&](DiskCacheProvider & provider, const StoredObject & object)
+    {
+        auto cells = resolve_writer(provider, object);
+        CacheWriter & writer = *cells.back().writer;
+        auto role = writer.takeFillRole();
+        EXPECT_TRUE(role);
+        EXPECT_EQ(writer.write(bytesAt(0, data), role), data.size());
+        return cells;
+    };
+    auto read_through_temporary_reader = [&](const StoredObject & object)
+    {
+        auto cells = temporary.resolve(object, 0, ByteRange{0, data.size()});
         EXPECT_EQ(cells.front().reader->read(ByteRange{0, data.size()}).totalBytes(), data.size());
     };
-    read(temporary);
-    EXPECT_EQ(active_bytes(), 0);
-    read(regular);
-    EXPECT_EQ(active_bytes(), data.size());
+
+    /// A reader on a file segment that a regular writer cached.
+    const StoredObject cached_object("temporary_mode_reads_cached", "", data.size());
+    fill(regular, cached_object);
+    /// Filling the cache is not a read from it.
+    ASSERT_EQ(active_bytes(cached_object), 0);
+    read_through_temporary_reader(cached_object);
+    EXPECT_EQ(active_bytes(cached_object), data.size());
+
+    /// A reader on a temporary file segment, which its writer still holds.
+    const StoredObject temporary_object("temporary_mode_reads_temporary", "", data.size());
+    {
+        auto cells = fill(temporary, temporary_object);
+        read_through_temporary_reader(temporary_object);
+        EXPECT_EQ(active_bytes(temporary_object), 0);
+    }
+
+    /// A temporary writer that serves the bytes another writer commits.
+    for (const bool temporary_fill : {false, true})
+    {
+        const StoredObject object(
+            temporary_fill ? "temporary_mode_serves_temporary_fill" : "temporary_mode_serves_regular_fill", "", data.size());
+        auto filler_cells = resolve_writer(temporary_fill ? temporary : regular, object);
+        auto served_cells = resolve_writer(temporary, object);
+        CacheWriter & filler = *filler_cells.back().writer;
+        auto role = filler.takeFillRole();
+        ASSERT_TRUE(role);
+        EXPECT_EQ(filler.write(bytesAt(0, data), role), data.size());
+        EXPECT_EQ(served_cells.back().writer->read(ByteRange{0, data.size()}).totalBytes(), data.size());
+        EXPECT_EQ(active_bytes(object), temporary_fill ? 0 : data.size()) << "temporary fill: " << temporary_fill;
+    }
 }

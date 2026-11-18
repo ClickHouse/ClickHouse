@@ -137,6 +137,9 @@ public:
 
     bool isUnbound() const { return is_unbound; }
 
+    /// See `CreateFileSegmentSettings::temporary`.
+    bool isTemporary() const { return is_temporary.load(std::memory_order_relaxed); }
+
     /// Whether the segment's file on disk currently has its size encoded in the name
     /// (`<offset>_<size>`). True once a regular segment is fully downloaded (or was loaded
     /// from such a file on startup); false while still downloading or for legacy files.
