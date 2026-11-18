@@ -23,10 +23,6 @@ Key capabilities:
 - Incremental result retrieval via `PollFlightInfo`.
 - Query cancellation via `CancelFlightInfo`.
 
-<Note>
-In ClickHouse Cloud, the Arrow Flight interface is disabled by default and requires a Cloud feature flag to be enabled for your service. The server configuration examples below apply to self-managed ClickHouse.
-</Note>
-
 ## Enabling the Arrow Flight Server {#enabling-server}
 
 To enable the Arrow Flight server, add the `arrowflight_port` setting to the ClickHouse server configuration:

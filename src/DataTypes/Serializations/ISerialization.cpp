@@ -14,7 +14,6 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 #include <absl/strings/str_split.h>
 #include <base/EnumReflection.h>
 #include <base/demangle.h>
@@ -325,10 +324,7 @@ String getNameForSubstreamPath(
         if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap || it->type == Substream::NullMapHidden)
             stream_name += ".null";
         else if (it->type == Substream::ArraySizes)
-        {
-            stream_name += ".size";
-            stream_name += toString(array_level);
-        }
+            stream_name += ".size" + toString(array_level);
         else if (it->type == Substream::ArrayElements)
             ++array_level;
         else if (it->type == Substream::StringSizes || it->type == Substream::InlinedStringSizes)
@@ -347,21 +343,16 @@ String getNameForSubstreamPath(
             stream_name += ".repl.idx";
         else if (Substream::named_types.contains(it->type))
         {
+            auto substream_name = "." + it->name_of_substream;
+
             /// For compatibility reasons, we use %2E (escaped dot) instead of dot.
             /// Because nested data may be represented not by Array of Tuple,
             /// but by separate Array columns with names in a form of a.b,
-            /// and name is encoded as a whole. Appended in place: this runs for every substream of every
-            /// granule read, and a temporary per element was most of its cost.
+            /// and name is encoded as a whole.
             if (it->type == Substream::TupleElement && escape_for_file_name)
-            {
-                stream_name += "%2E";
-                stream_name += escapeForFileName(it->name_of_substream);
-            }
+                stream_name += escapeForFileName(substream_name);
             else
-            {
-                stream_name += '.';
-                stream_name += it->name_of_substream;
-            }
+                stream_name += substream_name;
         }
         else if (it->type == Substream::VariantDiscriminators)
             stream_name += ".variant_discr";
@@ -621,16 +612,11 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
 {
     for (const auto & elem : path)
     {
-        /// `DictionaryKeysPrefix` and `VariantDiscriminatorsPrefix` exist only with `use_specialized_prefixes_and_suffixes_substreams`
-        /// (compact parts). They hold only the serialization version or mode, have no data type, and are structural,
-        /// like the other streams here.
         if (elem.type == Substream::NullMap
             || elem.type == Substream::NullMapHidden
             || elem.type == Substream::ArraySizes
             || elem.type == Substream::StringSizes
             || elem.type == Substream::DictionaryIndexes
-            || elem.type == Substream::DictionaryKeysPrefix
-            || elem.type == Substream::VariantDiscriminatorsPrefix
             || elem.type == Substream::SparseOffsets
             || elem.type == Substream::MapBucketsInfo)
             return false;

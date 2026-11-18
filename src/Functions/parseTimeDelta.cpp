@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
@@ -12,9 +13,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -107,25 +108,40 @@ namespace
         static constexpr auto name = "parseTimeDelta";
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionParseTimeDelta>(); }
 
-        [[nodiscard]] String getName() const override { return name; }
+        String getName() const override { return name; }
 
-        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        bool isVariadic() const override { return true; }
 
-        [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        [[nodiscard]] String getSignatureString() const override
+        size_t getNumberOfArguments() const override { return 0; }
+
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            return "(String) -> Float64";
+            if (arguments.empty())
+                throw Exception(
+                    ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                    "Number of arguments for function {} doesn't match: passed {}, should be 1.",
+                    getName(),
+                    arguments.size());
+
+            if (arguments.size() > 1)
+                throw Exception(
+                    ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
+                    "Number of arguments for function {} doesn't match: passed {}, should be 1.",
+                    getName(),
+                    arguments.size());
+
+            FunctionArgumentDescriptors mandatory_args{
+                {"timestr", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            };
+
+            validateFunctionArguments(*this, arguments, mandatory_args);
+
+            return std::make_shared<DataTypeFloat64>();
         }
 
-        /// `parseTimeDelta` distinguished the two arity errors before it adopted the declarative
-        /// signature, and its tests pin those codes.
-        [[nodiscard]] int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const override
-        {
-            return number_of_arguments < 1 ? ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION : ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-        }
-
-        [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {
             return std::make_shared<DataTypeFloat64>();
         }
@@ -133,11 +149,11 @@ namespace
         /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
         /// row references it, so a function that throws on the default value must not be executed on
         /// the whole dictionary - it would fail on entirely valid data.
-        [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
+        bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+        bool useDefaultImplementationForConstants() const override { return true; }
 
-        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             auto col_to = ColumnFloat64::create();
             auto & res_data = col_to->getData();

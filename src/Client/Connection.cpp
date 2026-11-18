@@ -20,7 +20,6 @@
 #include <Formats/NativeWriter.h>
 #include <Client/ClientApplicationBase.h>
 #include <Client/Connection.h>
-#include <Formats/FormatSettings.h>
 #include <Client/ConnectionParameters.h>
 #include <Client/sanitizeUntrustedServerString.h>
 #include <Common/logger_useful.h>
@@ -92,7 +91,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
@@ -735,8 +733,7 @@ void Connection::receiveHello()
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_SETTINGS)
         {
             Settings settings;
-            /// A server of another version may send values that this version rejects.
-            settings.read(*in, /* skip_invalid_values= */ true);
+            settings.read(*in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
             settings_from_server = settings.changes();
         }
 
@@ -970,7 +967,8 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     {
 #if USE_SSL
         std::string data(salt);
-        data += std::to_string(nonce.value());
+        if (nonce.has_value())
+            data += std::to_string(nonce.value());
         data += cluster_secret;
         data += "TablesStatusRequest";
         /// Bind the hash to the request body so a relayed hash cannot be reused for a
@@ -1118,23 +1116,9 @@ void Connection::sendQuery(
             settings_to_send = &*modified_settings;
         }
 
-        if (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS)
-        {
-            settings_to_send->write(*out);
-        }
-        else
-        {
-            /// Older servers expect settings in a binary format, which is no longer supported.
-            /// Only an empty list of settings can be sent: it is the same in both formats.
-            if (!settings_to_send->changes().empty())
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Server with protocol revision {} expects settings in the binary format, which is no longer supported "
-                    "(the minimum revision to pass settings is {})",
-                    server_revision,
-                    DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS);
-            Settings::writeEmpty(*out);
-        }
+        auto settings_format = (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
+                                                                                                          : SettingsWriteFormat::BINARY;
+        settings_to_send->write(*out, settings_format);
     }
     else
         writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
@@ -1155,16 +1139,18 @@ void Connection::sendQuery(
     if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET)
     {
         /// Hash
-        if (client_info && !cluster_secret.empty())
+        ///
+        /// Send correct hash only for !INITIAL_QUERY, due to:
+        /// - this will avoid extra protocol complexity for simplest cases
+        /// - there is no need in hash for the INITIAL_QUERY anyway
+        ///   (since there is no secure/non-secure changes)
+        if (client_info && !cluster_secret.empty() && client_info->query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         {
 #if USE_SSL
-            if (!nonce.has_value())
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                    "Server {} with protocol revision {} is too old for interserver secret, the minimum is {}",
-                    getDescription(), server_revision, DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2);
-
             std::string data(salt);
-            data += std::to_string(nonce.value());
+            // For backward compatibility
+            if (nonce.has_value())
+                data += std::to_string(nonce.value());
             data += cluster_secret;
             data += query;
             data += query_id;
@@ -1283,7 +1269,7 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         else
             maybe_compressed_out = out;
 
-        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, std::make_shared<const Block>(block.cloneEmpty()), optionalFormatSettings());
+        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, std::make_shared<const Block>(block.cloneEmpty()), format_settings);
     }
 
     if (scalar)
@@ -1757,7 +1743,7 @@ void Connection::initBlockInput()
         initMaybeCompressedInput();
         /// The server may send marshalled result blocks; their consumers convert them back.
         block_in = std::make_unique<NativeReader>(
-            *maybe_compressed_in, server_revision, optionalFormatSettings(), ISerialization::KindSet::all());
+            *maybe_compressed_in, server_revision, format_settings, ISerialization::KindSet::all());
     }
 }
 
@@ -1774,7 +1760,7 @@ void Connection::initBlockLogsInput()
         }
 
         /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
-        block_logs_in = std::make_unique<NativeReader>(*logs_buf, server_revision, optionalFormatSettings());
+        block_logs_in = std::make_unique<NativeReader>(*logs_buf, server_revision, format_settings);
     }
 }
 
@@ -1790,7 +1776,7 @@ void Connection::initBlockProfileEventsInput()
             profile_events_buf = maybe_compressed_in.get();
         }
 
-        block_profile_events_in = std::make_unique<NativeReader>(*profile_events_buf, server_revision, optionalFormatSettings());
+        block_profile_events_in = std::make_unique<NativeReader>(*profile_events_buf, server_revision, format_settings);
     }
 }
 
@@ -1923,18 +1909,6 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
     }
 
     return connection;
-}
-
-void Connection::setFormatSettings(const FormatSettings & settings)
-{
-    format_settings = std::make_shared<const FormatSettings>(settings);
-}
-
-std::optional<FormatSettings> Connection::optionalFormatSettings() const
-{
-    if (format_settings)
-        return *format_settings;
-    return std::nullopt;
 }
 
 }
