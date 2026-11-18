@@ -648,7 +648,7 @@ public:
 
         chassert(key_type == TYPE);
         const Map & map = typedMap<TYPE, Maps>(*this);
-        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(keys.key_columns, keys.key_sizes, key_range);
+        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(keys.key_columns, key_sizes, key_range);
 
         size_t rows = ScatteredBlock::Selector::size(selector);
 
@@ -709,10 +709,11 @@ public:
     /// row stops at its first match. The loop stops before a row once `offset` reaches `max_offset`, and returns the rows processed.
     /// It prefetches the first table. With `prefetch_later_maps` it also prefetches the two-level tables after the first, up to
     /// the first one that fits in the cache. With `stops_at_first_match` it prefetches only as many as `MultiMapLookupSampler` allows.
-    /// `lazy_row_filter` checks the NULL key and the mask of each row when the loop visits it, and does not prepare them for all
+    /// `lazy_row_filter` checks the NULL key and the mask of each row when the loop visits it, and builds no skip bytes for all
     /// of `selector`. That is cheaper when a call visits few rows, as a join with a residual condition does, and costs two checks
-    /// per row otherwise. It excludes `fast_path`, which has nothing to check, and `stops_at_first_match`, whose sampler reads
-    /// the prepared bytes. `TYPE` is the `type()` of every table.
+    /// per row otherwise. A key getter that builds its keys ahead (the `hashed` and packed `String` keys) still gets the skip
+    /// bytes of all of `selector`, as on master. It excludes `fast_path`, which has nothing to check, and `stops_at_first_match`,
+    /// whose sampler reads the prepared bytes. `TYPE` is the `type()` of every table.
     template <
         Type TYPE,
         typename Maps,
@@ -793,12 +794,14 @@ private:
         {
             if (slots.size() > 1)
             {
-                scattered = scatterBySlot<TYPE>(map, rows, is_asof_join, prebuilt_keys);
+                scattered = scatterBySlot<TYPE, is_asof_join>(map, rows, prebuilt_keys);
                 per_slot = scattered;
             }
         }
         else
             chassert(slots.size() == 1);
+        if constexpr (!PreparedKeyGetter<KeyGetter>)
+            chassert(prebuilt_keys.empty(), "Join keys were built ahead for a key getter that does not read them");
         if (!prebuilt_keys.empty() && prebuilt_keys.size() != rows.key_columns.at(0)->size())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -1001,9 +1004,9 @@ private:
     }
 
     /// Routes each row the way `map` places its key: by `map.hash` and `getBucketOfKey`.
-    template <Type TYPE, typename Map>
+    template <Type TYPE, bool is_asof_join, typename Map>
     std::vector<ScatteredBlock::Selector> scatterBySlot(
-        const Map & map, const InsertRows & rows, bool is_asof, [[maybe_unused]] PaddedPODArray<UInt128> & prebuilt_keys) const
+        const Map & map, const InsertRows & rows, [[maybe_unused]] PaddedPODArray<UInt128> & prebuilt_keys) const
     {
         using KeyGetter = KeyGetterForType<TYPE, Map>::Type;
 
@@ -1013,10 +1016,7 @@ private:
         const auto & key_columns = rows.key_columns;
         const auto & selector = rows.selector;
 
-        /// For ASOF the key getter leaves out the ASOF column.
-        KeyGetter key_getter = is_asof
-            ? KeyGetter(ColumnRawPtrs(key_columns.begin(), key_columns.end() - 1), Sizes(key_sizes.begin(), key_sizes.end() - 1), nullptr)
-            : KeyGetter(key_columns, key_sizes, nullptr);
+        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes);
 
         /// The rows are routed by these keys below, and the slot inserts read them too.
         if constexpr (PreparedKeyGetter<KeyGetter>)
@@ -1170,7 +1170,7 @@ private:
         {
             mapv[d] = &typedMap<TYPE, Maps>(*tables[d]);
             key_getter_vector.push_back(
-                createJoinKeyGetter<KeyGetter, is_asof_join>(keys[d].key_columns, keys[d].key_sizes, tables[d]->key_range));
+                createJoinKeyGetter<KeyGetter, is_asof_join>(keys[d].key_columns, tables[d]->key_sizes, tables[d]->key_range));
         }
     }
 

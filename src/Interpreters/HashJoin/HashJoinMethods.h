@@ -43,7 +43,6 @@ private:
         Tables tables,
         AddedColumns & added_columns,
         const ScatteredBlock::Selector & selector,
-        HashJoin::Type type,
         JoinStuff::JoinUsedFlags & used_flags);
 
     template <HashJoin::Type TYPE, typename AddedColumns>

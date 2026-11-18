@@ -58,8 +58,7 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     {
         const auto & key_names = !is_join_get ? onexprs[i].key_names_left : onexprs[i].key_names_right;
         join_on_keys.emplace_back(
-            block, key_names, onexprs[i].condColumnNames().first, join.data->tables[i]->keySizes(),
-            HashJoin::isLowCardinalityType(join.keyType()));
+            block, key_names, onexprs[i].condColumnNames().first, HashJoin::isLowCardinalityType(join.keyType()));
     }
 
     /// Only MapsAll keeps every right row of a key, so only there do the recorded words resolve to
@@ -96,7 +95,7 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     if (!added_columns.max_joined_block_rows)
         added_columns.max_joined_block_rows = std::numeric_limits<size_t>::max();
 
-    size_t processed_rows = switchJoinRightColumns(join.data->tables, added_columns, block.getSelector(), join.keyType(), *join.used_flags);
+    size_t processed_rows = switchJoinRightColumns(join.data->tables, added_columns, block.getSelector(), *join.used_flags);
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
 
@@ -157,10 +156,9 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
     Tables tables,
     AddedColumns & added_columns,
     const ScatteredBlock::Selector & selector,
-    HashJoin::Type type,
     JoinStuff::JoinUsedFlags & used_flags)
 {
-    switch (type)
+    switch (tables.front()->type())
     {
 #define M(TYPE) \
     case HashJoin::Type::TYPE: return joinRightColumnsSwitchNullability<HashJoin::Type::TYPE>(tables, added_columns, selector, used_flags);
