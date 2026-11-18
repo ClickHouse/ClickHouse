@@ -28,3 +28,10 @@ constant next to the window function	1	2
 constant next to the window function	1	2
 constant, every shard is remote	x	2
 constant, every shard is remote	x	2
+filter over a constant view	2
+filter over a constant view	2
+filter over a constant view, local replica	2
+filter over a constant view, local replica	2
+filter over a constant view, row_number	2	3
+filter over a constant view, synchronous socket	2
+filter over a constant view, synchronous socket	2

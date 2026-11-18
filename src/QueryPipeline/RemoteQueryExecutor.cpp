@@ -415,11 +415,23 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
 /** If we receive a block with slightly different column types, or with excessive columns,
   *  we will adapt it to expected structure.
   */
-static Block adaptBlockStructure(const Block & block, const Block & header)
+static Block adaptBlockStructure(const Block & block, const Block & header, bool header_describes_result)
 {
-    /// Special case when reader doesn't care about result structure. Deprecated and used only in Benchmark, PerformanceTest.
     if (header.empty())
-        return block;
+    {
+        /// Special case when reader doesn't care about result structure. Deprecated and used only in Benchmark, PerformanceTest.
+        if (!header_describes_result)
+            return block;
+
+        /// The result is known to have no columns, but the remote server may still send the columns it
+        /// computed for it, e.g. a filter column of a constant view that is not needed after the filter.
+        /// Only the number of rows matters then: keep it in the block info and drop the columns.
+        Block res;
+        res.info = block.info;
+        if (block.columns() != 0)
+            res.info.num_rows_without_columns = block.rows();
+        return res;
+    }
 
     /// A block with no columns keeps its number of rows in the block info - `Block::rows` reports zero
     /// for it. The columns synthesized below have to be sized from that count, or the rows of such a
@@ -1005,7 +1017,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             if (packet.block.rows() > 0 || packet.block.info.num_rows_without_columns > 0)
             {
                 got_data_from_replica = true;
-                return ReadResult(adaptBlockStructure(packet.block, *header));
+                return ReadResult(adaptBlockStructure(packet.block, *header, header_describes_result));
             }
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
@@ -1066,13 +1078,13 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
         case Protocol::Server::Totals:
             totals = packet.block;
             if (!totals.empty())
-                totals = adaptBlockStructure(totals, *header);
+                totals = adaptBlockStructure(totals, *header, header_describes_result);
             break;
 
         case Protocol::Server::Extremes:
             extremes = packet.block;
             if (!extremes.empty())
-                extremes = adaptBlockStructure(packet.block, *header);
+                extremes = adaptBlockStructure(packet.block, *header, header_describes_result);
             break;
 
         case Protocol::Server::Log:
