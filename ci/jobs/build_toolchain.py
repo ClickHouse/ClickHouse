@@ -3,10 +3,6 @@ import glob
 import os
 import platform
 import shutil
-import signal
-import subprocess
-import threading
-import time
 
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
@@ -44,12 +40,6 @@ OUTPUT_DIR = f"{Utils.cwd()}/ci/tmp"
 # Four jobs for 20 minutes collected ~1600 profiles on amd64; 150 seconds at full
 # parallelism collected 755 on amd64 and 1248 on aarch64, so this collects about as many.
 BOLT_PROFILE_TIMEOUT = 300
-
-# The PGO profile collection build is stopped when it prints nothing for this long. On
-# aarch64 it sometimes stops making progress (no step finishes for hours) about 25-30
-# minutes in; the profiles collected up to that point are used. A compile step prints a
-# line when it finishes, and no single step of the stopped build takes this long.
-PROFILE_BUILD_STALL_TIMEOUT = 15 * 60
 
 # LLVM projects for the final toolchain (note: "all" doesn't work with cmake).
 # `bolt` is needed by the BOLT stage of this job and by the ClickHouse BOLT builds.
@@ -140,69 +130,6 @@ def clean_dirs(*dirs):
         if os.path.exists(d):
             print(f"Cleaning {d}")
             shutil.rmtree(d, ignore_errors=True)
-
-
-def dump_stall_diagnostics(profraw_dir):
-    """Print what the machine is doing, to find out why a build stopped making progress."""
-    for cmd in [
-        "uptime",
-        "free -m",
-        "cat /proc/pressure/cpu /proc/pressure/memory /proc/pressure/io",
-        "df -h /tmp",
-        f"ls -la {profraw_dir}",
-        # The instrumented compilers take an `fcntl` lock on the shared profile file at exit
-        "cat /proc/locks",
-        # Process state and the kernel function a sleeping process waits in
-        "ps -eo pid,ppid,stat,wchan:32,etimes,time,rss,args --sort=-etimes | cut -c1-300",
-        "dmesg | tail -n 50",
-    ]:
-        Shell.check(cmd, verbose=True)
-
-
-def run_build_with_stall_watchdog(command, profraw_dir, stalled):
-    """Runs `command` and stops it when it prints nothing for `PROFILE_BUILD_STALL_TIMEOUT`
-    seconds, printing diagnostics first. Appends to `stalled` in that case."""
-    proc = subprocess.Popen(
-        command,
-        shell=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        errors="replace",
-        start_new_session=True,
-    )
-    last_output_time = time.monotonic()
-
-    def forward_output():
-        nonlocal last_output_time
-        for line in proc.stdout:
-            last_output_time = time.monotonic()
-            print(line, end="", flush=True)
-
-    reader = threading.Thread(target=forward_output, daemon=True)
-    reader.start()
-    while proc.poll() is None:
-        if time.monotonic() - last_output_time > PROFILE_BUILD_STALL_TIMEOUT:
-            print(
-                f"ERROR: The build printed nothing for {PROFILE_BUILD_STALL_TIMEOUT} seconds,"
-                " stopping it"
-            )
-            stalled.append(True)
-            dump_stall_diagnostics(profraw_dir)
-            os.killpg(proc.pid, signal.SIGINT)
-            try:
-                proc.wait(timeout=120)
-            except subprocess.TimeoutExpired:
-                os.killpg(proc.pid, signal.SIGKILL)
-                proc.wait()
-            # Ninja runs each step in its own process group, and a hung compiler can outlive it.
-            # The brackets keep the pattern from matching the shell that runs `pkill`.
-            pattern = f"[{STAGE1_INSTALL_DIR[0]}]{STAGE1_INSTALL_DIR[1:]}/bin/"
-            Shell.check(f"pkill -KILL -f '{pattern}'", verbose=True)
-            break
-        time.sleep(10)
-    reader.join()
-    return proc.returncode == 0
 
 
 def parse_args():
@@ -441,6 +368,10 @@ def main():
                 f" -DENABLE_THINLTO=0"
                 f" -DCMAKE_C_COMPILER={STAGE1_INSTALL_DIR}/bin/clang"
                 f" -DCMAKE_CXX_COMPILER={STAGE1_INSTALL_DIR}/bin/clang++"
+                # Link with the distro lld: the instrumented one never writes a profile
+                # (lld exits with `_Exit`), and its multithreaded value profiling uses
+                # non-atomic updates on aarch64, which can make a link spin forever.
+                f" -DLINKER_NAME=ld.lld-{LLVM_VERSION}"
                 f" -DCOMPILER_CACHE=disabled"
                 f" -DENABLE_TESTS=0"
                 f" -DENABLE_UTILS=0"
@@ -456,26 +387,14 @@ def main():
             )
             res = results[-1].is_ok()
 
-        profraw_dir = f"{STAGE1_BUILD_DIR}/profiles/"
         if res:
             # Build may fail at link step but profraw files from compilation
             # steps are still useful for PGO
-            stalled = []
             build_result = Result.from_commands_run(
                 name="Profile collection build (ClickHouse)",
-                command=lambda: run_build_with_stall_watchdog(
-                    f"{CUSTOM_NINJA} -C {CH_PROFILE_BUILD_DIR} clickhouse",
-                    profraw_dir,
-                    stalled,
-                ),
+                command=f"{CUSTOM_NINJA} -C {CH_PROFILE_BUILD_DIR} clickhouse",
             )
-            if stalled:
-                build_result.status = Result.Status.OK
-                build_result.info = (
-                    f"Build stopped after printing nothing for {PROFILE_BUILD_STALL_TIMEOUT}"
-                    " seconds; using the profiles collected so far, see the diagnostics in the log"
-                )
-            elif not build_result.is_ok():
+            if not build_result.is_ok():
                 print(
                     "ClickHouse build finished with errors"
                     " (link failures with instrumented compiler are expected)."
@@ -487,6 +406,7 @@ def main():
 
         # Merge profraw files with the matching `llvm-profdata` (it supports the zlib-compressed
         # profile format the instrumented clang can emit)
+        profraw_dir = f"{STAGE1_BUILD_DIR}/profiles/"
         if os.path.isdir(profraw_dir) and os.listdir(profraw_dir):
             results.append(
                 Result.from_commands_run(
