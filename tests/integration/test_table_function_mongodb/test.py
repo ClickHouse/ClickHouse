@@ -698,7 +698,7 @@ def test_block_boundary(started_cluster):
 @pytest.fixture(scope="module")
 def malformed_cursor_batch_server(started_cluster):
     node = started_cluster.instances["node"]
-    port = started_cluster.port_pool.get_port()
+    port_file = "/tmp/malformed_cursor_batch_server.port"
     node.copy_file_to_container(
         os.path.join(SCRIPT_DIR, "malformed_cursor_batch_server.py"),
         "/tmp/malformed_cursor_batch_server.py",
@@ -707,17 +707,17 @@ def malformed_cursor_batch_server(started_cluster):
         [
             "bash",
             "-c",
-            f"python3 /tmp/malformed_cursor_batch_server.py {port}"
+            f"rm -f {port_file}; python3 /tmp/malformed_cursor_batch_server.py {port_file}"
             " > /var/log/clickhouse-server/malformed_cursor_batch_server.log 2>&1",
         ],
         detach=True,
     )
-    wait_condition(
+    # The server binds to port 0 in the container of `node`, and writes the port to the port file when it listens.
+    port = wait_condition(
         lambda: node.exec_in_container(
-            ["bash", "-c", f"exec 3<>/dev/tcp/127.0.0.1/{port} && echo OK"],
-            nothrow=True,
-        ),
-        lambda reply: "OK" in reply,
+            ["bash", "-c", f"cat {port_file} 2>/dev/null"], nothrow=True
+        ).strip(),
+        lambda reply: reply.isdigit(),
         max_attempts=40,
         delay=0.5,
     )

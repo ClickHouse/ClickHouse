@@ -6,9 +6,12 @@ A fake MongoDB server that answers `find` and `getMore` with hand-encoded cursor
 The collection name of the `find` command selects the reply, see `SCENARIOS`.
 The cursor ID of the `getMore` command selects the next batch.
 
-Usage: malformed_cursor_batch_server.py <port>
+The server listens on a free port that the kernel selects, and writes the port number to the port file.
+
+Usage: malformed_cursor_batch_server.py <port file>
 """
 
+import os
 import socketserver
 import struct
 import sys
@@ -135,10 +138,14 @@ class MongoHandler(socketserver.StreamRequestHandler):
 
 
 class MongoServer(socketserver.ThreadingTCPServer):
-    allow_reuse_address = True
     daemon_threads = True
 
 
 if __name__ == "__main__":
-    with MongoServer(("127.0.0.1", int(sys.argv[1])), MongoHandler) as server:
+    port_file = sys.argv[1]
+    with MongoServer(("127.0.0.1", 0), MongoHandler) as server:
+        # The socket listens at this point. The rename makes the port file appear with its full content.
+        with open(port_file + ".tmp", "w") as f:
+            f.write(str(server.server_address[1]))
+        os.rename(port_file + ".tmp", port_file)
         server.serve_forever()
