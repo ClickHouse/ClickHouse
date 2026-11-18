@@ -138,7 +138,9 @@ public:
     {
     }
 
-    void enterImpl(QueryTreeNodePtr & node)
+    /// Post-order: the references nested in the subquery of a reference are visited before it,
+    /// so they can be replaced in that subquery (`cloneAndReplace` does not apply the map within a replacement).
+    void leaveImpl(QueryTreeNodePtr & node)
     {
         if (auto * table_node = node->as<TableNode>())
         {
@@ -152,7 +154,12 @@ public:
                     /// because the temporary table would already exist in the Context
                     /// and there would be an attempt to read it to send the temporary table to remote servers.
                     getContext()->getQueryContext()->removeExternalTable(table_node->getTemporaryTableName());
-                    replacement_map.emplace(table_node, static_pointer_cast<ITableExpressionNode>(table_node->getMaterializedCTESubquery()));
+                    /// E.g. `WITH a AS (...), b AS (SELECT ... FROM a) SELECT ... FROM b`: `a` is referenced only once,
+                    /// from the subquery of `b`, so it must be inlined into the subquery that replaces `b`.
+                    auto subquery = table_node->getMaterializedCTESubquery();
+                    if (!replacement_map.empty())
+                        subquery = subquery->cloneAndReplace(replacement_map);
+                    replacement_map.emplace(table_node, static_pointer_cast<ITableExpressionNode>(subquery));
                 }
             }
         }

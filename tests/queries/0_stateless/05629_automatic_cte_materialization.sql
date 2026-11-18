@@ -98,3 +98,16 @@ DROP TABLE t_auto_cte;
 SELECT '-- formatting';
 SELECT formatQuerySingleLine('WITH t AS NOT MATERIALIZED (SELECT 1) SELECT * FROM t');
 SELECT formatQuerySingleLine('WITH t AS MATERIALIZED (SELECT 1) SELECT * FROM t');
+
+SELECT '-- columns with the same name: inlined';
+WITH b AS (SELECT 1 AS d), a AS (SELECT g, d, max(if(m = 'A', g, NULL)) AS g FROM (SELECT 'g' AS g, 1 AS d, 'A' AS m) GROUP BY ALL)
+SELECT b.*, a.g FROM b LEFT JOIN a USING d;
+WITH a AS (SELECT g, max(g) AS g FROM (SELECT 'g' AS g) GROUP BY ALL)
+SELECT * FROM a AS x, a AS y;
+
+SELECT '-- a CTE referenced once from the subquery of another CTE referenced once: both inlined';
+SELECT countIf(explain LIKE '%Materializ%') FROM (EXPLAIN
+WITH a AS (SELECT number % 3 AS x, count() AS c FROM numbers(10) GROUP BY x), b AS (SELECT c, count() AS n FROM a GROUP BY c)
+SELECT * FROM b);
+WITH a AS (SELECT number % 3 AS x, count() AS c FROM numbers(10) GROUP BY x), b AS (SELECT c, count() AS n FROM a GROUP BY c)
+SELECT * FROM b ORDER BY c;

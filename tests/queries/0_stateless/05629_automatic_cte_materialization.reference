@@ -39,3 +39,10 @@
 -- formatting
 WITH t AS NOT MATERIALIZED (SELECT 1) SELECT * FROM t
 WITH t AS MATERIALIZED (SELECT 1) SELECT * FROM t
+-- columns with the same name: inlined
+1	g
+g	g	g	g
+-- a CTE referenced once from the subquery of another CTE referenced once: both inlined
+0
+3	2
+4	1

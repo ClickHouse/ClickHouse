@@ -264,6 +264,16 @@ bool bindMaterializedCTEReference(TableNode & table_node, const IdentifierResolv
         if (isMaterializedCTESubqueryCorrelated(subquery))
             return false;
 
+        /// A temporary table cannot have several columns with the same name, while a subquery can,
+        /// e.g. `SELECT g, max(g) AS g ... GROUP BY ALL`. Such a subquery is inlined.
+        const auto & projection_columns = subquery->as<QueryNode>()
+            ? subquery->as<QueryNode>()->getProjectionColumns()
+            : subquery->as<UnionNode>()->computeProjectionColumns();
+        std::unordered_set<std::string_view> projection_column_names;
+        for (const auto & column : projection_columns)
+            if (!projection_column_names.insert(column.name).second)
+                return false;
+
         const auto & materialized_cte = table_node.getMaterializedCTE();
         if (!materialized_cte->isStorageInitialized())
             materialized_cte->subquery_hash = subquery_hash;
