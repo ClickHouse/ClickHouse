@@ -30,6 +30,7 @@ ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS test_zero_copy SYNC;
     DROP TABLE IF EXISTS test_zero_copy_unnamed SYNC;
     DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_nouuid SYNC;
+    DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_table_disk SYNC;
 "
 
 UUID=$(${CLICKHOUSE_CLIENT} --query "SELECT reinterpretAsUUID(currentDatabase())")
@@ -329,6 +330,42 @@ ${CLICKHOUSE_CLIENT} -q "
     INSERT INTO test_zero_copy_unnamed SELECT toDate('2024-01-01');
     SELECT count() FROM test_zero_copy_unnamed;
     DROP TABLE test_zero_copy_unnamed SYNC;
+"
+
+#### 14 - The rollback keeps the data that a table disk held before the CREATE
+
+# With `table_disk` the data path is the root of the disk, so it can hold the detached parts of an
+# earlier table. Its own database keeps the disk away from the other replicas of a Replicated one.
+TD_DB="${CLICKHOUSE_DATABASE}_table_disk"
+TD_DISK="disk(name = '${CLICKHOUSE_TEST_UNIQUE_NAME}', type = object_storage, object_storage_type = local,
+    metadata_type = plain_rewritable, path = '${CLICKHOUSE_DISKS_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}/')"
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE DATABASE ${TD_DB} ENGINE=Atomic;
+    CREATE TABLE ${TD_DB}.src (k Int32) ENGINE=MergeTree ORDER BY k
+        SETTINGS table_disk=1, disk=${TD_DISK}, old_parts_lifetime=1, cleanup_delay_period=1,
+                 cleanup_delay_period_random_add=0, cleanup_thread_preferred_points_per_iteration=0;
+    INSERT INTO ${TD_DB}.src VALUES (1), (2), (3);
+    ALTER TABLE ${TD_DB}.src DETACH PARTITION tuple();
+"
+# An outdated part would make the CREATE fail before the replica is registered
+for _ in {1..120}; do
+    [[ $(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.parts WHERE database='${TD_DB}' AND table='src'") == 0 ]] && break
+    sleep 0.5
+done
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE ${TD_DB}.src PERMANENTLY SYNC"
+
+${CLICKHOUSE_CLIENT} --create_replicated_merge_tree_fault_injection_probability=1 \
+    -q "CREATE TABLE ${TD_DB}.r (k Int32) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/table_disk', 'r1') ORDER BY k
+        SETTINGS table_disk=1, disk=${TD_DISK}" 2>&1 | grep -cm1 "Fault injected"
+
+# The registration is removed, and the detached part can still be attached back
+${CLICKHOUSE_CLIENT} -q "
+    SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/table_disk/replicas';
+    ATTACH TABLE ${TD_DB}.src;
+    ALTER TABLE ${TD_DB}.src ATTACH PARTITION tuple();
+    SELECT count() FROM ${TD_DB}.src;
+    DROP DATABASE ${TD_DB} SYNC;
 "
 
 # No failpoint may leak into a later run of this test

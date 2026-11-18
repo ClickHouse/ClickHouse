@@ -3108,16 +3108,14 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 tryLogCurrentException("InterpreterCreateQuery");
             }
         }
-        bool registration_is_ours = replicated_storage->hasProvableCreationIdentity() && !published;
+        if (!published)
+            replicated_storage->tryRemoveOwnReplicaFromZooKeeper();
 
         try
         {
-            if (registration_is_ours)
-                replicated_storage->drop();
-            else
-                /// The local directory is this statement's either way, and a leftover fails the retry with
-                /// TABLE_ALREADY_EXISTS.
-                replicated_storage->dropIfEmpty();
+            /// Non-recursive: with `table_disk` the data path is a disk root that can hold detached parts of
+            /// another table. A leftover directory fails the retry with TABLE_ALREADY_EXISTS.
+            replicated_storage->dropIfEmpty();
         }
         catch (...)
         {

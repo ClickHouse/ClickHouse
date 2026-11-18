@@ -261,10 +261,9 @@ public:
 
     bool dropReplica(const String & drop_replica, LoggerPtr logger);
 
-    /// Whether a replica registration in Keeper can be attributed to this table rather than to any other
-    /// replicated table on this server. It cannot when the table has no UUID, because the identity stored
-    /// with the registration is then the same string for all of them.
-    bool hasProvableCreationIdentity() const { return getStorageID().uuid != UUIDHelpers::Nil; }
+    /// Removes this replica's registration if this statement is the one that created it, so that a failed
+    /// CREATE can be retried. Best effort, never throws.
+    void tryRemoveOwnReplicaFromZooKeeper();
 
     /// Removes table from ZooKeeper after the last replica was dropped
     static bool removeTableNodesFromZooKeeper(
@@ -604,9 +603,10 @@ private:
     void createNewZooKeeperNodes(const ZooKeeperRetriesInfo & zookeeper_retries_info);
     void createNewZooKeeperNodesAttempt() const;
 
-    /// Removes this replica's registration if this statement is the one that created it, so that a failed
-    /// CREATE can be retried. Best effort, never throws.
-    void tryRemoveOwnReplicaFromZooKeeper();
+    /// Whether a replica registration in Keeper can be attributed to this table rather than to any other
+    /// replicated table on this server. It cannot when the table has no UUID, because the identity stored
+    /// with the registration is then the same string for all of them.
+    bool hasProvableCreationIdentity() const { return getStorageID().uuid != UUIDHelpers::Nil; }
 
     /// Returns the ZooKeeper retries info specified for the CREATE TABLE query which is creating and starting this table right now.
     ZooKeeperRetriesInfo getCreateQueryZooKeeperRetriesInfo() const;
