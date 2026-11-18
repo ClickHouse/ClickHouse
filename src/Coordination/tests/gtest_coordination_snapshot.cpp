@@ -23,6 +23,7 @@
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/InMemoryRemovalQueue.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
@@ -456,8 +457,7 @@ std::pair<std::shared_ptr<DB::DiskObjectStorage>, std::shared_ptr<TestLocalObjec
             meta_disk ? meta_disk : std::make_shared<DB::DiskLocal>("SnapshotMetaDisk", meta_path),
             "",
             obj_storage->createKeyGenerator(),
-            /*persist_removal_queue_=*/false,
-            /*removal_log_compaction_threshold_=*/static_cast<size_t>(0));
+            std::make_unique<DB::InMemoryRemovalQueue>());
     Poco::AutoPtr<Poco::Util::MapConfiguration> config_ptr(new Poco::Util::MapConfiguration);
     getContext().context->setConfig(config_ptr);
     auto disk = std::make_shared<DB::DiskObjectStorage>("SnapshotDisk", cluster, metadata_storage, router, /*wrapped_disk=*/nullptr, *config_ptr, "");
