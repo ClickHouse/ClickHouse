@@ -504,7 +504,8 @@ std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
     auto query_context = CurrentThread::tryGetQueryContext();
     auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
-    const auto & exclude = hive_partitioning_columns.get()->hive_partition_columns_to_read_from_file_path;
+    const auto hive_columns = hive_partitioning_columns.get();
+    const auto & exclude = hive_columns->hive_partition_columns_to_read_from_file_path;
     auto result = metadata_snapshot->getColumnsWithoutDefaultExpressions(exclude);
     if (metadata_snapshot->getColumns().hasDefaults() && readsIgnoreColumnDefaults(query_context))
     {
