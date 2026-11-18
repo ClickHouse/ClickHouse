@@ -4,11 +4,13 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <unordered_set>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/FieldToDataType.h>
@@ -521,9 +523,130 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 /// exact-true, so exact-count / implicit-projection paths return wrong results. We therefore reuse the
 /// null atom only when the key is not wrapped at all; a wrapped key falls back to a full scan, which is
 /// always correct.
-static bool monotonicChainSupportsNullAtom(const KeyCondition::MonotonicFunctionsChain & chain)
+///
+/// The one exception is outer NULL-transparent identity casts, which `classifyNullAtomOverChain` peels
+/// first. The analyzer emits them when a non-Nullable sort-key expression is read through a
+/// `UNION ALL` view whose other arm has NULLs (`_CAST(toStartOfHour(ts), 'Nullable(DateTime)')`), and
+/// declining them loses all pruning for `(range) OR col IS NULL`.
+enum class NullAtomOverChain : uint8_t
 {
-    return chain.empty();
+    BareKey,        /// `isNull(chain(k))` is exactly `isNull(k)`: use the bare-key atom.
+    NeverNull,      /// `chain(k)` cannot be NULL: `isNull` is constantly false, `isNotNull` constantly true.
+    Decline,        /// Anything else: no atom, full scan (the behaviour before this exception).
+};
+
+/// `f` is a NULL-transparent identity cast when it is `CAST`, `_CAST` or `toNullable`, keeps the value
+/// domain (`removeNullable(result) == removeNullable(argument)`, after stripping `LowCardinality`), and
+/// does not drop nullability (a Nullable argument needs a Nullable result: `CAST(k, 'UInt32')` on a
+/// `Nullable(UInt32)` key throws on a NULL row). Then `f(NULL) = NULL`, `f(x) = x` for every non-NULL
+/// `x`, and `f` cannot throw.
+static bool isNullTransparentIdentityCast(const IFunctionBase & func)
+{
+    const auto & name = func.getName();
+    const auto & argument_types = func.getArgumentTypes();
+
+    if (name == "toNullable")
+    {
+        if (argument_types.size() != 1)
+            return false;
+    }
+    else if (name == "CAST" || name == "_CAST")
+    {
+        /// `CAST(x, 'T')`: the wrapped expression is the first argument, the constant type name the second.
+        if (argument_types.size() != 2 || !argument_types[1] || !isString(removeNullable(argument_types[1])))
+            return false;
+    }
+    else
+        return false;
+
+    const auto & argument_type = argument_types[0];
+    const auto & result_type = func.getResultType();
+    if (!argument_type || !result_type)
+        return false;
+
+    if (canContainNull(*argument_type) && !isNullableOrLowCardinalityNullable(result_type))
+        return false;
+
+    return removeNullable(recursiveRemoveLowCardinality(result_type))
+        ->equals(*removeNullable(recursiveRemoveLowCardinality(argument_type)));
+}
+
+/// A date-truncation function that is total for the argument and result types checked here: its per-row
+/// transform has no throw path, so evaluating it on any key value yields a value. Verified against
+/// `src/Functions/DateTimeTransforms.h` (`ToStartOfMinuteImpl`, `ToStartOfHourImpl`, `ToStartOfDayImpl`,
+/// `ToStartOfMonthImpl`) and `TransformDateTime64.h`:
+///   - the `DateTime` / `DateTime64` overloads of the sub-day functions are a time-zone lookup, clamped to the
+///     `UInt32` range for `DateTime64`; their `Date` / `Date32` / `Time` overloads throw, so those argument
+///     types are not accepted;
+///   - `toStartOfMonth` is a clamped day-number lookup for all four date types;
+///   - only the default result type (`DateTime`, resp. `Date`) is accepted: the
+///     `enable_extended_results_for_datetime_functions` path re-assembles a `DateTime64` and can throw
+///     `DECIMAL_OVERFLOW`.
+/// Keep this list small; a function goes on it only after its every accepted overload is checked.
+static bool isTotalDateTruncation(const IFunctionBase & func)
+{
+    static const std::unordered_set<std::string_view> to_date_time_functions = {"toStartOfMinute", "toStartOfHour", "toStartOfDay"};
+    static const std::unordered_set<std::string_view> to_date_functions = {"toStartOfMonth"};
+
+    const String name = func.getName();
+    const bool returns_date_time = to_date_time_functions.contains(name);
+    if (!returns_date_time && !to_date_functions.contains(name))
+        return false;
+
+    /// `f(x)` or `f(x, 'time_zone')`; the time zone is a constant validated when the function is built.
+    const auto & argument_types = func.getArgumentTypes();
+    if (argument_types.empty() || argument_types.size() > 2 || !argument_types[0])
+        return false;
+    if (argument_types.size() == 2 && (!argument_types[1] || !isString(removeNullable(argument_types[1]))))
+        return false;
+
+    const auto & result_type = func.getResultType();
+    if (!result_type)
+        return false;
+
+    const WhichDataType argument(removeNullable(recursiveRemoveLowCardinality(argument_types[0])));
+    const WhichDataType result(removeNullable(recursiveRemoveLowCardinality(result_type)));
+    if (returns_date_time)
+        return (argument.isDateTime() || argument.isDateTime64()) && result.isDateTime();
+    return (argument.isDate() || argument.isDate32() || argument.isDateTime() || argument.isDateTime64()) && result.isDate();
+}
+
+/// The chain is ordered from the key outwards, so the outermost wrapper is `chain.back()`.
+///   - BareKey: the chain is empty or only identity casts.
+///   - NeverNull: at least one outer identity cast was peeled, every remaining inner element is TOTAL
+///     (an identity cast or `isTotalDateTruncation`), and the rest of the chain returns a type that cannot
+///     hold NULL (`canContainNull`, the test `FunctionIsNull` folds a non-Nullable argument by). Then
+///     `isNull(cast(x))` is constantly 0 and `isNotNull(cast(x))` constantly 1, and no row could raise
+///     while computing `x`, so constant atoms change neither the result nor whether the query throws.
+///     Constant atoms, not the bare-key atom, because the inner functions (e.g. `toStartOfHour`) are not
+///     identities and the key's own NULL-ness says nothing here.
+///   - Decline: no outer identity cast (every pre-existing wrapped case: `ifNull`, `coalesce`,
+///     `assumeNotNull`, `CAST(k, 'UInt32')`, `toUInt32`, `toDateTime(date32_k)`, `intDiv`, ...), the rest of
+///     the chain can return NULL, or an inner element is partial: `toDateTime(date32_k)` under
+///     `date_time_overflow_behavior = 'throw'`, `intDiv(k, 0)` or `CAST(nullable_k, 'UInt32')` raise on
+///     some rows, and the row-level `isNull` does evaluate them because its argument (the outer cast) is
+///     Nullable. Folding those to a constant would turn an exception into a result; the scan keeps it.
+static NullAtomOverChain classifyNullAtomOverChain(const KeyCondition::MonotonicFunctionsChain & chain)
+{
+    size_t remaining = chain.size();
+    while (remaining > 0 && chain[remaining - 1] && isNullTransparentIdentityCast(*chain[remaining - 1]))
+        --remaining;
+
+    if (remaining == 0)
+        return NullAtomOverChain::BareKey;
+
+    if (remaining == chain.size())
+        return NullAtomOverChain::Decline;
+
+    for (size_t i = 0; i < remaining; ++i)
+        if (!chain[i] || !(isNullTransparentIdentityCast(*chain[i]) || isTotalDateTruncation(*chain[i])))
+            return NullAtomOverChain::Decline;
+
+    const auto & inner = chain[remaining - 1];
+    if (inner && inner->getResultType() && !canContainNull(*inner->getResultType()))
+        return NullAtomOverChain::NeverNull;
+
+    return NullAtomOverChain::Decline;
 }
 
 /// Functions with range inversion cannot be relaxed. It will become stricter instead.
@@ -2830,7 +2953,7 @@ static bool finalizeTransformedColumn(ColumnPtr & column, DataTypePtr & type)
 /// constant, and a conversion with a cancellation budget can hit `max_execution_time`.
 /// The cancellation exception stored by `checkTimeLimit` may carry `QUERY_WAS_CANCELLED_BY_CLIENT`,
 /// and an allocation failure below the memory tracker surfaces as `CANNOT_ALLOCATE_MEMORY`.
-static bool isQueryOuterGuardError(int code)
+bool isQueryOuterGuardError(int code)
 {
     return code == ErrorCodes::LOGICAL_ERROR
         || code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
@@ -5490,8 +5613,21 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
         /// they are sound only for a bare key. A wrapped key (`isNull(ifNull(k, 0))`,
         /// `isNull(toDateTime(date32_k))`, ...) would otherwise be analyzed like `isNull(k)` and
         /// wrongly prune a granule the predicate does not cover; decline and fall back to a scan.
-        if ((func_name == "isNull" || func_name == "isNotNull") && !monotonicChainSupportsNullAtom(chain))
-            return;
+        /// Outer NULL-transparent identity casts are peeled first, see `classifyNullAtomOverChain`.
+        if (func_name == "isNull" || func_name == "isNotNull")
+        {
+            switch (classifyNullAtomOverChain(chain))
+            {
+                case NullAtomOverChain::BareKey:
+                    chain.clear();
+                    break;
+                case NullAtomOverChain::NeverNull:
+                    group.atoms.emplace_back(func_name == "isNull" ? RPNElement::ALWAYS_FALSE : RPNElement::ALWAYS_TRUE);
+                    return;
+                case NullAtomOverChain::Decline:
+                    return;
+            }
+        }
 
         RPNElement element;
         element.key_columns.push_back(key_column_num);
@@ -5779,8 +5915,17 @@ void KeyCondition::extractIsNullAtomForNotDistinctFrom(
     if (key_column_num == static_cast<size_t>(-1))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
 
-    if (!monotonicChainSupportsNullAtom(chain))
-        return;
+    switch (classifyNullAtomOverChain(chain))
+    {
+        case NullAtomOverChain::BareKey:
+            chain.clear();
+            break;
+        case NullAtomOverChain::NeverNull:
+            group.atoms.emplace_back(RPNElement::ALWAYS_FALSE);
+            return;
+        case NullAtomOverChain::Decline:
+            return;
+    }
 
     RPNElement element;
     element.key_columns.push_back(key_column_num);
@@ -7386,6 +7531,10 @@ static bool functionIsCastPreservingFieldRepresentation(
 
     /// Nullable types don't have a fixed size in memory; this optimization only applies to plain integer types.
     if (from_type->isNullable() || to_type->isNullable())
+        return false;
+
+    /// `Bool` and `SimpleAggregateFunction(f, Bool)` are stored as `UInt8`, yet a cast into them maps every nonzero value to 1.
+    if (isBool(to_type) || isSimpleAggregateFunctionOfBool(*to_type))
         return false;
 
     WhichDataType from(from_type);
