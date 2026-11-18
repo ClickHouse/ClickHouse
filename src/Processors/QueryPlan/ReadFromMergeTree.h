@@ -855,6 +855,11 @@ private:
         bool use_uncompressed_cache,
         size_t min_marks_per_task_at_read_end = 0);
 
+    /// Rows of the query's limit not yet reported as a source's total; nullopt without a limit.
+    std::optional<size_t> total_rows_approx_budget;
+
+    size_t takeTotalRowsApprox(size_t rows_in_this_read);
+
     Pipe readFromPool(
         RangesInDataParts parts_with_range,
         const MergeTreeIndexBuildContextPtr & index_build_context,
