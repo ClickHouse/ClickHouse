@@ -16,6 +16,8 @@
 0
 1
 0
+-- Anchors do not repair an invalid pattern
+1
 -- Top-level alternation is anchored as a whole
 1
 1

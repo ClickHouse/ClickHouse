@@ -23,6 +23,13 @@ SELECT fullMatch('abc', '^*abc');
 SELECT fullMatch('xabc', '^*abc');
 SELECT fullMatch('abc', '?abc'); -- { serverError CANNOT_COMPILE_REGEXP }
 
+SELECT '-- Anchors do not repair an invalid pattern';
+SELECT fullMatch('$rest', unhex('5c')); -- { serverError CANNOT_COMPILE_REGEXP }
+SELECT fullMatch('a', '+a'); -- { serverError CANNOT_COMPILE_REGEXP }
+SELECT fullMatch('a', '{1}a'); -- { serverError CANNOT_COMPILE_REGEXP }
+SELECT fullMatch('a', materialize('+a')); -- { serverError CANNOT_COMPILE_REGEXP }
+SELECT fullMatch('{a}b', '{a}b');
+
 SELECT '-- Top-level alternation is anchored as a whole';
 SELECT fullMatch('zzz', 'zzz|gold.*');
 SELECT fullMatch('gold-1', 'zzz|gold.*');

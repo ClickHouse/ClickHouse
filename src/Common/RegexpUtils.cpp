@@ -345,6 +345,7 @@ String anchorRegexpToMatchWholeString(std::string_view regexp)
     bool top_level_alternation = false;
     bool top_level_multiline = false;
     bool ends_with_anchor = false;
+    bool trailing_escape = false;
     for (size_t pos = 0; pos < regexp.size(); ++pos)
     {
         char c = regexp[pos];
@@ -362,6 +363,7 @@ String anchorRegexpToMatchWholeString(std::string_view regexp)
         {
             if (pos + 1 < regexp.size() && regexp[pos + 1] == 'Q')
                 in_quote = true;
+            trailing_escape = pos + 1 >= regexp.size();
             ++pos;
         }
         else if (in_class)
@@ -425,21 +427,21 @@ String anchorRegexpToMatchWholeString(std::string_view regexp)
     if (in_quote)
         res += "\\E";
 
-    if (top_level_alternation || top_level_multiline)
+    /// The added anchors must not become a part of the regex's own syntax: a quantifier at the position
+    /// of the leading '^' (e.g. "^?a", "+a", "^(?i)*a") would apply to the anchor, and a trailing
+    /// backslash would escape the appended '$'. Wrap such regexes into a group too — they have no fixed
+    /// prefix anyway, so the prefix extraction loses nothing.
+    const char * end = res.data() + res.size();
+    const char * after_start_anchor = skipZeroWidthConstructs(res.data() + (res.starts_with('^') ? 1 : 0), end);
+    const bool quantifier_after_start_anchor = after_start_anchor < end
+        && (*after_start_anchor == '*' || *after_start_anchor == '?' || *after_start_anchor == '+' || *after_start_anchor == '{');
+
+    /// The non-capturing group isolates the regex from the added anchors.
+    if (top_level_alternation || top_level_multiline || trailing_escape || quantifier_after_start_anchor)
         return "^(?:" + res + ")$";
 
-    /// Keep the regex as written for a possible group wrap below.
-    const String body = res;
     if (!res.starts_with('^'))
         res = '^' + res;
-
-    /// A zero-allowing quantifier after the leading '^' (possibly behind zero-width constructs, e.g. "^(?i)*a")
-    /// would make the start anchor optional, so "^...$" would not anchor the start at all. Wrap such a regex
-    /// into a group instead; it guarantees no fixed prefix, so nothing is lost for the prefix extraction.
-    const char * end = res.data() + res.size();
-    if (isZeroAllowingQuantifier(skipZeroWidthConstructs(res.data() + 1, end), end))
-        return "^(?:" + body + ")$";
-
     if (!ends_with_anchor)
         res += '$';
     return res;
