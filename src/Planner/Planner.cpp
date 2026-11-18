@@ -164,9 +164,6 @@ namespace ErrorCodes
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int INVALID_LIMIT_EXPRESSION;
-    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
-    extern const int INVALID_WITH_FILL_EXPRESSION;
     extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
     extern const int ILLEGAL_STREAM;
 }
@@ -602,6 +599,11 @@ static void addStreamInQueryResultCacheStepIfNeeded(
     query_plan.addStep(std::move(stream_into_query_result_cache_step));
 }
 
+static bool isPlanBuiltOnlyForInspection(const SelectQueryOptions & select_query_options)
+{
+    return select_query_options.only_analyze || select_query_options.is_explain || select_query_options.build_logical_plan;
+}
+
 static bool coalesceSubqueryQueryResultCacheHerd(
     QueryPlan & query_plan,
     const ASTPtr & ast,
@@ -713,7 +715,8 @@ void Planner::buildPlanForUnionNode()
         if (tryAddReadFromQueryResultCacheStep(query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk))
             return;
 
-        if (coalesceSubqueryQueryResultCacheHerd(
+        if (!isPlanBuiltOnlyForInspection(select_query_options)
+            && coalesceSubqueryQueryResultCacheHerd(
                 query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk,
                 /* skip_context_check = */ !can_use_query_result_cache, herd_token_holder))
             return;
@@ -933,6 +936,7 @@ void Planner::buildPlanForQueryNode()
     /// the context flag check while still respecting safety checks for same condition used for the write path below.
     QueryResultCacheHerdTokenHolder herd_token_holder;
     if (should_cache
+        && !isPlanBuiltOnlyForInspection(select_query_options)
         && coalesceSubqueryQueryResultCacheHerd(
             query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk,
             /* skip_context_check = */ !can_use_query_result_cache, herd_token_holder))

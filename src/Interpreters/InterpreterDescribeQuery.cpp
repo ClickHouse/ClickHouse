@@ -159,7 +159,7 @@ void InterpreterDescribeQuery::fillColumnsFromSubquery(const ASTTableExpression 
 void InterpreterDescribeQuery::fillColumnsFromSubqueryImpl(const ASTPtr & select_query, const ContextPtr & current_context)
 {
     SelectQueryOptions select_query_options;
-    SharedHeader sample_block = InterpreterSelectQueryAnalyzer(select_query, current_context, select_query_options).getSampleBlock();
+    SharedHeader sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(select_query, current_context, select_query_options);
 
     for (auto && column : *sample_block)
         columns.emplace_back(column.name, column.type);

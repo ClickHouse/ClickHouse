@@ -558,7 +558,9 @@ static struct InitFiu
     REGULAR(aggregate_function_state_transfer_throw_after_child) \
     REGULAR(marks_loader_hold_task_until_canceled) \
     REGULAR(whatif_projection_scan_cut_short) \
-    REGULAR(http_connection_socket_inode_unavailable)
+    REGULAR(http_connection_socket_inode_unavailable) \
+    ONCE(query_result_cache_herd_registration_fail) \
+    ONCE(query_result_cache_herd_key_copy_fail)
 
 namespace FailPoints
 {

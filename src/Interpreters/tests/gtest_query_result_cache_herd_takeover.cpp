@@ -1,7 +1,9 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 
+#include <Common/FailPoint.h>
 #include <Common/tests/gtest_global_context.h>
 
+#include <base/scope_guard.h>
 #include <base/unit.h>
 
 #include <gtest/gtest.h>
@@ -10,6 +12,12 @@
 #include <thread>
 
 using namespace DB;
+
+namespace DB::FailPoints
+{
+extern const char query_result_cache_herd_registration_fail[];
+extern const char query_result_cache_herd_key_copy_fail[];
+}
 
 /// The herd token protocol of the query result cache: a query whose result is not in the cache either becomes the
 /// "executor" of a group of concurrent, identical queries, or waits while the executor computes the result.
@@ -317,4 +325,60 @@ TEST(QueryResultCacheHerdReprobe, WaiterLearnsThatTheResultWasReadFromTheCache)
 
     /// The token was completed as succeeded, so the waiter reads the result from the cache instead of taking over.
     EXPECT_EQ(waiter_outcome, Outcome::OwnerSucceeded);
+}
+
+/// A failure (e.g. a failed allocation) while a token is being registered or handed over must not leave a token which
+/// nobody releases: later queries for the key would wait for it until `query_cache_herd_wait_timeout`.
+TEST(QueryResultCacheHerdAllocationFailure, FailedRegistrationLeavesNoToken)
+{
+    const auto cache = makeSharedCache();
+    const auto key = makeKey(ast_hash, /*is_subquery=*/ true);
+    const auto other_key = makeKey(other_ast_hash, /*is_subquery=*/ true);
+
+    {
+        FailPointInjection::enableFailPoint(FailPoints::query_result_cache_herd_registration_fail);
+        SCOPE_EXIT(FailPointInjection::disableFailPoint(FailPoints::query_result_cache_herd_registration_fail));
+
+        EXPECT_ANY_THROW(cache->acquireOrWaitHerdToken(key, long_timeout, "query_1", neverCancelled()));
+    }
+
+    auto other_query = cache->acquireOrWaitHerdToken(key, std::chrono::milliseconds(100), "query_2", neverCancelled());
+    ASSERT_EQ(other_query.outcome, Outcome::Acquired);
+    cache->releaseHerdToken(key, other_query.token, /*succeeded=*/ true);
+
+    auto holder_of_other_key = cache->acquireOrWaitHerdToken(other_key, long_timeout, "query_3", neverCancelled());
+    ASSERT_EQ(holder_of_other_key.outcome, Outcome::Acquired);
+
+    std::thread releaser(
+        [&]
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            cache->releaseHerdToken(other_key, holder_of_other_key.token, /*succeeded=*/ true);
+        });
+
+    auto waiter = cache->acquireOrWaitHerdToken(other_key, long_timeout, "query_1", neverCancelled());
+    releaser.join();
+
+    EXPECT_NE(waiter.outcome, Outcome::Independent);
+    if (waiter.outcome == Outcome::Acquired)
+        cache->releaseHerdToken(other_key, waiter.token, /*succeeded=*/ true);
+}
+
+TEST(QueryResultCacheHerdAllocationFailure, FailedKeyCopyBeforeAcquiringLeavesNoToken)
+{
+    const auto cache = makeSharedCache();
+    const auto key = makeKey();
+
+    {
+        FailPointInjection::enableFailPoint(FailPoints::query_result_cache_herd_key_copy_fail);
+        SCOPE_EXIT(FailPointInjection::disableFailPoint(FailPoints::query_result_cache_herd_key_copy_fail));
+
+        QueryResultCacheHerdTokenHolder holder;
+        EXPECT_ANY_THROW(coalesceQueryResultCacheHerd(
+            cache, key, getContext().context, long_timeout, [] { return false; }, holder));
+    }
+
+    auto next = cache->acquireOrWaitHerdToken(key, std::chrono::milliseconds(100), "next", neverCancelled());
+    ASSERT_EQ(next.outcome, Outcome::Acquired);
+    cache->releaseHerdToken(key, next.token, /*succeeded=*/ true);
 }

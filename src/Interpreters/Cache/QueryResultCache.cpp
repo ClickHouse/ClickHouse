@@ -28,6 +28,7 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 #include <Common/TTLCachePolicy.h>
 #include <Common/formatReadable.h>
@@ -80,8 +81,15 @@ namespace Setting
     extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
+namespace FailPoints
+{
+    extern const char query_result_cache_herd_registration_fail[];
+    extern const char query_result_cache_herd_key_copy_fail[];
+}
+
 namespace ErrorCodes
 {
+    extern const int FAULT_INJECTED;
     extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
     extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
@@ -787,9 +795,29 @@ QueryResultCache::HerdTokenPtr QueryResultCache::createHerdToken(const Coalescin
         /// releases it, but `releaseHerdToken` only removes the current entry for the key.
         eraseHerdToken(it);
     }
-    herd_tokens.emplace(key, token);
-    if (key.is_subquery && !query_id.empty())
+
+    const bool counts_owner = key.is_subquery && !query_id.empty();
+    if (counts_owner)
         ++subquery_herd_tokens_by_owner[query_id];
+
+    try
+    {
+        fiu_do_on(FailPoints::query_result_cache_herd_registration_fail,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while registering a query result cache herd token");
+        });
+        herd_tokens.emplace(key, token);
+    }
+    catch (...)
+    {
+        if (counts_owner)
+        {
+            auto owner_it = subquery_herd_tokens_by_owner.find(query_id);
+            if (owner_it != subquery_herd_tokens_by_owner.end() && --owner_it->second == 0)
+                subquery_herd_tokens_by_owner.erase(owner_it);
+        }
+        throw;
+    }
     return token;
 }
 
@@ -924,6 +952,12 @@ bool coalesceQueryResultCacheHerd(
     const String & query_id = context->getCurrentQueryId();
     const auto deadline = std::chrono::steady_clock::now() + timeout;
 
+    QueryResultCache::CoalescingKey holder_key = key;
+    fiu_do_on(FailPoints::query_result_cache_herd_key_copy_fail,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while copying a query result cache herd key");
+    });
+
     while (true)
     {
         const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
@@ -933,7 +967,8 @@ bool coalesceQueryResultCacheHerd(
         auto result = cache->acquireOrWaitHerdToken(key, remaining, query_id, is_cancelled);
         if (result.outcome == QueryResultCache::HerdWaitOutcome::Acquired)
         {
-            holder = QueryResultCacheHerdTokenHolder(cache, key, std::move(result.token));
+            /// Moves only, none of which can throw.
+            holder = QueryResultCacheHerdTokenHolder(cache, std::move(holder_key), std::move(result.token));
             if (!try_read_from_cache())
                 return false;
             /// The result is in the cache and there is nothing to execute. Complete the token successfully.
