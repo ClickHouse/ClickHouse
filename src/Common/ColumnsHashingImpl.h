@@ -85,6 +85,11 @@ struct SubRangeStateOf
 template <typename State>
 using SubRangeState = typename SubRangeStateOf<State>::Type;
 
+/// A `SubRangeState` packs the keys of its sub-range into an array ahead of the lookups only when the sub-range holds
+/// at least this many rows. It packs the rows of a shorter one one by one: the array would cost more to allocate and
+/// fill than the rows it saves packing.
+constexpr size_t min_rows_to_batch_pack_sub_range = 256;
+
 namespace columns_hashing_impl
 {
 
@@ -293,6 +298,18 @@ public:
                 return emplaceImpl<false>(key_holder, data, derived.getPrecomputedHash(data, row));
             }
         }
+        return emplaceImpl<true>(key_holder, data, 0);
+    }
+
+    /// Inserts the key of `key_holder`, which the caller built with `getKeyHolder`, for example ahead of
+    /// its row to prefetch its cell (see `KeptLookAheadKeys`). It does what this class's `emplaceKey` does
+    /// after building the key. The caller guarantees that the state does not override `emplaceKey`, as
+    /// `HashMethodSingleLowCardinalityColumn`, `HashMethodSerialized` and `HashMethodHashed` do: this method
+    /// would skip the override.
+    template <typename Data, typename KeyHolder>
+    ALWAYS_INLINE EmplaceResult emplaceKeyHolder(Data & data, KeyHolder & key_holder)
+    {
+        static_assert(!nullable && !Derived::has_pre_computed_hashes);
         return emplaceImpl<true>(key_holder, data, 0);
     }
 

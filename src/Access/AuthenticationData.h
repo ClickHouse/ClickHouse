@@ -6,6 +6,7 @@
 #include <Access/Common/HTTPAuthenticationScheme.h>
 #include <Access/Common/OneTimePassword.h>
 #include <Common/Crypto/X509Certificate.h>
+#include <Common/NoDumpAllocator.h>
 #include <Common/SSHWrapper.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
@@ -23,7 +24,7 @@ namespace DB
 class AuthenticationData
 {
 public:
-    using Digest = std::vector<uint8_t>;
+    using Digest = std::vector<uint8_t, NoDumpAllocator<uint8_t>>;
 
     explicit AuthenticationData(AuthenticationType type_ = AuthenticationType::NO_PASSWORD) : type(type_) {}
     AuthenticationData(const AuthenticationData & src) = default;
