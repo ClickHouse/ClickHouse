@@ -74,16 +74,21 @@ SELECT count(), sum(x) FROM file(currentDatabase() || '_05833.parquet') PREWHERE
 
 -- Row group, bloom filter and page index pruning on columns used only in PREWHERE. 10 row groups of 1000 rows;
 -- `e = 4321` is inside the min/max of one row group but absent from it. Each filter prunes nothing when it is off.
+-- The last two reads add a DEFAULT column missing from the file.
 SET use_query_condition_cache = 0, use_parquet_metadata_cache = 0, input_format_parquet_dictionary_filter_push_down = 0, input_format_parquet_use_offset_index = 1;
 SELECT s FROM file(currentDatabase() || '_05833_pruning.parquet') PREWHERE k = 4321 SETTINGS log_comment = 'k_point';
 SELECT s FROM file(currentDatabase() || '_05833_pruning.parquet') PREWHERE k = 4321 SETTINGS log_comment = 'k_point_no_page_filter', input_format_parquet_page_filter_push_down = 0;
+SELECT s FROM file(currentDatabase() || '_05833_pruning.parquet') PREWHERE k = 4321 SETTINGS log_comment = 'k_point_no_stats', input_format_parquet_filter_push_down = 0;
 SELECT count(), min(s) FROM file(currentDatabase() || '_05833_pruning.parquet') PREWHERE k BETWEEN 4321 AND 4330 SETTINGS log_comment = 'k_range';
 SELECT count(), any(s) FROM file(currentDatabase() || '_05833_pruning.parquet') PREWHERE e = 4321 SETTINGS log_comment = 'e_absent';
 SELECT count(), any(s) FROM file(currentDatabase() || '_05833_pruning.parquet') PREWHERE e = 4321 SETTINGS log_comment = 'e_absent_no_bloom_filter', input_format_parquet_bloom_filter_push_down = 0;
+SELECT count(), sum(k), sum(d) FROM file(currentDatabase() || '_05833_pruning.parquet', Parquet, 'k UInt64, d UInt64 DEFAULT k + 1') PREWHERE k BETWEEN 4321 AND 4330 SETTINGS log_comment = 'default_k_range';
+SELECT count(), sum(k), sum(d) FROM file(currentDatabase() || '_05833_pruning.parquet', Parquet, 'k UInt64, e UInt64, d UInt64 DEFAULT 42') PREWHERE e IN (4321, 8642) WHERE d = 42 SETTINGS log_comment = 'default_e_in';
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['ParquetPrunedRowGroups'] AS pruned_by_stats,
     ProfileEvents['ParquetBloomFilterPrunedRowGroups'] AS pruned_by_bloom_filter, ProfileEvents['ParquetPrunedPages'] > 0 AS pruned_pages
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-    AND log_comment IN ('k_point', 'k_point_no_page_filter', 'k_range', 'e_absent', 'e_absent_no_bloom_filter')
+    AND log_comment IN ('k_point', 'k_point_no_page_filter', 'k_point_no_stats', 'k_range', 'e_absent', 'e_absent_no_bloom_filter',
+        'default_k_range', 'default_e_in')
 ORDER BY log_comment;
