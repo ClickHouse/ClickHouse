@@ -31,17 +31,26 @@ trap finish EXIT
 
 function wait_for_server()
 {
-    local log=$1
+    # The output of the server process and, optionally, the log file the server writes to.
+    local output=$1
+    local server_log=${2:-}
     # Bound every probe: a connection made while the server is still starting up may never get a reply,
     # and with the default `receive_timeout` (300 s) a single such probe would exceed the test time limit.
-    for _ in {1..300}; do
+    # Also bound the total wait by wall-clock time (well below the time limit of the test), so that a server
+    # that does not become ready is reported with its logs instead of the test being killed without them.
+    local deadline=$((SECONDS + 40))
+    while (( SECONDS < deadline )); do
         $CLICKHOUSE_CLIENT --connect_timeout 2 --receive_timeout 5 --send_timeout 5 --query "SELECT 1" >/dev/null 2>&1 && return
         if ! kill -0 "$PID" 2>/dev/null; then
             break
         fi
         sleep 0.2
     done
-    cat "$log"
+    echo "The server did not become ready"
+    cat "$output"
+    if [[ -n "$server_log" && -e "$server_log" ]]; then
+        tail -n 100 "$server_log"
+    fi
     exit 1
 }
 
@@ -112,7 +121,7 @@ $CLICKHOUSE_BINARY server \
     --query_cache.max_entries 11 \
     --logger_level information > "${CLICKHOUSE_TMP}/server1.log" 2>&1 &
 PID=$!
-wait_for_server "${CLICKHOUSE_TMP}/server1.log"
+wait_for_server "${CLICKHOUSE_TMP}/server1.log" "$srv_dir1/winner.log"
 
 # Path-backed settings are displayed in `system.server_settings` under their dotted path.
 $CLICKHOUSE_CLIENT --query "
