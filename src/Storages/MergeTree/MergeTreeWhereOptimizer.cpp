@@ -260,16 +260,19 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
         .fully_moved_to_prewhere = optimize_result->where_conditions.empty()};
 }
 
-/// KeyCondition builds no key atom from a constant its builder rejects, e.g. a LIKE pattern without a fixed prefix.
+/// KeyCondition builds no key atom from a String constant its builder rejects, e.g. a LIKE pattern without a fixed prefix.
 static bool keyConditionAcceptsConstant(const RPNBuilderFunctionTreeNode & function_node, const String & function_name)
 {
     if (function_node.getArgumentsSize() != 2)
         return true;
 
     auto constant = function_node.getArgumentAt(1);
+    if (!constant.isConstant() || !isStringOrFixedString(removeLowCardinalityAndNullable(constant.getConstantColumn().type)))
+        return true;
+
     Field value;
     DataTypePtr type;
-    if (constant.isSubqueryOrSet() || !constant.tryGetConstant(value, type) || value.isNull())
+    if (!constant.tryGetConstant(value, type) || value.isNull())
         return true;
 
     KeyCondition::RPNElement element;
