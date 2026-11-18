@@ -6,7 +6,8 @@
       "pages": [
         "agents/index",
         "agents/quickstart",
-        "agents/chat"
+        "agents/chat",
+        "agents/scheduled-chats"
       ]
     },
     {
