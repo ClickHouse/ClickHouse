@@ -1004,6 +1004,8 @@ const std::unordered_map<TypeIndex, size_t> & getTypesTextDeserializePriorityMap
         /// while DateTimes parsed with best_effort also accept a time alone.
         pm[TypeIndex::Time] = pm.at(TypeIndex::Date) + 2;
         pm[TypeIndex::Time64] = pm.at(TypeIndex::Date) + 1;
+        /// Intervals are read as plain integers: after every number, date and time, before the strings.
+        pm[TypeIndex::Interval] = pm.at(TypeIndex::FixedString) + 1;
         return pm;
     }();
 
