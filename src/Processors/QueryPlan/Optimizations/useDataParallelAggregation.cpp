@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
+#include <DataTypes/hasNullable.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
@@ -114,9 +115,19 @@ bool isPartitionKeyFunctionOfKeys(
     return allOutputsDependsOnlyOnAllowedNodes(partition_key_outputs, irreducible_nodes, matches);
 }
 
+bool partitionKeyCanDistinguishSignedZeros(const ActionsDAG & partition_actions)
+{
+    for (const auto * input : partition_actions.getInputs())
+        if (hasTypeThatCanContainFloat(input->result_type))
+            return true;
+    return false;
+}
+
 bool isPartitionKeyFunctionOfKeys(const KeyDescription & partition_key, const ActionsDAG & key_actions, const Names & key_names)
 {
     const auto & partition_actions = partition_key.expression->getActionsDAG();
+    if (partitionKeyCanDistinguishSignedZeros(partition_actions))
+        return false;
     /// The DAG may output both partition key columns and source columns. For example, with
     /// `PARTITION BY toYYYYMM(date)`, its outputs can be `[toYYYYMM(date), date]`. Only `toYYYYMM(date)`
     /// defines the partition key; checking the source column `date` separately would be too strict.
