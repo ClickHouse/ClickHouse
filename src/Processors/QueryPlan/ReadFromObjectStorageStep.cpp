@@ -32,6 +32,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 
@@ -144,6 +145,10 @@ bool ReadFromObjectStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAn
     if (info.formatReadsHivePartitionColumns())
         return false;
 
+    /// A column of `format_header` with the name of a column read under another name is another column.
+    if (info.columns_read_under_other_names.contains(sort_column.name))
+        return false;
+
     /// The output header is broader than what the format reads: Hive partition columns (from the
     /// path) and virtual columns (`_path`, `_file`, `_row_id`, ...) are added after the format has
     /// produced its chunk, so the reader could never compare them against the threshold.
@@ -252,7 +257,7 @@ Pipe ReadFromObjectStorageStep::buildInOrderPipe(
     /// Never collapse to one port: the sorting step installs no merge above a single port, so a
     /// single group would leave the concatenation unmerged.
     const size_t num_groups = std::max<size_t>(2, (num_files + threshold - 1) / threshold);
-    std::vector<Pipes> grouped(num_groups);
+    VectorWithMemoryTracking<Pipes> grouped(num_groups);
     for (size_t i = 0; i < num_files; ++i)
         grouped[i % num_groups].emplace_back(std::move(pipes[i]));
 
@@ -446,7 +451,8 @@ void ReadFromObjectStorageStep::createIterator()
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(context), object_storage, iterator_metadata, distributed_processing,
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
-        /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
+        /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"),
+        format_settings);
 
     /// The build side registers a join runtime filter in the lookup of the thread's query context, which is not always this step's context.
     if (!join_runtime_filters_for_file_pruning.empty())
