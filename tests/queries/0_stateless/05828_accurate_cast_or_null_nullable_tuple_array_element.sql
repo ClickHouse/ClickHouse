@@ -65,3 +65,12 @@ SELECT accurateCastOrDefault(materialize(toIPv4('1.2.3.4')::Dynamic), 'Variant(U
 SELECT accurateCastOrNull(tuple(materialize([toUInt16(3)::Dynamic])), 'Nullable(Tuple(Array(Variant(UInt8))))');
 SELECT accurateCastOrNull(materialize(toIPv4('1.2.3.4')::Dynamic), 'Decimal32(2)');
 SELECT accurateCastOrNull(tuple(materialize(toIPv4('1.2.3.4')::Dynamic)), 'Nullable(Tuple(Decimal32(2)))');
+
+-- A text value out of the range of an integer element fails as with accurateCast.
+SELECT accurateCastOrNull(tuple(materialize(['300'])), 'Nullable(Tuple(Array(UInt8)))'); -- { serverError CANNOT_PARSE_TEXT }
+SELECT accurateCastOrNull(tuple(materialize([toFixedString('300', 3)])), 'Nullable(Tuple(Array(UInt8)))'); -- { serverError CANNOT_PARSE_TEXT }
+SELECT accurateCastOrNull(tuple(materialize(map('a', '300'))), 'Nullable(Tuple(Map(String, UInt8)))'); -- { serverError CANNOT_PARSE_TEXT }
+SELECT accurateCastOrNull(tuple(materialize([CAST('300', 'Variant(String)')])), 'Nullable(Tuple(Array(UInt8)))'); -- { serverError CANNOT_PARSE_TEXT }
+SELECT accurateCastOrNull(tuple(materialize([CAST('300', 'String')::Dynamic])), 'Nullable(Tuple(Array(UInt8)))'); -- { serverError CANNOT_PARSE_TEXT }
+SELECT accurateCastOrDefault(tuple(materialize(['1', '300'])), 'Nullable(Tuple(Array(UInt8)))'); -- { serverError CANNOT_PARSE_TEXT }
+SELECT accurateCastOrNull(tuple(materialize(['30'])), 'Nullable(Tuple(Array(UInt8)))');
