@@ -6,7 +6,6 @@
 
 #include <atomic>
 #include <Common/ListWithMemoryTracking.h>
-#include <list>
 #include <memory>
 #include <span>
 #include <vector>
@@ -31,7 +30,7 @@ using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- connections are made before the list grows, so it must not throw at the memory limit
+using Processors = ListWithMemoryTracking<ProcessorPtr>;
 
 class StepWallClock;
 
