@@ -53,6 +53,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/LazyMaterializingTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
 #include <Processors/Transforms/VirtualRowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -3184,14 +3185,13 @@ void ReadFromMergeTree::buildPartitionPruningIndexes(
 {
     const auto & settings = query_context->getSettingsRef();
     const bool skip_constant_folding = skip_partition_pruning_ || !settings[Setting::use_constant_folding_in_index_analysis];
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
     const auto data_settings = data.getSettings();
 
-    if (auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings); !minmax_columns.empty())
+    if (auto minmax_columns = MergeTreeData::getMinMaxColumns(*metadata_snapshot, data_settings); !minmax_columns.empty())
     {
         auto key_condition_factory = [query_context, metadata_snapshot, skip_partition_pruning_, minmax_columns, data_settings, require_ready_sets](const ActionsDAG *, const ActionsDAG::Node * predicate)
         {
-            auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(metadata_snapshot->getPartitionKey(), data_settings, ExpressionActionsSettings(query_context));
+            auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(*metadata_snapshot, data_settings, ExpressionActionsSettings(query_context));
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
             KeyCondition condition{
                 wrapped, query_context, minmax_columns.getNames(), minmax_expression_actions,
@@ -4262,6 +4262,12 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             ? ReadType::InOrder
             : ReadType::InReverseOrder;
 
+    /// A read that needs no column reads the column cheapest on disk, as the planner chooses it.
+    /// The table's column sizes do not describe projection parts.
+    if (all_column_names.empty() && !result.parts_with_ranges.empty() && !projection_parts_exist)
+        result.column_names_to_read = {ExpressionActions::getCheapestColumnToRead(
+            metadata_snapshot->getColumns().getAllPhysical(), data.getColumnSizes()).name};
+
     return std::make_shared<AnalysisResult>(std::move(result));
 }
 
@@ -5019,6 +5025,8 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// without the index readers (`optimizeLazyFinal` copies the same map onto its synthetic reads).
     cloned_step->index_read_tasks = index_read_tasks;
     cloned_step->no_rows_needed = no_rows_needed;
+    /// A copy that replaces this read puts its parts where the lazy read of this one reads them from.
+    cloned_step->shareLazyReadOf(*this);
     /// Plan-based parallel replicas clone the subtree to ship a fragment, and the fragment's local plan is
     /// optimized with `enable_join_runtime_filters = false` (the filters are already in it), so the
     /// optimization that attaches these descriptors does not run there and cannot put them back.
@@ -5103,7 +5111,10 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
         analyzed_result_ptr->column_names_to_read = all_column_names;
 
     required_source_columns = all_column_names;
-    has_lazily_read_columns = true;
+
+    lazy_read_rows = std::make_shared<LazyMaterializingRows>();
+    new_reading->setLazyMaterializingRows(lazy_read_rows);
+    columns_read_lazily = columns_to_remove;
 
     return new_reading;
 }
@@ -5397,6 +5408,10 @@ size_t ReadFromMergeTree::getNumStreamsWhenNothingToRead(const AnalysisResult & 
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[maybe_unused]] const BuildQueryPipelineSettings & settings)
 {
     auto & result = getAnalysisResult();
+
+    /// The parts this read finally reads are the ones the lazy read of the columns it leaves out reads its rows from.
+    if (lazy_read_rows)
+        lazy_read_rows->addPartsOfMainRead(result.parts_with_ranges, storage_snapshot);
 
     /// Before any pool or processor copies the settings: both build the PREWHERE steps and must agree on them.
     reader_settings.read_ahead_prewhere_columns = canReadPrewhereColumnsAhead(result.parts_with_ranges);
@@ -7182,8 +7197,18 @@ ReadFromMergeTree::removeUnusedColumnsAndCreateLazyReadStep(
         data.getLogName());
 
     auto result = applyColumnPruning(pruning);
-    has_lazily_read_columns = true;
+
+    lazy_read_rows = std::make_shared<LazyMaterializingRows>();
+    lazy_reading->setLazyMaterializingRows(lazy_read_rows);
+    columns_read_lazily = std::move(columns_to_read_lazily);
+
     return {std::move(result), std::move(lazy_reading)};
+}
+
+void ReadFromMergeTree::shareLazyReadOf(const ReadFromMergeTree & other)
+{
+    lazy_read_rows = other.lazy_read_rows;
+    columns_read_lazily = other.columns_read_lazily;
 }
 
 void ReadFromMergeTree::setDistributedRead(size_t bucket_count)

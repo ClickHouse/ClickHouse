@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/LazyMaterializingTransform.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryInfo.h>
@@ -500,32 +501,10 @@ UseProjectionsResult optimizeUseNormalProjections(
     NormalProjectionCandidate * best_candidate = nullptr;
 
     const auto & query_info = reading->getQueryInfo();
+    /// Even over the row limit, this is the analysis the read executes with: the projections below prune it, not a copy of it.
     auto parent_reading_select_result = reading->getAnalyzedResult();
     if (!parent_reading_select_result)
         parent_reading_select_result = reading->selectRangesToRead();
-
-    /// parent parts (non-projection result) exceeded limits
-    /// construct a base AnalysisResult with all parts to analyze projection candidates
-    if (!parent_reading_select_result->isUsable())
-    {
-        const auto & parts = reading->getParts();
-
-        parent_reading_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>();
-        parent_reading_select_result->parts_with_ranges = parts;
-        parent_reading_select_result->selected_parts = parts.size();
-        parent_reading_select_result->exceeded_row_limits = true;
-
-        size_t total_marks = 0;
-        size_t total_rows = 0;
-        for (const auto & part : parts)
-        {
-            total_marks += part.data_part->getMarksCount();
-            total_rows += part.data_part->rows_count;
-        }
-        parent_reading_select_result->selected_marks = total_marks;
-        parent_reading_select_result->selected_rows = total_rows;
-        parent_reading_select_result->selected_ranges = parts.size();
-    }
 
     if (!relax_projection_checks)
     {
@@ -547,6 +526,18 @@ UseProjectionsResult optimizeUseNormalProjections(
         }
 
         return true;
+    };
+
+    /// A lazy read reads more columns of the rows of the read by their part offsets. Read from a projection instead, the
+    /// rows of a part are addressed by the offsets in the parent part where the projection has them, and else by the
+    /// offsets in the projection part, which the lazy read then reads its columns from. See `LazyMaterializingRows`.
+    auto can_serve_lazy_read = [&](const ProjectionDescription * projection)
+    {
+        if (!reading->hasLazilyReadColumns() || (need_parent_part_offset && projection->with_parent_part_offset))
+            return true;
+
+        return std::ranges::all_of(
+            reading->getColumnsReadLazily(), [&](const auto & column) { return projection->sample_block.findColumnOrSubcolumnByName(column).has_value(); });
     };
 
     auto projection_sort_order_useful = [&](const ProjectionDescription * projection)
@@ -620,9 +611,13 @@ UseProjectionsResult optimizeUseNormalProjections(
             }
         }
 
-        if (!has_all_required_columns(projection))
+        const bool has_columns = has_all_required_columns(projection);
+        if (!has_columns || !can_serve_lazy_read(projection))
         {
-            result.projection_reject_reasons.try_emplace(projection->name, "the projection does not contain all columns required by the query");
+            result.projection_reject_reasons.try_emplace(projection->name,
+                has_columns ? "some columns of the read are read lazily by their part offsets, and the projection has neither those "
+                              "columns nor the offsets of the parent part"
+                            : "the projection does not contain all columns required by the query");
 
             /// Check if projection can be used to filter parts or building projection index filters
             if (query.filter_node && optimize_use_projection_filtering)
@@ -645,6 +640,11 @@ UseProjectionsResult optimizeUseNormalProjections(
         auto & candidate = candidates.emplace_back();
         candidate.projection = projection;
 
+        /// A lazy read made before reads its columns from the projection parts, unless it reads the parent parts by the
+        /// offsets the projection stores, see `can_serve_lazy_read`.
+        const bool lazy_read_from_projection_parts
+            = reading->hasLazilyReadColumns() && !(need_parent_part_offset && projection->with_parent_part_offset);
+
         MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), projection);
         bool analyzed = analyzeProjectionCandidate(
             candidate,
@@ -659,7 +659,8 @@ UseProjectionsResult optimizeUseNormalProjections(
             reading->isQueryConditionCacheAllowed(),
             reading->isTopKPrewhereQueryConditionCacheAllowed(),
             context,
-            hypothetical.get());
+            hypothetical.get(),
+            lazy_read_from_projection_parts ? reading->getColumnsReadLazily() : Names{});
 
         if (!analyzed)
         {
@@ -828,6 +829,13 @@ UseProjectionsResult optimizeUseNormalProjections(
         {
             projection_reading_step->copyTopKFilterInfoAndQueryConditionCacheGate(*reading);
             projection_reading_step->copyJoinRuntimeFilterIndexAnalysisDescriptors(*reading);
+            /// The projection parts keep the numbering of their parent parts, so the lazy read of the read reads their rows.
+            /// The lazy read made before addresses them by `_part_offset`, which the projection gives as the offsets of the
+            /// parent part where it stores them, see above. A lazy read made after this has the offsets of the projection.
+            projection_reading_step->shareLazyReadOf(*reading);
+            if (const auto & lazy_read_rows = reading->getLazyReadRows();
+                lazy_read_rows && need_parent_part_offset && best_candidate->projection->with_parent_part_offset)
+                lazy_read_rows->projection_parts_by_parent_part_offsets = true;
         }
     }
 

@@ -234,8 +234,11 @@ static struct InitFiu
     REGULAR(refresh_mv_skip_execution) \
     REGULAR(refresh_mv_incremental_fail_after_append) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
+    ONCE(column_aggregate_function_expand_exception) \
     ONCE(space_saving_copy_arena_throw) \
     ONCE(adaptive_aggregation_drain_create_states_throw) \
+    ONCE(aggregator_merge_collect_states_throw) \
+    ONCE(aggregator_merge_batch_throw) \
     REGULAR(keepermap_fail_drop_data) \
     PAUSEABLE_ONCE(keepermap_create_pause_before_drop_lock_version) \
     REGULAR(keeper_fault_on_watch_request) \
@@ -365,6 +368,7 @@ static struct InitFiu
     REGULAR(rmt_merge_selecting_task_max_part_size) \
     REGULAR(merge_tree_load_statistics_throw) \
     REGULAR(merge_tree_load_outdated_parts_retryable_error) \
+    REGULAR(merge_tree_load_outdated_parts_schedule_error) \
     PAUSEABLE(merge_tree_load_outdated_parts_pause) \
     REGULAR(restore_part_inject_no_space_error) \
     PAUSEABLE(smt_mutate_task_pause_in_prepare) \

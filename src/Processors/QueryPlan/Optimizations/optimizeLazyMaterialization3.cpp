@@ -380,7 +380,7 @@ void appendOutputToStep(IQueryPlanStep & step, const ActionsDAG::Node & step_nod
             name, step.getName(), former_header->dumpStructure(), header.dumpStructure());
 }
 
-/// Rebuilds `Limit -> Sorting -> tree of Expression, Filter, BuildRuntimeFilter and JoinStepLogical ->
+/// Rebuilds `Limit -> Sorting -> tree of Expression, Filter, BuildRuntimeFilter, ArrayJoin and JoinStepLogical ->
 /// sources` so that the columns the frontier defers are read for the rows the `LIMIT` returns only.
 ///
 /// The main branch is the original plan with fewer columns: every step is kept, with its own expressions
@@ -474,8 +474,16 @@ public:
 
             const auto & origin = merged.getOrigin(value);
             Carrying carrying{.value = value, .name = makeCarriedName(carried.size())};
+            /// An alias has the values of what it names, so the step outputting an alias of the value outputs the value,
+            /// as an `ARRAY JOIN` does its elements.
             const auto & values = merged.step_outputs.at(origin.plan_node);
-            if (const auto output_it = std::ranges::find(values, value); output_it != values.end())
+            const auto output_it = std::ranges::find_if(values, [value](const auto * output)
+            {
+                while (output != value && output->type == ActionsDAG::ActionType::ALIAS)
+                    output = output->children.front();
+                return output == value;
+            });
+            if (output_it != values.end())
                 carrying.position = output_it - values.begin();
             else if (origin.step_node
                 && (typeid_cast<const ExpressionStep *>(origin.plan_node->step.get())
@@ -650,9 +658,8 @@ public:
             ILazyMaterializingRowsPtr lazy_materializing_rows;
             if (lazy.merge_tree_reading)
             {
-                auto rows = std::make_shared<LazyMaterializingRows>(std::move(lazy.parts));
-                lazy.merge_tree_reading->setLazyMaterializingRows(rows);
-                lazy_materializing_rows = std::move(rows);
+                /// The main read fills the rows when it builds its pipeline, see `ReadFromMergeTree::hasLazilyReadColumns`.
+                lazy_materializing_rows = lazy.merge_tree_reading->getLazyMaterializingRows();
                 lazy_plan.addStep(std::move(lazy.merge_tree_reading));
             }
             else
@@ -749,7 +756,6 @@ private:
         /// Set by `apply`.
         std::unique_ptr<LazilyReadFromMergeTree> merge_tree_reading;
         std::unique_ptr<LazilyReadFromObjectStorage> object_storage_reading;
-        RangesInDataParts parts;
         LazyObjectStorageFileRegistryPtr row_index_registry;
     };
 
@@ -1112,13 +1118,6 @@ private:
                 if (lazy->merge_tree_reading)
                     lazy_header = lazy->merge_tree_reading->getOutputHeader().get();
 
-                /// The lazy read fetches exactly the rows the main read selected, addressed by their row
-                /// index. It must not apply the vector search rescoring filter again: that one belongs to
-                /// the main read, and applying it against the candidates of the vector index can drop a
-                /// requested row.
-                lazy->parts = merge_tree->getParts();
-                for (auto & part : lazy->parts)
-                    part.read_hints.use_vector_search_result_filter = false;
             }
         }
         else if (lazy)

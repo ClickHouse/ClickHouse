@@ -132,7 +132,6 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
     extern const SettingsUInt64 distributed_group_by_no_merge;
-    extern const SettingsDistributedProductMode distributed_product_mode;
     extern const SettingsBool optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsBool extremes;
@@ -146,7 +145,6 @@ namespace Setting
     extern const SettingsBool make_distributed_plan;
     extern const SettingsDouble offset;
     extern const SettingsBool prefer_column_name_to_alias;
-    extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_columns_to_read;
@@ -467,32 +465,6 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
       * We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
       * Because it is the column that is cheapest to read.
       */
-    class ColumnWithSize
-    {
-    public:
-        ColumnWithSize(NameAndTypePair column_, ColumnSize column_size_)
-            : column(std::move(column_))
-            , compressed_size(column_size_.data_compressed)
-            , uncompressed_size(column_size_.data_uncompressed)
-            , type_size(column.type->haveMaximumSizeOfValue() ? column.type->getMaximumSizeOfValueInMemory() : 100)
-        {
-        }
-
-        bool operator<(const ColumnWithSize & rhs) const
-        {
-            return std::tie(compressed_size, type_size, uncompressed_size)
-                < std::tie(rhs.compressed_size, rhs.type_size, rhs.uncompressed_size);
-        }
-
-        NameAndTypePair column;
-        size_t compressed_size = 0;
-        size_t uncompressed_size = 0;
-        size_t type_size = 0;
-    };
-
-    std::vector<ColumnWithSize> columns_with_sizes;
-
-    auto column_sizes = storage->getColumnSizes();
     auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns());
 
     if (!column_names_allowed_to_select.empty())
@@ -522,35 +494,13 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
         }
     }
 
-    if (!column_sizes.empty())
-    {
-        for (auto & column_name_and_type : column_names_and_types)
-        {
-            auto it = column_sizes.find(column_name_and_type.name);
-            if (it == column_sizes.end())
-                continue;
+    /// A table expression can resolve to no columns at all, for example a table function over a
+    /// table whose schema is unavailable. `getSmallestColumn` treats an empty list as a logical error.
+    if (column_names_and_types.empty())
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Cannot read from table expression with no columns");
 
-            columns_with_sizes.emplace_back(column_name_and_type, it->second);
-        }
-    }
-
-    NameAndTypePair result;
-
-    if (!columns_with_sizes.empty())
-        result = std::min_element(columns_with_sizes.begin(), columns_with_sizes.end())->column;
-    else
-    {
-        /// A table expression can resolve to no columns at all, for example a table function over a
-        /// table whose schema is unavailable. `getSmallestColumn` treats an empty list as a logical error.
-        if (column_names_and_types.empty())
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Cannot read from table expression with no columns");
-
-        /// If we have no information about columns sizes, choose a column of minimum size of its data type
-        result = ExpressionActions::getSmallestColumn(column_names_and_types);
-    }
-
-    return result;
+    return ExpressionActions::getCheapestColumnToRead(column_names_and_types, storage->getColumnSizes());
 }
 
 /// True if the table expression carries modifiers that prevent answering a
@@ -3620,14 +3570,6 @@ const StorageDistributed * getDistributedStorageFromTableExpression(const QueryT
     }
 
     return nullptr;
-}
-
-bool isGlobalJoin(const JoinNode & join_node, const Settings & settings)
-{
-    const auto distributed_product_mode = settings[Setting::distributed_product_mode];
-    return join_node.getLocality() == JoinLocality::Global
-        || distributed_product_mode == DistributedProductMode::GLOBAL
-        || (distributed_product_mode != DistributedProductMode::LOCAL && settings[Setting::prefer_global_in_and_join]);
 }
 
 void tryRewriteGlobalRightJoinAsLeftJoin(QueryNode & query_node, const ContextPtr & context)
