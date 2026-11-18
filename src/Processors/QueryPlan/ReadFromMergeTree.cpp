@@ -393,6 +393,7 @@ namespace Setting
     extern const SettingsBool use_uncompressed_cache;
     extern const SettingsBool use_columns_cache;
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
+    extern const SettingsUInt64 merge_tree_read_end_tasks_per_stream;
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
@@ -1343,7 +1344,8 @@ Pipe ReadFromMergeTree::read(
     ReadType read_type,
     size_t max_streams,
     size_t min_marks_for_concurrent_read,
-    bool use_uncompressed_cache)
+    bool use_uncompressed_cache,
+    size_t min_marks_per_task_at_read_end)
 {
     const auto & settings = context->getSettingsRef();
     size_t sum_marks = parts_with_range.getMarksCountAllParts();
@@ -1358,6 +1360,7 @@ Pipe ReadFromMergeTree::read(
         .threads = max_streams,
         .sum_marks = sum_marks,
         .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
+        .min_marks_per_task_at_read_end = min_marks_per_task_at_read_end,
         .preferred_block_size_bytes = settings[Setting::preferred_block_size_bytes],
         .use_uncompressed_cache = use_uncompressed_cache,
         .use_columns_cache = settings[Setting::use_columns_cache],
@@ -1989,6 +1992,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
     if (0 == info.sum_marks)
         return {};
 
+    /// The size of the tasks at the end of the read, or zero when the end of the read is cut like the rest.
+    size_t min_marks_per_task_at_read_end = 0;
+
     if (num_streams > 1)
     {
         const size_t initial_num_streams = num_streams;
@@ -2025,18 +2031,29 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         const bool is_local_unordered_read
             = !is_parallel_reading_from_replicas && !isQueryWithFinal() && !checkAnyPartOnRemoteFS(parts_with_ranges);
 
-        /// If that left some streams without a task, use smaller tasks, not below `merge_tree_min_read_task_size`.
-        /// A single stream stays one (it reads in order). Only the plain read pool cuts tasks of exactly this size
-        /// (adaptive granularity, local prefetched pool not allowed). With the columns cache, the pool does not align
-        /// tasks to the stripes of the cache when a stripe exceeds the share of a stream, so the small tasks stay small.
-        if (allow_spreading_small_read && is_local_unordered_read && data.canUseAdaptiveGranularity()
-            && !settings[Setting::allow_prefetched_read_pool_for_local_filesystem]
+        /// Only the plain read pool cuts tasks of exactly `info.min_marks_for_concurrent_read` marks
+        /// (adaptive granularity, local prefetched pool not allowed), so only its task size is lowered.
+        const bool pool_cuts_tasks_of_exact_size = is_local_unordered_read && data.canUseAdaptiveGranularity()
+            && !settings[Setting::allow_prefetched_read_pool_for_local_filesystem];
+
+        /// Returns the task size that cuts the share of each of `streams` streams into `tasks_per_stream`
+        /// tasks. It only lowers the current task size, and not below `merge_tree_min_read_task_size`.
+        const auto task_marks_for_share = [&](size_t streams, size_t tasks_per_stream)
+        {
+            const size_t min_task_marks = settings[Setting::merge_tree_min_read_task_size];
+            return std::min(
+                info.min_marks_for_concurrent_read, std::max(info.sum_marks / streams / tasks_per_stream, min_task_marks));
+        };
+
+        /// If the reduction above left some streams without a task, use smaller tasks, not below
+        /// `merge_tree_min_read_task_size`. A single stream stays one (it reads in order). With the columns
+        /// cache, the pool does not align tasks to the stripes of the cache when a stripe exceeds the share
+        /// of a stream, so the small tasks stay small.
+        if (allow_spreading_small_read && pool_cuts_tasks_of_exact_size
             && requested_num_streams <= MIN_STREAMS_TO_CAP_BY_READ_BYTES && num_streams > 1 && num_streams < initial_num_streams)
         {
             static constexpr size_t tasks_per_stream = 3;
-            const size_t min_task_marks = settings[Setting::merge_tree_min_read_task_size];
-            const size_t task_marks = std::min(
-                info.min_marks_for_concurrent_read, std::max(info.sum_marks / tasks_per_stream / initial_num_streams, min_task_marks));
+            const size_t task_marks = task_marks_for_share(initial_num_streams, tasks_per_stream);
             size_t tasks = 0;
             for (const size_t part_marks : info.sum_marks_in_parts)
                 tasks += std::max<size_t>(1, part_marks / task_marks);
@@ -2054,6 +2071,24 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
             && settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability] == 0)
             capStreamsByReadBytes(
                 num_streams, parts_with_ranges, column_names, storage_snapshot, mutations_snapshot, context, settings, log);
+
+        /// The number of streams is final here, which fixes the share of the marks that a stream gets. A
+        /// stream that has read its share takes tasks from the shares of other streams, one task at a time,
+        /// so the last streams of a read work alone for up to one task each. The pool therefore cuts the end
+        /// of the read (see `MergeTreeReadPool::adjustTaskSizeToReadEnd`) into smaller tasks, of
+        /// 1/`merge_tree_read_end_tasks_per_stream` of a share, unless that needs tasks below
+        /// `merge_tree_min_read_task_size`; 0 cuts the end like the rest of the read. The default of 32 keeps
+        /// that time at about 3% of a share. For example, 192 streams over 12,288 marks have 64 marks each:
+        /// the default task is 24 marks, and the tasks at the end of the read are the smallest task of 8
+        /// marks. 16 streams have 768 marks each, which is 32 default tasks, so all their tasks are default
+        /// ones.
+        const size_t read_end_tasks_per_stream = settings[Setting::merge_tree_read_end_tasks_per_stream];
+        if (pool_cuts_tasks_of_exact_size && num_streams > 1 && read_end_tasks_per_stream)
+        {
+            const size_t task_marks = task_marks_for_share(num_streams, read_end_tasks_per_stream);
+            if (task_marks < info.min_marks_for_concurrent_read)
+                min_marks_per_task_at_read_end = task_marks;
+        }
     }
 
     auto read_type = is_parallel_reading_from_replicas ? ReadType::ParallelReplicas : ReadType::Default;
@@ -2119,7 +2154,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
             read_type,
             num_streams,
             info.min_marks_for_concurrent_read,
-            info.use_uncompressed_cache);
+            info.use_uncompressed_cache,
+            min_marks_per_task_at_read_end);
 
         if (merging_pipes.empty())
             return non_intersecting_parts_ranges_read_pipe;
@@ -2149,7 +2185,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         read_type,
         num_streams,
         info.min_marks_for_concurrent_read,
-        info.use_uncompressed_cache);
+        info.use_uncompressed_cache,
+        min_marks_per_task_at_read_end);
 }
 
 static ActionsDAG createProjection(const Block & header)
