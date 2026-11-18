@@ -43,6 +43,9 @@ Join: customer ⋈ d ⋈ orders
 Join: customer ⋈ d
 row policy on a column with statistics
 1	1
+row policy on a column without statistics
+Join: orders ⋈ customer ⋈ nation_rp0
+Join: orders ⋈ customer
 build_rows_empty	0
 build_rows_one_nation	10001
 statistics below an ASOF join

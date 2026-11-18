@@ -38,6 +38,13 @@ INSERT INTO nation_rp SETTINGS materialize_statistics_on_insert = 1 VALUES (5, '
 DROP ROW POLICY IF EXISTS rp_05816 ON nation_rp;
 CREATE ROW POLICY rp_05816 ON nation_rp USING n_name = 'GERMANY' TO ALL;
 
+-- A row policy on a column without statistics keeps the written order like the same filter in WHERE.
+CREATE TABLE nation_rp0 (n_nationkey Int32, n_name String)
+ENGINE = MergeTree ORDER BY n_nationkey SETTINGS auto_statistics_types = '', index_granularity = 8192;
+INSERT INTO nation_rp0 VALUES (5, 'ETHIOPIA'), (6, 'FRANCE'), (7, 'GERMANY'), (100, 'UNKNOWN');
+DROP ROW POLICY IF EXISTS rp0_05816 ON nation_rp0;
+CREATE ROW POLICY rp0_05816 ON nation_rp0 USING n_name = 'GERMANY' TO ALL;
+
 SELECT 'filter on a column without statistics';
 SELECT replaceRegexpAll(trimLeft(explain), '\\[[^]]*\\]', '') FROM (EXPLAIN keep_logical_steps = 1, actions = 1
     SELECT count() FROM orders JOIN (SELECT * FROM customer JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'WAKANDA') AS cn ON c_custkey = o_custkey)
@@ -126,6 +133,11 @@ WITH
         SELECT count() FROM customer JOIN nation_stats ON c_nationkey = n_nationkey WHERE n_name = 'GERMANY') WHERE explain LIKE '%Join:%' LIMIT 1) AS by_where
 SELECT by_policy = by_where, by_policy != '';
 
+SELECT 'row policy on a column without statistics';
+SELECT replaceRegexpAll(trimLeft(explain), '\\[[^]]*\\]', '') FROM (EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT count() FROM orders JOIN customer ON c_custkey = o_custkey JOIN nation_rp0 ON c_nationkey = n_nationkey)
+WHERE explain ILIKE '%Join: %';
+
 -- Only the outer join estimates the ASOF join below it, which must not load the statistics of the inner join's reads again.
 SELECT count() FROM nation_stats AS a JOIN nation_partial AS b ON a.n_nationkey = b.n_nationkey
     ASOF JOIN customer ON c_nationkey = b.n_nationkey AND a.n_nationkey >= c_custkey
@@ -171,3 +183,4 @@ FROM (SELECT log_comment, ProfileEvents['LoadedStatistics'] AS loaded FROM syste
     WHERE current_database = currentDatabase() AND log_comment IN ('distinct_in_join', 'distinct_alone') AND type = 'QueryFinish');
 
 DROP ROW POLICY rp_05816 ON nation_rp;
+DROP ROW POLICY rp0_05816 ON nation_rp0;
