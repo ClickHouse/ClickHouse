@@ -25,7 +25,7 @@ verdict() {
     fi
 }
 
-MAP_SETTINGS="map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic'"
+MAP_SETTINGS="map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets'"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_final_repl"
 $CLICKHOUSE_CLIENT --query "
