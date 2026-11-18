@@ -18,6 +18,9 @@ size_t estimateSortingWorkspace(size_t rows);
 /// Sort one block by `description`. If limit != 0, then the partial sort of the first `limit` rows is produced.
 void sortBlock(Block & block, const SortDescription & description, UInt64 limit = 0, IColumn::PermutationSortStability stability = IColumn::PermutationSortStability::Unstable);
 
+/// Same as `sortBlock` without a limit and with an unstable sort, using up to `max_threads` threads for a large block.
+void sortBlockInParallel(Block & block, const SortDescription & description, size_t max_threads);
+
 /// Sorts the block by `description` and keeps one row for each sort key. Stable sorting retains the
 /// first input row. Duplicates are removed from the permutation before output columns are materialized.
 /// Without a non-constant sort column, all rows compare equal and only the first input row is retained.

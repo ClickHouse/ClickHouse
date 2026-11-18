@@ -1,0 +1,25 @@
+<test>
+    <create_query>CREATE TABLE in_subquery_large_set_index_analysis_1 (ipkey Int64, v1 String, v2 String, i3 Int64, PROJECTION p0 (SELECT v2, i3, v1 ORDER BY v2, i3)) ENGINE = MergeTree ORDER BY ipkey</create_query>
+    <create_query>CREATE TABLE in_subquery_large_set_index_analysis_2 (ipkey Int64, i1 Int64, v2 String, v3 String) ENGINE = MergeTree ORDER BY ipkey</create_query>
+    <create_query>CREATE TABLE in_subquery_large_set_index_analysis_3 (ipkey Int64, v1 String, v2 String, i3 Int64) ENGINE = MergeTree ORDER BY ipkey</create_query>
+    <create_query>CREATE TABLE in_subquery_large_set_index_analysis_4 (ipkey Int64, i1 Int64, v2 String, v3 String) ENGINE = MergeTree ORDER BY ipkey</create_query>
+
+    <fill_query>INSERT INTO in_subquery_large_set_index_analysis_1 SELECT number, toString(cityHash64(number, 1) % 3000000), toString(cityHash64(number, 2) % 3000000), number FROM numbers(6000000)</fill_query>
+    <fill_query>INSERT INTO in_subquery_large_set_index_analysis_2 SELECT number, number, toString(cityHash64(number, 3) % 3000000), toString(cityHash64(number, 4) % 3000000) FROM numbers(3000000)</fill_query>
+    <fill_query>INSERT INTO in_subquery_large_set_index_analysis_3 SELECT number, toString(cityHash64(number, 1) % 3000000), toString(cityHash64(number, 2) % 3000000), cityHash64(number, 5) % 1000 FROM numbers(6000000)</fill_query>
+    <fill_query>INSERT INTO in_subquery_large_set_index_analysis_4 SELECT number * 2, cityHash64(number, 6) % 1000, toString(cityHash64(number, 3) % 3000000), toString(cityHash64(number, 4) % 3000000) FROM numbers(3000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE in_subquery_large_set_index_analysis_1 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE in_subquery_large_set_index_analysis_2 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE in_subquery_large_set_index_analysis_3 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE in_subquery_large_set_index_analysis_4 FINAL</fill_query>
+
+    <!-- The set of 3 million elements is sorted to analyze the projection ordered by `v2`, which then is not used. -->
+    <query>SELECT count() FROM in_subquery_large_set_index_analysis_1 WHERE (v1, v2) IN (SELECT v2, v3 FROM in_subquery_large_set_index_analysis_2)</query>
+    <!-- The set of 3 million elements is sorted to analyze the primary key `ipkey`, which prunes nothing. -->
+    <query>SELECT count() FROM in_subquery_large_set_index_analysis_3 WHERE (i3, ipkey) IN (SELECT i1, ipkey FROM in_subquery_large_set_index_analysis_4)</query>
+
+    <drop_query>DROP TABLE IF EXISTS in_subquery_large_set_index_analysis_1</drop_query>
+    <drop_query>DROP TABLE IF EXISTS in_subquery_large_set_index_analysis_2</drop_query>
+    <drop_query>DROP TABLE IF EXISTS in_subquery_large_set_index_analysis_3</drop_query>
+    <drop_query>DROP TABLE IF EXISTS in_subquery_large_set_index_analysis_4</drop_query>
+</test>

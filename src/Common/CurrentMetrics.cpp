@@ -111,6 +111,9 @@
     M(MergeTreeStatisticsLoaderThreads, "Number of threads in the thread pool for loading the statistics of data parts.") \
     M(MergeTreeStatisticsLoaderThreadsActive, "Number of threads in the thread pool for loading the statistics of data parts running a task.") \
     M(MergeTreeStatisticsLoaderThreadsScheduled, "Number of queued or active jobs in the thread pool for loading the statistics of data parts.") \
+    M(SortBlockInParallelThreads, "Number of threads in the thread pools that sort a large block in parallel, e.g. a large set for index analysis.") \
+    M(SortBlockInParallelThreadsActive, "Number of threads in the thread pools that sort a large block in parallel running a task.") \
+    M(SortBlockInParallelThreadsScheduled, "Number of queued or active jobs in the thread pools that sort a large block in parallel.") \
     M(BackgroundQueryThreads, "Number of threads in the background query thread pool.") \
     M(BackgroundQueryThreadsActive, "Number of threads in the background query thread pool running a task.") \
     M(BackgroundQueryThreadsScheduled, "Number of queued or active jobs in the background query thread pool.") \

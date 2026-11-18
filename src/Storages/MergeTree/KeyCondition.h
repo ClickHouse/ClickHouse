@@ -910,7 +910,8 @@ private:
         const DataTypes & set_types,
         SetAtomCandidate candidate,
         bool allow_relaxed_pruning,
-        const DataTypePtr & has_element_type);
+        const DataTypePtr & has_element_type,
+        size_t max_threads);
 
     /// Maps the predicate expression whose values are tested for set membership (the left-hand side
     /// of `IN`, or the element argument of `has`) onto key columns. Each matched tuple component has
@@ -1024,6 +1025,8 @@ private:
     bool date_time_overflow_behavior_ignore;
     /// Consulted only while extracting atoms, so the private copying constructor leaves it unset.
     bool validate_enum_literals_in_operators = true;
+    /// Threads a `MergeTreeSetIndex` may use to sort its set, also consulted only while extracting atoms.
+    size_t max_threads_for_set_index = 1;
 
     /// Holds the value of the `analyze_index_with_multiple_key_columns_per_condition` setting.
     /// When false, atom extraction keeps at most one atom per predicate leaf: the candidate

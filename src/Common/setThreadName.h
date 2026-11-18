@@ -163,6 +163,7 @@ namespace DB
     M(SEND_TO_SHELL_CMD, "SendToShellCmd") \
     M(SIGNAL_LISTENER, "SignalListnr") \
     M(SNAPSHOT_ASYNC, "SnapshotAsync") \
+    M(SORT_BLOCK, "SortBlock") \
     M(SSH_HANDLER, "SSHHandler") \
     M(SUGGEST, "Suggest") \
     M(SYSTEM_LOG_FLUSH, "SystemLogFlush") \
