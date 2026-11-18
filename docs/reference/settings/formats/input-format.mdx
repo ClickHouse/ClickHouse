@@ -787,6 +787,16 @@ A column with the index has the name of its dimension when no variable and no ot
 
 The columns are added before the columns of the variables and have the type [UInt64](/reference/data-types/int-uint).
 
+## input_format_netcdf_allow_missing_columns {#input_format_netcdf_allow_missing_columns}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting that allows missing columns in NetCDF files"}]}]}/>
+
+Allow reading a `NetCDF` file that has no variable for some of the requested columns. Such columns are filled with the default values of their types.
+
+This is what makes a schema inferred with `schema_inference_mode = 'union'` readable: it has the variables of all the files, and a file may lack some of them. When disabled, a requested column without a variable throws an exception.
+
 ## input_format_netcdf_fill_value_as_null {#input_format_netcdf_fill_value_as_null}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

@@ -1498,7 +1498,7 @@ If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` ar
 Path of the file used to record errors while reading text formats (CSV, TSV).
 )", 0) \
     DECLARE(Bool, input_format_netcdf_fill_value_as_null, false, R"(
-Read the values that are equal to the `_FillValue` or `missing_value` attribute of a variable of a `NetCDF` file as `NULL`, making the column [Nullable](/sql-reference/data-types/nullable.md).
+Read the values that are equal to the `_FillValue` or `missing_value` attribute of a variable of a `NetCDF` file as `NULL`, making the column [Nullable](/reference/data-types/nullable).
 
 These attributes are how the [CF conventions](https://cfconventions.org/) mark the data that is missing, such as the sea surface temperature over land. An attribute is used only when it has the same type as the variable.
 
@@ -1518,7 +1518,7 @@ A variable may use the same dimension more than once, as in `correlation(instrum
 
 A column with the index has the name of its dimension when no variable and no other added column has it. Otherwise, the suffix `_index` is appended to the name of the dimension, and then `_index_2`, `_index_3` and so on, until the name is free. For example, the variables `instrument(instrument)` and `correlation(instrument, instrument)` give the column `instrument_index` for the second axis, and a variable `triple(t, t, t)` in a file without a variable `t` gives the columns `t`, `t_index` and `t_index_2`.
 
-The columns are added before the columns of the variables and have the type [UInt64](/sql-reference/data-types/int-uint.md).
+The columns are added before the columns of the variables and have the type [UInt64](/reference/data-types/int-uint).
 )", 0, \
         {"26.11", false, false, "New setting that makes the NetCDF format add a column with the index along every dimension that has no coordinate variable of the same name"}) \
     DECLARE(Bool, input_format_netcdf_allow_missing_columns, true, R"(

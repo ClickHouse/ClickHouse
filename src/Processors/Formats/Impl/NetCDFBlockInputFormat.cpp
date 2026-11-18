@@ -505,7 +505,7 @@ void NetCDFBlockInputFormat::prepareNullValues(ColumnState & state)
             const char * value = sentinels.data.data() + offset;
             if (column.variable->type == NetCDFType::Float)
             {
-                Float32 sentinel;
+                Float32 sentinel = 0;
                 memcpy(&sentinel, value, sizeof(sentinel));
                 transformEndianness<std::endian::native, std::endian::big>(sentinel);
                 if (std::isnan(sentinel))
@@ -515,13 +515,13 @@ void NetCDFBlockInputFormat::prepareNullValues(ColumnState & state)
             }
             else if (column.variable->type == NetCDFType::Double)
             {
-                Float64 sentinel;
+                Float64 sentinel = 0;
                 memcpy(&sentinel, value, sizeof(sentinel));
                 transformEndianness<std::endian::native, std::endian::big>(sentinel);
                 if (std::isnan(sentinel))
                     result.has_nan = true;
                 else
-                    result.floats.push_back(static_cast<Float64>(sentinel));
+                    result.floats.push_back(sentinel);
             }
             else
             {
@@ -642,7 +642,10 @@ void NetCDFBlockInputFormat::initialize()
             state.is_identity = state.column->axis_ids == layout.row_axes;
             state.is_constant = state.column->axis_ids.empty();
 
-            if (!state.column->is_string && !state.column->null_values.empty())
+            /// The sentinels of a `char` variable read as one character per row are single bytes,
+            /// prepared like those of a numeric column, so a large `missing_value` attribute is not
+            /// scanned for every row.
+            if ((!state.column->is_string || !state.column->has_string_length_dimension) && !state.column->null_values.empty())
             {
                 prepareNullValues(state);
                 if (isCancelled())
@@ -833,8 +836,9 @@ void NetCDFBlockInputFormat::getElementIndexes(
 namespace
 {
 
-/// Whether the value of `size` bytes is one of the sentinels. The sentinels of a string have the
-/// length of the whole attribute, so a value of another length matches none of them.
+/// Whether the string of `size` bytes is one of the sentinels. The sentinels of a string have the
+/// length of the whole attribute, so a value of another length matches none of them. There is one
+/// sentinel per attribute, so this is not a scan of a large array.
 bool isNullValue(const VectorWithMemoryTracking<NetCDFTableLayout::Column::NullValues> & null_values, const char * value, size_t size)
 {
     for (const auto & sentinels : null_values)
@@ -947,7 +951,11 @@ void NetCDFBlockInputFormat::fillColumn(const ColumnState & state, IColumn & col
 
             if (null_map)
             {
-                null_map->push_back(isNullValue(description.null_values, from, length));
+                if (description.has_string_length_dimension)
+                    null_map->push_back(isNullValue(description.null_values, from, length));
+                else
+                    null_map->push_back(length == 1 && std::binary_search(state.null_values.integers.begin(),
+                        state.null_values.integers.end(), static_cast<UInt64>(static_cast<UInt8>(from[0]))));
             }
         }
         return;
@@ -1253,26 +1261,26 @@ are stored in the file.
 
 ## Data types matching {#data_types-matching}
 
-| NetCDF data type (`INSERT`) | ClickHouse data type                                    | NetCDF data type (`SELECT`) |
-|-----------------------------|---------------------------------------------------------|-----------------------------|
-| `byte`                      | [Int8](/sql-reference/data-types/int-uint.md)           | `byte`                      |
-| `short`                     | [Int16](/sql-reference/data-types/int-uint.md)          | `short`                     |
-| `int`                       | [Int32](/sql-reference/data-types/int-uint.md)          | `int`                       |
-| `int64`                     | [Int64](/sql-reference/data-types/int-uint.md)          | `int64`                     |
-| `ubyte`                     | [UInt8](/sql-reference/data-types/int-uint.md)          | `ubyte`                     |
-| `ushort`                    | [UInt16](/sql-reference/data-types/int-uint.md)         | `ushort`                    |
-| `uint`                      | [UInt32](/sql-reference/data-types/int-uint.md)         | `uint`                      |
-| `uint64`                    | [UInt64](/sql-reference/data-types/int-uint.md)         | `uint64`                    |
-| `float`                     | [Float32](/sql-reference/data-types/float.md)           | `float`                     |
-| `double`                    | [Float64](/sql-reference/data-types/float.md)           | `double`                    |
-| `char`                      | [String](/sql-reference/data-types/string.md)           | `char`                      |
-|                             | [FixedString](/sql-reference/data-types/fixedstring.md) | `char`                      |
-|                             | [Enum8](/sql-reference/data-types/enum.md)              | `byte`                      |
-|                             | [Enum16](/sql-reference/data-types/enum.md)             | `short`                     |
-|                             | [Date](/sql-reference/data-types/date.md)               | `ushort`                    |
-|                             | [Date32](/sql-reference/data-types/date32.md)           | `int`                       |
-|                             | [DateTime](/sql-reference/data-types/datetime.md)       | `uint`                      |
-|                             | [DateTime64](/sql-reference/data-types/datetime64.md)   | `int64`                     |
+| NetCDF data type (`INSERT`) | ClickHouse data type                                | NetCDF data type (`SELECT`) |
+|-----------------------------|-----------------------------------------------------|-----------------------------|
+| `byte`                      | [Int8](/reference/data-types/int-uint)              | `byte`                      |
+| `short`                     | [Int16](/reference/data-types/int-uint)             | `short`                     |
+| `int`                       | [Int32](/reference/data-types/int-uint)             | `int`                       |
+| `int64`                     | [Int64](/reference/data-types/int-uint)             | `int64`                     |
+| `ubyte`                     | [UInt8](/reference/data-types/int-uint)             | `ubyte`                     |
+| `ushort`                    | [UInt16](/reference/data-types/int-uint)            | `ushort`                    |
+| `uint`                      | [UInt32](/reference/data-types/int-uint)            | `uint`                      |
+| `uint64`                    | [UInt64](/reference/data-types/int-uint)            | `uint64`                    |
+| `float`                     | [Float32](/reference/data-types/float)              | `float`                     |
+| `double`                    | [Float64](/reference/data-types/float)              | `double`                    |
+| `char`                      | [String](/reference/data-types/string)              | `char`                      |
+|                             | [FixedString](/reference/data-types/fixedstring)    | `char`                      |
+|                             | [Enum8](/reference/data-types/enum)                 | `byte`                      |
+|                             | [Enum16](/reference/data-types/enum)                | `short`                     |
+|                             | [Date](/reference/data-types/date)                  | `ushort`                    |
+|                             | [Date32](/reference/data-types/date32)              | `int`                       |
+|                             | [DateTime](/reference/data-types/datetime)          | `uint`                      |
+|                             | [DateTime64](/reference/data-types/datetime64)      | `int64`                     |
 
 The types `ubyte`, `ushort`, `uint`, `int64` and `uint64` exist only in CDF-5.
 
@@ -1346,7 +1354,7 @@ The version of the format is chosen automatically: CDF-5 when a column needs one
 only CDF-5 has, or when a number that the header of a CDF-2 file writes as a 32-bit value - the
 length of a dimension or the size of a variable - does not fit into it, and CDF-2 otherwise.
 
-A [Nullable](/sql-reference/data-types/nullable.md) column that contains a `NULL` is written with the
+A [Nullable](/reference/data-types/nullable) column that contains a `NULL` is written with the
 `_FillValue` attribute, which is the way the format marks missing data. The value of the attribute is the
 default fill value of the type of the netCDF library, or, when the data of the column contains that
 value, another value that the data does not contain, so that a value of the column is never read
@@ -1368,11 +1376,11 @@ value of `char`, so that the readers do not take that byte as missing.
 
 ## Format settings {#format-settings}
 
-| Setting                                                                                                                     | Description                                                                                     | Default |
-|-----------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|---------|
-| [`input_format_netcdf_fill_value_as_null`](/operations/settings/settings-formats#input_format_netcdf_fill_value_as_null)     | Read the values equal to the `_FillValue` or `missing_value` attribute of a variable as `NULL`. | `false` |
-| [`input_format_netcdf_add_dimension_columns`](/operations/settings/settings-formats#input_format_netcdf_add_dimension_columns) | Add a column with the index along every axis of the row space that has no coordinate variable. | `false` |
-| [`input_format_netcdf_allow_missing_columns`](/operations/settings/settings-formats#input_format_netcdf_allow_missing_columns) | Fill a requested column that the file has no variable for with the default values of its type. | `true` |
+| Setting                                                                                                                           | Description                                                                                     | Default |
+|-----------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|---------|
+| [`input_format_netcdf_fill_value_as_null`](/reference/settings/formats/input-format#input_format_netcdf_fill_value_as_null)       | Read the values equal to the `_FillValue` or `missing_value` attribute of a variable as `NULL`. | `false` |
+| [`input_format_netcdf_add_dimension_columns`](/reference/settings/formats/input-format#input_format_netcdf_add_dimension_columns) | Add a column with the index along every axis of the row space that has no coordinate variable.  | `false` |
+| [`input_format_netcdf_allow_missing_columns`](/reference/settings/formats/input-format#input_format_netcdf_allow_missing_columns) | Fill a requested column that the file has no variable for with the default values of its type.  | `true`  |
 )DOCS_MD",
         .introduced_in = {26, 11},
         .related = {"Npy", "Parquet"}});
