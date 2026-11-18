@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.settings-beta" />
 
@@ -18,7 +17,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ## Действия сервиса и масштабирование
 </div>
 
-<Image img="/images/managed-postgres/service-actions.webp" alt="Действия сервиса и масштабирование" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Действия сервиса и масштабирование](/images/managed-postgres/service-actions.webp)
+
+</Frame>
+
+</div>
 
 Панель инструментов **Действия сервиса** содержит элементы управления для вашего экземпляра ClickHouse Managed Postgres:
 
@@ -33,7 +40,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ## Изменение параметров конфигурации
 </div>
 
-<Image img="/images/managed-postgres/postgres-parameters.webp" alt="Настройка параметров Postgres" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Настройка параметров Postgres](/images/managed-postgres/postgres-parameters.webp)
+
+</Frame>
+
+</div>
 
 Чтобы изменить параметр, нажмите кнопку **Edit parameters**. Выберите параметры, которые нужно изменить, и задайте для них нужные значения. Когда изменения вас устроят, нажмите кнопку **Save Changes**.
 

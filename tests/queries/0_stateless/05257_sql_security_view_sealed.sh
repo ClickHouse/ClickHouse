@@ -81,6 +81,8 @@ GRANT SELECT ON $db.none_projection_view TO $user;
 GRANT SELECT ON $db.url_view TO $user;
 GRANT SELECT ON $db.dist_policy_view TO $user;
 GRANT SELECT ON $db.dist_ck_policy_view TO $user;
+GRANT SELECT ON $db.dist_view TO $user;
+GRANT SELECT ON $db.view_over_dist TO $user;
 EOF
 
 echo "--- an outer expression is not evaluated on the hidden rows"
@@ -92,8 +94,9 @@ for view in definer_view none_view policy_view view_policy_view; do
 done
 
 echo "--- nor on a remote server"
+# A local replica would run the query as the initiator, the definer of the view, rather than as the user.
 for serialize in 0 1; do
-    ${CLICKHOUSE_CLIENT} --serialize_query_plan "$serialize" --query "
+    ${CLICKHOUSE_CLIENT} --serialize_query_plan "$serialize" --prefer_localhost_replica 0 --query "
         SELECT secret FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', '$db', 'definer_view', '$user', '')
         WHERE throwIf(secret = 'HIDDEN', 'LEAKED') = 0" 2>&1
 done
@@ -101,7 +104,7 @@ done
 echo "--- nor through a \`Distributed\` table, with the plan shipped to the shard or built there"
 for table in dist_view view_over_dist; do
     for serialize in 0 1; do
-        ${CLICKHOUSE_CLIENT} --serialize_query_plan "$serialize" --prefer_localhost_replica 0 --query "
+        ${CLICKHOUSE_CLIENT} --user "$user" --serialize_query_plan "$serialize" --prefer_localhost_replica 0 --query "
             SELECT secret FROM $db.$table WHERE throwIf(secret = 'HIDDEN', 'LEAKED') = 0" 2>&1
     done
 done
@@ -115,7 +118,7 @@ echo "--- nor in a distributed query plan, which is built for the view's plan on
 ${CLICKHOUSE_CLIENT} --user "$user" --make_distributed_plan 1 --distributed_plan_execute_locally 1 --distributed_plan_max_rows_to_broadcast 0 --enable_parallel_replicas 0 --query "
     SELECT secret FROM $db.definer_view WHERE throwIf(secret = 'HIDDEN', 'LEAKED') = 0" 2>&1
 ${CLICKHOUSE_CLIENT} --make_distributed_plan 1 --distributed_plan_execute_locally 1 --distributed_plan_max_rows_to_broadcast 0 --enable_parallel_replicas 0 --query "
-    SELECT countIf(explain LIKE '%Exchange%') > 0 FROM (EXPLAIN SELECT secret FROM $db.definer_view WHERE secret = 'x')"
+    SELECT countIf(explain LIKE '%Exchange%') > 0 FROM (EXPLAIN SELECT secret FROM $db.none_view WHERE secret = 'x')"
 
 echo "--- nor on parallel replicas, which would run the view's reads as another user"
 for allow_view in 0 1; do
@@ -157,7 +160,7 @@ ${CLICKHOUSE_CLIENT} --user "$definer" --query "
     SELECT secret FROM $db.policy_dist SETTINGS $pr_settings, prefer_localhost_replica = 1, log_comment = '05257_dist_direct_${CLICKHOUSE_DATABASE}'"
 ${CLICKHOUSE_CLIENT} --query "
     SYSTEM FLUSH LOGS query_log;
-    SELECT replaceOne(log_comment, '_' || currentDatabase(), ''), countIf(NOT is_initial_query) > 0 FROM system.query_log
+    SELECT replaceOne(log_comment, '_' || currentDatabase(), ''), countIf(NOT is_initial_query AND distributed_depth > 0) > 0 FROM system.query_log
     WHERE type = 'QueryFinish' AND initial_query_id IN (
         SELECT query_id FROM system.query_log
         WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
@@ -203,6 +206,9 @@ echo "--- a plan fragment that reads the view can be cloned"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT secret FROM $db.definer_view AS v WHERE EXISTS (SELECT 1 FROM numbers(10) WHERE number = length(v.secret))
     SETTINGS allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 0"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT secret FROM $db.none_view AS v WHERE EXISTS (SELECT 1 FROM numbers(10) WHERE number = length(v.secret))
+    SETTINGS allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 0"
 
 # The plan of the view is optimized after it is cloned: once optimized, a join, a set, a lazy read or a sort in it cannot be cloned.
 ${CLICKHOUSE_CLIENT} <<EOF
@@ -210,10 +216,12 @@ CREATE TABLE $db.t_left (k UInt64, s String) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE $db.t_right (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO $db.t_left VALUES (1, 'a'), (2, 'b'), (3, 'c');
 INSERT INTO $db.t_right VALUES (1), (3);
-CREATE VIEW $db.join_view DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT t_left.k AS k FROM $db.t_left INNER JOIN $db.t_right ON t_left.k = t_right.k;
-CREATE VIEW $db.in_view DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT k FROM $db.t_left WHERE k IN (SELECT k FROM $db.t_right);
-CREATE VIEW $db.top_view DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT k FROM $db.t_left ORDER BY s LIMIT 2;
-CREATE VIEW $db.order_view DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT k FROM $db.t_left ORDER BY k;
+GRANT SELECT ON $db.t_left TO $definer;
+GRANT SELECT ON $db.t_right TO $definer;
+CREATE VIEW $db.join_view DEFINER = $definer SQL SECURITY DEFINER AS SELECT t_left.k AS k FROM $db.t_left INNER JOIN $db.t_right ON t_left.k = t_right.k;
+CREATE VIEW $db.in_view DEFINER = $definer SQL SECURITY DEFINER AS SELECT k FROM $db.t_left WHERE k IN (SELECT k FROM $db.t_right);
+CREATE VIEW $db.top_view DEFINER = $definer SQL SECURITY DEFINER AS SELECT k FROM $db.t_left ORDER BY s LIMIT 2;
+CREATE VIEW $db.order_view DEFINER = $definer SQL SECURITY DEFINER AS SELECT k FROM $db.t_left ORDER BY k;
 GRANT SELECT ON $db.in_view TO $user;
 EOF
 for arm in "correlated_subqueries_use_in_memory_buffer = 0" "correlated_subqueries_default_join_kind = 'left'"; do
@@ -245,10 +253,16 @@ for view in definer_view none_view invoker_view projection_view policy_view; do
     ${CLICKHOUSE_CLIENT} --query "SELECT countIf(explain LIKE '%ReadFromSealedView%') FROM (EXPLAIN SELECT * FROM $db.$view WHERE secret = 'x')"
 done
 
+echo -n "definer_view for another user: "
+${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN SELECT * FROM $db.definer_view WHERE secret = 'x'" | grep -c ReadFromSealedView
+
 echo -n "param_view: "
 ${CLICKHOUSE_CLIENT} --query "SELECT countIf(explain LIKE '%ReadFromSealedView%') FROM (EXPLAIN SELECT * FROM $db.param_view(owner = 'alice') WHERE secret = 'x')"
+
+echo -n "param_view for another user: "
+${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN SELECT * FROM $db.param_view(owner = 'alice') WHERE secret = 'x'" | grep -c ReadFromSealedView
 
 echo -n "view_policy_view for the user with the policy: "
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN SELECT * FROM $db.view_policy_view WHERE secret = 'x'" | grep -c ReadFromSealedView
 
-${CLICKHOUSE_CLIENT} --query "DROP VIEW $db.policy_view; DROP VIEW $db.pr_policy_view; DROP VIEW $db.ck_policy_view; DROP VIEW $db.url_view; DROP VIEW $db.dist_policy_view; DROP VIEW $db.dist_ck_policy_view; DROP ROW POLICY policy05257 ON $db.policy_secrets; DROP ROW POLICY invoker_policy05257 ON $db.invoker_policy_secrets; DROP ROW POLICY view_policy05257 ON $db.view_policy_view; DROP USER $user, $definer; DROP VIEW $db.join_view, $db.in_view, $db.top_view, $db.order_view; DROP TABLE $db.t_left, $db.t_right"
+${CLICKHOUSE_CLIENT} --query "DROP VIEW $db.policy_view; DROP VIEW $db.pr_policy_view; DROP VIEW $db.ck_policy_view; DROP VIEW $db.url_view; DROP VIEW $db.dist_policy_view; DROP VIEW $db.dist_ck_policy_view; DROP ROW POLICY policy05257 ON $db.policy_secrets; DROP ROW POLICY invoker_policy05257 ON $db.invoker_policy_secrets; DROP ROW POLICY view_policy05257 ON $db.view_policy_view; DROP VIEW $db.join_view, $db.in_view, $db.top_view, $db.order_view; DROP TABLE $db.t_left, $db.t_right; DROP USER $user, $definer"
