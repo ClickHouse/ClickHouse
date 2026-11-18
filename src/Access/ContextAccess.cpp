@@ -1115,6 +1115,12 @@ bool ContextAccess::checkAdminOptionImplHelper(const ContextPtr & context, const
         return false;
     }
 
+    if (params.readonly)
+    {
+        show_error(ErrorCodes::READONLY, "{}: Cannot change grants in readonly mode.", getUserName());
+        return false;
+    }
+
     if (isGranted(context, AccessType::ROLE_ADMIN))
         return true;
 
@@ -1241,6 +1247,14 @@ void ContextAccess::checkCanAdministerDefaultRoles() const
         throw Exception(ErrorCodes::ACCESS_DENIED,
             "The current session is authenticated with a method which limits the access rights with the GRANTS clause, "
             "and such sessions cannot administer roles");
+}
+
+void ContextAccess::checkCanChangeGrants() const
+{
+    if (params.full_access)
+        return;
+    if (params.readonly)
+        throw Exception(ErrorCodes::READONLY, "{}: Cannot change grants in readonly mode.", getUserName());
 }
 
 bool ContextAccess::isGrantedWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter) const

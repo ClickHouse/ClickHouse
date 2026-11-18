@@ -28,7 +28,7 @@ namespace ErrorCodes
     DECLARE(String, rabbitmq_queue_base, "", "Base for queue names to be able to reopen non-empty queues in case of failure.", 0) \
     DECLARE(Bool, rabbitmq_persistent, false, "For insert query messages will be made 'persistent', durable.", 0) \
     DECLARE(Bool, rabbitmq_secure, false, "Use SSL connection", 0) \
-    DECLARE(String, rabbitmq_address, "", "Address for connection", 0) \
+    DECLARE(SecretString, rabbitmq_address, "", "Address for connection", 0) \
     DECLARE(UInt64, rabbitmq_skip_broken_messages, 0, "Skip at least this number of broken messages from RabbitMQ per block", 0) \
     DECLARE(UInt64, rabbitmq_max_block_size, 0, "Number of row collected before flushing data from RabbitMQ.", 0) \
     DECLARE(UInt64, rabbitmq_flush_interval_ms, 0, "Timeout for flushing data from RabbitMQ.", 0) \
@@ -39,7 +39,7 @@ namespace ErrorCodes
     DECLARE(UInt64, rabbitmq_empty_queue_backoff_step_ms, 100, "A backoff step to reschedule read if the RabbitMQ queue is empty", 0) \
     DECLARE(Bool, rabbitmq_queue_consume, false, "Use user-defined queues and do not make any RabbitMQ setup: declaring exchanges, queues, bindings", 0) \
     DECLARE(String, rabbitmq_username, "", "RabbitMQ username", 0) \
-    DECLARE(String, rabbitmq_password, "", "RabbitMQ password", 0) \
+    DECLARE(SecretString, rabbitmq_password, "", "RabbitMQ password", 0) \
     DECLARE(Bool, reject_unhandled_messages, false, "Allow messages to be rejected in case they cannot be processed. This also automatically implies if there is a x-deadletter-exchange queue setting added", 0) \
     DECLARE(Bool, rabbitmq_commit_on_select, false, "Commit messages when select query is made", 0) \
     DECLARE(UInt64, rabbitmq_max_rows_per_message, 1, "The maximum number of rows produced in one message for row-based formats.", 0) \
