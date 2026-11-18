@@ -73,6 +73,7 @@ def started_cluster():
 
 
 def test_insert_rejected_before_staging_files(started_cluster):
+    wait_for_hms(started_cluster)
     node = started_cluster.instances["node1"]
     catalog = load_hive_catalog(started_cluster)
     namespace = f"insert_rejected_{uuid.uuid4().hex}"
