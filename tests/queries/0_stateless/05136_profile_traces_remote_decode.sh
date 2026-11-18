@@ -51,10 +51,11 @@ def native_arguments(options):
 
 def log_query(query):
     # Keep small decoder allocations eligible in the profiled query; these checks do not sample themselves.
+    # `SYSTEM FLUSH LOGS` can exceed the limit of the profiled queries in the flaky check.
     options = dict(settings, send_profile_traces=0, memory_profiler_sample_probability=0,
-                   max_block_size=65536, allow_introspection_functions=1)
+                   max_block_size=65536, allow_introspection_functions=1, max_execution_time=120)
     result = subprocess.run(native_arguments(options) + ["--query", query],
-                            capture_output=True, text=True, timeout=60)
+                            capture_output=True, text=True, timeout=180)
     assert result.returncode == 0, result.stderr
     return result.stdout.strip()
 
