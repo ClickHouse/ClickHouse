@@ -1897,7 +1897,7 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
     checkTTLExpressions(new_metadata, old_metadata);
-    setProperties(new_metadata, old_metadata);
+    setPropertiesAndResetSerializationHints(new_metadata, old_metadata);
 
     try
     {
@@ -1906,7 +1906,9 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     catch (...)
     {
         LOG_ERROR(log, "Failed to set table structure, reverting changes");
-        setProperties(old_metadata, new_metadata);
+        /// Hints too, otherwise the revert pairs old column types with the new-typed hints the
+        /// publish above built. Safe here because this function never calls `changeSettings`.
+        setPropertiesAndResetSerializationHints(old_metadata, new_metadata);
         throw;
     }
 }
@@ -6935,11 +6937,6 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         LOG_INFO(log, "Applied changes to the metadata of the table. Current metadata version: {}", applied_metadata_snapshot->getMetadataVersion());
     }
 
-    {
-        auto parts_lock = lockParts();
-        resetSerializationHints(parts_lock);
-    }
-
     return true;
 }
 
@@ -7150,7 +7147,7 @@ void StorageReplicatedMergeTree::alter(
         /// Also we don't upgrade alter lock to table structure lock.
         merge_strategy_picker.refreshState();
         auto old_metadata = getInMemoryMetadataPtr(query_context, true);
-        changeSettings(future_metadata.settings_changes, table_lock_holder);
+        changeSettings(future_metadata.getSettingsChanges(), table_lock_holder);
 
         if (statistics_changed)
         {
@@ -7167,7 +7164,7 @@ void StorageReplicatedMergeTree::alter(
         catch (...)
         {
             /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
-            changeSettings(old_metadata->settings_changes, table_lock_holder);
+            changeSettings(old_metadata->getSettingsChanges(), table_lock_holder);
             if (statistics_changed)
                 setInMemoryMetadata(*old_metadata);
             throw;
@@ -7205,7 +7202,7 @@ void StorageReplicatedMergeTree::alter(
     {
         merge_strategy_picker.refreshState();
         auto old_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);
-        changeSettings(future_metadata.settings_changes, table_lock_holder);
+        changeSettings(future_metadata.getSettingsChanges(), table_lock_holder);
 
         /// changeSettings is the sole writer of the setting-derived escape fields and has
         /// already committed them; carry them into future_metadata so the comment commit
@@ -7229,7 +7226,7 @@ void StorageReplicatedMergeTree::alter(
         catch (...)
         {
             /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
-            changeSettings(old_metadata->settings_changes, table_lock_holder);
+            changeSettings(old_metadata->getSettingsChanges(), table_lock_holder);
             setInMemoryMetadata(*old_metadata);
             throw;
         }
@@ -7354,7 +7351,7 @@ void StorageReplicatedMergeTree::alter(
                     "its value may differ between replicas, see allow_nondeterministic_mutations setting", *virtual_column_name);
         }
 
-        bool settings_are_changed = (ast_to_str(current_metadata->settings_changes) != ast_to_str(future_metadata.settings_changes));
+        bool settings_are_changed = (ast_to_str(current_metadata->getSettingsChanges()) != ast_to_str(future_metadata.getSettingsChanges()));
         bool comment_is_changed = (current_metadata->comment != future_metadata.comment);
 
         if (settings_are_changed || comment_is_changed)
@@ -7362,7 +7359,7 @@ void StorageReplicatedMergeTree::alter(
             StorageInMemoryMetadata metadata_copy = *current_metadata;
 
             if (settings_are_changed)
-                metadata_copy.settings_changes = future_metadata.settings_changes;
+                metadata_copy.setSettingsChanges(future_metadata.getSettingsChanges());
             if (comment_is_changed)
                 metadata_copy.setComment(future_metadata.comment);
 
@@ -7373,7 +7370,7 @@ void StorageReplicatedMergeTree::alter(
 
             /// Just change settings
             if (settings_are_changed)
-                changeSettings(metadata_copy.settings_changes, table_lock_holder);
+                changeSettings(metadata_copy.getSettingsChanges(), table_lock_holder);
 
             /// The comment is not replicated as of today, but we can implement it later.
             if (comment_is_changed)
@@ -7391,7 +7388,7 @@ void StorageReplicatedMergeTree::alter(
             {
                 /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
                 if (settings_are_changed)
-                    changeSettings(current_metadata->settings_changes, table_lock_holder);
+                    changeSettings(current_metadata->getSettingsChanges(), table_lock_holder);
                 if (comment_is_changed)
                     setInMemoryMetadata(*current_metadata);
                 throw;
@@ -9359,6 +9356,14 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
         waitForCommittingOpsToFinish(zookeeper, context_copy->getPartitionIdToMaxBlock(getStorageID().uuid), ops, backoff_ms, sync_timeout);
     }
 
+    /// With `enable_shared_storage_snapshot_in_query` the update reads with the snapshot of this table
+    /// cached for the whole query. Anything analyzed before this point may have cached one: the pruning
+    /// analysis in `allocateBlockNumbersInAffectedPartitions`, or the validation of `IN` operands in
+    /// `InterpreterUpdateQuery`. Such a snapshot predates the wait for committing inserts above, so the
+    /// parts that arrived during the wait would be invisible to the update and their rows would stay
+    /// unchanged. Discard it, so that the update and its subqueries share a snapshot taken now.
+    discardSharedStorageSnapshot(context_copy);
+
     auto [pipeline, patch_metadata] = updateLightweightImpl(commands, context_copy);
 
     auto sink = std::make_shared<ReplicatedMergeTreeSinkPatch>(
@@ -10470,6 +10475,10 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     if (part->uuid == UUIDHelpers::Nil)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Part {} does not have an uuid assigned and it can't be moved between shards", part_name);
 
+    /// Ensure that the merge predicate will use the most recent state of the queue
+    /// (in particular the list of virtual parts).
+    queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::MERGE_PREDICATE);
+
     auto merge_predicate = queue.getMergePredicate(zookeeper, PartitionIdsHint{part_info.getPartitionId()});
 
     /// The following block is pretty much copy & paste from StorageReplicatedMergeTree::dropPart to avoid conflicts while this is WIP.
@@ -10683,8 +10692,29 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
 
     const auto handler = queue.addSubscriber(std::move(callback), wait_for_ids, sync_mode, source_replicas);
 
-    if (!target_entry_event.tryWait(max_wait_milliseconds))
-        return false;
+    QueryStatusPtr process_list_element;
+    if (CurrentThread::isInitialized())
+    {
+        if (auto query_context = CurrentThread::get().tryGetQueryContext())
+            process_list_element = query_context->getProcessListElementSafe();
+    }
+
+    /// Nothing sets the event on cancellation, so wait in slices to notice `KILL QUERY` and `max_execution_time`.
+    constexpr UInt64 cancellation_check_period_ms = 1000;
+    Stopwatch watch;
+    while (true)
+    {
+        /// Throws with `timeout_overflow_mode = 'break'` too: returning false means `max_wait_milliseconds` elapsed.
+        if (process_list_element)
+            process_list_element->checkTimeLimit(OverflowMode::THROW);
+
+        const UInt64 elapsed_ms = watch.elapsedMilliseconds();
+        const UInt64 remaining_ms = max_wait_milliseconds > elapsed_ms ? max_wait_milliseconds - elapsed_ms : 0;
+        if (target_entry_event.tryWait(std::min(remaining_ms, cancellation_check_period_ms)))
+            break;
+        if (remaining_ms <= cancellation_check_period_ms)
+            return false;
+    }
 
     if (was_interrupted)
         throw Exception(ErrorCodes::ABORTED, "Shutdown is called for table");
