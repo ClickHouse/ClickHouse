@@ -14,21 +14,21 @@ public:
     static FunctionPtr createImpl() { return std::make_shared<FunctionEmptyArrayToSingle>(); }
     static FunctionPtr create(ContextPtr) { return createImpl(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override { return "(Array(T)) -> Array(T)"; }
+    [[nodiscard]] String getSignatureString() const override { return "(Array(T)) -> Array(T)"; }
 
     /// The elements keep their type, so the elements of a multidimensional `FixedArray` stay `FixedArray`
     /// (`LEFT ARRAY JOIN` relies on it). Only the outer `FixedArray` is processed as `Array`.
-    bool useDefaultImplementationForFixedArray() const override { return false; }
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
+    [[nodiscard]] bool useDefaultImplementationForFixedArray() const override { return false; }
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 };
 
 }
