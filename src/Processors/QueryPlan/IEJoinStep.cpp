@@ -1,5 +1,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <optional>
+#include <Formats/FormatSettings.h>
 
 #include <Core/Block.h>
 #include <DataTypes/DataTypeLowCardinality.h>
