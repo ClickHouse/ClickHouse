@@ -23,6 +23,16 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 当分区键适合 GROUP BY 键时，启用在独立线程上对各分区分别进行聚合。当分区数量接近 CPU 核心数，且各分区大小大致相同时，此功能最有利。`ReadFromMergeTree` 中的启发式规则会在布局不理想时 (分区过少、分区过多，或分区大小严重失衡) 自动禁用该优化；如需绕过这些检查，请参见 `force_aggregate_partitions_independently`。
 
+## allow_ai_functions {#allow_ai_functions}
+
+**别名**：`allow_experimental_ai_functions`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "AI 函数进入 Beta 阶段，并默认启用。该设置当时名为 `allow_experimental_ai_functions`，该名称现为其别名。无论 `compatibility` 如何设置，均保持此默认值。"}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "新增设置。该设置当时名为 `allow_experimental_ai_functions`，该名称现为其别名。"}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "1"},{"label": "新增设置别名 `allow_experimental_ai_functions`。"}]}]} />
+
+允许使用 AI 函数 (`aiGenerate`、`aiClassify`、`aiFilter`、`aiExtract`、`aiTranslate`、`aiRedact`、`aiEmbed`、`aiSimilarity`) 。禁用此设置时，使用这些函数的查询将抛出异常。
+
 ## allow_archive_path_syntax {#allow_archive_path_syntax}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

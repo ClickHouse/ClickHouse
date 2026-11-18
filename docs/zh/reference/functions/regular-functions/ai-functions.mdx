@@ -65,6 +65,12 @@ GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
 GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
 ```
 
+设置 [`allow_ai_functions`](/zh/reference/settings/session-settings/allow#allow_ai_functions) (默认已启用) 设为 `0` 时会禁用 AI 函数，例如可在设置配置文件中或通过约束将其设为 `0`。若使用 `CONST`，该 profile 的用户将无法重新启用 AI 函数：
+
+```sql
+CREATE SETTINGS PROFILE no_ai SETTINGS allow_ai_functions = 0 CONST TO ai_restricted_role;
+```
+
 AI 函数仅在用户运行的查询中执行。变更 (`ALTER TABLE ... UPDATE`、`ALTER TABLE ... DELETE`) 以及表的键、生存时间 (TTL)、跳过索引和投影均在后台执行，因此会拒绝 AI 函数；此外，`Buffer` 在刷写过程中若需对 AI 函数求值，会抛出异常。`DEFAULT` 和 `MATERIALIZED` 列在插入时求值；如果通过 `ALTER TABLE` 添加此类列，现有 parts 会在后台计算该列，而后台不会执行 AI 函数。
 
 如需为现有行填充某一列，请使用轻量级 [`UPDATE`](/zh/reference/statements/update)。它由查询执行，且只写入被更新的列：

@@ -65,6 +65,12 @@ GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
 GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
 ```
 
+يؤدي ضبط الإعداد [`allow_ai_functions`](/ar/reference/settings/session-settings/allow#allow_ai_functions) (المفعّل افتراضيًا) على `0` إلى تعطيل دوال الذكاء الاصطناعي، ويمكن ذلك مثلًا في ملف تعريف الإعدادات أو باستخدام قيد. ومع `CONST`، لا يستطيع مستخدمو ملف التعريف تمكينها:
+
+```sql
+CREATE SETTINGS PROFILE no_ai SETTINGS allow_ai_functions = 0 CONST TO ai_restricted_role;
+```
+
 لا تُنفَّذ دوال الذكاء الاصطناعي إلا في الاستعلامات التي يشغّلها المستخدم. فهي مرفوضة في عمليات التعديل (`ALTER TABLE ... UPDATE`، و`ALTER TABLE ... DELETE`)، وفي مفاتيح الجدول وTTL وفهارس تخطي البيانات والإسقاطات الخاصة به، إذ تُنفَّذ جميعها في الخلفية. كما ترفع عمليات تفريغ `Buffer` استثناءً عند تقييمها لدالة ذكاء اصطناعي. تُقيَّم أعمدة `DEFAULT` و`MATERIALIZED` أثناء عملية الإدراج؛ أما عند إضافة عمود من هذا النوع باستخدام `ALTER TABLE`، فتحسبه أجزاء البيانات الموجودة في الخلفية، حيث لا تُنفَّذ دوال الذكاء الاصطناعي.
 
 لملء عمود في الصفوف الموجودة، استخدم عملية [`UPDATE`](/ar/reference/statements/update) الخفيفة، التي يُنفّذها الاستعلام نفسه ولا تكتب سوى العمود المُحدَّث:

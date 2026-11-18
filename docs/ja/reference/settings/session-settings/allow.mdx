@@ -23,6 +23,16 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 パーティションキーが GROUP BY キーに適している場合、パーティションごとに別スレッドで独立して集約できるようにします。これは、パーティション数がコア数に近く、各パーティションのサイズがほぼ同じ場合に有効です。`ReadFromMergeTree` のヒューリスティックは、レイアウトが不利な場合 (パーティション数が少なすぎる、多すぎる、またはパーティションサイズの偏りが大きい場合) には、この最適化を自動的に無効化します。これらのチェックを回避するには、`force_aggregate_partitions_independently` を参照してください。
 
+## allow_ai_functions {#allow_ai_functions}
+
+**別名**: `allow_experimental_ai_functions`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "AI関数はベータとなり、デフォルトで有効になりました。当時この設定の名前は `allow_experimental_ai_functions` でしたが、現在はこの設定の別名となっています。`compatibility` の値にかかわらず、デフォルト値は維持されます。"}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "新しい設定。当時この設定の名前は `allow_experimental_ai_functions` でしたが、現在はこの設定の別名となっています。"}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "1"},{"label": "設定の別名 `allow_experimental_ai_functions` を追加しました。"}]}]} />
+
+AI関数 (`aiGenerate`、`aiClassify`、`aiFilter`、`aiExtract`、`aiTranslate`、`aiRedact`、`aiEmbed`、`aiSimilarity`) の使用を許可します。無効の場合、これらの関数を使用するクエリは例外をスローします。
+
 ## allow_archive_path_syntax {#allow_archive_path_syntax}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

@@ -23,6 +23,16 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 파티션 키가 GROUP BY 키에 적합할 때 각 파티션을 별도 스레드에서 독립적으로 집계하도록 활성화합니다. 파티션 수가 코어 수에 가깝고 파티션 크기가 대체로 비슷할 때 유리합니다. `ReadFromMergeTree`의 휴리스틱은 레이아웃이 바람직하지 않은 경우(파티션이 너무 적거나, 너무 많거나, 파티션 크기 편차가 큰 경우) 이 최적화를 자동으로 비활성화합니다. 이러한 검사를 우회하려면 `force_aggregate_partitions_independently`를 참조하십시오.
 
+## allow_ai_functions {#allow_ai_functions}
+
+**별칭**: `allow_experimental_ai_functions`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "AI 함수가 베타 단계로 전환되어 기본적으로 활성화됩니다. 당시 이 설정의 이름은 `allow_experimental_ai_functions`였으며, 현재는 이 설정의 별칭입니다. `compatibility` 값과 관계없이 기본값을 유지합니다."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "새 설정입니다. 당시 이 설정의 이름은 `allow_experimental_ai_functions`였으며, 현재는 이 설정의 별칭입니다."}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "1"},{"label": "`allow_experimental_ai_functions` 설정에 대한 설정 별칭을 추가했습니다."}]}]} />
+
+AI 함수(`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`, `aiEmbed`, `aiSimilarity`)의 사용을 허용합니다. 비활성화하면 이 함수를 사용하는 쿼리는 예외를 발생시킵니다.
+
 ## allow_archive_path_syntax {#allow_archive_path_syntax}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

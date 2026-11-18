@@ -65,6 +65,12 @@ GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
 GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
 ```
 
+El parámetro de configuración [`allow_ai_functions`](/es/reference/settings/session-settings/allow#allow_ai_functions) (habilitado de forma predeterminada) deshabilita las funciones de IA cuando se establece en `0`, por ejemplo, en un perfil de configuración o mediante una restricción. Con `CONST`, los usuarios del perfil no pueden volver a habilitarlas:
+
+```sql
+CREATE SETTINGS PROFILE no_ai SETTINGS allow_ai_functions = 0 CONST TO ai_restricted_role;
+```
+
 Las funciones de IA solo se ejecutan en consultas lanzadas por un usuario. Se rechazan en las mutaciones (`ALTER TABLE ... UPDATE`, `ALTER TABLE ... DELETE`) y en las claves, el TTL, los índices de omisión y las proyecciones de una tabla, que se ejecutan en segundo plano; además, los vaciados de `Buffer` lanzan una excepción cuando evalúan una función de IA. Las columnas `DEFAULT` y `MATERIALIZED` se evalúan durante la inserción; cuando se añade una columna de este tipo con `ALTER TABLE`, las partes existentes la calculan en segundo plano, donde las funciones de IA no se ejecutan.
 
 Para rellenar una columna en filas existentes, utilice un [`UPDATE`](/es/reference/statements/update) ligero, que se ejecuta como parte de la consulta y escribe solo la columna actualizada:

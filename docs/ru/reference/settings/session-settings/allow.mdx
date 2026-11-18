@@ -23,6 +23,16 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает независимую агрегацию партиций в отдельных потоках, если ключ партиционирования соответствует ключу GROUP BY. Полезно, когда число партиций близко к числу ядер, а сами партиции имеют примерно одинаковый размер. Эвристики в `ReadFromMergeTree` автоматически отключают эту оптимизацию при неблагоприятной структуре (слишком мало партиций, слишком много партиций или размеры партиций сильно перекошены); чтобы обойти эти проверки, см. `force_aggregate_partitions_independently`.
 
+## allow_ai_functions {#allow_ai_functions}
+
+**Псевдонимы**: `allow_experimental_ai_functions`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Функции ИИ находятся в статусе бета и включены по умолчанию. В то время настройка называлась `allow_experimental_ai_functions`; теперь это её псевдоним. Значение по умолчанию сохраняется независимо от `compatibility`."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Новая настройка. В то время настройка называлась `allow_experimental_ai_functions`; теперь это её псевдоним."}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "1"},{"label": "Добавлен псевдоним настройки `allow_experimental_ai_functions`."}]}]} />
+
+Разрешает использование функций ИИ (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`, `aiEmbed`, `aiSimilarity`). Если настройка отключена, запрос, в котором используются эти функции, генерирует исключение.
+
 ## allow_archive_path_syntax {#allow_archive_path_syntax}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

@@ -23,6 +23,16 @@ Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Habilita a agregação independente de partições em threads separadas quando a chave de particionamento é adequada à chave de `GROUP BY`. Isso é benéfico quando o número de partições é próximo do número de núcleos e as partições têm aproximadamente o mesmo tamanho. As heurísticas em `ReadFromMergeTree` desabilitam automaticamente a otimização para layouts desfavoráveis (poucas partições, muitas partições ou tamanhos de partição significativamente desbalanceados); consulte `force_aggregate_partitions_independently` para ignorar essas verificações.
 
+## allow_ai_functions {#allow_ai_functions}
+
+**aliases**: `allow_experimental_ai_functions`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "As funções de IA estão em Beta e habilitadas por padrão. Na época, a configuração se chamava `allow_experimental_ai_functions`, que agora é um alias dela. Mantém o padrão independentemente de `compatibility`."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nova configuração. Na época, a configuração se chamava `allow_experimental_ai_functions`, que agora é um alias dela."}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "1"},{"label": "Adicionado um nome alternativo para a configuração `allow_experimental_ai_functions`."}]}]} />
+
+Permite o uso de funções de IA (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`, `aiEmbed`, `aiSimilarity`). Se estiver desabilitada, uma consulta que use essas funções lança uma exceção.
+
 ## allow_archive_path_syntax {#allow_archive_path_syntax}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

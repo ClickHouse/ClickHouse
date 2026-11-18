@@ -65,6 +65,12 @@ GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
 GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
 ```
 
+Настройка [`allow_ai_functions`](/ru/reference/settings/session-settings/allow#allow_ai_functions) (включена по умолчанию) при значении `0` отключает функции ИИ — например, если задать это значение в профиле настроек или с помощью ограничения. Если указан `CONST`, пользователи этого профиля не смогут их включить:
+
+```sql
+CREATE SETTINGS PROFILE no_ai SETTINGS allow_ai_functions = 0 CONST TO ai_restricted_role;
+```
+
 Функции ИИ выполняются только в запросах, запущенных пользователем. Они отклоняются в мутациях (`ALTER TABLE ... UPDATE`, `ALTER TABLE ... DELETE`), а также в ключах, TTL, индексах пропуска данных и проекциях таблицы, поскольку те выполняются в фоновом режиме; при сбросе на диск таблиц `Buffer`, в ходе которого вычисляется функция ИИ, генерируется исключение. Столбцы `DEFAULT` и `MATERIALIZED` вычисляются при вставке; если такой столбец добавляется с помощью `ALTER TABLE`, для существующих частей он вычисляется в фоновом режиме, где функции ИИ не выполняются.
 
 Чтобы заполнить столбец в существующих строках, используйте легковесный [`UPDATE`](/ru/reference/statements/update): он выполняется в рамках запроса и записывает только обновлённый столбец:

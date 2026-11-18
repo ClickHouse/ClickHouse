@@ -65,6 +65,12 @@ GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
 GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
 ```
 
+設定 [`allow_ai_functions`](/ja/reference/settings/session-settings/allow#allow_ai_functions) (デフォルトで有効) を `0` に設定すると、AI関数は無効になります。この設定は、たとえば設定プロファイルや制約 (constraint) で指定できます。`CONST` を指定した場合、そのプロファイルのユーザーは AI関数を有効化できません。
+
+```sql
+CREATE SETTINGS PROFILE no_ai SETTINGS allow_ai_functions = 0 CONST TO ai_restricted_role;
+```
+
 AI関数は、ユーザーが実行するクエリ内でのみ実行されます。ミューテーション (`ALTER TABLE ... UPDATE`、`ALTER TABLE ... DELETE`) や、テーブルのキー、有効期限 (TTL)、スキップ索引、プロジェクションはバックグラウンドで実行されるため、これらの中で AI関数を使用すると拒否されます。また、`Buffer` の flush では、AI関数を評価すると例外がスローされます。`DEFAULT` および `MATERIALIZED` カラムは挿入時に評価されます。このようなカラムを `ALTER TABLE` で追加した場合、既存のパーツではその値がバックグラウンドで計算されますが、バックグラウンドでは AI関数は実行されません。
 
 既存の行のカラムを補完するには、軽量な [`UPDATE`](/ja/reference/statements/update) を使用してください。これはクエリとして実行され、更新対象のカラムのみを書き込みます。
