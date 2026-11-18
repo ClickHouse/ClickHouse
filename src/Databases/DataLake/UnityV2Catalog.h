@@ -29,7 +29,8 @@ public:
         const std::string & auth_scope_,
         const std::string & auth_header_,
         const std::string & oauth_server_uri_,
-        DB::ContextPtr context_);
+        DB::ContextPtr context_,
+        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
 
     ~UnityV2Catalog() override;
 
@@ -39,6 +40,8 @@ public:
     CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
     bool existsTable(const std::string & schema_name, const std::string & table_name) const override;
 
+    /// TODO: Managed Iceberg tables could be created through the inner Iceberg REST catalog without a location.
+    /// Override `writesInitialMetadata` and `createTableAtDefaultLocation` and forward them to `getIcebergRestCatalog`.
     void createTable(
         const String & namespace_name,
         const String & table_name,
@@ -92,12 +95,15 @@ public:
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
-        Poco::JSON::Object::Ptr new_snapshot) const override;
+        const String & base_catalog_metadata_location,
+        Poco::JSON::Object::Ptr new_snapshot,
+        Poco::JSON::Object::Ptr new_metadata) const override;
 
     bool updateSchema(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
+        const String & base_catalog_metadata_location,
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const override;
 
@@ -120,6 +126,7 @@ private:
     std::string auth_scope;
     std::string oauth_server_uri;
     bool use_oauth = false;
+    const DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode;
 
     /// Guards the token and everything derived from it, because `iceberg_rest_catalog` embeds the token in its auth header.
     mutable std::mutex token_mutex;

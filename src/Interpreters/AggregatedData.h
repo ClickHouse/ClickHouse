@@ -5,6 +5,7 @@
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashTableTraits.h>
+#include <Common/HashTable/KeysAndPackedStringHashTable.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
 #include <Common/HashTable/TwoLevelStringHashMap.h>
@@ -60,6 +61,16 @@ using AggregatedDataWithStringKeyVoid = HashSetWithSavedHash<std::string_view, D
 using AggregatedDataWithKeys128 = HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256 = HashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
 
+/// Fixed-width keys packed into 32, 64 or 128 bits and one `String` key; the fixed part of a key with an empty
+/// string is hashed like the `keys32`, `keys64` and `keys128` methods hash their keys.
+using AggregatedDataWithKeys32AndPackedString = KeysAndPackedStringHashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
+using AggregatedDataWithKeys64AndPackedString = KeysAndPackedStringHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
+using AggregatedDataWithKeys128AndPackedString = KeysAndPackedStringHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
+/// The same keys without aggregate functions, in sets whose cells hold the keys alone.
+using AggregatedDataWithKeys32AndPackedStringVoid = KeysAndPackedStringHashSet<UInt32, HashCRC32<UInt32>>;
+using AggregatedDataWithKeys64AndPackedStringVoid = KeysAndPackedStringHashSet<UInt64, HashCRC32<UInt64>>;
+using AggregatedDataWithKeys128AndPackedStringVoid = KeysAndPackedStringHashSet<UInt128, UInt128HashCRC32>;
+
 using AggregatedDataWithKeys128Void = HashSet<UInt128, UInt128HashCRC32>;
 using AggregatedDataWithKeys256Void = HashSet<UInt256, UInt256HashCRC32>;
 
@@ -81,6 +92,13 @@ using AggregatedDataWithStringKeyVoidTwoLevel = TwoLevelHashSetWithSavedHash<std
 
 using AggregatedDataWithKeys128TwoLevel = TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
+
+using AggregatedDataWithKeys32AndPackedStringTwoLevel = TwoLevelKeysAndPackedStringHashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
+using AggregatedDataWithKeys64AndPackedStringTwoLevel = TwoLevelKeysAndPackedStringHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
+using AggregatedDataWithKeys128AndPackedStringTwoLevel = TwoLevelKeysAndPackedStringHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
+using AggregatedDataWithKeys32AndPackedStringVoidTwoLevel = TwoLevelKeysAndPackedStringHashSet<UInt32, HashCRC32<UInt32>>;
+using AggregatedDataWithKeys64AndPackedStringVoidTwoLevel = TwoLevelKeysAndPackedStringHashSet<UInt64, HashCRC32<UInt64>>;
+using AggregatedDataWithKeys128AndPackedStringVoidTwoLevel = TwoLevelKeysAndPackedStringHashSet<UInt128, UInt128HashCRC32>;
 
 using AggregatedDataWithKeys128VoidTwoLevel = TwoLevelHashSet<UInt128, UInt128HashCRC32>;
 using AggregatedDataWithKeys256VoidTwoLevel = TwoLevelHashSet<UInt256, UInt256HashCRC32>;
@@ -113,10 +131,10 @@ struct AggregationDataWithNullKey : public Base
 
     bool & hasNullKeyData() { return has_null_key_data; }
     AggregateDataPtr & getNullKeyData() { return null_key_data; }
-    bool hasNullKeyData() const { return has_null_key_data; }
-    const AggregateDataPtr & getNullKeyData() const { return null_key_data; }
-    size_t size() const { return Base::size() + (has_null_key_data ? 1 : 0); }
-    bool empty() const { return Base::empty() && !has_null_key_data; }
+    [[nodiscard]] bool hasNullKeyData() const { return has_null_key_data; }
+    [[nodiscard]] const AggregateDataPtr & getNullKeyData() const { return null_key_data; }
+    [[nodiscard]] size_t size() const { return Base::size() + (has_null_key_data ? 1 : 0); }
+    [[nodiscard]] bool empty() const { return Base::empty() && !has_null_key_data; }
     void clear()
     {
         Base::clear();
@@ -155,8 +173,8 @@ struct AggregationDataWithNullKeyTwoLevel : public Base
 
     bool & hasNullKeyData() { return impls[0].hasNullKeyData(); }
     AggregateDataPtr & getNullKeyData() { return impls[0].getNullKeyData(); }
-    bool hasNullKeyData() const { return impls[0].hasNullKeyData(); }
-    const AggregateDataPtr & getNullKeyData() const { return impls[0].getNullKeyData(); }
+    [[nodiscard]] bool hasNullKeyData() const { return impls[0].hasNullKeyData(); }
+    [[nodiscard]] const AggregateDataPtr & getNullKeyData() const { return impls[0].getNullKeyData(); }
 };
 
 template <typename ... Types>

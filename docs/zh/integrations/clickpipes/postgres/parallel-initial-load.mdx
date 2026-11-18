@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 本文档介绍 Postgres ClickPipe 中并行快照/初始加载的工作原理，并说明可用于控制该过程的快照参数。
 
 <div id="overview-pg-snapshot">
@@ -35,7 +33,15 @@ Postgres ClickPipe 使用 CTID 列对源表进行逻辑分区。它会先对源�
 
 下面来看看这些设置：
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/snapshot_params.webp" alt="快照参数" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![快照参数](/images/integrations/data-ingestion/clickpipes/postgres/snapshot_params.webp)
+
+</Frame>
+
+</div>
 
 <div id="numrows-pg-snapshot">
   #### 每个分区的快照行数
