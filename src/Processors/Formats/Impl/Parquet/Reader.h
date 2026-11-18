@@ -519,7 +519,7 @@ struct Reader
         VectorWithMemoryTracking<ColumnSubchunk> columns;
         BlockMissingValues block_missing_values;
 
-        VectorWithMemoryTracking<OutputColumnState> output; // parallel to extended_sample_block
+        VectorWithMemoryTracking<OutputColumnState> output; // parallel to extended_sample_block, followed by prewhere_intermediates
 
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
@@ -600,7 +600,7 @@ struct Reader
     {
         ExpressionActions actions;
         std::optional<String> filter_column_name {};
-        VectorWithMemoryTracking<size_t> input_idxs {}; // indices in extended_sample_block
+        VectorWithMemoryTracking<size_t> input_idxs {}; // indices in extended_sample_block, or past its end for prewhere_intermediates
         VectorWithMemoryTracking<std::pair<String, size_t>> idxs_in_output_block {};
     };
 
@@ -649,6 +649,9 @@ struct Reader
     Block extended_sample_block;
     DataTypes extended_sample_block_data_types; // = extended_sample_block.getDataTypes()
     VectorWithMemoryTracking<Step> steps;
+    /// Columns that a PREWHERE step computes only for a later step. Row subgroups keep them in the `output`
+    /// slots after the columns of `extended_sample_block`, in this order.
+    VectorWithMemoryTracking<NameAndTypePair> prewhere_intermediates;
 
     /// Per-column KeyConditions for page-level filter push-down (column index).
     /// Stored here to keep the shared_ptrs alive, since raw pointers from them
