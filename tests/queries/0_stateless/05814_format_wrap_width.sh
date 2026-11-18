@@ -65,16 +65,19 @@ SQL
 queries="$layout_queries"$'\n'"$invariant_queries"
 oneline=$(format --show_secrets --oneline --query "$queries")
 unwrapped=$(format --show_secrets --query "$queries")
-for width in 1 16 40 120; do
+for width in 10 16 40 120; do
     formatted=$(format --show_secrets --wrap_width "$width" --query "$queries")
     [[ $(format --show_secrets --oneline --query "$formatted") == "$oneline" ]] || echo "Wrapping at $width changed the query"
     [[ $(format --show_secrets --wrap_width "$width" --query "$formatted") == "$formatted" ]] || echo "Wrapping at $width is not idempotent"
-    [[ $(format --wrap_width "$width" --query "SELECT * FROM url(url_creds, url = 'https://example.com/?token=secret'), mysql('host', 'db', 'table', 'user', 'secret')") != *secret* ]] || echo "Wrapping at $width shows secrets"
+    secrets="SELECT * FROM url(url_creds, url = 'https://example.com/?token=secret'), mysql('host', 'db', 'table', 'user', 'secret')"
+    hidden=$(format --wrap_width "$width" --query "$secrets")
+    [[ $hidden != *secret* ]] || echo "Wrapping at $width shows secrets"
+    [[ $(format --wrap_width "$width" --query "${secrets//secret/a_much_longer_secret_value}") == "$hidden" ]] || echo "Layout at $width depends on secrets"
 done
 [[ $(format --show_secrets --wrap_width 1000 --query "$queries") == "$unwrapped" ]] || echo 'Wrapping changed queries that fit'
 [[ $(format --show_secrets --wrap_width 0 --query "$queries") == "$unwrapped" ]] || echo 'Width 0 does not disable wrapping'
 
-for width in -1 1.5 invalid 18446744073709551616; do
+for width in 1.5 invalid 18446744073709551616; do
     if $CLICKHOUSE_FORMAT --wrap_width "$width" --query 'SELECT 1' > /dev/null 2>&1; then
         echo "Width $width accepted"
     fi

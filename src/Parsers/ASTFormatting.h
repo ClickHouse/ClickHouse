@@ -1,106 +1,66 @@
 #pragma once
 
-#include <IO/WriteBuffer.h>
 #include <Parsers/IAST.h>
+
+#include <functional>
 
 
 namespace DB
 {
 
+class ASTExpressionList;
+class WriteBufferFromOwnString;
+
 /// Line wrapping for `clickhouse-format --wrap_width`.
 ///
-/// While writing the usual output, formatting code marks groups and the places where a line may be broken.
-/// If the output does not fit the width, the marks are used to lay the text out again.
-/// When no layout is collected (the default), groups do nothing and breaks are written as their flat text.
-
-class ASTFormattingGroup
+/// A construct that can be wrapped (function arguments and parameters, an array, tuple or map, an AND/OR chain,
+/// a window definition, the columns of INSERT) is first formatted in one line into a temporary buffer.
+/// If this text does not fit on the current line, the construct starts its items on new lines
+/// and formats them with the indentation of the next level.
+/// The decision is made before the construct is written, so nested multiline parts (like subqueries)
+/// get the right indentation by themselves. Text after the construct (like a closing parenthesis
+/// or an alias) is not taken into account, so the width is a soft limit.
+///
+/// Wrapping is active only inside `formatASTWithWrapping`, so other formatting (e.g. `formatQuery`) is not affected.
+class ASTFormatting
 {
 public:
-    enum class Mode : uint8_t
-    {
-        /// Lines that already exist in the group are kept, the group breaks only if its first line does not fit.
-        PreserveLines,
-        /// The group also breaks if any of its lines does not fit (used for function arguments).
-        ConsistentLines,
-        /// Like PreserveLines, but if the group starts on its own line, the items are aligned with the first one.
-        List,
-    };
+    ASTFormatting(const WriteBufferFromOwnString & out_, size_t width_) : out(out_), width(width_) {}
 
-    ASTFormattingGroup(
-        WriteBuffer & out, IASTFormatState & state, const IAST::FormatStateStacked & frame, Mode mode = Mode::PreserveLines)
-    {
-        if (state.formatting)
-            start(out, state, frame, mode);
-    }
-
-    ~ASTFormattingGroup() { finish(); }
-
-    ASTFormattingGroup(const ASTFormattingGroup &) = delete;
-    ASTFormattingGroup & operator=(const ASTFormattingGroup &) = delete;
-
-    /// Can be changed while the group is open, e.g. when it becomes known that the node is a function call.
-    void setMode(Mode mode);
-
-    void finish() noexcept
-    {
-        if (formatting)
-            close();
-    }
-
-private:
-    void start(WriteBuffer & out, IASTFormatState & state, const IAST::FormatStateStacked & frame, Mode mode);
-    void close() noexcept;
-
-    ASTFormatting * formatting = nullptr;
-    size_t index = 0;
+    const WriteBufferFromOwnString & out;
+    const size_t width;
 };
 
-enum class ASTFormattingBreak : uint8_t
-{
-    /// Breaks if the enclosing group does not fit.
-    Consistent,
-    /// Breaks if the next item of the enclosing list does not fit on the current line. Used to pack literals.
-    Fill,
-    /// Breaks if the text up to the next possible break does not fit on the current line.
-    Optional,
-};
+/// Whether `out` is wrapped, and a construct formatted at `frame` may still put its items on new lines.
+bool canWrapAST(const WriteBuffer & out, const IAST::FormatState & state, const IAST::FormatStateStacked & frame);
 
-namespace ASTFormattingDetail
-{
-void writeBreak(WriteBuffer & out, IASTFormatState & state, size_t indent, size_t nest, char flat, ASTFormattingBreak kind);
-void writeIndent(WriteBuffer & out, IASTFormatState & state, size_t indent);
-}
+/// Whether `text` written at the current position fits into the width. All lines of a multiline text are checked.
+bool fitsOnLineAST(const IAST::FormatState & state, std::string_view text);
 
-/// A possible line break that is written as `flat` (nothing if it is '\0') when the line is not broken.
-/// After a break, the line is indented by `nest` levels relative to the line where the enclosing group starts.
-inline void writeASTFormattingBreak(
+/// Indentation level of the items of a construct wrapped at the current line: one level deeper than the line,
+/// and not less than one level deeper than `min_indent`.
+UInt16 wrappedIndentAST(const IAST::FormatState & state, UInt16 min_indent = 0);
+
+/// Text written by `format` without wrapping.
+String formatASTWithoutWrapping(const std::function<void(WriteBuffer &, IAST::FormatState &)> & format);
+
+/// Starts a new line indented by `indent` levels.
+void writeASTNewLine(WriteBuffer & out, size_t indent);
+
+/// Writes the space after the separator of list items. If the list is wrapped, the next item starts a new line instead,
+/// unless the list is packed (then `packed_next_item` is the next item with its separator) and it fits on the current line.
+void writeASTListSpace(
+    WriteBuffer & out, const IAST::FormatState & state, size_t indent, bool wrap, std::string_view packed_next_item = {});
+
+/// Writes `(list)`. If `list` is an expression list that does not fit on the current line, every element starts a new line.
+void formatASTListInParentheses(
+    const IAST & list,
     WriteBuffer & out,
-    IASTFormatState & state,
-    const IAST::FormatStateStacked & frame,
-    size_t nest = 1,
-    char flat = ' ',
-    ASTFormattingBreak kind = ASTFormattingBreak::Consistent)
-{
-    if (state.formatting)
-        ASTFormattingDetail::writeBreak(out, state, frame.indent, nest, flat, kind);
-    else if (flat)
-        out.write(flat);
-}
+    const IAST::FormatSettings & settings,
+    IAST::FormatState & state,
+    IAST::FormatStateStacked frame);
 
-/// Indentation of a line that the formatting code starts itself.
-/// It is reported to the layout, so it can be shifted together with the group it belongs to.
-inline void writeASTFormattingIndent(WriteBuffer & out, const IAST::FormatSettings & settings, IASTFormatState & state, size_t indent)
-{
-    if (settings.one_line)
-        return;
-    if (state.formatting)
-        ASTFormattingDetail::writeIndent(out, state, indent);
-    else
-        for (size_t i = 0; i < 4 * indent; ++i)
-            out.write(' ');
-}
-
-/// Formats the query. If `wrap_width` is not zero and some line is wider, long expressions are wrapped.
+/// Formats the query and wraps lines longer than `wrap_width` (0 disables wrapping).
 String formatASTWithWrapping(const IAST & ast, const IAST::FormatSettings & settings, size_t wrap_width);
 
 }

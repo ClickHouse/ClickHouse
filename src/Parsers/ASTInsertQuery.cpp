@@ -228,7 +228,6 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
 
 void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ASTFormattingGroup formatting_group(ostr, state, frame);
     ostr << "INSERT INTO" << " ";
     if (table_function)
     {
@@ -236,8 +235,7 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         table_function->format(ostr, settings, state, frame);
         if (partition_by)
         {
-            writeASTFormattingBreak(ostr, state, frame, 0);
-            ostr << "PARTITION BY ";
+            ostr << " " << "PARTITION BY" << " ";
             partition_by->format(ostr, settings, state, frame);
         }
     }
@@ -269,13 +267,8 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
     if (columns)
     {
-        writeASTFormattingBreak(ostr, state, frame, 0, ' ', ASTFormattingBreak::Optional);
-        ASTFormattingGroup columns_group(ostr, state, frame);
-        ostr << '(';
-        writeASTFormattingBreak(ostr, state, frame, 1, '\0');
-        columns->format(ostr, settings, state, frame);
-        writeASTFormattingBreak(ostr, state, frame, 0, '\0');
-        ostr << ')';
+        ostr << " ";
+        formatASTListInParentheses(*columns, ostr, settings, state, frame);
     }
 
     if (returning)
@@ -320,10 +313,7 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
     if (select)
     {
-        if (delim == ' ')
-            writeASTFormattingBreak(ostr, state, frame, 0, ' ', ASTFormattingBreak::Optional);
-        else
-            ostr << delim;
+        ostr << delim;
         /// Disable FROM-first syntax to avoid parsing ambiguity with INSERT ... FROM INFILE.
         /// Only affects the immediate SELECT, not nested subqueries.
         bool was_disable_from_first_syntax = frame.disable_from_first_syntax;

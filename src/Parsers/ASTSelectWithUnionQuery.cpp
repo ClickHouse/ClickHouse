@@ -1,5 +1,4 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTFormatting.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/SelectUnionMode.h>
@@ -78,6 +77,8 @@ void ASTSelectWithUnionQuery::updateTreeHashImpl(SipHash & hash_state, bool igno
 
 void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+
     auto mode_to_str = [&](SelectUnionMode mode)
     {
         if (mode == SelectUnionMode::UNION_DEFAULT)
@@ -122,9 +123,10 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
     {
         if (it != list_of_selects->children.begin())
         {
-            ostr << settings.nl_or_ws;
-            writeASTFormattingIndent(ostr, settings, state, frame.indent);
-            ostr << mode_to_str(get_mode(it)) << settings.nl_or_ws;
+            ostr << settings.nl_or_ws << indent_str
+                << mode_to_str(get_mode(it))
+
+                << settings.nl_or_ws;
         }
 
         bool need_parens = false;
@@ -188,7 +190,7 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
 
         if (need_parens)
         {
-            writeASTFormattingIndent(ostr, settings, state, frame.indent);
+            ostr << indent_str;
             auto subquery = make_intrusive<ASTSubquery>(*it);
             subquery->format(ostr, settings, state, frame);
         }

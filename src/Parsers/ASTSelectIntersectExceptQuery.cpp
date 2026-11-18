@@ -1,5 +1,4 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
-#include <Parsers/ASTFormatting.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -38,13 +37,16 @@ void ASTSelectIntersectExceptQuery::updateTreeHashImpl(SipHash & hash_state, boo
 
 void ASTSelectIntersectExceptQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
         {
-            ostr << settings.nl_or_ws;
-            writeASTFormattingIndent(ostr, settings, state, frame.indent);
-            ostr << fromOperator(final_operator) << settings.nl_or_ws;
+            ostr << settings.nl_or_ws << indent_str
+                          << fromOperator(final_operator)
+
+                          << settings.nl_or_ws;
         }
 
         /// Wrap compound children in parentheses: `UNION` has lower precedence than
@@ -64,7 +66,7 @@ void ASTSelectIntersectExceptQuery::formatImpl(WriteBuffer & ostr, const FormatS
 
         if (need_parens)
         {
-            writeASTFormattingIndent(ostr, settings, state, frame.indent);
+            ostr << indent_str;
             auto subquery = make_intrusive<ASTSubquery>(*it);
             subquery->format(ostr, settings, state, frame);
         }

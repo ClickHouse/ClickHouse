@@ -1,5 +1,4 @@
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTFormatting.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -90,7 +89,7 @@ void ASTSubquery::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         return;
     }
 
-    ASTFormattingGroup group(ostr, state, frame);
+    std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
     std::string nl_or_nothing = settings.one_line ? "" : "\n";
 
     ostr << "(" << nl_or_nothing;
@@ -99,9 +98,7 @@ void ASTSubquery::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     frame_nested.parent_has_trailing_settings = false;
     ++frame_nested.indent;
     children[0]->format(ostr, settings, state, frame_nested);
-    ostr << nl_or_nothing;
-    writeASTFormattingIndent(ostr, settings, state, frame.indent);
-    ostr << ")";
+    ostr << nl_or_nothing << indent_str << ")";
 }
 
 void ASTSubquery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const

@@ -1,4 +1,3 @@
-#include <charconv>
 #include <functional>
 #include <iostream>
 #include <string_view>
@@ -84,7 +83,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("hilite,highlight", "add syntax highlight with ANSI terminal escape sequences (can also use --highlight)")
             ("oneline", "format in single line")
             ("max_line_length", po::value<size_t>()->default_value(0), "format in single line queries with length less than specified")
-            ("wrap_width", po::value<std::string>()->default_value("0"), "wrap multiline queries at this display width (0 disables wrapping)")
+            ("wrap_width", po::value<size_t>()->default_value(0), "wrap multiline queries at this display width (0 disables wrapping)")
             ("quiet,q", "just check syntax, no output on success")
             ("multiquery,n", "allow multiple queries in the same file")
             ("obfuscate", "obfuscate instead of formatting")
@@ -116,15 +115,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         bool quiet = options.contains("quiet");
         bool multiple = options.contains("multiquery");
         size_t max_line_length = options["max_line_length"].as<size_t>();
-        /// Parsed manually, because boost::program_options accepts negative values for unsigned types.
-        size_t wrap_width = 0;
-        const auto & wrap_width_string = options["wrap_width"].as<std::string>();
-        auto [wrap_width_end, wrap_width_error] = std::from_chars(wrap_width_string.data(), wrap_width_string.data() + wrap_width_string.size(), wrap_width);
-        if (wrap_width_error != std::errc{} || wrap_width_end != wrap_width_string.data() + wrap_width_string.size())
-        {
-            std::cerr << "Option 'wrap_width' must be a nonnegative integer." << std::endl;
-            return 2;
-        }
+        size_t wrap_width = options["wrap_width"].as<size_t>();
         bool obfuscate = options.contains("obfuscate");
         bool backslash = options.contains("backslash");
         bool rainbow_parentheses = !options.contains("no_rainbow_parentheses");

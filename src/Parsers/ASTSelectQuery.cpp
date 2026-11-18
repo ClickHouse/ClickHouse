@@ -1,5 +1,4 @@
 #include <Common/typeid_cast.h>
-#include <Parsers/ASTFormatting.h>
 #include <Common/SipHash.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -169,21 +168,11 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
     frame.current_select = this;
     frame.expression_list_prepend_whitespace = true;
 
-    /// The indentation is written explicitly, so the line wrapping can shift it together with the enclosing group.
-    auto indent = [&]() -> WriteBuffer &
-    {
-        writeASTFormattingIndent(ostr, s, state, frame.indent);
-        return ostr;
-    };
-    auto new_line = [&]() -> WriteBuffer &
-    {
-        ostr << s.nl_or_ws;
-        return indent();
-    };
+    std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
 
     if (with())
     {
-        indent() << "WITH";
+        ostr << indent_str << "WITH";
 
         if (recursive_with)
             ostr << " RECURSIVE";
@@ -215,13 +204,13 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
 
     if (format_from_first && tables())
     {
-        indent() << "FROM";
+        ostr << indent_str << "FROM";
         tables()->format(ostr, s, state, frame);
-        new_line() << "SELECT" << (distinct ? " DISTINCT" : "");
+        ostr << s.nl_or_ws << indent_str << "SELECT" << (distinct ? " DISTINCT" : "");
     }
     else
     {
-        indent() << "SELECT" << (distinct ? " DISTINCT" : "");
+        ostr << indent_str << "SELECT" << (distinct ? " DISTINCT" : "");
     }
 
     s.one_line
@@ -230,7 +219,7 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
 
     if (!format_from_first && tables())
     {
-        new_line() << "FROM";
+        ostr << s.nl_or_ws << indent_str << "FROM";
         tables()->format(ostr, s, state, frame);
     }
 
@@ -239,28 +228,28 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         const bool prep_whitespace = frame.expression_list_prepend_whitespace;
         frame.expression_list_prepend_whitespace = false;
 
-        indent() << " (";
+        ostr << indent_str << " (";
         aliases()->format(ostr, s, state, frame);
-        indent() << ")";
+        ostr << indent_str << ")";
 
         frame.expression_list_prepend_whitespace = prep_whitespace;
     }
 
     if (prewhere())
     {
-        new_line() << "PREWHERE ";
+        ostr << s.nl_or_ws << indent_str << "PREWHERE ";
         prewhere()->format(ostr, s, state, frame);
     }
 
     if (where())
     {
-        new_line() << "WHERE ";
+        ostr << s.nl_or_ws << indent_str << "WHERE ";
         where()->format(ostr, s, state, frame);
     }
 
     if (!group_by_all && groupBy())
     {
-        new_line() << "GROUP BY";
+        ostr << s.nl_or_ws << indent_str << "GROUP BY";
         if (!group_by_with_grouping_sets)
         {
             s.one_line
@@ -270,7 +259,7 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
     }
 
     if (group_by_all)
-        new_line() << "GROUP BY ALL";
+        ostr << s.nl_or_ws << indent_str << "GROUP BY ALL";
 
     if (group_by_with_grouping_sets && groupBy())
     {
@@ -278,7 +267,7 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         nested_frame.surround_each_list_element_with_parens = true;
         nested_frame.expression_list_prepend_whitespace = false;
         nested_frame.indent++;
-        new_line() << (s.one_line ? "" : "    ") << "GROUPING SETS";
+        ostr << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "GROUPING SETS";
         ostr << " (";
         s.one_line
         ? groupBy()->format(ostr, s, state, nested_frame)
@@ -287,23 +276,23 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
     }
 
     if (group_by_with_rollup)
-        new_line() << (s.one_line ? "" : "    ") << "WITH ROLLUP";
+        ostr << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH ROLLUP";
 
     if (group_by_with_cube)
-        new_line() << (s.one_line ? "" : "    ") << "WITH CUBE";
+        ostr << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH CUBE";
 
     if (group_by_with_totals)
-        new_line() << (s.one_line ? "" : "    ") << "WITH TOTALS";
+        ostr << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH TOTALS";
 
     if (having())
     {
-        new_line() << "HAVING ";
+        ostr << s.nl_or_ws << indent_str << "HAVING ";
         having()->format(ostr, s, state, frame);
     }
 
     if (window())
     {
-        new_line() <<
+        ostr << s.nl_or_ws << indent_str <<
             "WINDOW";
         s.one_line
             ? window()->format(ostr, s, state, frame)
@@ -312,20 +301,20 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
 
     if (qualify())
     {
-        new_line() << "QUALIFY ";
+        ostr << s.nl_or_ws << indent_str << "QUALIFY ";
         qualify()->format(ostr, s, state, frame);
     }
 
     if (!order_by_all && orderBy())
     {
-        new_line() << "ORDER BY";
+        ostr << s.nl_or_ws << indent_str << "ORDER BY";
         s.one_line
             ? orderBy()->format(ostr, s, state, frame)
             : orderBy()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
 
         if (interpolate())
         {
-            new_line() << "INTERPOLATE";
+            ostr << s.nl_or_ws << indent_str << "INTERPOLATE";
             if (!interpolate()->children.empty())
             {
                 auto nested_frame = frame;
@@ -340,7 +329,7 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
 
     if (order_by_all)
     {
-        new_line() << "ORDER BY ALL";
+        ostr << s.nl_or_ws << indent_str << "ORDER BY ALL";
 
         auto * elem = orderBy()->children[0]->as<ASTOrderByElement>();
         ostr << (elem->direction == -1 ? " DESC" : " ASC");
@@ -352,11 +341,11 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
     }
 
     if (shuffle)
-        new_line() << "SHUFFLE";
+        ostr << s.nl_or_ws << indent_str << "SHUFFLE";
 
     if (limitByLength())
     {
-        new_line() << "LIMIT ";
+        ostr << s.nl_or_ws << indent_str << "LIMIT ";
         if (limitByOffset())
         {
             formatLimitFirstExpression(*limitByOffset(), ostr, s, state, frame);
@@ -379,7 +368,7 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
 
     if (limitLength() || limitAfter() || limitUntil())
     {
-        new_line() << "LIMIT";
+        ostr << s.nl_or_ws << indent_str << "LIMIT";
         if (limitOffset())
         {
             ostr << " ";
@@ -398,34 +387,34 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
                 formatLimitFirstExpression(*limitLength(), ostr, s, state, frame);
         }
         if (limit_with_ties)
-            new_line() << " WITH TIES";
+            ostr << s.nl_or_ws << indent_str << " WITH TIES";
         if (limitAfter())
         {
-            new_line() << " AFTER ";
+            ostr << s.nl_or_ws << indent_str << " AFTER ";
             formatLimitRangeBoundary(*limitAfter(), ostr, s, state, frame);
             if (limit_after_all)
                 ostr << " ALL";
             if (limitUntil())
             {
-                new_line() << " UNTIL ";
+                ostr << s.nl_or_ws << indent_str << " UNTIL ";
                 formatLimitRangeBoundary(*limitUntil(), ostr, s, state, frame);
             }
         }
         else if (limitUntil())
         {
-            new_line() << " UNTIL ";
+            ostr << s.nl_or_ws << indent_str << " UNTIL ";
             formatLimitRangeBoundary(*limitUntil(), ostr, s, state, frame);
         }
     }
     else if (limitOffset())
     {
-        new_line() << "OFFSET ";
+        ostr << s.nl_or_ws << indent_str << "OFFSET ";
         limitOffset()->format(ostr, s, state, frame);
     }
 
     if (settings())
     {
-        new_line() << "SETTINGS ";
+        ostr << s.nl_or_ws << indent_str << "SETTINGS ";
         settings()->format(ostr, s, state, frame);
     }
 }

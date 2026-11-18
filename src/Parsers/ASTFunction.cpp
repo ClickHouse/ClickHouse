@@ -1,6 +1,5 @@
 #include <Common/StringUtils.h>
 #include <algorithm>
-#include <optional>
 #include <string_view>
 
 #include <Parsers/ASTFunction.h>
@@ -352,19 +351,15 @@ void ASTFunction::finishFormatWithWindow(WriteBuffer & ostr, const FormatSetting
     if (!isWindowFunction())
         return;
 
-    writeASTFormattingBreak(ostr, state, frame, 0);
-    ostr << "OVER ";
+    ostr << " OVER ";
     if (!window_name.empty())
     {
         ostr << backQuoteIfNeed(window_name);
     }
     else
     {
-        ASTFormattingGroup window_group(ostr, state, frame);
         ostr << "(";
-        writeASTFormattingBreak(ostr, state, frame, 1, '\0');
         window_definition->format(ostr, settings, state, frame);
-        writeASTFormattingBreak(ostr, state, frame, 0, '\0');
         ostr << ")";
     }
 }
@@ -506,15 +501,13 @@ static bool formatNamedArgWithHiddenValue(IAST * arg, WriteBuffer & ostr, const 
     return true;
 }
 
-/// When a list does not fit, plain values (literals and identifiers) are packed several per line,
-/// other arguments are written one per line.
-static ASTFormattingBreak argumentsBreak(const ASTs & arguments)
+/// Wrapped lists of plain values (literals and identifiers) are packed several items per line.
+static bool arePlainValues(const ASTs & arguments)
 {
-    const bool plain = std::ranges::all_of(arguments, [](const ASTPtr & argument)
+    return std::ranges::all_of(arguments, [](const ASTPtr & argument)
     {
         return (argument->as<ASTLiteral>() || argument->as<ASTIdentifier>()) && argument->tryGetAlias().empty();
     });
-    return plain ? ASTFormattingBreak::Fill : ASTFormattingBreak::Consistent;
 }
 
 /// Only some types of arguments are accepted by the parser of the '->' operator.
@@ -592,11 +585,6 @@ static void writeFunctionName(
 
 void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    /// The window clause is kept out of the group of the function itself, so `OVER (...)` does not force the arguments to break.
-    std::optional<ASTFormattingGroup> window_formatting_group;
-    if (isWindowFunction())
-        window_formatting_group.emplace(ostr, state, frame);
-    ASTFormattingGroup formatting_group(ostr, state, frame);
     frame.expression_list_prepend_whitespace = false;
     auto kind = getKind();
     if (kind == Kind::CODEC || kind == Kind::STATISTICS || kind == Kind::BACKUP_NAME)
@@ -612,9 +600,41 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     nested_need_parens.list_element_index = 0;
     nested_dont_need_parens.list_element_index = 0;
 
+    /// Whether the function does not fit on the current line, so its arguments start on new lines (see ASTFormatting.h).
+    /// The NULLS modifier and the window clause after the arguments are not taken into account. Neither are the enclosing parentheses,
+    /// so the decision is the same whether they are added here or written around a parenthesized expression.
+    auto should_wrap = [&]
+    {
+        if (!canWrapAST(ostr, state, frame))
+            return false;
+        FormatStateStacked flat_frame = frame;
+        flat_frame.need_parens = false;
+        String text = formatASTWithoutWrapping([&](WriteBuffer & out, FormatState & flat_state)
+        {
+            formatImplWithoutAlias(out, settings, flat_state, flat_frame);
+        });
+        if (isWindowFunction())
+            text.resize(text.size() - formatASTWithoutWrapping([&](WriteBuffer & out, FormatState & flat_state)
+            {
+                finishFormatWithWindow(out, settings, flat_state, flat_frame);
+            }).size());
+        return !fitsOnLineAST(state, text);
+    };
+    /// A list item with its separator, for packing (see writeASTListSpace).
+    auto format_without_wrapping = [&](const ASTPtr & argument, const FormatStateStacked & argument_frame, bool with_separator)
+    {
+        return formatASTWithoutWrapping([&](WriteBuffer & out, FormatState & flat_state)
+        {
+            argument->format(out, settings, flat_state, argument_frame);
+            if (with_separator)
+                out.write(',');
+        });
+    };
+
     if (auto * query = tryGetQueryArgument())
     {
         std::string nl_or_nothing = settings.one_line ? "" : "\n";
+        std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
         if (!name.empty())
             writeFunctionName(ostr, settings, name, isCompoundName(), arguments);
         ostr << "(";
@@ -624,8 +644,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         frame_nested.parent_has_trailing_settings = false;
         ++frame_nested.indent;
         query->format(ostr, settings, state, frame_nested);
-        ostr << nl_or_nothing;
-        writeASTFormattingIndent(ostr, settings, state, frame.indent);
+        ostr << nl_or_nothing << indent_str;
         ostr << ")";
         return;
     }
@@ -643,25 +662,24 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     {
         /// viewIfPermitted() needs special formatting: ELSE instead of comma between arguments, and better indents too.
         const auto * nl_or_nothing = settings.one_line ? "" : "\n";
+        auto indent0 = settings.one_line ? "" : String(4u * frame.indent, ' ');
+        auto indent1 = settings.one_line ? "" : String(4u * (frame.indent + 1), ' ');
+        auto indent2 = settings.one_line ? "" : String(4u * (frame.indent + 2), ' ');
         ostr << name << "(" << nl_or_nothing;
         FormatStateStacked frame_nested = frame;
         frame_nested.need_parens = false;
         frame_nested.parent_has_trailing_settings = false;
         frame_nested.indent += 2;
         arguments->children[0]->format(ostr, settings, state, frame_nested);
-        ostr << nl_or_nothing;
-        writeASTFormattingIndent(ostr, settings, state, frame.indent + 1);
-        ostr << (settings.one_line ? " " : "") << "ELSE " << nl_or_nothing;
-        writeASTFormattingIndent(ostr, settings, state, frame.indent + 2);
+        ostr << nl_or_nothing << indent1 << (settings.one_line ? " " : "")
+             << "ELSE " << nl_or_nothing << indent2;
         /// The parser accepts only a function call after ELSE (it is a table function such as null('structure')),
         /// so a function that would normally be formatted as an operator (e.g. `not`) must keep
         /// the function-call form here, or the query could not be parsed back.
         FormatStateStacked frame_else = frame_nested;
         frame_else.allow_operators = false;
         arguments->children[1]->format(ostr, settings, state, frame_else);
-        ostr << nl_or_nothing;
-        writeASTFormattingIndent(ostr, settings, state, frame.indent);
-        ostr << ")";
+        ostr << nl_or_nothing << indent0 << ")";
         return;
     }
 
@@ -677,8 +695,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         if (frame.need_parens)
             ostr << '(';
         arguments->children[0]->format(ostr, settings, state, nested_need_parens);
-        writeASTFormattingBreak(ostr, state, frame);
-        ostr << "| ";
+        ostr << " | ";
         arguments->children[1]->format(ostr, settings, state, nested_need_parens);
         if (frame.need_parens)
             ostr << ')';
@@ -770,7 +787,6 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 {"isNull", " IS NULL"},
                 {"isNotNull", " IS NOT NULL"},
             }};
-            static_assert(std::ranges::all_of(operators, [](const auto & op) { return op.operator_name.starts_with(' '); }));
 
             if (auto it = std::ranges::find_if(operators, [&](const auto & op) { return equalsCaseInsensitive(name, op.function_name); });
                 it != operators.end())
@@ -778,8 +794,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 if (frame.need_parens)
                     ostr << '(';
                 arguments->format(ostr, settings, state, nested_need_parens);
-                writeASTFormattingBreak(ostr, state, frame);
-                ostr << it->operator_name.substr(1);
+                ostr << it->operator_name;
                 if (frame.need_parens)
                     ostr << ')';
 
@@ -828,7 +843,6 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 {"globalIn",          " GLOBAL IN "},
                 {"globalNotIn",       " GLOBAL NOT IN "}
             }};
-            static_assert(std::ranges::all_of(operators, [](const auto & op) { return op.operator_name.starts_with(' '); }));
 
             if (auto it = std::ranges::find(operators, name, &FunctionOperatorMapping::function_name); it != operators.end())
             {
@@ -856,8 +870,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     nested_dont_need_parens.current_function = nullptr;
                 }
                 arguments->children[0]->format(ostr, settings, state, nested_need_parens);
-                writeASTFormattingBreak(ostr, state, frame);
-                ostr << it->operator_name.substr(1);
+                ostr << it->operator_name;
 
                 /// Format `x IN 1` as `x IN (1)`: put parens around the right-hand side even if
                 /// there is a single element in the set (some external databases the query can be
@@ -890,8 +903,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 /// LIKE/ILIKE/SIMILAR TO with ESCAPE clause: format the 3rd argument as ESCAPE 'char'
                 if (is_operator_with_escape)
                 {
-                    writeASTFormattingBreak(ostr, state, frame);
-                    ostr << "ESCAPE ";
+                    ostr << " ESCAPE ";
                     arguments->children[2]->format(ostr, settings, state, nested_dont_need_parens);
                 }
 
@@ -1037,8 +1049,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 else
                     first_argument->format(ostr, settings, state, nested_need_parens);
 
-                writeASTFormattingBreak(ostr, state, frame, 1, ' ', ASTFormattingBreak::Optional);
-                ostr << "-> ";
+                ostr << " -> ";
                 arguments->children[1]->format(ostr, settings, state, nested_need_parens);
                 if (frame.need_parens || frame.list_element_index > 0)
                     ostr << ')';
@@ -1053,25 +1064,29 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 {"and", " AND "},
                 {"or", " OR "}
             }};
-            static_assert(std::ranges::all_of(operators, [](const auto & op) { return op.operator_name.starts_with(' '); }));
 
             if (auto it = std::ranges::find(operators, name, &FunctionOperatorMapping::function_name); it != operators.end())
             {
                 if (frame.need_parens)
                     ostr << '(';
-                /// Without parentheses the first operand starts on its own line, so the operands are aligned.
-                if (!frame.need_parens && !isParenthesized())
-                    writeASTFormattingBreak(ostr, state, frame, 1, '\0');
+                /// A wrapped chain starts every next operand on a new line: `a\n    AND b`.
+                /// It is indented deeper than the enclosing chain, even if it starts on the same line.
+                const bool wrap = should_wrap();
+                FormatStateStacked operand_frame = nested_need_parens;
+                if (wrap)
+                    operand_frame.indent = wrappedIndentAST(state, frame.indent);
                 for (size_t i = 0; i < arguments->children.size(); ++i)
                 {
-                    if (i != 0)
+                    if (i != 0 && wrap)
                     {
-                        writeASTFormattingBreak(ostr, state, frame);
+                        writeASTNewLine(ostr, operand_frame.indent);
                         ostr << it->operator_name.substr(1);
                     }
+                    else if (i != 0)
+                        ostr << it->operator_name;
                     if (arguments->children[i]->as<ASTSetQuery>())
                         ostr << "SETTINGS ";
-                    arguments->children[i]->format(ostr, settings, state, nested_need_parens);
+                    arguments->children[i]->format(ostr, settings, state, operand_frame);
                 }
                 if (frame.need_parens)
                     ostr << ')';
@@ -1079,32 +1094,38 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             }
         }
 
-        const auto format_collection_arguments = [&]
+        /// Writes the elements of an array, tuple or map, each on a new line if they do not fit on the current one.
+        const auto format_elements = [&](std::string_view open, char close)
         {
-            const auto separator_break = argumentsBreak(arguments->children);
+            const bool wrap = !arguments->children.empty() && should_wrap();
+            const bool pack = wrap && arePlainValues(arguments->children);
+            FormatStateStacked element_frame = nested_dont_need_parens;
+            if (wrap)
+                element_frame.indent = wrappedIndentAST(state);
+            ostr << open;
+            if (wrap)
+                writeASTNewLine(ostr, element_frame.indent);
             for (size_t i = 0; i < arguments->children.size(); ++i)
             {
+                element_frame.list_element_index = i;
                 if (i != 0)
                 {
                     ostr << ',';
-                    writeASTFormattingBreak(ostr, state, nested_dont_need_parens, 1, ' ', separator_break);
+                    writeASTListSpace(ostr, state, element_frame.indent, wrap,
+                        pack ? format_without_wrapping(arguments->children[i], element_frame, i + 1 < arguments->children.size()) : "");
                 }
                 if (arguments->children[i]->as<ASTSetQuery>())
                     ostr << "SETTINGS ";
-                nested_dont_need_parens.list_element_index = i;
-                arguments->children[i]->format(ostr, settings, state, nested_dont_need_parens);
+                arguments->children[i]->format(ostr, settings, state, element_frame);
             }
+            if (wrap)
+                writeASTNewLine(ostr, element_frame.indent - 1);
+            ostr << close;
         };
 
         if (!written && name == "array"sv && isOperator())
         {
-            ostr << '[';
-            if (!arguments->children.empty())
-                writeASTFormattingBreak(ostr, state, nested_dont_need_parens, 1, '\0');
-            format_collection_arguments();
-            if (!arguments->children.empty())
-                writeASTFormattingBreak(ostr, state, frame, 0, '\0');
-            ostr << ']';
+            format_elements("[", ']');
             written = true;
         }
 
@@ -1113,35 +1134,22 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         /// before calling `formatImplWithoutAlias`.
         if (!written && arguments->children.size() >= 2 && name == "tuple"sv && isOperator())
         {
-            ostr << '(';
-            writeASTFormattingBreak(ostr, state, nested_dont_need_parens, 1, '\0');
-            format_collection_arguments();
-            writeASTFormattingBreak(ostr, state, frame, 0, '\0');
-            ostr << ')';
+            format_elements("(", ')');
             written = true;
         }
 
         if (!written && name == "map"sv)
         {
-            ostr << "map(";
-            if (!arguments->children.empty())
-                writeASTFormattingBreak(ostr, state, nested_dont_need_parens, 1, '\0');
-            format_collection_arguments();
-            if (!arguments->children.empty())
-                writeASTFormattingBreak(ostr, state, frame, 0, '\0');
-            ostr << ')';
+            format_elements("map(", ')');
             written = true;
         }
     }
 
     if (written)
     {
-        formatting_group.finish();
         finishFormatWithWindow(ostr, settings, state, frame);
         return;
     }
-
-    formatting_group.setMode(ASTFormattingGroup::Mode::ConsistentLines);
 
     /// In function-call form `not(x)` re-parses as `NOT (x)`, same AST, so skip quoting
     bool is_plain_not_call = !frame.allow_operators && equalsCaseInsensitive(name, "not") && arguments
@@ -1151,6 +1159,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     const bool plain_not_call_needs_parens = is_plain_not_call && frame.need_parens;
     if (plain_not_call_needs_parens)
         ostr << '(';
+
+    const bool wrap_arguments = arguments && !arguments->children.empty() && should_wrap();
+    const UInt16 wrapped_indent = wrap_arguments ? wrappedIndentAST(state) : 0;
 
     /// Empty names are used rarely, to format queries with an extra pair of parentheses for external databases.
     if (is_plain_not_call)
@@ -1164,19 +1175,15 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     if (parameters)
     {
-        ostr << '(';
         if (secret_arguments.hide_parameters)
         {
+            ostr << '(';
             for (size_t i = 0; i < parameters->children.size(); ++i)
                 ostr << (i == 0 ? "" : ", ") << HIDDEN_SECRET_LITERAL;
+            ostr << ')';
         }
-        else if (!parameters->children.empty())
-        {
-            writeASTFormattingBreak(ostr, state, nested_dont_need_parens, 1, '\0');
-            parameters->format(ostr, settings, state, nested_dont_need_parens);
-            writeASTFormattingBreak(ostr, state, frame, 0, '\0');
-        }
-        ostr << ')';
+        else
+            formatASTListInParentheses(*parameters, ostr, settings, state, nested_dont_need_parens);
     }
 
     /// If the function has a NULLS modifier (IGNORE NULLS / RESPECT NULLS), we must always print
@@ -1189,21 +1196,26 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         = (arguments && !arguments->children.empty()) || !noEmptyArgs() || has_nulls_action || isWindowFunction();
 
     if (need_parens)
-    {
         ostr << '(';
-        if (arguments && !arguments->children.empty())
-            writeASTFormattingBreak(ostr, state, nested_dont_need_parens, 1, '\0');
-    }
 
     if (arguments)
     {
-        const auto separator_break = argumentsBreak(arguments->children);
+        /// The sizes of hidden secrets must not affect the layout, so their arguments are not packed.
+        const bool pack_arguments = wrap_arguments && arePlainValues(arguments->children)
+            && (settings.show_secrets || !secret_arguments.hasSecrets());
+        if (wrap_arguments)
+        {
+            nested_dont_need_parens.indent = wrapped_indent;
+            writeASTNewLine(ostr, wrapped_indent);
+        }
+
         for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
         {
             if (i != 0)
             {
                 ostr << ',';
-                writeASTFormattingBreak(ostr, state, nested_dont_need_parens, 1, ' ', separator_break);
+                writeASTListSpace(ostr, state, nested_dont_need_parens.indent, wrap_arguments,
+                    pack_arguments ? format_without_wrapping(arguments->children[i], nested_dont_need_parens, i + 1 < size) : "");
             }
 
             const auto & argument = arguments->children[i];
@@ -1317,17 +1329,14 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     }
 
+    if (wrap_arguments)
+        writeASTNewLine(ostr, wrapped_indent - 1);
     if (need_parens)
-    {
-        if (arguments && !arguments->children.empty())
-            writeASTFormattingBreak(ostr, state, frame, 0, '\0');
         ostr << ')';
-    }
 
     if (plain_not_call_needs_parens)
         ostr << ')';
 
-    formatting_group.finish();
     finishFormatWithWindow(ostr, settings, state, frame);
 }
 

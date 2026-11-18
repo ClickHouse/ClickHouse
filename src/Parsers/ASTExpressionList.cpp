@@ -1,9 +1,7 @@
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFormatting.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
-#include <optional>
 
 
 namespace DB
@@ -35,9 +33,8 @@ void ASTExpressionList::readJSON(const Poco::JSON::Object & json)
 
 void ASTExpressionList::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ASTFormattingGroup group(ostr, state, frame, ASTFormattingGroup::Mode::List);
     if (frame.expression_list_prepend_whitespace)
-        writeASTFormattingBreak(ostr, state, frame);
+        ostr << ' ';
 
     for (size_t i = 0, size = children.size(); i < size; ++i)
     {
@@ -45,7 +42,7 @@ void ASTExpressionList::formatImpl(WriteBuffer & ostr, const FormatSettings & se
         {
             if (char sep = getSeparator())
                 ostr << sep;
-            writeASTFormattingBreak(ostr, state, frame);
+            ostr << ' ';
         }
 
         FormatStateStacked frame_nested = frame;
@@ -65,15 +62,12 @@ void ASTExpressionList::formatImpl(WriteBuffer & ostr, const FormatSettings & se
 void ASTExpressionList::formatImplMultiline(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     ++frame.indent;
-
-    std::optional<ASTFormattingGroup> group;
-    if (children.size() == 1 && !frame.expression_list_always_start_on_new_line)
-        group.emplace(ostr, state, frame);
+    std::string indent_str = "\n" + std::string(4 * frame.indent, ' ');
 
     if (frame.expression_list_prepend_whitespace)
     {
         if (!(children.size() > 1 || frame.expression_list_always_start_on_new_line))
-            writeASTFormattingBreak(ostr, state, frame);
+            ostr << ' ';
     }
 
     for (size_t i = 0, size = children.size(); i < size; ++i)
@@ -82,10 +76,7 @@ void ASTExpressionList::formatImplMultiline(WriteBuffer & ostr, const FormatSett
             ostr << sep;
 
         if (size > 1 || frame.expression_list_always_start_on_new_line)
-        {
-            ostr << '\n';
-            writeASTFormattingIndent(ostr, settings, state, frame.indent);
-        }
+            ostr << indent_str;
 
         FormatStateStacked frame_nested = frame;
         frame_nested.expression_list_always_start_on_new_line = false;

@@ -84,11 +84,24 @@ void ASTWindowDefinition::updateTreeHashImpl(SipHash & hash_state, bool ignore_a
 void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & settings,
                                      FormatState & state, FormatStateStacked format_frame) const
 {
-    ASTFormattingGroup formatting_group(ostr, state, format_frame);
     format_frame.expression_list_prepend_whitespace = false;
-    auto list_frame = format_frame;
-    list_frame.expression_list_prepend_whitespace = true;
     bool need_space = false;
+
+    /// If the definition does not fit on the current line, every next clause starts on a new line (see ASTFormatting.h).
+    const bool wrap = canWrapAST(ostr, state, format_frame)
+        && !fitsOnLineAST(state, formatASTWithoutWrapping([&](WriteBuffer & out, FormatState & flat_state)
+        {
+            formatImpl(out, settings, flat_state, format_frame);
+        }));
+    if (wrap)
+        format_frame.indent = wrappedIndentAST(state, format_frame.indent);
+    const auto write_space = [&]
+    {
+        if (wrap)
+            writeASTNewLine(ostr, format_frame.indent);
+        else
+            ostr << " ";
+    };
 
     if (!parent_window_name.empty())
     {
@@ -100,12 +113,10 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
     if (partition_by)
     {
         if (need_space)
-        {
-            writeASTFormattingBreak(ostr, state, format_frame, 0);
-        }
+            write_space();
 
-        ostr << "PARTITION BY";
-        partition_by->format(ostr, settings, state, list_frame);
+        ostr << "PARTITION BY ";
+        partition_by->format(ostr, settings, state, format_frame);
 
         need_space = true;
     }
@@ -113,12 +124,10 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
     if (order_by)
     {
         if (need_space)
-        {
-            writeASTFormattingBreak(ostr, state, format_frame, 0);
-        }
+            write_space();
 
-        ostr << "ORDER BY";
-        order_by->format(ostr, settings, state, list_frame);
+        ostr << "ORDER BY ";
+        order_by->format(ostr, settings, state, format_frame);
 
         need_space = true;
     }
@@ -126,7 +135,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
     if (!frame_is_default)
     {
         if (need_space)
-            writeASTFormattingBreak(ostr, state, format_frame, 0);
+            write_space();
 
         /// The frame offset grammar requires the offset to be wrapped in parentheses
         /// when it is an aliased expression (e.g. `((1 + 1) AS x) PRECEDING`),
@@ -151,8 +160,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
             ostr << " "
                 << (!frame_begin_preceding ? "FOLLOWING" : "PRECEDING");
         }
-        writeASTFormattingBreak(ostr, state, format_frame);
-        ostr << "AND ";
+        ostr << " AND ";
         if (frame_end_type == WindowFrame::BoundaryType::Current)
         {
             ostr << "CURRENT ROW";
@@ -212,12 +220,9 @@ void ASTWindowListElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_
 void ASTWindowListElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings,
                                       FormatState & state, FormatStateStacked frame) const
 {
-    ASTFormattingGroup group(ostr, state, frame);
     ostr << backQuoteIfNeed(name);
     ostr << " AS (";
-    writeASTFormattingBreak(ostr, state, frame, 1, '\0');
     definition->format(ostr, settings, state, frame);
-    writeASTFormattingBreak(ostr, state, frame, 0, '\0');
     ostr << ")";
 }
 

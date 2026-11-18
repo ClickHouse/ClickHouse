@@ -1,18 +1,16 @@
-SELECT
-    f(
-        a, b, c, d, e, f, g, h, i, j, k,
-        l, m, n, o, p, q, r, s, t, u, v,
-        w, x, y, z, a, b, c, d, e, f, g,
-        h, i, j, k, l, m, n, o, p, q, r,
-        s, t, u, v, w, x, y, z
-    );
+SELECT f(
+    a, b, c, d, e, f, g, h, i, j, k, l,
+    m, n, o, p, q, r, s, t, u, v, w, x,
+    y, z, a, b, c, d, e, f, g, h, i, j,
+    k, l, m, n, o, p, q, r, s, t, u, v,
+    w, x, y, z
+);
 
-SELECT
-    f(
-        g(first_argument),
-        g(second_argument),
-        third_argument
-    )
+SELECT f(
+    g(first_argument),
+    g(second_argument),
+    third_argument
+)
 FROM numbers(1);
 
 SELECT
@@ -23,22 +21,21 @@ SELECT
     ) AS result
 FROM numbers(1);
 
-SELECT
-    concat(
-        'spaces inside a very long string',
-        'x'
-    )
-    AS `spaces inside a very long identifier`;
+SELECT concat(
+    'spaces inside a very long string',
+    'x'
+) AS `spaces inside a very long identifier`;
 
-SELECT
-    concat(
-        '你好', '世界', '🙂', 'é',
-        '乌龟走着走着，找到了辣椒'
-    );
+SELECT concat(
+    '你好', '世界', '🙂', 'é',
+    '乌龟走着走着，找到了辣椒'
+);
 
 SELECT
     [
-        [1, 2, 3], [4, 5, 6], [7, 8, 9],
+        [1, 2, 3],
+        [4, 5, 6],
+        [7, 8, 9],
         [10, 11, 12]
     ],
     tuple(
@@ -49,12 +46,10 @@ SELECT
 
 SELECT user_id
 FROM events
-WHERE user_id
-    IN (
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
-        11, 12, 13, 14, 15, 16, 17, 18,
-        19, 20
-    );
+WHERE user_id IN (
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+    12, 13, 14, 15, 16, 17, 18, 19, 20
+);
 
 SELECT user_id
 FROM events
@@ -66,68 +61,50 @@ WHERE (user_id IN (
 
 SELECT user_id
 FROM events
-WHERE
-    ((first_long_column = 1)
+WHERE ((first_long_column = 1)
         OR (second_long_column = 2))
     AND ((third_long_column = 3)
         OR (fourth_long_column = 4));
 
-SELECT
-    arrayMap(
-        x -> concat(
-            x, '_first_suffix',
-            '_second_suffix',
-            '_third_suffix'
-        ),
-        labels
-    )
+SELECT arrayMap(
+    x -> concat(
+        x, '_first_suffix',
+        '_second_suffix',
+        '_third_suffix'
+    ),
+    labels
+)
 FROM events;
 
-SELECT
-    (a, b, c)
-        > (
-            first_long_identifier,
-            second_long_identifier,
-            third_long_identifier
-        )
+SELECT (a, b, c) > (
+    first_long_identifier,
+    second_long_identifier,
+    third_long_identifier
+)
 FROM events;
 
-SELECT
-    f(
-        first_parameter,
-        second_parameter,
-        third_parameter
-    )(
-        first_argument, second_argument
-    )
+SELECT f(
+    first_parameter,
+    second_parameter,
+    third_parameter
+)(
+    first_argument, second_argument
+)
 FROM events;
 
-SELECT
-    sum(value)
-    OVER (
-        PARTITION BY
-            customer_identifier,
-            region_identifier
-        ORDER BY
-            event_timestamp ASC,
-            sequence_number ASC
-    )
+SELECT sum(value) OVER (PARTITION BY customer_identifier, region_identifier
+        ORDER BY event_timestamp ASC, sequence_number ASC)
 FROM events;
 
 SELECT sum(value) OVER w
 FROM events
-WINDOW
-    w AS (
-        PARTITION BY customer_identifier
+WINDOW w AS (PARTITION BY customer_identifier
         ORDER BY event_timestamp ASC
-        ROWS BETWEEN 2 PRECEDING
-            AND CURRENT ROW
-    );
+        ROWS BETWEEN 2 PRECEDING AND CURRENT ROW);
 
 SELECT a.value
 FROM first_table AS a
-INNER JOIN second_table AS b ON
-    (a.identifier = b.identifier)
+INNER JOIN second_table AS b ON (a.identifier = b.identifier)
     AND (a.tenant_id = b.tenant_id);
 
 SELECT very_long_function_name((
@@ -157,30 +134,22 @@ INSERT INTO a_long_table_name (
 ) VALUES ('spaces inside payload', 123);
 
 ALTER TABLE events
-    (
-        UPDATE status = if(
-            (user_id IN (1, 2, 3)),
-            'enabled',
-            'disabled'
-        )
-        WHERE
-            (event_date >= '2026-01-01')
-            AND (user_id = 123456789)
-    );
+    (UPDATE status = if(
+        (user_id IN (1, 2, 3)),
+        'enabled',
+        'disabled'
+    ) WHERE (event_date >= '2026-01-01')
+        AND (user_id = 123456789));
 
 Backslash
-SELECT \
-    concat( \
-        'first', \
-        'second', \
-        'third' \
-    )
+SELECT concat( \
+    'first', 'second', \
+    'third' \
+)
 Separate semicolons
-SELECT
-    concat(
-        'first',
-        'second'
-    )
+SELECT concat(
+    'first', 'second'
+)
 ;
 
 Single line takes precedence
