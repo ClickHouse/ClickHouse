@@ -92,6 +92,13 @@ ASOF INNER JOIN
     FROM numbers(30000)
 ) AS r ON l.f3 = r.f3 AND l.u = r.u AND l.a >= r.t
 SETTINGS join_algorithm = 'hash', hash_join_layout = 'parallel', max_threads = 8, query_plan_join_swap_table = false, max_block_size = 10000;
+SELECT 'asof join parallel build with 99% NULL asof keys a, b, c', count(), sum(cityHash64(toString((l.a, l.q, r.t)))) FROM t_keys_fixed_chunks AS l
+ASOF INNER JOIN
+(
+    SELECT toInt64(number % 16700) AS a, a * 7 AS b, a * 13 AS c, if(number % 100 = 0, toInt64(number % 16700) - 5, NULL) AS t
+    FROM numbers(100000)
+) AS r ON l.a = r.a AND l.b = r.b AND l.c = r.c AND l.a >= r.t
+SETTINGS join_algorithm = 'hash', hash_join_layout = 'parallel', max_threads = 8, query_plan_join_swap_table = false;
 SELECT 'in order a, f3, u', count(), sum(cityHash64(toString((a, f3, u, n)))) FROM
 (SELECT a, f3, u, count() AS n FROM t_keys_fixed_chunks_in_order GROUP BY a, f3, u)
 SETTINGS optimize_aggregation_in_order = 1, optimize_read_in_order = 1, max_threads = 1;

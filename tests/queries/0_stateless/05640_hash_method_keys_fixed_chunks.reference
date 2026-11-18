@@ -18,6 +18,7 @@ join fan-out parallel_hash f3, u	30000	9837709444193650948
 join hash build with NULL keys f3n, u	46998	4872313058429040621
 asof join build with NULL asof keys f3, u	18000	3584476681314649956
 asof join parallel build with NULL asof keys f3, u	18000	3584476681314649956
+asof join parallel build with 99% NULL asof keys a, b, c	500	10716459421093069227
 in order a, f3, u	49665	8301127028210855580
 distinct in order a, f3, u	49665	2946907259577560212
 1

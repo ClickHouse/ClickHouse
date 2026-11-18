@@ -112,9 +112,9 @@ struct SparseStateOf
 template <typename State>
 using SparseState = typename SparseStateOf<State>::Type;
 
-/// A caller that asks about fewer than one row in this many of its block uses a `SparseState`. Chosen from 2, 3, 4, 6
-/// and 8 by the worst ratio of times to master over `IN` probes and set builds with 40% to 99% NULL keys (2: 1.07,
-/// 3: 1.09, 4: 1.03, 6: 1.00, 8: 1.02).
+/// A caller that asks about fewer than one row in this many of its block gets the asked rows packed one by one: a
+/// `SparseState`, or `RowRange::asks_few_rows`. Chosen from 2, 3, 4, 6 and 8 by the worst ratio of times to master
+/// over `IN` probes and set builds with 40% to 99% NULL keys (2: 1.07, 3: 1.09, 4: 1.03, 6: 1.00, 8: 1.02).
 constexpr size_t max_rows_per_asked_row = 6;
 
 inline bool asksAboutFewRows(size_t asked_rows, size_t rows)

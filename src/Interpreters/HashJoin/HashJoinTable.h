@@ -1115,7 +1115,9 @@ private:
         const auto & key_columns = rows.key_columns;
         const auto & selector = rows.selector;
 
-        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes, {}, joinKeyRows(selector));
+        /// The scatter reads the key of every row of the selector, also of a row that the slot inserts skip.
+        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(
+            key_columns, key_sizes, {}, joinKeyRows<KeyGetter>(nullptr, JoinCommon::JoinMask(true, selector.size()), selector, false));
 
         /// The rows are routed by these keys below, and the slot inserts read them too.
         if constexpr (PreparedKeyGetter<KeyGetter>)
