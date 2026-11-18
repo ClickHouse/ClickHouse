@@ -6,11 +6,9 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadPoolTaskTracker.h>
-#include <Common/getRandomASCIIString.h>
 #include <Common/typeid_cast.h>
 #include <IO/S3RequestSettings.h>
 #include <Common/BlobStorageLogWriter.h>
-#include <Common/HTTPConnectionInfo.h>
 #include <Interpreters/Context.h>
 #include <IO/LimitSeekableReadBuffer.h>
 #include <IO/S3/getObjectInfo.h>
@@ -66,7 +64,6 @@ namespace S3RequestSetting
     extern const S3RequestSettingsUInt64 max_single_operation_copy_size;
     extern const S3RequestSettingsUInt64 max_single_part_upload_size;
     extern const S3RequestSettingsUInt64 max_unexpected_write_error_retries;
-    extern const S3RequestSettingsBool use_idempotency_id;
     extern const S3RequestSettingsUInt64 max_upload_part_size;
     extern const S3RequestSettingsUInt64 min_upload_part_size;
     extern const S3RequestSettingsString storage_class_name;
@@ -90,8 +87,7 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
-            const LoggerPtr log_,
-            bool use_upload_checksum_algorithm_)
+            const LoggerPtr log_)
             : client_ptr(client_ptr_)
             , dest_bucket(dest_bucket_)
             , dest_key(dest_key_)
@@ -100,13 +96,6 @@ namespace
             , schedule(schedule_)
             , blob_storage_log(blob_storage_log_)
             , log(log_)
-            /// `GCS` does not accept the AWS flexible checksum headers (`x-amz-checksum-*`, `x-amz-sdk-checksum-algorithm`)
-            /// and rejects `SigV4`-signed requests that carry them with `SignatureDoesNotMatch`, so never enable them for
-            /// `GCS`. `GCS` is never an `S3Express` bucket, so this is independent of the `S3Express` handling.
-            , upload_checksum_algorithm(
-                use_upload_checksum_algorithm_ && !client_ptr->isClientForGCS()
-                    ? std::make_optional(S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, client_ptr->isS3ExpressBucket()))
-                    : std::nullopt)
             , num_parts(0)
             , normal_part_size(0)
         {
@@ -123,11 +112,6 @@ namespace
         ThreadPoolCallbackRunnerUnsafe<void> schedule;
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
-        const std::optional<S3::RequestChecksum::Algorithm> upload_checksum_algorithm;
-        /// Identifies this upload among all writers to `dest_key`, stamped by `CreateMultipartUpload`.
-        /// Empty if disabled by the `use_idempotency_id` request setting.
-        const String idempotency_id
-            = request_settings[S3RequestSetting::use_idempotency_id] ? getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH) : "";
 
         /// Represents a task uploading a single part.
         /// Keep this struct small because there can be thousands of parts.
@@ -144,7 +128,6 @@ namespace
         size_t normal_part_size;
         String multipart_upload_id;
         DequeWithMemoryTracking<String> multipart_tags;
-        DequeWithMemoryTracking<String> multipart_checksums;
         std::atomic<size_t> num_finished_parts = 0;
         std::atomic<bool> has_failed = false;
 
@@ -156,17 +139,12 @@ namespace
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
 
-            auto metadata = object_metadata.value_or(ObjectAttributes{});
-            if (!idempotency_id.empty())
-                metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
-            request.SetMetadata(metadata);
+            if (object_metadata.has_value())
+                request.SetMetadata(object_metadata.value());
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
                 request.SetStorageClass(S3::getStorageClassForName(storage_class_name));
-
-            if (usesFlexibleUploadChecksumHeader())
-                request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
 
             client_ptr->setKMSHeaders(request);
         }
@@ -180,7 +158,6 @@ namespace
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
 
-            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             auto outcome = client_ptr->CreateMultipartUpload(request);
             auto elapsed = watch.elapsedMicroseconds();
@@ -216,16 +193,12 @@ namespace
             request.SetBucket(dest_bucket);
             request.SetKey(dest_key);
             request.SetUploadId(multipart_upload_id);
-            request.setIdempotencyId(idempotency_id);
 
             Aws::S3::Model::CompletedMultipartUpload multipart_upload;
             for (size_t i = 0; i < multipart_tags.size(); ++i)
             {
                 Aws::S3::Model::CompletedPart part;
-                part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1));
-                if (usesFlexibleUploadChecksumHeader())
-                    S3::RequestChecksum::setChecksum(part, *upload_checksum_algorithm, multipart_checksums.at(i));
-                multipart_upload.AddParts(part);
+                multipart_upload.AddParts(part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1)));
             }
 
             request.SetMultipartUpload(multipart_upload);
@@ -237,7 +210,6 @@ namespace
                 if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
 
-                HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
                 Stopwatch watch;
                 auto outcome = client_ptr->CompleteMultipartUpload(request);
                 auto elapsed = watch.elapsedMicroseconds();
@@ -254,10 +226,9 @@ namespace
                     break;
                 }
 
-                const auto & error = outcome.GetError();
-
-                if (isTransientCompleteMultipartUploadError(error) && (retries < max_retries))
+                if (isTransientCompleteMultipartUploadError(outcome.GetError()) && (retries < max_retries))
                 {
+                    const auto & error = outcome.GetError();
                     const String details = error.GetExceptionName().empty() ? error.GetMessage() : error.GetExceptionName();
                     LOG_INFO(log, "Multipart upload failed with a transient error ({}) for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", details, dest_bucket, dest_key, multipart_upload_id, multipart_tags.size());
                     continue; /// will retry
@@ -278,7 +249,6 @@ namespace
             abort_request.SetKey(dest_key);
             abort_request.SetUploadId(multipart_upload_id);
 
-            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             auto outcome = client_ptr->AbortMultipartUpload(abort_request);
             auto elapsed = watch.elapsedMicroseconds();
@@ -311,7 +281,6 @@ namespace
             try
             {
                 multipart_tags.resize(num_parts);
-                multipart_checksums.resize(num_parts);
                 for (size_t part_number = 1; position < end_position; ++part_number)
                 {
                     if (has_failed)
@@ -325,12 +294,11 @@ namespace
                     chassert(part_size);
 
                     auto & part_tag = multipart_tags[part_number - 1];
-                    auto & part_checksum = multipart_checksums[part_number - 1];
 
-                    task_tracker.add([this, part_number, position, part_size, &part_tag, &part_checksum]()
+                    task_tracker.add([this, part_number, position, part_size, &part_tag]()
                     {
                         UploadPartTask task = {part_number, position, part_size};
-                        this->processUploadTask(task, part_tag, part_checksum);
+                        this->processUploadTask(task, part_tag);
                     });
 
                     position = next_position;
@@ -412,26 +380,7 @@ namespace
             normal_part_size = part_size;
         }
 
-        String prepareChecksums(Aws::AmazonWebServiceRequest & request) const
-        {
-            if (!usesFlexibleUploadChecksumHeader())
-                return {};
-
-            auto & upload_part_request = typeid_cast<S3::UploadPartRequest &>(request);
-
-            upload_part_request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
-
-            auto checksum = S3::RequestChecksum::calculateFlexibleChecksum(upload_part_request, *upload_checksum_algorithm);
-            S3::RequestChecksum::setChecksum(upload_part_request, *upload_checksum_algorithm, checksum);
-            return checksum;
-        }
-
-        bool usesFlexibleUploadChecksumHeader() const
-        {
-            return upload_checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*upload_checksum_algorithm);
-        }
-
-        void processUploadTask(UploadPartTask & task, String & part_tag, String & part_checksum)
+        void processUploadTask(UploadPartTask & task, String & part_tag)
         {
             if (has_failed)
                 return;
@@ -441,21 +390,17 @@ namespace
                 Stopwatch watch;
 
                 auto request = makeUploadPartRequest(task.part_number, task.part_offset, task.part_size);
-                auto checksum = prepareChecksums(*request);
-                auto tag = processUploadPartRequest(*request, task.part_size);
+                auto tag = processUploadPartRequest(*request);
 
                 watch.stop();
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, task.part_size);
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
-                part_tag = std::move(tag);
-                /// Empty unless a flexible checksum was requested; `prepareChecksums` guarantees a
-                /// non-empty value in that case (it throws otherwise), so there is nothing to re-check here.
-                part_checksum = std::move(checksum);
+                part_tag = tag;
                 auto finished_count = ++num_finished_parts;
 
                 LOG_TRACE(log, "Finished writing part #{}. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Finished parts: {} of {}",
-                        task.part_number, dest_bucket, dest_key, multipart_upload_id, part_tag, finished_count, num_parts);
+                        task.part_number, dest_bucket, dest_key, multipart_upload_id, tag, finished_count, num_parts);
             }
             catch (Exception & e)
             {
@@ -469,7 +414,7 @@ namespace
 
         /// These functions can be called from multiple threads, so derived class needs to take care about synchronization.
         virtual std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) const = 0;
-        virtual String processUploadPartRequest(Aws::AmazonWebServiceRequest & request, size_t part_size) = 0;
+        virtual String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) = 0;
     };
 
     /// Helper class to help implementing copyDataToS3File().
@@ -487,16 +432,7 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_)
-            : UploadHelper(
-                client_ptr_,
-                dest_bucket_,
-                dest_key_,
-                request_settings_,
-                object_metadata_,
-                schedule_,
-                blob_storage_log_,
-                getLogger("copyDataToS3File"),
-                /* use_upload_checksum_algorithm =*/ true)
+            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, blob_storage_log_, getLogger("copyDataToS3File"))
             , create_read_buffer(create_read_buffer_)
             , offset(offset_)
             , size(size_)
@@ -547,16 +483,13 @@ namespace
             if (!storage_class_name.value.empty())
                 request.SetStorageClass(S3::getStorageClassForName(storage_class_name));
 
-            if (usesFlexibleUploadChecksumHeader())
-                request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
-
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
 
             client_ptr->setKMSHeaders(request);
         }
 
-        /// Returns true if the single-part upload of a non-empty object failed with EntityTooLarge / InvalidRequest and the
+        /// Returns true if the single-part upload failed with EntityTooLarge / InvalidRequest and the
         /// caller should fall back to a multipart upload. The fallback is done by the caller (not here)
         /// so the PutObject request and its in-memory body can be released first.
         bool processPutRequest(S3::PutObjectRequest & request)
@@ -568,7 +501,6 @@ namespace
                 if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
 
-                HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
                 Stopwatch watch;
                 auto outcome = client_ptr->PutObject(request);
                 auto elapsed = watch.elapsedMicroseconds();
@@ -593,8 +525,7 @@ namespace
                     return false;
                 }
 
-                if (size && (outcome.GetError().GetExceptionName() == "EntityTooLarge" ||
-                             outcome.GetError().GetExceptionName() == "InvalidRequest"))
+                if (outcome.GetError().GetExceptionName() == "EntityTooLarge" || outcome.GetError().GetExceptionName() == "InvalidRequest")
                 {
                     // Can't come here with MinIO, MinIO allows single part upload for large objects.
                     LOG_INFO(
@@ -648,7 +579,7 @@ namespace
             return request;
         }
 
-        String processUploadPartRequest(Aws::AmazonWebServiceRequest & request, size_t part_size) override
+        String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) override
         {
             auto & req = typeid_cast<S3::UploadPartRequest &>(request);
 
@@ -656,14 +587,13 @@ namespace
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPart);
 
-            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             auto outcome = client_ptr->UploadPart(req);
             auto elapsed = watch.elapsedMicroseconds();
 
             if (blob_storage_log)
                 blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadWrite,
-                                           dest_bucket, dest_key, /* local_path_ */ {}, part_size, elapsed,
+                                           dest_bucket, dest_key, /* local_path_ */ {}, size, elapsed,
                                            outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
                                            outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
 
@@ -705,18 +635,13 @@ namespace
                 object_metadata_,
                 schedule_,
                 blob_storage_log_,
-                getLogger("copyS3File"),
-                /* use_upload_checksum_algorithm =*/ false)
+                getLogger("copyS3File"))
             , src_bucket(src_bucket_)
             , src_key(src_key_)
             , offset(src_offset_)
             , size(src_size_)
             , src_object_size(src_object_size_)
-            /// Native multipart copy is disabled for `S3Express` buckets: there `Client::doRequest` forces
-            /// `CreateMultipartUpload` to use a flexible checksum, but the copy path does not propagate the per-part
-            /// checksums returned by `UploadPartCopy` into `CompleteMultipartUpload`, which then fails. Large objects
-            /// fall back to read-and-reupload via `fallback_method`, which checksums each part correctly.
-            , supports_multipart_copy(client_ptr_->supportsMultiPartCopy() && !client_ptr_->isS3ExpressBucket())
+            , supports_multipart_copy(client_ptr_->supportsMultiPartCopy())
             , is_ranged_copy(is_ranged_copy_)
             , read_settings(read_settings_)
             , fallback_method(std::move(fallback_method_))
@@ -736,16 +661,6 @@ namespace
             bool source_allows_range_copy = src_object_size > MIN_SOURCE_SIZE_FOR_RANGE_COPY;
             if (is_ranged_copy && (!multipart_copy_available || !source_allows_range_copy))
             {
-                LOG_TRACE(
-                    log,
-                    "Not copying the range of {} natively, falling back to a buffered ranged read: {}",
-                    src_key,
-                    !multipart_copy_available
-                        ? String("multipart copy is unavailable")
-                        : fmt::format(
-                              "the source is {} bytes, not above the {} bytes S3 requires of a ranged copy source",
-                              src_object_size,
-                              MIN_SOURCE_SIZE_FOR_RANGE_COPY));
                 fallback_method();
                 return;
             }
@@ -814,16 +729,7 @@ namespace
                 if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3CopyObject);
 
-                HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
-                Stopwatch watch;
                 auto outcome = client_ptr->CopyObject(request);
-                auto elapsed = watch.elapsedMicroseconds();
-
-                if (blob_storage_log)
-                    blob_storage_log->addCopyEvent(src_bucket, src_key, dest_bucket, dest_key, size, elapsed,
-                                                   outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
-                                                   outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
-
                 if (outcome.IsSuccess())
                 {
                     LOG_TRACE(
@@ -841,9 +747,7 @@ namespace
                     outcome.GetError().GetExceptionName() == "AccessDenied" ||
                     S3::Client::RetryStrategy::useGCSRewrite(outcome.GetError()))
                 {
-                    /// The multipart retry sends byte-range `UploadPartCopy` requests (see MIN_SOURCE_SIZE_FOR_RANGE_COPY).
-                    if (!supports_multipart_copy || !request_settings[S3RequestSetting::allow_multipart_copy]
-                        || src_object_size <= MIN_SOURCE_SIZE_FOR_RANGE_COPY || outcome.GetError().GetExceptionName() == "AccessDenied")
+                    if (!supports_multipart_copy || outcome.GetError().GetExceptionName() == "AccessDenied")
                     {
                         LOG_INFO(
                             log,
@@ -924,7 +828,7 @@ namespace
             return request;
         }
 
-        String processUploadPartRequest(Aws::AmazonWebServiceRequest & request, size_t part_size) override
+        String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) override
         {
             auto & req = typeid_cast<S3::UploadPartCopyRequest &>(request);
 
@@ -932,16 +836,7 @@ namespace
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPartCopy);
 
-            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
-            Stopwatch watch;
             auto outcome = client_ptr->UploadPartCopy(req);
-            auto elapsed = watch.elapsedMicroseconds();
-
-            if (blob_storage_log)
-                blob_storage_log->addCopyEvent(src_bucket, src_key, dest_bucket, dest_key, part_size, elapsed,
-                                               outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
-                                               outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
-
             if (!outcome.IsSuccess())
             {
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());

@@ -37,6 +37,9 @@
           "$ref": "./products/managed-postgres/navigation.json"
         },
         {
+          "$ref": "./clickstack/navigation.json"
+        },
+        {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
           "item": "Langfuse"
@@ -47,7 +50,7 @@
           "item": "مفتوح المصدر"
         },
         {
-          "$ref": "./clickstack/navigation.json"
+          "$ref": "./products/agentic-data-stack/navigation.json"
         },
         {
           "$ref": "./chdb/navigation.json"
@@ -61,7 +64,7 @@
     {
       "menu": [
         {
-          "item": "المنظومة",
+          "item": "النظام المتكامل",
           "pages": [
             "ar/integrations/home",
             "ar/integrations/data-catalogs"
@@ -77,7 +80,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "التكاملات"
+      "tab": "عمليات التكامل"
     },
     {
       "menu": [

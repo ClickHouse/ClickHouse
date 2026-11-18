@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Formats/FormatSettings.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/FieldVisitorToString.h>
 #include <AggregateFunctions/FactoryHelpers.h>
@@ -38,6 +37,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -282,8 +282,9 @@ struct AggregateFunctionMergedJSONPatchData
         size_t size = 0;
         readVarUInt(size, buf);
 
+        /// Do not reserve `size` entries upfront: it comes from untrusted data and can be arbitrarily large.
+        /// A state with a wrong size fails on reading after the end of the buffer instead.
         VectorWithMemoryTracking<Entry> batch;
-        batch.reserve(size);
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -291,6 +292,13 @@ struct AggregateFunctionMergedJSONPatchData
             readStringBinary(lv.path, buf);
             readStringBinary(lv.value_blob, buf);
             lv.sort_key.deserialize(buf);
+
+            /// `serialize` writes `entries`, which are sorted by path and have no duplicate paths.
+            /// A duplicate path would be inserted into the result twice for a single row of JSON.
+            if (i > 0 && batch[i - 1].path >= lv.path)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Paths in a serialized state of aggregate function mergedJSONPatch are not sorted or have duplicates (at path '{}')",
+                    lv.path);
         }
 
         insertBatchAtomic(batch);
@@ -605,8 +613,8 @@ SELECT mergedJSONPatch(json, sort_key) FROM
             )",
             R"(
 ┌─mergedJSONPatch(json, sort_key)─┐
-│ {"a":3,"b":2,"c":4}             │
-└─────────────────────────────────┘
+│ {"a":3,"b":2,"c":4}              │
+└──────────────────────────────────┘
             )"
         }
     };

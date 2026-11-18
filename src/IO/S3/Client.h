@@ -98,6 +98,8 @@ bool isS3ExpressEndpoint(const std::string & endpoint);
 struct ClientSettings
 {
     bool use_virtual_addressing = false;
+    /// Disable checksum to avoid extra read of the input stream
+    bool disable_checksum = false;
     /// Should client send ComposeObject request after upload to GCS.
     ///
     /// Previously ComposeObject request was required to make Copy possible,
@@ -211,7 +213,6 @@ public:
     Model::AbortMultipartUploadOutcome AbortMultipartUpload(AbortMultipartUploadRequest & request) const;
     Model::CreateMultipartUploadOutcome CreateMultipartUpload(CreateMultipartUploadRequest & request) const;
     Model::CompleteMultipartUploadOutcome CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const;
-
     Model::UploadPartOutcome UploadPart(UploadPartRequest & request) const;
     Model::UploadPartCopyOutcome UploadPartCopy(UploadPartCopyRequest & request) const;
 
@@ -239,8 +240,6 @@ public:
     }
 
     ProviderType getProviderType() const { return provider_type; }
-
-    bool isClientForGCS() const { return provider_type == ProviderType::GCS; }
 
     std::string getGCSOAuthToken() const;
 
@@ -304,18 +303,6 @@ private:
 
     Model::HeadObjectOutcome headObjectInternal(HeadObjectRequest & request) const;
 
-    /// GCS ignores `If-None-Match` on PUT, and an AWS4-signed request cannot also carry
-    /// `x-goog-if-generation-match` (GCS rejects the mix). So an HMAC create-if-absent is
-    /// signed with GOOG4 instead, with generation 0, which succeeds only when the object does not exist.
-    bool isGCSCreateIfAbsentWithHMAC(const Model::PutObjectRequest & request) const;
-    Model::PutObjectOutcome putObjectWithGOOG4Signature(const Model::PutObjectRequest & request) const;
-
-    /// True only if the object at `key` carries `idempotency_id`, i.e. whoever set it wrote the object.
-    /// One HeadObject. Logs a failed proof, at warning level if asked.
-    bool isObjectWrittenWithIdempotencyId(
-        const Aws::String & bucket, const Aws::String & key, const Aws::String & idempotency_id,
-        bool warn_if_unproven) const;
-
     std::optional<S3::URI> getURIForBucket(const std::string & bucket) const;
 
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
@@ -375,7 +362,7 @@ public:
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,
         ServerSideEncryptionKMSConfig sse_kms_config,
-        NormalizedHTTPHeaderEntries headers,
+        HTTPHeaderEntries headers,
         CredentialsConfiguration credentials_configuration,
         const String & session_token = "",
         const std::shared_ptr<ClientCache> & shared_cache = nullptr);
@@ -392,20 +379,6 @@ public:
         std::optional<std::string> opt_disk_name,
         const HTTPRequestThrottler & request_throttler,
         const String & protocol = "https");
-
-    /// The configuration keeps a reference to the filter, so the filter must not be a temporary.
-    PocoHTTPClientConfiguration createClientConfiguration(
-        const String & force_region,
-        const RemoteHostFilter && remote_host_filter,
-        unsigned int s3_max_redirects,
-        const PocoHTTPClientConfiguration::RetryStrategy & retry_strategy,
-        bool s3_slow_all_threads_after_network_error,
-        bool s3_slow_all_threads_after_retryable_error,
-        bool enable_s3_requests_logging,
-        bool for_disk_s3,
-        std::optional<std::string> opt_disk_name,
-        const HTTPRequestThrottler & request_throttler,
-        const String & protocol = "https") = delete;
 
 private:
     ClientFactory();

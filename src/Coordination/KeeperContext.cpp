@@ -19,7 +19,6 @@
 #include <Disks/DiskSelector.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
-#include <Common/saturatedWaitDuration.h>
 #include <base/getMemoryAmount.h>
 
 #include <boost/algorithm/string.hpp>
@@ -40,7 +39,6 @@ namespace CoordinationSetting
     extern const CoordinationSettingsBool use_lsmt_storage;
     extern const CoordinationSettingsBool storage_memory_only;
     extern const CoordinationSettingsUInt64 write_snapshot_version;
-    extern const CoordinationSettingsUInt64 write_log_entry_version;
     extern const CoordinationSettingsMilliseconds ttl_gc_period_ms;
     extern const CoordinationSettingsMilliseconds container_gc_period_ms;
 }
@@ -83,7 +81,6 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
         KeeperFeatureFlag::PERSISTENT_WATCHES,
         KeeperFeatureFlag::TRY_REMOVE,
         KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA,
-        KeeperFeatureFlag::LIST_WITH_OPTIONS,
         KeeperFeatureFlag::MAX_REQUEST_SIZE,
     };
 
@@ -110,19 +107,7 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
     updateKeeperMemorySoftLimit(config);
 
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
-    server_id = config.getInt("keeper_server.server_id", -1);
     digest_enabled_on_commit = config.getBool("keeper_server.digest_enabled_on_commit", false);
-    remove_orphaned_nodes_on_startup = config.getBool("keeper_server.remove_orphaned_nodes_on_startup", false);
-
-    /// Orphaned-nodes cleanup is implemented only by the in-memory nodes storage
-    /// (`KeeperMemNodesStorage`). Refuse the combination instead of silently accepting a recovery
-    /// setting that would never run.
-    if (remove_orphaned_nodes_on_startup && getCoordinationSettings()[CoordinationSetting::use_lsmt_storage])
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "'keeper_server.remove_orphaned_nodes_on_startup' is not supported with 'use_lsmt_storage'. "
-            "Set 'keeper_server.coordination_settings.use_lsmt_storage' to false to run the orphaned-nodes recovery, "
-            "then re-enable it after a successful startup");
 
     initializeFeatureFlags(config);
     initializeDisks(config);
@@ -305,16 +290,6 @@ bool KeeperContext::digestEnabled() const
 bool KeeperContext::digestEnabledOnCommit() const
 {
     return digest_enabled_on_commit;
-}
-
-bool KeeperContext::removeOrphanedNodesOnStartup() const
-{
-    return remove_orphaned_nodes_on_startup;
-}
-
-void KeeperContext::setRemoveOrphanedNodesOnStartup(bool remove_orphaned_nodes_on_startup_)
-{
-    remove_orphaned_nodes_on_startup = remove_orphaned_nodes_on_startup_;
 }
 
 void KeeperContext::setDigestEnabled(bool digest_enabled_)
@@ -602,7 +577,6 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
     }
 
     validateWriteSnapshotVersion(getCoordinationSettings());
-    validateWriteLogEntryVersion(getCoordinationSettings());
 
     if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL))
     {
@@ -649,16 +623,6 @@ void KeeperContext::validateWriteSnapshotVersion(const CoordinationSettings & se
             static_cast<int>(SnapshotVersion::V9), write_version);
 }
 
-void KeeperContext::validateWriteLogEntryVersion(const CoordinationSettings & settings) const
-{
-    const uint64_t write_version = settings[CoordinationSetting::write_log_entry_version];
-
-    if (write_version > MAX_SUPPORTED_LOG_ENTRY_VERSION)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Unsupported write log entry version {} (must be between 0 and {})",
-            write_version, MAX_SUPPORTED_LOG_ENTRY_VERSION);
-}
-
 static UInt64 calculateMemorySoftLimit(const Poco::Util::AbstractConfiguration & config)
 {
     if (config.hasProperty("keeper_server.max_memory_usage_soft_limit"))
@@ -694,7 +658,6 @@ void KeeperContext::updateSettings(CoordinationSettingsPtr new_settings)
     /// The exception propagates to the config reloader, which logs it and keeps the
     /// previously applied settings.
     validateWriteSnapshotVersion(*merged);
-    validateWriteLogEntryVersion(*merged);
 
     std::lock_guard lock(settings_mutex);
     merged->version = next_coordination_settings_version++;
@@ -734,13 +697,10 @@ bool KeeperContext::localLogsPreprocessed() const
     return local_logs_preprocessed;
 }
 
-bool KeeperContext::waitLocalLogsPreprocessedOrShutdown(uint64_t wait_timeout_ms)
+void KeeperContext::waitLocalLogsPreprocessedOrShutdown()
 {
     std::unique_lock lock(local_logs_preprocessed_cv_mutex);
-    local_logs_preprocessed_cv.wait_for(
-        lock, saturatedWaitMilliseconds(wait_timeout_ms), [this] { return shutdown_called || local_logs_preprocessed; });
-    /// The wait also ends on shutdown, which is not the same thing as the logs being preprocessed.
-    return local_logs_preprocessed;
+    local_logs_preprocessed_cv.wait(lock, [this]{ return shutdown_called || local_logs_preprocessed; });
 }
 
 const CoordinationSettings & KeeperContext::getFixedCoordinationSettings() const
@@ -810,8 +770,6 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
             return feature_flags.isEnabled(KeeperFeatureFlag::REMOVE_RECURSIVE);
         case Coordination::OpNum::ListRecursive:
             return feature_flags.isEnabled(KeeperFeatureFlag::GET_CHILDREN_RECURSIVE);
-        case Coordination::OpNum::ListWithOptions:
-            return feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS);
         case Coordination::OpNum::CheckStat:
             return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT);
         case Coordination::OpNum::Create2:
@@ -875,7 +833,7 @@ bool KeeperContext::waitCommittedUpto(uint64_t log_idx, uint64_t wait_timeout_ms
     wait_commit_upto_idx = log_idx;
     bool success = last_committed_log_idx_cv.wait_for(
         lock,
-        saturatedWaitMilliseconds(wait_timeout_ms),
+        std::chrono::milliseconds(wait_timeout_ms),
         [&] { return shutdown_called || lastCommittedIndex() >= wait_commit_upto_idx; });
 
     wait_commit_upto_idx.reset();
