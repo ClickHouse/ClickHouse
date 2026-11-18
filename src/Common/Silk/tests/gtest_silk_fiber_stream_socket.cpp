@@ -352,7 +352,7 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
 }
 
 
-/// `waitForSendOrReceive` suspends the fiber until the socket is ready, and spends its timeout.
+/// `waitForSendOrReceive` on a fiber socket reports the ready directions, and spends its timeout.
 TYPED_TEST(SilkFiberSocketTest, WaitForSendOrReceive)
 {
     auto listener = this->policy.makeListener();
