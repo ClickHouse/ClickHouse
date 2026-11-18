@@ -127,7 +127,6 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool enable_identifier_resolve_cache;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsBool parallel_replicas_plan_based;
 }
 
 
@@ -542,7 +541,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePt
             /// a single expression node too, not only for a list: otherwise an alias defined and later
             /// referenced within a standalone expression (such as a column DEFAULT expression checked
             /// during `ALTER TABLE ... DROP COLUMN`) is not found and resolution fails with UNKNOWN_IDENTIFIER.
-            QueryExpressionsAliasVisitor visitor(scope.aliases);
+            QueryExpressionsAliasVisitor visitor(scope.aliases, scope.context);
             visitor.visit(node);
 
             if (node_type == QueryTreeNodeType::LIST)
@@ -554,7 +553,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePt
         }
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
-            QueryExpressionsAliasVisitor expressions_alias_visitor(scope.aliases);
+            QueryExpressionsAliasVisitor expressions_alias_visitor(scope.aliases, scope.context);
             resolveTableFunction(node, scope, expressions_alias_visitor, false /*nested_table_function*/);
             break;
         }
@@ -609,7 +608,7 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Tab
     /// above and is needed for a single expression node too, not only for a list: otherwise an alias
     /// defined and later referenced within a standalone constant expression (such as a user predicate
     /// passed to `mergeTreeAnalyzeIndexes`) is not found and resolution fails with UNKNOWN_IDENTIFIER.
-    QueryExpressionsAliasVisitor visitor(scope.aliases);
+    QueryExpressionsAliasVisitor visitor(scope.aliases, scope.context);
     visitor.visit(node);
 
     if (node_type == QueryTreeNodeType::LIST)
@@ -3865,7 +3864,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
             scope.scope_node->formatASTForErrorMessage());
 
     /// Initialize aliases in lambda scope
-    QueryExpressionsAliasVisitor visitor(scope.aliases);
+    QueryExpressionsAliasVisitor visitor(scope.aliases, scope.context);
     visitor.visit(lambda_to_resolve.getExpression());
 
     /** Bind lambda arguments to the provided argument nodes.
@@ -5523,7 +5522,7 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
             alias_column_resolve_scope.context = scope.context;
 
             /// Initialize aliases in alias column scope
-            QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope.aliases);
+            QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope.aliases, alias_column_resolve_scope.context);
             visitor.visit(alias_column_to_resolve->getExpression());
 
             resolveExpressionNode(alias_column_resolve_scope.scope_node,
@@ -5671,14 +5670,12 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     resolveExpressionNode(nodes[1], scope, /* allow_lambda_expression */false, /* allow_table_function */false);
                     if (auto * constant = nodes[1]->as<ConstantNode>())
                     {
-                        /// Serialize the constant value using datatype specific
-                        /// interfaces to match the deserialization in ReplaceQueryParametersVistor.
+                        /// Serialize the constant with its own data type, straight from its column, to match the
+                        /// deserialization in `ReplaceQueryParameterVisitor`. Same as `analyzeFunctionParamValues`
+                        /// does for the other entrypoints of a parameterized view (`DESCRIBE`, `EXPLAIN SYNTAX`).
                         WriteBufferFromOwnString buf;
-                        const auto & value = constant->getValue();
-                        auto real_type = constant->getResultType();
-                        auto temporary_column  = real_type->createColumn();
-                        temporary_column->insert(value);
-                        real_type->getDefaultSerialization()->serializeTextEscaped(*temporary_column, 0, buf, {});
+                        constant->getResultType()->getDefaultSerialization()->serializeTextEscaped(
+                            constant->getColumn()->getDataColumn(), 0, buf, {});
                         view_params[identifier_node->getIdentifier().getFullName()] = buf.str();
                     }
                 }
@@ -6650,7 +6647,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             }
 
             auto & projection_node = left_subquery->getProjection().getNodes().front();
-            QueryExpressionsAliasVisitor alias_visitor(left_subquery_scope.aliases);
+            QueryExpressionsAliasVisitor alias_visitor(left_subquery_scope.aliases, left_subquery_scope.context);
             alias_visitor.visit(projection_node);
             resolveExpressionNode(projection_node, left_subquery_scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -6937,16 +6934,9 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     if (view->isSealed(*storage_snapshot->metadata, scope.context))
         return;
 
-    /// A query that ships an inlined body to parallel replicas would have it run as another user. Only plan-based
-    /// parallel replicas ship the resolved plan; the offset and custom key modes ship the query text, as task-based ones do otherwise.
+    /// An inlined `DEFINER` / `NONE` body could be shipped to parallel replicas, and its own query context would have no owner.
     const auto & view_metadata = *storage_snapshot->metadata;
-    auto can_ship = [](const ContextPtr & c)
-    {
-        return (c->canUseParallelReplicasOnInitiator() && !c->getSettingsRef()[Setting::parallel_replicas_plan_based])
-            || c->canUseParallelReplicasCustomKey() || c->canUseOffsetParallelReplicas();
-    };
-    if ((view_metadata.sql_security_type == SQLSecurityType::DEFINER || view_metadata.sql_security_type == SQLSecurityType::NONE)
-        && (can_ship(scope.context) || (scope.context->hasQueryContext() && can_ship(scope.context->getQueryContext()))))
+    if (view_metadata.sql_security_type == SQLSecurityType::DEFINER || view_metadata.sql_security_type == SQLSecurityType::NONE)
         return;
 
     auto storage_id = storage->getStorageID();
@@ -7629,7 +7619,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             projection_alias_names.insert(projection_node->getAlias());
 
     /// Initialize aliases in query node scope
-    QueryExpressionsAliasVisitor visitor(scope.aliases);
+    QueryExpressionsAliasVisitor visitor(scope.aliases, scope.context);
 
     if (scope.context->getSettingsRef()[Setting::enable_scopes_for_with_statement])
     {
@@ -7637,7 +7627,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
     else
     {
-        QueryExpressionsAliasVisitor alias_collector(scope.global_with_aliases);
+        QueryExpressionsAliasVisitor alias_collector(scope.global_with_aliases, scope.context);
         alias_collector.visit(query_node_typed.getWithNode());
 
         scope.aliases = scope.global_with_aliases;

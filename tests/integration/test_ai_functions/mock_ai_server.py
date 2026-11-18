@@ -37,6 +37,8 @@ Endpoints:
       structured output: for an `aiFilter` boolean-filter system prompt, returns plain `true` or
       `false`, or an unrecognized reply (`"gibberish"`) when the user message asks for it;
       otherwise echoes the user message as plain text.
+  POST /v1/chat/completions_leading_whitespace — like `/v1/chat/completions`, but the structured
+      reply starts with a newline, as some models return it.
   POST /v1/embeddings                — returns one deterministic embedding per input.
       Honors `dimensions` if provided, otherwise returns DEFAULT_EMBED_DIM floats.
       `prompt_tokens` = sum of input character lengths.
@@ -409,6 +411,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 content = filter_match_response(user_msg)
             else:
                 content = user_msg
+            self._send_json(200, make_success_response(content))
+            return
+
+        if parsed.path == "/v1/chat/completions_leading_whitespace":
+            user_msg = extract_user_message(body)
+            json_schema = extract_response_format(body)
+            content = "\n" + build_structured_response(json_schema, user_msg)
             self._send_json(200, make_success_response(content))
             return
 
