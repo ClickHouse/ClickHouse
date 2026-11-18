@@ -40,9 +40,14 @@ corrosion_set_env_vars(delta_kernel_ffi
 
 # aws-lc-sys's memcmp_check links a small test binary via cc; clang adds
 # -lgcc_s / -lgcc_eh by default but the bundled Linux sysroot ships only
-# libgcc.a.
+# libgcc.a. That libgcc.a is from GCC 8 and lacks the outline atomics helpers
+# (`__aarch64_swp1_acq` and others) which the sanitizer runtimes need on
+# AArch64, so the compiler-rt builtins are linked after it.
 if (OS_LINUX)
-    corrosion_set_env_vars(delta_kernel_ffi "LDFLAGS=-nodefaultlibs -lc -lgcc")
+    # `BUILTINS_LIBRARY` may also list the sanitizer runtimes; only the builtins are needed here
+    separate_arguments(DELTA_KERNEL_BUILTINS_LIBRARY UNIX_COMMAND "${BUILTINS_LIBRARY}")
+    list(GET DELTA_KERNEL_BUILTINS_LIBRARY 0 DELTA_KERNEL_BUILTINS_LIBRARY)
+    corrosion_set_env_vars(delta_kernel_ffi "LDFLAGS=-nodefaultlibs -lc -lgcc ${DELTA_KERNEL_BUILTINS_LIBRARY}")
 endif()
 
 target_include_directories(delta_kernel_ffi INTERFACE "${DELTA_KERNEL_TARGET_PATH}/")
