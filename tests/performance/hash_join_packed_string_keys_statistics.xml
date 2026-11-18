@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- The Iceberg configuration creates Iceberg tables, which have no `basic` statistics, so it would not run the rule under test. -->
     <settings>
         <join_algorithm>parallel_hash</join_algorithm>
         <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>

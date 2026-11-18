@@ -90,8 +90,7 @@ SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l LEFT AN
 FORMAT Null SETTINGS min_rows_for_packed_string_keys_in_hash_join = 100000000, log_comment = '05814:long_big_stats:left_anti:min_rows_large';
 SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l LEFT ANTI JOIN long_big_stats AS r ON l.k = r.k
 FORMAT Null SETTINGS min_rows_for_packed_string_keys_in_hash_join = 0, log_comment = '05814:long_big_stats:left_anti:min_rows_0';
--- The runtime filter of a `Nullable(String)` key is a set that is dropped above `join_runtime_filter_exact_values_limit` keys, and
--- then it passes every row. It does not count either.
+-- A `Nullable(String)` key is packed like a `String` key.
 SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l INNER JOIN long_big_nullable_stats AS r ON l.k = r.k
 FORMAT Null SETTINGS min_rows_for_packed_string_keys_in_hash_join = 100000000, log_comment = '05814:long_big_nullable_stats:inner:min_rows_large';
 SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l INNER JOIN long_big_nullable_stats AS r ON l.k = r.k

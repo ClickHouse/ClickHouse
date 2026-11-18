@@ -20,7 +20,6 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
-#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
@@ -694,12 +693,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// Remove algorithms that are not compatible with runtime filters
     std::erase_if(join_algorithms, [&](auto join_algorithm) { return !supports_runtime_filter(join_algorithm); });
 
-    /// The packed long keys are hashed for every row that reaches the join, so only a filter that passes mostly the rows
-    /// which match saves that. A `LEFT ANTI` filter passes the misses. A key type without a bloom filter gets a set that is
-    /// dropped above `join_runtime_filter_exact_values_limit` keys, and then passes every row.
-    const bool keeps_matching_rows = !check_left_does_not_contain
-        && std::ranges::all_of(common_types, [](const DataTypePtr & type) { return AdaptiveSetRuntimeFilter::isDataTypeSupported(type); });
-    if (keeps_matching_rows)
+    /// A packed long key is hashed for every row that reaches the join, so only a filter that passes mostly the rows
+    /// which match saves that. A `LEFT ANTI` filter passes the misses.
+    if (!check_left_does_not_contain)
         join_step->setRuntimeFilterKeepsMatchingRows();
     return true;
 }

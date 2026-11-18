@@ -299,7 +299,8 @@ protected:
     /// does: the comparison behind it reads a row estimate, which no copy taken over the wire has.
     bool runtime_filter_declined_small_probe = false;
 
-    /// The runtime filter pass of this host added a filter that passes mostly the rows which match. Not serialized: a host adds its own.
+    /// The runtime filter pass of this host added a filter that passes mostly the rows which match.
+    /// Not serialized: a host adds its own.
     bool runtime_filter_keeps_matching_rows = false;
 
     /// The sender estimated the right side below `min_rows_for_packed_string_keys_in_hash_join`. Set only on a step taken
