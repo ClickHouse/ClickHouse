@@ -245,28 +245,45 @@ DataTypePtr rawByteTargetType(const DataTypePtr & hint)
     return nullptr;
 }
 
-}
-
-String DictionaryRegistry::positionKey(const FieldPosition & position)
+String hintName(const DataTypePtr & hint)
 {
-    return fmt::format("{}/{}/{}", position.list_depth, position.below_union, position.path);
+    return hint ? hint->getName() : String{};
 }
 
-void DictionaryRegistry::set(Int64 id, const FieldPosition & position, Values values, bool is_delta)
+}
+
+bool DictionaryUse::operator==(const DictionaryUse & other) const
+{
+    return position == other.position && hintName(hint) == hintName(other.hint);
+}
+
+String DictionaryRegistry::useKey(const DictionaryUse & use)
+{
+    /// A type name can contain any character, so its length delimits it from the path.
+    const String hint_name = hintName(use.hint);
+    return fmt::format(
+        "{}/{}/{}/{}/{}", use.position.list_depth, use.position.below_union, hint_name.size(), hint_name, use.position.path);
+}
+
+void DictionaryRegistry::set(Int64 id, const DictionaryUse & use, Values values, bool is_delta)
 {
     if (!is_delta)
     {
         Dictionary dictionary;
         dictionary.offsets.push_back(values.column->size());
         dictionary.segments.push_back(std::move(values));
-        dictionaries[id][positionKey(position)] = std::move(dictionary);
+        dictionaries[id][useKey(use)] = std::move(dictionary);
         return;
     }
 
     auto it = dictionaries.find(id);
     if (it == dictionaries.end())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC delta dictionary batch for unknown dictionary id {}", id);
-    Dictionary & dictionary = it->second.at(positionKey(position));
+    auto use_it = it->second.find(useKey(use));
+    if (use_it == it->second.end())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Arrow IPC dictionary {} has no base values decoded for the field at {}", id, use.position.path);
+    Dictionary & dictionary = use_it->second;
     const IColumn * base_column = dictionary.segments.front().column.get();
     const IColumn * delta_column = values.column.get();
     if (const auto * constant = typeid_cast<const ColumnConst *>(base_column))
@@ -316,12 +333,16 @@ void DictionaryRegistry::set(Int64 id, const FieldPosition & position, Values va
     }
 }
 
-const DictionaryRegistry::Dictionary & DictionaryRegistry::get(Int64 id, const FieldPosition & position) const
+const DictionaryRegistry::Dictionary & DictionaryRegistry::get(Int64 id, const DictionaryUse & use) const
 {
     auto it = dictionaries.find(id);
     if (it == dictionaries.end())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch references unknown dictionary id {}", id);
-    return it->second.at(positionKey(position));
+    auto use_it = it->second.find(useKey(use));
+    if (use_it == it->second.end())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Arrow IPC dictionary {} has no values decoded for the field at {}", id, use.position.path);
+    return use_it->second;
 }
 
 MutableColumnPtr reinterpretStringLeaf(const ColumnString & str, const NullMap * null_map, const DataTypePtr & to_no_null)
@@ -1682,11 +1703,10 @@ ColumnPtr RecordBatchDecoder::buildSizeDeterminedColumn(
 
 ColumnPtr RecordBatchDecoder::decodeDictionary(
     const ArrowField & field, size_t rows, bool allow_low_cardinality, const InvisibleRowsMask * invisible_rows,
-    const String & path, size_t list_depth)
+    const DictionaryUse & use)
 {
     const Slice indices_slice = nextBuffer();
-    const DictionaryRegistry::Dictionary & dictionary
-        = registry.get(field.dictionary->id, FieldPosition{path, list_depth, decoding_below_union});
+    const DictionaryRegistry::Dictionary & dictionary = registry.get(field.dictionary->id, use);
     const size_t dictionary_size = dictionary.size();
 
     const int bits = field.dictionary->index_bit_width;
@@ -2042,7 +2062,7 @@ ColumnPtr RecordBatchDecoder::decodeField(
 
     /// Dictionary values come from separate batches; `effective_invisible` controls index visibility.
     if (field.dictionary)
-        return decodeDictionary(field, rows, allow_low_cardinality, effective_invisible, path, list_depth);
+        return decodeDictionary(field, rows, allow_low_cardinality, effective_invisible, dictionaryUse(target_hint, path, list_depth));
 
     ColumnPtr inner = decodeInner(field, rows, target_hint, path, list_depth, effective_invisible);
     if (wrapsInNullable(field, *inner, resolveTargetHint(target_hint, path, list_depth)))
@@ -2392,7 +2412,7 @@ DictionaryRegistry::Values RecordBatchDecoder::decodeDictionaryValues(
     if (!schema.little_endian)
         convertBuffersFromBigEndian(&value_field, 1);
     expectNextNodeLength(static_cast<size_t>(batch.length()), fmt::format("column '{}'", value_field.name));
-    /// The values decode as the field at `use.position` would decode them inline.
+    /// The values decode as a field with this use would decode them inline.
     decoding_below_union = use.position.below_union;
     SCOPE_EXIT({ decoding_below_union = false; });
     ColumnUInt8::Ptr null_map;
@@ -2476,7 +2496,7 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
     /// determines whether that type keeps its outer `Nullable` wrapper.
     if (effective_field.dictionary)
     {
-        const auto & dictionary = registry.get(effective_field.dictionary->id, FieldPosition{path, list_depth, decoding_below_union});
+        const auto & dictionary = registry.get(effective_field.dictionary->id, dictionaryUse(target_hint, path, list_depth));
         const DataTypePtr & value_type = dictionary.segments.front().type;
         decoded.type = effective_field.nullable ? value_type : removeNullable(value_type);
         if (decoded.type->canBeInsideLowCardinality())
@@ -2860,6 +2880,11 @@ DataTypePtr RecordBatchDecoder::resolveTargetHint(const DataTypePtr & parent_hin
     return resolveHint(parent_hint, path, list_depth, decoding_below_union ? nullptr : target_types);
 }
 
+DictionaryUse RecordBatchDecoder::dictionaryUse(const DataTypePtr & target_hint, const String & path, size_t list_depth) const
+{
+    return {FieldPosition{path, list_depth, decoding_below_union}, resolveTargetHint(target_hint, path, list_depth)};
+}
+
 UnorderedMapWithMemoryTracking<Int64, DictionaryUses> RecordBatchDecoder::collectDictionaryUses(
     const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_) const
@@ -2885,12 +2910,11 @@ void RecordBatchDecoder::collectDictionaryUses(
     const DataTypePtr effective_hint = resolveHint(target_hint, path, list_depth, below_union ? nullptr : lookup_types);
     if (field.dictionary)
     {
-        /// Two fields share a position only below unions, which drop the path; they resolve no hint there, so
-        /// one decoding serves both.
-        const FieldPosition position{path, list_depth, below_union};
+        /// Fields with equal uses decode the values the same way, so one decoding serves them all.
+        const DictionaryUse use{FieldPosition{path, list_depth, below_union}, effective_hint};
         DictionaryUses & id_uses = uses[field.dictionary->id];
-        if (std::ranges::none_of(id_uses, [&](const DictionaryUse & use) { return use.position == position; }))
-            id_uses.push_back(DictionaryUse{position, effective_hint});
+        if (std::ranges::find(id_uses, use) == id_uses.end())
+            id_uses.push_back(use);
     }
 
     const ArrowType & type = field.type;
