@@ -47,6 +47,7 @@
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Storages/SelectQueryInfo.h>
+#include <base/find_symbols.h>
 #include <base/scope_guard.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
@@ -110,18 +111,6 @@ static bool writesCompressedV2PagesAsUncompressed(std::string_view created_by)
     for (size_t i = 0; i < created_by.size() && isNumericASCII(created_by[i]) && major < 2; ++i)
         major = major * 10 + static_cast<UInt64>(created_by[i] - '0');
     return major < 2;
-}
-
-/// Thrift deserialization can store an out-of-range value into an unscoped enum field when the
-/// input file is malformed. Loading such an enum directly is undefined behavior (caught by
-/// -fsanitize=enum); reading the raw underlying integer via memcpy is well-defined. We use it to
-/// validate page-header enums up front, so the rest of the reader only ever loads valid values.
-template <typename E>
-static int thriftEnumToInt(const E & e)
-{
-    std::underlying_type_t<E> v;
-    memcpy(&v, &e, sizeof(v));
-    return static_cast<int>(v);
 }
 
 /// The smallest memory limit in effect for the current thread: of the query, of the user, or of the server.
@@ -3617,6 +3606,29 @@ size_t Reader::memoryEstimateLimit() const
     return std::min(watermark, MAX_ALLOCATION_SIZE / 4) + 1;
 }
 
+namespace
+{
+
+/// May read `verdicts[verdicts.size()]`, which is in the padding.
+void narrowFilterByVerdicts(IColumnFilter & filter, const IColumnFilter & verdicts)
+{
+    size_t verdict_idx = 0;
+    for (auto & row : filter)
+    {
+        const bool passed = row != 0;
+        row = passed ? verdicts.data()[verdict_idx] : 0;
+        verdict_idx += passed;
+    }
+    chassert(verdict_idx == verdicts.size(), fmt::format("{} verdicts for {} passing rows", verdicts.size(), verdict_idx));
+}
+
+}
+
+/// A gap of failing values up to this size is decoded and dropped rather than skipped.
+static constexpr size_t max_gap_bytes_to_coalesce = 128;
+/// Wider values cost more to copy again when dropping the gap than the skip saves.
+static constexpr size_t max_coalesced_value_bytes = 8;
+
 void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, RowGroup & row_group, RowSubgroup & row_subgroup)
 {
     /// Allocate columns for values, null map, and array offsets.
@@ -3691,6 +3703,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         column.data_pages.empty() &&
         !column.need_null_map;
     const size_t subgroup_end_row_idx = row_subgroup.start_row_idx + row_subgroup.filter.rows_total;
+    bool coalesced_runs = false;
 
     if (use_filter_in_decoder)
     {
@@ -3714,25 +3727,60 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     }
     else
     {
+        const IColumnFilter & mask = row_subgroup.filter.filter;
+        const char * mask_begin = reinterpret_cast<const char *>(mask.data());
+        const char * mask_end = mask_begin + mask.size();
+        auto find_next = [&](size_t row, bool passes)
+        {
+            const char * pos = mask_begin + row;
+            return size_t((passes ? find_first_not_symbols<'\0'>(pos, mask_end) : find_first_symbols<'\0'>(pos, mask_end)) - mask_begin);
+        };
+
+        /// Only values copied as is: converting a failing row could throw.
+        const auto & converter = column_info.decoder.fixed_size_converter;
+        const bool can_coalesce_runs = !mask.empty() && column_info.levels.back().rep == 0 && !column_info.group_nullable
+            && converter && converter->isTrivial() && converter->input_size <= max_coalesced_value_bytes;
+        IColumnFilter decoded_rows_filter;
+        size_t passing_rows_decoded = 0;
+
         size_t row_subidx = 0;
         while (true) // loop over row ranges that pass the filter
         {
             size_t num_rows = row_subgroup.filter.rows_total - row_subidx;
-            if (!row_subgroup.filter.filter.empty())
+            if (!mask.empty())
             {
-                while (row_subidx < row_subgroup.filter.rows_total && !row_subgroup.filter.filter[row_subidx])
-                    row_subidx += 1;
-                num_rows = 0;
-                while (row_subidx + num_rows < row_subgroup.filter.rows_total && row_subgroup.filter.filter[row_subidx + num_rows])
-                    num_rows += 1;
+                row_subidx = find_next(row_subidx, true);
+                num_rows = find_next(row_subidx, false) - row_subidx;
             }
             if (!num_rows)
                 break;
             size_t start_row_idx = row_subgroup.start_row_idx + row_subidx;
-            size_t end_row_idx = start_row_idx + num_rows;
-            row_subidx += num_rows;
 
             skipToRowOrNextPage(start_row_idx, column, column_info);
+
+            if (can_coalesce_runs)
+            {
+                const size_t page_end = std::min(row_subgroup.filter.rows_total,
+                    column.page.end_row_idx.value_or(subgroup_end_row_idx) - row_subgroup.start_row_idx);
+                size_t range_end = row_subidx + num_rows;
+                while (range_end < page_end)
+                {
+                    const size_t next_run = find_next(range_end, true);
+                    if (next_run >= page_end || (next_run - range_end) * converter->input_size > max_gap_bytes_to_coalesce)
+                        break;
+                    range_end = find_next(next_run, false);
+                    if (!coalesced_runs)
+                        decoded_rows_filter.resize_fill(passing_rows_decoded, 1);
+                    coalesced_runs = true;
+                }
+                if (coalesced_runs)
+                    decoded_rows_filter.insert(mask.begin() + row_subidx, mask.begin() + range_end);
+                else
+                    passing_rows_decoded += num_rows;
+                num_rows = range_end - row_subidx;
+            }
+            size_t end_row_idx = start_row_idx + num_rows;
+            row_subidx += num_rows;
 
             while (true) // loop over pages
             {
@@ -3754,7 +3802,20 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
                 chassert(page.value_idx == 0);
             }
         }
+
+        if (coalesced_runs)
+        {
+            if (subchunk.null_map)
+            {
+                const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
+                subchunk.column->expand(null_map, /*inverted*/ true);
+                subchunk.null_map = subchunk.null_map->filter(decoded_rows_filter, row_subgroup.filter.rows_pass)->assumeMutable();
+            }
+            subchunk.column = subchunk.column->filter(decoded_rows_filter, row_subgroup.filter.rows_pass)->assumeMutable();
+        }
     }
+
+    column.dictionary.flushStringValueFilterStats();
 
     for (const auto & offsets : subchunk.arrays_offsets)
     {
@@ -3779,7 +3840,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         subchunk.null_map = nullptr;
     }
 
-    if (subchunk.null_map)
+    if (subchunk.null_map && !coalesced_runs)
     {
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
         /// Fill defaults at null rows so the column reaches full size. For a group_nullable leaf,
@@ -3826,6 +3887,14 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     }
 
     chassert(subchunk.column->getDataType() == column_info.output_type->getColumnType());
+
+    if (column_info.levels_only_arrays)
+    {
+        /// Nothing takes the values, and the row subgroup keeps its columns until the end of the read.
+        subchunk.column.reset();
+        subchunk.null_map.reset();
+        subchunk.arrays_offsets.resize(column_info.levels_only_arrays);
+    }
 
     OutputColumnState & state = row_subgroup.output.at(column_info.idx_in_output_block);
     chassert(!state.column);
@@ -4244,7 +4313,7 @@ void Reader::createPageDecoder(PageState & page, ColumnChunk & column, const Pri
     if (page.is_dictionary_encoded)
         page.decoder = makeDictionaryIndicesDecoder(page.encoding, column.dictionary.count, page.data);
     else
-        page.decoder = column_info.decoder.makeDecoder(page.encoding, page.data, column_info.string_value_filter.get());
+        page.decoder = column_info.decoder.makeDecoder(page.encoding, page.data, page.num_values, column_info.string_value_filter.get());
 }
 
 /// Returns true if this row is found in this page, and value_idx is at the first value of this row.
@@ -4698,6 +4767,10 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         return res;
     }
 
+    if (output_info.report_as_missing && output_info.idx_in_output_block.has_value()
+        && *output_info.idx_in_output_block < row_subgroup.block_missing_values.getNumColumns())
+        row_subgroup.block_missing_values.setBits(*output_info.idx_in_output_block, num_rows);
+
     /// Physically-nullable struct read as Nullable(Tuple(...)). input_type is Nullable(Tuple), but
     /// we assemble the inner ColumnTuple from the leaves and then wrap it in ColumnNullable using
     /// the group null map. Every leaf shares the same def-level null map (the subtree is
@@ -4768,7 +4841,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         else
             res = ColumnTuple::create(std::move(columns));
     }
-    else if (kind == TypeIndex::Dynamic || kind == TypeIndex::Object)
+    else if (kind == TypeIndex::Dynamic || kind == TypeIndex::Object || kind == TypeIndex::Variant)
     {
         chassert(output_info.nested_columns.size() == 2);
         MutableColumnPtr metadata = formOutputColumn(row_subgroup, output_info.nested_columns[0], num_rows);
@@ -4776,7 +4849,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
 
         res = output_info.input_type->createColumn();
         res->reserve(num_rows);
-        decodeVariantColumn(*metadata, *value, *res, output_info.input_type, output_info.name, num_rows, options.format);
+        decodeVariantColumn(*metadata, *value, *res, output_info.input_type, output_info.name, num_rows, VariantSettings(options.format));
     }
     else
     {
@@ -4967,11 +5040,14 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
 
         /// Expand the filter to correspond to all column subchunk rows, rather than only rows that
         /// passed previous filters (previous prewhere steps).
-        auto mut_col = IColumn::mutate(std::move(filter_column));
-        auto & mut_filter = typeid_cast<ColumnUInt8 &>(*mut_col);
         if (row_subgroup.filter.rows_pass != row_subgroup.filter.rows_total)
-            mut_filter.expand(row_subgroup.filter.filter, /*inverted*/ false);
-        row_subgroup.filter.filter = std::move(mut_filter.getData());
+            narrowFilterByVerdicts(row_subgroup.filter.filter, filter);
+        else
+        {
+            auto mut_col = IColumn::mutate(std::move(filter_column));
+            auto & mut_filter = typeid_cast<ColumnUInt8 &>(*mut_col);
+            row_subgroup.filter.filter = std::move(mut_filter.getData());
+        }
         row_subgroup.filter.rows_pass = rows_pass;
     }
 }
@@ -4999,7 +5075,7 @@ void Reader::initColumnsCache()
         if (!output_idx.has_value())
             continue;
         const OutputColumnInfo & info = output_columns.at(*output_idx);
-        if (info.is_missing_column || info.primitive_start == info.primitive_end)
+        if (info.is_missing_column || info.report_as_missing || info.primitive_start == info.primitive_end)
             continue;
 
         SipHash hash;
@@ -5019,6 +5095,7 @@ void Reader::initColumnsCache()
             hash.update(primitive.output_type->getName());
             hash.update(primitive.output_nullable);
             hash.update(primitive.group_nullable);
+            hash.update(primitive.levels_only_arrays);
         }
         if (!decoded)
             continue;

@@ -7,15 +7,21 @@ description: 'Déployer ClickHouse sur votre propre infrastructure cloud'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <div id="key-concepts">
   ## Concepts clés
 </div>
 
 Le diagramme ci-dessous illustre les relations entre les organizations ClickHouse Cloud, les comptes cloud et l’infrastructure BYOC.
 
-<Image img="/images/cloud/reference/byoc-organization-hierarchy.svg" size="lg" alt="Hiérarchie des organizations BYOC" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Hiérarchie des organizations BYOC](/images/cloud/reference/byoc-organization-hierarchy.svg)
+
+</Frame>
+
+</div>
 
 * **Organization ClickHouse Cloud :** entité de premier niveau dans ClickHouse Cloud qui gère les utilisateurs, la facturation et les services ClickHouse non BYOC. Les utilisateurs d’une organization peuvent accéder à la fois aux services Cloud standard et aux services BYOC.
 * **Organization ClickHouse BYOC :** organization distincte dédiée à la gestion des déploiements BYOC. Elle partage les utilisateurs avec l’organization Cloud, mais est liée à un ou plusieurs comptes cloud dans lesquels l’infrastructure BYOC est déployée.
@@ -43,7 +49,15 @@ Dans votre **Customer BYOC VPC**, ClickHouse provisionne un cluster Kubernetes (
 
 <br />
 
-<Image img="/images/cloud/reference/byoc-architecture.svg" size="lg" alt="Architecture BYOC : le plan de contrôle ClickHouse, dans le ClickHouse VPC, gère un plan de données Kubernetes situé dans le compte cloud du client ; les données ClickHouse, les sauvegardes, les logs et les données de supervision restent dans le compte du client, et seul un ensemble restreint de données de télémétrie opérationnelle est exporté." />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Architecture BYOC : le plan de contrôle ClickHouse, dans le ClickHouse VPC, gère un plan de données Kubernetes situé dans le compte cloud du client ; les données ClickHouse, les sauvegardes, les logs et les données de supervision restent dans le compte du client, et seul un ensemble restreint de données de télémétrie opérationnelle est exporté.](/images/cloud/reference/byoc-architecture.svg)
+
+</Frame>
+
+</div>
 
 <br />
 

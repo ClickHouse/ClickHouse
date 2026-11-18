@@ -388,15 +388,22 @@
                 {
                     method: 'POST',
                     headers: { 'Authorization': 'never' },
-                    body: `SELECT encodeXMLComponent(demangle(addressToSymbol(${addr_int}::UInt64))) AS name,
-                                  encodeXMLComponent(addressToLine(${addr_int}::UInt64)) AS line`
+                    body: `SELECT demangle(addressToSymbol(${addr_int}::UInt64)) AS name,
+                                  addressToLine(${addr_int}::UInt64) AS line`
                 }).then(response => response.json().then(o => {
 
                     let name = o.rows ? o.data[0].name : 'nothing';
                     let line = o.rows ? o.data[0].line : '';
 
                     if (generation == connection_generation && addr_int == current_requested_addr) {
-                        popup.setContent(`<p><b>${addr_hex}</b></p><p>${name}</p><p>${line}</p>`);
+                        /// The response is untrusted (the server can be specified by the `host` parameter),
+                        /// so it is inserted as text, never as HTML.
+                        const content = document.createElement('div');
+                        const addr_elem = content.appendChild(document.createElement('p')).appendChild(document.createElement('b'));
+                        addr_elem.textContent = addr_hex;
+                        content.appendChild(document.createElement('p')).textContent = name;
+                        content.appendChild(document.createElement('p')).textContent = line;
+                        popup.setContent(content);
                     }
                 }));
 

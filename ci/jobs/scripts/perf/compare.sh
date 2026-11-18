@@ -809,6 +809,8 @@ create table query_run_metric_names engine File(TSV, 'analyze/query-run-metric-n
 # query. We also don't have lateral joins. So I just put all runs of each
 # query into a separate file, and then compute randomization distribution
 # for each file. I do this in parallel using GNU parallel.
+# A run with no query measured on both servers writes neither file in the loop.
+touch analyze/commands.txt analyze/query-metric-stats.tsv
 ( set +x # do not bloat the log
 IFS=$'\n'
 for prefix in $(cut -f1,2 "analyze/query-run-metrics-for-stats.tsv" | sort | uniq)
@@ -865,7 +867,8 @@ clickhouse-local --query "
 -- Because of this, we make a view with arrays first, and then apply all the
 -- array joins.
 create view query_metric_stat_arrays as
-    with (select * from file('analyze/query-run-metric-names.tsv',
+    -- any gives [] for an empty file, which a plain scalar subquery rejects.
+    with (select any(n) from file('analyze/query-run-metric-names.tsv',
         TSV, 'n Array(String)')) as metric_name
     select test, query_index, metric_name, left, right, diff, stat_threshold
     from file('analyze/query-metric-stats.tsv', TSV, 'left Array(float),
@@ -1481,6 +1484,7 @@ create view profile_counters as
     group by test, query_index
     ;
 
+-- Keep the columns in sync with read_slower_queries in ci/jobs/performance_tests.py.
 create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv')
     as with
         -- server_time is sometimes reported as zero (if it's less than 1 ms),
@@ -1555,7 +1559,7 @@ create view test_speedup as
 create view total_speedup as
     select
         'Total' test,
-        exp2(avg(log2(times_speedup))) times_speedup,
+        exp2(ifNotFinite(avg(log2(times_speedup)), 0)) times_speedup,
         sum(queries) queries,
         unstable + changed bad,
         sum(changed) changed,
