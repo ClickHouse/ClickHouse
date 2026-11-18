@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <climits>
 #include <memory>
+#include <utility>
 
 
 namespace Poco {
@@ -93,8 +94,7 @@ void NonBlockingFilterBIO::rethrowCaught()
 {
 	if (!caught)
 		return;
-	std::exception_ptr exception = caught;
-	caught = nullptr;
+	std::exception_ptr exception = std::exchange(caught, nullptr);
 	std::rethrow_exception(exception);
 }
 
