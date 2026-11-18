@@ -72,6 +72,7 @@ public:
     void consume(Chunk & chunk) override;
     void onFinish() override;
     void onException(std::exception_ptr exception) override;
+    void onPipelineFinished() override;
 
 private:
     void cancelBuffers() noexcept;
@@ -278,6 +279,14 @@ void SetOrJoinSink::onFinish()
     setCurrentQueryMemoryDriftExpected();
 
     insert_finished = true;
+}
+
+void SetOrJoinSink::onPipelineFinished()
+{
+    /// A `timeout_overflow_mode = 'break'` stop cancels the sink before `onFinish` but is a successful exit.
+    /// A pipeline is also cancelled after it has completed successfully, so do not publish twice.
+    if (isCancelled() && stage != Stage::Exception && !insert_finished)
+        onFinish();
 }
 
 

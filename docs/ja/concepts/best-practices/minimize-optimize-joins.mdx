@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 このページでは、可能な限り JOIN を避け、JOIN が必要な場合にはそのコストを抑えるための具体的な指針を示します。構文とセマンティクスについては、[`JOIN` 句リファレンス](/ja/reference/statements/select/join)を参照してください。実行アルゴリズムとその選択方法については、[テーブルの結合](/ja/concepts/features/operations/select/joining-tables)を参照してください。
 
 ## JOINはできるだけ避ける {#prefer-avoiding-joins}
@@ -54,7 +52,15 @@ ClickHouse は、速度とメモリのトレードオフが異なる複数の JO
 
 <br />
 
-<Image img="/images/guides/joins-4.webp" size="lg" alt="結合パフォーマンス最適化の決定木" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![結合パフォーマンス最適化の決定木](/images/guides/joins-4.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -78,7 +84,15 @@ Grace Hash Join は、メモリに制約されない 3 つの結合アルゴリ�
 
 <br />
 
-<Image img="/images/guides/joins-5.webp" size="lg" alt="結合のメモリ最適化に関する決定木" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![結合のメモリ最適化に関する決定木](/images/guides/joins-5.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
