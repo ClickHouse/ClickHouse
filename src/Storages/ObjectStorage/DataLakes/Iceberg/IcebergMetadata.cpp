@@ -871,7 +871,6 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
                 parent_snapshot_id = current_snapshot_id;
         }
 
-        /// Catalog-backed tables name metadata files `<N>-<uuid>.metadata.json`.
         FileNamesGenerator filename_generator(
             persistent_components.path_resolver.getTableLocation(),
             /* use_uuid_in_metadata */ catalog != nullptr,

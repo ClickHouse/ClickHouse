@@ -257,6 +257,19 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         summary->set(Iceberg::f_added_position_deletes, std::to_string(num_deleted_rows));
     }
 
+    if (removals.data_files != 0)
+    {
+        summary->set(Iceberg::f_deleted_data_files, std::to_string(removals.data_files));
+        summary->set(Iceberg::f_deleted_records, std::to_string(removals.records));
+        summary->set(Iceberg::f_removed_files_size, std::to_string(removals.files_size));
+    }
+    if (removals.position_delete_files != 0)
+    {
+        summary->set(Iceberg::f_removed_delete_files, std::to_string(removals.position_delete_files));
+        summary->set(Iceberg::f_removed_position_delete_files, std::to_string(removals.position_delete_files));
+        summary->set(Iceberg::f_removed_position_deletes, std::to_string(removals.position_deletes));
+    }
+
     if (operation == SnapshotOperation::Delete)
     {
         /// TRUNCATE drops every row the parent held, so report what was removed and reset all
@@ -277,19 +290,6 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     }
     else
     {
-        if (removals.data_files != 0)
-        {
-            summary->set(Iceberg::f_deleted_data_files, std::to_string(removals.data_files));
-            summary->set(Iceberg::f_deleted_records, std::to_string(removals.records));
-            summary->set(Iceberg::f_removed_files_size, std::to_string(removals.files_size));
-        }
-        if (removals.position_delete_files != 0)
-        {
-            summary->set(Iceberg::f_removed_delete_files, std::to_string(removals.position_delete_files));
-            summary->set(Iceberg::f_removed_position_delete_files, std::to_string(removals.position_delete_files));
-            summary->set(Iceberg::f_removed_position_deletes, std::to_string(removals.position_deletes));
-        }
-
         setSnapshotTotals(
             summary,
             parent_snapshot,
