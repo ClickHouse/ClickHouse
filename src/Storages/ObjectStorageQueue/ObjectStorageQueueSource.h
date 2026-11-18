@@ -137,6 +137,11 @@ public:
         /// next() stops returning keys, isFinished returns true.
         std::atomic_bool iterator_invalidated = false;
 
+        /// The iterator is also invalid once the lock owner of this server was considered
+        /// dead: cleanup releases all the locks which the iterator holds.
+        const size_t lock_owner_generation;
+        bool isInvalidated() const;
+
         bool is_path_with_hive_partitioning = false;
 
         /// Only for processing without buckets.

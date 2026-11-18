@@ -13,6 +13,16 @@ namespace ErrorCodes
 
 class ZooKeeperWithFaultInjection;
 
+/// The owner of a persistent lock (a bucket lock or a processing node),
+/// see `ObjectStorageQueueMetadata::getLockOwner`.
+struct ObjectStorageQueueLockOwner
+{
+    /// Empty if lock owners are not used.
+    std::string id;
+    /// Path of the owner node in keeper.
+    std::string path;
+};
+
 /// A base class to work with single file metadata in keeper.
 /// Metadata can have type Ordered or Unordered.
 class ObjectStorageQueueIFileMetadata
@@ -113,6 +123,7 @@ public:
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
+        const ObjectStorageQueueLockOwner & lock_owner_,
         const std::atomic<size_t> & processing_state_cache_ttl_seconds_,
         LoggerPtr log_);
 
@@ -250,6 +261,8 @@ protected:
     const size_t max_loading_retries;
     const std::atomic<size_t> & metadata_ref_count;
     const bool use_persistent_processing_nodes;
+    /// The owner of the processing node which this object creates.
+    const ObjectStorageQueueLockOwner lock_owner;
     const std::atomic<size_t> & processing_state_cache_ttl_seconds;
     const std::string processing_node_path;
     const std::string processed_node_path;
@@ -278,9 +291,20 @@ protected:
 
     bool checkProcessingOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
 
+    /// Add a request to remove the processing node. A node with a lock owner is removed
+    /// only together with a check that the owner still exists: cleanup releases the locks
+    /// of an owner which was considered dead, so such an owner must not touch them.
+    void addProcessingNodeRemovalRequest(Coordination::Requests & requests) const;
+    /// Whether the multi request failed because the lock owner was considered dead.
+    [[nodiscard]] bool isLockOwnerDead(
+        Coordination::Error code,
+        const Coordination::Requests & requests,
+        const Coordination::Responses & responses) const;
+    [[nodiscard]] bool isLockOwnerAlive(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client) const;
+
     static NodeMetadata createNodeMetadata(const std::string & path, const std::string & exception = {}, size_t retries = 0);
 
-    static std::string getProcessorInfo(const std::string & processor_id);
+    static std::string getProcessorInfo(const std::string & processor_id, const std::string & lock_owner_id = {});
 };
 
 }

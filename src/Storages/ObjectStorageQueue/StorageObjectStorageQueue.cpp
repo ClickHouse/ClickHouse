@@ -145,6 +145,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsBool commit_on_select;
     extern const ObjectStorageQueueSettingsBool deduplication_v2;
     extern const ObjectStorageQueueSettingsUInt32 persistent_processing_node_ttl_seconds;
+    extern const ObjectStorageQueueSettingsUInt32 lock_owner_timeout_seconds;
     extern const ObjectStorageQueueSettingsUInt32 processing_state_cache_ttl_seconds;
     extern const ObjectStorageQueueSettingsUInt32 after_processing_retries;
     extern const ObjectStorageQueueSettingsString after_processing_move_uri;
@@ -512,6 +513,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         /* use_persistent_processing_nodes */true,
         (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
+        (*queue_settings_)[ObjectStorageQueueSetting::lock_owner_timeout_seconds],
         (*queue_settings_)[ObjectStorageQueueSetting::processing_state_cache_ttl_seconds],
         getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes],
@@ -657,6 +659,19 @@ void StorageObjectStorageQueue::scheduleStreamingTasksImpl()
 {
     for (auto & task : streaming_tasks)
         task->schedule();
+}
+
+ActionLock StorageObjectStorageQueue::getActionLock(StorageActionBlockType action_type)
+{
+    auto lock = IStreamingStorage::getActionLock(action_type);
+
+    /// A table which does not consume releases its locks in `threadFunc`. The next poll can
+    /// be minutes away, so run the streaming tasks now. A task which is in the middle of
+    /// a cycle runs again right after it.
+    if (action_type == ActionLocks::StreamConsume && !shutdown_called)
+        scheduleStreamingTasksImpl();
+
+    return lock;
 }
 
 void StorageObjectStorageQueue::rebuildObjectStorageClient(ContextPtr rebuild_context)
@@ -889,6 +904,26 @@ size_t StorageObjectStorageQueue::getDependencies() const
     return DatabaseCatalog::instance().getReadyDependentViews(getStorageID(), getContext()).size();
 }
 
+void StorageObjectStorageQueue::releaseStreamingLocks()
+{
+    std::shared_ptr<FileIterator> file_iterator;
+    {
+        std::lock_guard streaming_lock(streaming_mutex);
+        file_iterator = std::move(streaming_file_iterator);
+        streaming_file_iterator.reset();
+    }
+
+    /// The destructor releases the locks. It works with keeper, so it is called without the mutex.
+    try
+    {
+        file_iterator.reset();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
+}
+
 void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 {
     chassert(streaming_tasks_index < streaming_tasks.size());
@@ -931,6 +966,8 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
             tryLogCurrentException(log);
         }
 
+        releaseStreamingLocks();
+
         std::lock_guard lock(mutex);
         reschedule_processing_interval_ms = paused_reschedule_period;
     }
@@ -939,6 +976,8 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
         static constexpr auto disabled_streaming_reschedule_period = 5000;
 
         LOG_TRACE(log, "Streaming is disabled, rescheduling next check in {} ms", disabled_streaming_reschedule_period);
+
+        releaseStreamingLocks();
 
         std::lock_guard lock(mutex);
         reschedule_processing_interval_ms = disabled_streaming_reschedule_period;
@@ -969,15 +1008,31 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
                 }
 
                 LOG_DEBUG(log, "Stopped streaming to {} attached views", dependencies_count);
+
+                /// The cycle could be the last one before the table was stopped or paused.
+                if (stream_control.isBlocked())
+                    releaseStreamingLocks();
             }
             else
             {
                 LOG_TEST(log, "No ready attached dependencies");
+                releaseStreamingLocks();
             }
         }
         catch (...)
         {
             LOG_ERROR(log, "Failed to process data: {}", getCurrentExceptionMessage(true));
+
+            /// The failure can mean that the lock owner of this server was considered dead.
+            /// Find it out now, to not take new locks under an owner which no longer exists.
+            try
+            {
+                metadata->updateLockOwner();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log);
+            }
         }
     }
 
@@ -2037,6 +2092,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = static_cast<UInt32>(cleanup_interval_ms.first);
     settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = static_cast<UInt32>(cleanup_interval_ms.second);
     settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = static_cast<UInt32>(metadata->getPersistentProcessingNodeTTLSeconds());
+    settings[ObjectStorageQueueSetting::lock_owner_timeout_seconds] = static_cast<UInt32>(metadata->getLockOwnerTimeoutSeconds());
     settings[ObjectStorageQueueSetting::processing_state_cache_ttl_seconds] = static_cast<UInt32>(metadata->getProcessingStateCacheTTLSeconds());
     settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = metadata->usePersistentProcessingNode();
     const auto & file_statuses_cache = metadata->getFileStatusesCache();

@@ -83,6 +83,7 @@ public:
         size_t cleanup_interval_max_ms_,
         bool use_persistent_processing_nodes_,
         size_t persistent_processing_nodes_ttl_seconds_,
+        size_t lock_owner_timeout_seconds_,
         size_t processing_state_cache_ttl_seconds_,
         size_t keeper_multiread_batch_size_,
         size_t metadata_cache_size_bytes_,
@@ -202,6 +203,26 @@ public:
 
     bool usePersistentProcessingNode() const { return use_persistent_processing_nodes; }
     size_t getPersistentProcessingNodeTTLSeconds() const { return persistent_processing_node_ttl_seconds; }
+
+    /// The owner of the persistent locks (bucket locks and processing nodes) which this
+    /// server process takes: a node `owners/<id>` in keeper, which the process keeps
+    /// updating for as long as this object exists. Every lock stores the id of its owner.
+    /// When an owner does not update its node for `lock_owner_timeout_seconds`, cleanup
+    /// removes the node and after that releases the locks which point to it.
+    /// Every request which removes a lock checks that its owner node still exists,
+    /// so an owner which was considered dead cannot commit or release anything.
+    ///
+    /// Returns the owner and creates its node if needed.
+    /// The owner is empty if lock owners are not used.
+    ObjectStorageQueueLockOwner getLockOwner();
+    /// Path of the owner node in keeper. Empty for an empty id.
+    std::string getLockOwnerPath(const std::string & lock_owner_id) const;
+    /// Update the owner node, so that the owner is not considered dead.
+    /// Finds out if the node was removed, which means that all locks are lost.
+    void updateLockOwner();
+    /// Changes when this process finds out that it lost all its locks, see `updateLockOwner`.
+    size_t getLockOwnerGeneration() const { return lock_owner_generation; }
+    size_t getLockOwnerTimeoutSeconds() const { return lock_owner_timeout_seconds; }
     size_t getProcessingStateCacheTTLSeconds() const { return processing_state_cache_ttl_seconds; }
 
     size_t getKeeperMultireadBatchSize() const { return keeper_multiread_batch_size; }
@@ -218,7 +239,15 @@ public:
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
-    void cleanupPersistentProcessingNodes();
+    void cleanupPersistentProcessingNodes(const std::string & cleanup_lock_path);
+    /// Remove owners which did not update their node for longer than their timeout.
+    /// Returns the ids of the owners which are alive.
+    NameSet cleanupLockOwners(Int64 keeper_time_ms);
+
+    void lockOwnerHeartbeatFunc();
+    void registerLockOwner() TSA_REQUIRES(lock_owner_mutex);
+    std::string getLockOwnerData() const;
+    size_t getLockOwnerHeartbeatIntervalMS() const;
     void cleanupTrackedNodes(const std::string & nodes_path, std::string_view description);
 
     void migrateToBucketsInKeeper(size_t value);
@@ -237,6 +266,8 @@ private:
     const std::string zookeeper_name;
     const fs::path zookeeper_path;
     const size_t keeper_multiread_batch_size;
+    /// Zero if lock owners are not used.
+    const size_t lock_owner_timeout_seconds;
 
     const bool cleanup_processed_files = false;
     const bool cleanup_failed_files = false;
@@ -269,6 +300,12 @@ private:
     std::atomic_bool shutdown_called = false;
     std::atomic_bool startup_called = false;
     BackgroundSchedulePoolTaskHolder cleanup_task;
+
+    std::mutex lock_owner_mutex;
+    /// Empty until the first lock is taken, and after the owner was considered dead.
+    std::string lock_owner_id TSA_GUARDED_BY(lock_owner_mutex);
+    std::atomic<size_t> lock_owner_generation = 0;
+    BackgroundSchedulePoolTaskHolder lock_owner_heartbeat_task;
 
     FileStatusesCache local_file_statuses;
     std::mutex exclusive_processing_paths_mutex;

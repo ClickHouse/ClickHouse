@@ -165,6 +165,7 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     size_t max_loading_retries_,
     std::atomic<size_t> & metadata_ref_count_,
     bool use_persistent_processing_nodes_,
+    const ObjectStorageQueueLockOwner & lock_owner_,
     const std::atomic<size_t> & processing_state_cache_ttl_seconds_,
     LoggerPtr log_)
     : path(path_)
@@ -174,6 +175,7 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     , max_loading_retries(max_loading_retries_)
     , metadata_ref_count(metadata_ref_count_)
     , use_persistent_processing_nodes(use_persistent_processing_nodes_)
+    , lock_owner(lock_owner_)
     , processing_state_cache_ttl_seconds(processing_state_cache_ttl_seconds_)
     , processing_node_path(processing_node_path_)
     , processed_node_path(processed_node_path_)
@@ -220,6 +222,9 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
         try
         {
             Coordination::Error code = {};
+            Coordination::Requests requests;
+            addProcessingNodeRemovalRequest(requests);
+            Coordination::Responses responses;
             auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
             zk_retry.retryLoop([&]
             {
@@ -239,9 +244,9 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
                 }
                 else
                 {
-                    chassert(checkProcessingOwnership(zk_client));
+                    chassert(checkProcessingOwnership(zk_client) || !isLockOwnerAlive(zk_client));
                 }
-                code = zk_client->tryRemove(processing_node_path);
+                code = zk_client->tryMulti(requests, responses);
             });
 
             if (code == Coordination::Error::ZOK)
@@ -251,6 +256,14 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
             {
                 LOG_WARNING(log, "Keeper session expired and retries did not help. "
                             "Will rely on automatic processing node cleanup");
+                return;
+            }
+
+            if (isLockOwnerDead(code, requests, responses))
+            {
+                LOG_TEST(
+                    log, "Will not remove processing node {}: its lock owner {} was considered dead, "
+                    "the node is released by cleanup", processing_node_path, lock_owner.id);
                 return;
             }
 
@@ -298,12 +311,15 @@ ObjectStorageQueueIFileMetadata::NodeMetadata ObjectStorageQueueIFileMetadata::c
     return metadata;
 }
 
-std::string ObjectStorageQueueIFileMetadata::getProcessorInfo(const std::string & processor_id)
+std::string ObjectStorageQueueIFileMetadata::getProcessorInfo(const std::string & processor_id, const std::string & lock_owner_id)
 {
     /// Add information which will be useful for debugging just in case.
     Poco::JSON::Object json;
     json.set("hostname", DNSResolver::instance().getHostName());
     json.set("processor_id", processor_id);
+    /// Cleanup releases the lock when this owner is dead.
+    if (!lock_owner_id.empty())
+        json.set("owner_id", lock_owner_id);
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
@@ -331,6 +347,28 @@ bool ObjectStorageQueueIFileMetadata::checkProcessingOwnership(std::shared_ptr<Z
         processing_node_path, data, processor_info);
 
     return data == processor_info;
+}
+
+void ObjectStorageQueueIFileMetadata::addProcessingNodeRemovalRequest(Coordination::Requests & requests) const
+{
+    if (!lock_owner.path.empty())
+        requests.push_back(zkutil::makeCheckRequest(lock_owner.path, -1));
+    requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+}
+
+bool ObjectStorageQueueIFileMetadata::isLockOwnerDead(
+    Coordination::Error code,
+    const Coordination::Requests & requests,
+    const Coordination::Responses & responses) const
+{
+    if (lock_owner.path.empty() || code != Coordination::Error::ZNONODE || responses.empty())
+        return false;
+    return requests[zkutil::getFailedOpIndex(code, responses)]->getPath() == lock_owner.path;
+}
+
+bool ObjectStorageQueueIFileMetadata::isLockOwnerAlive(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client) const
+{
+    return lock_owner.path.empty() || zk_client->exists(lock_owner.path);
 }
 
 bool ObjectStorageQueueIFileMetadata::hasNonProcessableState() const
@@ -480,7 +518,7 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
         }
         else
         {
-            chassert(checkProcessingOwnership(zk_client));
+            chassert(checkProcessingOwnership(zk_client) || !isLockOwnerAlive(zk_client));
         }
         code = zk_client->tryMulti(requests, responses);
     });
@@ -495,9 +533,15 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
         return;
     }
 
-    const auto failed_path = responses[0]->error != Coordination::Error::ZOK
-        ? requests[0]->getPath()
-        : requests[1]->getPath();
+    if (isLockOwnerDead(code, requests, responses))
+    {
+        LOG_TEST(
+            log, "Will not remove processing node {}: its lock owner {} was considered dead, "
+            "the node is released by cleanup", processing_node_path, lock_owner.id);
+        return;
+    }
+
+    const auto failed_path = requests[zkutil::getFailedOpIndex(code, responses)]->getPath();
 
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
@@ -508,7 +552,7 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
 void ObjectStorageQueueIFileMetadata::prepareResetProcessingRequests(Coordination::Requests & requests)
 {
     LOG_TEST(log, "Resetting processing for {}", path);
-    requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+    addProcessingNodeRemovalRequest(requests);
 }
 
 void ObjectStorageQueueIFileMetadata::prepareProcessedRequests(Coordination::Requests & requests,
@@ -668,7 +712,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
         permanently_failed = true;
 
         /// Remove Processing node.
-        requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+        addProcessingNodeRemovalRequest(requests);
         /// Create Failed node.
         requests.push_back(zkutil::makeCreateRequest(failed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
         return;
@@ -708,7 +752,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
         permanently_failed = true;
 
         /// Remove Processing node.
-        requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+        addProcessingNodeRemovalRequest(requests);
         /// Remove /failed/node_hash.retriable node.
         requests.push_back(zkutil::makeRemoveRequest(retrieable_failed_node_path, retriable_failed_node_stat.version));
         /// Create a persistent node /failed/node_hash.
@@ -717,7 +761,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     else
     {
         /// Remove Processing node.
-        requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+        addProcessingNodeRemovalRequest(requests);
 
         if (node_metadata.retries == 0)
         {

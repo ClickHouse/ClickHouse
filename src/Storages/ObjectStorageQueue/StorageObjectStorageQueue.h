@@ -130,6 +130,10 @@ public:
 
     static constexpr auto engine_names = {"S3Queue", "AzureQueue"};
 
+    /// STOP/PAUSE: also wake the streaming tasks, so that the table releases the locks
+    /// which it holds right away and not at its next poll.
+    ActionLock getActionLock(StorageActionBlockType action_type) override;
+
     void checkTableCanBeRenamed(const StorageID & new_name) const override;
     void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override;
 
@@ -221,6 +225,9 @@ private:
     /// executing the whole process of reading from object storage
     /// and pushing result to dependent tables.
     void threadFunc(size_t streaming_tasks_index);
+    /// Release the bucket locks and the processing nodes which the streaming file iterator
+    /// holds. Called when the table does not consume, so that other servers can take them.
+    void releaseStreamingLocks();
     /// A subset of logic executed by threadFunc.
     bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch);
     /// Apply after_processing action to successfully processed files.
