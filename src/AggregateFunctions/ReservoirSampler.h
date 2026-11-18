@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <limits>
 #include <IO/Operators_pcg_random.h>
@@ -72,6 +73,7 @@ public:
         samples.clear();
         sorted = false;
         total_values = 0;
+        next_selected = 0;
         rng.seed(123456);
     }
 
@@ -96,6 +98,93 @@ public:
             UInt64 rnd = genRandom(total_values);
             if (rnd < sample_count)
                 samples[rnd] = v;
+        }
+    }
+
+    /// The same as `insert` for each of `count` values, but from position `SKIP_AHEAD_FROM * sample_count` on
+    /// it draws the position of the next kept value instead of a random number for every value.
+    void insertMany(const T * __restrict values, size_t count)
+    {
+        if constexpr (is_floating_point<T>)
+        {
+            /// Not `std::any_of`: a loop without an early exit is vectorized.
+            bool has_nan = false;
+            for (size_t i = 0; i < count; ++i)
+                has_nan |= isNaN(values[i]);
+            if (has_nan)
+            {
+                for (size_t i = 0; i < count; ++i)
+                    insert(values[i]);
+                return;
+            }
+        }
+        insertManyImpl(count, [values](size_t i) -> const T & { return values[i]; });
+    }
+
+    /// The same as `insert(v)` `count` times, see `insertMany`.
+    void insertManySame(const T & v, size_t count)
+    {
+        if (isNaN(v))
+            return;
+        insertManyImpl(count, [&v](size_t) -> const T & { return v; });
+    }
+
+    /// The same as `insert` for each of `count` values where `(mask[i] != 0) == keep_nonzero`, see `insertMany`.
+    template <bool keep_nonzero>
+    void insertManyFiltered(const T * __restrict values, size_t count, const UInt8 * __restrict mask)
+    {
+        size_t i = 0;
+        if (total_values < skipAheadFrom())
+        {
+            for (; i < count; ++i)
+            {
+                if ((mask[i] != 0) == keep_nonzero)
+                {
+                    insert(values[i]);
+                    if (total_values >= skipAheadFrom())
+                    {
+                        ++i;
+                        break;
+                    }
+                }
+            }
+        }
+
+        static constexpr size_t CHUNK = 64;
+        while (i < count)
+        {
+            if (unlikely(total_values >= MAX_NEXT_SELECTED - CHUNK))
+            {
+                for (; i < count; ++i)
+                    if ((mask[i] != 0) == keep_nonzero)
+                        insert(values[i]);
+                return;
+            }
+            if (next_selected <= total_values)
+                next_selected = drawNextSelected(total_values);
+
+            /// Count the values of a chunk without branches, and skip it if the next selected value is not there.
+            const size_t end = std::min(count, i + CHUNK);
+            size_t in_chunk = 0;
+            for (size_t j = i; j < end; ++j)
+                in_chunk += ((mask[j] != 0) == keep_nonzero) & !isNaN(values[j]);
+            if (in_chunk < next_selected - total_values)
+            {
+                total_values += in_chunk;
+                i = end;
+                continue;
+            }
+
+            for (; i < end; ++i)
+            {
+                total_values += ((mask[i] != 0) == keep_nonzero) & !isNaN(values[i]);
+                if (total_values == next_selected)
+                {
+                    insertSelected(values[i]);
+                    ++i;
+                    break;
+                }
+            }
         }
     }
 
@@ -264,6 +353,7 @@ public:
             return;
 
         sorted = false;
+        next_selected = 0;
 
         if (b.total_values <= sample_count)
         {
@@ -334,6 +424,7 @@ public:
             DB::readBinaryLittleEndian(samples[i], buf);
 
         sorted = false;
+        next_selected = 0;
     }
 
     void write(DB::WriteBuffer & buf) const
@@ -353,11 +444,21 @@ private:
     /// We allocate a little memory on the stack - to avoid allocations when there are many objects with a small number of elements.
     using Array = DB::PODArrayWithStackMemory<T, 64>;
 
+    /// `insertMany` draws the position of the next kept value from position `SKIP_AHEAD_FROM * sample_count` on.
+    /// Before that many values are kept anyway, and the results are the same as with a random number for every value.
+    static constexpr size_t SKIP_AHEAD_FROM = 16;
+
     size_t sample_count;
     size_t total_values = 0;
     Array samples;
     pcg32_fast rng;
     bool sorted = false;
+    /// The position of the next value that `insertMany` keeps, or 0. Not serialized: it only depends on random draws
+    /// and on `total_values`. A position that `insert` has passed is drawn again, and one that it has not passed
+    /// is still valid, because the values at different positions are kept independently.
+    /// A bit field in the padding after `sorted`, so that the state does not grow.
+    size_t next_selected : 56 = 0;
+    static constexpr size_t MAX_NEXT_SELECTED = (size_t(1) << 56) - 1;
 
     UInt64 genRandom(UInt64 limit)
     {
@@ -367,6 +468,88 @@ private:
         if (limit <= static_cast<UInt64>(pcg32_fast::max()))
             return rng() % limit; /// NOLINT(clang-analyzer-core.DivideZero)
         return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32_fast::max()) + 1ULL) + static_cast<UInt64>(rng())) % limit;
+    }
+
+    [[nodiscard]] size_t skipAheadFrom() const
+    {
+        return sample_count > std::numeric_limits<size_t>::max() / SKIP_AHEAD_FROM ? std::numeric_limits<size_t>::max()
+                                                                                : sample_count * SKIP_AHEAD_FROM;
+    }
+
+    /// `get(i)` returns the value at index `i` of `count` values without NaN.
+    template <typename Get>
+    void insertManyImpl(size_t count, Get && get)
+    {
+        size_t i = 0;
+        if (total_values < skipAheadFrom())
+            for (const size_t per_value = std::min(count, skipAheadFrom() - total_values); i < per_value; ++i)
+                insert(get(i));
+
+        while (i < count)
+        {
+            if (unlikely(total_values >= MAX_NEXT_SELECTED - (count - i)))
+            {
+                for (; i < count; ++i)
+                    insert(get(i));
+                return;
+            }
+            if (next_selected <= total_values)
+                next_selected = drawNextSelected(total_values);
+
+            /// The value at index `i` has position `total_values + 1`.
+            if (next_selected - total_values > count - i)
+            {
+                total_values += count - i;
+                return;
+            }
+
+            i += next_selected - total_values;
+            total_values = next_selected;
+            insertSelected(get(i - 1));
+        }
+    }
+
+    /// A uniform random number in [0, 1) with 53 random bits.
+    double genUniform()
+    {
+        const UInt64 high = rng();
+        const UInt64 low = rng();
+        return static_cast<double>((high << 21) | (low >> 11)) * 0x1p-53;
+    }
+
+    /// Keeps `v` at position `total_values` == `next_selected` and draws the next position.
+    void insertSelected(const T & v)
+    {
+        sorted = false;
+        samples[genRandom(sample_count)] = v;
+        next_selected = drawNextSelected(total_values);
+    }
+
+    /// Returns the position of the next value kept by Algorithm R after `seen` >= `sample_count` values,
+    /// or MAX_NEXT_SELECTED if it is beyond that. Algorithm R keeps the value at position i independently
+    /// with probability sample_count / i. Candidates are drawn from the geometric distribution with the
+    /// probability for position `seen + 1`, which is not less than for the later positions, and a candidate
+    /// at position i is accepted with probability (seen + 1) / i (thinning). The result has exactly the
+    /// distribution of drawing for each value, while a candidate is rejected with probability below
+    /// 1 / sample_count. This is the idea of J. S. Vitter, "Random sampling with a reservoir" (1985).
+    size_t drawNextSelected(size_t seen)
+    {
+        static constexpr size_t max = MAX_NEXT_SELECTED;
+        const double count = static_cast<double>(sample_count);
+        while (true)
+        {
+            const double first = static_cast<double>(seen) + 1;
+            /// The number of skipped candidates: P(gap >= g) = (1 - count / first)^g.
+            const double gap = std::floor(std::log(1 - genUniform()) / std::log1p(-count / first));
+            if (!(gap >= 0 && gap < 0x1p63))
+                return max;
+            const size_t step = static_cast<size_t>(gap) + 1;
+            if (step > max - seen)
+                return max;
+            seen += step;
+            if (genUniform() * static_cast<double>(seen) < first)
+                return seen;
+        }
     }
 
     void sortIfNeeded()

@@ -1,0 +1,17 @@
+the same sample for any block size
+1
+1
+1
+uniform positions, filtered, NULL and NaN values are not counted
+1
+1
+1
+1
+1
+1
+1
+sparse column
+1	0
+State and Merge, GROUP BY with one key per block
+1
+1
