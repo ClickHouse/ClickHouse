@@ -85,7 +85,7 @@ struct IndexReadTask
     std::vector<Column> columns;
     MergeTreeIndexWithCondition index;
 
-    NamesAndTypesList getNamesAndTypesList() const;
+    [[nodiscard]] NamesAndTypesList getNamesAndTypesList() const;
 };
 
 /// Ordered map to ensure deterministic iteration order.
@@ -104,8 +104,8 @@ struct MergeTreeReadTaskColumns
     /// Column names to read from patch parts.
     NamesAndTypesLists patch_columns;
 
-    String dump() const;
-    Names getAllColumnNames() const;
+    [[nodiscard]] String dump() const;
+    [[nodiscard]] Names getAllColumnNames() const;
     void moveAllColumnsFromPrewhere();
 };
 

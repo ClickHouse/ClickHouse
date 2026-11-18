@@ -92,6 +92,25 @@ struct AggregateFunctionSumData
         Impl::add(sum, toAccumulateResult(value));
     }
 
+    /// On AArch64 clang-23 does not turn a sum of 8- or 16-bit integers into a 64-bit accumulator into a partial
+    /// reduction (`udot`/`sdot` + `uadalp`) any more, and widens every element to 64 bits instead, which is twice as
+    /// slow (https://github.com/llvm/llvm-project/pull/226226). Summing into a 32-bit accumulator over chunks short
+    /// enough not to overflow it is vectorized with `udot`/`sdot` by every compiler, so the result is the same.
+    template <typename Value>
+    static constexpr bool use_narrow_accumulator =
+#if defined(__aarch64__)
+        is_integer<Value> && sizeof(Value) <= 2 && is_integer<T> && sizeof(AccumulateResult) == 8;
+#else
+        false;
+#endif
+
+    template <typename Value>
+    using NarrowAccumulator = std::conditional_t<is_signed_v<Value>, Int32, UInt32>;
+
+    /// The absolute value of a chunk sum stays below 2^31.
+    template <typename Value>
+    static constexpr size_t narrow_accumulator_chunk_size = 1ULL << (31 - 8 * sizeof(Value));
+
     /// `sum` and `sumIf` over Decimal32 and Decimal64 accumulate into Decimal128, and sumWithOverflow over them into the
     /// same type. The generic loop widens each row to the total's type and adds it as one value. Instead, sum the raw
     /// integers in 64-bit arithmetic, which vectorizes, and add the total once. The total is exact, or wraps modulo 2^N,
@@ -171,7 +190,21 @@ struct AggregateFunctionSumData
             return;
         }
 
-        if constexpr (is_floating_point<T>)
+        if constexpr (use_narrow_accumulator<Value>)
+        {
+            AccumulateResult local_sum{};
+            while (ptr < end_ptr)
+            {
+                const auto * chunk_end = ptr + std::min<size_t>(end_ptr - ptr, narrow_accumulator_chunk_size<Value>);
+                NarrowAccumulator<Value> chunk_sum = 0;
+                for (; ptr < chunk_end; ++ptr)
+                    chunk_sum += *ptr;
+                local_sum += chunk_sum;
+            }
+            Impl::add(sum, local_sum);
+            return;
+        }
+        else if constexpr (is_floating_point<T>)
         {
             /// Compiler cannot unroll this loop, do it manually.
             /// (at least for floats, most likely due to the lack of -fassociative-math)
@@ -236,7 +269,21 @@ struct AggregateFunctionSumData
             return;
         }
 
-        if constexpr ((is_integer<T> || is_decimal<T>) && !is_over_big_int<T>)
+        if constexpr (use_narrow_accumulator<Value>)
+        {
+            AccumulateResult local_sum{};
+            while (ptr < end_ptr)
+            {
+                const auto * chunk_end = ptr + std::min<size_t>(end_ptr - ptr, narrow_accumulator_chunk_size<Value>);
+                NarrowAccumulator<Value> chunk_sum = 0;
+                for (; ptr < chunk_end; ++ptr, ++condition_map)
+                    chunk_sum += static_cast<NarrowAccumulator<Value>>(*ptr) * static_cast<NarrowAccumulator<Value>>(!*condition_map == add_if_zero);
+                local_sum += chunk_sum;
+            }
+            Impl::add(sum, local_sum);
+            return;
+        }
+        else if constexpr ((is_integer<T> || is_decimal<T>) && !is_over_big_int<T>)
         {
             /// For integers we can vectorize the operation if we replace the null check using a multiplication (by 0 for null, 1 for not null)
             /// https://quick-bench.com/q/MLTnfTvwC2qZFVeWHfOBR3U7a8I
@@ -257,7 +304,7 @@ struct AggregateFunctionSumData
             AccumulateResult local_sum{};
             for (size_t i = 0; i < count; ++i)
             {
-                uint8_t flag = (condition_map[i] != add_if_zero);
+                uint8_t flag = (static_cast<bool>(condition_map[i]) != add_if_zero);
 
                 AccumulateResult mask{};
                 std::memset(&mask, static_cast<int>(masks[flag]), sizeof(AccumulateResult));
@@ -355,7 +402,7 @@ struct AggregateFunctionSumData
         readBinaryLittleEndian(sum, buf);
     }
 
-    T get() const
+    [[nodiscard]] T get() const
     {
 #if defined(__x86_64__)
         if constexpr (std::is_same_v<AccumulateResult, wide::BitInt256> || std::is_same_v<AccumulateResult, wide::BitUInt256>)
@@ -505,7 +552,7 @@ struct AggregateFunctionSumKahanData
         readBinary(compensation, buf);
     }
 
-    T get() const
+    [[nodiscard]] T get() const
     {
         return sum;
     }
@@ -528,7 +575,7 @@ public:
     using ColVecType = ColumnVectorOrDecimal<T>;
     using ResultType = TResult;
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if constexpr (Type == AggregateFunctionTypeSum)
             return "sum";
@@ -563,14 +610,14 @@ public:
         }
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     /// The sum of unsigned integers qualifies for the `Subadditive` bound: the merged value is
     /// the modular sum of the partial values, which never exceeds their saturating sum - even
     /// when the accumulator wraps around. Signed and floating-point sums do not qualify
     /// (negative addends break the bound), and neither do the decimal and wide-integer results
     /// (the bound's arithmetic works on `UInt64` values).
-    MergedValueBound getMergedValueBound() const override
+    [[nodiscard]] MergedValueBound getMergedValueBound() const override
     {
         if constexpr (is_unsigned_v<T> && std::is_same_v<TResult, UInt64>)
             return MergedValueBound::Subadditive;
@@ -669,7 +716,7 @@ public:
         this->data(place).write(buf);
     }
 
-    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
+    [[nodiscard]] std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
     {
         return Data::serialized_size_bound;
     }
@@ -700,7 +747,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         if constexpr (Type == AggregateFunctionTypeSumKahan)
             return false;

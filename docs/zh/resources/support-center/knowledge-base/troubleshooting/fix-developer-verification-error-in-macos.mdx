@@ -6,8 +6,6 @@ tags: ['错误与异常']
 keywords: ['开发者验证', 'MacOS']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ## 修复 macOS 中的开发者验证错误 {#fix-the-developer-verification-error-in-macos}
 
 默认情况下，对于从互联网下载的应用程序或工具，除非已由经过认证的开发者签名并通过 Apple 公证，否则 macOS 不会运行它们。
@@ -24,7 +22,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 尝试运行已被隔离的 `clickhouse` 二进制文件时，您可能会看到以下错误：
 
-<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="md" alt="MacOS 开发者验证错误对话框" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![MacOS 开发者验证错误对话框](/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp)
+
+</Frame>
+
+</div>
 
 如果无法改用已签名的构建，请通过系统设置或终端解除该二进制文件的隔离。
 
@@ -36,13 +42,29 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 3. 前往**隐私与安全**：
 
-   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="MacOS 隐私与安全设置默认视图" border />
+   <div className="ch-image-md">
+
+   <Frame>
+
+   ![MacOS 隐私与安全设置默认视图](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp)
+
+   </Frame>
+
+   </div>
 
 4. 向下滚动到**安全**部分，找到一条消息：*&quot;clickhouse-macos-aarch64&quot; 因并非来自已识别的开发者而被阻止使用*。
 
 5. 点击**仍要允许** (在较新的 macOS 版本中为**仍要打开**) 。
 
-   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="MacOS 隐私与安全设置中显示“仍要允许”按钮" border />
+   <div className="ch-image-md">
+
+   <Frame>
+
+   ![MacOS 隐私与安全设置中显示“仍要允许”按钮](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp)
+
+   </Frame>
+
+   </div>
 
 6. 输入你的 macOS 用户密码。
 
