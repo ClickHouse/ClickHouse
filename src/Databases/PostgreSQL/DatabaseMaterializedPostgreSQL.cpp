@@ -380,18 +380,10 @@ void DatabaseMaterializedPostgreSQL::addUnmaterializedTablesListChange(SettingsC
 
 ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
-    if (!local_context->hasQueryContext())
+    /// An existing table is described by its nested table: its columns and sorting key are fixed when it is
+    /// created and can differ from the current PostgreSQL table.
+    if (!local_context->hasQueryContext() || DatabaseAtomic::tryGetTable(table_name, getContext()))
         return DatabaseAtomic::getCreateTableQueryImpl(table_name, local_context, throw_on_error);
-
-    /// Use the table's actual (stable) UUID rather than a freshly generated one. Otherwise every
-    /// call to this method returns a slightly different definition, which breaks operations that
-    /// read the table metadata several times and expect it to stay consistent - most notably
-    /// BACKUP, which kept retrying with "Table ... was created or changed its definition during
-    /// scanning" and never finished. Fall back to a generated UUID only if the table does not exist
-    /// yet. Fetched before acquiring `handler_mutex` to avoid lock ordering issues.
-    UUID table_uuid = UUIDHelpers::generateV4();
-    if (auto existing_table = DatabaseAtomic::tryGetTable(table_name, getContext()))
-        table_uuid = existing_table->getStorageID().uuid;
 
     std::lock_guard lock(handler_mutex);
 
@@ -400,7 +392,7 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
     {
         auto storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(TSA_SUPPRESS_WARNING_FOR_READ(database_name), table_name), getContext(), remote_database_name, table_name);
         ast_storage = replication_handler->getCreateNestedTableQuery(storage.get(), table_name);
-        assert_cast<ASTCreateQuery *>(ast_storage.get())->uuid = table_uuid;
+        assert_cast<ASTCreateQuery *>(ast_storage.get())->uuid = UUIDHelpers::generateV4();
     }
     catch (...)
     {
@@ -913,9 +905,6 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         .has_builtin_setting_fn = MaterializedPostgreSQLSettings::hasBuiltin,
     }, Documentation{
         .description = R"DOCS_MD(
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # MaterializedPostgreSQL
 
 <ExperimentalBadge/>
@@ -930,9 +919,9 @@ Creates a ClickHouse database with tables from PostgreSQL database. Firstly, dat
 Replication is implemented with PostgreSQL Logical Replication Protocol, which does not allow to replicate DDL, but allows to know whether replication breaking changes happened (column type changes, adding/removing columns). Such changes are detected and according tables stop receiving updates. In this case you should use `ATTACH`/ `DETACH PERMANENTLY` queries to reload table completely. If DDL does not break replication (for example, renaming a column) table will still receive updates (insertion is done by position).
 
 <Note>
-This database engine is experimental. To use it, set `allow_experimental_database_materialized_postgresql` to 1 in your configuration files or by using the `SET` command:
+This database engine is experimental. To use it, set `enable_database_materialized_postgresql` to 1 in your configuration files or by using the `SET` command:
 ```sql
-SET allow_experimental_database_materialized_postgresql=1
+SET enable_database_materialized_postgresql=1
 ```
 </Note>
 
@@ -1137,7 +1126,7 @@ This setting only controls the column types chosen by type inference when the ne
 
 ## TLS/SSL {#tls-ssl}
 
-TLS/SSL parameters are forwarded to `libpq` and can be supplied through a [named collection](/operations/named-collections) or as trailing key-value arguments of the engine: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`; when unset, the `libpq` default of `prefer` applies), and the certificates and the key in one of two forms. `sslrootcert` (CA certificate), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files, accepted only from a named collection defined in the server configuration file. `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead, can be specified from SQL, and are masked in logs and `SHOW` queries like a password.
+TLS/SSL parameters are forwarded to `libpq` and can be supplied through a [named collection](/concepts/features/configuration/server-config/named-collections) or as trailing key-value arguments of the engine: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`; when unset, the `libpq` default of `prefer` applies), and the certificates and the key in one of two forms. `sslrootcert` (CA certificate), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files, accepted only from a named collection defined in the server configuration file. `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead, can be specified from SQL, and are masked in logs and `SHOW` queries like a password.
 
 Example of connecting to a PostgreSQL server that enforces TLS, verifying the server certificate:
 

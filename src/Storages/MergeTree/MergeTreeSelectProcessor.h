@@ -10,6 +10,7 @@
 #include <Interpreters/SetSpillable.h>
 
 #include <unordered_set>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -75,7 +76,7 @@ struct SkipIndexReadInput
     size_t part_starting_offset_in_query = 0;
 };
 using RangesByIndex = std::unordered_map<size_t, SkipIndexReadInput>;
-using ProjectionRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
+using ProjectionRangesByIndex = UnorderedMapWithMemoryTracking<size_t, RangesInDataParts>;
 class MergeTreeIndexReadResultPool;
 using MergeTreeIndexReadResultPoolPtr = std::shared_ptr<MergeTreeIndexReadResultPool>;
 
@@ -118,7 +119,7 @@ struct MergeTreeIndexBuildContext
         MergeTreeIndexReadResultPoolPtr index_reader_pool_,
         PartRemainingMarks part_remaining_marks_);
 
-    MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTask & task) const;
+    [[nodiscard]] MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTask & task) const;
 
     /// Replaces the whole-part ranges the skip indexes of a part are evaluated over with the analyzed ones. Later calls
     /// for the same part extend them: an in-order read splits a part between streams that share this context, and each
@@ -149,8 +150,7 @@ public:
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         MergeTreeIndexBuildContextPtr merge_tree_index_build_context_ = {},
-        LazyMaterializingRowsPtr lazy_materializing_rows_ = {},
-        const ColumnsDescription * columns_ = nullptr);
+        LazyMaterializingRowsPtr lazy_materializing_rows_ = {});
 
     String getName() const;
     std::span<ISpillable * const> getSpillables() const { return set_spillables.get(); }
@@ -181,8 +181,7 @@ public:
         const ExpressionActionsSettings & actions_settings,
         bool enable_multiple_prewhere_read_steps,
         bool force_short_circuit_execution,
-        bool read_ahead_prewhere_columns,
-        const ColumnsDescription * columns = nullptr);
+        bool read_ahead_prewhere_columns);
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 

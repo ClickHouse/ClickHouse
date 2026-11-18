@@ -1,4 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Common/CurrentThread.h>
@@ -16,6 +19,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <base/defines.h>
@@ -41,7 +45,7 @@ LoggerPtr getJoinOrderOptimizerLogger()
     return log;
 }
 
-DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_)
+DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, UnorderedMapWithMemoryTracking<String, ColumnStats> column_stats_)
     : relations()
     , cost(0.0)
     , estimated_rows(rows)
@@ -133,6 +137,10 @@ void QueryGraph::buildColumnEquivalences()
         auto lhs_resolved = resolveInput(lhs);
         auto rhs_resolved = resolveInput(rhs);
         if (!lhs_resolved || !rhs_resolved)
+            continue;
+
+        /// Only an exact equality is transitive: for `FixedString` x and `String` y, z, `x = y AND x = z` does not imply `y = z`.
+        if (!JoinCommon::isExactJoinKeyEquality(lhs_resolved->getType(), rhs_resolved->getType()))
             continue;
 
         auto lhs_rel = lhs_resolved->getSourceRelations().getSingleBit();
@@ -241,6 +249,10 @@ static void cleanupJoinPredicates(
             if (!lhs_resolved || !rhs_resolved)
                 return false;
 
+            /// Same rule as in `buildColumnEquivalences`: such a predicate is neither redundant nor a source of equivalences.
+            if (!JoinCommon::isExactJoinKeyEquality(lhs_resolved->getType(), rhs_resolved->getType()))
+                return false;
+
             auto lhs_class = equiv.getClass(*lhs_resolved);
             auto rhs_class = equiv.getClass(*rhs_resolved);
             if (lhs_class && rhs_class && lhs_class == rhs_class)
@@ -290,7 +302,7 @@ static void cleanupJoinPredicates(
             };
 
             using ConstClassPtr = EquivClasses::ConstClassPtr;
-            std::unordered_set<ConstClassPtr> visited;
+            UnorderedSetWithMemoryTracking<ConstClassPtr> visited;
 
             for (const auto & [member, _] : column_equivalences.getMemberToClassMap())
             {
@@ -341,7 +353,7 @@ String DPJoinEntry::dump() const
 class JoinOrderOptimizer
 {
 public:
-    JoinOrderOptimizer(QueryGraph query_graph_, const std::vector<JoinOrderAlgorithm> & enabled_algorithms_, UInt64 max_searched_plans_)
+    JoinOrderOptimizer(QueryGraph query_graph_, const std::vector<JoinOrderAlgorithm> & enabled_algorithms_, UInt64 max_searched_plans_) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `QueryPlanOptimizationSettings::query_plan_optimize_join_order_algorithm` is std::vector
         : query_graph(std::move(query_graph_))
         , max_searched_plans(max_searched_plans_)
         , enabled_algorithms(enabled_algorithms_)
@@ -359,7 +371,7 @@ public:
 private:
     QueryGraph query_graph;
     const UInt64 max_searched_plans;
-    const std::vector<JoinOrderAlgorithm> enabled_algorithms;
+    const std::vector<JoinOrderAlgorithm> enabled_algorithms; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `QueryPlanOptimizationSettings::query_plan_optimize_join_order_algorithm` is std::vector
     LoggerPtr log = DB::getJoinOrderOptimizerLogger();
     QueryStatusPtr query_status;
     std::function<bool()> interactive_cancel_callback;
@@ -449,6 +461,13 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
     /// `QueryGraph`) can decide whether to build its reordering constraints from CD-A/CD-C.
     query_graph.conflict_detector = optimization_settings.query_plan_optimize_join_order_conflict_detector;
     query_graph.join_swap_table = optimization_settings.join_swap_table;
+    query_graph.use_interesting_orders = query_graph.use_interesting_orders && optimization_settings.enable_join_transitive_predicates;
+    query_graph.reuse_join_output_order = optimization_settings.optimize_sorting_by_input_stream_properties;
+    /// The runtime filter skips granules at read time only with `use_skip_indexes_on_data_read`, taken as the query runs it.
+    query_graph.runtime_filter_prunes_probe = optimization_settings.enable_join_runtime_filters
+        && optimization_settings.enable_join_runtime_filters_index_analysis
+        && optimization_settings.use_skip_indexes_on_data_read_at_execution;
+    query_graph.shard_merge_by_pk_ranges = optimization_settings.query_plan_join_shard_by_pk_ranges;
 
     JoinOrderOptimizer reorderer(
         std::move(query_graph),
