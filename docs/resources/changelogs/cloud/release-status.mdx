@@ -35,10 +35,10 @@ Scheduled upgrade windows are available for all release channels for services in
 <Warning>
 **Understanding release dates**
 
-The dates shown below indicate when ClickHouse **begins the rollout** to each release channel, not when your individual service will be upgraded.
+The start dates shown below indicate when ClickHouse **begins the rollout** of a new database version to each release channel, not when your individual service will be upgraded.
 
 - Rollouts are automated and occur gradually over multiple weeks
-- Services with configured scheduled upgrade windows are upgraded during their scheduled window in the week after the channel rollout ends (starting on Monday 00:00 UTC)
+- Services with configured scheduled upgrade windows are upgraded during their scheduled window in the week after the channel rollout ends (starting on Monday 10:00 UTC)
 - Rollout completion may be delayed due to rollout pauses (e.g., holiday freezes) or health monitoring
 - An [EOL date](https://clickhouse.com/legal/support-services-policy) is no earlier than 60 days after the Slow channel rollout completes. For releases whose Slow channel end date is not yet scheduled, the EOL date is `TBD`.
 
@@ -104,6 +104,19 @@ For advance testing before production upgrades, use the Fast or Regular channel 
     },
 ]} />
 
+<Note>
+**Upcoming release freezes**
+
+ClickHouse pauses rollouts during release freezes and doesn't upgrade services, even if a service has a scheduled upgrade window. Exceptions include critical security patches and fixes for issues that could lead to data corruption or loss.
+
+Scheduled freezes, with dates in UTC and inclusive:
+
+- **Black Friday and Cyber Monday:** 2026-11-24 to 2026-12-01
+- **Christmas and New Year:** 2026-12-23 to 2027-01-03
+
+If you're preparing for higher traffic during these periods, see [Preparing for traffic spikes](/products/cloud/features/scaling/preparing-for-traffic-spikes).
+</Note>
+
 ## ClickHouse Private and ClickHouse Government end-of-life dates {#private-and-government-eol}
 
 The table below lists end-of-life (EOL) dates for the ClickHouse major versions shipped in ClickHouse Private and ClickHouse Government.
@@ -114,3 +127,4 @@ The table below lists end-of-life (EOL) dates for the ClickHouse major versions 
 | 26.2 | 2026-08-07 | 2026-10-04 | End of life |
 
 Older versions are end of life. EOL dates marked as estimated may change.
+For details on version support and end-of-life policies, see the [ClickHouse Support Services Policy](https://clickhouse.com/legal/support-services-policy).

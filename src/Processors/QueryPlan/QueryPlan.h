@@ -69,6 +69,8 @@ class SettingsChanges;
 using MapStepToExchangeIds = std::unordered_map<const IQueryPlanStep *, UInt32>;
 
 /// Options from EXPLAIN queries based on plan.
+class QueryPlanLogCapture;
+
 struct ExplainPlanOptions
 {
     /// Add output header to step.
@@ -120,7 +122,7 @@ struct ExplainPlanOptions
     /// writes to or reads from. Set by `EXPLAIN PLAN fragments = 1, json = 1` (see `explainAsFragmentsJSON`).
     const MapStepToExchangeIds * exchange_ids = nullptr;
 
-    SettingsChanges toSettingsChanges() const;
+    [[nodiscard]] SettingsChanges toSettingsChanges() const;
 };
 struct DistributedQueryPlan;
 struct DistributedPlanCut;
@@ -204,10 +206,13 @@ public:
     /// Why `applyDistributedPlanFallbackToLocal` rejected this plan; empty unless `didFallBackToLocal`.
     const String & getDistributedPlanFallbackReason() const { return distributed_plan_fallback_reason; }
 
+    /// `log_capture` is passed only by the caller whose plan is the query's own; the nested builds
+    /// of subqueries and of child plans pass nothing, so only one plan per query is ever captured.
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
         const BuildQueryPipelineSettings & build_pipeline_settings,
-        bool do_optimize=true);
+        bool do_optimize=true,
+        QueryPlanLogCapture * log_capture = nullptr);
 
     struct ExplainPipelineOptions
     {

@@ -3582,7 +3582,9 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & ar
             split_nodes.insert(node);
     });
 
-    auto res = split(split_nodes);
+    /// A node moved before ARRAY JOIN may have the name of a joined input, for example when the query and a view
+    /// it reads each generate `__array_join_exp_1`. Both columns would then reach ARRAY JOIN under one name.
+    auto res = split(split_nodes, /*create_split_nodes_mapping=*/ false, /*avoid_duplicate_inputs=*/ true);
     return res;
 }
 
@@ -5146,9 +5148,8 @@ static void serializeConstant(
 /// The serialized data may come from a client, and the deserialization is recursive.
 static constexpr size_t MAX_ACTIONS_DAG_DESERIALIZATION_DEPTH = 1000;
 
-/// The maximum number of nodes in a deserialized `ActionsDAG`. The nodes have to be preallocated
-/// (children may reference nodes that come later in the stream), so the declared count must be
-/// bounded before it sizes the allocation.
+/// The maximum number of nodes in a deserialized `ActionsDAG`. The nodes are preallocated,
+/// so the declared count must be bounded before it sizes the allocation.
 static constexpr size_t MAX_ACTIONS_DAG_DESERIALIZATION_NODES = 1'000'000;
 
 static void checkActionsDAGDeserializationDepth(size_t nesting_depth)
@@ -5316,8 +5317,18 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
         /// runtime-filter id carrier, a volatile per-plan-build rendezvous key whose `result_name` is its
         /// stable identity. This output is hash-only and never deserialized; the transmission path
         /// (`for_cache_key == false`) always writes the value.
-        if (has_column && !(registry.for_cache_key && (node.is_runtime_filter_id || !isConstantValueInCacheKey(node))))
-            serializeConstant(*node.result_type, *node.column, out, registry, input_header);
+        ///
+        /// A set is the exception: `isConstantValueInCacheKey` leaves it out, but what `serializeConstant`
+        /// writes for it is only the set's hash, and a cache key writes no names, so without it nothing would tell
+        /// `x IN (SELECT a FROM t1)` from `x IN (SELECT a FROM t2)` - see `Node::updateHash`, which keeps
+        /// it for the same reason.
+        if (has_column)
+        {
+            const bool serialize_constant
+                = !node.is_runtime_filter_id && (isConstantValueInCacheKey(node) || WhichDataType(node.result_type).isSet());
+            if (!registry.for_cache_key || serialize_constant)
+                serializeConstant(*node.result_type, *node.column, out, registry, input_header);
+        }
 
         if (node.type == ActionType::INPUT)
         {
@@ -5395,6 +5406,13 @@ ActionsDAG ActionsDAG::deserialize(
     for (size_t i = 0; i < nodes_size; ++i)
         id_to_node.push_back(&nodes.emplace_back());
 
+    auto get_node = [&](size_t id, size_t limit)
+    {
+        if (id >= limit)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Node id {} is out of range, must be less than {}", id, limit);
+        return id_to_node[id];
+    };
+
     for (size_t i = 0; i < nodes_size; ++i)
     {
         Node & node = *id_to_node.at(i);
@@ -5420,7 +5438,8 @@ ActionsDAG ActionsDAG::deserialize(
         {
             size_t child_id = 0;
             readVarUInt(child_id, in);
-            children.push_back(id_to_node.at(child_id));
+            /// `serialize` writes every node after its children.
+            children.push_back(get_node(child_id, i));
         }
         node.children.assign(children.begin(), children.end());
 
@@ -5538,7 +5557,7 @@ ActionsDAG ActionsDAG::deserialize(
     {
         size_t input_id = 0;
         readVarUInt(input_id, in);
-        const auto * input = id_to_node.at(input_id);
+        const auto * input = get_node(input_id, nodes_size);
 
         if (input->type != ActionType::INPUT)
             throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -5565,7 +5584,7 @@ ActionsDAG ActionsDAG::deserialize(
     {
         size_t output_id = 0;
         readVarUInt(output_id, in);
-        outputs.push_back(id_to_node.at(output_id));
+        outputs.push_back(get_node(output_id, nodes_size));
     }
 
     for (const auto & node : nodes)
