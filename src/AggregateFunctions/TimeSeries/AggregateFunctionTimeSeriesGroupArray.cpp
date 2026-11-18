@@ -192,14 +192,14 @@ SELECT timeSeriesGroupArray(timestamps, values);
         "Merging two arrays of integer histograms",
         R"(
 SELECT timeSeriesGroupArray(h)
-FROM values('h Array(Tuple(timestamp UInt32, flags UInt8, counter_reset_hint UInt8, schema Int8, zero_threshold Float64, sum Float64, count_int Int64, zero_count_int Int64, count_float Float64, zero_count_float Float64, positive_int Array(Tuple(index Int32, count Int64)), negative_int Array(Tuple(index Int32, count Int64)), positive_float Array(Tuple(index Int32, count Float64)), negative_float Array(Tuple(index Int32, count Float64)), custom_values Array(Float64)))',
+FROM values('h Array(Tuple(timestamp UInt32, flags UInt8, counter_reset_hint Enum8(''unknown'' = 0, ''reset'' = 1, ''not_reset'' = 2, ''gauge'' = 3), schema Int8, zero_threshold Float64, sum Float64, count_int Int64, zero_count_int Int64, count_float Float64, zero_count_float Float64, positive_int Array(Tuple(index Int32, count Int64)), negative_int Array(Tuple(index Int32, count Int64)), positive_float Array(Tuple(index Int32, count Float64)), negative_float Array(Tuple(index Int32, count Float64)), custom_values Array(Float64)))',
     [(100, 0, 0, 0, 0., 1., 1, 0, 0., 0., [(0, 1)], [], [], [], []), (120, 0, 0, 0, 0., 3., 3, 0, 0., 0., [(0, 2), (1, 1)], [], [], [], [])],
     [(110, 0, 0, 0, 0., 2., 2, 0, 0., 0., [(0, 1), (1, 1)], [], [], [], []), (120, 0, 0, 0, 0., 7., 4, 0, 0., 0., [(0, 3), (1, 1)], [], [], [], [])]);
         )",
         R"(
-┌─timeSeriesGroupArray(h)───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ [(100,0,0,0,0,1,1,0,0,0,[(0,1)],[],[],[],[]),(110,0,2,0,0,2,2,0,0,0,[(0,1),(1,1)],[],[],[],[]),(120,0,2,0,0,7,4,0,0,0,[(0,3),(1,1)],[],[],[],[])] │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─timeSeriesGroupArray(h)───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [(100,0,'unknown',0,0,1,1,0,0,0,[(0,1)],[],[],[],[]),(110,0,'not_reset',0,0,2,2,0,0,0,[(0,1),(1,1)],[],[],[],[]),(120,0,'not_reset',0,0,7,4,0,0,0,[(0,3),(1,1)],[],[],[],[])] │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

@@ -145,7 +145,7 @@ template <bool is_const>
 template <typename Source>
 TimeSeriesHistogramPayloadColumnsViewImpl<is_const>::TimeSeriesHistogramPayloadColumnsViewImpl(FromSource, const Source & source)
     : flags(checkedElement<Ref<ColumnUInt8>>(source, Element::Flags))
-    , counter_reset_hint(checkedElement<Ref<ColumnUInt8>>(source, Element::CounterResetHint))
+    , counter_reset_hint(checkedElement<Ref<ColumnInt8>>(source, Element::CounterResetHint))
     , schema(checkedElement<Ref<ColumnInt8>>(source, Element::Schema))
     , zero_threshold(checkedElement<Ref<ColumnFloat64>>(source, Element::ZeroThreshold))
     , sum(checkedElement<Ref<ColumnFloat64>>(source, Element::Sum))

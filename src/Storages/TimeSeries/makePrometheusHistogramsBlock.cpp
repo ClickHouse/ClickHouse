@@ -256,6 +256,12 @@ namespace
         dest.finishArray();
     }
 
+    /// `appendHistogram` stores the `ResetHint` of a histogram as its number.
+    static_assert(TimeSeriesHistogramCounterResetHint::Unknown == prometheus::Histogram::UNKNOWN);
+    static_assert(TimeSeriesHistogramCounterResetHint::Reset == prometheus::Histogram::YES);
+    static_assert(TimeSeriesHistogramCounterResetHint::NotReset == prometheus::Histogram::NO);
+    static_assert(TimeSeriesHistogramCounterResetHint::Gauge == prometheus::Histogram::GAUGE);
+
     /// Appends one histogram sample to the columns: the flavour's counts as sent, the other flavour's scalars 0 and arrays empty.
     /// A histogram is an integer or a float one by its `count` arm (Prometheus's `IsFloatHistogram`; an unset arm is an integer
     /// histogram with count 0), and only that flavour's fields are read, like Prometheus's receiver does.
@@ -266,7 +272,7 @@ namespace
         const MutableView & view = columns.view;
         PrometheusTimestamps::insertInto(histogram.timestamp(), view.timestamps);
         view.flags.insertValue(is_float ? TimeSeriesHistogramFlags::IsFloat : 0);
-        view.counter_reset_hint.insertValue(narrow<UInt8>(static_cast<Int32>(histogram.reset_hint()), histogram, "reset_hint"));
+        view.counter_reset_hint.insertValue(narrow<Int8>(static_cast<Int32>(histogram.reset_hint()), histogram, "reset_hint"));
         view.schema.insertValue(narrow<Int8>(histogram.schema(), histogram, "schema"));
         view.zero_threshold.insertValue(histogram.zero_threshold());
         view.sum.insertValue(histogram.sum());

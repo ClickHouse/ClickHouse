@@ -19,8 +19,15 @@ INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.flags) V
 INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.flags) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [3]); -- { serverError INCORRECT_DATA }
 INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.flags) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [128]); -- { serverError INCORRECT_DATA }
 
-SELECT '-- counter_reset_hint is 0..3';
-INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.counter_reset_hint) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [4]); -- { serverError INCORRECT_DATA }
+SELECT '-- counter_reset_hint is a value of its Enum8 type: text input is rejected while parsing, binary input by the validation';
+INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.counter_reset_hint) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [4]); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+-- A binary format doesn't check the values of an Enum: the arrays [4] and [-1] in RowBinary.
+INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.counter_reset_hint)
+    SELECT 'm', map('job', 'api'), [toDateTime64(100, 3)], hints
+    FROM format(RowBinary, 'hints Array(Enum8(''unknown'' = 0, ''reset'' = 1, ''not_reset'' = 2, ''gauge'' = 3))', unhex('0104')); -- { serverError INCORRECT_DATA }
+INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.counter_reset_hint)
+    SELECT 'm', map('job', 'api'), [toDateTime64(100, 3)], hints
+    FROM format(RowBinary, 'hints Array(Enum8(''unknown'' = 0, ''reset'' = 1, ''not_reset'' = 2, ''gauge'' = 3))', unhex('01FF')); -- { serverError INCORRECT_DATA }
 
 SELECT '-- schema is -4..8 or -53';
 INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.schema) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [9]); -- { serverError INCORRECT_DATA }

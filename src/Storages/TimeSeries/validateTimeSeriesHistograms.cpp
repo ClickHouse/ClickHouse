@@ -31,8 +31,6 @@ namespace
     constexpr Int8 exponential_schema_max = 8;
     constexpr Int8 custom_buckets_schema = -53;
 
-    constexpr UInt8 max_counter_reset_hint = 3;
-
     using ColumnsView = TimeSeriesHistogramsColumnsView;
 
     /// Throws INCORRECT_DATA about a histogram sample: its number among the samples of the block, the row of the block it belongs
@@ -80,16 +78,13 @@ namespace
             fail("flags {} has reserved bits set, only bit 0 (a float histogram) may be set", static_cast<UInt32>(flags));
     }
 
-    /// The reset hint is one of unknown, yes, no, gauge.
+    /// The reset hint is a value of its `Enum8` type, which binary input formats and remote write don't check.
     template <typename Fail>
-    void checkCounterResetHint(UInt8 counter_reset_hint, const Fail & fail)
+    void checkCounterResetHint(Int8 counter_reset_hint, const Fail & fail)
     {
-        if (counter_reset_hint > max_counter_reset_hint)
-        {
-            fail("counter_reset_hint {} is out of the range 0..{}",
-                static_cast<UInt32>(counter_reset_hint),
-                static_cast<UInt32>(max_counter_reset_hint));
-        }
+        using Hint = TimeSeriesHistogramCounterResetHint;
+        if ((counter_reset_hint < Hint::Unknown) || (counter_reset_hint > Hint::Gauge))
+            fail("counter_reset_hint {} is out of the range {}..{}", counter_reset_hint, Hint::Unknown, Hint::Gauge);
     }
 
     bool isCustomBucketsSchema(Int8 schema)

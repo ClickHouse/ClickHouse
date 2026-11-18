@@ -51,15 +51,18 @@ struct TimeSeriesHistogramFlags
     static constexpr bool hasReservedBits(UInt8 flags) { return (flags & ~OuterMask) != 0; }
 };
 
+/// The values of the `counter_reset_hint` element: the numbers of `ResetHint` of the Prometheus remote-write protocol, named as
+/// Prometheus writes the hint in the text form of a histogram (`counter_reset_hint:not_reset`). A counter hint describes the relation
+/// to the preceding sample; the gauge marker describes the sample itself. The hints are computed by TimeSeriesHistogramCounterResetRule.
 struct TimeSeriesHistogramCounterResetHint
 {
-    static constexpr UInt8 Unknown = 0;
-    static constexpr UInt8 Reset = 1;
-    static constexpr UInt8 NoReset = 2;
-    static constexpr UInt8 Gauge = 3;
+    static constexpr Int8 Unknown = 0;
+    static constexpr Int8 Reset = 1;
+    static constexpr Int8 NotReset = 2;
+    static constexpr Int8 Gauge = 3;
 
-    /// A counter hint describes the relation to the preceding sample; the gauge marker describes the sample itself.
-    /// The hints are computed by TimeSeriesHistogramCounterResetRule.
+    /// No value may be below `Unknown`: an `Enum` inserts its smallest value as the default, while its column inserts 0.
+    static constexpr std::string_view getTypeName() { return "Enum8('unknown' = 0, 'reset' = 1, 'not_reset' = 2, 'gauge' = 3)"; }
 };
 
 /// The name, the type and the codec of an element of the histogram tuple, and its description for the documentation.
@@ -114,8 +117,9 @@ public:
                     "and its counts in the `*_int` elements. The readers ignore the elements of the other flavour, which remote write leaves 0 and "
                     "empty. The other bits are reserved and must be 0"};
             case TimeSeriesHistogramsColumn::CounterResetHint:
-                return {"counter_reset_hint", "UInt8", "CODEC(ZSTD(3))",
-                    "The counter reset hint: 0 - unknown, 1 - a counter reset happened, 2 - no counter reset, 3 - a gauge histogram"};
+                return {"counter_reset_hint", TimeSeriesHistogramCounterResetHint::getTypeName(), "CODEC(ZSTD(3))",
+                    "The counter reset hint: `unknown`, `reset` (a counter reset happened), `not_reset` (no counter reset) or `gauge` "
+                    "(a gauge histogram)"};
             case TimeSeriesHistogramsColumn::Schema:
                 return {"schema", "Int8", "CODEC(ZSTD(3))",
                     "The bucket schema: from -4 to 8 for exponential buckets, -53 for custom buckets"};
@@ -211,7 +215,7 @@ public:
     static constexpr size_t getTuplePosition(TimeSeriesHistogramsColumn column) { return getTimestampPosition() + 1 + static_cast<size_t>(column); }
 
     /// The type of the `histograms` column of the samples tables (without the `SimpleAggregateFunction` wrapper) and of
-    /// `timeSeriesSelector`: `Array(Tuple(timestamp <timestamp_type>, flags UInt8, counter_reset_hint UInt8, ..., custom_values Array(Float64)))`.
+    /// `timeSeriesSelector`: `Array(Tuple(timestamp <timestamp_type>, flags UInt8, counter_reset_hint Enum8(...), ..., custom_values Array(Float64)))`.
     static DataTypePtr makeHistogramsArrayType(const DataTypePtr & timestamp_type);
 
     /// If `type` is `Array(Tuple(timestamp, <the payload elements>))` (optionally wrapped in `SimpleAggregateFunction`),

@@ -106,11 +106,11 @@ namespace
     /// detected, starts a new chunk in its TSDB, and the first sample of a chunk is returned with an unknown hint because the previous
     /// chunk may be gone (`counterResetHint` in `tsdb/chunkenc/histogram_meta.go`), so the readers detect resets from the data.
     /// PromQL trusts `YES` without checking the data, so a stored reset is returned as unknown here too.
-    prometheus::Histogram_ResetHint toPrometheusResetHint(const UInt8 stored_hint)
+    prometheus::Histogram_ResetHint toPrometheusResetHint(const Int8 stored_hint)
     {
         if (stored_hint == TimeSeriesHistogramCounterResetHint::Gauge)
             return prometheus::Histogram::GAUGE;
-        if (stored_hint == TimeSeriesHistogramCounterResetHint::NoReset)
+        if (stored_hint == TimeSeriesHistogramCounterResetHint::NotReset)
             return prometheus::Histogram::NO;
         return prometheus::Histogram::UNKNOWN;
     }

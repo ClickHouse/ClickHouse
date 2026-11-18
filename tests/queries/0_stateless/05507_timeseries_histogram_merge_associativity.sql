@@ -10,14 +10,15 @@ DROP TABLE IF EXISTS histogram_arrays;
 CREATE TABLE histogram_arrays
 (
     name String,
-    h Array(Tuple(timestamp UInt32, flags UInt8, counter_reset_hint UInt8, schema Int8, zero_threshold Float64,
+    h Array(Tuple(timestamp UInt32, flags UInt8, counter_reset_hint Enum8('unknown' = 0, 'reset' = 1, 'not_reset' = 2, 'gauge' = 3),
+                  schema Int8, zero_threshold Float64,
                   sum Float64, count_int Int64, zero_count_int Int64, count_float Float64, zero_count_float Float64,
                   positive_int Array(Tuple(index Int32, count Int64)), negative_int Array(Tuple(index Int32, count Int64)),
                   positive_float Array(Tuple(index Int32, count Float64)), negative_float Array(Tuple(index Int32, count Float64)),
                   custom_values Array(Float64)))
 ) ENGINE = Memory;
 
--- Samples as (timestamp, count, hint); the hints are 0 - unknown, 1 - reset, 2 - no reset, 3 - gauge.
+-- Samples as (timestamp, count, hint); the hints are 0 - unknown, 1 - reset, 2 - not_reset, 3 - gauge.
 INSERT INTO histogram_arrays
 SELECT name, arrayMap(s -> (s.1, 0, s.3, 0, 0., toFloat64(s.2), s.2, s.2, 0., 0., [], [], [], [], []), samples)
 FROM values('name String, samples Array(Tuple(UInt32, Int64, UInt8))',

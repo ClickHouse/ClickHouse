@@ -1137,7 +1137,7 @@ bit 0 of `flags` tells the flavour. The readers ignore the elements of the other
 and an `INSERT` isn't validated for them.
 The buckets of a side are pairs of the bucket index and the count sorted by index.
 A row of a float-only series has an empty `histograms` array, a row of a histogram-only series has an empty `samples` array.
-The Prometheus remote-read protocol returns both kinds of samples; a histogram with a reset hint of 1 (a counter reset) is returned with
+The Prometheus remote-read protocol returns both kinds of samples; a histogram with the counter reset hint `reset` is returned with
 an unknown hint, as Prometheus itself returns the first sample of a chunk, so the reader detects the reset from the data instead of
 trusting the hint; the first histogram of a series in the response, whose predecessor isn't in it, gets an unknown hint too
 unless it is a gauge. PromQL queries evaluate the float samples only until the functions

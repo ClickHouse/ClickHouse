@@ -149,7 +149,7 @@ def test_integer_histogram():
         timestamp=TIMESTAMP_MS,
     )
     check_histogram_round_trip(
-        histogram, f"{TIMESTAMP_MS}\t0\t2\t3\t0.001\t12.5\t10\t2\t[(-2,3),(-1,2),(1,3)]\t[(0,0)]\t0\t0\t[]\t[]\t[]"
+        histogram, f"{TIMESTAMP_MS}\t0\tnot_reset\t3\t0.001\t12.5\t10\t2\t[(-2,3),(-1,2),(1,3)]\t[(0,0)]\t0\t0\t[]\t[]\t[]"
     )
 
 
@@ -166,7 +166,7 @@ def test_float_histogram():
         reset_hint=types_pb2.Histogram.ResetHint.GAUGE,
         timestamp=TIMESTAMP_MS,
     )
-    check_histogram_round_trip(histogram, f"{TIMESTAMP_MS}\t1\t3\t0\t0\t3.25\t0\t0\t[]\t[]\t5.5\t0.5\t[(0,2.5),(1,2.5)]\t[]\t[]")
+    check_histogram_round_trip(histogram, f"{TIMESTAMP_MS}\t1\tgauge\t0\t0\t3.25\t0\t0\t[]\t[]\t5.5\t0.5\t[(0,2.5),(1,2.5)]\t[]\t[]")
 
 
 def test_custom_buckets_histogram():
@@ -182,14 +182,14 @@ def test_custom_buckets_histogram():
         positive_deltas=[2, 1, 1],
         timestamp=TIMESTAMP_MS,
     )
-    check_histogram_round_trip(histogram, f"{TIMESTAMP_MS}\t0\t0\t-53\t0\t4.2\t9\t0\t[(0,2),(1,3),(2,4)]\t[]\t0\t0\t[]\t[]\t[0.1,0.5,1]")
+    check_histogram_round_trip(histogram, f"{TIMESTAMP_MS}\t0\tunknown\t-53\t0\t4.2\t9\t0\t[(0,2),(1,3),(2,4)]\t[]\t0\t0\t[]\t[]\t[0.1,0.5,1]")
 
 
 def test_stale_marker_and_unset_count():
     # A stale marker is a histogram whose `sum` is the stale NaN; Prometheus sends nothing else. The NaN payload must survive
     # bit-exactly, that is how staleness is detected. A histogram without a `count` arm is an integer histogram with count 0.
     stale = types_pb2.Histogram(sum=STALE_NAN, timestamp=TIMESTAMP_MS)
-    check_histogram_round_trip(stale, f"{TIMESTAMP_MS}\t0\t0\t0\t0\tnan\t0\t0\t[]\t[]\t0\t0\t[]\t[]\t[]")
+    check_histogram_round_trip(stale, f"{TIMESTAMP_MS}\t0\tunknown\t0\t0\tnan\t0\t0\t[]\t[]\t0\t0\t[]\t[]\t[]")
     assert node.query("SELECT hex(reinterpretAsUInt64(h.sum)) FROM timeSeriesSamples(prometheus) ARRAY JOIN histograms AS h") == "7FF0000000000002\n"
 
 
@@ -261,7 +261,7 @@ def test_invalid_histograms_are_rejected():
     # Values which would wrap into valid ones if they were cast to the column types without a check: -309 into -53, 260 into 4.
     expect_rejected(types_pb2.Histogram(sum=1, schema=-309, timestamp=TIMESTAMP_MS), "schema -309 is out of the range -128..127")
     expect_rejected(types_pb2.Histogram(sum=1, schema=300, timestamp=TIMESTAMP_MS), "schema 300 is out of the range -128..127")
-    expect_rejected(types_pb2.Histogram(sum=1, reset_hint=260, timestamp=TIMESTAMP_MS), "reset_hint 260 is out of the range 0..255")
+    expect_rejected(types_pb2.Histogram(sum=1, reset_hint=260, timestamp=TIMESTAMP_MS), "reset_hint 260 is out of the range -128..127")
 
     # A count above Int64 would wrap into a negative one.
     expect_rejected(
@@ -457,7 +457,7 @@ def test_remote_read_returns_stored_resets_as_unknown():
     # the sender's reset included.
     assert node.query(
         "SELECT metric_name, histograms.counter_reset_hint FROM prometheus WHERE metric_name IN ('explicit', 'detected') ORDER BY metric_name"
-    ) == "detected\t[0,1,2]\nexplicit\t[2,2,2]\n"
+    ) == "detected\t['unknown','reset','not_reset']\nexplicit\t['not_reset','not_reset','not_reset']\n"
 
     series = remote_read(timestamps[0], timestamps[-1])
     assert [h.reset_hint for h in series[labels_key(__name__="detected")].histograms] == [
@@ -484,7 +484,7 @@ def test_fields_of_the_other_flavour_are_ignored():
     send(make_write_request(({"__name__": "hist"}, [integer_histogram, float_histogram])))
 
     assert read_histograms() == (
-        f"{TIMESTAMP_MS}\t0\t0\t0\t0\t1\t3\t0\t[(0,3)]\t[]\t0\t0\t[]\t[]\t[]\n"
-        f"{TIMESTAMP_MS + 1000}\t1\t0\t0\t0\t2\t0\t0\t[]\t[]\t2.5\t0\t[(0,2.5)]\t[]\t[]\n"
+        f"{TIMESTAMP_MS}\t0\tunknown\t0\t0\t1\t3\t0\t[(0,3)]\t[]\t0\t0\t[]\t[]\t[]\n"
+        f"{TIMESTAMP_MS + 1000}\t1\tunknown\t0\t0\t2\t0\t0\t[]\t[]\t2.5\t0\t[(0,2.5)]\t[]\t[]\n"
     )
 

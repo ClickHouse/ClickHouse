@@ -62,7 +62,7 @@ public:
     [[nodiscard]] size_t size() const { return flags.size(); }
 
     Ref<ColumnUInt8> flags;
-    Ref<ColumnUInt8> counter_reset_hint;
+    Ref<ColumnInt8> counter_reset_hint;
     Ref<ColumnInt8> schema;
     Ref<ColumnFloat64> zero_threshold;
     Ref<ColumnFloat64> sum;
