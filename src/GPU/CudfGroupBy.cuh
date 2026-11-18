@@ -41,9 +41,6 @@ public:
     virtual bool reducesRuns() const = 0;
     virtual void reduceRuns(bool reduce) = 0;
 
-    /// Whether the partial results of every aggregate combine by an aggregate: not those of an `avg`.
-    virtual bool combinesPartials() const = 0;
-
     /// Before the first batch, of a `GROUP BY` with keys whose aggregates combine: each batch is reduced into partial
     /// results by a groupby of cuDF and split by a hash of the keys into `num_parts` parts as it comes, as Sirius does,
     /// so that no hash table grows over the batches. See `partition`.

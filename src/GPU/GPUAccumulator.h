@@ -131,10 +131,6 @@ public:
     /// The columns of a batch: the keys, the values, then the columns of `where`.
     void add(GPUDeviceBatch batch);
 
-    /// Whether the lanes can merge by parts of their keys: with keys, and of aggregates whose partial results combine,
-    /// not of an `avg`.
-    bool mergesByParts() const { return !group_keys.empty() && group_by->combinesPartials(); }
-
     /// Before the first batch: reduces each batch into partial results split by the keys into `num_parts` parts, see
     /// `CudfGroupBy::splitIntoParts`.
     void splitIntoParts(size_t num_parts) { group_by->splitIntoParts(num_parts); }

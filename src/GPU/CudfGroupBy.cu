@@ -407,8 +407,6 @@ public:
         reduce_runs = reduce;
     }
 
-    __host__ bool combinesPartials() const override { return runs_combine; }
-
     __host__ void splitIntoParts(size_t num_parts) override
     {
         if (keyless || !runs_combine)
