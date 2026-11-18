@@ -267,14 +267,15 @@ def main():
             res = results[-1].is_ok()
 
     # Stage 1: Build instrumented clang for PGO profile collection
-    # Only needs clang + lld (for compilation/linking) and compiler-rt (profiling runtime)
+    # Only needs clang and compiler-rt (profiling runtime). No lld: ClickHouse links with an `ld.lld` next to
+    # its compiler, and an instrumented lld exits through `_Exit`, so it writes no profile.
     if res and JobStages.STAGE1_BUILD in stages:
         clean_dirs(STAGE1_BUILD_DIR, STAGE1_INSTALL_DIR)
         os.makedirs(STAGE1_BUILD_DIR, exist_ok=True)
 
         cmake_cmd = (
             f"cmake -G Ninja"
-            f' -DLLVM_ENABLE_PROJECTS="clang;lld"'
+            f' -DLLVM_ENABLE_PROJECTS="clang"'
             f' -DLLVM_ENABLE_RUNTIMES="compiler-rt"'
             f" -DLLVM_TARGETS_TO_BUILD=Native"
             f" -DCMAKE_BUILD_TYPE=Release"
@@ -301,7 +302,7 @@ def main():
             results.append(
                 Result.from_commands_run(
                     name="Stage 1 Build (instrumented clang)",
-                    command=f"{CUSTOM_NINJA} -C {STAGE1_BUILD_DIR} clang lld",
+                    command=f"{CUSTOM_NINJA} -C {STAGE1_BUILD_DIR} clang",
                 )
             )
             res = results[-1].is_ok()
@@ -312,7 +313,7 @@ def main():
                     name="Stage 1 Install",
                     command=(
                         f"{CUSTOM_NINJA} -C {STAGE1_BUILD_DIR}"
-                        f" install-clang install-clang-resource-headers install-lld"
+                        f" install-clang install-clang-resource-headers"
                     ),
                 )
             )
