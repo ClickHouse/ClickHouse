@@ -75,21 +75,21 @@ public:
             regexp_jit_min_count = settings[Setting::min_count_to_compile_regular_expression];
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool isVariadic() const override { return Generator::isVariadic(); }
+    [[nodiscard]] bool isVariadic() const override { return Generator::isVariadic(); }
 
-    size_t getNumberOfArguments() const override { return Generator::getNumberOfArguments(); }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return Generator::getNumberOfArguments(); }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return Generator::getArgumentsThatAreAlwaysConstant(); }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return Generator::getArgumentsThatAreAlwaysConstant(); }
 
     /// Per-Generator opt-in to declarative signatures: when the Generator defines a
     /// `signature` static member the framework uses it for type checking and return-type
     /// resolution; otherwise we fall back to the legacy `Generator::checkArguments` path
     /// which always returns `Array(String)`.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (requires { Generator::signature; })
             return Generator::signature;
@@ -97,14 +97,14 @@ public:
             return {};
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         Generator::checkArguments(*this, arguments);
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         Generator generator{};
         /// Only generators that opt in (currently `ExtractAllImpl`) take the JIT compile-count threshold.

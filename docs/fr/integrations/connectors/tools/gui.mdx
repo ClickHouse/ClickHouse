@@ -470,6 +470,21 @@ doc_type: 'reference'
   [Plugin ClickHouse pour Tabularis](https://github.com/TabularisDB/tabularis-clickhouse-plugin) · [Site web](https://tabularis.dev)
 </Accordion>
 
+<Accordion title="DBine">
+  [DBine](https://github.com/addlayer-io/dbine) est un gestionnaire de bases de données de bureau gratuit et open-source (Apache 2.0) pour Windows, macOS et Linux. Il se connecte à ClickHouse via l&#39;interface HTTP (`8123`, ou `8443` avec TLS), aux côtés de plus de 130 bases de données et services cloud, le tout dans une même fenêtre.
+
+  Fonctionnalités :
+
+  * Éditeur SQL prenant en charge le dialecte ClickHouse, avec autocomplétion des tables et des colonnes, et annulation des requêtes via `KILL QUERY`.
+  * Exploration des bases de données, tables, vues et colonnes, avec grilles de résultats, graphiques et export aux formats CSV, JSON, XLSX et SQL.
+  * Concepteur de tables prenant en charge `ENGINE`, `ORDER BY`, `PARTITION BY`, TTL et les codecs ; les modifications de cellules sont converties en mutations `ALTER TABLE ... UPDATE`, que vous pouvez vérifier avant de les exécuter.
+  * Plans de requête obtenus via `EXPLAIN json = 1, indexes = 1`, liste des processus issue de `system.processes` et profileur reposant sur `system.query_log`.
+  * Comparaison de schémas, comparaison de données et notebooks capables d&#39;interroger plusieurs bases de données et d&#39;en joindre les résultats avec DuckDB.
+  * Tunnels SSH, mots de passe récupérés depuis des gestionnaires de secrets, connexions en lecture seule, serveur MCP et assistant IA qui propose des requêtes sans rien exécuter avant votre approbation.
+
+  [Site web](https://dbine.com) · [Téléchargement](https://github.com/addlayer-io/dbine/releases)
+</Accordion>
+
 ## Commercial {#commercial}
 
 <Accordion title="ADQM Notebook">
