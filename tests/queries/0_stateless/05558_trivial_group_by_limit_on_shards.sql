@@ -27,7 +27,7 @@ SETTINGS max_block_size = 65409;
 SELECT number FROM remote('127.0.0.{2,3}', numbers(1000)) GROUP BY number LIMIT 5 SETTINGS max_rows_to_group_by = 100, group_by_overflow_mode = 'throw'; -- { serverError TOO_MANY_ROWS }
 SELECT number FROM view(SELECT number FROM remote('127.0.0.2', numbers(1000)) GROUP BY number LIMIT 5 SETTINGS max_rows_to_group_by = 100, group_by_overflow_mode = 'throw') GROUP BY number LIMIT 5; -- { serverError TOO_MANY_ROWS }
 
--- Such a query over a trivial view is not pushed down to the shards.
+-- Such a query over a trivial view is pushed down to the shards, as without the optimization.
 DROP VIEW IF EXISTS v;
 DROP TABLE IF EXISTS d;
 CREATE TABLE d (number UInt64) ENGINE = Distributed(test_cluster_two_shards, system, numbers);
@@ -38,7 +38,7 @@ SELECT 'enabled', countIf(explain LIKE '%MergingAggregated%') FROM (EXPLAIN SELE
 DROP VIEW v;
 DROP TABLE d;
 
--- The queries in `UNION` have no limit on groups, so a distributed plan can be made for them.
+-- With `make_distributed_plan` there is no limit on groups, so a distributed plan can be made.
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t SELECT number % 100 FROM numbers(1000);

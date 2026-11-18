@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: shard
-# The internal setting `trivial_group_by_limit` does not override the limits of the user.
+# The limit on groups of a trivial `GROUP BY ... LIMIT` does not override the limits of the user, also on shards.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -26,7 +26,7 @@ do
         echo -n "$profile, $table: "
         $CLICKHOUSE_CLIENT --user "$user" -q "
             SELECT x FROM $table GROUP BY x LIMIT 30
-            SETTINGS trivial_group_by_limit = 30, max_block_size = 10, max_threads = 1, prefer_localhost_replica = 0,
+            SETTINGS max_block_size = 10, max_threads = 1, prefer_localhost_replica = 0,
                 optimize_aggregation_in_order = 0, enable_parallel_replicas = 0
         " 2>&1 | awk '/TOO_MANY_ROWS/ { error = 1 } END { print error ? "TOO_MANY_ROWS" : NR }'
     done

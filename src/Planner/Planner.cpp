@@ -144,7 +144,6 @@ namespace Setting
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsUInt64 max_rows_to_group_by;
-    extern const SettingsUInt64 trivial_group_by_limit;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsBool make_distributed_plan;
@@ -306,7 +305,6 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
             findTableForParallelReplicas(query_tree, select_query_options),
             findTableUnionForParallelReplicas(query_tree, select_query_options),
             collectFiltersForAnalysis(query_tree, select_query_options, post_filter_))))
-    , is_root_planner(true)
 {
 }
 
@@ -1067,37 +1065,38 @@ void Planner::buildPlanForQueryNode()
                     useful_sets);
 
             /// For the trivial `GROUP BY ... LIMIT` shape, cap the aggregation at `LIMIT + OFFSET`
-            /// keys. Unlike the cap permitted by `OptimizeTrivialGroupByLimitPass`
-            /// (which is restricted to aggregate-free projections), the shared kept-keys cutoff
-            /// keeps the aggregate values of the kept keys exact, so it also fires with aggregate
-            /// functions in the projection. It is only sound when this node performs the complete
+            /// keys. The cap goes only into the parameters of this aggregation. It is not set with
+            /// `max_rows_to_group_by`: the views that the query reads, and the shards with all the
+            /// subqueries that they execute, inherit the settings, so that would cap their aggregations too.
+            ///
+            /// Without aggregate functions in the projection, any `LIMIT + OFFSET` keys are a correct
+            /// result, so every thread and every node can keep other keys, and the cap is sound at any
+            /// stage. The shards see the full query, so they find the same cap themselves.
+            ///
+            /// With aggregate functions, the shared kept-keys cutoff keeps the aggregate values of the
+            /// kept keys exact. It is only sound when this node performs the complete
             /// aggregation itself (both stages): partial states sent to a remote initiator would
             /// be merged with other nodes' states, whose kept keys differ, and the values of the
             /// kept keys would be undercounted again — one level up, across nodes instead of
             /// across threads. On the shards of distributed queries and on the replicas of
             /// parallel-replicas reading, `isSecondStage` is false, so the cutoff stays off there.
+            ///
+            /// `make_distributed_plan` cannot split an aggregation with a cap, so the cap is not used with it.
+            ///
             /// `settings` holds this node's SETTINGS clause as constrained and clamped. A nested change equal to the inherited
             /// value is not applied there, so an explicit `group_by_overflow_mode` is not marked as changed.
             Settings query_settings = settings;
             if (query_node.getSettingsChanges().tryGet("group_by_overflow_mode"))
                 query_settings[Setting::group_by_overflow_mode].setChanged(true);
 
-            /// Without aggregate functions any keys will do, so the cap is sound at any stage, but not in nested
-            /// subqueries: they can be correlated.
             const bool has_aggregates = !aggregation_analysis_result.aggregate_descriptions.empty();
-            const bool can_cap_aggregation = has_aggregates
-                ? !query_settings[Setting::make_distributed_plan] && query_processing_info.isSecondStage()
-                : is_root_planner;
+            const bool can_cap_aggregation
+                = !query_settings[Setting::make_distributed_plan] && (!has_aggregates || query_processing_info.isSecondStage());
 
             std::optional<UInt64> trivial_group_by_limit;
             if (can_cap_aggregation)
             {
                 trivial_group_by_limit = getTrivialGroupByLimit(query_node, query_settings);
-
-                /// `OptimizeTrivialGroupByLimitPass` permits the cap on the initiator. Views and subqueries on shards
-                /// inherit the setting, so check that it is about this query. It overrides nothing on this server.
-                if (!has_aggregates && trivial_group_by_limit != query_settings[Setting::trivial_group_by_limit].value)
-                    trivial_group_by_limit.reset();
 
                 /// Respect a user-set tighter `max_rows_to_group_by`. Equality is safe only with
                 /// the approximate ANY-mode semantics; otherwise forcing ANY below would replace

@@ -94,8 +94,6 @@ private:
     std::set<std::string> used_row_policies;
     QueryNodeToPlanStepMapping query_node_to_plan_step_mapping;
     bool allow_query_cache_for_subqueries_propagation = true;
-    /// The query tree is planned on its own, not as a part of the query tree of another planner.
-    bool is_root_planner = false;
 };
 
 }

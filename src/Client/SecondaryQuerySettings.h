@@ -23,8 +23,9 @@ struct Settings;
 ///   the shard otherwise takes the parser from the effective `dialect` of the authenticated user, which
 ///   its own profile may default to Kusto or PRQL. Sending a value the user already has is a no-op for
 ///   settings constraints, so this does not trip a profile that pins `dialect` as read-only.
-/// - `trivial_group_by_limit` is not sent with an explicit `group_by_overflow_mode` other than `any`, which
-///   forbids the cap: the shard drops a value equal to its own, so it cannot tell that `throw` is explicit.
+/// - An explicit `group_by_overflow_mode` other than `any` forbids the cap on groups of a trivial `GROUP BY ... LIMIT`
+///   (see `getTrivialGroupByLimit`), but the shard drops a value equal to its own, so it cannot tell that `throw` is
+///   explicit. Thus `optimize_trivial_group_by_limit_query` is disabled for the shard explicitly.
 ///
 /// The demotion runs first, so the `dialect` override is marked changed afterwards.
 void prepareSecondaryQuerySettings(Settings & settings);

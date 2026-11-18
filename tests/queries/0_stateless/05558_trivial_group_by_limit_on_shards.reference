@@ -1,12 +1,12 @@
 local	1	0
 one shard	1	0
 scalar subquery	1	0
-subquery	0	0
+subquery	1	0
 two shards	2	0
 two shards, aggregate	0	0
 two shards, disabled	0	0
 two shards, plan	2	0
 disabled	1
-enabled	0
+enabled	1
 union
 union
