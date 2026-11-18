@@ -2430,7 +2430,8 @@ static NameToNameVector collectFilesForRenames(
                         columns_to_check.push_back(name);
 
                 auto old_streams = getStreamCounts(source_part, source_part->checksums, columns_to_check);
-                auto new_streams = getStreamCounts(new_part, source_part->checksums, columns_to_check);
+                /// A renamed Nested field keeps the shared offsets stream under the same name.
+                auto new_streams = getStreamCounts(new_part, source_part->checksums, new_part->getColumns().getNames());
 
                 for (const auto & [old_stream, _] : old_streams)
                 {

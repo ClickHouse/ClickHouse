@@ -57,6 +57,23 @@ SELECT 'update', id, a, c FROM t_update ORDER BY id;
 CHECK TABLE t_update SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_update;
 
+-- ALTER UPDATE of another column, then DROP COLUMN and RENAME COLUMN of two Nested fields that share the offsets.
+DROP TABLE IF EXISTS t_nested SYNC;
+CREATE TABLE t_nested (id UInt32, x UInt32, n Nested(a UInt32, b UInt32))
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_nested', '1') ORDER BY tuple()
+SETTINGS share_nested_offsets = 1, max_replicated_mutations_in_queue = 0, replicated_max_mutations_in_one_entry = 1,
+    min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
+
+INSERT INTO t_nested VALUES (1, 10, [10, 11], [20, 21]);
+ALTER TABLE t_nested UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
+ALTER TABLE t_nested DROP COLUMN `n.b`, RENAME COLUMN `n.a` TO `n.c` SETTINGS alter_sync = 0;
+SYSTEM SYNC REPLICA t_nested;
+ALTER TABLE t_nested MODIFY SETTING max_replicated_mutations_in_queue = 16;
+ALTER TABLE t_nested UPDATE x = x WHERE 1 SETTINGS mutations_sync = 2;
+SELECT 'nested', id, x, n.c FROM t_nested ORDER BY id;
+CHECK TABLE t_nested SETTINGS check_query_single_value_result = 1;
+DROP TABLE t_nested;
+
 -- Lightweight UPDATE of the renamed column, then ALTER DELETE.
 DROP TABLE IF EXISTS t_patch SYNC;
 CREATE TABLE t_patch (id UInt32, a UInt32, b UInt32)

@@ -9,6 +9,8 @@ update columns	['id','a','c']
 update	1	1112	2222
 update	2	3334	4444
 1
+nested	1	11	[10,11]
+1
 patch pending	2
 patch columns	['id','a','c']
 patch	2	3333	9999
