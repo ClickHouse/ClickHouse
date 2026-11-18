@@ -5713,6 +5713,17 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     if (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
         reader_settings.use_partial_aggregate_cache = false;
 
+    /// Pending alter and metadata mutations (e.g. a `DROP COLUMN` followed by re-adding a column with the same
+    /// definition) change the values returned through `AlterConversions` without changing the part name,
+    /// `info.mutation` or the current column definitions that the metadata identity covers.
+    if (MergeTreeDataSelectExecutor::hasPendingAlterOrMetadataMutations(result.parts_with_ranges, mutations_snapshot))
+        reader_settings.use_partial_aggregate_cache = false;
+
+    /// A masking policy rewrites the values of a part at read time for the current user only,
+    /// while the cache is shared by all users and does not represent the policy in its key.
+    if (reader_settings.use_partial_aggregate_cache && data.hasEnabledMaskingPolicies(context))
+        reader_settings.use_partial_aggregate_cache = false;
+
     /// A parallel replica or a distributed read bucket reads only the mark ranges assigned to it, not the whole part
     /// that keys the cache. The flag can be set after the step was created, so check it again here.
     if (is_parallel_reading_from_replicas || distributed_read_bucket_count > 0)
