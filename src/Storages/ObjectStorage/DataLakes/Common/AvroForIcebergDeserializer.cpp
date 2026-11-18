@@ -274,6 +274,11 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
             for (const auto & column_stats : values_count.safeGet<Array>())
             {
                 const auto & column_number_and_count = column_stats.safeGet<Tuple>();
+                if (column_number_and_count.size() != 2)
+                    throw Exception(
+                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                        "Expected a key-value pair of 2 elements in {} in manifest file '{}', got {} elements",
+                        path, manifest_file_path, column_number_and_count.size());
                 Int32 number = static_cast<Int32>(column_number_and_count[0].safeGet<Int32>());
                 Int64 count = column_number_and_count[1].safeGet<Int64>();
                 if (path == c_data_file_value_counts)
@@ -297,6 +302,11 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
             for (const auto & column_stats : bounds.safeGet<Array>())
             {
                 const auto & column_number_and_bound = column_stats.safeGet<Tuple>();
+                if (column_number_and_bound.size() != 2)
+                    throw Exception(
+                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                        "Expected a key-value pair of 2 elements in {} in manifest file '{}', got {} elements",
+                        path, manifest_file_path, column_number_and_bound.size());
                 Int32 number = static_cast<Int32>(column_number_and_bound[0].safeGet<Int32>());
                 const Field & bound_value = column_number_and_bound[1];
 
