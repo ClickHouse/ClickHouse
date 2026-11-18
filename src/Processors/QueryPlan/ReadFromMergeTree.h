@@ -1,4 +1,6 @@
 #pragma once
+
+#include <Processors/QueryPlan/Profiling/Capture/PlanIndexStats.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -142,64 +144,15 @@ struct HypotheticalProjection;
 class ReadFromMergeTree final : public SourceStepWithFilter
 {
 public:
-    enum class IndexType : uint8_t
-    {
-        None,
-        MinMax,
-        Partition,
-        PrimaryKey,
-        Skip,
-        PrimaryKeyExpand,
-        Statistics,
-        NonIntersectingSplit,
-    };
-
-    struct DistributedIndexStat
-    {
-        std::string address;
-        size_t num_parts_send;
-        size_t num_parts_received;
-        size_t num_granules_send;
-        size_t num_granules_received;
-        /// Note, probably need to include the following as well:
-        /// - search_algorithm
-    };
-
-    /// This is a struct with information about applied indexes.
-    /// Is used for introspection only, in EXPLAIN query.
-    struct IndexStat
-    {
-        IndexType type;
-        std::string name = {};
-        std::string part_name = {};
-        std::string description = {};
-        std::string condition = {};
-        std::vector<std::string> used_keys = {}; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- filled from `KeyCondition::Description::used_keys` and `StatisticsPartPruner::getUsedColumns`
-        size_t num_parts_after;
-        size_t num_granules_after;
-        MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
-
-        VectorWithMemoryTracking<DistributedIndexStat> distributed = {};
-    };
-
-    using IndexStats = VectorWithMemoryTracking<IndexStat>;
+    using IndexType = PlanIndexType;
+    using DistributedIndexStat = PlanDistributedIndexStat;
+    using IndexStat = PlanIndexStat;
+    using IndexStats = PlanIndexStats;
 
     /// Information about used projections.
-    struct ProjectionStat
-    {
-        std::string name = {};
-        std::string description = {};
-        std::string condition = {};
-        MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
-        UInt64 selected_parts = 0;
-        UInt64 selected_ranges = 0;
-        UInt64 selected_marks = 0;
-        UInt64 selected_rows = 0;
-        UInt64 filtered_parts = 0;
-    };
+    using ProjectionStat = PlanProjectionStat;
 
-    /// `deque` is used to ensure stable addresses during projection analysis stats building.
-    using ProjectionStats = DequeWithMemoryTracking<ProjectionStat>;
+    using ProjectionStats = PlanProjectionStats;
 
     using ReadType = MergeTreeReadType;
 
@@ -334,6 +287,9 @@ public:
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
+
+    const IndexStats & getIndexStats() const;
+    const ProjectionStats & getProjectionStats() const;
     void describeProjections(JSONBuilder::JSONMap & map) const override;
 
     const Names & getAllColumnNames() const { return all_column_names; }
@@ -406,12 +362,13 @@ public:
         bool allow_top_k_prewhere_query_condition_cache_,
         bool supports_skip_indexes_on_data_read,
         bool check_row_limits,
-        bool skip_ranges_analysis);
+        bool skip_ranges_analysis,
+        bool report_index_usage);
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
-    /// Analyze ranges only for an intermediate cardinality estimate, without enforcing row limits
-    /// or memoizing the result. The executed read analyzes again after its final mode is known.
+    /// Analyze ranges only for an intermediate cardinality estimate, without enforcing row limits,
+    /// memoizing the result or reporting the index usage. The executed read analyzes again after its final mode is known.
     /// `allow_query_condition_cache_ = false` also bypasses the query condition cache: an estimate runs
     /// before `tryOptimizeTopK`, so the `use_query_condition_cache_for_top_k` gate is not yet known.
     AnalysisResultPtr selectRangesToReadForEstimation(bool allow_query_condition_cache_) const;
@@ -895,7 +852,8 @@ private:
         ReadType read_type,
         size_t max_streams,
         size_t min_marks_for_concurrent_read,
-        bool use_uncompressed_cache);
+        bool use_uncompressed_cache,
+        size_t min_marks_per_task_at_read_end = 0);
 
     Pipe readFromPool(
         RangesInDataParts parts_with_range,
