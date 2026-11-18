@@ -31,7 +31,7 @@ struct PostingListSegment
     /// Block codec used to compress this segment's packed blocks.
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::Bitpacking;
 
-    size_t bytesAllocated() const
+    [[nodiscard]] size_t bytesAllocated() const
     {
         return sizeof(*this)
             + payload_buffer.allocated_bytes()
@@ -41,7 +41,5 @@ struct PostingListSegment
 };
 
 using PostingListSegmentPtr = std::shared_ptr<const PostingListSegment>;
-/// A flattened, sorted array of posting list row ids.
-using FlatPostingsPtr = std::shared_ptr<const PaddedPODArray<UInt32>>;
 
 }

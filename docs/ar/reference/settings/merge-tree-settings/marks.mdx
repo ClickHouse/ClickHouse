@@ -12,17 +12,13 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 هذه الإعدادات متاحة في [system.merge&#95;tree&#95;settings](/ar/reference/system-tables/merge_tree_settings)، وهي مُنشأة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-<div id="marks_compress_block_size">
-  ## marks_compress_block_size
-</div>
+## marks_compress_block_size {#marks_compress_block_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="65536" />
 
-حجم كتلة ضغط marks، أي الحجم الفعلي للكتلة المراد ضغطها.
+حجم الكتل، مُقدَّرًا بالبايتات قبل الضغط، التي تُستخدم عند كتابة ملفات العلامات المضغوطة لأجزاء البيانات الجديدة أو المُعاد كتابتها. لا يسري هذا الإعداد إلا عند تفعيل `compress_marks`. وهو يتحكم في تأطير الضغط والتخزين المؤقت، لكنه لا يُغيّر دقة تقسيم الفهرس (index granularity).
 
-<div id="marks_compression_codec">
-  ## marks_compression_codec
-</div>
+## marks_compression_codec {#marks_compression_codec}
 
 <SettingsInfoBlock type="String" default_value="ZSTD(3)" />
 

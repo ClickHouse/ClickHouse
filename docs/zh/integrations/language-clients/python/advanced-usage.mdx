@@ -13,7 +13,7 @@ doc_type: 'reference'
 
 ### 客户端 `raw_query` 方法 {#client-rawquery-method}
 
-`Client.raw_query` 方法允许通过客户端连接直接使用 ClickHouse HTTP 查询接口。返回值是一个未经处理的 `bytes` 对象。它通过极简接口提供了便捷封装，支持参数绑定、错误处理、重试和 settings 管理：
+`Client.raw_query` 方法允许通过客户端连接直接使用 ClickHouse HTTP 查询接口。返回值是一个未经处理的 `bytes` 对象。它通过极简接口提供了便捷封装，支持参数绑定、错误处理、对符合条件的读取操作进行重试以及 settings 管理。请参见 [HTTP 重试](/zh/integrations/language-clients/python/driver-api#http-retries)。
 
 | 参数                   | 类型               | 默认值    | 说明                                                                                           |
 | -------------------- | ---------------- | ------ | -------------------------------------------------------------------------------------------- |
@@ -35,7 +35,7 @@ doc_type: 'reference'
 
 `Client.raw_insert` 方法允许通过客户端连接直接插入 `bytes` 对象或 `bytes` 对象生成器。由于它不会对插入载荷进行任何处理，因此性能非常高。该方法提供了用于指定设置和插入格式的选项：
 
-| Parameter            | Type                                 | Default | Description                                                                              |
+| 参数            | Type                                 | Default | Description                                                                              |
 | -------------------- | ------------------------------------ | ------- | ---------------------------------------------------------------------------------------- |
 | `table`              | str                                  | 必填      | 简单表名或带数据库限定名的目标表。                                                                        |
 | `column_names`       | Sequence[str]                        | `None`  | 插入块的列名。当 `fmt` 不包含列名时为必填项。                                                               |
@@ -46,6 +46,8 @@ doc_type: 'reference'
 | `transport_settings` | dict                                 | `None`  | 添加到此请求的 HTTP 请求头。                                                                        |
 
 调用方有责任确保 `insert_block` 采用指定的格式，并使用指定的压缩方法。ClickHouse Connect 会将这些原始插入用于文件上传和 PyArrow 表，并将解析工作交由 ClickHouse 服务器 处理。
+
+字符串和字节载荷在远程连接关闭后可以重试，而生成器和已打开的文件则无法重放。请参见[插入重试与去重](/zh/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication)。
 
 ## 将查询结果保存为文件 {#saving-query-results-as-files}
 
@@ -85,7 +87,7 @@ if __name__ == "__main__":
 
 ## 多线程、多进程和异步/事件驱动用例 {#multithreaded-multiprocess-and-asyncevent-driven-use-cases}
 
-ClickHouse Connect 非常适合用于多线程、多进程以及事件循环驱动/异步应用程序。所有查询和插入处理都在单个线程内完成，因此这些操作通常是线程安全的。 (未来可能会在较低层级为某些操作引入并行处理，以克服单线程带来的性能损耗；但即便如此，线程安全性仍会得到保证。)
+ClickHouse Connect 支持多线程、多进程以及 asyncio 应用程序。只要并发调用不使用同一个 ClickHouse 会话，同步 HTTP 客户端就可以在多个线程之间共享，详见下文关于会话的说明。异步客户端会在工作线程中执行部分解析和插入准备工作。
 
 由于每个已执行的查询或插入都会分别在各自的 `QueryContext` 或 `InsertContext` 对象中维护状态，这些辅助对象本身并不是线程安全的，因此不应在多个处理流之间共享。有关上下文对象的更多讨论，请参见 [QueryContexts](/zh/integrations/language-clients/python/advanced-querying#querycontexts) 和 [InsertContexts](/zh/integrations/language-clients/python/advanced-inserting#insertcontexts) 部分。
 
@@ -119,6 +121,8 @@ asyncio.run(main())
 ```
 
 异步客户端与同步客户端遵循相同的 查询、插入、raw、Arrow 和 流式约定。它使用 aiohttp 进行网络 I/O。受 CPU 限制的 Native 格式解析可能会在 executor 中运行，以免阻塞事件循环。
+
+`insert_arrow` 和 `insert_df_arrow` 会在每个客户端专用的工作线程中执行 DataFrame 转换和 Arrow 编码，该工作线程独立于流式查询读取器。每个客户端同一时间只执行一个准备操作，以控制临时内存占用。使用完毕后，请通过 `async with` 或 `await client.close()` 关闭客户端。持有 Python 全局解释器锁的 PyArrow 操作仍可能导致其他协程暂停。
 
 异步客户端持有一个 aiohttp 会话，该会话创建于某个特定的事件循环中。若要将客户端移至另一个事件循环，请先在其所属的循环中将其关闭，然后在新循环中调用 `await client._initialize()`，再发起请求。如果所属的循环已经关闭，请在当前循环中依次调用 `await client.close()` 和 `await client._initialize()`。如果清理操作在所属循环关闭之后才开始，aiohttp 仍可能报告存在未关闭的 transport，因此请尽量在迁移之前先关闭客户端。
 

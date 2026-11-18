@@ -111,6 +111,5 @@ oracle_variant	1
 oracle_variant_neq	1
 control_variant	1
 control_variant_neq	1
-control_variant_prunes	1
 oracle_variant_ambiguous	1
 control_variant_ambiguous	1

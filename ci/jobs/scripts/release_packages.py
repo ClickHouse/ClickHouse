@@ -31,6 +31,8 @@ MACOS_S3_OBJECT = "clickhouse"
 
 MACOS_SIGNED_S3_OBJECT = "clickhouse-macos.zip"
 
+ILLUMOS_S3_OBJECT = "clickhouse.zst"
+
 SIGN_MACOS_JOB_SCRIPT = "ci/jobs/sign_macos_binary.py"
 
 # The workflow that builds a release branch's artifacts.
@@ -199,7 +201,26 @@ def commit_has_macos_signing(commit_sha: str) -> bool:
     return present.returncode == 0
 
 
-def expected_s3_objects(version: str, with_signed_macos: bool):
+def commit_has_illumos_build(commit_sha: str) -> bool:
+    resolved = subprocess.run(
+        ["git", "cat-file", "-e", f"{commit_sha}^{{commit}}"],
+        capture_output=True,
+    )
+    if resolved.returncode != 0:
+        raise RuntimeError(f"Commit [{commit_sha}] is not present in the local repository")
+    workflow = subprocess.run(
+        ["git", "show", f"{commit_sha}:.github/workflows/release_branches.yml"],
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    return any(
+        line.strip() == "build_amd_illumos:"
+        for line in workflow.stdout.splitlines()
+    )
+
+
+def expected_s3_objects(version: str, with_signed_macos: bool, with_illumos: bool):
     """`{job_name: set(object_basenames)}` — every object `CreateRelease`
     downloads from `<s3_commit_prefix>/<job_name>/` for this version."""
     by_job = {}  # type: dict[str, set]
@@ -210,6 +231,8 @@ def expected_s3_objects(version: str, with_signed_macos: bool):
     if with_signed_macos:
         for _package_arch, job in iter_macos_signed_objects():
             by_job.setdefault(job, set()).add(MACOS_SIGNED_S3_OBJECT)
+    if with_illumos:
+        by_job.setdefault("build_amd_illumos", set()).add(ILLUMOS_S3_OBJECT)
     return by_job
 
 
@@ -220,6 +243,7 @@ def release_build_artifacts_ready(
     commit_sha: str,
     version: str,
     with_signed_macos: bool,
+    with_illumos: bool,
 ) -> bool:
     """Whether every object `CreateRelease` will download for this commit is
     already present in S3.
@@ -241,7 +265,7 @@ def release_build_artifacts_ready(
     in so this module stays dependency-free.
     """
     prefix = s3_commit_prefix(release, commit_sha)
-    for job, expected_files in expected_s3_objects(version, with_signed_macos).items():
+    for job, expected_files in expected_s3_objects(version, with_signed_macos, with_illumos).items():
         job_prefix = f"{prefix}/{job}/"
         present = {
             key.rsplit("/", 1)[-1] for key in s3.list_prefix(f"{bucket}/{job_prefix}")
