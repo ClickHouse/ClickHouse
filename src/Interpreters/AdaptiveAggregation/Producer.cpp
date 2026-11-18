@@ -519,7 +519,7 @@ AdaptiveLocalProbes ALWAYS_INLINE Aggregator::collectArgumentMisses(
 
         if constexpr (is_keys_and_packed_string<RecordKey>)
         {
-            /// As in `collectCountMisses`: a key with an empty string that repeats the last missed key
+            /// As in `collectCombinedMisses`: a key with an empty string that repeats the last missed key
             /// misses as well, and its record takes that key's hash without hashing or probing it again.
             if (key.str.isEmpty() && has_missed_key && last_missed_key.str.isEmpty() && key.keys == last_missed_key.keys)
             {

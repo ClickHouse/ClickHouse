@@ -1196,11 +1196,8 @@ private:
         const StageMisses & stage_misses) const;
 
     /// The probe/staging loop of a block whose records carry aggregate arguments, the counterpart of `collectCombinedMisses`.
-    /// With `record_places` it stores the place of every row in `places_data`, null for a miss; without it, it is the bypassed
-    /// probe, which has no hits and so skips the allocation of the places and the per-row stores. A NULL key goes to its slot
-    /// (`emplace_null_key`) without a lookup, so its rows need places: the shape without them takes only a block without such
-    /// rows. A batch whose kept key bytes reach their bound is staged by `stage_misses` in the middle of the block. Returns the
-    /// hits and the rows of the NULL key.
+    /// With `record_places` it stores the place of every row in `places_data`, null for a miss. A NULL key goes to its slot
+    /// (`emplace_null_key`) without a lookup and needs a place, so without `record_places` the block has no such rows.
     template <bool record_places, typename RecordKey, typename LocalMethod, typename State, typename EmplaceNullKey, typename StageMisses>
     AdaptiveLocalProbes collectArgumentMisses(
         LocalMethod & local_method,
