@@ -41,7 +41,9 @@ class SettingsChanges;
     M(CLASS_NAME, ParquetVersion) \
     M(CLASS_NAME, SchemaInferenceMode) \
     M(CLASS_NAME, Seconds) \
+    M(CLASS_NAME, SecretString) \
     M(CLASS_NAME, String) \
+    M(CLASS_NAME, Timezone) \
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, NonZeroUInt64) \
@@ -69,6 +71,9 @@ Get latest metadata path from version-hint.text file.
 )", 0) \
     DECLARE(NonZeroUInt64, iceberg_format_version, 2, R"(
 Metadata format version.
+)", 0) \
+    DECLARE(Timezone, iceberg_timezone_for_timestamptz, "UTC", R"(
+The time zone of the `DateTime64` type that Iceberg `timestamptz` and `timestamptz_ns` columns are mapped to. The stored values are instants and do not depend on this setting, it only changes how they are displayed and how `DateTime64` literals without an explicit time zone are interpreted in queries.
 )", 0) \
     DECLARE(Bool, paimon_incremental_read, false, R"(
 Enable incremental read mode for Paimon tables. When enabled, the table will track the last committed snapshot
@@ -175,14 +180,14 @@ Per-table counterpart of the query-level setting of the same name: data files la
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
 )", 0) \
     DECLARE(DatabaseDataLakeCatalogType, storage_catalog_type, DatabaseDataLakeCatalogType::NONE, "Catalog type", 0) \
-    DECLARE(String, storage_catalog_credential, "", "", 0)             \
+    DECLARE(SecretString, storage_catalog_credential, "", "", 0)             \
     DECLARE(String, storage_auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0)             \
     DECLARE(String, storage_oauth_server_uri, "", "OAuth server uri", 0)             \
     DECLARE(Bool, storage_oauth_server_use_request_body, true, "Put parameters into request body or query params", 0)             \
     DECLARE(String, storage_warehouse, "", "Warehouse name inside the catalog", 0)             \
-    DECLARE(String, storage_auth_header, "", "Authorization header of format 'Authorization: <scheme> <auth_info>'", 0)           \
+    DECLARE(SecretString, storage_auth_header, "", "Authorization header of format 'Authorization: <scheme> <auth_info>'", 0)           \
     DECLARE(String, storage_aws_access_key_id, "", "AWS access key id used to connect to the Glue catalog, and forwarded as a static S3 storage credential for non-Glue DataLakeCatalog table reads when vended_credentials = false", 0)           \
-    DECLARE(String, storage_aws_secret_access_key, "", "AWS secret access key used to connect to the Glue catalog, and forwarded as a static S3 storage credential for non-Glue DataLakeCatalog table reads when vended_credentials = false", 0)           \
+    DECLARE(SecretString, storage_aws_secret_access_key, "", "AWS secret access key used to connect to the Glue catalog, and forwarded as a static S3 storage credential for non-Glue DataLakeCatalog table reads when vended_credentials = false", 0)           \
     DECLARE(String, storage_region, "", "Region for Glue catalog", 0)           \
     DECLARE(String, storage_aws_role_arn, "", "Role arn for AWS connection for Glue catalog", 0) \
     DECLARE(String, storage_aws_role_session_name, "", "Role session name for AWS connection for Glue catalog", 0) \
@@ -213,7 +218,7 @@ struct DataLakeStorageSettings
 
     Field get(const std::string & name);
 
-    bool isChanged(std::string_view name) const;
+    [[nodiscard]] bool isChanged(std::string_view name) const;
 
     static bool hasBuiltin(std::string_view name);
     /// Returns the canonical name of a setting given under one of its aliases.
