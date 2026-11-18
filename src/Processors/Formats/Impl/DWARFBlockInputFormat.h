@@ -27,8 +27,6 @@ public:
 
     String getName() const override { return "DWARFBlockInputFormat"; }
 
-    void resetParser() override;
-
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
 protected:
@@ -51,6 +49,8 @@ private:
         const llvm::DWARFUnit * dwarf_unit;
         const llvm::DWARFAbbreviationDeclarationSet * abbrevs;
         uint64_t end_offset;
+        /// `.debug_info` truncated at the end of this unit, so that parsing its entries never reads the next unit.
+        llvm::DWARFDataExtractor data;
 
         std::string unit_name;
         ColumnPtr filename_table; // from .debug_line
@@ -64,9 +64,9 @@ private:
         uint64_t offset = 0;
         VectorWithMemoryTracking<StackEntry> stack;
 
-        bool eof() const { return offset == end_offset; }
+        [[nodiscard]] bool eof() const { return offset == end_offset; }
 
-        explicit UnitState(llvm::DWARFUnit * u);
+        UnitState(llvm::DWARFUnit * u, const llvm::DWARFDataExtractor & section_data);
     };
 
     const FormatSettings format_settings;
@@ -107,6 +107,9 @@ private:
     void parseFilenameTable(UnitState & unit, uint64_t offset);
     Chunk parseEntries(UnitState & unit);
 
+    void checkAttributeEnd(
+        const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t attr_offset, uint64_t offset,
+        const UnitState & unit) const;
     llvm::DWARFFormValue parseAttribute(
         const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t * offset,
         const UnitState & unit) const;

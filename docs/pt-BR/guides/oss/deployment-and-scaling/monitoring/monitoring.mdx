@@ -9,8 +9,6 @@ title: 'Monitoramento'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <Note>
   Os dados de monitoramento descritos neste guia podem ser acessados no ClickHouse Cloud. Além de serem exibidos no dashboard integrado descrito abaixo, as métricas básicas e avançadas de desempenho também podem ser visualizadas diretamente no console principal do serviço.
 </Note>
@@ -24,7 +22,15 @@ Você pode monitorar:
   ## Dashboard avançado de observabilidade integrado
 </div>
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" alt="Dashboard avançado de observabilidade nativo" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Dashboard avançado de observabilidade nativo](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 O ClickHouse inclui um dashboard avançado de observabilidade integrado, que pode ser acessado em `$HOST:$PORT/dashboard` (requer usuário e senha) e exibe as seguintes métricas:
 

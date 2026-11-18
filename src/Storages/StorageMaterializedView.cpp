@@ -191,9 +191,16 @@ namespace
                 "Incremental refresh source table {} has engine {}, which does not support streaming",
                 source->getStorageID().getNameForLogs(), source->getName());
 
-        /// The cursor is expressed in _block_number/_block_offset, stable across merges only when these are persisted.
+        /// The refresh resumes from the cursor that the read reports through `Context::getStreamingCursor`, and only
+        /// a `MergeTree` read reports it. A source of another engine that supports STREAM (e.g. a queue) would be
+        /// read from the beginning on every refresh, appending the same rows again.
         const auto * merge_tree = castStorage<MergeTreeData>(source, DeferredTable::Load).get();
-        if (merge_tree)
+        if (!merge_tree)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Incremental refresh source table {} has engine {}; only MergeTree tables are supported",
+                source->getStorageID().getNameForLogs(), source->getName());
+
+        /// The cursor is expressed in _block_number/_block_offset, stable across merges only when these are persisted.
         {
             if (merge_tree->merging_params.mode != MergeTreeData::MergingParams::Ordinary)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -551,15 +558,23 @@ void StorageMaterializedView::readImpl(
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, context);
 
-    if (!view_metadata->select.select_table_id.empty())
-        context->checkAccess(AccessType::SELECT, view_metadata->select.select_table_id, column_names);
+    /// Reading a view column requires `SELECT` on the source-table column with the same name. A subcolumn
+    /// read (e.g. `t.a`) must require exactly what reading its parent `t` requires, so normalize against the
+    /// view's own schema (the one the names were resolved against), not the target table's, which can diverge.
+    const auto & select_table_id = view_metadata->select.select_table_id;
+    if (!select_table_id.empty())
+        context->checkAccess(
+            AccessType::SELECT, select_table_id, storage_snapshot->getColumnNamesForSelectAccessCheck(column_names, context, select_table_id));
 
     auto storage_id = storage->getStorageID();
 
     /// TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
     /// We don't need to check access if the inner table was created automatically.
+    /// Subcolumns (e.g. `t.a`) are covered by the grant on their parent column, so map them back to top-level storage
+    /// columns of the target table.
     if (!has_inner_table && !storage_id.empty() && view_metadata->sql_security_type)
-        context->checkAccess(AccessType::SELECT, storage_id, column_names);
+        context->checkAccess(
+            AccessType::SELECT, storage_id, target_storage_snapshot->getColumnNamesForSelectAccessCheck(column_names, context, storage_id));
 
     auto src_table_query_info = query_info;
     src_table_query_info.initial_storage_snapshot = storage_snapshot;
@@ -831,6 +846,8 @@ StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refr
         /// entries. doCreateOrReplaceTable's internal drop inherits these settings via the create context.
         refresh_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
         refresh_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+        /// The temporary table repeats the stored definition of the existing target.
+        refresh_context->setSetting("allow_reserved_column_names", Field(UInt64{1}));
 
         InterpreterCreateQuery create_interpreter(create_query, refresh_context);
         create_interpreter.setInternal(true);
@@ -978,10 +995,7 @@ void StorageMaterializedView::alter(
             /// As in InterpreterAlterQuery: the query-scoped cache can hold a snapshot pinned before
             /// this lock, and the alter below reads the inner table's metadata through that cache.
             if (auto metadata_cache = local_context->getQueryMetadataCache())
-            {
-                auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
-                cache->clear();
-            }
+                metadata_cache->clear();
             target_table->checkAlterIsPossible(column_comment_commands, local_context);
             /// Not `local_context`: a `Replicated` database has a single ZooKeeper transaction per query
             /// and commits it at the first metadata change made from the query context itself, which has
