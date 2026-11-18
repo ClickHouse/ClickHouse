@@ -81,6 +81,8 @@ namespace
 {
     const auto left_bare = removeNullable(removeLowCardinality(left_type));
     const auto right_bare = removeNullable(removeLowCardinality(right_type));
+    if (left.isNull() || right.isNull())
+        return left.isNull() && right.isNull();
     if (const auto * left_array = typeid_cast<const DataTypeArray *>(left_bare.get()))
     {
         if (const auto * right_array = typeid_cast<const DataTypeArray *>(right_bare.get()))

@@ -23,6 +23,10 @@ SELECT
     [tuple(toFloat64(0.1))] IN (materialize(CAST([tuple(toDecimal32('0.1', 1))] AS Dynamic)), NULL)
 SETTINGS in_null_as_unknown = 1;
 
+SELECT [CAST(NULL AS Nullable(Float64)), toFloat64(0.1)] IN
+    (materialize(CAST([CAST(NULL AS Nullable(Decimal32(1))), toDecimal32('0.1', 1)] AS Dynamic)), NULL)
+SETTINGS in_null_as_unknown = 1;
+
 DROP TABLE IF EXISTS squality_in_string_carrier_check;
 CREATE TABLE squality_in_string_carrier_check
 (
