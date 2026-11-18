@@ -1,40 +1,51 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/131545
-untuple_value(11).1	untuple_value(22).1
+untuple_value_05813(11).1	untuple_value_05813(22).1
 11	22
 -- the inner query alone
-untuple_value(11).1	untuple_value(22).1
+untuple_value_05813(11).1	untuple_value_05813(22).1
 11	22
 -- column arguments
-untuple_value(number).1	untuple_value(plus(number, 1)).1
+untuple_value_05813(number).1	untuple_value_05813(plus(number, 1)).1
 0	1
 1	2
 -- nested function
-untuple_value_nested(11).1	untuple_value_nested(22).1
+untuple_value_nested_05813(11).1	untuple_value_nested_05813(22).1
 11	22
 -- lambda arguments
-untuple_map(x -> (x + 1), [1]).1	untuple_map(x -> (x + 2), [1]).1
+untuple_map_05813(x -> (x + 1), [1]).1	untuple_map_05813(x -> (x + 2), [1]).1
 [2]	[3]
-map(x -> (x + number), [1])	map(x -> (x * number), [1])
+map_05813(x -> (x + number), [1])	map_05813(x -> (x * number), [1])
 [1]	[0]
 [2]	[1]
-untuple_map(x -> toTypeName(tuple(x AS a)), [1]).1	untuple_map(x -> toTypeName(tuple(x AS b)), [1]).1
+untuple_map_05813(x -> toTypeName(tuple(x AS a)), [1]).1	untuple_map_05813(x -> toTypeName(tuple(x AS b)), [1]).1
 ['Tuple(a UInt8)']	['Tuple(b UInt8)']
 -- a lambda argument called in the body
-apply_lambda(y -> untuple(tuple(y)), 11).1	apply_lambda(y -> untuple(tuple(y)), 22).1
+apply_lambda_05813(y -> untuple(tuple(y)), 11).1	apply_lambda_05813(y -> untuple(tuple(y)), 22).1
 11	22
-wrap_apply_lambda(11).1	wrap_apply_lambda(22).1
+wrap_apply_lambda_05813(11).1	wrap_apply_lambda_05813(22).1
 11	22
--- a WITH lambda keeps its name: stored view definitions keep WITH lambdas
+-- a SQL UDF called in a WITH lambda: the WITH call names the columns
+l(11).1	l(22).1
+11	22
+l(11).1	l(22).1
+11	22
+l(x -> (x + 1), 1).1	l(x -> (x + 2), 1).1
+2	3
+-- WITH lambdas without a SQL UDF call keep their names: stored view definitions keep WITH lambdas
+tupleElement((x), \'1\')
+11
 tupleElement((x), \'1\')
 11
 -- an alias still names the columns
 a.1	b.1
 11	22
--- view
+-- views: CREATE substitutes SQL UDFs
 tupleElement((11), \'1\')	tupleElement((22), \'1\')
 11	22
+tupleElement((x), \'1\')
+11
 -- remote()
-untuple_value(plus(dummy, 11)).1	untuple_value(plus(dummy, 22)).1
+untuple_value_05813(plus(dummy, 11)).1	untuple_value_05813(plus(dummy, 22)).1
 11	22
 -- names inside the body keep the parameter name
 1

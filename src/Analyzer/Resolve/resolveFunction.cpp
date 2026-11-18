@@ -1367,6 +1367,29 @@ QueryTreeNodePtr QueryAnalyzer::castNodeToType(
     return result;
 }
 
+ProjectionName QueryAnalyzer::calculateInlinedCallProjectionName(
+    const QueryTreeNodePtr & call_node, ProjectionNames arguments_projection_names, const IdentifierResolveScope & scope)
+{
+    /// A lambda argument is resolved only inside the body. Its text names it, masked if it holds a secret.
+    const auto & arguments = call_node->as<FunctionNode &>().getArguments().getNodes();
+    for (size_t i = 0; i < arguments.size(); ++i)
+    {
+        if (arguments_projection_names[i] != PROJECTION_NAME_PLACEHOLDER)
+            continue;
+        auto lambda_ast = arguments[i]->toAST();
+        if (canDisplaySecrets(scope.context) || !lambda_ast->hasSecretParts())
+        {
+            arguments_projection_names[i] = lambda_ast->formatWithSecretsOneLine();
+            continue;
+        }
+        auto & mask_map = *scope.projection_mask_map;
+        auto mask = mask_map.insert({arguments[i]->getTreeHash(), mask_map.size() + 1}).first->second;
+        arguments_projection_names[i] = "[HIDDEN id: " + std::to_string(mask) + "]";
+    }
+
+    return calculateFunctionProjectionName(call_node, {}, arguments_projection_names);
+}
+
 /** Resolve function node in scope.
   * During function node resolve, function node can be replaced with another expression (if it match lambda or sql user defined function),
   * with constant (if it allow constant folding), or with expression list. It is caller responsibility to handle such cases appropriately.
@@ -3073,30 +3096,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto lambda_expression_clone = lambda_expression_untyped->clone();
 
             IdentifierResolveScope & lambda_scope = createIdentifierResolveScope(lambda_expression_clone, &scope /*parent_scope*/);
-            lambda_scope.inlined_call_projection_name.emplace();
+            lambda_scope.inlined_call_arguments_projection_names = arguments_projection_names;
+            lambda_scope.inlines_sql_udf = inlines_sql_udf;
             /// Stored view definitions keep `WITH` lambdas, and their columns depend on these names. SQL UDF calls are
             /// substituted at `CREATE`, so their names may change.
             if (inlines_sql_udf)
-            {
-                /// A lambda argument is resolved only inside the body. Its text names it, masked if it holds a secret.
-                for (size_t i = 0; i < function_arguments_size; ++i)
-                {
-                    if (arguments_projection_names[i] != PROJECTION_NAME_PLACEHOLDER)
-                        continue;
-                    auto lambda_ast = function_arguments[i]->toAST();
-                    if (canDisplaySecrets(scope.context) || !lambda_ast->hasSecretParts())
-                    {
-                        arguments_projection_names[i] = lambda_ast->formatWithSecretsOneLine();
-                        continue;
-                    }
-                    auto & mask_map = *scope.projection_mask_map;
-                    auto mask = mask_map.insert({function_arguments[i]->getTreeHash(), mask_map.size() + 1}).first->second;
-                    arguments_projection_names[i] = "[HIDDEN id: " + std::to_string(mask) + "]";
-                }
-
-                result_projection_names = { calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names) };
-                lambda_scope.inlined_call_projection_name = result_projection_names.front();
-            }
+                result_projection_names = { calculateInlinedCallProjectionName(node, arguments_projection_names, scope) };
             ProjectionNames lambda_projection_names = resolveLambda(lambda_expression_untyped, lambda_expression_clone, function_arguments, lambda_scope);
 
             auto & resolved_lambda = lambda_expression_clone->as<LambdaNode &>();
@@ -3156,10 +3161,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// When `untuple` is the body of an inlined lambda (SQL UDF), the alias of the call it replaces applies to it
             /// and takes priority over an alias inside the body, as in the old analyzer. The call is the top of the parent
             /// scope's expression stack; nested calls are walked the same way, so the outermost alias wins.
-            /// Without an alias, the outermost SQL UDF call of the contiguous chain of inlined calls is used instead.
+            /// Without an alias, the outermost call of the contiguous chain of inlined calls is used instead if the chain has
+            /// a SQL UDF call, which no stored view definition has.
             String untuple_alias = node->getAlias();
-            String inlined_call_projection_name;
+            QueryTreeNodePtr outermost_inlined_call;
+            const IdentifierResolveScope * outermost_inlined_call_scope = nullptr;
             bool through_inlined_calls = true;
+            bool inlined_calls_include_sql_udf = false;
             const auto * current_scope = &scope;
             const auto * current_node = node.get();
             while (current_scope->parent_scope)
@@ -3179,15 +3187,22 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
                 if (call_node->hasAlias())
                     untuple_alias = call_node->getAlias();
-                through_inlined_calls = through_inlined_calls && current_scope->inlined_call_projection_name.has_value();
-                if (through_inlined_calls && !current_scope->inlined_call_projection_name->empty())
-                    inlined_call_projection_name = *current_scope->inlined_call_projection_name;
+                through_inlined_calls = through_inlined_calls && current_scope->inlined_call_arguments_projection_names.has_value();
+                if (through_inlined_calls)
+                {
+                    outermost_inlined_call = call_node;
+                    outermost_inlined_call_scope = current_scope;
+                    inlined_calls_include_sql_udf = inlined_calls_include_sql_udf || current_scope->inlines_sql_udf;
+                }
                 current_node = call_node.get();
                 current_scope = current_scope->parent_scope;
             }
 
-            if (untuple_alias.empty())
-                untuple_alias = inlined_call_projection_name;
+            if (untuple_alias.empty() && inlined_calls_include_sql_udf)
+                untuple_alias = calculateInlinedCallProjectionName(
+                    outermost_inlined_call,
+                    *outermost_inlined_call_scope->inlined_call_arguments_projection_names,
+                    *outermost_inlined_call_scope->parent_scope);
 
             for (const auto & element_name : element_names)
             {
