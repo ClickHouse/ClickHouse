@@ -25,7 +25,7 @@ Row 4:
 log_comment: 05624_zero_rows_empty_table
 type:        QueryFinish
 views:       ['default.mv']
-columns:     ['default.empty_src.a','default.empty_src.b','default.mv.tgtKey','default.mv.tgtVal','default.src.a','default.src.b','default.tgt.tgtKey','default.tgt.tgtVal']
+columns:     ['default.empty_src.a','default.empty_src.b','default.src.a','default.src.b']
 
 Row 5:
 ──────
@@ -39,4 +39,4 @@ Row 6:
 log_comment: 05624_zero_rows_where
 type:        QueryFinish
 views:       ['default.mv']
-columns:     ['system.one.dummy','default.mv.tgtKey','default.mv.tgtVal','default.src.a','default.src.b','default.tgt.tgtKey','default.tgt.tgtVal']
+columns:     ['system.one.dummy','default.src.a','default.src.b']

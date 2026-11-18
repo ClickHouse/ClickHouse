@@ -556,7 +556,7 @@ public:
         ContextPtr context_,
         ContextMutablePtr query_context_,
         bool async_insert_)
-        : ExceptionKeepingTransform(input_header, output_header, /* ignore_on_start_and_finish */ false)
+        : ExceptionKeepingTransform(input_header, output_header)
         , select_query(select_query_)
         , source_id(source_id_)
         , source_metadata(source_metadata_)
@@ -602,20 +602,6 @@ protected:
         return res;
     }
 
-    void onFinish() override
-    {
-        if (!query_context || written_columns_recorded)
-            return;
-
-        /// No block came, so the SELECT was never analyzed. Analyze it over an empty block without running it: scalar
-        /// subqueries are not executed and no pipeline is built. The result header does not depend on the data.
-        auto local_context = createLocalContext(getInputPort().getHeader().cloneEmpty());
-        QueryExecutionCounters::RepeatedPipelineBuildScope repeated_build_scope(view_id.getFullTableName());
-        InterpreterSelectQueryAnalyzer interpreter(
-            select_query, local_context, SelectQueryOptions().ignoreAccessCheck().analyze(), local_context->getViewSource());
-        recordWrittenColumns(interpreter.getSampleBlock()->getNames());
-    }
-
 private:
     ASTPtr select_query;
     StorageID source_id;
@@ -645,19 +631,6 @@ private:
         }
     };
 
-    /// A context in which the source table is a table with the same name and the same alias columns that holds only
-    /// `data_block`, the block inserted into the source. The interpreter does the processing of alias columns.
-    ContextMutablePtr createLocalContext(Block data_block) const
-    {
-        auto local_context = Context::createCopy(context);
-        local_context->addViewSource(std::make_shared<StorageValues>(
-            source_id,
-            source_metadata->getColumns(),
-            std::move(data_block),
-            source_metadata->virtuals));
-        return local_context;
-    }
-
     /// Lists in the query log what the view writes: the result columns of its SELECT, known only once the SELECT is
     /// analyzed. The target gets the ones it stores. The query log reads the access info again when the query
     /// finishes, so one record per view is enough.
@@ -673,7 +646,16 @@ private:
 
     QueryPipeline process(Block data_block, Chunk::ChunkInfoCollection && chunk_infos)
     {
-        auto local_context = createLocalContext(std::move(data_block));
+        /// We create a table with the same name as original table and the same alias columns,
+        ///  but it will contain single block (that is INSERT-ed into main table).
+        /// The interpreter will do processing of alias columns.
+        auto local_context = Context::createCopy(context);
+
+        local_context->addViewSource(std::make_shared<StorageValues>(
+            source_id,
+            source_metadata->getColumns(),
+            std::move(data_block),
+            source_metadata->virtuals));
 
         QueryPipelineBuilder pipeline;
 
@@ -1585,7 +1567,10 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         /// The query log lists for every table the columns its writer supplies. The inserted table gets the column
         /// list of the INSERT, and the target of an inserted view gets the ones it stores. A dependent view and its
         /// target are listed by name here, and `ExecutingInnerQueryFromViewTransform` adds the columns once the
-        /// SELECT of the view is analyzed.
+        /// SELECT of the view is analyzed, which happens with the first block. The SELECT is not analyzed here on
+        /// purpose: that would take a storage snapshot of every table it reads, and it would execute a scalar
+        /// subquery in a table function or parameterized view argument, see `evaluateScalarSubqueryIfNeeded`. So an
+        /// insert that moves no rows lists a dependent view and its target by name only.
         Names column_names;
         if (current == init_table_id)
             column_names = init_header->getNames();
