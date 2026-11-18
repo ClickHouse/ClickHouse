@@ -20,7 +20,7 @@ class FunctionDateOrDateTimeToSomething final : public IFunctionDateOrDateTime<T
 public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
         {
@@ -78,7 +78,7 @@ public:
     /// Route the types-only path to it as well, so the base
     /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
     /// would reject valid calls or evaluate an uncaptured return-type name).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -87,7 +87,7 @@ public:
         return getReturnTypeImpl(columns);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// For Interval operands, validate the kind match here (at type
         /// analysis) rather than only in `executeImpl`, so an invalid
@@ -139,7 +139,7 @@ public:
         return result;
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         /// If result type is DateTime or DateTime64 we don't know the timezone and scale without argument types.
         /// Keep this branch as the `if constexpr` so `std::make_shared<ToDataType>()` is not instantiated
@@ -156,7 +156,7 @@ public:
         }
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
 
@@ -195,15 +195,15 @@ private:
     /// PostgreSQL-style `EXTRACT(<unit> FROM INTERVAL ...)`: kind matching is
     /// validated in `getReturnTypeImpl`, so here we just return the underlying
     /// Int64 values cast to the function's result type.
-    ColumnPtr executeOnInterval(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const
+    [[nodiscard]] ColumnPtr executeOnInterval(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const
     {
         return castColumn(arguments[0], result_type);
     }
 
 public:
-    bool hasInformationAboutPreimage() const override { return Transform::hasPreimage(); }
+    [[nodiscard]] bool hasInformationAboutPreimage() const override { return Transform::hasPreimage(); }
 
-    FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
+    [[nodiscard]] FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
     {
         if constexpr (Transform::hasPreimage())
             return Transform::getPreimage(type, point);
