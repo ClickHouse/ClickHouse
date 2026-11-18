@@ -4,6 +4,7 @@
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseS3.h>
+#include <Databases/TableFunctionDatabaseTable.h>
 
 #include <Common/Logger.h>
 #include <Common/RemoteHostFilter.h>
@@ -22,6 +23,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
+#include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <boost/algorithm/string.hpp>
@@ -93,14 +95,11 @@ bool DatabaseS3::isTableExist(const String & name, ContextPtr context_) const
     return checkUrl(getFullUrl(name), context_, false);
 }
 
-StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) const
+namespace
 {
-    /// Not cached across sessions: the built S3 client depends on the per-session
-    /// `s3_allow_server_credentials_in_user_queries`, so reuse could let an allowed session prime a client for a
-    /// restricted one. Rebuild every time. Caching can return once it keys on the credential mode.
-    auto url = getFullUrl(name);
-    checkUrl(url, context_, /* throw_on_error */true);
 
+ASTPtr makeS3FunctionAST(const String & url, const DatabaseS3::Configuration & config)
+{
     auto function = make_intrusive<ASTFunction>();
     function->name = "s3";
     function->arguments = make_intrusive<ASTExpressionList>();
@@ -126,15 +125,39 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
                 make_intrusive<ASTLiteral>(static_cast<UInt64>(1))));
     }
 
-    auto table_function = TableFunctionFactory::instance().get(function, context_);
-    if (!table_function)
-        return nullptr;
+    return function;
+}
 
-    /// TableFunctionS3 throws exceptions, if table cannot be created.
-    auto table_storage = table_function->execute(function, context_, name, /*cached_columns_=*/{}, /*use_global_context=*/false, /*is_insert_query=*/true);
-    /// Intentionally not cached -- see the note above.
+}
 
-    return table_storage;
+StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) const
+{
+    /// Not cached across sessions: the built S3 client depends on the per-session
+    /// `s3_allow_server_credentials_in_user_queries`, so reuse could let an allowed session prime a client for a
+    /// restricted one. Rebuild every time. Caching can return once it keys on the credential mode.
+    auto url = getFullUrl(name);
+    checkUrl(url, context_, /* throw_on_error */true);
+
+    return makeTableFunctionDatabaseTable(
+        StorageID(getDatabaseName(), name),
+        [url, name, database_config = config](const ContextPtr & context, bool is_insert_query) -> TableFunctionDelegate
+        {
+            auto function = makeS3FunctionAST(url, database_config);
+
+            /// The table is referenced by an identifier, which cannot be sent to replicas as a `-Cluster` table function.
+            ContextMutablePtr context_copy = Context::createCopy(context);
+            context_copy->setSetting("parallel_replicas_for_cluster_engines", Field(false));
+
+            auto table_function = TableFunctionFactory::instance().get(function, context_copy);
+            if (!table_function)
+                return {};
+
+            /// TableFunctionS3 throws exceptions, if table cannot be created.
+            auto storage = table_function->execute(
+                function, context_copy, name, /*cached_columns_=*/{}, /*use_global_context=*/false, is_insert_query);
+            return {std::move(table_function), std::move(storage)};
+        },
+        context_);
 }
 
 StoragePtr DatabaseS3::getTable(const String & name, ContextPtr context_) const
@@ -381,6 +404,8 @@ S3 URLs are checked against the server's remote-host filter. Creating this datab
 ```sql
 GRANT READ, WRITE ON S3 TO user_name;
 ```
+
+Reading a table also requires the `READ` source grant on `S3`.
 
 See the [`SOURCES` privileges](/reference/statements/grant#sources) for version and compatibility details.
 
