@@ -260,14 +260,46 @@ static void checkSchemaDepth(arrow::io::RandomAccessFile & file, const FormatSet
     }
 }
 
+/// A copy of the end of the file, from the start of the footer. Both the depth check and Arrow read the footer from it:
+/// each read of a remote file is a separate request, which may return different bytes.
+static std::shared_ptr<arrow::io::RandomAccessFile> readFooter(arrow::io::RandomAccessFile & file)
+{
+    auto file_size_or_error = file.GetSize();
+    if (!file_size_or_error.ok())
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read Parquet metadata: {}", file_size_or_error.status().ToString());
+    const int64_t file_size = *file_size_or_error;
+
+    /// The size of the first read of Arrow, enough for most footers.
+    const int64_t read_size = std::min(file_size, parquet::kDefaultFooterReadSize);
+    std::shared_ptr<arrow::Buffer> buffer = read_size > 0
+        ? readAt(file, file_size - read_size, read_size)
+        : std::make_shared<arrow::Buffer>(std::string_view{});
+
+    /// Arrow reports other files as invalid without reading more.
+    if (read_size >= 8 && (memcmp(buffer->data() + read_size - 4, "PAR1", 4) == 0 || memcmp(buffer->data() + read_size - 4, "PARE", 4) == 0))
+    {
+        const int64_t metadata_size = unalignedLoadLittleEndian<uint32_t>(buffer->data() + read_size - 8);
+        if (metadata_size > file_size - 8)
+            throw Exception(
+                ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Cannot read Parquet metadata: its size in the footer ({} bytes) exceeds the size of the file ({} bytes)",
+                metadata_size,
+                file_size);
+        if (metadata_size + 8 > read_size)
+            buffer = readAt(file, file_size - 8 - metadata_size, metadata_size + 8);
+    }
+    return std::make_shared<arrow::io::BufferReader>(std::move(buffer));
+}
+
 static std::shared_ptr<parquet::FileMetaData> getFileMetadata(
     ReadBuffer & in,
     const FormatSettings & format_settings,
     std::atomic<int> & is_stopped)
 {
     auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
-    checkSchemaDepth(*arrow_file, format_settings);
-    return parquet::ReadMetaData(arrow_file);
+    auto footer = readFooter(*arrow_file);
+    checkSchemaDepth(*footer, format_settings);
+    return parquet::ReadMetaData(footer);
 }
 
 ParquetMetadataInputFormat::ParquetMetadataInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_)
