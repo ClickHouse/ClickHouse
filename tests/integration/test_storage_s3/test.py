@@ -3,7 +3,6 @@ import io
 import logging
 import os
 import random
-import threading
 import time
 import uuid
 
@@ -18,7 +17,6 @@ from helpers.cluster import (
 )
 from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
-from helpers.network import PartitionManager
 from helpers.s3_tools import prepare_s3_bucket
 from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 from helpers.s3_queue_common import generate_random_string
@@ -1354,63 +1352,18 @@ def test_predefined_connection_configuration(started_cluster):
     instance.query(f"DROP TABLE {name}")
 
 
-result = ""
-
-
 def test_url_reconnect_in_the_middle(started_cluster):
-    bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
-    table_format = "id String, data String"
-    filename = "test_url_reconnect_{}.tsv".format(random.randint(0, 1000))
-
-    instance.query(
-        f"""insert into table function
-                   s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{filename}', 'TSV', '{table_format}')
-                   select number, randomPrintableASCII(number % 1000) from numbers(1000000)"""
+    table_format = "column1 Int64, column2 Int64, column3 Int64, column4 Int64"
+    query_id = uuid.uuid4().hex
+    # Each response of the mock ends after at most 1.3 MB, so every 2 MiB range is resumed mid-way.
+    result = instance.query(
+        f"SELECT count(), sum(column3), sum(column4) FROM url('http://resolver:8081/{started_cluster.minio_bucket}/test.csv', 'CSV', '{table_format}') "
+        "SETTINGS http_max_tries = 10, max_download_threads = 4, max_download_buffer_size = 2097152 FORMAT CSV",
+        query_id=query_id,
     )
-
-    with PartitionManager() as pm:
-        pm_rule_reject = {
-            "instance": instance,
-            "chain": "INPUT",
-            "probability": 0.02,
-            "destination": instance.ip_address,
-            "source_port": started_cluster.minio_port,
-            "action": "REJECT --reject-with tcp-reset",
-            "protocol": "tcp",
-        }
-        pm_rule_drop_all = {
-            "instance": instance,
-            "chain": "INPUT",
-            "destination": instance.ip_address,
-            "source_port": started_cluster.minio_port,
-            "action": "DROP",
-            "protocol": "tcp",
-        }
-
-        pm.add_rule(pm_rule_reject)
-
-        def select():
-            global result
-            result = instance.query(
-                f"""select count(), sum(cityHash64(x)) from (select toUInt64(id) + sleep(0.1) as x from
-                url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{filename}', 'TSV', '{table_format}')
-                settings http_max_tries = 10, http_retry_max_backoff_ms=2000, http_send_timeout=1, http_receive_timeout=1)"""
-            )
-            assert result == "1000000\t3914219105369203805\n"
-
-        thread = threading.Thread(target=select)
-        thread.start()
-        time.sleep(4)
-        pm.add_rule(pm_rule_drop_all)
-
-        time.sleep(2)
-        pm.delete_rule(pm_rule_drop_all)
-        pm.delete_rule(pm_rule_reject)
-
-        thread.join()
-
-        assert result == "1000000\t3914219105369203805\n"
+    assert result.splitlines() == ["500001,500000,0"]
+    assert instance.contains_in_log(f"{query_id}.*Unexpected EOF")
 
 
 # At the time of writing the actual read bytes are respectively 148 and 169, so -10% to not be flaky
