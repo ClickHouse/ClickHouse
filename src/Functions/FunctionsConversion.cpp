@@ -2165,11 +2165,9 @@ FunctionCast::WrapperType FunctionCast::createWrapperIfCanConvert(const DataType
             return {};
     }
 
-    /// Asked to report its failures as NULL (see `prepareUnpackDictionaries`), the conversion fails every value.
     if (to->canBeInsideNullable())
         return createToNullableColumnWrapper();
 
-    /// `to` cannot hold that NULL, so the values are converted without reporting failures, as in an array element.
     return [this, from, to](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
     {
         if (arguments.front().column->empty())
