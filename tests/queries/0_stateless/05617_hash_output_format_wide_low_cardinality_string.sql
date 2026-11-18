@@ -20,6 +20,10 @@ SELECT tuple(s, toFloat64(1)) FROM t_hash_wide_lc SETTINGS max_threads = 1, max_
 SELECT tuple(s, toFloat64(-0.)) FROM t_hash_wide_lc SETTINGS max_threads = 1, max_block_size = 65536, max_memory_usage = 100000000 FORMAT Hash;
 SELECT tuple(s, toFloat64(0.)) FROM t_hash_wide_lc SETTINGS max_threads = 1, max_block_size = 65536, max_memory_usage = 100000000 FORMAT Hash;
 
+-- The fingerprint of wide values with a negative zero does not depend on how the result is split into blocks.
+SELECT tuple(toLowCardinality(concat(toString(number % 2), repeat('x', 8000))), toFloat64(-0.)) FROM numbers(3000) SETTINGS max_block_size = 65536 FORMAT Hash;
+SELECT tuple(toLowCardinality(concat(toString(number % 2), repeat('x', 8000))), toFloat64(-0.)) FROM numbers(3000) SETTINGS max_block_size = 7 FORMAT Hash;
+
 -- The same for a `LowCardinality(Float64)` column whose dictionary has no negative zeros.
 SET allow_suspicious_low_cardinality_types = 1;
 SELECT toLowCardinality(toFloat64(number % 3)) FROM numbers(10) FORMAT Hash;

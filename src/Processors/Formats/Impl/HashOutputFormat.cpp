@@ -50,7 +50,11 @@ void HashOutputFormat::consume(Chunk chunk)
         canonical_columns[j] = canonicalizeNegativeZeroThroughLowCardinality(*full_columns[j]);
     }
 
-    Arena arena;
+    /// Each arena holds at most one value at a time, so that `rollback` always releases the last allocation:
+    /// with both values in one arena, the second one may start a new chunk, and rolling back the first one
+    /// from that chunk would corrupt the arena.
+    Arena value_arena;
+    Arena canonical_arena;
     for (size_t i = 0, rows = chunk.getNumRows(); i < rows; ++i)
     {
         for (size_t j = 0; j < num_columns; ++j)
@@ -61,16 +65,15 @@ void HashOutputFormat::consume(Chunk chunk)
                 continue;
 
             const char * begin = nullptr;
-            const std::string_view value = full_columns[j]->serializeValueIntoArena(i, arena, begin, nullptr);
+            const std::string_view value = full_columns[j]->serializeValueIntoArena(i, value_arena, begin, nullptr);
             begin = nullptr;
-            const std::string_view canonical_value = canonical_columns[j]->serializeValueIntoArena(i, arena, begin, nullptr);
+            const std::string_view canonical_value = canonical_columns[j]->serializeValueIntoArena(i, canonical_arena, begin, nullptr);
             if (value != canonical_value)
                 hash.update(value.data(), value.size());
 
-            /// Both values are only needed for the comparison; release them in the reverse order of
-            /// allocation, so that the arena does not grow with the number of rows.
-            arena.rollback(canonical_value.size());
-            arena.rollback(value.size());
+            /// Both values are only needed for the comparison; release them, so that the arenas do not grow with the number of rows.
+            canonical_arena.rollback(canonical_value.size());
+            value_arena.rollback(value.size());
         }
     }
 }
