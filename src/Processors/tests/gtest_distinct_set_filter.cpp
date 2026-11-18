@@ -1109,34 +1109,19 @@ TEST(DistinctSetFilterWorkspace, PreparedKeysMatchActualAllocation)
 
             set.callOnMethod([&]<typename Method>(const Method &)
             {
-                auto check = [&]<typename State>()
+                typename Method::State state(key_columns, key_sizes, {});
+                size_t actual_bytes = 0;
+                if constexpr (requires { state.prepared_keys; })
                 {
-                    State state(key_columns, key_sizes, {});
-                    size_t actual_bytes = 0;
-                    if constexpr (requires { state.prepared_keys; })
-                    {
-                        /// A state may pack its keys when the first row is asked for.
-                        Arena arena;
-                        if (rows)
-                            state.getKeyHolder(0, arena);
-                        /// An empty array uses shared static padding without allocating a batch buffer.
-                        if (!state.prepared_keys.empty())
-                            actual_bytes = state.prepared_keys.allocated_bytes();
-                    }
-                    EXPECT_EQ(set.estimatePreparedKeysMemory(rows, key_sizes), actual_bytes);
-                };
-
-                /// The state that `withStateForAskedRows` builds for the block.
-                using State = typename Method::State;
-                if constexpr (!std::is_same_v<ColumnsHashing::ChunkedState<State>, State>)
-                {
-                    if (ColumnsHashing::keysOutgrowCache<State>(rows))
-                    {
-                        check.template operator()<ColumnsHashing::ChunkedState<State>>();
-                        return;
-                    }
+                    /// A state may pack its keys when the first row is asked for.
+                    Arena arena;
+                    if (rows)
+                        state.getKeyHolder(0, arena);
+                    /// An empty array uses shared static padding without allocating a batch buffer.
+                    if (!state.prepared_keys.empty())
+                        actual_bytes = state.prepared_keys.allocated_bytes();
                 }
-                check.template operator()<State>();
+                EXPECT_EQ(set.estimatePreparedKeysMemory(rows, key_sizes), actual_bytes);
             });
         }
     }

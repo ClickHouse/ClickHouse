@@ -80,15 +80,8 @@ size_t SetVariantsTemplate<Variant>::estimatePreparedKeysMemory(size_t num_rows,
 
     auto estimate = [num_rows, &key_sizes]<typename Method>(const Method &) -> size_t
     {
-        using State = typename Method::State;
-        if constexpr (requires { State::estimatePreparedKeysMemory(num_rows, key_sizes); })
-        {
-            /// The state that `withStateForAskedRows` builds for the block.
-            if constexpr (!std::is_same_v<ColumnsHashing::ChunkedState<State>, State>)
-                if (ColumnsHashing::keysOutgrowCache<State>(num_rows))
-                    return ColumnsHashing::ChunkedState<State>::estimatePreparedKeysMemory(num_rows, key_sizes);
-            return State::estimatePreparedKeysMemory(num_rows, key_sizes);
-        }
+        if constexpr (requires { Method::State::estimatePreparedKeysMemory(num_rows, key_sizes); })
+            return Method::State::estimatePreparedKeysMemory(num_rows, key_sizes);
         else
             return 0;
     };
