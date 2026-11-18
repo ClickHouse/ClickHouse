@@ -24,6 +24,11 @@ ASTPtr timeSeriesScalarToAST(Float64 value);
 /// Group 0 is reserved for an empty set of tags (see ContextTimeSeriesTagsCollector).
 ASTPtr timeSeriesNoTagsGroupToAST();
 
+/// Converts a set of tags to SQL: `CAST(timeSeriesTagsToMap(args...), 'Array(Tuple(String, String))')`.
+/// `args` are the arguments of timeSeriesTagsToMap(): an array of tags followed by pairs of a tag name and a tag value.
+/// The result is sorted by tag name and has no tags with empty values.
+ASTPtr timeSeriesNormalizedTagsToAST(ASTs && args);
+
 /// Makes an AST casting an expression representing a timestamp to a specified `timestamp_data_type`.
 ASTPtr timeSeriesTimestampASTCast(ASTPtr && ast, const DataTypePtr & timestamp_data_type);
 

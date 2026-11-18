@@ -89,6 +89,13 @@ ASTPtr timeSeriesNoTagsGroupToAST()
 }
 
 
+ASTPtr timeSeriesNormalizedTagsToAST(ASTs && args)
+{
+    return makeASTFunction(
+        "CAST", makeASTFunction("timeSeriesTagsToMap", std::move(args)), make_intrusive<ASTLiteral>("Array(Tuple(String, String))"));
+}
+
+
 ASTPtr timeSeriesTimestampASTCast(ASTPtr && ast, const DataTypePtr & timestamp_data_type)
 {
     WhichDataType which_data_type{timestamp_data_type};

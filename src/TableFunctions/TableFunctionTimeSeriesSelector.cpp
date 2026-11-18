@@ -1,6 +1,7 @@
 #include <TableFunctions/TableFunctionTimeSeriesSelector.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
@@ -36,6 +37,17 @@ ColumnsDescription TableFunctionTimeSeriesSelector::getActualTableStructure(Cont
         return ColumnsDescription({
             {TimeSeriesColumnNames::ID, config.table_id_type},
             {TimeSeriesColumnNames::Samples, samples_type}
+        });
+    }
+
+    if (config.return_columns == StorageTimeSeriesSelector::Configuration::ReturnColumns::Tags)
+    {
+        /// The column `tags`: the tags of a time series sorted by tag name.
+        DataTypePtr tags_type = std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}));
+        return ColumnsDescription({
+            {TimeSeriesColumnNames::ID, config.table_id_type},
+            {TimeSeriesColumnNames::Tags, tags_type}
         });
     }
 

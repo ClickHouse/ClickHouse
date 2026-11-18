@@ -226,7 +226,7 @@ timeSeriesSelector('time_series_table', 'instant_query', min_time, max_time, ret
 - `instant_query` - An instant selector written in [PromQL syntax](https://prometheus.io/docs/prometheus/latest/querying/basics/#instant-vector-selectors), without `@` or `offset` modifiers.
 - `min_time` - Start timestamp, inclusive.
 - `max_time` - End timestamp, inclusive.
-- `return_columns` - The columns returning the samples: `'samples'` or `'timestamp_and_value'`, see below.
+- `return_columns` - The returned columns: `'samples'`, `'timestamp_and_value'` or `'tags'`, see below.
 
 `min_time` and `max_time` can have fractions of a second even if the timestamps in the table are whole seconds:
 the function selects the samples with `min_time <= timestamp <= max_time` exactly, without rounding the bounds to the type of the timestamps.
@@ -240,6 +240,9 @@ in the columns chosen by the argument `return_columns`:
   The samples of a time series can be returned in multiple rows, for example one row per time bucket of the samples table.
   Use the aggregate function `timeSeriesGroupArray` to merge the rows of a time series.
 - `'timestamp_and_value'` - the columns `timestamp` and `value` with one sample per row.
+- `'tags'` - the column `tags` with the tags of a time series (including `__name__`) as an array of tuples `(tag_name, tag_value)`
+  sorted by tag name, without samples. The function returns the same time series as with the other values of `return_columns`
+  for the same arguments, a time series can be returned in multiple rows if its identifier is stored in multiple unmerged parts.
 
 A `TimeSeries` table of version 11 or later stores buckets of samples as arrays, the tables of earlier versions store one sample per row.
 The samples are converted when the requested columns differ from the layout of the table, which costs some time; the PromQL functions
@@ -258,6 +261,11 @@ GROUP BY id
 ```sql
 SELECT id, timestamp, value
 FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now(), 'timestamp_and_value')
+```
+
+```sql
+SELECT DISTINCT tags
+FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now(), 'tags')
 ```
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
 
