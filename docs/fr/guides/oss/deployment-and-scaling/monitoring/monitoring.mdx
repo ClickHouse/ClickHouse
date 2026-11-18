@@ -7,8 +7,6 @@ title: 'Monitoring'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <Note>
   Les données de monitoring présentées dans ce guide sont accessibles dans ClickHouse Cloud. En plus d’être affichées dans le tableau de bord intégré décrit ci-dessous, les métriques de performance, de base comme avancées, peuvent également être consultées directement dans la console principale du service.
 </Note>
@@ -22,7 +20,15 @@ Vous pouvez surveiller :
   ## Tableau de bord avancé d&#39;observability intégré
 </div>
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" alt="Tableau de bord avancé natif d'observability" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Tableau de bord avancé natif d'observability](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 ClickHouse inclut une fonctionnalité intégrée de tableau de bord avancé d&#39;observability, accessible via `$HOST:$PORT/dashboard` (nécessite un utilisateur et un mot de passe), qui affiche les métriques suivantes :
 

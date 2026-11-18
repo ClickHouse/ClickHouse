@@ -93,7 +93,7 @@ void HTMLForm::load(const Poco::Net::HTTPRequest & request, ReadBuffer & request
     clear();
 
     Poco::URI uri(request.getURI());
-    const std::string & query = uri.getRawQuery();
+    std::string_view query = uri.getRawQuery();
     if (!query.empty())
     {
         ReadBufferFromString istr(query);
