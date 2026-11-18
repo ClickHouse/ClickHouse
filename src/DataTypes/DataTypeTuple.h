@@ -44,6 +44,7 @@ public:
     Field getDefault() const override;
     void insertDefaultInto(IColumn & column) const override;
     bool isDefaultInsertTrivial() const override;
+    MutableColumnConstPtr createColumnConst(size_t size, const Field & field) const override;
 
     bool equals(const IDataType & rhs) const override;
 
