@@ -40,6 +40,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsBool prefer_column_name_to_alias;
@@ -508,23 +509,30 @@ std::optional<Reading> tryGetCommonReading(const std::vector<LiteralUse> & uses)
 struct Conversion
 {
     DataTypePtr type;
-    /// If the identifier that the literal is compared with has another type with the other value of `prefer_column_name_to_alias`,
-    /// the identifier, the name of that type, and the type the literal is read as then.
+    /// If the identifier that the literal is compared with has another type with other settings of name resolution, the
+    /// identifier, and for each such type, its name and the type the literal is read as then.
     const IAST * operand = nullptr;
-    String alternative_operand_type_name = {};
-    DataTypePtr alternative_type = nullptr;
+    struct Alternative
+    {
+        String operand_type_name;
+        DataTypePtr type;
+    };
+    std::vector<Alternative> alternatives = {};
 };
 
 /// The conversions of the literals that every evaluation reads as the same `DateTime` or `DateTime64` without a time zone, in
-/// `uses`, and in `alternative_uses` with the other value of `prefer_column_name_to_alias` if it is given.
+/// `uses`, and in each of `alternative_uses`, the evaluations with other settings of name resolution.
 ///
 /// A literal that is evaluated in several places, such as in the body of a lambda that is invoked through its alias with
 /// arrays of several types, is converted only if all of them read it the same way. If the identifier that it is compared with
-/// names an alias with one value of the setting and the column with its name with the other one, and their types differ, such
-/// as `toDateTime64(event, 3) AS event` of a `DateTime` column, the string is read with each type, and the one of the type that
-/// the identifier has where the expression is evaluated is taken: `if(toTypeName(event) = 'DateTime', toDateTime('...', 'tz'),
-/// toDateTime64('...', 3, 'tz'))`. So it is read as the comparison of the string reads it, with the same range and rounding.
-std::unordered_map<const IAST *, Conversion> getConversions(const LiteralUses & uses, const std::optional<LiteralUses> & alternative_uses)
+/// names something else with other settings, and their types differ, such as the alias `toDateTime64(event, 3) AS event` and a
+/// `DateTime` column `event` with `prefer_column_name_to_alias`, or a `DateTime` column `event` of the table `t` and a
+/// `DateTime64(3)` subcolumn `t.event` with `analyzer_compatibility_prefer_alias_over_subcolumn`, the string is read with each
+/// type, and the one of the type that the identifier has where the expression is evaluated is taken: `if(toTypeName(event) =
+/// 'DateTime', toDateTime('...', 'tz'), toDateTime64('...', 3, 'tz'))`. So it is read as the comparison of the string reads it,
+/// with the same range and rounding. If the type of the identifier does not tell which reading is taken, or other settings read
+/// the literal otherwise, such as compared with a `String` subcolumn, it is left as it is.
+std::unordered_map<const IAST *, Conversion> getConversions(const LiteralUses & uses, const std::vector<LiteralUses> & alternative_uses)
 {
     std::unordered_map<const IAST *, Conversion> conversions;
     for (const auto & [literal, literal_uses] : uses)
@@ -533,46 +541,81 @@ std::unordered_map<const IAST *, Conversion> getConversions(const LiteralUses & 
         if (!reading)
             continue;
 
-        /// A literal that is not evaluated with the other value of the setting is read only as with this one. An identifier that
-        /// names the alias of a literal and is not evaluated so with the other value names something else then, such as a column
-        /// with its name, so it is left as it is.
-        const auto alternative_it = alternative_uses ? alternative_uses->find(literal) : LiteralUses::const_iterator{};
-        if (!alternative_uses || alternative_it == alternative_uses->end())
+        const bool is_alias_reference = std::ranges::any_of(literal_uses, [](const LiteralUse & use) { return use.is_alias_reference; });
+        Conversion conversion{reading->type};
+        bool convertible = true;
+        for (const auto & alternative : alternative_uses)
         {
-            const bool is_alias_reference = std::ranges::any_of(literal_uses, [](const LiteralUse & use) { return use.is_alias_reference; });
-            if (!alternative_uses || !is_alias_reference)
-                conversions.emplace(literal, Conversion{reading->type});
-            continue;
-        }
+            /// A literal that is not evaluated with the other settings is read only as with these. An identifier that names the
+            /// alias of a literal and is not evaluated so with the other settings names something else then, such as a column
+            /// with its name, so it is left as it is.
+            const auto alternative_it = alternative.find(literal);
+            if (alternative_it == alternative.end())
+            {
+                convertible = !is_alias_reference;
+                if (!convertible)
+                    break;
+                continue;
+            }
 
-        const auto alternative_reading = tryGetCommonReading(alternative_it->second);
-        if (!alternative_reading)
-            continue;
-        if (alternative_reading->type->equals(*reading->type))
-        {
-            conversions.emplace(literal, Conversion{reading->type});
-            continue;
+            const auto alternative_reading = tryGetCommonReading(alternative_it->second);
+            if (!alternative_reading)
+            {
+                convertible = false;
+                break;
+            }
+            if (alternative_reading->type->equals(*reading->type))
+                continue;
+
+            /// The type of the identifier must tell the readings apart.
+            if (!reading->operand || reading->operand != alternative_reading->operand || !reading->operand_type
+                || !alternative_reading->operand_type)
+            {
+                convertible = false;
+                break;
+            }
+            const auto operand_type_name = alternative_reading->operand_type->getName();
+            if (operand_type_name == reading->operand_type->getName())
+            {
+                convertible = false;
+                break;
+            }
+            const auto same_name = std::ranges::find(conversion.alternatives, operand_type_name, &Conversion::Alternative::operand_type_name);
+            if (same_name != conversion.alternatives.end())
+            {
+                if (!same_name->type->equals(*alternative_reading->type))
+                {
+                    convertible = false;
+                    break;
+                }
+                continue;
+            }
+            conversion.operand = reading->operand;
+            conversion.alternatives.push_back({operand_type_name, alternative_reading->type});
         }
-        if (!reading->operand || reading->operand != alternative_reading->operand || !reading->operand_type
-            || !alternative_reading->operand_type || reading->operand_type->getName() == alternative_reading->operand_type->getName())
-            continue;
-        conversions.emplace(
-            literal, Conversion{reading->type, reading->operand, alternative_reading->operand_type->getName(), alternative_reading->type});
+        if (convertible)
+            conversions.emplace(literal, std::move(conversion));
     }
     return conversions;
 }
 
 ASTPtr convertLiteral(const ASTPtr & literal_ast, const Conversion & conversion, const String & timezone)
 {
-    if (!conversion.operand)
-        return wrapWithTimezone(literal_ast, conversion.type, timezone);
-    auto names_alternative = makeASTFunction(
-        "equals",
-        makeASTFunction("toTypeName", conversion.operand->clone()),
-        make_intrusive<ASTLiteral>(Field(conversion.alternative_operand_type_name)));
-    auto read_for_alternative = wrapWithTimezone(literal_ast->clone(), conversion.alternative_type, timezone);
-    auto read_for_this = wrapWithTimezone(literal_ast, conversion.type, timezone);
-    return makeASTFunction("if", std::move(names_alternative), std::move(read_for_alternative), std::move(read_for_this));
+    /// The reading of each alternative is cloned before the literal itself is wrapped.
+    std::vector<ASTPtr> alternative_readings;
+    for (const auto & alternative : conversion.alternatives)
+        alternative_readings.push_back(wrapWithTimezone(literal_ast->clone(), alternative.type, timezone));
+
+    auto result = wrapWithTimezone(literal_ast, conversion.type, timezone);
+    for (size_t i = conversion.alternatives.size(); i > 0; --i)
+    {
+        auto names_alternative = makeASTFunction(
+            "equals",
+            makeASTFunction("toTypeName", conversion.operand->clone()),
+            make_intrusive<ASTLiteral>(Field(conversion.alternatives[i - 1].operand_type_name)));
+        result = makeASTFunction("if", std::move(names_alternative), std::move(alternative_readings[i - 1]), std::move(result));
+    }
+    return result;
 }
 
 /// Replaces the literals of `ast` that `conversions` converts, which are arguments of functions or values of assignments. Returns
@@ -606,6 +649,14 @@ bool hasAlias(const ASTPtr & ast)
     if (!ast->tryGetAlias().empty())
         return true;
     return std::ranges::any_of(ast->children, [](const ASTPtr & child) { return hasAlias(child); });
+}
+
+/// Whether `ast` has a compound identifier, such as `t.event`.
+bool hasCompoundIdentifier(const ASTPtr & ast)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && identifier->compound())
+        return true;
+    return std::ranges::any_of(ast->children, [](const ASTPtr & child) { return hasCompoundIdentifier(child); });
 }
 
 /// The type of the column `name` if `columns` has it, or nullptr.
@@ -681,17 +732,36 @@ ASTPtr rewriteDateTimeLiteralsWithTimezone(
         return nullptr;
 
     /// The mutation runs with the settings of the server or of the session, depending on the engine, which may differ from those
-    /// of this query. With `prefer_column_name_to_alias` there, an identifier with the name of an alias names the column with
-    /// that name instead, if there is one, so the expressions are analyzed with the other value of the setting too, if they have
-    /// an alias. If they cannot be analyzed with it, the mutation fails where it runs with it whatever its literals are, so only
-    /// the evaluations with the settings of this query matter.
-    std::optional<LiteralUses> alternative_uses;
-    if (std::ranges::any_of(expressions, [](const Expression & expression) { return hasAlias(expression.ast); }))
+    /// of this query, and the profile of the server may change before it runs. What an identifier names depends on the settings
+    /// of name resolution, as `MutationsInterpreter` checks: with `prefer_column_name_to_alias`, an identifier with the name of an
+    /// alias names the column with that name instead, if there is one, and with `analyzer_compatibility_prefer_alias_over_subcolumn`,
+    /// a compound identifier such as `t.event` names the column `event` of the table `t` instead of the subcolumn `event` of a
+    /// column `t`. So the expressions are analyzed with the other values of these settings too, of the first if they have an
+    /// alias, and of the second if they have a compound identifier. If they cannot be analyzed with some, the mutation fails where
+    /// it runs with them whatever its literals are, so only the evaluations with the other settings matter.
+    std::vector<LiteralUses> alternative_uses;
     {
-        auto alternative_context = Context::createCopy(context);
-        alternative_context->setSetting(
-            "prefer_column_name_to_alias", Field(!context->getSettingsRef()[Setting::prefer_column_name_to_alias]));
-        alternative_uses = tryCollectLiteralUses(expressions, table_node, alternative_context);
+        const auto & settings = context->getSettingsRef();
+        const bool prefer_column_name = settings[Setting::prefer_column_name_to_alias];
+        const bool prefer_alias = settings[Setting::analyzer_compatibility_prefer_alias_over_subcolumn];
+        const bool has_alias = std::ranges::any_of(expressions, [](const Expression & expression) { return hasAlias(expression.ast); });
+        const bool has_compound_identifier
+            = std::ranges::any_of(expressions, [](const Expression & expression) { return hasCompoundIdentifier(expression.ast); });
+        for (const bool other_prefer_column_name : {prefer_column_name, !prefer_column_name})
+        {
+            for (const bool other_prefer_alias : {prefer_alias, !prefer_alias})
+            {
+                if ((other_prefer_column_name == prefer_column_name && other_prefer_alias == prefer_alias)
+                    || (other_prefer_column_name != prefer_column_name && !has_alias)
+                    || (other_prefer_alias != prefer_alias && !has_compound_identifier))
+                    continue;
+                auto alternative_context = Context::createCopy(context);
+                alternative_context->setSetting("prefer_column_name_to_alias", Field(other_prefer_column_name));
+                alternative_context->setSetting("analyzer_compatibility_prefer_alias_over_subcolumn", Field(other_prefer_alias));
+                if (auto alternative = tryCollectLiteralUses(expressions, table_node, alternative_context))
+                    alternative_uses.push_back(std::move(*alternative));
+            }
+        }
     }
 
     /// The root of the predicate is not a literal that is compared or assigned, so it stays the same.
@@ -720,14 +790,14 @@ bool rewriteDateTimeLiteralsWithTimezone(
 
     /// The `TTL` is analyzed with the server settings, as its validation and the merges analyze it, so a setting of the query
     /// that changes the types, such as `enable_extended_results_for_datetime_functions`, neither rejects it nor changes what
-    /// the identifiers are bound to. It does not allow aliases, so the other value of `prefer_column_name_to_alias` does not matter.
+    /// the identifiers are bound to, also by the settings of name resolution, which are those of the merges.
     auto execution_context = Context::createCopy(getTTLExpressionContext(context));
     const auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, columns);
     const auto table_node = std::make_shared<TableNode>(storage, execution_context);
     const auto uses = tryCollectLiteralUses(expressions, table_node, execution_context);
     if (!uses)
         return false;
-    const auto conversions = getConversions(*uses, std::nullopt);
+    const auto conversions = getConversions(*uses, {});
 
     /// The visitor replaces only the arguments of the functions and the values of the assignments, so the root of the
     /// expression stays the same.
