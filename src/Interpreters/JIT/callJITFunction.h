@@ -33,7 +33,7 @@ consteval UInt32 jitFunctionTag()
 template <typename F, typename... Args>
 NO_SANITIZE_UNDEFINED __attribute__((no_sanitize("cfi-icall"))) inline decltype(auto) callJITFunction(F && f, Args &&... args)
 {
-    UInt32 tag;
+    UInt32 tag = 0;
     memcpy(&tag, reinterpret_cast<const char *>(f) - sizeof(tag), sizeof(tag));
     if (tag != jitFunctionTag<std::decay_t<F>>())
     {
