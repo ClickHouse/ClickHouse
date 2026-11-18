@@ -133,8 +133,12 @@ Once connected, your AI assistant has access to a range of tools spanning the co
 - **Saved searches** — Create, update, and inspect reusable saved search definitions.
 - **Webhooks** — List available webhook destinations for alert notifications.
 - **Teams** — List teams the current user belongs to and identify the active team.
+- **Service health** — `clickstack_service_health` checks every service of a trace source in one call and returns the worst ones first, 20 by default, with their throughput, error rate, p50, p95, and p99 latency, and top error groups. It compares them with the same time window yesterday by default (the previous period, the previous week, or no comparison can be chosen instead). Each service gets a one-line summary and flags for the thresholds it crossed: a level, such as `high_error_rate` for an error rate of 5% or more, or a change from the comparison window, such as `latency_up`. Error groups that are new or growing are marked.
+- **Investigation** — `clickstack_trace_waterfall` returns the spans of one trace as a parent/child tree. `clickstack_trace_top_time_consuming_operations` ranks the other operations in the traces that contain a matching span, such as a slow endpoint, by their total time across those traces. `clickstack_event_patterns` groups events, such as log messages, into patterns ranked by frequency, as in [Event patterns](/clickstack/observability/features/event-patterns). `clickstack_event_deltas` compares the attribute values of two groups of rows, as in [Event deltas](/clickstack/observability/features/event-deltas). `clickstack_emerging_signals` lists the patterns that appeared, grew, or faded in a current window compared with an earlier baseline window: by default, a pattern's share of events has to change at least threefold.
 
 The specific set of tools may expand over time. Your MCP client will automatically discover the available tools when it connects.
+
+Every tool declares the four MCP behavior hints: `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint`. MCP clients can use these hints to decide which calls need your approval. The server's `initialize` response also includes a title, a description, and a website URL, for MCP clients and directories that list the server.
 
 ## Troubleshooting {#troubleshooting}
 
