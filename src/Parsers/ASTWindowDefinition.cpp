@@ -88,11 +88,13 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
     bool need_space = false;
 
     /// If the definition does not fit on the current line, every next clause starts on a new line (see ASTFormatting.h).
-    const bool wrap = canWrapAST(ostr, state, format_frame)
-        && !fitsOnLineAST(state, formatASTWithoutWrapping([&](WriteBuffer & out, FormatState & flat_state)
+    const bool wrap = shouldWrapAST(ostr, state, format_frame, [&]
+    {
+        return formatASTWithoutWrapping([&](WriteBuffer & out, FormatState & flat_state)
         {
             formatImpl(out, settings, flat_state, format_frame);
-        }));
+        });
+    });
     if (wrap)
         format_frame.indent = wrappedIndentAST(state, format_frame.indent);
     const auto write_space = [&]

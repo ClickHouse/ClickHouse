@@ -39,21 +39,26 @@ size_t lineIndent(const IAST::FormatState & state)
     return std::min(line.find_first_not_of(' '), line.size()) / 4;
 }
 
+bool fitsOnLine(const IAST::FormatState & state, std::string_view text)
+{
+    return fitsWidth(text, displayWidth(currentLine(state)), state.formatting->width);
 }
 
-bool canWrapAST(const WriteBuffer & out, const IAST::FormatState & state, const IAST::FormatStateStacked & frame)
+}
+
+bool shouldWrapAST(
+    const WriteBuffer & out,
+    const IAST::FormatState & state,
+    const IAST::FormatStateStacked & frame,
+    const std::function<String()> & flat_text)
 {
     if (!state.formatting || static_cast<const WriteBuffer *>(&state.formatting->out) != &out)
         return false;
     /// When the indentation alone takes the whole width, wrapping does not help
     /// and would only make the output grow quadratically with the nesting depth.
-    return 4 * (std::max<size_t>(frame.indent, lineIndent(state)) + 1) < state.formatting->width;
-}
-
-bool fitsOnLineAST(const IAST::FormatState & state, std::string_view text)
-{
-    std::string_view line = currentLine(state);
-    return fitsWidth(text, displayWidth(line), state.formatting->width);
+    if (4 * (std::max<size_t>(frame.indent, lineIndent(state)) + 1) >= state.formatting->width)
+        return false;
+    return !fitsOnLine(state, flat_text());
 }
 
 UInt16 wrappedIndentAST(const IAST::FormatState & state, UInt16 min_indent)
@@ -78,7 +83,7 @@ void writeASTNewLine(WriteBuffer & out, size_t indent)
 
 void writeASTListSpace(WriteBuffer & out, const IAST::FormatState & state, size_t indent, bool wrap, std::string_view packed_next_item)
 {
-    if (!wrap || (!packed_next_item.empty() && fitsOnLineAST(state, " " + String(packed_next_item))))
+    if (!wrap || (!packed_next_item.empty() && fitsOnLine(state, " " + String(packed_next_item))))
         out.write(' ');
     else
         writeASTNewLine(out, indent);
@@ -92,13 +97,15 @@ void formatASTListInParentheses(
     IAST::FormatStateStacked frame)
 {
     const auto * expression_list = list.as<ASTExpressionList>();
-    const bool wrap = expression_list && !list.children.empty() && canWrapAST(out, state, frame)
-        && !fitsOnLineAST(state, formatASTWithoutWrapping([&](WriteBuffer & flat, IAST::FormatState & flat_state)
+    const bool wrap = expression_list && !list.children.empty() && shouldWrapAST(out, state, frame, [&]
+    {
+        return formatASTWithoutWrapping([&](WriteBuffer & flat, IAST::FormatState & flat_state)
         {
             flat.write('(');
             list.format(flat, settings, flat_state, frame);
             flat.write(')');
-        }));
+        });
+    });
 
     out.write('(');
     if (wrap)

@@ -605,20 +605,21 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     /// so the decision is the same whether they are added here or written around a parenthesized expression.
     auto should_wrap = [&]
     {
-        if (!canWrapAST(ostr, state, frame))
-            return false;
-        FormatStateStacked flat_frame = frame;
-        flat_frame.need_parens = false;
-        String text = formatASTWithoutWrapping([&](WriteBuffer & out, FormatState & flat_state)
+        return shouldWrapAST(ostr, state, frame, [&]
         {
-            formatImplWithoutAlias(out, settings, flat_state, flat_frame);
-        });
-        if (isWindowFunction())
-            text.resize(text.size() - formatASTWithoutWrapping([&](WriteBuffer & out, FormatState & flat_state)
+            FormatStateStacked flat_frame = frame;
+            flat_frame.need_parens = false;
+            String text = formatASTWithoutWrapping([&](WriteBuffer & out, FormatState & flat_state)
             {
-                finishFormatWithWindow(out, settings, flat_state, flat_frame);
-            }).size());
-        return !fitsOnLineAST(state, text);
+                formatImplWithoutAlias(out, settings, flat_state, flat_frame);
+            });
+            if (isWindowFunction())
+                text.resize(text.size() - formatASTWithoutWrapping([&](WriteBuffer & out, FormatState & flat_state)
+                {
+                    finishFormatWithWindow(out, settings, flat_state, flat_frame);
+                }).size());
+            return text;
+        });
     };
     /// A list item with its separator, for packing (see writeASTListSpace).
     auto format_without_wrapping = [&](const ASTPtr & argument, const FormatStateStacked & argument_frame, bool with_separator)

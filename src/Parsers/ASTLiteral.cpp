@@ -326,8 +326,8 @@ void formatWrappedField(const Field & value, WriteBuffer & ostr, IAST::FormatSta
             break;
     }
 
-    const String text = applyVisitor(FieldVisitorToString(), value);
-    if (!elements || elements->empty() || !canWrapAST(ostr, state, frame) || fitsOnLineAST(state, text))
+    String text = applyVisitor(FieldVisitorToString(), value);
+    if (!elements || elements->empty() || !shouldWrapAST(ostr, state, frame, [&] { return text; }))
     {
         ostr << text;
         return;

@@ -31,11 +31,13 @@ public:
     const size_t width;
 };
 
-/// Whether `out` is wrapped, and a construct formatted at `frame` may still put its items on new lines.
-bool canWrapAST(const WriteBuffer & out, const IAST::FormatState & state, const IAST::FormatStateStacked & frame);
-
-/// Whether `text` written at the current position fits into the width. All lines of a multiline text are checked.
-bool fitsOnLineAST(const IAST::FormatState & state, std::string_view text);
+/// Whether a construct written at the current position of `out` has to be wrapped,
+/// because its text without wrapping (returned by `flat_text`, called only if wrapping is possible) does not fit.
+bool shouldWrapAST(
+    const WriteBuffer & out,
+    const IAST::FormatState & state,
+    const IAST::FormatStateStacked & frame,
+    const std::function<String()> & flat_text);
 
 /// Indentation level of the items of a construct wrapped at the current line: one level deeper than the line,
 /// and not less than one level deeper than `min_indent`.
