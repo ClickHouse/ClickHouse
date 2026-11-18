@@ -981,6 +981,57 @@ static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
         writeQueryPlanError(elem.query_plan, getCurrentExceptionMessage(/*with_stacktrace=*/ false));
     }
 }
+
+/// Writes the bodies registered by `Context::addSQLSecurityOverriddenBody` as child rows of `elem`, without metrics.
+static void logSQLSecurityOverriddenBodies(
+    QueryLog & query_log, const QueryLogElement & elem, Context::QueryAccessInfo & access_info, UInt64 max_query_length)
+{
+    std::vector<std::shared_ptr<const Context::SQLSecurityOverriddenBody>> bodies;
+    {
+        std::lock_guard lock(access_info.mutex);
+        bodies.swap(access_info.sql_security_overridden_bodies);
+    }
+
+    for (const auto & body : bodies)
+    {
+        QueryLogElement row;
+        row.type = elem.type;
+        row.event_time = elem.event_time;
+        row.event_time_microseconds = elem.event_time_microseconds;
+        row.query_start_time = elem.query_start_time;
+        row.query_start_time_microseconds = elem.query_start_time_microseconds;
+        row.log_comment = elem.log_comment;
+        row.is_internal = elem.is_internal;
+        row.exception_code = elem.exception_code;
+        row.exception = elem.exception;
+
+        row.current_database = body->current_database;
+        row.query = body->query->formatForLogging(max_query_length);
+        row.normalized_query_hash = normalizedQueryHash(row.query, false);
+        row.query_kind = body->query->getQueryKind();
+
+        row.client_info = elem.client_info;
+        row.client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        row.client_info.current_query_id = toString(UUIDHelpers::generateV4());
+        row.client_info.current_user = body->user;
+
+        {
+            const auto & body_access_info = *body->access_info;
+            std::lock_guard lock(body_access_info.mutex);
+            row.query_databases = body_access_info.databases;
+            row.query_tables = body_access_info.tables;
+            row.query_columns = body_access_info.columns;
+            row.query_partitions = body_access_info.partitions;
+            row.query_projections = body_access_info.projections;
+            row.query_views = body_access_info.views;
+            row.used_row_policies = body_access_info.row_policies;
+        }
+
+        query_log.add([&](QueryLogElement & e) { e = row; });
+        logSQLSecurityOverriddenBodies(query_log, elem, *body->access_info, max_query_length);
+    }
+}
+
 static void logQueryFinishImpl(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
@@ -1065,6 +1116,7 @@ static void logQueryFinishImpl(
             {
                 attachQueryPlan(context, elem);
                 query_log->add([&](QueryLogElement & e) { e = elem; });
+                logSQLSecurityOverriddenBodies(*query_log, elem, *context->getQueryAccessInfoPtr(), settings[Setting::log_queries_cut_to_length]);
             }
         }
 
@@ -1245,6 +1297,7 @@ void logQueryException(
 
         attachQueryPlan(context, elem);
         query_log->add([&](QueryLogElement & e) { e = elem; });
+        logSQLSecurityOverriddenBodies(*query_log, elem, *context->getQueryAccessInfoPtr(), settings[Setting::log_queries_cut_to_length]);
     }
 
     if (query_span)
@@ -1414,6 +1467,7 @@ void logExceptionBeforeStart(
 
             attachQueryPlan(context, elem);
             query_log->add([&](QueryLogElement & e) { e = elem; });
+            logSQLSecurityOverriddenBodies(*query_log, elem, *context->getQueryAccessInfoPtr(), settings[Setting::log_queries_cut_to_length]);
         }
         else if (!settings[Setting::log_queries])
         {
