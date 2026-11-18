@@ -1,11 +1,8 @@
-#include <stack>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
 #include <Common/typeid_cast.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/IJoin.h>
-#include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -17,7 +14,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-static size_t tryConvertOuterJoinToInnerJoinLegacy(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
+size_t tryConvertOuterJoinToInnerJoinLegacy(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 {
     auto & parent = parent_node->step;
     auto * filter = typeid_cast<FilterStep *>(parent.get());
@@ -95,8 +92,7 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
         filter->getExpression(),
         filter->getFilterColumnName(),
         *interesting_side_header,
-        /*allow_unknown_function_arguments=*/true,
-        interesting_side_plan_node);
+        /*allow_unknown_function_arguments=*/true);
 
     /// If not matched rows are not always filtered out, then we cannot convert ANY OUTER JOIN to INNER JOIN
     /// See discussion in https://github.com/ClickHouse/ClickHouse/issues/66447
@@ -119,8 +115,7 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
                 if (current_node->type == ActionsDAG::ActionType::INPUT)
                     join_keys_interesting_side.insert(current_node->result_name);
 
-                if (current_node->type == ActionsDAG::ActionType::FUNCTION
-                    && current_node->function_base->isInjective(getFunctionArgumentColumns(*current_node)))
+                if (current_node->type == ActionsDAG::ActionType::FUNCTION && current_node->function_base->isInjective({}))
                 {
                     for (const auto * child : current_node->children)
                         nodes_to_process.push(child);
@@ -149,12 +144,6 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
         /// JOIN condition: t1.name = t2.name and t1.uid > t2.uid
         /// There can be multiple rows matching the join condition (same name, but different uid).
         if (predicate_op != JoinConditionOperator::Equals)
-            return 0;
-
-        /// The grouping keys are unique as raw values. A key pair the JOIN does not compare exactly, such as
-        /// `FixedString` vs `String`, matches one value to several groups (`'a'` and `'a\0\0'`), so uniqueness is lost.
-        const bool is_key_pair = (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
-        if (is_key_pair && !JoinCommon::isExactJoinKeyEquality(lhs.getType(), rhs.getType()))
             return 0;
 
         if (lhs.fromLeft() && rhs.fromRight())
@@ -233,25 +222,13 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
     if (!join || child_node->children.size() != 2)
         return 0;
 
-    /// Storage Join expects a particular join kind and cannot build not-matched rows for
-    /// composite keys, so converting its outer join to inner is unsound (issue #106949).
-    /// A prepared key-value storage can fill a missing key with the type default on a direct lookup but
-    /// with the column default when read as an ordinary stream, and which applies is decided after this pass.
-    /// Earlier passes (filter push-down, runtime-filter build) can insert single-child steps
-    /// between the join and its JoinStepLogicalLookup source, so descend through them.
-    auto isPreparedJoinStorage = [](const QueryPlan::Node * side_node)
+    auto isStorageJoin = [](auto & step)
     {
-        for (const auto * node = side_node; node; )
-        {
-            if (auto * lookup_step = typeid_cast<JoinStepLogicalLookup *>(node->step.get()))
-                return static_cast<bool>(lookup_step->getPreparedJoinStorage());
-            if (node->children.size() != 1)
-                break;
-            node = node->children.front();
-        }
-        return false;
+        auto * lookup_step = typeid_cast<JoinStepLogicalLookup *>(step.get());
+        return lookup_step && lookup_step->getPreparedJoinStorage().storage_join;
     };
-    if (isPreparedJoinStorage(child_node->children.back()))
+    /// Storage Join expects particular join kind, so we cannot change it
+    if (isStorageJoin(child_node->children.back()->step))
         return 0;
 
     auto & join_operator = join->getJoinOperator();
@@ -273,14 +250,10 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
     bool right_stream_safe = true;
 
     if (check_left_stream)
-        left_stream_safe = filterResultForNotMatchedRows(
-            filter_dag, filter_column_name, *left_stream_input_header,
-            /*allow_unknown_function_arguments=*/true, child_node->children.front()) == FilterResult::FALSE;
+        left_stream_safe = filter_dag.isFilterAlwaysFalseForDefaultValueInputs(filter_column_name, *left_stream_input_header);
 
     if (check_right_stream)
-        right_stream_safe = filterResultForNotMatchedRows(
-            filter_dag, filter_column_name, *right_stream_input_header,
-            /*allow_unknown_function_arguments=*/true, child_node->children.back()) == FilterResult::FALSE;
+        right_stream_safe = filter_dag.isFilterAlwaysFalseForDefaultValueInputs(filter_column_name, *right_stream_input_header);
 
     if (!left_stream_safe || !right_stream_safe)
     {

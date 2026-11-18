@@ -59,6 +59,7 @@ struct PaimonToken
     const String bearer_token;
     const String dlf_access_key_id;
     const String dlf_access_key_secret;
+    mutable String dlf_generated_authorization;
 
     explicit PaimonToken(const String & bearer_token_)
         : token_provider("bearer")
@@ -82,23 +83,19 @@ public:
 
     ~PaimonRestCatalog() override = default;
 
-    [[nodiscard]] bool empty() const override;
+    bool empty() const override;
 
-    [[nodiscard]] CatalogTables getTables() const override;
+    DB::Names getTables() const override;
 
-    [[nodiscard]] Namespaces getNamespaces() const override;
-
-    [[nodiscard]] bool existsTable(const String & database_name, const String & table_name) const override;
+    bool existsTable(const String & database_name, const String & table_name) const override;
 
     void getTableMetadata(const String & database_name, const String & table_name, TableMetadata & result) const override;
 
     bool tryGetTableMetadata(const String & database_name, const String & table_name, TableMetadata & result) const override;
 
-    [[nodiscard]] std::optional<StorageType> getStorageType() const override { return storage_type; }
+    std::optional<StorageType> getStorageType() const override { return storage_type; }
 
-    [[nodiscard]] DB::DatabaseDataLakeCatalogType getCatalogType() const override { return DB::DatabaseDataLakeCatalogType::PAIMON_REST; }
-
-    [[nodiscard]] DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::PAIMON; }
+    DB::DatabaseDataLakeCatalogType getCatalogType() const override { return DB::DatabaseDataLakeCatalogType::PAIMON_REST; }
 
 private:
     using StopCondition = std::function<bool(const String &)>;
@@ -111,20 +108,17 @@ private:
     String warehouse_root_path;
     std::optional<StorageType> storage_type;
     const LoggerPtr log;
+    Poco::Net::HTTPBasicCredentials credentials{};
 
     // void listDatabases();
-    /// Adds provider-specific auth material for the request. For the `dlf` provider this appends the
-    /// signed headers to `current_headers` and returns an empty string; for the `bearer` provider it
-    /// returns the bearer token (to pass to `create`) without adding a header. Returns an empty
-    /// string when no token is configured.
-    String createAuthHeaders(
+    void createAuthHeaders(
         DB::HTTPHeaderEntries & current_headers,
         const String & resource_path,
         const std::unordered_map<String, String> & query_params,
         const String & method,
         const std::optional<String> & data = std::nullopt) const;
 
-    [[nodiscard]] DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
+    DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
         const String & endpoint,
         const String & method,
         const Poco::URI::QueryParameters & params = {},
@@ -136,9 +130,7 @@ private:
 
     void forEachTables(const String & database, DB::Names & tables, StopCondition stop_condition = {}, ExecuteFunc execute_func = {}) const;
 
-    [[nodiscard]] CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
-
-    [[nodiscard]] Poco::JSON::Object::Ptr requestRest(
+    Poco::JSON::Object::Ptr requestRest(
         const String & endpoint,
         const String & method,
         const Poco::URI::QueryParameters & params = {},

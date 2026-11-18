@@ -1,4 +1,0 @@
-log_cb property hidden: 1
-librdkafka configuration dump logged: 1
-lines with hexadecimal numbers: 0
-Kafka property test.mock.num.brokers is not allowed

@@ -20,7 +20,7 @@ bool IParserBase::parse(Pos & pos, ASTPtr & node, Expected & expected)
                 Pos prev_token = pos;
                 --prev_token;
 
-                HighlightedRange range{};
+                HighlightedRange range;
                 range.begin = begin;
                 range.end = prev_token->end;
                 range.highlight = type;

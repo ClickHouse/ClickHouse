@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <vector>
 #include <Processors/Chunk.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 
@@ -12,7 +11,7 @@ class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
 
 using ColumnIdentifier = std::string;
-using ColumnIdentifiers = std::vector<ColumnIdentifier>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- a column name list, interchangeable with `Names`
+using ColumnIdentifiers = std::vector<ColumnIdentifier>;
 
 struct ChunkBuffer;
 using ChunkBufferPtr = std::shared_ptr<ChunkBuffer>;
@@ -28,7 +27,7 @@ public:
         ColumnIdentifiers columns_to_save_,
         ChunkBufferPtr chunk_buffer_);
 
-    [[nodiscard]] String getName() const override { return "SaveSubqueryResultToBuffer"; }
+    String getName() const override { return "SaveSubqueryResultToBuffer"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
