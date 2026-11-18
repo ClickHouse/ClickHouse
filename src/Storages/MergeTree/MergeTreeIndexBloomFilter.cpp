@@ -1071,6 +1071,21 @@ static std::optional<size_t> findArrayJoinIndexPosition(
     return findIndexPosition(header, index_nodes, node.toFunctionNode().getArgumentAt(0));
 }
 
+/// True if `column` holds the element LEFT ARRAY JOIN pads an empty array with: the default of `element_type`.
+static bool containsPaddedElement(const IColumn & column, const IDataType & element_type)
+{
+    if (element_type.isDefaultInsertTrivial())
+        return column.getNumberOfDefaultRows() != 0;
+
+    auto padded_column = element_type.createColumn();
+    element_type.insertDefaultInto(*padded_column);
+    const Field padded_element = (*padded_column)[0];
+    for (size_t row = 0; row < column.size(); ++row)
+        if (column[row] == padded_element)
+            return true;
+    return false;
+}
+
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     const String & function_name,
     const RPNBuilderTreeNode & wrapped_key_node,
@@ -1320,7 +1335,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         return false;
 
     const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
-    if (padded && converted_column->getNumberOfDefaultRows() != 0)
+    if (padded && containsPaddedElement(*converted_column, *array_nested_type))
         return false;
 
     out.predicate.emplace_back(
@@ -1590,7 +1605,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     if (converted_field.isNull())
                         return false;
 
-                    if (padded && array_type->getNestedType()->createColumnConst(1, converted_field)->isDefaultAt(0))
+                    if (padded && containsPaddedElement(*array_type->getNestedType()->createColumnConst(1, converted_field), *array_type->getNestedType()))
                         return false;
 
                     out.function = RPNElement::FUNCTION_HAS;

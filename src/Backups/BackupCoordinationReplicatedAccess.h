@@ -40,7 +40,7 @@ public:
     void addFilePath(FilePathForAccessEntity && file_path_for_access_entity);
 
     /// Returns all paths added by addFilePath() if `host_id` is a host chosen to store access.
-    Strings getFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const;
+    [[nodiscard]] Strings getFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const;
 
 private:
     using ZkPathAndEntityType = std::pair<String, AccessEntityType>;
