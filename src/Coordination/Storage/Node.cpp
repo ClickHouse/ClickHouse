@@ -33,11 +33,9 @@ namespace
     ///    base_path (base_path_len bytes)
     constexpr size_t BLOCK_HEADER_SCALARS_SIZE = sizeof(uint32_t) * 3 + sizeof(uint64_t) * 2;
 
-    /// Zeroed bytes allocated after `capacity`, so that `readNodeImpl` stays inside the allocation
-    /// even for a corrupted record: before its bounds checks, it reads at most the action byte, the
-    /// varints size byte and four group varints (each decode reads at most MAX_SIZE bytes) from the
-    /// record start, and a record always starts before `capacity`.
-    constexpr size_t READ_PADDING = 2 + 3 * DB::GroupVarint4x32::MAX_SIZE + DB::GroupVarint8x64::MAX_SIZE;
+    /// The most `readNodeRecord<false>` reads from a record start before its range checks: the action
+    /// byte, the varints size byte and four group varints (each decode reads at most MAX_SIZE bytes).
+    constexpr size_t MAX_READ_BEFORE_CHECKS = 2 + 3 * DB::GroupVarint4x32::MAX_SIZE + DB::GroupVarint8x64::MAX_SIZE;
 }
 
 std::optional<NodeAction> combineActions(std::optional<NodeAction> first, NodeAction second, bool strict)
@@ -141,10 +139,9 @@ BlockPtr BlockData::create(size_t capacity_)
     /// pointer to chase. The buffer isn't allowed to grow anyway because NodeRef-s must stay valid.
     /// (The control block is allocated separately so that a lingering BlockWeakPtr keeps only the
     /// small control block alive, not the whole BlockData+buffer.)
-    void * raw = ::operator new(sizeof(BlockData) + capacity_ + READ_PADDING);
+    void * raw = ::operator new(sizeof(BlockData) + capacity_);
     BlockData * block = new (raw) BlockData();
     block->capacity = static_cast<uint32_t>(capacity_);
-    memset(block->data() + capacity_, 0, READ_PADDING);
 
     try
     {
@@ -407,6 +404,32 @@ bool BlockData::appendNodeOrStartNewBlock(const BlockPtr & block, FullNode & nod
     return true;
 }
 
+/// For `readNodeRecord<true>`: checks, before decoding, that a group varint at `group` lies within the
+/// varints area and that the decoder's over-read (up to `max_over_read` bytes past the group, but at most
+/// `max_size` bytes in total) stays inside the block.
+inline void ALWAYS_INLINE checkGroupVarint(
+    const char * group, const char * varints_end, const char * block_end,
+    size_t header_size, size_t max_over_read, size_t max_size, size_t (*get_size)(const char *))
+{
+    if (varints_end - group < static_cast<ptrdiff_t>(header_size))
+        throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA, "Node has incorrect varints_size");
+    const size_t size = get_size(group);
+    if (size > static_cast<size_t>(varints_end - group))
+        throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA, "Node has incorrect varints_size");
+    if (std::min(size + max_over_read, max_size) > static_cast<size_t>(block_end - group))
+        throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA, "Node goes out of bounds of its block");
+}
+
+inline void ALWAYS_INLINE checkGroupVarint4x32(const char * group, const char * varints_end, const char * block_end)
+{
+    checkGroupVarint(group, varints_end, block_end, 1, 4, DB::GroupVarint4x32::MAX_SIZE, DB::GroupVarint4x32::getSize);
+}
+
+inline void ALWAYS_INLINE checkGroupVarint8x64(const char * group, const char * varints_end, const char * block_end)
+{
+    checkGroupVarint(group, varints_end, block_end, 3, 8, DB::GroupVarint8x64::MAX_SIZE, DB::GroupVarint8x64::getSize);
+}
+
 /// Deserializes a subset of a serialized znode, as requested by the non-null out_* arguments.
 /// Serialization format is described in BlockData::appendNodeNoResize.
 ///
@@ -419,12 +442,23 @@ bool BlockData::appendNodeOrStartNewBlock(const BlockPtr & block, FullNode & nod
 ///  caller below, where the nullness of every arg is a compile-time constant, so the dead branches
 ///  get eliminated and each caller ends up like a hand-written partial reader.)
 /// (Plain `inline` was not enough for clang.)
-/// (Alternatively, we could make it a template and use `if constexpr`, but that seems annoying.)
-inline void ALWAYS_INLINE readNodeImpl(
+///
+/// `checked = false` reads up to MAX_READ_BEFORE_CHECKS bytes from the record start before its range
+/// checks, so it may be used only if that much of the block is left; `checked = true` bounds-checks every
+/// read first, for records closer to the end of the block (see `readNodeImpl`).
+template <bool checked>
+inline void ALWAYS_INLINE readNodeRecord(
     const BlockData * block, uint32_t offset, DB::KeeperNodeStats * out_stats, const char ** out_data_ptr, NodePath * out_path,
     std::string * out_path_buf, uint64_t * out_digest, NodeAction * out_action, uint32_t * out_serialized_size)
 {
     const char * p = block->data() + offset;
+    /// (Only used by `checked`; the unchecked path never reads past `p + MAX_READ_BEFORE_CHECKS`.)
+    [[maybe_unused]] const char * const block_end = block->data() + block->capacity;
+    if constexpr (checked)
+    {
+        if (offset >= block->capacity || block->capacity - offset < 2)
+            throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA, "Node goes out of bounds of its block");
+    }
 
     uint8_t action_byte = static_cast<uint8_t>(p[0]);
     if (action_byte > static_cast<uint8_t>(NodeAction::Create))
@@ -434,6 +468,11 @@ inline void ALWAYS_INLINE readNodeImpl(
         *out_action = action;
 
     const uint32_t varints_size = static_cast<uint8_t>(p[1]);
+    if constexpr (checked)
+    {
+        if (size_t(2) + varints_size > block->capacity - offset)
+            throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA, "Node goes out of bounds of its block");
+    }
 
     const char * varints = p + 2;
     /// `path suffix` immediately follows all the group varints.
@@ -444,6 +483,8 @@ inline void ALWAYS_INLINE readNodeImpl(
     uint32_t data_size = 0;
     uint32_t acl_id = 0;
     uint32_t version = 0;
+    if constexpr (checked)
+        checkGroupVarint4x32(varints, path_suffix, block_end);
     DB::GroupVarint4x32::decode(varints, path_suffix_size, data_size, acl_id, version);
 
     /// Check against capacity rather than size: capacity is immutable, so this doesn't race with
@@ -476,6 +517,8 @@ inline void ALWAYS_INLINE readNodeImpl(
         uint32_t path_depth_delta = 0;
         uint32_t num_children = 0;
         uint32_t flags = 0;
+        if constexpr (checked)
+            checkGroupVarint4x32(varints, path_suffix, block_end);
         DB::GroupVarint4x32::decode(varints, path_prefix_size, path_depth_delta, num_children, flags);
 
         if (out_stats)
@@ -492,6 +535,8 @@ inline void ALWAYS_INLINE readNodeImpl(
             uint32_t cversion = 0;
             uint32_t aversion = 0;
             uint32_t unused = 0;
+            if constexpr (checked)
+                checkGroupVarint4x32(varints, path_suffix, block_end);
             DB::GroupVarint4x32::decode(varints, cversion, aversion, unused, unused);
             out_stats->cversion = static_cast<int32_t>(cversion);
             out_stats->aversion = static_cast<int32_t>(aversion);
@@ -505,6 +550,8 @@ inline void ALWAYS_INLINE readNodeImpl(
             uint64_t mtime_delta = 0;
             uint64_t ephemeral_or_seq_num_or_ttl = 0;
             uint64_t unused64 = 0;
+            if constexpr (checked)
+                checkGroupVarint8x64(varints, path_suffix, block_end);
             DB::GroupVarint8x64::decode(
                 varints, czxid_delta, mzxid_delta, pzxid_delta, ctime_delta, mtime_delta, ephemeral_or_seq_num_or_ttl, unused64, unused64);
 
@@ -516,10 +563,10 @@ inline void ALWAYS_INLINE readNodeImpl(
             out_stats->ephemeral_or_seq_num_or_ttl = static_cast<int64_t>(ephemeral_or_seq_num_or_ttl);
         }
 
-        /// We do this range check only after doing the reads, instead of expensively pre-checking
-        /// before each varint decode. So when deserializing a corrupted file we may read past
-        /// `capacity`, but never past `READ_PADDING` zeroed bytes allocated after it (see
-        /// `BlockData::create`); we get here, fail this check, and discard all results of the bad reads.
+        /// The unchecked path does this range check only after doing the reads, instead of expensively
+        /// pre-checking before each varint decode. When deserializing a corrupted file the bad reads
+        /// still stay inside the block (`readNodeImpl` picks this path only if at least
+        /// MAX_READ_BEFORE_CHECKS bytes are left); we get here, fail this check, and discard their results.
         if (varints > path_suffix)
             throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA, "Node has incorrect varints_size");
 
@@ -547,6 +594,27 @@ inline void ALWAYS_INLINE readNodeImpl(
         if (!block->compatible_digest || action == NodeAction::Remove)
             *out_digest = 0;
     }
+}
+
+/// The checked path is taken rarely, so it is not inlined into every caller.
+static NO_INLINE void readNodeRecordChecked(
+    const BlockData * block, uint32_t offset, DB::KeeperNodeStats * out_stats, const char ** out_data_ptr, NodePath * out_path,
+    std::string * out_path_buf, uint64_t * out_digest, NodeAction * out_action, uint32_t * out_serialized_size)
+{
+    readNodeRecord<true>(block, offset, out_stats, out_data_ptr, out_path, out_path_buf, out_digest, out_action, out_serialized_size);
+}
+
+inline void ALWAYS_INLINE readNodeImpl(
+    const BlockData * block, uint32_t offset, DB::KeeperNodeStats * out_stats, const char ** out_data_ptr, NodePath * out_path,
+    std::string * out_path_buf, uint64_t * out_digest, NodeAction * out_action, uint32_t * out_serialized_size)
+{
+    /// Blocks read from files may be corrupted, and their capacity is exactly their size. Almost every
+    /// record starts at least MAX_READ_BEFORE_CHECKS bytes before the end of the block, so even its
+    /// unchecked reads stay inside; only the last few records of a block need the checked path.
+    if (offset < block->capacity && block->capacity - offset >= MAX_READ_BEFORE_CHECKS) [[likely]]
+        readNodeRecord<false>(block, offset, out_stats, out_data_ptr, out_path, out_path_buf, out_digest, out_action, out_serialized_size);
+    else
+        readNodeRecordChecked(block, offset, out_stats, out_data_ptr, out_path, out_path_buf, out_digest, out_action, out_serialized_size);
 }
 
 void NodeRef::read(FullNode & out_node, std::string & out_path_buf) const

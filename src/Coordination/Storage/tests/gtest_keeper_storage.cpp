@@ -895,14 +895,15 @@ TEST(KeeperStorage, ReadNodeRejectsMalformedRecords)
     expectCorruptedRecord(makeBlockHeader(28) + std::string{'\x00', '\xc8', '\x00', '\x00'}, /*read_full_node=*/ false);
 
     /// The first group varint fits in the varints area but ends at the last byte of the block; decoding
-    /// it reads up to 4 bytes past `capacity`.
+    /// it without a check would read up to 4 bytes past `capacity`.
     expectCorruptedRecord(makeBlockHeader(28) + std::string{'\x00', '\x01', '\x00'}, /*read_full_node=*/ false);
 
     /// The first group varint claims more bytes (1 + 4 * 4) than the varints area holds (1).
     expectCorruptedRecord(makeBlockHeader(28) + std::string{'\x00', '\x01', '\xff'} + std::string(32, '\0'), /*read_full_node=*/ false);
 
     /// A `Create` record at the end of the block: three empty 4 x u32 groups, then an 8 x u64 group that
-    /// claims more bytes than the varints area holds; decoding it reads up to 67 bytes, past `capacity`.
+    /// claims more bytes than the varints area holds; decoding it without a check would read up to 67
+    /// bytes, past `capacity`.
     std::string record = {'\x02', '\x06', '\x00', '\x00', '\x00', '\xff', '\xff', '\xff'};
     record += std::string(8, '\0'); /// digest
     expectCorruptedRecord(makeBlockHeader(28) + record, /*read_full_node=*/ true);
