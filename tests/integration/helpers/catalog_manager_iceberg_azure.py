@@ -128,19 +128,47 @@ class IcebergAzureCatalogManager:
         self,
         batches: List[pa.Table],
         table_name: Optional[str] = None,
+        partition_column: Optional[str] = None,
     ) -> Tuple[str, List[int]]:
-        """Create a table with multiple snapshots (one per batch).
+        """Create a table with one snapshot per batch, optionally partitioned.
 
         Returns (table_name, list_of_snapshot_ids).
         """
         if table_name is None:
             table_name = f"tbl_{uuid.uuid4().hex[:8]}"
 
-        table = self._catalog.create_table(
-            identifier=f"default.{table_name}",
-            schema=arrow_to_iceberg_schema(batches[0]),
-            location=self._table_location(table_name),
-        )
+        iceberg_schema = arrow_to_iceberg_schema(batches[0])
+        if partition_column is None:
+            table = self._catalog.create_table(
+                identifier=f"default.{table_name}",
+                schema=iceberg_schema,
+                location=self._table_location(table_name),
+            )
+        else:
+            partition_field_id = None
+            for field in iceberg_schema.fields:
+                if field.name == partition_column:
+                    partition_field_id = field.field_id
+                    break
+            if partition_field_id is None:
+                raise ValueError(f"Partition column '{partition_column}' not found in schema")
+
+            partition_spec = PartitionSpec(
+                PartitionField(
+                    source_id=partition_field_id,
+                    field_id=1000,
+                    transform=IdentityTransform(),
+                    name=f"{partition_column}_identity",
+                )
+            )
+            table = self._catalog.create_table(
+                identifier=f"default.{table_name}",
+                schema=iceberg_schema,
+                partition_spec=partition_spec,
+                location=self._table_location(table_name),
+            )
+
+        self._tables_created.append(table_name)
 
         snapshot_ids = []
         for batch in batches:
@@ -148,8 +176,12 @@ class IcebergAzureCatalogManager:
             table = self._catalog.load_table(f"default.{table_name}")
             snapshot_ids.append(table.metadata.current_snapshot_id)
 
+        if partition_column is not None:
+            snapshot = table.current_snapshot()
+            if snapshot is None or len(snapshot.manifests(table.io)) < 2:
+                raise AssertionError("Expected multiple manifests in the latest snapshot")
+
         self._upload_table(table_name)
-        self._tables_created.append(table_name)
         log.info(
             "Created multi-snapshot Iceberg table '%s' (%d snapshots)",
             table_name,

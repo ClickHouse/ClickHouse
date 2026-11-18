@@ -9,8 +9,10 @@
 #if USE_AVRO
 
 #include <cstddef>
+#include <map>
 #include <memory>
 #include <optional>
+#include <utility>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/UUID.h>
@@ -1812,6 +1814,18 @@ IcebergMetadata::estimateRead(
             manifests_to_decode.push_back(manifest_list_entry);
     }
 
+    struct ManifestFilesPrunerCacheEntry
+    {
+        /// This must outlive the pruner, which stores a pointer to it.
+        std::shared_ptr<const DB::KeyDescription> partition_key;
+        std::unique_ptr<ManifestFilesPruner> pruner;
+    };
+
+    using ManifestPrunersByDataSchema = std::unordered_map<Int32, ManifestFilesPrunerCacheEntry>;
+
+    /// Keyed by partition-spec header, manifest schema ID, and data-file schema ID.
+    std::map<std::pair<String, Int32>, ManifestPrunersByDataSchema> file_pruners_by_manifest_identity;
+
     /// Read ahead on the IO thread pool as in `totalRows`, parsed in order on this thread.
     const auto query_status = context->getProcessListElement();
     Iceberg::ManifestFilesPrefetcher manifests(object_storage, persistent_components, context, log, std::move(manifests_to_decode));
@@ -1830,28 +1844,35 @@ IcebergMetadata::estimateRead(
         if (!manifest_position_deletes.empty() || !files_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
             estimate.has_delete_files = true;
 
-        /// The pruners refer to the partition key of this manifest, so they live as long as its handle.
-        std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> file_pruners_by_schema_id;
-        for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
+        const auto & manifest_data_files = files_handle.getFilesWithoutDeleted(FileContentType::DATA);
+        auto manifest_pruners = file_pruners_by_manifest_identity.end();
+        if (pruning_filter && !manifest_data_files.empty())
+            manifest_pruners = file_pruners_by_manifest_identity.try_emplace(
+                std::make_pair(files_handle.getPartitionSpecificationHeader(), files_handle.getManifestSchemaId())).first;
+        for (const auto & data_file : manifest_data_files)
         {
             if (pruning_filter)
             {
-                /// Keyed by the file's schema: a pruner is bound to one schema, and a merged manifest can hold files of several.
-                auto & pruner = file_pruners_by_schema_id[data_file->resolved_schema_id];
-                if (!pruner)
-                    pruner = std::make_unique<ManifestFilesPruner>(
+                auto & pruner_cache_entry = manifest_pruners->second[data_file->resolved_schema_id];
+                if (!pruner_cache_entry.pruner)
+                {
+                    pruner_cache_entry.partition_key = files_handle.getSharedPartitionKeyDescription();
+                    pruner_cache_entry.pruner = std::make_unique<ManifestFilesPruner>(
                         *persistent_components.schema_processor,
                         table_state_snapshot->schema_id,
                         data_file->resolved_schema_id,
                         pruning_filter,
-                        files_handle.getPartitionKeyDescription(),
+                        pruner_cache_entry.partition_key.get(),
                         *data_file->common_partition_specification,
                         context,
                         /* require_ready_sets */ true);
+                }
 
-                const auto hyperrectangles
-                    = getDataFileHyperrectangles(*data_file, pruner->getMinMaxColumnTypes(), manifest_list_entry.manifest_file_path);
-                if (pruner->canBePruned(data_file, hyperrectangles) != PruningReturnStatus::NOT_PRUNED)
+                const auto hyperrectangles = getDataFileHyperrectangles(
+                    *data_file,
+                    pruner_cache_entry.pruner->getMinMaxColumnTypes(),
+                    manifest_list_entry.manifest_file_path);
+                if (pruner_cache_entry.pruner->canBePruned(data_file, hyperrectangles) != PruningReturnStatus::NOT_PRUNED)
                 {
                     estimate.pruned_data_files = true;
                     continue;

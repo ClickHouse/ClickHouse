@@ -75,6 +75,13 @@ public:
         /// nullptr if the partition spec has no usable field. Kept in the handle so files can be pruned after the iterator is gone.
         [[nodiscard]] const DB::KeyDescription * getPartitionKeyDescription() const { return partition_key.get(); }
 
+        [[nodiscard]] const std::shared_ptr<const DB::KeyDescription> & getSharedPartitionKeyDescription() const
+        {
+            return partition_key;
+        }
+        [[nodiscard]] const String & getPartitionSpecificationHeader() const { return partition_specification_header; }
+        [[nodiscard]] Int32 getManifestSchemaId() const { return manifest_schema_id; }
+
     private:
         friend class ManifestFileIterator;
 
@@ -82,10 +89,14 @@ public:
             FilesPtr data_files_,
             FilesPtr position_delete_files_,
             FilesPtr equality_delete_files_,
+            String partition_specification_header_,
+            Int32 manifest_schema_id_,
             std::shared_ptr<const DB::KeyDescription> partition_key_)
             : data_files(std::move(data_files_))
             , position_delete_files(std::move(position_delete_files_))
             , equality_delete_files(std::move(equality_delete_files_))
+            , partition_specification_header(std::move(partition_specification_header_))
+            , manifest_schema_id(manifest_schema_id_)
             , partition_key(std::move(partition_key_))
         {
         }
@@ -93,6 +104,8 @@ public:
         FilesPtr data_files;
         FilesPtr position_delete_files;
         FilesPtr equality_delete_files;
+        String partition_specification_header;
+        Int32 manifest_schema_id;
         std::shared_ptr<const DB::KeyDescription> partition_key;
     };
 
@@ -140,6 +153,7 @@ private:
         std::optional<UInt64> inherited_first_row_id,
         DB::ContextPtr context,
         Int32 manifest_schema_id,
+        String partition_specification_header,
         std::shared_ptr<const PartitionSpecification> common_partition_specification,
         std::optional<DB::KeyDescription> partition_key_description,
         size_t partition_spec_fields_count,
@@ -160,6 +174,7 @@ private:
     std::vector<std::optional<UInt64>> entry_first_row_ids;
     const DB::ContextPtr context;
     const Int32 manifest_schema_id;
+    const String partition_specification_header;
     const std::shared_ptr<const PartitionSpecification> common_partition_specification;
     const std::shared_ptr<const DB::KeyDescription> partition_key_description;
     const size_t partition_spec_fields_count;
