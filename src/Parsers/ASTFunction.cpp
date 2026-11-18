@@ -618,6 +618,13 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 {
                     finishFormatWithWindow(out, settings, flat_state, flat_frame);
                 }).size());
+            /// The alias is written right after the arguments, so it has to fit on the line too.
+            else if (!alias.empty())
+                text += formatASTWithoutWrapping([&](WriteBuffer & out, FormatState &)
+                {
+                    out << " AS ";
+                    settings.writeIdentifier(out, alias, /*ambiguous=*/false);
+                });
             return text;
         });
     };

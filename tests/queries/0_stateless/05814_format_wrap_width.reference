@@ -22,6 +22,16 @@ SELECT
     ) AS result
 FROM numbers(1);
 
+SELECT
+    number,
+    concat(
+        'first', 'second', 'third'
+    ) AS result,
+    [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+    ] AS numbers
+FROM numbers(1);
+
 SELECT concat(
     'spaces inside a very long string',
     'x'

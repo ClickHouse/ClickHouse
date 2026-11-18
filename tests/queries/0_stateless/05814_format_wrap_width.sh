@@ -8,6 +8,7 @@ queries=$(cat <<'EOF'
 SELECT f(a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z);
 SELECT f(g(first_argument), g(second_argument), third_argument) FROM numbers(1);
 SELECT number, concat('first', 'second', 'third', 'fourth') AS result FROM numbers(1);
+SELECT number, concat('first', 'second', 'third') AS result, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] AS numbers FROM numbers(1);
 SELECT concat('spaces inside a very long string', 'x') AS `spaces inside a very long identifier`;
 SELECT concat('你好', '世界', '🙂', 'é', '乌龟走着走着，找到了辣椒');
 SELECT [[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]], tuple(tuple(), tuple(1), tuple(1, tuple(2, 3)));

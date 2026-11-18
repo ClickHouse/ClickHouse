@@ -301,9 +301,10 @@ public:
 namespace
 {
 
-/// Writes the same text as FieldVisitorToString. If an array, tuple or map does not fit on the current line,
-/// its elements start on new lines (see ASTFormatting.h).
-void formatWrappedField(const Field & value, WriteBuffer & ostr, IAST::FormatState & state, IAST::FormatStateStacked frame)
+/// Writes the same text as FieldVisitorToString. If an array, tuple or map followed by `suffix` does not fit
+/// on the current line, its elements start on new lines (see ASTFormatting.h).
+void formatWrappedField(
+    const Field & value, WriteBuffer & ostr, IAST::FormatState & state, IAST::FormatStateStacked frame, std::string_view suffix = {})
 {
     const FieldVector * elements = nullptr;
     std::string_view open = "[";
@@ -327,7 +328,7 @@ void formatWrappedField(const Field & value, WriteBuffer & ostr, IAST::FormatSta
     }
 
     String text = applyVisitor(FieldVisitorToString(), value);
-    if (!elements || elements->empty() || !shouldWrapAST(ostr, state, frame, [&] { return text; }))
+    if (!elements || elements->empty() || !shouldWrapAST(ostr, state, frame, [&] { return text + String(suffix); }))
     {
         ostr << text;
         return;
@@ -364,7 +365,18 @@ void ASTLiteral::formatImplWithoutAlias(
     WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
 {
     if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
-        formatWrappedField(value, ostr, state, frame);
+    {
+        /// The alias is written right after the literal, so it has to fit on the line too.
+        String alias_text;
+        if (state.formatting && !alias.empty())
+        {
+            WriteBufferFromOwnString out;
+            out << " AS ";
+            settings.writeIdentifier(out, alias, /*ambiguous=*/false);
+            alias_text = std::move(out.str());
+        }
+        formatWrappedField(value, ostr, state, frame, alias_text);
+    }
     else if (settings.literal_escaping_style == LiteralEscapingStyle::PostgreSQL)
         ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
     else
