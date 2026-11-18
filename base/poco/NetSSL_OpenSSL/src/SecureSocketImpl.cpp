@@ -614,6 +614,9 @@ int SecureSocketImpl::sendNow(const void* buffer, int length)
 	if (writeLength > length)
 		throw Poco::IllegalStateException("sendNow must repeat a write that wants to read with at least the same length");
 
+	/// Outside the OpenSSL call: the wait can suspend a fiber, which can resume on another thread.
+	_pSocket->throttleSend(static_cast<size_t>(writeLength), true);
+
 	SSLOperationResult result = performSSLOperation(_pSSL, [this, buffer, writeLength]
 	{
 		return SSL_write(_pSSL, buffer, writeLength);
@@ -632,7 +635,10 @@ int SecureSocketImpl::sendNow(const void* buffer, int length)
 	{
 		_nowWriteLength = 0;
 		/// The filter dropped the bytes after a transport error.
-		return holdsSendError() ? -1 : result.rc;
+		if (holdsSendError())
+			return -1;
+		_pSocket->useSendThrottlerBudget(result.rc);
+		return result.rc;
 	}
 	if (result.sslError == SSL_ERROR_WANT_READ)
 	{

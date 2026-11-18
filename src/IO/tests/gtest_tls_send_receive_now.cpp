@@ -124,6 +124,22 @@ struct RecordingThrottler : public Poco::Net::Throttler
     std::vector<size_t> max_block_ns_of_calls;
 };
 
+/// Throws on its first call, and never waits.
+struct ThrowingOnceThrottler : public Poco::Net::Throttler
+{
+    bool throttle(size_t /*amount*/, size_t /*max_block_ns*/) override
+    {
+        if (!thrown)
+        {
+            thrown = true;
+            throw Poco::IOException("The send limit is exceeded");
+        }
+        return false;
+    }
+
+    bool thrown = false;
+};
+
 }
 
 
@@ -286,8 +302,8 @@ TEST(TLSSendReceiveNow, WaitSeesDataThatOpenSSLHasDecrypted)
 }
 
 
-/// Only the transport socket throttles, once for each send of encrypted bytes, and it may wait.
-TEST(TLSSendReceiveNow, TransportSocketThrottlesOnce)
+/// `sendNow` lets the throttler wait once for each write, as a blocking send does.
+TEST(TLSSendReceiveNow, SendNowThrottlesOnce)
 {
     TLSLoopbackPair pair;
     auto throttler = std::make_shared<RecordingThrottler>();
@@ -296,6 +312,24 @@ TEST(TLSSendReceiveNow, TransportSocketThrottlesOnce)
     ASSERT_EQ(pair.socket().sendNow("abc", 3), 3);
     ASSERT_EQ(throttler->max_block_ns_of_calls.size(), 1U);
     EXPECT_GT(throttler->max_block_ns_of_calls[0], 0U);
+}
+
+
+/// The throttler waits outside OpenSSL: a wait inside a BIO callback could suspend a fiber in the
+/// middle of an OpenSSL call. An error of the throttler then leaves the connection usable; inside a
+/// callback, it would fail the TLS connection.
+TEST(TLSSendReceiveNow, ThrottlerErrorKeepsTheConnection)
+{
+    TLSLoopbackPair pair;
+    auto throttler = std::make_shared<ThrowingOnceThrottler>();
+    pair.client.setSendThrottler(throttler);
+
+    EXPECT_THROW(pair.socket().sendNow("abc", 3), Poco::IOException);
+    ASSERT_EQ(pair.socket().sendNow("def", 3), 3);
+
+    char buffer[3];
+    ASSERT_EQ(pair.server.receiveBytes(buffer, 3), 3);
+    EXPECT_EQ(std::string(buffer, 3), "def");
 }
 
 #endif

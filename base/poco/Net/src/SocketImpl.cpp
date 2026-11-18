@@ -690,6 +690,18 @@ int SocketImpl::sendNow(const void* buffer, int length)
 
 	/// A non-blocking throttle only books the budget, and would never slow the send down.
 	throttleSend(length, true);
+	const int rc = sendNowUnthrottled(buffer, length);
+	if (rc > 0)
+		useSendThrottlerBudget(rc);
+	return rc;
+}
+
+
+int SocketImpl::sendNowUnthrottled(const void* buffer, int length)
+{
+	if (length <= 0) throw InvalidArgumentException("sendNow needs a positive length");
+	if (_heldSendError != 0) return -1;
+	if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
 
 	int flags = MSG_DONTWAIT;
 #if defined(MSG_NOSIGNAL)
@@ -711,8 +723,6 @@ int SocketImpl::sendNow(const void* buffer, int length)
 		_heldSendError = err;
 		return -1;
 	}
-
-	useSendThrottlerBudget(rc);
 	return rc;
 }
 

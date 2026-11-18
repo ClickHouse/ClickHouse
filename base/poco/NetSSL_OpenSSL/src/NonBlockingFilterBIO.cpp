@@ -67,7 +67,7 @@ bool NonBlockingFilterBIO::sendQueued()
 	while (hasQueued())
 	{
 		const size_t left = queue.size() - queueOffset;
-		const int sent = socket.sendNow(queue.data() + queueOffset, static_cast<int>(std::min<size_t>(left, INT_MAX)));
+		const int sent = socket.sendNowUnthrottled(queue.data() + queueOffset, static_cast<int>(std::min<size_t>(left, INT_MAX)));
 		if (sent < 0)
 		{
 			/// The socket holds the error, and the connection cannot send any more.
@@ -212,7 +212,7 @@ int NonBlockingFilterBIO::writeNonBlocking(const char* data, int length)
 		int rest = length;
 		if (sendQueued())
 		{
-			const int sent = socket.sendNow(data, length);
+			const int sent = socket.sendNowUnthrottled(data, length);
 			if (sent < 0)
 				return length;
 			data += sent;
