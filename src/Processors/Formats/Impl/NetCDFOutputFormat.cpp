@@ -148,17 +148,19 @@ void writeBigEndian(WriteBuffer & out, T value)
     out.write(reinterpret_cast<const char *>(&value), sizeof(T));
 }
 
-/// Every `NON_NEG` field of the header is a signed 32-bit value in CDF-1 and CDF-2, so a file that
-/// has to put a larger number anywhere in its header can only be written as CDF-5.
-constexpr UInt64 MAX_CDF2_SIZE = std::numeric_limits<Int32>::max();
+/// Every `NON_NEG` field of the header is an unsigned 32-bit value in CDF-2, as the reference
+/// implementation and our reader decode it, so a file that has to put a larger number anywhere in
+/// its header can only be written as CDF-5. The reference implementation limits the length of a
+/// dimension of CDF-2 to `2^32 - 4`, which is used as the bound of every such field.
+constexpr UInt64 MAX_CDF2_SIZE = std::numeric_limits<UInt32>::max() - 3;
 
-/// `NON_NEG` in the specification: a 32-bit value in CDF-1 and CDF-2, and a 64-bit value in CDF-5.
+/// `NON_NEG` in the specification: an unsigned 32-bit value in CDF-2, and a 64-bit value in CDF-5.
 void writeSize(WriteBuffer & out, UInt64 value, UInt8 version)
 {
     if (version == 5)
         writeBigEndian<Int64>(out, static_cast<Int64>(value));
     else
-        writeBigEndian<Int32>(out, static_cast<Int32>(value));
+        writeBigEndian<UInt32>(out, static_cast<UInt32>(value));
 }
 
 void writePadding(WriteBuffer & out, UInt64 size)
