@@ -7,8 +7,6 @@ score: 10000
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 ## الخلفية {#background}
 
 تتيح لك العروض المادية التزايدية (العروض المادية) نقل تكلفة المعالجة من وقت الاستعلام إلى وقت الإدراج، مما يؤدي إلى تسريع استعلامات `SELECT`.
@@ -19,7 +17,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 تُحدَّث العروض المادية في ClickHouse آنيًا مع تدفق البيانات إلى الجدول الذي تستند إليه، فتعمل بصورة أقرب إلى الفهارس التي تُحدَّث باستمرار. وهذا يختلف عن قواعد البيانات الأخرى، حيث تكون العروض المادية عادةً لقطات ثابتة لاستعلام يجب تحديثها (على نحو مشابه لـ [العروض المادية القابلة للتحديث](/ar/reference/statements/create/view#refreshable-materialized-view) في ClickHouse).
 
-<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="مخطط العرض المادي" />
+<div className="ch-image-md">
+
+<Frame>
+
+![مخطط العرض المادي](/images/materialized-view/materialized-view-diagram.webp)
+
+</Frame>
+
+</div>
 
 <div id="example">
   ## مثال
