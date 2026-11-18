@@ -1664,6 +1664,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     if (map_value_field.isNull() || map_value_field == Field(Int64(0)) || map_value_field == map_value_type->getDefault())
                         return false;
                 }
+                /// The default of a `Tuple` holds the first value of each `Enum` in it.
+                else if (isTuple(map_value_type)
+                    && tryConvertFieldToType(value_field, *map_value_type, value_type.get(), {}, /* strict */ true) == map_value_type->getDefault())
+                    return false;
             }
 
             size_t position = 0;

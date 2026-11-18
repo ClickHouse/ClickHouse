@@ -5,6 +5,7 @@ DROP TABLE IF EXISTS t_enum_elem;
 DROP TABLE IF EXISTS t_enum_elem_buckets;
 DROP TABLE IF EXISTS t_enum_elem_memory;
 DROP TABLE IF EXISTS t_enum_elem_dst;
+DROP TABLE IF EXISTS t_enum_elem_idx;
 
 CREATE TABLE t_enum_elem (id UInt8, arr Array(Enum8('x' = 1, 'y' = 2)), m Map(String, Enum8('x' = 1, 'y' = 2)))
 ENGINE = MergeTree ORDER BY id;
@@ -99,7 +100,25 @@ SELECT tupleElement(arrayZip(CAST([], 'Array(Enum8(\'a\' = -1, \'z\' = 0))'), CA
 SELECT arrayMap(x -> tupleElement(x, 1), arrayZip(CAST([], 'Array(Enum8(\'a\' = -1, \'z\' = 0))'), CAST([], 'Array(Nothing)'))[[number + 1]]) FROM numbers(1);
 SELECT tupleElement(m.key_k, 1) FROM (SELECT mapFromArrays(CAST([], 'Array(String)'), arrayZip(CAST([], 'Array(Enum8(\'a\' = -1, \'z\' = 0))'), CAST([], 'Array(Nothing)'))) AS m);
 
+SELECT 'skip index';
+CREATE TABLE t_enum_elem_idx
+(
+    id UInt8,
+    m Map(String, Enum8('x' = 1, 'y' = 2)),
+    mt Map(String, Tuple(Enum8('x' = 1, 'y' = 2))),
+    INDEX i_tbf mapKeys(m) TYPE tokenbf_v1(512, 3, 0),
+    INDEX i_bf mapKeys(mt) TYPE bloom_filter
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1, map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets', min_bytes_for_wide_part = 0;
+INSERT INTO t_enum_elem_idx SELECT 1, map('k', 'y'), map('k', tuple('y')) UNION ALL SELECT 2, map('o', 'y'), map('o', tuple('y'));
+SELECT groupArray(id) FROM t_enum_elem_idx WHERE m['k'] = 'x' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0;
+SELECT groupArray(id) FROM t_enum_elem_idx WHERE m['k'] = 'x' SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0;
+SELECT groupArray(id) FROM t_enum_elem_idx WHERE mt['k'] = tuple('x') SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0;
+SELECT groupArray(id) FROM t_enum_elem_idx WHERE mt['k'] = tuple('x') SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0;
+
 DROP TABLE t_enum_elem;
 DROP TABLE t_enum_elem_buckets;
 DROP TABLE t_enum_elem_memory;
 DROP TABLE t_enum_elem_dst;
+DROP TABLE t_enum_elem_idx;
