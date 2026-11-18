@@ -1,5 +1,5 @@
 -- Tags: no-shared-merge-tree
--- no-shared-merge-tree: the affected rows are counted only for `MergeTree` and `ReplicatedMergeTree`
+-- Tag no-shared-merge-tree: the affected rows are counted only for `MergeTree` and `ReplicatedMergeTree`.
 
 -- Tests for `affected_rows` in `system.mutations` for `ALTER TABLE ... UPDATE` on `MergeTree`.
 -- The affected rows of an `UPDATE` command are the rows that match its condition, even if the new value equals the old one.
@@ -7,7 +7,8 @@
 -- To apply several mutations together, all of them are queued with `SYSTEM STOP MERGES`, and then
 -- a no-op mutation `UPDATE v = v WHERE 0` waits for them (it reports 0). It is an `UPDATE` and not a `DELETE`,
 -- so that the mutations are applied without rewriting all columns, as without it.
--- The rows of `system.mutations` are not sorted: for a table, they are returned in the order of mutations and commands.
+-- `system.mutations` returns the rows of a table in the order of the mutations and of the commands in a mutation,
+-- so the queries need no `ORDER BY`.
 
 -- 1. One mutation
 SELECT '-- one mutation';

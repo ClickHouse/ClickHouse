@@ -2993,10 +2993,11 @@ If there were problems with mutating some data parts, the following columns cont
 
 For `DELETE` and `UPDATE` commands on `MergeTree` and `ReplicatedMergeTree` tables, the following column shows how many rows the command has changed:
 
-- `affected_rows` ([UInt64](/reference/data-types/int-uint)) — The number of rows affected by the command in the parts mutated so far
-for `MergeTree` and `ReplicatedMergeTree` tables. It counts:
+- `affected_rows` ([UInt64](/reference/data-types/int-uint)) — The number of rows affected by the command in the parts mutated so far. It counts:
   - for a `DELETE`, the rows it deletes. A row is counted only for the first command that deletes it,
   - for an `UPDATE`, the rows that match its condition and are not deleted by a previous command, even if their values do not change.
+
+A lightweight `DELETE` (`DELETE FROM`) is shown as the command `UPDATE _row_exists = 0` and is counted as an `UPDATE`: the rows it deletes that were not deleted before.
 
 The commands are counted in the order they are applied, and the counts are the same whether the mutations are applied to a part together or one by one, except for the cases in the note below. For `ReplicatedMergeTree`, only the parts mutated by this replica are counted, not the parts fetched from other replicas.
 

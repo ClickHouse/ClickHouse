@@ -1,5 +1,5 @@
 -- Tags: no-shared-merge-tree
--- no-shared-merge-tree: the affected rows are counted only for `MergeTree` and `ReplicatedMergeTree`
+-- Tag no-shared-merge-tree: the affected rows are counted only for `MergeTree` and `ReplicatedMergeTree`.
 
 -- Tests for `affected_rows` in `system.mutations` for `ALTER TABLE ... DELETE` on `MergeTree`.
 -- A row is attributed to the first mutation (in mutation order) that deletes it, so the counts
@@ -244,7 +244,7 @@ SELECT count() FROM t_exists;
 DROP TABLE t_exists;
 
 -- 21. Several conditions on a column out of the keys delete all rows of the part together, also a constant one. A known limitation:
--- not all conditions are constant, so the rows of the part are not counted, and all commands report 0
+-- the conditions up to the first true one are not all literals, so the rows of the part are not counted, and all commands report 0
 SELECT '-- non-key conditions';
 DROP TABLE IF EXISTS t_non_key;
 CREATE TABLE t_non_key (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id;

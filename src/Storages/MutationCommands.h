@@ -20,7 +20,9 @@ class Context;
 class WriteBuffer;
 class ReadBuffer;
 
-/// Identifies a command of a mutation of `StorageMergeTree`: the version of the mutation and the index of the command in it.
+/// Identifies a command of a mutation: the number of the mutation and the index of the command in it. The number of the mutation
+/// is its version for `StorageMergeTree`, and the number of its znode for `StorageReplicatedMergeTree`, where the version (a block
+/// number) differs between partitions.
 using MutationCommandIdentifier = std::pair<UInt64, size_t>;
 
 /// Represents set of actions which should be applied
@@ -182,8 +184,8 @@ public:
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;
 
-/// The number of rows affected by each mutation command in a mutated part. The key is the version of the mutation and each value is a
-/// vector of the number of rows affected by each command in the mutation.
+/// The number of rows affected by each mutation command in a mutated part. The key is the number of the mutation (see
+/// `MutationCommandIdentifier`), and each value is a vector of the number of rows affected by each command in the mutation.
 using AffectedRowsByMutationCommandsMap = std::unordered_map<UInt64, std::vector<UInt64>>;
 
 /// A pair of Actions DAG that is required to execute one step

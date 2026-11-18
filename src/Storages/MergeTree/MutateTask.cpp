@@ -5362,25 +5362,25 @@ bool MutateTask::prepare()
             return command.type == MutationCommand::DELETE;
         });
 
-        /// Whether the rows affected by each command are counted
-        const bool count_affected_rows = std::ranges::all_of(ctx->commands_for_part, [](const auto & command)
-        {
-            return command.command_identifier.has_value();
-        });
-
         if (has_only_delete_commands)
         {
-            /// There will be no interpreter call, so the rows deleted by each command are counted separately.
-            if (count_affected_rows)
+            /// There will be no interpreter call, so the rows deleted by each command are counted separately. The rows already deleted
+            /// by a lightweight delete are not known without reading the part, so a part with a lightweight delete is not counted.
+            const bool count_affected_rows = std::ranges::all_of(*commands_for_execution, [](const auto & command)
             {
-                const bool has_lightweight_delete = ctx->source_part->hasLightweightDelete() || alter_conversions->hasLightweightDelete();
-                const auto deleted_rows_by_command = countDeletedRowsByCommands(ctx->source_part, *commands_for_execution, has_lightweight_delete);
+                return command.command_identifier.has_value();
+            });
+            const bool has_lightweight_delete = ctx->source_part->hasLightweightDelete() || alter_conversions->hasLightweightDelete();
+            if (count_affected_rows && !has_lightweight_delete)
+            {
+                const auto deleted_rows_by_command = countDeletedRowsByCommands(ctx->source_part->rows_count, *commands_for_execution);
 
                 for (size_t i = 0; i < deleted_rows_by_command.size(); ++i)
                 {
-                    const auto & [mutation_version, command_index] = *(*commands_for_execution)[i].command_identifier;
-                    auto & rows_by_command = ctx->affected_rows_of_empty_part[mutation_version];
-                    rows_by_command.resize(command_index + 1);
+                    const auto & [mutation_number, command_index] = *(*commands_for_execution)[i].command_identifier;
+                    auto & rows_by_command = ctx->affected_rows_of_empty_part[mutation_number];
+                    if (rows_by_command.size() <= command_index)
+                        rows_by_command.resize(command_index + 1);
                     rows_by_command[command_index] += deleted_rows_by_command[i];
                 }
             }

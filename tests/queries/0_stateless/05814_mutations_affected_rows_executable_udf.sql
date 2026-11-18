@@ -1,6 +1,7 @@
 -- Tags: no-fasttest, zookeeper, no-shared-merge-tree
--- no-fasttest: the executable function `test_function` is not configured in the fast test
--- no-shared-merge-tree: the affected rows are counted only for `MergeTree` and `ReplicatedMergeTree`
+-- Tag no-fasttest: the executable function `test_function` is not configured in the fast test.
+-- Tag zookeeper: the test uses a `ReplicatedMergeTree` table.
+-- Tag no-shared-merge-tree: the affected rows are counted only for `MergeTree` and `ReplicatedMergeTree`.
 
 -- Mutations that use an executable UDF (`test_function(a, b)`, which is defined in `tests/config/test_function.xml`,
 -- returns `a + b`) must complete, also when they affect all rows of a part.

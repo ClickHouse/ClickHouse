@@ -52,12 +52,10 @@ IsStorageTouched isStorageTouchedByMutations(
     std::function<void()> on_exception
 );
 
-/// Returns the number of rows of the part deleted by each `DELETE` command. It is called only when the commands delete all rows of the
-/// part, which is then replaced by an empty one without being read. So the rows are counted only when that needs no read and cannot fail:
-/// one command on a part without a lightweight delete, or several commands whose conditions are literals, where the first true one deletes
-/// all rows. Otherwise the rows are not counted, and all counts are 0.
-std::vector<UInt64> countDeletedRowsByCommands(
-    const MergeTreeData::DataPartPtr & source_part, const std::vector<MutationCommand> & commands, bool has_lightweight_delete);
+/// Returns the number of rows deleted by each `DELETE` command of a part of `rows_count` existing rows that the commands delete
+/// entirely. The part is replaced by an empty one without being read, so the rows are counted only when that needs no read and cannot
+/// fail: for one command, or when the conditions up to the first true one are literals. Otherwise all counts are 0.
+std::vector<UInt64> countDeletedRowsByCommands(UInt64 rows_count, const std::vector<MutationCommand> & commands);
 
 /// Build the WHERE-style filter for a mutation command. The parsed
 /// `ASTAlterCommand` is passed in so the caller can reuse the same parse for
@@ -347,9 +345,8 @@ private:
             /// If so, the update step is followed by a `CountAffectedRowsStep`.
             [[nodiscard]] bool needToCountUpdatedRows() const { return update_condition != nullptr; }
 
-            /// A stage might contain multiple `DELETE` commands, but only one `UPDATE` command in the end. Multiple update
-            ///commands cannot be in the same stage. Then the number of cascaded delete commands can be calculated as the
-            /// number of commands minus one if there is an update command.
+            /// The number of counted `DELETE` commands of the stage. A stage has any number of `DELETE` commands, and at most
+            /// one `UPDATE` command, which is the last one.
             [[nodiscard]] size_t getNumDeleteCommands() const { return command_identifiers.size() - (needToCountUpdatedRows() ? 1 : 0); }
 
             /// Whether the rows deleted by each filter of the stage are counted.

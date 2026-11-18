@@ -1,11 +1,13 @@
 -- Tags: zookeeper, no-shared-merge-tree
--- no-shared-merge-tree: the affected rows are counted by each replica of `ReplicatedMergeTree` for the parts it mutates itself
+-- Tag zookeeper: the test uses `ReplicatedMergeTree` tables.
+-- Tag no-shared-merge-tree: the affected rows are counted by each replica of `ReplicatedMergeTree` for the parts it mutates itself.
 
 -- Tests for `affected_rows` in `system.mutations` for `ReplicatedMergeTree`.
 -- Each replica counts the rows of the parts it mutates itself, so both replicas report the same counts.
 -- A replica that fetches a mutated part from another replica does not count its rows.
 -- The counts are tracked in memory and are reset when the table is reloaded.
--- The rows of `system.mutations` are not sorted: for a table, they are returned in the order of mutations and commands.
+-- `system.mutations` returns the rows of a table in the order of the mutations and of the commands in a mutation,
+-- so the queries need no `ORDER BY`.
 
 -- 1. `DELETE`, both replicas mutate the part
 SELECT '-- delete';

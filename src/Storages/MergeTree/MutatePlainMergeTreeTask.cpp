@@ -156,7 +156,7 @@ bool MutatePlainMergeTreeTask::executeStep()
 
                 mutate_task->updateProfileEvents();
 
-                /// Accumulate the number of affected rows per each mutation task
+                /// Add the rows affected by each mutation command in this part to the mutation entries.
                 storage.addAffectedRowsToMutationEntries(mutate_task->getAffectedRows());
 
                 /// Write the part log entry before reporting the mutation as done, otherwise a

@@ -479,6 +479,7 @@ public:
 
     /// Adds the number of rows affected by each `DELETE` and `UPDATE` command of mutations while mutating a part by this replica.
     void addAffectedRowsToMutations(const AffectedRowsByMutationCommandsMap & affected_rows);
+
     struct MutationsSnapshot : public MergeTreeData::MutationsSnapshotBase
     {
     public:

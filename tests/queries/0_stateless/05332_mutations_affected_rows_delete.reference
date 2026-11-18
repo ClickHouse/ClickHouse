@@ -82,3 +82,9 @@ empty part	1
 (DELETE WHERE 0)	0
 (DELETE WHERE materialize(1))	0
 0
+-- first true literal
+(DELETE WHERE 0)	0
+(DELETE WHERE 1)	10
+(DELETE WHERE 1)	0
+(DELETE WHERE id = 5)	0
+0

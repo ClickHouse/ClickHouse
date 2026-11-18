@@ -407,19 +407,17 @@ IsStorageTouched isStorageTouchedByMutations(
     return result;
 }
 
-std::vector<UInt64> countDeletedRowsByCommands(
-    const MergeTreeData::DataPartPtr & source_part, const std::vector<MutationCommand> & commands, bool has_lightweight_delete)
+std::vector<UInt64> countDeletedRowsByCommands(UInt64 rows_count, const std::vector<MutationCommand> & commands)
 {
     chassert(std::ranges::all_of(commands, [](const auto & command) { return command.type == MutationCommand::DELETE; }), "Only DELETE commands can be counted");
 
-    /// The rows already deleted by a lightweight delete are not known without reading the part, so they are not counted.
     std::vector<UInt64> deleted_rows_by_command(commands.size(), 0);
-    if (commands.empty() || has_lightweight_delete)
+    if (commands.empty())
         return deleted_rows_by_command;
 
     if (commands.size() == 1)
     {
-        deleted_rows_by_command[0] = source_part->rows_count;
+        deleted_rows_by_command[0] = rows_count;
         return deleted_rows_by_command;
     }
 
@@ -451,7 +449,7 @@ std::vector<UInt64> countDeletedRowsByCommands(
     }
 
     if (first_deleting_command)
-        deleted_rows_by_command[*first_deleting_command] = source_part->rows_count;
+        deleted_rows_by_command[*first_deleting_command] = rows_count;
     return deleted_rows_by_command;
 }
 
@@ -2008,7 +2006,8 @@ void MutationsInterpreter::addStageIfNeeded(std::optional<UInt64> mutation_versi
     }
 }
 
-/// The index of a command in a stage needs values from 0 to `num_commands`, use the smallest type that fits.
+/// The index of a command in a stage needs values from 0 to `num_commands`. A stage rarely has more than 255 commands,
+/// but keep the column small,as small as possible, and `UInt64` otherwise.
 static DataTypePtr getCommandIndexType(size_t num_commands)
 {
     if (num_commands <= std::numeric_limits<UInt8>::max())
@@ -2226,7 +2225,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             /// correspond 1:1 to all_asts->children.
             /// First num_filters children are the filter expressions.
             QueryTreeNodePtr filter_node;
-            QueryTreeNodePtr deleting_filter_index_node;
+            QueryTreeNodePtr deleting_command_index_node;
             const auto & affected_rows_counting = stage.affected_rows_counting;
             if (affected_rows_counting.needToCount() && affected_rows_counting.getNumDeleteCommands() != num_filters)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -2235,13 +2234,12 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
             if (affected_rows_counting.needToCountDeletedRows())
             {
-
                 /// To count the rows deleted by each filter, calculate the 1-based index of the first filter that deletes the row
-                /// `deleting_filter_index = multiIf(NOT filter_1, 1, NOT filter_2, 2, ..., 0)` and keep the rows with
-                /// `deleting_filter_index = 0`. `multiIf` may evaluate a filter only for the rows kept by the previous filters.
+                /// `deleting_command_index = multiIf(NOT filter_1, 1, NOT filter_2, 2, ..., 0)` and keep the rows with
+                /// `deleting_command_index = 0`. `multiIf` may evaluate a filter only for the rows kept by the previous filters.
                 /// The index is 1-based to reserve 0 for the kept rows: the filter is a comparison with a constant,
                 /// and `CountAffectedRowsTransform` counts all rows into `rows_by_command_index[index]` without a branch.
-                auto filter_index_type = getCommandIndexType(affected_rows_counting.command_identifiers.size());
+                auto command_index_type = getCommandIndexType(affected_rows_counting.command_identifiers.size());
 
                 /// A filter equal to an earlier one deletes no row first, so it gets no branch: its index is never returned,
                 /// and its count stays 0. This keeps the number of distinct constants within the number of distinct filters,
@@ -2259,33 +2257,34 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                     not_node->getArguments().getNodes().push_back(filter);
                     resolveOrdinaryFunctionNodeByName(*not_node, "not", execution_context);
                     multi_if_arguments.push_back(std::move(not_node));
-                    multi_if_arguments.push_back(std::make_shared<ConstantNode>(Field(static_cast<UInt64>(fi + 1)), filter_index_type));
+                    multi_if_arguments.push_back(std::make_shared<ConstantNode>(Field(static_cast<UInt64>(fi + 1)), command_index_type));
                 }
-                multi_if_arguments.push_back(std::make_shared<ConstantNode>(Field(static_cast<UInt64>(0)), filter_index_type)); // If row should be kept, the index is 0.
+                /// The index of a kept row is 0.
+                multi_if_arguments.push_back(std::make_shared<ConstantNode>(Field(static_cast<UInt64>(0)), command_index_type));
                 resolveOrdinaryFunctionNodeByName(*multi_if_node, "multiIf", execution_context);
 
                 auto equals_node = std::make_shared<FunctionNode>("equals");
                 auto & equals_arguments = equals_node->getArguments().getNodes();
                 equals_arguments.push_back(multi_if_node);
-                equals_arguments.push_back(std::make_shared<ConstantNode>(Field(static_cast<UInt64>(0)), filter_index_type));
+                equals_arguments.push_back(std::make_shared<ConstantNode>(Field(static_cast<UInt64>(0)), command_index_type));
                 resolveOrdinaryFunctionNodeByName(*equals_node, "equals", execution_context);
 
-                /// The rows deleted by a lightweight delete of a previous stage should not be counted as deleted
-                /// Accordingly, we add a condition  if(_row_exists, multiIf(NOT f1, 1, …, 0), 0) to the filter.
+                /// The rows deleted by a lightweight delete of a previous stage are not counted as deleted again,
+                /// so the index is `if(_row_exists, multiIf(NOT filter_1, 1, ..., 0), 0)`. The filter still deletes them.
                 if (row_exists_position)
                 {
                     auto if_node = std::make_shared<FunctionNode>("if");
                     auto & if_arguments = if_node->getArguments().getNodes();
                     if_arguments.push_back(expression->getChildren()[*row_exists_position]);
                     if_arguments.push_back(multi_if_node);
-                    if_arguments.push_back(std::make_shared<ConstantNode>(Field(static_cast<UInt64>(0)), filter_index_type));
+                    if_arguments.push_back(std::make_shared<ConstantNode>(Field(static_cast<UInt64>(0)), command_index_type));
                     resolveOrdinaryFunctionNodeByName(*if_node, "if", execution_context);
-                    deleting_filter_index_node = std::move(if_node);
+                    deleting_command_index_node = std::move(if_node);
                 }
                 else
                 {
                     /// No rows deleted in the previous stage as a lightweight delete, so keep the original multiIf node.
-                    deleting_filter_index_node = std::move(multi_if_node);
+                    deleting_command_index_node = std::move(multi_if_node);
                 }
                 filter_node = std::move(equals_node);
             }
@@ -2321,15 +2320,15 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             chassert(expression_nodes.size() == 1);
 
             /// Retrieve the pointer to the node that contains the index of the first filter that deletes the row
-            const ActionsDAG::Node * deleting_filter_index_dag_node = nullptr;
-            if (deleting_filter_index_node)
+            const ActionsDAG::Node * deleting_command_index_dag_node = nullptr;
+            if (deleting_command_index_node)
             {
                 /// The visitor reuses the nodes already added for the filter expression.
-                auto [deleting_filter_index_nodes, deleting_filter_index_correlated_subtrees]
-                    = actions_visitor.visit(filter_actions->dag, deleting_filter_index_node);
-                deleting_filter_index_correlated_subtrees.assertEmpty("in mutation filter");
-                chassert(deleting_filter_index_nodes.size() == 1);
-                deleting_filter_index_dag_node = deleting_filter_index_nodes[0];
+                auto [deleting_command_index_nodes, deleting_command_index_correlated_subtrees]
+                    = actions_visitor.visit(filter_actions->dag, deleting_command_index_node);
+                deleting_command_index_correlated_subtrees.assertEmpty("in mutation filter");
+                chassert(deleting_command_index_nodes.size() == 1);
+                deleting_command_index_dag_node = deleting_command_index_nodes[0];
             }
 
             /// Build a map from the current outputs for O(1) lookup,
@@ -2363,10 +2362,10 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                         dag_outputs.push_back(it->second);
             }
 
-            if (deleting_filter_index_dag_node)
+            if (deleting_command_index_dag_node)
             {
-                dag_outputs.push_back(deleting_filter_index_dag_node);
-                stage.affected_rows_counting.deleting_command_index_column_name = deleting_filter_index_dag_node->result_name;
+                dag_outputs.push_back(deleting_command_index_dag_node);
+                stage.affected_rows_counting.deleting_command_index_column_name = deleting_command_index_dag_node->result_name;
             }
 
             dag_outputs.push_back(expression_nodes[0]);
@@ -2408,7 +2407,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             {
                 /// To count the updated rows, calculate `updating_command_index = if(condition, index, 0)`,
                 /// where `index` is the 1-based index of the `UPDATE` command in `command_identifiers`.
-                /// The index is a constant of the same type as `deleting_filter_index`, see the comment there.
+                /// The index is a constant of the same type as `deleting_command_index`, see the comment there.
                 auto command_index_type = getCommandIndexType(stage.affected_rows_counting.command_identifiers.size());
 
                 auto if_node = std::make_shared<FunctionNode>("if");
@@ -2654,6 +2653,16 @@ static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const Prepar
 AffectedRowsByMutationCommandsMap MutationsInterpreter::getAffectedRows() const
 {
     AffectedRowsByMutationCommandsMap result;
+
+    /// A lambda to add `rows` to the number of rows affected by the command.
+    const auto addAffectedRows = [&result](const MutationCommandIdentifier & command_identifier, UInt64 rows) -> void {
+        const auto & [mutation_number, command_index] = command_identifier;
+        auto & rows_by_command = result[mutation_number];
+        if (rows_by_command.size() <= command_index)
+            rows_by_command.resize(command_index + 1);
+        rows_by_command[command_index] += rows;
+    };
+
     for (const auto & stage : stages)
     {
         const auto & affected_rows_counting = stage.affected_rows_counting;
@@ -2661,15 +2670,9 @@ AffectedRowsByMutationCommandsMap MutationsInterpreter::getAffectedRows() const
             continue;
 
         /// The index 0 counts the rows not affected by any command.
-        auto rows_by_counted_command_index = affected_rows_counting.counter->get();
+        auto rows_by_command_index = affected_rows_counting.counter->get();
         for (size_t i = 0; i < affected_rows_counting.command_identifiers.size(); ++i)
-        {
-            const auto & [mutation_version, command_index] = affected_rows_counting.command_identifiers[i];
-            auto & rows_by_command = result[mutation_version];
-            if (rows_by_command.size() <= command_index)
-                rows_by_command.resize(command_index + 1);
-            rows_by_command[command_index] += rows_by_counted_command_index[i + 1];
-        }
+            addAffectedRows(affected_rows_counting.command_identifiers[i], rows_by_command_index[i + 1]);
     }
     return result;
 }
