@@ -6,6 +6,7 @@
 #include <string_view>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
+#include <Client/SecondaryQuerySettings.h>
 #include <Columns/ColumnBLOB.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -193,6 +194,7 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int TCP_CONNECTION_LIMIT_REACHED;
     extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int QUERY_WAS_CANCELLED;
 
     // We have to distinguish the case when query is killed by `KILL QUERY` statement
     // and when it is killed by `Protocol::Client::Cancel` packet.
@@ -332,6 +334,23 @@ Block convertColumnsToBLOBs(
         res.insert(std::move(column));
     }
     return res;
+}
+
+/// For a query that fails with the exception being handled, `cancel` rethrows the exception of the cancelled execution.
+/// `QUERY_WAS_CANCELLED` can be caused by this cancellation itself, so it must not replace the one being handled.
+template <typename Executor>
+void cancelExecutorOnException(Executor & executor, const LoggerPtr & log)
+{
+    try
+    {
+        executor.cancel();
+    }
+    catch (...)
+    {
+        if (getCurrentExceptionCode() != ErrorCodes::QUERY_WAS_CANCELLED)
+            throw;
+        LOG_DEBUG(log, "Exception of the cancelled query execution: {}", getCurrentExceptionMessage(/* with_stacktrace */ false));
+    }
 }
 }
 
@@ -594,9 +613,7 @@ void TCPHandler::runImpl()
             /// If we need to shut down, or client disconnects.
             if (!tcp_server.isOpen() || in->isCanceled() || in->eof())
             {
-                LOG_TEST(log, "Closing connection (open: {}, in_canceled: {}, eof: {})",
-                    tcp_server.isOpen(), in->isCanceled(),
-                    !in->isCanceled() && in->eof());
+                LOG_TEST(log, "Closing connection (open: {}, in_canceled: {})", tcp_server.isOpen(), in->isCanceled());
                 return;
             }
         }
@@ -1669,7 +1686,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
         catch (...)
         {
             killQueryIfStoppedByClient(state);
-            executor.cancel();
+            cancelExecutorOnException(executor, log);
             throw;
         }
     };
@@ -1828,7 +1845,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
         catch (...)
         {
             killQueryIfStoppedByClient(state);
-            executor.cancel();
+            cancelExecutorOnException(executor, log);
             throw;
         }
 
@@ -3024,6 +3041,23 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         state->query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
     }
     state->query_context->applySettingsChanges(settings_changes);
+
+    /// The clamp above may drop or change a value that the initiator passed for a setting that chooses the
+    /// method of an aggregation key (see `markAggregationMethodSettingsChanged`). This server would then
+    /// number two-level buckets differently from the initiator, which merges the buckets of all servers by
+    /// their numbers. So it disables two-level aggregation, as for an initiator of an older revision (see
+    /// `DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD`): it sends single-level blocks,
+    /// and the initiator splits them into buckets with its own method. It keeps the value that its
+    /// constraints allow rather than the initiator's: any client may mark its query as secondary, so taking
+    /// the passed value would let a user get around its own constraints.
+    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && aggregationMethodSettingsDifferFromInitiator(passed_settings, state->query_context->getSettingsRef()))
+    {
+        LOG_DEBUG(
+            log, "The settings constraints changed an aggregation method setting of the initiator, so two-level aggregation is disabled");
+        state->query_context->setSetting("group_by_two_level_threshold", Field(0));
+        state->query_context->setSetting("group_by_two_level_threshold_bytes", Field(0));
+    }
 
     /// Sets the default database if it wasn't set earlier for the session context. This runs after
     /// the passed settings are applied, so the database explicitly carried by the query packet wins

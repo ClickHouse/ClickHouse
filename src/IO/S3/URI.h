@@ -51,7 +51,7 @@ struct URI
 
     /// Allowed by an <s3_bucket> entry for the endpoint and bucket, or by a <host>/<host_regexp> entry for the host.
     /// With throw_on_error, throws UNACCEPTABLE_URL instead of returning false.
-    bool checkRemoteHostFilter(const RemoteHostFilter & filter, bool throw_on_error = true) const;
+    bool checkRemoteHostFilter(const RemoteHostFilter & filter, bool throw_on_error = true) const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
 
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);
     static void validateKey(const std::string & key, const Poco::URI & uri);
