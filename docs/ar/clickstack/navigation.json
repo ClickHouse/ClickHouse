@@ -1,5 +1,4 @@
 {
-  "icon": "/images/icons/icon-clickstack.svg",
   "item": "ClickStack",
   "pages": [
     "ar/clickstack/index",
@@ -112,6 +111,8 @@
                 {
                   "group": "سبتمبر",
                   "pages": [
+                    "ar/clickstack/demo-days/2026/2026-09-24",
+                    "ar/clickstack/demo-days/2026/2026-09-17",
                     "ar/clickstack/demo-days/2026/2026-09-10",
                     "ar/clickstack/demo-days/2026/2026-09-04"
                   ]

@@ -1,4 +1,5 @@
 #include <Processors/Transforms/MergingAggregatedTransform.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -36,7 +37,7 @@ static ActionsDAG makeReorderingActions(const Block & in_header, const GroupingS
     ActionsDAG::NodeRawConstPtrs new_outputs;
     new_outputs.reserve(in_header.columns() + params.used_keys.size() - params.used_keys.size());
 
-    std::unordered_map<std::string_view, size_t> index;
+    UnorderedMapWithMemoryTracking<std::string_view, size_t> index;
     for (size_t pos = 0; pos < outputs.size(); ++pos)
         index.emplace(outputs[pos]->result_name, pos);
 
@@ -93,7 +94,8 @@ MergingAggregatedTransform::MergingAggregatedTransform(
                 params.max_block_size,
                 params.min_hit_rate_to_use_consecutive_keys_optimization,
                 params.serialize_string_with_zero_byte,
-                params.enable_packed_string_keys);
+                params.enable_packed_string_keys,
+                params.enable_fixed_and_packed_string_keys);
 
             auto transform_params = std::make_shared<AggregatingTransformParams>(std::make_shared<const Block>(reordering.updateHeader(in_header)), std::move(set_params), final);
 

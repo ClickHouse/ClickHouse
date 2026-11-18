@@ -1,0 +1,370 @@
+---
+slug: /cloud/managed-postgres/guides/nodejs
+sidebarTitle: 'Node.js'
+title: 'Usar Node.js con ClickHouse Managed Postgres'
+description: 'Conecte una aplicación Node.js a ClickHouse Managed Postgres con node-postgres (pg) mediante un grupo de conexiones, TLS verificado, consultas parametrizadas y transacciones'
+keywords: ['managed postgres', 'node.js', 'nodejs', 'node-postgres', 'pg', 'javascript', 'connection pool', 'tls', 'pgbouncer']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-nodejs-beta" />
+
+[node-postgres](https://node-postgres.com/) (el paquete `pg`) es el controlador de Postgres más utilizado para Node.js. En esta guía, se conectará a ClickHouse Managed Postgres mediante un `pg.Pool` con verificación completa de certificados TLS, creará dos tablas, transferirá dinero entre cuentas dentro de una transacción y servirá los datos a través de un pequeño servidor `node:http`.
+
+## Requisitos previos {#prerequisites}
+
+* [Node.js](https://nodejs.org/) 20.6 o posterior (para el indicador integrado `--env-file`). Esta guía se ha probado con Node.js 24.21.0 y `pg` 8.23.1.
+* Una cuenta de ClickHouse Cloud
+* [`psql`](https://www.postgresql.org/download/), para crear la base de datos
+
+## Crear un servicio de ClickHouse Managed Postgres {#create-service}
+
+En la consola de ClickHouse Cloud, haga clic en **New service** y seleccione **Postgres**. La instancia estará lista en unos minutos. Consulte la [guía de inicio rápido](/es/products/managed-postgres/quickstart) para ver el proceso paso a paso.
+
+## Obtenga los detalles de conexión {#connection-details}
+
+Haga clic en **Conectar** en la barra lateral izquierda de su servicio. Con la opción **Directly** seleccionada, copie la URL de conexión de la pestaña **url**. Deje **Use SSL** desactivado: la aplicación proporciona el certificado de CA en el código en lugar de en la URL (consulte [Configurar el grupo de conexiones](#configure-pool)).
+
+Esta guía se conecta **directamente** a Postgres en el puerto `5432`. Un servidor Node.js de ejecución prolongada ya mantiene su propio grupo de conexiones mediante `pg.Pool`, por lo que no necesita un segundo pooler delante de Postgres. Si ejecuta muchos procesos o funciones sin servidor, utilice en su lugar el PgBouncer incluido; consulte [Usar PgBouncer](#pgbouncer).
+
+A continuación, descargue el certificado de CA de su instancia. Active **Use SSL** y haga clic en **Download CA certificate**, o vaya a **Settings → CA Certificate → Download CA certificate**. Cada instancia tiene su propio certificado.
+
+## Configurar el proyecto {#project-setup}
+
+Cree un proyecto e instale `pg`:
+
+```bash
+mkdir node-pg-app && cd node-pg-app
+npm init -y
+npm install pg
+```
+
+<Tip>
+  **¿Va a añadirlo a una aplicación existente?**
+
+  Omita `mkdir` y `npm init -y`. En su proyecto, ejecute `npm install pg` y continúe con [Crear la base de datos](#create-database).
+</Tip>
+
+Los ejemplos de esta guía son módulos ES con la extensión `.mjs`, por lo que funcionan tanto si su `package.json` usa CommonJS como si usa módulos ES.
+
+## Crear la base de datos {#create-database}
+
+Mueva el archivo descargado `<service-name>-ca-certificate.pem` al directorio del proyecto y cámbiele el nombre a `ca-certificate.pem`. A continuación, cree una base de datos para la aplicación:
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c 'CREATE DATABASE guide_nodejs;'
+```
+
+Cree un archivo `.env` con la URL de conexión que copió, cambiando el nombre de la base de datos a `guide_nodejs`, y con la ruta al certificado:
+
+```bash .env
+DATABASE_URL=postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_nodejs
+DATABASE_CA_CERT=./ca-certificate.pem
+```
+
+Si su contraseña contiene caracteres como `@`, `/` o `#`, aplíqueles codificación porcentual en la URL.
+
+## Configurar el grupo de conexiones {#configure-pool}
+
+Cree `db.mjs`. Este archivo exporta un único grupo que comparte el resto de la aplicación:
+
+```javascript db.mjs
+import fs from 'node:fs';
+import pg from 'pg';
+
+export const pool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    // Trust only your instance's CA; the hostname is verified too (verify-full).
+    ca: fs.readFileSync(process.env.DATABASE_CA_CERT, 'utf8'),
+  },
+  max: 10,
+  idleTimeoutMillis: 30_000,
+});
+
+// An idle client can be disconnected by the server (for example, during a failover).
+// Without this handler, the error would crash the process.
+pool.on('error', (err) => {
+  console.error('Idle client error:', err.message);
+});
+```
+
+Pasar `ssl: { ca }` equivale a `sslmode=verify-full`: `pg` comprueba que el certificado del servidor esté firmado por la CA de su instancia y que coincida con el nombre del host. `rejectUnauthorized` tiene `true` como valor predeterminado; no lo establezca en `false`.
+
+<Warning>
+  **No combine `ssl` con parámetros SSL en la URL**
+
+  Si `DATABASE_URL` contiene `sslmode` o `sslrootcert`, `pg` genera su configuración de TLS a partir de la URL e ignora el objeto `ssl`. Por ejemplo, una URL que termine en `?sslmode=verify-full` sin `sslrootcert` sustituye su `ca`, y la conexión falla con `unable to verify the first certificate`. No incluya parámetros SSL en `DATABASE_URL` cuando pase `ssl` en el código.
+
+  Tenga en cuenta también que:
+
+  * Si no hay un objeto `ssl` ni `sslmode` en la URL, `pg` no usa TLS ni verifica el servidor.
+  * `pg` lee `PGHOST`, `PGUSER`, `PGPASSWORD` y variables similares, pero no lee `PGSSLROOTCERT`. Por lo tanto, las variables de la pestaña **env** del modal Conectar no bastan por sí solas para verificar el servidor.
+  * Si prefiere tenerlo todo en la URL, la URL que muestra el modal Conectar con **Use SSL** activado también funciona con `pg`; por ejemplo, `...?sslmode=verify-full&sslrootcert=ca-certificate.pem`. En ese caso, elimine la opción `ssl` y tenga en cuenta que `sslrootcert` se resuelve de forma relativa al directorio desde el que se inicia Node.js.
+</Warning>
+
+## Crear el esquema {#create-schema}
+
+Cree `setup.mjs`. Este archivo crea las tablas, inserta dos cuentas mediante consultas parametrizadas y luego las lee:
+
+```javascript setup.mjs
+import { pool } from './db.mjs';
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS accounts (
+    id      integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    owner   text NOT NULL UNIQUE,
+    balance numeric(12, 2) NOT NULL CHECK (balance >= 0)
+  );
+  CREATE TABLE IF NOT EXISTS transfers (
+    id         integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    from_id    integer NOT NULL REFERENCES accounts (id),
+    to_id      integer NOT NULL REFERENCES accounts (id),
+    amount     numeric(12, 2) NOT NULL CHECK (amount > 0),
+    created_at timestamptz NOT NULL DEFAULT now()
+  );
+`);
+
+const accounts = [
+  ['alice', 100],
+  ['bob', 50],
+];
+for (const [owner, balance] of accounts) {
+  await pool.query(
+    'INSERT INTO accounts (owner, balance) VALUES ($1, $2) ON CONFLICT (owner) DO NOTHING',
+    [owner, balance],
+  );
+}
+
+const { rows } = await pool.query(
+  'SELECT id, owner, balance FROM accounts WHERE owner = ANY($1) ORDER BY id',
+  [['alice', 'bob']],
+);
+console.table(rows);
+
+await pool.end();
+```
+
+Pase siempre los valores como parámetros (`$1`, `$2`, ...) en lugar de concatenarlos en la cadena SQL. `pg` los envía por separado del texto de la consulta, lo que evita la inyección de SQL. Los arrays de JavaScript se corresponden con arrays de Postgres, como en la consulta `ANY($1)`.
+
+Ejecútelo:
+
+```bash
+node --env-file=.env setup.mjs
+```
+
+```text
+┌─────────┬────┬─────────┬──────────┐
+│ (index) │ id │ owner   │ balance  │
+├─────────┼────┼─────────┼──────────┤
+│ 0       │ 1  │ 'alice' │ '100.00' │
+│ 1       │ 2  │ 'bob'   │ '50.00'  │
+└─────────┴────┴─────────┴──────────┘
+```
+
+`pg` devuelve los valores `numeric` (y `bigint`) como cadenas para no perder precisión. Si necesita números, conviértalos explícitamente.
+
+## Ejecutar consultas en una transacción {#transaction}
+
+Una transacción debe ejecutarse en una única conexión, por lo que debe obtener un Client con `pool.connect` y liberarlo siempre. Cree `transfer.mjs`:
+
+```javascript transfer.mjs
+import { pool } from './db.mjs';
+
+// Moves money between two accounts atomically: either every statement commits, or none do.
+export async function transfer(fromOwner, toOwner, amount) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const debit = await client.query(
+      'UPDATE accounts SET balance = balance - $1 WHERE owner = $2 AND balance >= $1 RETURNING id',
+      [amount, fromOwner],
+    );
+    if (debit.rowCount === 0) {
+      throw new Error(`Insufficient funds or unknown account: ${fromOwner}`);
+    }
+    const credit = await client.query(
+      'UPDATE accounts SET balance = balance + $1 WHERE owner = $2 RETURNING id',
+      [amount, toOwner],
+    );
+    if (credit.rowCount === 0) {
+      throw new Error(`Unknown account: ${toOwner}`);
+    }
+    const { rows } = await client.query(
+      'INSERT INTO transfers (from_id, to_id, amount) VALUES ($1, $2, $3) RETURNING *',
+      [debit.rows[0].id, credit.rows[0].id, amount],
+    );
+    await client.query('COMMIT');
+    return rows[0];
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+```
+
+No utilice `pool.query` para las sentencias dentro de una transacción: cada llamada a `pool.query` puede ejecutarse en una conexión distinta.
+
+## Servir los datos a través de HTTP {#http-server}
+
+Cree `server.mjs`. Este archivo sirve las cuentas y las transferencias en formato JSON en el puerto `3107`, acepta nuevas transferencias y se detiene de forma ordenada al recibir `SIGINT` (<kbd>Ctrl</kbd>+<kbd>C</kbd>) o `SIGTERM`:
+
+```javascript server.mjs
+import http from 'node:http';
+import { pool } from './db.mjs';
+import { transfer } from './transfer.mjs';
+
+const port = Number(process.env.PORT ?? 3107);
+
+function sendJson(res, status, body) {
+  res.writeHead(status, { 'content-type': 'application/json' });
+  res.end(`${JSON.stringify(body, null, 2)}\n`);
+}
+
+async function readJson(req) {
+  let body = '';
+  for await (const chunk of req) body += chunk;
+  return JSON.parse(body);
+}
+
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  try {
+    if (req.method === 'GET' && url.pathname === '/accounts') {
+      const { rows } = await pool.query('SELECT id, owner, balance FROM accounts ORDER BY id');
+      return sendJson(res, 200, rows);
+    }
+    if (req.method === 'GET' && url.pathname === '/transfers') {
+      const limit = Number(url.searchParams.get('limit') ?? 10);
+      const { rows } = await pool.query(
+        `SELECT t.id, f.owner AS "from", o.owner AS "to", t.amount, t.created_at
+           FROM transfers t
+           JOIN accounts f ON f.id = t.from_id
+           JOIN accounts o ON o.id = t.to_id
+          ORDER BY t.id DESC
+          LIMIT $1`,
+        [limit],
+      );
+      return sendJson(res, 200, rows);
+    }
+    if (req.method === 'POST' && url.pathname === '/transfers') {
+      const { from, to, amount } = await readJson(req);
+      return sendJson(res, 201, await transfer(from, to, amount));
+    }
+    sendJson(res, 404, { error: 'Not found' });
+  } catch (err) {
+    sendJson(res, 400, { error: err.message });
+  }
+});
+
+server.listen(port, () => console.log(`Listening on http://localhost:${port}`));
+
+// Stop accepting requests, let in-flight ones finish, then close all pool connections.
+function shutdown(signal) {
+  console.log(`${signal} received, shutting down`);
+  server.close(async () => {
+    await pool.end();
+    console.log('Pool closed');
+  });
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+```
+
+Llame a `pool.end` una sola vez, cuando el proceso finalice, y no después de cada solicitud. Espera a que se liberen los Clients que estén en uso y, a continuación, cierra todas las conexiones.
+
+## Verificación {#verify}
+
+Inicie el servidor:
+
+```bash
+node --env-file=.env server.mjs
+```
+
+En una segunda terminal, realice una transferencia y, a continuación, intente otra que dejaría una cuenta en descubierto y otra a una cuenta que no existe:
+
+```bash
+curl -X POST localhost:3107/transfers -H 'content-type: application/json' -d '{"from": "alice", "to": "bob", "amount": 25}'
+curl -X POST localhost:3107/transfers -H 'content-type: application/json' -d '{"from": "bob", "to": "alice", "amount": 1000}'
+curl -X POST localhost:3107/transfers -H 'content-type: application/json' -d '{"from": "alice", "to": "carol", "amount": 10}'
+```
+
+```text
+{
+  "id": 1,
+  "from_id": 1,
+  "to_id": 2,
+  "amount": "25.00",
+  "created_at": "2026-09-30T16:45:56.751Z"
+}
+{
+  "error": "Insufficient funds or unknown account: bob"
+}
+{
+  "error": "Unknown account: carol"
+}
+```
+
+La tercera transferencia ya había realizado el cargo en la cuenta de `alice` cuando falló, pero el `ROLLBACK` lo deshizo. Abra [http://localhost:3107/accounts](http://localhost:3107/accounts) en su navegador para ver los saldos. La respuesta tiene un aspecto similar a este:
+
+```json
+[
+  {
+    "id": 1,
+    "owner": "alice",
+    "balance": "75.00"
+  },
+  {
+    "id": 2,
+    "owner": "bob",
+    "balance": "75.00"
+  }
+]
+```
+
+Para confirmar que la conexión utiliza TLS verificado, ejecute una consulta sobre `pg_stat_ssl`:
+
+```bash
+node --env-file=.env --input-type=module -e "
+import { pool } from './db.mjs';
+const { rows } = await pool.query('SELECT ssl, version FROM pg_stat_ssl WHERE pid = pg_backend_pid()');
+console.log(rows[0]);
+await pool.end();
+"
+```
+
+```text
+{ ssl: true, version: 'TLSv1.3' }
+```
+
+Si hace que `DATABASE_CA_CERT` apunte a cualquier otro certificado, la conexión falla con `unable to verify the first certificate`, lo que demuestra que el certificado del servidor se verifica realmente.
+
+Por último, detenga el servidor con <kbd>Ctrl</kbd>+<kbd>C</kbd>. Se mostrará `SIGINT received, shutting down` y, a continuación, `Pool closed`.
+
+También puede consultar los datos en la consola. Abra **SQL console**, despliegue la base de datos `guide_nodejs` y abra la tabla `accounts`:
+
+| id | owner | balance |
+| -- | ----- | ------- |
+| 1  | alice | 75.00   |
+| 2  | bob   | 75.00   |
+
+## Usar PgBouncer {#pgbouncer}
+
+Para conectarse a través del [PgBouncer](/es/products/managed-postgres/connection#pgbouncer) incluido, seleccione **via PgBouncer** en el modal Conectar y use el puerto `6432` en `DATABASE_URL`. No es necesario modificar el código; el mismo certificado de CA sigue siendo válido.
+
+PgBouncer se ejecuta en modo de agrupación de conexiones por transacción, por lo que cada transacción puede ejecutarse en una conexión de Postgres distinta. Con `pg`:
+
+* Las consultas parametrizadas, las sentencias preparadas con nombre (`pool.query({ name, text, values })`) y las transacciones que usan `pool.connect` funcionan tal como se muestra en esta guía.
+* Las sentencias `PREPARE` y `EXECUTE` a nivel de SQL, así como la configuración de sesión establecida con `SET`, no se mantienen entre transacciones. En su lugar, use `SET LOCAL` dentro de una transacción.
+* `pg_stat_ssl` refleja la conexión entre PgBouncer y Postgres, por lo que la consulta de comprobación de TLS anterior devuelve `ssl: false`. Aun así, la conexión de su aplicación con PgBouncer se sigue verificando: con un certificado de CA incorrecto, la conexión falla igualmente.
+
+## Próximos pasos {#next-steps}
+
+* [Conexión](/es/products/managed-postgres/connection): cadenas de conexión, PgBouncer y TLS
+* [Configuración](/es/products/managed-postgres/settings): modifique parámetros como `max_connections`
+* [Réplicas de lectura](/es/products/managed-postgres/read-replicas): envíe consultas de solo lectura a una réplica
+* [Alta disponibilidad](/es/products/managed-postgres/high-availability): instancias standby y conmutación por error (failover)

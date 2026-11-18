@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataOperation.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsMetadata.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
@@ -38,6 +39,32 @@ public:
     void execute() override;
 };
 
+/// Publishes the changes recorded by the transaction snapshot as the latest state of the metadata.
+/// It is the last operation of a transaction: if it fails, the preceding operations are rolled back as usual.
+class MetadataStorageFromPlainObjectStoragePublishOperation final : public IMetadataOperation
+{
+private:
+    const std::shared_ptr<FsSnapshot> fs_tree;
+    FsMetadata & fs;
+    const std::shared_ptr<IObjectStorage> object_storage;
+    const std::shared_ptr<PlainRewritableLayout> layout;
+    StoredObjects & removed_objects;
+
+    /// The blobs that lost their last link only when the changes were published, see `FsMetadata::applyJournal`.
+    StoredObjects unlinked_blobs;
+
+public:
+    MetadataStorageFromPlainObjectStoragePublishOperation(
+        std::shared_ptr<FsSnapshot> fs_tree_,
+        FsMetadata & fs_,
+        std::shared_ptr<IObjectStorage> object_storage_,
+        std::shared_ptr<PlainRewritableLayout> layout_,
+        StoredObjects & removed_objects_);
+
+    void execute() override;
+    void finalize() override;
+};
+
 class MetadataStorageFromPlainObjectStorageCreateDirectoryOperation final : public IMetadataOperation
 {
 private:
@@ -50,7 +77,7 @@ private:
     const std::shared_ptr<PlainRewritableMetrics> metrics;
 
     /// Set after all validation and before the write, so `undo` runs exactly when `execute` may have changed object
-    /// storage; see `blob_move_attempted` of the move operation.
+    /// storage; see `source_copy_attempted` of the move operation.
     bool write_attempted = false;
 
 public:
@@ -105,7 +132,7 @@ private:
     const std::shared_ptr<PlainRewritableMetrics> metrics;
 
     DirectoryRemoteInfo info;
-    /// Set once `info` is captured and before the removal; see `blob_move_attempted` of the move operation.
+    /// Set once `info` is captured and before the removal; see `source_copy_attempted` of the move operation.
     bool remove_attempted = false;
 
 public:
@@ -172,9 +199,11 @@ private:
     /// otherwise the blob would be discovered as a file again when the metadata is loaded. To be able to undo the removal,
     /// the blob is first copied to a temporary location.
     std::filesystem::path remote_source_path;
+    std::string tmp_name;
     std::filesystem::path remote_tmp_path;
-    /// Set once both keys are known and before the first write; see `blob_move_attempted` of the move operation.
-    bool blob_removal_attempted = false;
+    /// Set right before their steps; see `source_copy_attempted` of the move operation.
+    bool copy_attempted = false;
+    bool remove_attempted = false;
 
     /// Otherwise the file is removed from the explicit file list of the directory (switching the directory to that form
     /// if needed), and the blob is removed after the commit if this was its last link.
@@ -215,7 +244,7 @@ private:
 
     std::filesystem::path remote_path_from;
     std::filesystem::path remote_path_to;
-    /// Set once both keys are known and before the copy; see `blob_move_attempted` of the move operation.
+    /// Set right before the copy; see `source_copy_attempted` of the move operation.
     bool copy_attempted = false;
     std::optional<DirectoryRemoteInfo> previous_directory_info;
     bool prefix_path_written = false;
@@ -299,12 +328,18 @@ private:
 
     std::filesystem::path remote_path_from;
     std::filesystem::path remote_path_to;
+    std::string tmp_name_from;
+    std::string tmp_name_to;
     std::filesystem::path tmp_remote_path_from;
     std::filesystem::path tmp_remote_path_to;
     std::optional<FileRemoteInfo> file_from_remote_info;
-    /// Set once the keys above are known and before the first write, so that `undo` knows `execute` may have changed
-    /// object storage. It does not claim that any particular write landed; `undo` finds that out for itself.
-    bool blob_move_attempted{false};
+    /// What the marker of the backup of an existing target says until the replacement is in place.
+    std::optional<PlainRewritableLayout::PendingReplace> pending_replace;
+    /// Each flag is set right before its step: a step can land even when it throws, so a set flag says that the step
+    /// may have changed object storage and that the steps before it completed. `undo` asks object storage for the rest.
+    bool source_copy_attempted{false};
+    bool target_remove_attempted{false};
+    bool source_remove_attempted{false};
     bool had_existing_target{false};
 
 public:
@@ -319,19 +354,19 @@ public:
         StoredObjects & removed_objects_);
     /**
      * @brief Move a file from remote_path_from to remote_path_to
-     *  1. Copy remote_path_to (if exists) to tmp_remote_path_from, which is used to restore the target file in case of failure.
-     *  2. Copy remote_path_from to tmp_remote_path_to, which is used to restore the source file in case of failure.
+     *  1. Copy remote_path_from to tmp_remote_path_from.
+     *  2. If the target exists, copy remote_path_to to tmp_remote_path_to and remove remote_path_to.
      *  3. Copy remote_path_from to remote_path_to.
-     *  4. Remove remote_path_to.
+     *  4. Remove remote_path_from.
      *  5. Update fs_tree
      */
     void execute() override;
     /**
      * @brief Undo the `execute` logic:
-     *  1. If remote_path_from is copied to remote_path_to, remove remote_path_to
-     *  2. Restore remote_path_from from tmp_remote_path_from if it is copied.
-     *  3. Restore remote_path_to from tmp_remote_path_to if it is copied.
-     *  5. Update fs_tree
+     *  1. Restore remote_path_from from tmp_remote_path_from, if its removal was attempted.
+     *  2. Restore remote_path_to from tmp_remote_path_to, if its removal was attempted,
+     *     or remove it if there was no target.
+     *  3. Remove the temporary copies.
      */
     void undo() override;
     /**
@@ -354,11 +389,15 @@ private:
 
     const LoggerPtr log;
 
+    std::string tmp_name;
     std::filesystem::path tmp_path;
     std::unique_ptr<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation> move_to_tmp_op;
-    /// The metadata objects of the removed directories and the blobs whose last links were inside the removed subtree.
-    StoredObjects objects_to_remove;
+    /// The blobs whose last links were inside the removed subtree, and the metadata objects of the removed directories.
+    /// They are removed in this order, see `finalize`.
+    StoredObjects data_objects_to_remove;
+    StoredObjects metadata_objects_to_remove;
     bool move_tried = false;
+    bool marker_written = false;
 
 public:
     MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation(

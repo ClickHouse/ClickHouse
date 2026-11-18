@@ -3,9 +3,11 @@ Correctness tests for `enable_group_by_top_k_optimization` under non-final
 (partial) aggregation - distributed tables and parallel replicas.
 
 Partial aggregation gets its top-K parameters from the Planner hook
-`applyTopKPushdownToPartialAggregation`, which only applies when each node
-plans the query text itself (not with `serialize_query_plan`) and only for
-queries with a real ORDER BY over a leading prefix of the GROUP BY keys:
+`applyTopKPushdownToPartialAggregation`.  It applies both when each node
+plans the query text itself and when the initiator ships a serialized plan
+(`AggregatingStep::serialize` carries top-K since `Aggregating` step
+version 1), and only for queries with a real ORDER BY over a leading
+prefix of the GROUP BY keys:
 
   * with ORDER BY (`GROUP BY ... ORDER BY <prefix> LIMIT N`) - safe on the
     partial side: a key rejected by a shard-local heap cannot be in the
@@ -28,9 +30,9 @@ follower-side heap actually runs on the text-planned path.
 The per-clause negative tests all run on the text-planned follower path
 (`serialize_query_plan = 0`, `parallel_replicas_local_plan = 0`) and pair
 every "no `Top-K`" assertion with a control query that must carry one - see
-`_assert_guard_blocks_top_k`.  Run with `serialize_query_plan = 1` they would
-instead stop at the serialization gate, which returns before any of the
-clause guards, and would keep passing with those guards deleted.
+`_assert_guard_blocks_top_k`.  The clause guards live in the shared Planner
+hook and run identically on the serialized path, so one deterministic path
+is enough.
 """
 
 import json
@@ -181,12 +183,10 @@ def _assert_same_result(node, query):
     )
 
 
-# Settings that make every replica a text-planned follower, which is the only
-# path where `applyTopKPushdownToPartialAggregation` reaches its clause guards:
-# with `serialize_query_plan = 1` the hook returns at the serialization gate,
-# before HAVING / QUALIFY / windows / DISTINCT / `exact_rows_before_limit` are
-# ever looked at.  A negative test run that way would prove the serialization
-# gate and nothing about the clause it names.
+# Settings that make every replica a text-planned follower.  The clause guards
+# of `applyTopKPushdownToPartialAggregation` run identically on the serialized
+# path; this path is pinned so every negative assertion runs against one
+# deterministic plan shape with a visible positive control.
 _FOLLOWER_SETTINGS = {
     "enable_parallel_replicas": 2,
     "max_parallel_replicas": 2,
@@ -337,7 +337,7 @@ def test_sharded_distributed_order_by_with_push_down_limit(start_cluster, serial
     assert off == expected
 
     plan = node1.query(f"EXPLAIN PLAN {query}", settings=settings_on)
-    assert ("Top-K:" in plan) == (serialize_query_plan == 0), (
+    assert "Top-K:" in plan, (
         f"serialize_query_plan={serialize_query_plan} produced an unexpected plan:\n{plan}"
     )
 
@@ -481,14 +481,31 @@ def test_parallel_replicas_order_by(start_cluster, max_parallel_replicas):
     assert off == expected
 
 
+def _remote_replicas_subplan(plan):
+    """The part of an `EXPLAIN distributed=1` output nested under
+    `ReadFromRemoteParallelReplicas`, i.e. the plan the follower replicas run.
+    The initiator's local fragment is printed beside that step, not under it."""
+    lines = plan.splitlines()
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("ReadFromRemoteParallelReplicas"):
+            indent = len(line) - len(line.lstrip())
+            subplan = []
+            for nested in lines[i + 1 :]:
+                if nested.strip() and len(nested) - len(nested.lstrip()) <= indent:
+                    break
+                subplan.append(nested)
+            return "\n".join(subplan)
+    raise AssertionError(f"no ReadFromRemoteParallelReplicas step in:\n{plan}")
+
+
 def test_remote_partial_aggregation_top_k(start_cluster):
-    """Partial aggregation derives the top-K parameters from the analyzed
-    query in the Planner, and that only reaches the followers when each node
-    plans the query text itself.  With `serialize_query_plan` the initiator's
-    serialized sub-plan is shipped instead and `AggregatingStep::serialize`
-    deliberately does not carry top-K (the plan-serialization protocol has no
-    version negotiation), so the pushdown is gated off entirely there - the
-    plan must not advertise a `Top-K` the followers would never run."""
+    """EXPLAIN must advertise the `Top-K` the followers actually run: on the
+    text-planned path (`serialize_query_plan = 0`) the annotation comes from
+    the follower planning the query text, on the serialized path from the
+    shipped plan (`AggregatingStep` carries the top-K payload since step
+    version 1).  Engagement itself is proven via profile
+    events by `test_remote_partial_aggregation_follower_heap_engaged` and
+    `test_remote_partial_aggregation_serialized_heap_engaged`."""
     table = "t_pr"
     _create_replicated_shards(table)
     query = (
@@ -499,6 +516,7 @@ def test_remote_partial_aggregation_top_k(start_cluster):
         "enable_parallel_replicas": 2,
         "max_parallel_replicas": 2,
         "cluster_for_parallel_replicas": "one_shard_two_replicas",
+        "parallel_replicas_local_plan": 1,
         "query_plan_max_limit_for_top_k_optimization": 1000,
     }
     for serialize in (0, 1):
@@ -511,10 +529,20 @@ def test_remote_partial_aggregation_top_k(start_cluster):
                     enable_group_by_top_k_optimization=opt,
                 ),
             )
-            if opt and not serialize:
+            if opt:
                 assert "Top-K:" in plan, (
                     f"serialize_query_plan={serialize}, opt={opt}\nFull plan:\n{plan}"
                 )
+                followers_plan = _remote_replicas_subplan(plan)
+                assert "Top-K:" in followers_plan, (
+                    f"serialize_query_plan={serialize}: the followers' plan has no Top-K\n"
+                    f"Full plan:\n{plan}"
+                )
+                if serialize:
+                    assert "ReadFromTable" in followers_plan, (
+                        "serialize_query_plan=1: the followers did not get a serialized plan\n"
+                        f"Full plan:\n{plan}"
+                    )
             else:
                 assert "Top-K:" not in plan, (
                     f"serialize_query_plan={serialize}, opt={opt}\nFull plan:\n{plan}"
@@ -568,15 +596,64 @@ def test_remote_partial_aggregation_follower_heap_engaged(start_cluster):
     assert skipped > 0, "no follower reported top-K skipped rows"
 
 
+def test_remote_partial_aggregation_serialized_heap_engaged(start_cluster):
+    """Follower-side proof for the serialized path: with
+    `serialize_query_plan = 1` each shard receives a plan whose `Aggregating`
+    step carries the top-K parameters (step version 1), and the shards must
+    report `AggregationTopKRowsSkipped`.  Result equality alone cannot
+    distinguish a working remote heap from parameters silently dropped in
+    serialization.
+
+    `prefer_localhost_replica = 0` makes both `remote()` shards secondary
+    queries that read all of their own data, so the proof does not depend on
+    how a parallel-replicas coordinator hands out ranges.  The shipped
+    parallel-replicas plan is checked for `Top-K` by
+    `test_remote_partial_aggregation_top_k`."""
+    _make_local_shards()
+    comment = "topk_serialized_heap_proof"
+    node1.query(
+        "SELECT k, sum(v) "
+        "FROM remote('node{1,2}', currentDatabase(), t_local) "
+        "GROUP BY k ORDER BY k ASC LIMIT 10",
+        settings={
+            "enable_group_by_top_k_optimization": 1,
+            "enable_parallel_replicas": 0,
+            "serialize_query_plan": 1,
+            "prefer_localhost_replica": 0,
+            "query_plan_max_limit_for_top_k_optimization": 1000,
+            "log_comment": comment,
+        },
+    )
+    for node in (node1, node2):
+        node.query("SYSTEM FLUSH LOGS query_log")
+    initial_query_id = node1.query(
+        f"SELECT query_id FROM system.query_log "
+        f"WHERE log_comment = '{comment}' AND is_initial_query AND type = 'QueryFinish' "
+        f"ORDER BY event_time_microseconds DESC LIMIT 1"
+    ).strip()
+    assert initial_query_id, "initial query not found in query_log"
+    skipped = 0
+    for node in (node1, node2):
+        skipped += int(
+            node.query(
+                f"SELECT sum(ProfileEvents['AggregationTopKRowsSkipped']) "
+                f"FROM system.query_log "
+                f"WHERE initial_query_id = '{initial_query_id}' "
+                f"AND NOT is_initial_query AND type = 'QueryFinish'"
+            ).strip()
+        )
+    assert skipped > 0, "no follower reported top-K skipped rows on the serialized-plan path"
+
+
 @pytest.mark.parametrize("max_parallel_replicas", [2])
 def test_parallel_replicas_order_by_serialize_query_plan(
     start_cluster, max_parallel_replicas
 ):
     """With `serialize_query_plan = 1` the initiator ships a serialized
-    sub-plan and the partial top-K pushdown is gated off in
-    `applyTopKPushdownToPartialAggregation` (top-K is not serialized).  The
-    query must still work and match the optimization-off baseline - i.e. the
-    gate degrades to plain partial aggregation, nothing more."""
+    sub-plan that carries the top-K parameters (`Aggregating` step version
+    1), so the followers run the heap.  The result must match the
+    optimization-off baseline - per-replica skipping and eviction must stay
+    invisible after the initiator's merge, sort and limit."""
     table = "t_pr"
     _create_replicated_shards(table)
     query = f"SELECT k, sum(v) FROM {table} GROUP BY k ORDER BY k ASC LIMIT 10"
@@ -740,11 +817,13 @@ def test_parallel_replicas_no_order_by(start_cluster, max_parallel_replicas):
 def test_parallel_replicas_no_order_by_serialize_query_plan(
     start_cluster, parallel_replicas_local_plan
 ):
-    """A serialized parallel-replica fragment cannot carry the top-K heap.
-
-    The no-ORDER-BY optimization must therefore add neither a stale `Top-K`
-    annotation nor its synthetic full sort to the outer merge plan, regardless
-    of whether the initiator also executes a local fragment.
+    """The no-ORDER-BY shape must not push the heap to the followers even
+    though a serialized plan can carry top-K parameters: the synthesized sort
+    that makes the shape safe cannot be placed above the initiator's merge, so
+    each follower would truncate its group set independently and merged groups
+    would come back incomplete.  The outer merge plan must show neither a
+    stale `Top-K` annotation nor the synthetic sort, regardless of whether the
+    initiator also executes a local fragment.
     """
     table = "t_pr"
     _create_replicated_shards(table)

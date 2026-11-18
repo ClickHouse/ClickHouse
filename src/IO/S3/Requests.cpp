@@ -1,4 +1,5 @@
 #include <IO/S3/Requests.h>
+#include <IO/S3/AwsFormat.h>
 #include <Common/StringUtils.h>
 
 #include <algorithm>
@@ -28,10 +29,19 @@ namespace ErrorCodes
 namespace DB::S3RequestSetting
 {
     extern const S3RequestSettingsString upload_checksum_algorithm;
+    extern const S3RequestSettingsString delete_checksum_algorithm;
 }
 
 namespace DB::S3
 {
+
+Model::StorageClass getStorageClassForName(const std::string & name)
+{
+    /// An unknown name is sent as is, so it must not break the header line.
+    if (name.find_first_of("\r\n") != std::string::npos)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting storage_class has invalid value: it contains CR or LF");
+    return Model::StorageClassMapper::GetStorageClassForName(Aws::String(name));
+}
 
 RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket)
 {
@@ -54,10 +64,11 @@ RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3R
                     ErrorCodes::INVALID_SETTING_VALUE,
                     "Setting upload_checksum_algorithm cannot be MD5 for S3Express buckets, "
                     "which require a flexible checksum; use CRC32 or SHA256");
-            if (OpenSSLInitializer::instance().isFIPSEnabled())
+            if (!OpenSSLInitializer::instance().isMD5Available())
                 throw Exception(
                     ErrorCodes::INVALID_SETTING_VALUE,
-                    "Setting upload_checksum_algorithm cannot be MD5 when FIPS mode is enabled; use CRC32 or SHA256");
+                    "Setting upload_checksum_algorithm cannot be MD5 because the MD5 digest is not available (FIPS mode?); "
+                    "use CRC32 or SHA256");
         }
         return *algorithm;
     }
@@ -72,6 +83,53 @@ RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3R
     return RequestChecksum::Algorithm::MD5;
 }
 
+bool RequestChecksum::hasExplicitDeleteChecksumAlgorithm(const S3RequestSettings & request_settings)
+{
+    return !request_settings[DB::S3RequestSetting::delete_checksum_algorithm].value.empty();
+}
+
+RequestChecksum::Algorithm RequestChecksum::getDeleteChecksumAlgorithm(
+    const S3RequestSettings & request_settings, bool is_s3express_bucket, bool md5_rejected_by_server)
+{
+    const auto md5_available = OpenSSLInitializer::instance().isMD5Available();
+
+    const auto & name = request_settings[DB::S3RequestSetting::delete_checksum_algorithm].value;
+    if (!name.empty())
+    {
+        const auto algorithm = tryParse(name);
+        if (!algorithm)
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting delete_checksum_algorithm has invalid value {} which only supports {}",
+                name, supportedAlgorithms());
+
+        if (*algorithm == Algorithm::MD5)
+        {
+            if (is_s3express_bucket)
+                throw Exception(
+                    ErrorCodes::INVALID_SETTING_VALUE,
+                    "Setting delete_checksum_algorithm cannot be MD5 for S3Express buckets, "
+                    "which require a flexible checksum; use CRC32 or SHA256");
+            if (!md5_available)
+                throw Exception(
+                    ErrorCodes::INVALID_SETTING_VALUE,
+                    "Setting delete_checksum_algorithm cannot be MD5 because the MD5 digest is not available (FIPS mode?); "
+                    "use CRC32 or SHA256");
+        }
+        return *algorithm;
+    }
+
+    if (is_s3express_bucket)
+        return Algorithm::CRC32; /// flexible checksum is mandatory, `Content-MD5` not accepted
+
+    /// Most servers reject `DeleteObjects` without a digest. If the `MD5` digest is unavailable in the crypto library
+    /// (e.g. FIPS mode), the SDK would silently omit the header, so use a flexible checksum instead.
+    if (!md5_available || md5_rejected_by_server)
+        return Algorithm::SHA256;
+
+    return Algorithm::MD5;
+}
+
 namespace
 {
 
@@ -79,6 +137,7 @@ namespace
 constexpr std::pair<std::string_view, std::string_view> GCS_TRANSLATED_HEADERS[] = {
     {"x-amz-copy-source", "x-goog-copy-source"},
     {"x-amz-metadata-directive", "x-goog-metadata-directive"},
+    {"x-amz-acl", "x-goog-acl"},
     /// Only the name is translated: S3 and GCS share no class name but STANDARD, so an S3 class
     /// reaches GCS as 400 InvalidStorageClass.
     {"x-amz-storage-class", "x-goog-storage-class"},
@@ -134,7 +193,7 @@ Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCol
     /// we have to replace all the prefixes client set internally
     const auto replace_with_gcs_header = [&](std::string_view amz_header, std::string_view gcs_header)
     {
-        if (const auto it = headers.find(std::string(amz_header)); it != headers.end())
+        if (const auto it = headers.find(Aws::String(amz_header)); it != headers.end())
         {
             auto header_value = std::move(it->second);
             headers.erase(it);
@@ -146,16 +205,19 @@ Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCol
         replace_with_gcs_header(amz_header, gcs_header);
 
     for (const auto & dropped_header : GCS_DROPPED_HEADERS)
-        headers.erase(std::string(dropped_header));
+        headers.erase(Aws::String(dropped_header));
+
+    if (const auto it = headers.find("if-none-match"); it != headers.end() && it->second == "*")
+        headers.emplace("x-goog-if-generation-match", "0");
 
     /// replace all x-amz-meta- headers
-    VectorWithMemoryTracking<std::pair<std::string, std::string>> new_meta_headers;
+    VectorWithMemoryTracking<std::pair<Aws::String, Aws::String>> new_meta_headers;
     for (auto it = headers.begin(); it != headers.end();)
     {
         if (it->first.starts_with(AMZ_META_PREFIX))
         {
             auto value = std::move(it->second);
-            auto header = std::string(GCS_META_PREFIX) + it->first.substr(AMZ_META_PREFIX.size());
+            auto header = Aws::String(GCS_META_PREFIX) + it->first.substr(AMZ_META_PREFIX.size());
             new_meta_headers.emplace_back(std::pair{std::move(header), std::move(value)});
             it = headers.erase(it);
         }
@@ -281,7 +343,7 @@ void ComposeObjectRequest::SetKey(const char * value)
     key.assign(value);
 }
 
-void ComposeObjectRequest::SetComponentNames(Strings component_names_)
+void ComposeObjectRequest::SetComponentNames(Aws::Vector<Aws::String> component_names_)
 {
     component_names = std::move(component_names_);
 }
@@ -311,7 +373,7 @@ static size_t getAttemptFromInfo(const Aws::String & request_info)
     auto value = request_info.substr(val_begin, val_end - val_begin);
     try
     {
-        return std::stol(value, nullptr, 10);
+        return std::stol(String(value), nullptr, 10);
     }
     catch (const std::exception &)
     {
@@ -319,7 +381,7 @@ static size_t getAttemptFromInfo(const Aws::String & request_info)
     }
 }
 
-static String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const String & key)
+static Aws::String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const Aws::String & key)
 {
     auto it = map.find(key);
     if (it == map.end())
@@ -329,7 +391,7 @@ static String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const Str
 
 void setClickHouseAttemptNumber(Aws::AmazonWebServiceRequest & request, size_t attempt)
 {
-    request.SetAdditionalCustomHeaderValue("clickhouse-request", fmt::format("attempt={}", attempt));
+    request.SetAdditionalCustomHeaderValue("clickhouse-request", awsFormat("attempt={}", attempt));
 }
 
 size_t getClickHouseAttemptNumber(const Aws::AmazonWebServiceRequest & request)

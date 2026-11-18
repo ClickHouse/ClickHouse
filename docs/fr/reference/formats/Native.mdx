@@ -15,17 +15,15 @@ doc_type: 'référence'
 | ------ | ------ | ----- |
 | ✔      | ✔      |       |
 
-<div id="description">
-  ## Description
-</div>
+## Description {#description}
 
 La spécification officielle complète du format `Native` est disponible [ici](/fr/resources/develop-contribute/native-protocol/format), et la spécification complémentaire du protocole `Native` — le protocole TCP sous-jacent qui le transporte — est disponible [ici](/fr/resources/develop-contribute/native-protocol/protocol).
 
 <Note>
-  Les deux spécifications ont été générées par des LLM à partir du code source de ClickHouse. Le code reste la principale source de référence : en cas de désaccord entre la spécification et le code, c’est le code qui fait foi.
+  Les deux spécifications ont été générées par des LLM à partir du code source de ClickHouse. Le code reste la principale source de référence : en cas de désaccord entre la spécification et le code, c’est le code qui fait foi.
 </Note>
 
-Le format `Native` est le format le plus efficace de ClickHouse, car il est véritablement « colonnaire »
+Le format `Native` est le format le plus efficace de ClickHouse, car il est véritablement « colonnaire »
 dans le sens où il ne convertit pas les colonnes en lignes.
 
 Dans ce format, les données sont écrites et lues [par blocs](/fr/resources/develop-contribute/introduction/architecture#block), au format binaire.
@@ -38,9 +36,7 @@ C’est le format utilisé dans l’interface native pour les échanges entre se
   Il n’est pas forcément pratique de manipuler directement ce format.
 </Tip>
 
-<div id="data-types-wire-format">
-  ## Format filaire des types de données
-</div>
+## Format filaire des types de données {#data-types-wire-format}
 
 Les données sont transmises dans un format colonnaire, ce qui signifie que chaque colonne est envoyée séparément
 et que toutes les valeurs d&#39;une colonne sont envoyées ensemble sous la forme d&#39;un seul tableau.
@@ -53,9 +49,7 @@ Chaque colonne d&#39;un bloc contient un en-tête similaire à [RowBinaryWithNam
   l&#39;interface HTTP standard sans version de protocole, ce qui omet `BlockInfo`.
 </Note>
 
-<div id="block-structure">
-  ### Structure d’un bloc
-</div>
+### Structure d’un bloc {#block-structure}
 
 La requête suivante renvoie deux colonnes, `number` et `str`, et comporte trois lignes :
 
@@ -97,9 +91,7 @@ const data = new Uint8Array([
 ])
 ```
 
-<div id="multiple-blocks">
-  ### Blocs multiples
-</div>
+### Blocs multiples {#multiple-blocks}
 
 Cependant, dans de nombreux cas, les données ne tiendront pas dans un seul bloc, et ClickHouse les enverra sous forme de plusieurs blocs.
 Prenons la requête suivante, qui récupère deux lignes avec une taille de bloc réduite afin de forcer le découpage des données à raison d’une ligne par bloc :
@@ -153,9 +145,7 @@ const data = new Uint8Array([
 ]);
 ```
 
-<div id="simple-data-types">
-  ### Types de données simples
-</div>
+### Types de données simples {#simple-data-types}
 
 Le format filaire d&#39;une valeur individuelle de l&#39;un de ces types de données simples est similaire à `RowBinary`/`RowBinaryWithNamesAndTypes`.
 La liste complète des types correspondant à cette description est la suivante :
@@ -175,9 +165,7 @@ La liste complète des types correspondant à cette description est la suivante�
 
 Pour plus de détails, consultez les descriptions des types ci-dessus dans [&quot;Format filaire des types de données RowBinary&quot;](/fr/reference/formats/RowBinary/RowBinary#data-types-wire-format).
 
-<div id="complex-data-types">
-  ### Types de données complexes
-</div>
+### Types de données complexes {#complex-data-types}
 
 L&#39;encodage des types suivants diffère de `RowBinary` et de `RowBinaryWithNamesAndTypes`.
 
@@ -189,9 +177,7 @@ L&#39;encodage des types suivants diffère de `RowBinary` et de `RowBinaryWithNa
 * Dynamic
 * JSON
 
-<div id="nullable">
-  #### Nullable
-</div>
+#### Nullable {#nullable}
 
 Dans le format `Native`, une colonne `Nullable` est précédée d’un nombre d’octets égal au nombre de lignes du bloc, avant les données proprement dites. Chacun de ces octets indique si la valeur est `NULL` ou non. Par exemple, avec cette requête, chaque nombre impair sera `NULL` à la place :
 
@@ -311,9 +297,7 @@ const data = new Uint8Array([
 ])
 ```
 
-<div id="lowcardinality">
-  #### LowCardinality
-</div>
+#### LowCardinality {#lowcardinality}
 
 Contrairement à [RowBinary](/fr/reference/formats/RowBinary/RowBinary#lowcardinality), où `LowCardinality` est transparent, le format Native utilise un encodage colonnaire basé sur un dictionnaire. Une colonne est encodée sous la forme d&#39;un préfixe de version, puis d&#39;un dictionnaire de valeurs uniques et d&#39;un tableau d&#39;index entiers pointant vers ce dictionnaire.
 
@@ -361,9 +345,7 @@ Avec `LowCardinality(Nullable(String))`, l’indice 0 est `NULL` :
 02 00 02 00 02              // indexes → "yes", NULL, "yes", NULL, "yes"
 ```
 
-<div id="array">
-  #### Array
-</div>
+#### Array {#array}
 
 Contrairement à [RowBinary](/fr/reference/formats/RowBinary/RowBinary#array), où chaque array est préfixé par un nombre d&#39;éléments au format LEB128, le format Native encode les arrays sous forme de deux sous-flux colonnaires :
 
@@ -402,9 +384,7 @@ Un tableau vide a le même offset que la ligne précédente. Par exemple, `Array
 01 32                       // "2"
 ```
 
-<div id="map">
-  #### Map
-</div>
+#### Map {#map}
 
 Un `Map(K, V)` est encodé sous la forme `Array(Tuple(K, V))` — les offsets du tableau, suivis de toutes les clés, puis de toutes les valeurs. Cela diffère de [RowBinary](/fr/reference/formats/RowBinary/RowBinary#map), où les clés et les valeurs sont entrelacées pour chaque entrée.
 
@@ -433,9 +413,7 @@ Par exemple, `Map(String, UInt64)` avec 3 lignes `[{'a':0,'b':10}, {'a':1,'b':11
 0c 00 00 00 00 00 00 00    // 12
 ```
 
-<div id="variant">
-  #### Variant
-</div>
+#### Variant {#variant}
 
 Contrairement à [RowBinary](/fr/reference/formats/RowBinary/RowBinary#variant), où chaque ligne contient son propre octet de discriminant suivi directement de la valeur, le format Native sépare les discriminants des données.
 
@@ -464,9 +442,7 @@ Par exemple, `Variant(String, UInt32)` avec 5 lignes `[0::UInt32, 'hello', NULL,
 03 00 00 00                 // 3
 ```
 
-<div id="dynamic">
-  #### Dynamic
-</div>
+#### Dynamic {#dynamic}
 
 Contrairement à [RowBinary](/fr/reference/formats/RowBinary/RowBinary#dynamic), où chaque valeur est autodescriptive (préfixe de type + valeur), le format Native sérialise `Dynamic` en un préfixe de structure suivi d’une colonne [Variant](#variant).
 
@@ -493,9 +469,7 @@ Par exemple, `Dynamic` avec 5 lignes `[0::UInt32, 'hello', NULL, 3::UInt32, 'hel
 03 00 00 00                 // UInt32: 3
 ```
 
-<div id="json">
-  #### JSON
-</div>
+#### JSON {#json}
 
 Contrairement à [RowBinary](/fr/reference/formats/RowBinary/RowBinary#json), où chaque ligne est auto-descriptive avec des noms de chemins et des valeurs, le format Native sérialise `JSON` dans une structure colonnaire. L’encodage est complexe et dépend de la version : il se compose d’un préfixe de structure avec la version de sérialisation, des noms de chemins dynamiques et l’organisation des données partagées, suivis de chemins typés (chacun sous la forme d’une colonne en bloc), de chemins dynamiques (chacun sous la forme d’une colonne [Dynamic](#dynamic)) et de données partagées pour les chemins en dépassement.
 

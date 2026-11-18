@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -29,6 +30,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -41,6 +43,8 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
+
+#include <Planner/PlannerJoinTree.h>
 
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
@@ -66,11 +70,12 @@ namespace Setting
 namespace
 {
 
-/// Wrapper storages answer both predicates by walking what they wrap, so they are memoized per visitor.
+/// Wrapper storages answer these predicates by walking what they wrap, so they are memoized per visitor.
 struct SubcolumnSupportAnswers
 {
     bool all_transformers;
     std::optional<bool> tuple_element_only;
+    std::optional<bool> bucketed_map_serialization;
 };
 
 using SubcolumnSupportCache = std::unordered_map<const IStorage *, SubcolumnSupportAnswers>;
@@ -79,7 +84,7 @@ SubcolumnSupportAnswers & getSubcolumnSupportAnswers(const IStorage & storage, S
 {
     auto it = cache.find(&storage);
     if (it == cache.end())
-        it = cache.emplace(&storage, SubcolumnSupportAnswers{storage.supportsOptimizationToSubcolumns(), std::nullopt}).first;
+        it = cache.emplace(&storage, SubcolumnSupportAnswers{storage.supportsOptimizationToSubcolumns(), std::nullopt, std::nullopt}).first;
     return it->second;
 }
 
@@ -164,7 +169,7 @@ struct IdentifiersToOptimize
     /// can be rewritten inside WHERE/PREWHERE.
     ColumnInSourceSet filter_only;
 
-    bool empty() const { return everywhere.empty() && filter_only.empty(); }
+    [[nodiscard]] bool empty() const { return everywhere.empty() && filter_only.empty(); }
 };
 
 /// The correlated columns of every subquery on the way down, one entry per query or union level.
@@ -194,7 +199,7 @@ public:
 
     void leave() { stack.pop_back(); }
 
-    bool contains(const ColumnInSource & column_in_source) const
+    [[nodiscard]] bool contains(const ColumnInSource & column_in_source) const
     {
         for (const auto & columns : stack)
             if (columns.contains(column_in_source))
@@ -317,12 +322,23 @@ bool canOptimizeToExpectedSubcolumn(
     return subcolumnDescendsFromColumn(storage_snapshot, ctx.column.name, *resolved, info->substreams_path);
 }
 
+/// The type of the `size` subcolumn of a String or Nullable(String) column.
+/// For Nullable(String) it is Nullable(UInt64) with NULL in the rows where the column is NULL,
+/// which is the same as the result of `length`, `empty` and `notEmpty` for these rows.
+DataTypePtr getStringSizesSubcolumnType(const ColumnContext & ctx)
+{
+    DataTypePtr type = std::make_shared<DataTypeUInt64>();
+    if (ctx.column.type->isNullable())
+        return makeNullable(type);
+    return type;
+}
+
 void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
 {
     /// Replace `length(argument)` with `argument.size`.
-    /// `argument` is String.
+    /// `argument` is String or Nullable(String).
 
-    NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
+    NameAndTypePair column{ctx.column.name + ".size", getStringSizesSubcolumnType(ctx)};
     if (sourceHasColumn(ctx.column_source, column.name)
         || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type))
         return;
@@ -334,9 +350,9 @@ void optimizeFunctionStringEmpty(QueryTreeNodePtr &, FunctionNode & function_nod
 {
     /// Replace `empty(argument)` with `equals(argument.size, 0)` if positive.
     /// Replace `notEmpty(argument)` with `notEquals(argument.size, 0)` if not positive.
-    /// `argument` is String.
+    /// `argument` is String or Nullable(String).
 
-    NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
+    NameAndTypePair column{ctx.column.name + ".size", getStringSizesSubcolumnType(ctx)};
     if (sourceHasColumn(ctx.column_source, column.name)
         || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type))
         return;
@@ -401,19 +417,23 @@ void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & 
 
     const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
     const auto & key_type = data_type_map.getKeyType();
-    auto tmp_key_column = key_type->createColumn();
-    /// Verify that the constant value is compatible with the map's key type.
-    if (!tmp_key_column->tryInsert(second_argument_constant_node->getValue()))
-    {
-        /// A map with Enum keys can also be indexed by the name of the enum value,
-        /// so convert the name to the numeric value of the enum.
-        if (!isEnum(key_type) || second_argument_constant_node->getValue().getType() != Field::Types::String)
-            return;
 
-        Field enum_value = tryConvertFieldToType(second_argument_constant_node->getValue(), *key_type);
-        if (enum_value.isNull() || !tmp_key_column->tryInsert(enum_value))
+    Field key_value = second_argument_constant_node->getValue();
+    if (isEnum(key_type))
+    {
+        /// A map with Enum keys can be indexed either by the name of the enum value or by its numeric value.
+        /// Convert both forms to the numeric value of the enum. This also rejects a value that is not in
+        /// the Enum at all, which has no name and hence no key subcolumn, while `arrayElement` returns
+        /// the default value for it.
+        key_value = tryConvertFieldToType(key_value, *key_type);
+        if (key_value.isNull())
             return;
     }
+
+    auto tmp_key_column = key_type->createColumn();
+    /// Verify that the constant value is compatible with the map's key type.
+    if (!tmp_key_column->tryInsert(key_value))
+        return;
 
     /// Serialize the key to its text representation to construct the subcolumn name,
     /// e.g. the string key "foo" becomes the subcolumn suffix "key_foo".
@@ -596,7 +616,7 @@ void optimizeElementToSubcolumn(QueryTreeNodePtr & node, FunctionNode & function
 
 void optimizeDistinctJSONPaths(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
 {
-    /// Replace distinctJSONPaths(json) to arraySort(groupArrayDistinct(arrayJoin(json.__special_subcolumn_name_for_distinct_paths_calculation)))
+    /// Replace distinctJSONPaths(json) to arraySort(groupUniqArrayArray(json.__special_subcolumn_name_for_distinct_paths_calculation))
     NameAndTypePair column{ctx.column.name + "." + DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION, std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())};
 
     if (sourceHasColumn(ctx.column_source, column.name)
@@ -604,16 +624,12 @@ void optimizeDistinctJSONPaths(QueryTreeNodePtr & node, FunctionNode &, ColumnCo
         return;
 
     auto new_column_node = std::make_shared<ColumnNode>(column, ctx.column_source);
-    auto function_array_join_node = std::make_shared<FunctionNode>("arrayJoin");
-    function_array_join_node->getArguments().getNodes().push_back(std::move(new_column_node));
-    resolveOrdinaryFunctionNodeByName(*function_array_join_node, "arrayJoin", ctx.context);
-
-    auto function_group_array_distinct_node = std::make_shared<FunctionNode>("groupArrayDistinct");
-    function_group_array_distinct_node->getArguments().getNodes().push_back(std::move(function_array_join_node));
-    resolveAggregateFunctionNodeByName(*function_group_array_distinct_node, "groupArrayDistinct");
+    auto function_group_uniq_array_node = std::make_shared<FunctionNode>("groupUniqArrayArray");
+    function_group_uniq_array_node->getArguments().getNodes().push_back(std::move(new_column_node));
+    resolveAggregateFunctionNodeByName(*function_group_uniq_array_node, "groupUniqArrayArray");
 
     auto function_array_sort_node = std::make_shared<FunctionNode>("arraySort");
-    function_array_sort_node->getArguments().getNodes().push_back(std::move(function_group_array_distinct_node));
+    function_array_sort_node->getArguments().getNodes().push_back(std::move(function_group_uniq_array_node));
     resolveOrdinaryFunctionNodeByName(*function_array_sort_node, "arraySort", ctx.context);
 
     node = std::move(function_array_sort_node);
@@ -903,6 +919,27 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         },
     },
     {
+        {TypeIndex::Nullable, "length"}, [](QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+        {
+            if (isString(removeNullable(ctx.column.type)))
+                optimizeFunctionStringLength(node, function_node, ctx);
+        },
+    },
+    {
+        {TypeIndex::Nullable, "empty"}, [](QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+        {
+            if (isString(removeNullable(ctx.column.type)))
+                optimizeFunctionStringEmpty<true>(node, function_node, ctx);
+        },
+    },
+    {
+        {TypeIndex::Nullable, "notEmpty"}, [](QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+        {
+            if (isString(removeNullable(ctx.column.type)))
+                optimizeFunctionStringEmpty<false>(node, function_node, ctx);
+        },
+    },
+    {
         {TypeIndex::Variant, "variantElement"}, optimizeElementToSubcolumn<DataTypeVariant>,
     },
     {
@@ -963,6 +1000,24 @@ std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full
     {TypeIndex::QBit, "tupleElement"},
 };
 
+/// The constant path element `tupleElement` (a `String` only) or `arrayElement` (also a `Nullable` or `LowCardinality` one)
+/// accepts over `JSON`. Over `Dynamic` the call checks it only per stored type at execution.
+std::optional<String> tryGetJSONPathElement(const QueryTreeNodePtr & node, bool allow_nullable_or_low_cardinality)
+{
+    const auto * constant = node->as<ConstantNode>();
+    if (!constant || constant->getValue().getType() != Field::Types::String)
+        return {};
+
+    auto type = constant->getResultType();
+    if (allow_nullable_or_low_cardinality)
+        type = removeLowCardinalityAndNullable(type);
+
+    if (!isString(type))
+        return {};
+
+    return constant->getValue().safeGet<String>();
+}
+
 /// Optimizes:
 ///   tupleElement(... tupleElement(arrayElement(ColumnNode(Dynamic), N), 'f1') ..., 'fK')
 /// to:
@@ -996,10 +1051,10 @@ void optimizeJSONArrayElement(
         auto & args = function_node.getArguments().getNodes();
         if (args.size() != 2)
             return;
-        const auto * constant = args[1]->as<ConstantNode>();
-        if (!constant || constant->getValue().getType() != Field::Types::String)
+        auto field_name = tryGetJSONPathElement(args[1], /*allow_nullable_or_low_cardinality=*/ false);
+        if (!field_name)
             return;
-        field_names.push_back(constant->getValue().safeGet<String>());
+        field_names.push_back(std::move(*field_name));
     }
 
     /// All intermediates except the last (arrayElement) must be tupleElement with constant string second arg.
@@ -1011,10 +1066,10 @@ void optimizeJSONArrayElement(
         auto & args = inner_func->getArguments().getNodes();
         if (args.size() != 2)
             return;
-        const auto * constant = args[1]->as<ConstantNode>();
-        if (!constant || constant->getValue().getType() != Field::Types::String)
+        auto field_name = tryGetJSONPathElement(args[1], /*allow_nullable_or_low_cardinality=*/ false);
+        if (!field_name)
             return;
-        field_names.push_back(constant->getValue().safeGet<String>());
+        field_names.push_back(std::move(*field_name));
     }
 
     /// Reverse to get inner-to-outer order (the path under Array(JSON)).
@@ -1099,10 +1154,10 @@ void optimizeJSONArrayElementChain(
         auto & args = function_node.getArguments().getNodes();
         if (args.size() != 2)
             return;
-        const auto * constant = args[1]->as<ConstantNode>();
-        if (!constant || constant->getValue().getType() != Field::Types::String)
+        auto key = tryGetJSONPathElement(args[1], /*allow_nullable_or_low_cardinality=*/ true);
+        if (!key)
             return;
-        keys.push_back(constant->getValue().safeGet<String>());
+        keys.push_back(std::move(*key));
     }
 
     /// All intermediates must be arrayElement with constant string 2nd arg.
@@ -1113,10 +1168,10 @@ void optimizeJSONArrayElementChain(
         auto & args = inner_func->getArguments().getNodes();
         if (args.size() != 2)
             return;
-        const auto * constant = args[1]->as<ConstantNode>();
-        if (!constant || constant->getValue().getType() != Field::Types::String)
+        auto key = tryGetJSONPathElement(args[1], /*allow_nullable_or_low_cardinality=*/ true);
+        if (!key)
             return;
-        keys.push_back(constant->getValue().safeGet<String>());
+        keys.push_back(std::move(*key));
     }
 
     /// Reverse to get inner-to-outer order (the JSON path).
@@ -1175,10 +1230,27 @@ std::map<std::pair<TypeIndex, String>, ChainedNodeToSubcolumnTransformer> chaine
     },
 };
 
-bool canOptimizeWithWherePrewhereOrGroupBy(const String & function_name)
+/// The special subcolumn holds all paths of a read in its first row, so the rewrite is valid only
+/// when one aggregate sees every row of one table, unfiltered and with its stored values.
+bool canOptimizeDistinctJSONPaths(
+    const QueryTreeNodePtr & query_node,
+    const FunctionNode & function_node,
+    const QueryTreeNodePtr & column_source,
+    const ContextPtr & context)
 {
-    /// Optimization for distinctJSONPaths works correctly only if we request distinct JSON paths across whole table.
-    return function_name != "distinctJSONPaths";
+    if (!function_node.isAggregateFunction())
+        return false;
+
+    const auto & query = query_node->as<const QueryNode &>();
+    if (query.hasWhere() || query.hasPrewhere() || query.hasGroupBy() || query.getJoinTreeNode().get() != column_source.get())
+        return false;
+
+    for (const auto & aggregate_function_node : collectAggregateFunctionNodes(query_node))
+        if (hasFunctionNode(aggregate_function_node, "arrayJoin"))
+            return false;
+
+    return !context->canUseOffsetParallelReplicas()
+        && canAnswerWholeTableAggregateFromMetadata(column_source, context, /*needs_stored_values=*/ true);
 }
 
 /// Follow a chain of trivial ALIAS columns (an ALIAS column whose body is itself a ColumnNode
@@ -1220,6 +1292,16 @@ bool storageAllowsTransformer(
     const IStorage & storage, const IDataType & type, const String & function_name, SubcolumnSupportCache & cache)
 {
     auto & answers = getSubcolumnSupportAnswers(storage, cache);
+
+    /// Without buckets the key subcolumn `m.key_<key>` reads the whole Map, so `m['key']` is not rewritten to it.
+    if (function_name == "arrayElement" && isMap(type))
+    {
+        if (!answers.bucketed_map_serialization)
+            answers.bucketed_map_serialization = storage.hasBucketedMapSerialization();
+        if (!*answers.bucketed_map_serialization)
+            return false;
+    }
+
     if (answers.all_transformers)
         return true;
     if (!answers.tuple_element_only)
@@ -1409,10 +1491,10 @@ public:
         {
             if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets())
                 can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::group_by_use_nulls];
-            has_where_prewhere_or_group_by = query_node->hasWhere() || query_node->hasPrewhere() || query_node->hasGroupBy();
             /// Push a placeholder for this query level; needChildVisit will update it
             /// to true when we descend into WHERE or PREWHERE.
             in_where_prewhere_stack.push_back(false);
+            query_nodes.push_back(node);
             correlated_columns.enter(query_node->getCorrelatedColumns());
             return;
         }
@@ -1432,6 +1514,7 @@ public:
         if (node->as<QueryNode>())
         {
             in_where_prewhere_stack.pop_back();
+            query_nodes.pop_back();
             correlated_columns.leave();
         }
         else if (node->as<UnionNode>())
@@ -1454,7 +1537,7 @@ public:
         return true;
     }
 
-    IdentifiersToOptimize getIdentifiersToOptimize() const
+    [[nodiscard]] IdentifiersToOptimize getIdentifiersToOptimize() const
     {
         if (can_wrap_result_columns_with_nullable)
         {
@@ -1529,13 +1612,13 @@ private:
     /// Stack tracking whether the current node is inside a WHERE or PREWHERE clause.
     /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
     std::vector<bool> in_where_prewhere_stack;
+    std::vector<QueryTreeNodePtr> query_nodes;
 
     CorrelatedColumnsStack correlated_columns;
 
     std::unordered_set<const IQueryTreeNode *> processed_sources;
     SubcolumnSupportCache subcolumn_support_cache;
     bool can_wrap_result_columns_with_nullable = false;
-    bool has_where_prewhere_or_group_by = false;
 
     /// Intermediate function nodes of already-matched chained patterns.
     /// Prevents double-counting in multi-level chains like
@@ -1589,7 +1672,8 @@ private:
         const auto & column = first_argument_column_node.getColumn();
         auto qualified_name = makeColumnInSource(column_source, column.name);
 
-        if (has_where_prewhere_or_group_by && !canOptimizeWithWherePrewhereOrGroupBy(function_node.getFunctionName()))
+        if (function_node.getFunctionName() == "distinctJSONPaths"
+            && (query_nodes.empty() || !canOptimizeDistinctJSONPaths(query_nodes.back(), function_node, column_source, getContext())))
             return;
 
         /// The column belongs to an outer query, and the subquery reading it lists it among its
@@ -1621,9 +1705,6 @@ private:
 
         const auto & column = first_argument_column_node.getColumn();
         auto qualified_name = makeColumnInSource(column_source, column.name);
-
-        if (has_where_prewhere_or_group_by && !canOptimizeWithWherePrewhereOrGroupBy(function_node.getFunctionName()))
-            return;
 
         /// The same reasoning as for a direct match: a chained rewrite of a correlated column, such as
         /// `json.a[1].b` into a subcolumn of `json.a`, would leave the subquery's list of correlated
