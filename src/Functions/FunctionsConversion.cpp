@@ -3166,6 +3166,27 @@ FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(
     };
 }
 
+/// Converts only the rows that are not NULL in `null_map`; the NULL rows get default values.
+static ColumnPtr convertNotNullRows(
+    const FunctionCast::WrapperType & wrapper,
+    ColumnsWithTypeAndName & nested_args,
+    const NullMap & null_map,
+    const DataTypePtr & nested_type,
+    size_t input_rows_count)
+{
+    IColumn::Filter not_null(input_rows_count);
+    for (size_t row = 0; row < input_rows_count; ++row)
+        not_null[row] = !null_map[row];
+    const size_t rows_without_nulls = countBytesInFilter(not_null);
+
+    for (auto & column : nested_args)
+        column.column = column.column->filter(not_null, rows_without_nulls);
+
+    auto res = IColumn::mutate(wrapper(nested_args, nested_type, nullptr, rows_without_nulls));
+    res->expand(not_null, /* inverted */ false);
+    return res;
+}
+
 FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
     const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check, bool report_failures_as_null) const
 {
@@ -3185,6 +3206,13 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
     /// An identity conversion can neither reject a value nor produce a NULL, so a source NULL needs no filtering.
     const bool nested_types_equal = from_nested_type->equals(*to_nested_type);
 
+    /// A conversion that can throw must not see the nested values of NULL rows: any under `accurateCast`, and under
+    /// `accurateCastOrNull` the strict conversion of a `Variant` or `Dynamic` member (see `createWrapperIfCanConvert`).
+    const bool exclude_source_nulls = source_is_nullable && !nested_types_equal
+        && (cast_type == CastType::accurate
+            || (cast_type == CastType::accurateOrNull
+                && anyInTypeTree(*from_nested_type, [](const IDataType & type) { return isVariant(type) || isDynamic(type); })));
+
     /// A conversion asked to report its failures as NULL needs a nullable result even when `to_type` cannot
     /// hold NULL (see `prepareUnpackDictionaries`).
     const bool requested_result_is_nullable = (result_is_nullable && !strict_text_conversion) || report_failures_as_null;
@@ -3193,8 +3221,6 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
 
     if (result_is_nullable)
     {
-        bool exclude_source_nulls = source_is_nullable && cast_type == CastType::accurate && !nested_types_equal;
-
         return [wrapper, source_is_nullable, exclude_source_nulls]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
         {
@@ -3220,7 +3246,6 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
 
             if (exclude_source_nulls)
             {
-                /// The nested column of a NULL row holds a default, not a value to convert.
                 const auto & nullable_column = assert_cast<const ColumnNullable &>(*arguments.front().column);
                 const auto & null_map = nullable_column.getNullMapData();
                 const size_t rows_with_nulls = countBytesInFilter(null_map.data(), 0, input_rows_count);
@@ -3229,21 +3254,9 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
                     return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
 
                 if (rows_with_nulls != 0)
-                {
-                    const size_t rows_without_nulls = input_rows_count - rows_with_nulls;
-
-                    IColumn::Filter not_null(input_rows_count);
-                    for (size_t row = 0; row < input_rows_count; ++row)
-                        not_null[row] = !null_map[row];
-
-                    for (auto & column : tmp_args)
-                        column.column = column.column->filter(not_null, rows_without_nulls);
-
-                    auto filtered_res = wrapper(tmp_args, nested_type, nullptr, rows_without_nulls);
-                    auto mutable_res = IColumn::mutate(std::move(filtered_res));
-                    mutable_res->expand(not_null, /* inverted */ false);
-                    return wrapInNullable(std::move(mutable_res), nullable_column.getNullMapColumnPtr());
-                }
+                    return wrapInNullable(
+                        convertNotNullRows(wrapper, tmp_args, null_map, nested_type, input_rows_count),
+                        nullable_column.getNullMapColumnPtr());
             }
 
             /// Perform the requested conversion.
@@ -3261,7 +3274,7 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
     {
         /// Conversion from Nullable to non-Nullable.
 
-        return [wrapper, skip_not_null_check, report_failures_as_null]
+        return [wrapper, skip_not_null_check, report_failures_as_null, exclude_source_nulls]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
         {
             auto tmp_args = createBlockWithNestedColumns(arguments);
@@ -3284,7 +3297,12 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
             }
 
             const ColumnNullable * nullable_source = typeid_cast<const ColumnNullable *>(arguments.front().column.get());
-            auto tmp_res = wrapper(tmp_args, nested_type, nullable_source, input_rows_count);
+            ColumnPtr tmp_res;
+            if (report_failures_as_null && exclude_source_nulls && nullable_source
+                && !memoryIsZero(nullable_source->getNullMapData().data(), 0, input_rows_count))
+                tmp_res = convertNotNullRows(wrapper, tmp_args, nullable_source->getNullMapData(), nested_type, input_rows_count);
+            else
+                tmp_res = wrapper(tmp_args, nested_type, nullable_source, input_rows_count);
 
             /// A conversion asked to report its failures as NULL returns ColumnNullable where source NULLs
             /// and conversion-failure NULLs are merged. This happens for Tuple element conversions under

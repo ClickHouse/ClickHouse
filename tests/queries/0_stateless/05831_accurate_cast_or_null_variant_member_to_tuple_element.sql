@@ -24,3 +24,11 @@ SELECT accurateCastOrNull(tuple(materialize('[1]'::Dynamic)), 'Nullable(Tuple(Ar
 SELECT accurateCastOrNull(tuple(materialize('[2]'::Variant(UInt16, String))), 'Nullable(Tuple(Array(UInt8)))');
 SELECT accurateCastOrNull(tuple(materialize(toUInt16(3)::Variant(UInt16))), 'Nullable(Tuple(Array(UInt8)))'); -- { serverError TYPE_MISMATCH }
 SELECT accurateCastOrNull(tuple(materialize(toUInt16(3)::Dynamic)), 'Nullable(Tuple(Map(String, UInt8)))'); -- { serverError TYPE_MISMATCH }
+
+-- The values under a NULL tuple are not converted.
+SELECT accurateCastOrNull(if(number = 0, NULL, tuple(v)), 'Nullable(Tuple(Array(UInt8)))') FROM (SELECT number, if(number = 0, 3::UInt16::Variant(UInt16, String), '[1]'::Variant(UInt16, String)) AS v FROM numbers(2));
+SELECT accurateCastOrNull(if(number = 0, NULL, tuple(v)), 'Nullable(Tuple(Array(UInt8)))') FROM (SELECT number, if(number = 0, 3::UInt16::Dynamic, '[1]'::Dynamic) AS v FROM numbers(2));
+SELECT accurateCastOrNull(if(number = 0, NULL, tuple(v)), 'Nullable(Tuple(Array(UInt8)))') FROM (SELECT number, if(number = 0, 3::UInt16::Dynamic(max_types = 0), '[1]'::Dynamic(max_types = 0)) AS v FROM numbers(2));
+SELECT accurateCastOrDefault(if(number = 0, NULL, tuple(v)), 'Nullable(Tuple(Array(UInt8)))', CAST(tuple([9]), 'Nullable(Tuple(Array(UInt8)))')) FROM (SELECT number, if(number = 0, 3::UInt16::Variant(UInt16, String), '[1]'::Variant(UInt16, String)) AS v FROM numbers(2));
+SELECT accurateCastOrNull(tuple(if(number = 0, NULL, tuple(v))), 'Nullable(Tuple(Tuple(Array(UInt8))))') FROM (SELECT number, if(number = 0, 3::UInt16::Variant(UInt16, String), '[1]'::Variant(UInt16, String)) AS v FROM numbers(2));
+SELECT accurateCastOrNull(if(number = 0, NULL, tuple(if(number = 1, NULL, tuple(v)))), 'Nullable(Tuple(Nullable(Tuple(Array(UInt8)))))') FROM (SELECT number, if(number = 2, '[1]'::Variant(UInt16, String), 3::UInt16::Variant(UInt16, String)) AS v FROM numbers(3));
