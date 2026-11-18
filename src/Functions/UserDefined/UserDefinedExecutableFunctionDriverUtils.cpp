@@ -81,14 +81,14 @@ void validateSignatureTypes(const ASTPtr & arguments_ast, const ASTPtr & return_
         for (const auto & argument : arguments_ast->children)
         {
             if (const auto * name_type_pair = argument->as<ASTNameTypePair>())
-                data_type_factory.get(name_type_pair->type);
+                (void)data_type_factory.get(name_type_pair->type);
             else
-                data_type_factory.get(argument);
+                (void)data_type_factory.get(argument);
         }
     }
 
     if (return_type_ast)
-        data_type_factory.get(return_type_ast);
+        (void)data_type_factory.get(return_type_ast);
 }
 
 String engineArgumentToString(const ASTLiteral & literal)
