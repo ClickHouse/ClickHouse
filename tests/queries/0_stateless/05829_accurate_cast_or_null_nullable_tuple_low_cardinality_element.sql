@@ -27,3 +27,9 @@ SELECT accurateCastOrNull(tuple(tuple(materialize('abc'))), 'Nullable(Tuple(Tupl
 
 -- A nullable dictionary keeps a NULL of the source element as a value.
 SELECT accurateCastOrNull(tuple(materialize(NULL::Nullable(String))), 'Nullable(Tuple(LowCardinality(Nullable(String))))');
+
+-- The NULL rows of the source tuple hold placeholder values, which are not converted.
+SELECT accurateCastOrNull(t, 'Nullable(Tuple(LowCardinality(String)))'), accurateCastOrNull(t, 'Nullable(Tuple(LowCardinality(FixedString(1))))')
+FROM (SELECT arrayJoin([tuple('a'::Enum8('a' = 1)), arrayElementOrNull([tuple('a'::Enum8('a' = 1))], 2)]) AS t);
+SELECT accurateCastOrDefault(arrayElementOrNull([tuple('a'::Enum16('a' = 1000))], 2), 'Nullable(Tuple(LowCardinality(String)))');
+SELECT CAST(arrayElementOrNull([tuple('a'::Enum8('a' = 1))], 2), 'Nullable(Tuple(Nullable(String)))');

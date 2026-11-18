@@ -3205,7 +3205,7 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
         bool exclude_source_nulls = source_is_nullable && cast_type == CastType::accurate && !nested_types_equal;
 
         return [wrapper, source_is_nullable, exclude_source_nulls]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
         {
             /// Create a temporary columns on which to perform the operation.
             const auto & nullable_type = static_cast<const DataTypeNullable &>(*result_type);
@@ -3217,9 +3217,8 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
             else
                 tmp_args = arguments;
 
-            const ColumnNullable * nullable_source = nullptr;
-
-            /// Add original ColumnNullable for createStringToEnumWrapper()
+            /// Add original ColumnNullable for createStringToEnumWrapper(). A non-nullable source keeps the null map of a
+            /// surrounding `Nullable(Tuple(...))`, whose NULL rows hold placeholder values.
             if (source_is_nullable)
             {
                 if (arguments.size() != 1)

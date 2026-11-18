@@ -18,3 +18,7 @@ Nullable(Tuple(LowCardinality(FixedString(2)))), Nullable(size = 1, Tuple(size =
 \N
 \N
 (NULL)
+('a')	('a')
+\N	\N
+\N
+\N
