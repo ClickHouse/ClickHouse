@@ -1,0 +1,55 @@
+expected
+1430	1563650
+2570	6434350
+0	\N
+500	\N
+2000	\N
+2500	\N
+1000	2000
+1500	3000
+3000	6000
+3500	7000
+page index
+1430	1563650
+2570	6434350
+2570	6434350
+1430	1563650
+bloom filter
+1430	1563650
+2570	6434350
+1430	1563650
+1430	1563650
+dictionary filter
+1430	1563650
+2570	6434350
+1430	1563650
+1430	1563650
+PREWHERE
+1430	1563650
+2570	6434350
+1430	1563650
+0	\N
+500	\N
+2000	\N
+2500	\N
+1000	2000
+1500	3000
+3000	6000
+3500	7000
+1430	1563650
+page_is_null	0	0	0	23
+page_is_not_null	0	0	0	14
+page_not_is_null	0	0	0	14
+page_off	0	0	0	0
+bloom_is_null	0	0	0	0
+bloom_is_not_null	0	0	0	0
+bloom_or	1	1	0	0
+bloom_or_off	1	0	0	0
+dict_is_null	0	0	0	0
+dict_is_not_null	0	0	0	0
+dict_or	1	0	1	0
+dict_or_off	1	0	0	0
+prewhere_is_null	2	0	0	3
+prewhere_is_not_null	1	0	0	4
+prewhere_or	1	1	0	3
+prewhere_off	0	0	0	0
