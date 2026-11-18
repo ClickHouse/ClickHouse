@@ -31,7 +31,9 @@ SELECT id FROM tab WHERE e['k'] = 'n' ORDER BY id;
 SELECT id FROM tab WHERE e['k'] IN ('n') ORDER BY id;
 SELECT id FROM tab WHERE e['k'] != 'm' ORDER BY id;
 SELECT id FROM tab WHERE e.key_k = 'n' ORDER BY id;
-SELECT id FROM tab WHERE e['k'] = 'm' ORDER BY id SETTINGS force_data_skipping_indices = 'idx_e';
+SELECT id FROM tab WHERE e['k'] = 'm' ORDER BY id;
+-- The type default ('m') is probed as well.
+SELECT id FROM tab WHERE e['k'] = 'm' ORDER BY id SETTINGS force_data_skipping_indices = 'idx_e'; -- { serverError INDEX_NOT_USED }
 SELECT id FROM tab WHERE e['k'] = 'o' ORDER BY id SETTINGS force_data_skipping_indices = 'idx_e';
 SELECT id FROM tab WHERE t['k'].x = 'n' ORDER BY id;
 SELECT id FROM tab WHERE t['k'] = tuple('n') ORDER BY id;

@@ -2122,6 +2122,17 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     if (mayBeTrueOnDefaultValue(subdag, createColumnConstWithDefaultValue(required_column.type->createColumn())))
         return false;
 
+    /// Probe the type's own default too (`insertDefaultInto`, an `Enum`'s lowest member), so the decision
+    /// does not depend on which of the two a missing key is filled with.
+    if (!required_column.type->isDefaultInsertTrivial())
+    {
+        auto type_default = required_column.type->createColumn();
+        required_column.type->insertDefaultInto(*type_default);
+        ColumnPtr type_default_probe = ColumnConst::create(std::move(type_default), 1);
+        if (mayBeTrueOnDefaultValue(subdag, type_default_probe))
+            return false;
+    }
+
     auto tokens = stringToTokens(std::string_view(*key_const_value), /*compact=*/ true);
     out.function = RPNElement::FUNCTION_EQUALS;
     out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>("mapContainsKey", TextSearchMode::All, getHintOrNoneMode(), std::move(tokens)));
