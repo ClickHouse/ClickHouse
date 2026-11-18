@@ -65,13 +65,13 @@ GroupExpressionPtr makeEnforcerExpression(
     QueryPlanStepPtr step,
     ExpressionProperties input_required,
     ExpressionProperties output_properties,
-    EnforcedProperty enforced)
+    const ExpressionProperties & required_properties)
 {
     auto enforcer_expression = std::make_shared<GroupExpression>(std::move(step));
     enforcer_expression->group_id = source->group_id;
     enforcer_expression->inputs.push_back({.group_id = source->group_id, .required_properties = std::move(input_required)});
     enforcer_expression->properties = std::move(output_properties);
-    enforcer_expression->enforced_property = enforced;
+    enforcer_expression->enforced_for.push_back(required_properties);
     return enforcer_expression;
 }
 

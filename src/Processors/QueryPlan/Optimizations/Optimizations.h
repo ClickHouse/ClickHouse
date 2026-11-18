@@ -325,7 +325,11 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
 /// Register the applied `__applyFilter` conjuncts on the reading step at the top of the stack.
 void collectAppliedJoinRuntimeFilters(const Stack & stack);
 void processAndOptimizeTextIndexFunctions(
-    const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings);
+    const Stack & stack,
+    QueryPlan::Nodes & nodes,
+    bool direct_read_from_text_index,
+    const FindSingleNodeRead & find_single_node_read,
+    const Optimization::ExtraSettings & settings);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 /// A full sorting without LIMIT or PARTITION BY merges all its streams in one thread, so a small read all of whose streams
 /// reach it keeps its default stream count.
@@ -351,7 +355,7 @@ void optimizeJoinByShards(QueryPlan::Node & root);
 /// primary key range pruning (see SealGatedReadTransform).
 void markSealGatedReading(QueryPlan::Node & root);
 void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_shards);
-void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+void optimizeDistinctInOrder(const Stack & stack, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeLimitForAggregationInOrder(QueryPlan::Node & root);
 /// Execute `ORDER BY rand()` by `ShuffleStep` instead of `SortingStep`.
 void useShuffleForOrderByRand(QueryPlan::Node & node);
