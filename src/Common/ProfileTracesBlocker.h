@@ -29,6 +29,17 @@ public:
         return FiberLocalStorage::loadAtomic<FiberLocalSlot::PROFILE_TRACES_BLOCKED>();
     }
 
+    /// The calling thread's flag, for a sampler that reads it while the thread is suspended.
+    static uintptr_t * threadFlag()
+    {
+        return FiberLocalStorage::threadAtomicSlot<FiberLocalSlot::PROFILE_TRACES_BLOCKED>();
+    }
+
+    static bool isBlocked(uintptr_t * thread_flag)
+    {
+        return FiberLocalStorage::loadAtomicOf<FiberLocalSlot::PROFILE_TRACES_BLOCKED>(thread_flag);
+    }
+
     ProfileTracesStreamBlocker(const ProfileTracesStreamBlocker &) = delete;
     ProfileTracesStreamBlocker & operator=(const ProfileTracesStreamBlocker &) = delete;
 

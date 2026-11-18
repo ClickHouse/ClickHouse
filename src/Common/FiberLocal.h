@@ -161,6 +161,22 @@ public:
         return std::atomic_ref<uintptr_t>(currentSlots()[slot]).exchange(value, std::memory_order_relaxed);
     }
 
+    /// The calling thread's active slot. Fiber switches swap the active fiber's value into it,
+    /// so another thread can read it while this thread is suspended (the macOS query profiler).
+    template <size_t slot>
+    static uintptr_t * threadAtomicSlot() noexcept
+    {
+        static_assert(slot == FiberLocalSlot::PROFILE_TRACES_BLOCKED);
+        return &currentSlots()[slot];
+    }
+
+    template <size_t slot>
+    static uintptr_t loadAtomicOf(uintptr_t * thread_slot) noexcept
+    {
+        static_assert(slot == FiberLocalSlot::PROFILE_TRACES_BLOCKED);
+        return std::atomic_ref<uintptr_t>(*thread_slot).load(std::memory_order_relaxed);
+    }
+
     void destroySlots() noexcept;
 
 private:

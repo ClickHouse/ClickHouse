@@ -28,6 +28,7 @@
 #include <mach/thread_act.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
+#include <Common/ProfileTracesBlocker.h>
 #include <algorithm>
 #include <cstring>
 #endif
@@ -313,6 +314,7 @@ namespace
             /// ProfileEventsScope of shorter life than this registration.
             reg.thread_status = CurrentThread::isInitialized() ? &CurrentThread::get() : nullptr;
             reg.counters = reg.thread_status ? &reg.thread_status->performance_counters : &ProfileEvents::global_counters;
+            reg.profile_traces_blocked = ProfileTracesStreamBlocker::threadFlag();
             armRegistration(reg, period_ns);
             ensureThreadStarted();
             cond.notify_all();
@@ -363,6 +365,8 @@ namespace
             const ThreadName * thread_name = nullptr;
             ThreadStatus * thread_status = nullptr;
             ProfileEvents::Counters * counters = nullptr;
+            /// The sampled thread's `ProfileTracesStreamBlocker` flag, read while it is suspended.
+            uintptr_t * profile_traces_blocked = nullptr;
             UInt64 period_ns = 0;
             UInt64 next_deadline_ns = 0; /// wall-clock: next fire (real) or next poll (cpu)
             UInt64 last_cpu_ns = 0;      /// cpu time at the last poll (cpu only)
@@ -410,6 +414,7 @@ namespace
             ThreadName thread_name = ThreadName::UNKNOWN;
             char query_id[TraceSender::QUERY_ID_MAX_LEN];
             size_t query_id_size = 0;
+            UInt64 profile_traces_id = 0;
             {
                 StackTrace::SuspendedThread suspended(reg.handle);
                 stack_trace = suspended.captureStackTrace();
@@ -422,6 +427,10 @@ namespace
                         std::string_view id = reg.thread_status->getQueryId();
                         query_id_size = std::min(id.size(), sizeof(query_id));
                         memcpy(query_id, id.data(), query_id_size);
+                        /// Like the calling-thread `TraceSender::send`: no live delivery while the
+                        /// sampled thread is inside a trace transport scope.
+                        if (!ProfileTracesStreamBlocker::isBlocked(reg.profile_traces_blocked))
+                            profile_traces_id = reg.thread_status->getProfileTracesId();
                     }
                 }
             }
@@ -435,7 +444,9 @@ namespace
                 reg.is_cpu ? TraceType::CPU : TraceType::Real,
                 stack_trace,
                 {},
-                {.query_id = {query_id, query_id_size}, .thread_id = reg.thread_id, .thread_name = thread_name});
+                {.query_id = {query_id, query_id_size}, .thread_id = reg.thread_id,
+                 .thread_name = thread_name,
+                 .profile_traces_id = profile_traces_id});
             reg.counters->incrementNoTrace(ProfileEvents::QueryProfilerRuns);
         }
 
