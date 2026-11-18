@@ -22,6 +22,11 @@ a3	c1	4
 2	2
 2	0
 2	2
+-- the same column from a view below a Merge table stays above the JOIN of the view
+2	0
+2	2
+2	0
+2	2
 -- same rows as without the filter push down
 1
 1

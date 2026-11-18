@@ -79,6 +79,20 @@ ORDER BY k, a;
 SELECT t_aj_l.k, a FROM t_aj_l INNER JOIN t_aj_r ON t_aj_l.k = t_aj_r.k ARRAY JOIN A AS a
     WHERE (intDiv(6, x) > 1 AND a = 2) OR (t_aj_l.k = 2 AND a = 0)
 ORDER BY 1, 2;
+
+SELECT '-- the same column from a view below a Merge table stays above the JOIN of the view';
+DROP TABLE IF EXISTS t_aj_m;
+DROP VIEW IF EXISTS t_aj_v;
+CREATE VIEW t_aj_v AS SELECT t_aj_l.k AS k, intDiv(6, x) AS z, A FROM t_aj_l INNER JOIN t_aj_r ON t_aj_l.k = t_aj_r.k;
+CREATE TABLE t_aj_m (k UInt64, z Int64, A Array(Int64)) ENGINE = Merge(currentDatabase(), '^t_aj_v$');
+SELECT k, a FROM merge(currentDatabase(), '^t_aj_v$') ARRAY JOIN A AS a
+    WHERE (z > 1 AND a = 2) OR (k = 2 AND a = 0)
+ORDER BY k, a;
+SELECT k, a FROM t_aj_m ARRAY JOIN A AS a
+    WHERE (z > 1 AND a = 2) OR (k = 2 AND a = 0)
+ORDER BY k, a;
+DROP TABLE t_aj_m;
+DROP VIEW t_aj_v;
 DROP TABLE t_aj_l;
 DROP TABLE t_aj_r;
 
