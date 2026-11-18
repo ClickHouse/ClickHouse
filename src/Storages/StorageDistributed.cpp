@@ -735,6 +735,11 @@ bool queryTreeIsPlainRead(const QueryTreeNodePtr & root)
     if (query_node->isDistinct() || query_node->hasLimitBy())
         return false;
 
+    /// The bare `ReadFromTableStep` sent to the shards carries no `PREWHERE`: the legacy path sends it with
+    /// the query, but the plan-level read would sort and select the candidates over the unfiltered rows.
+    if (query_node->hasPrewhere())
+        return false;
+
     const auto & join_tree = query_node->getJoinTree();
     if (!join_tree.as<TableNode>() && !join_tree.as<TableFunctionNode>())
         return false;
