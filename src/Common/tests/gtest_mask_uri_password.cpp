@@ -103,7 +103,7 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
         {"https://SEKRIT@PW@localhost:11111/x", "https://[HIDDEN]@localhost:11111/x"},
         {"https://TOKEN@localhost:11111/x?next=http://u:p@other/x", "https://[HIDDEN]@localhost:11111/x?next=http://u:[HIDDEN]@other/x"},
         {"http://host/a|b|cdefgh", "http://host/a|b|cdefgh"},
-        {"http://host/123://user:pw@other/x", "http://host/123://user:pw@other/x"},
+        {"http://host/123://user:pw@other/x", "http://host/123://user:[HIDDEN]@other/x"},
         {"http://TOPSECRET|tail@localhost:11111/x", "http://[HIDDEN]@localhost:11111/x"},
         {"http://TOKEN1@one:80|http://TOKEN2@two/x", "http://[HIDDEN]@one:80|http://[HIDDEN]@two/x"},
 

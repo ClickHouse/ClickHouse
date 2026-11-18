@@ -10,8 +10,6 @@
 #include <utility>
 #include <vector>
 
-#include "regex"
-
 
 namespace DB
 {
@@ -69,37 +67,30 @@ inline bool maskAzureConnectionStringSecrets(std::string & str)
     return masked;
 }
 
-
-static constexpr bool is_letter(const char c) { return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z'); }
-static constexpr bool is_digit(const char c) { return '0' <= c && c <= '9'; }
-static constexpr bool is_letter_or_digit(const char c) { return is_letter(c) || is_digit(c); }
-
-static constexpr std::string_view url_legal_name_chars = "-._~!$&'()*+,;=";
-
 /// Whether `authority` is `host [ ":" port ]` of RFC 3986, sections 3.2.2 and 3.2.3.
-static constexpr bool isURIHostAndPort(const std::string& authority, const size_t offset, const size_t limit)
+static constexpr bool isURIHostAndPort(std::string_view authority)
 {
-    auto is_hex_digit = [](const char c) { return is_digit(c) || ('a' <= c && c <= 'f') || ('A' <= c && c <= 'F'); };
-    auto is_reg_name_char = [](const char c)
+    auto is_hex_digit = [](char c) { return ('0' <= c && c <= '9') || ('a' <= c && c <= 'f') || ('A' <= c && c <= 'F'); };
+    auto is_reg_name_char = [](char c)
     {
-        return is_letter_or_digit(c) || url_legal_name_chars.contains(c);
+        return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9') || std::string_view("-._~!$&'()*+,;=").contains(c);
     };
 
-    size_t host_end = offset;
-    if (authority[host_end] =='[')
+    size_t host_end = 0;
+    if (authority.starts_with('['))
     {
-        host_end = authority.find(']', host_end + 1);
+        host_end = authority.find(']');
         if (host_end == std::string_view::npos)
             return false;
         ++host_end;
     }
     else
     {
-        for (; host_end < limit && authority[host_end] != ':'; ++host_end)
+        for (; host_end < authority.length() && authority[host_end] != ':'; ++host_end)
         {
             if (authority[host_end] == '%')
             {
-                if (host_end + 2 >= limit || !is_hex_digit(authority[host_end + 1]) || !is_hex_digit(authority[host_end + 2]))
+                if (host_end + 2 >= authority.length() || !is_hex_digit(authority[host_end + 1]) || !is_hex_digit(authority[host_end + 2]))
                     return false;
                 host_end += 2;
             }
@@ -110,35 +101,49 @@ static constexpr bool isURIHostAndPort(const std::string& authority, const size_
         }
     }
 
-    return host_end == limit
-        || (authority[host_end] == ':'
-            && std::all_of(
-                std::ranges::next(authority.cbegin(), host_end + 1), std::ranges::next(authority.cbegin(), limit), is_digit));
+    std::string_view port = authority.substr(host_end);
+    if (port.empty())
+        return true;
+    return port[0] == ':' && std::all_of(port.begin() + 1, port.end(), [](char c) { return '0' <= c && c <= '9'; });
 }
 
 /// Where RFC 3986, section 3.2, ends the authority of a URI. `Poco::URI` ends it there too.
-inline constexpr auto URI_AUTHORITY_TERMINATORS = R"(/?#)";
-
-static constexpr std::string_view SCHEMA_SEPARATOR = "://";
+inline constexpr std::string_view URI_AUTHORITY_TERMINATORS = "/?#";
 
 /// The range `[begin, end)` of the password of the first URI in `text` that carries one, or `{npos, npos}`.
 /// RFC 3986: the authority ends at the first '/', '?' or '#', and the password is its userinfo after the first ':'.
 /// Input that breaks the grammar is masked more, never less:
 /// - a raw '@' in the password: the userinfo runs to the last '@' of the authority (`u:pw@1@host` hides `pw@1`);
 /// - an authority cut short by a raw '/', '?' or '#' in the password: it runs to the last '@' (`u:pa/ss@host`).
-/// `authority_terminators` are where the consumer of the URI ends its userinfo.
-static constexpr std::pair<size_t, size_t> findURIPasswordRange(const std::string & text)
+/// `authority_terminators` are where the consumer of the URI ends its userinfo. By default only '/', as the MongoDB
+/// driver does, since the consumer of a text is not always known; pass `URI_AUTHORITY_TERMINATORS` for `Poco::URI`.
+static constexpr std::pair<size_t, size_t> findURIPasswordRange(const std::string & text, size_t offset = 0, std::string_view authority_terminators = "/")
 {
-    for (size_t separator = text.find(SCHEMA_SEPARATOR); separator != std::string_view::npos;
-         separator = text.find(SCHEMA_SEPARATOR, separator + SCHEMA_SEPARATOR.length()))
+    static constexpr std::string_view SEPARATOR = "//";
+    size_t starting_offset = text.find(SEPARATOR, offset);
+    starting_offset = starting_offset == std::string_view::npos && offset > 0 ? text.find('|', offset) : starting_offset;
+    if (offset > 0 && starting_offset == std::string_view::npos)
+        return {std::string_view::npos, std::string_view::npos};
+    const size_t first_at = text.find('@', offset);
+    if (first_at == std::string_view::npos)
     {
-        const size_t authority_begin = separator + SCHEMA_SEPARATOR.length();
-        const size_t userinfo_bound = std::min(text.find('/', authority_begin), text.length() - 1);
+        return {std::string_view::npos, std::string_view::npos};
+    }
+    for (size_t separator = first_at > starting_offset ? starting_offset : offset; separator != std::string_view::npos;
+         separator = text.find(SEPARATOR, separator + SEPARATOR.length()))
+    {
+        const size_t authority_begin = separator == 0 && text[0] != '/' ? 0 : separator + (text[separator] == '|' ? 1 : SEPARATOR.length());
+        const size_t userinfo_bound = std::min(text.find_first_of(authority_terminators, authority_begin), text.length());
+        auto bounded = std::string_view(text).substr(authority_begin, userinfo_bound - authority_begin);
 
-        if (const size_t at_sign = text.rfind('@', userinfo_bound); at_sign != std::string_view::npos)
+        if (const size_t at_sign = bounded.rfind('@'); at_sign != std::string_view::npos)
         {
-            if (const size_t colon = text.find(':', authority_begin); colon < at_sign)
+            const size_t colon = bounded.find(':');
+            if (colon < at_sign)
                 return {authority_begin + colon + 1, authority_begin + at_sign};
+            if ((colon == std::string::npos || colon > at_sign) &&
+                (userinfo_bound == text.length() || isURIHostAndPort(bounded.substr(at_sign + 1, std::min(bounded.find("|", at_sign + 1) - 1, bounded.length()) - at_sign - 1))))
+                return {authority_begin, authority_begin + at_sign};
             continue;
         }
 
@@ -146,8 +151,10 @@ static constexpr std::pair<size_t, size_t> findURIPasswordRange(const std::strin
         auto authority = std::string_view(text).substr(authority_begin, authority_end - authority_begin);
         const size_t colon = authority.find(':');
 
-        if (colon == std::string_view::npos || isURIHostAndPort(text, authority_begin, authority_end))
+        if (colon == std::string_view::npos || isURIHostAndPort(authority))
+        {
             continue;
+        }
 
         if (size_t at_sign = text.rfind('@'); at_sign != std::string_view::npos && at_sign > authority_end)
             return {authority_begin + colon + 1, at_sign};
@@ -155,145 +162,26 @@ static constexpr std::pair<size_t, size_t> findURIPasswordRange(const std::strin
 
     return {std::string_view::npos, std::string_view::npos};
 }
-/// `^[a-zA-Z][a-zA-Z0-9+.-]*` - the scheme. The character classes are spelled out rather than
-/// taken from `<cctype>`, which depends on the locale.
-static constexpr size_t skip_valid_schema_chars(const std::string & uri, size_t offset, const size_t limit)
-{
-    if (offset == limit)
-        return offset;
-    if (!is_letter(uri[offset]))
-        return offset;
-    ++offset;
-    while (offset < limit - 3 && (is_letter_or_digit(uri[offset]) || uri[offset] == '+' || uri[offset] == '.' || uri[offset] == '-'))
-        ++offset;
-    return offset;
-};
 
-/// Replace the passwords found in userinfo components in the given string with `[HIDDEN]`. Returns whether anything was masked.
-/// In contrast to rfc-3986, userinfo components without a colon are interpreted as a password and masked whole to account for URIs
-/// like http://token@host.
+/// Replace the passwords `findURIPasswordRange` finds with `[HIDDEN]`. Returns whether anything was masked.
 inline bool maskURIPassword(std::string & uri, std::string_view authority_terminators = "/")
 {
-    const auto original_size = uri.size();
-    size_t uncopied_offset = 0;
-    std::string result;
-    auto parse_userinfo_and_authority = [&](size_t offset) -> size_t
+    bool result = false;
+    size_t offset = 0;
+    while (offset < uri.length())
     {
-        const size_t initial_offset = offset;
-        size_t last_at = std::string_view::npos;
-        size_t last_pipe = std::string_view::npos;
-        size_t first_colon = std::string_view::npos;
-        while (offset < original_size)
+        if (auto [password_begin, password_end] = findURIPasswordRange(uri, offset, authority_terminators);
+            password_begin != std::string::npos)
         {
-            if (const char c = uri[offset]; c == '@')
-                last_at = offset;
-            else if (c == '|')
-                last_pipe = offset;
-            else if (c == ':' && first_colon == std::string_view::npos)
-                first_colon = offset;
-            else if (authority_terminators.contains(c))
-            {
-                if (first_colon == std::string_view::npos || isURIHostAndPort(uri, last_at < offset ? last_at + 1 : initial_offset, offset - 1))
-                {
-                    --offset;
-                    break;
-                }
-                if (c == '/' && first_colon != std::string_view::npos && last_pipe != std::string_view::npos && last_at < last_pipe
-                    && first_colon > last_at && offset > 3
-                    && last_pipe > initial_offset && offset + 1 < original_size && uri[offset - 1] == ':' && uri[offset + 1] != '/'
-                    && isURIHostAndPort(uri, last_at + 1, last_pipe - 1))
-                {
-                    size_t i = offset - 2;
-                    for (; i >= initial_offset + 2; --i)
-                    {
-                        if (is_letter(uri[i]))
-                        {
-                            first_colon = std::string_view::npos;
-                            offset = i;
-                            break;
-                        }
-                        if (!is_digit(uri[i]) && !(uri[i] == '+' || uri[i] == '.' || uri[i] == '-'))
-                        {
-                            break;
-                        }
-                    }
-                    break;
-                }
-            }
-            offset++;
-        }
-        if (last_at != std::string_view::npos)
+            uri.replace(password_begin, password_end - password_begin, HIDDEN_SECRET);
+            result = true;
+            offset = password_begin + HIDDEN_SECRET.length() + 1;
+        } else
         {
-            result.append(uri, uncopied_offset, (first_colon > last_at ? initial_offset - 1 : first_colon) - uncopied_offset + 1)
-                .append(HIDDEN_SECRET);
-            uncopied_offset = last_at;
+            break;
         }
-        return offset;
-    };
-    auto parse_schema_from_root = [&](size_t offset) -> size_t
-    {
-        // a // at the start of a uri is resolved relative to the schema of the base, interpret offset + 2 as start of authority
-        size_t authority_begin = offset == 0 || uri[offset - 1] == '|' ? offset : std::string_view::npos;
-        if (offset < original_size - 3 && (offset == 0 || uri[offset - 1] == '|') && uri.compare(offset, 2, "//") == 0)
-            return parse_userinfo_and_authority(offset + 2);
-        while (offset < original_size - 3)
-        {
-            const size_t next_offset = uri.find_first_of(std::string{authority_terminators}.append(offset > 0 ? "|@:" : "@:"), offset);
-            if (next_offset == std::string_view::npos)
-            {
-                // nothing interesting left to parse
-                return original_size;
-            }
-            const char c = uri[next_offset];
-            if ('@' == c)
-            {
-                if (offset == 0)
-                    return parse_userinfo_and_authority(authority_begin);
-                if (authority_begin < next_offset)
-                    return parse_userinfo_and_authority(authority_begin);
-                offset = next_offset + 1;
-            }
-
-            if (':' == c)
-            {
-                if (next_offset >= offset && next_offset < original_size - 3 && uri.compare(next_offset + 1, 2, "//") == 0)
-                {
-                    if (next_offset == 0 || authority_begin == next_offset - 1 || authority_begin == 0 || authority_begin == std::string_view::npos)
-                        return parse_userinfo_and_authority(next_offset + 3);
-                    for (size_t i = next_offset - 1; i >=offset; --i)
-                    {
-                        if (is_letter(uri[i]))
-                            return parse_userinfo_and_authority(next_offset + 3);
-                        if (!is_digit(uri[i]) && !(uri[i] == '+' || uri[i] == '.' || uri[i] == '-'))
-                        {
-                            break;
-                        }
-                    }
-                    offset = next_offset + 2;
-                }
-                else
-                    offset = next_offset + 1;
-            } else if (c == '|' && authority_begin == std::string_view::npos)
-            {
-                authority_begin = next_offset + 1;
-                offset = authority_begin;
-            } else
-            {
-                authority_begin = std::string_view::npos;
-                offset = next_offset + 1;
-            }
-        }
-        return original_size;
-    };
-    for (size_t i = 0; i < original_size;)
-    {
-        i = parse_schema_from_root(i) + 1;
     }
-    if (uncopied_offset == 0)
-        return false;
-    result.append(uri, uncopied_offset);
-    uri = result;
-    return true;
+    return result;
 }
 
 /// Hides the secret option values and the URI password of a MongoDB connection string or option list; returns whether any was hidden.
@@ -387,15 +275,27 @@ inline bool maskMongoDBConnectionString(std::string & str)
 
 /** The offset just past the `://` of a value that starts with an RFC 3986 scheme, `npos` otherwise.
   */
-inline size_t findURIAuthority(const std::string & uri)
+inline size_t findURIAuthority(std::string_view uri)
 {
-    const size_t scheme_end = skip_valid_schema_chars(uri, 0, uri.length());
-    if (scheme_end == 0)
-        return std::string_view::npos;
-    if (uri.compare(scheme_end, SCHEMA_SEPARATOR.length(), SCHEMA_SEPARATOR) != 0)
+    static constexpr std::string_view SEPARATOR = "://";
+
+    /// `^[a-zA-Z][a-zA-Z0-9+.-]*` - the scheme. The character classes are spelled out rather than
+    /// taken from `<cctype>`, which depends on the locale.
+    auto is_letter = [](char c) { return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z'); };
+    auto is_letter_or_digit = [&](char c) { return is_letter(c) || ('0' <= c && c <= '9'); };
+
+    if (uri.empty() || !is_letter(uri[0]))
         return std::string_view::npos;
 
-    return scheme_end + SCHEMA_SEPARATOR.length();
+    size_t scheme_end = 1;
+    while (scheme_end < uri.length()
+           && (is_letter_or_digit(uri[scheme_end]) || uri[scheme_end] == '+' || uri[scheme_end] == '.' || uri[scheme_end] == '-'))
+        ++scheme_end;
+
+    if (uri.compare(scheme_end, SEPARATOR.length(), SEPARATOR) != 0)
+        return std::string_view::npos;
+
+    return scheme_end + SEPARATOR.length();
 }
 
 /** Mask the userinfo part of a URL: `scheme://anything@rest` becomes `scheme://[HIDDEN]@rest`.
@@ -408,12 +308,12 @@ inline size_t findURIAuthority(const std::string & uri)
   */
 inline bool maskURIUserinfo(std::string & url)
 {
-    const size_t authority_begin = findURIAuthority(url);
+    size_t authority_begin = findURIAuthority(url);
     if (authority_begin == std::string::npos)
         return false;
 
     /// `[^/?#]+@` - the userinfo, greedy, so it ends at the last '@' before the path.
-    size_t authority_end = url.find_first_of(URI_AUTHORITY_TERMINATORS, authority_begin);
+    size_t authority_end = url.find_first_of("/?#", authority_begin);
     if (authority_end == std::string::npos)
         authority_end = url.length();
 
