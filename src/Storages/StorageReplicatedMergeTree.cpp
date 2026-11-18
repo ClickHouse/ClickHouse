@@ -747,7 +747,7 @@ void StorageReplicatedMergeTree::tryRemoveOwnReplicaFromZooKeeper()
             return;
 
         /// An earlier table with the same explicit UUID on this server has the same `creator_info`. Like the
-        /// reuse check in createReplicaAttempt, only a replica that never started is taken: a started one has
+        /// reuse check in `createReplicaAttempt`, only a replica that never started is taken: a started one has
         /// a non-empty `host`, and a missing node means the replica is partly dropped.
         auto never_started = zookeeper->tryGet(Strings{replica_path + "/host", replica_path + "/log_pointer", replica_path + "/parts"});
         for (size_t i = 0; i < never_started.size(); ++i)
@@ -769,7 +769,7 @@ void StorageReplicatedMergeTree::tryRemoveOwnReplicaFromZooKeeper()
             tryLogCurrentException(log.load(), "Cannot determine the zero-copy lock paths of " + replica_path);
         }
 
-        /// Not drop(): the table has no parts, and loading outdated parts to discover them is pure risk on
+        /// Not `drop`: the table has no parts, and loading outdated parts to discover them is pure risk on
         /// a table that never started up. This keeps the /replicas + /dropped lock protocol that lets a
         /// concurrent creator of the same table win.
         if (dropReplica(zookeeper, zookeeper_info, log.load(), &has_metadata_in_zookeeper))

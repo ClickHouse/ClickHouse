@@ -162,10 +162,10 @@ ${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 -q "
     DROP DATABASE ${DB}_txn SYNC;
 "
 
-#### 7 - The local data directory is still cleaned up when the registration has to be kept
+#### 7 - A failed CREATE TABLE with an explicit UUID frees its data path
 
-# Keeping the registration must not also keep the local directory. With an explicit UUID the retry
-# resolves to the same data path, so a leftover directory fails it with TABLE_ALREADY_EXISTS.
+# With an explicit UUID the retry resolves to the same data path, so a leftover directory would fail
+# it with TABLE_ALREADY_EXISTS.
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB}_retry ENGINE=Replicated('${ZK}/retry', 's1', 'r1')"
 
 RETRY_UUID=$(${CLICKHOUSE_CLIENT} -q "SELECT reinterpretAsUUID('${CLICKHOUSE_DATABASE}retry')")
@@ -174,7 +174,7 @@ ${CLICKHOUSE_CLIENT} --database_replicated_allow_explicit_uuid 3 \
     --create_replicated_merge_tree_fault_injection_probability=1 --distributed_ddl_output_mode=none \
     -q "CREATE TABLE ${DB}_retry.t UUID '${RETRY_UUID}' (k UInt64) ENGINE=ReplicatedMergeTree ORDER BY k" 2>&1 | grep -cm1 "Fault injected"
 
-# The retry reuses both the registration and the freed data path, so the table ends up usable
+# The retry gets the freed data path, so the table ends up usable
 ${CLICKHOUSE_CLIENT} --database_replicated_allow_explicit_uuid 3 --distributed_ddl_output_mode=none -q "
     CREATE TABLE ${DB}_retry.t UUID '${RETRY_UUID}' (k UInt64) ENGINE=ReplicatedMergeTree ORDER BY k;
     INSERT INTO ${DB}_retry.t SELECT 1;
