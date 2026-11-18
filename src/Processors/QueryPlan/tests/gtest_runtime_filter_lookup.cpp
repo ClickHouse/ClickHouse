@@ -423,19 +423,45 @@ TEST(RuntimeFilterLookup, ApplyFilterCountsTheRowsOfLowCardinalityKeys)
     EXPECT_EQ(registered_filter->getStats().rows_passed.load(), 7);
 }
 
+TEST(RuntimeFilterLookup, FilterIsSwitchedOffByTheRowsThatItFiltersOutPerLookup)
+{
+    auto is_switched_off = [](UInt64 rows_checked, UInt64 rows_passed, UInt64 values_looked_up)
+    {
+        RuntimeFilterEvaluationState state(
+            RuntimeFilterConfig{/*pass_ratio_threshold_for_disabling=*/0.7, /*blocks_to_skip_before_reenabling=*/1});
+        state.updateStats(rows_checked, rows_passed, values_looked_up);
+        return state.shouldSkip(1);
+    };
+
+    /// A plain key takes a lookup per row: the filter is switched off if more than 70% of the rows pass.
+    EXPECT_TRUE(is_switched_off(100, 71, 100));
+    EXPECT_FALSE(is_switched_off(100, 70, 100));
+
+    /// 11 lookups for 1000 rows, e.g. of a dictionary: the filter is worth them if it filters out more than 0.3 rows
+    /// per lookup, which is 3.3 rows.
+    EXPECT_TRUE(is_switched_off(1000, 1000, 11));
+    EXPECT_TRUE(is_switched_off(1000, 997, 11));
+    EXPECT_FALSE(is_switched_off(1000, 996, 11));
+    EXPECT_FALSE(is_switched_off(1000, 0, 11));
+
+    /// One lookup for a constant key: all its rows pass, or none.
+    EXPECT_TRUE(is_switched_off(1000, 1000, 1));
+    EXPECT_FALSE(is_switched_off(1000, 0, 1));
+}
+
 TEST(RuntimeFilterLookup, SkipBudgetPreservesSerialExhaustionSemantics)
 {
     RuntimeFilterEvaluationState state(
         RuntimeFilterConfig{/*pass_ratio_threshold_for_disabling=*/0.5,
                             /*blocks_to_skip_before_reenabling=*/1});
 
-    state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100);
+    state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100, /*values_looked_up=*/100);
     EXPECT_TRUE(state.shouldSkip(60));
     EXPECT_FALSE(state.shouldSkip(60));
     EXPECT_EQ(state.getStats().blocks_skipped.load(), 1);
     EXPECT_EQ(state.getStats().rows_skipped.load(), 60);
 
-    state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100);
+    state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100, /*values_looked_up=*/100);
     EXPECT_FALSE(state.shouldSkip(100));
 }
 
@@ -463,7 +489,7 @@ TEST(RuntimeFilterLookup, SkipBudgetConsumptionIsLinearizable)
     size_t non_linearizable_iterations = 0;
     for (size_t iteration = 0; iteration < iterations; ++iteration)
     {
-        state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100);
+        state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100, /*values_looked_up=*/100);
         sync.arrive_and_wait();
         sync.arrive_and_wait();
         if (should_skip[0] == should_skip[1])
@@ -499,7 +525,7 @@ TEST(RuntimeFilterLookup, SkipBudgetDoesNotLoseConcurrentReplenishment)
             for (size_t iteration = 0; iteration < iterations; ++iteration)
             {
                 sync.arrive_and_wait();
-                state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100);
+                state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100, /*values_looked_up=*/100);
                 sync.arrive_and_wait();
             }
         });
@@ -507,7 +533,7 @@ TEST(RuntimeFilterLookup, SkipBudgetDoesNotLoseConcurrentReplenishment)
     size_t lost_replenishments = 0;
     for (size_t iteration = 0; iteration < iterations; ++iteration)
     {
-        state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100);
+        state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100, /*values_looked_up=*/100);
         sync.arrive_and_wait();
         sync.arrive_and_wait();
         if (!state.shouldSkip(99))

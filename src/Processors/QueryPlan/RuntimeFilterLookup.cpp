@@ -140,7 +140,7 @@ RuntimeFilterEvaluationState::RuntimeFilterEvaluationState(RuntimeFilterConfig c
 {
 }
 
-void RuntimeFilterEvaluationState::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
+void RuntimeFilterEvaluationState::updateStats(UInt64 rows_checked, UInt64 rows_passed, UInt64 values_looked_up) const
 {
     stats.blocks_processed++;
     stats.rows_checked += rows_checked;
@@ -150,9 +150,14 @@ void RuntimeFilterEvaluationState::updateStats(UInt64 rows_checked, UInt64 rows_
     ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsChecked, rows_checked);
     ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsPassed, rows_passed);
 
-    /// Skip the configured number of blocks if too few rows got filtered out.
-    const double rows_passed_threshold = config.pass_ratio_threshold_for_disabling * static_cast<double>(rows_checked);
-    if (static_cast<double>(rows_passed) > rows_passed_threshold)
+    /// Skip the configured number of blocks if too few rows got filtered out for the lookups that it took: the filter
+    /// costs a lookup per value, and saves the rows that it filters out. The rows that were not looked up one by one
+    /// cost nothing, so they are left out of the rows that passed. For a plain key every row is looked up, and this
+    /// is the ratio of the passed rows to the checked rows.
+    const Int64 rows_without_a_lookup = static_cast<Int64>(rows_checked) - static_cast<Int64>(values_looked_up);
+    const double rows_passed_with_a_lookup = static_cast<double>(static_cast<Int64>(rows_passed) - rows_without_a_lookup);
+    const double rows_passed_threshold = config.pass_ratio_threshold_for_disabling * static_cast<double>(values_looked_up);
+    if (rows_passed_with_a_lookup > rows_passed_threshold)
         skip_budget.replenish(rows_checked, config.blocks_to_skip_before_reenabling);
 }
 
@@ -1119,16 +1124,18 @@ void RuntimeFilter::finishInsert()
 namespace
 {
 
-/// A mask over the rows of a column, and the number of rows that it passes.
+/// A mask over the rows of a column, the number of rows that it passes, and the number of values that were looked up
+/// for it.
 struct RowsMask
 {
     ColumnPtr mask;
     size_t rows_passed = 0;
+    size_t values_looked_up = 0;
 };
 
-RowsMask constantRowsMask(bool passed, size_t rows)
+RowsMask constantRowsMask(bool passed, size_t rows, size_t values_looked_up)
 {
-    return {DataTypeUInt8().createColumnConst(rows, passed), passed ? rows : 0};
+    return {DataTypeUInt8().createColumnConst(rows, passed), passed ? rows : 0, values_looked_up};
 }
 
 /// Maps `values_mask`, a mask over the values that a compact form of a column stores, onto the rows of the column.
@@ -1137,11 +1144,11 @@ RowsMask expandRowsMask(const RowsMask & values_mask, size_t rows, Expand && exp
 {
     /// It passes every value or none of them, so every row or none of them.
     if (const auto * mask_const = typeid_cast<const ColumnConst *>(values_mask.mask.get()))
-        return constantRowsMask(mask_const->getBool(0), rows);
+        return constantRowsMask(mask_const->getBool(0), rows, values_mask.values_looked_up);
 
     auto mask = expand(values_mask.mask);
     const size_t rows_passed = countPassedStats(mask);
-    return {std::move(mask), rows_passed};
+    return {std::move(mask), rows_passed, values_mask.values_looked_up};
 }
 
 /// Looks up the rows of `values`, see `RuntimeFilter::find`. This is what the default implementations of `IFunction`
@@ -1156,7 +1163,7 @@ RowsMask findRows(const ColumnWithTypeAndName & values, Probe && probe)
     if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
     {
         const auto value_mask = findRows({column_const->getDataColumnPtr(), values.type, values.name}, probe);
-        return constantRowsMask(value_mask.rows_passed != 0, rows);
+        return constantRowsMask(value_mask.rows_passed != 0, rows, value_mask.values_looked_up);
     }
 
     if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
@@ -1210,7 +1217,7 @@ ColumnPtr RuntimeFilter::find(const ColumnWithTypeAndName & values) const
     if (evaluation_state.shouldSkip(rows_in_block))
         return DataTypeUInt8().createColumnConst(rows_in_block, true);
 
-    auto [mask, rows_passed] = std::visit(
+    auto [mask, rows_passed, values_looked_up] = std::visit(
         [&](const auto & filter)
         {
             return findRows(
@@ -1220,11 +1227,11 @@ ColumnPtr RuntimeFilter::find(const ColumnWithTypeAndName & values) const
                     std::optional<size_t> probed_rows_passed;
                     ColumnPtr probed_mask = filter.find(plain_values, probed_rows_passed);
                     const size_t passed = probed_rows_passed ? *probed_rows_passed : countPassedStats(probed_mask);
-                    return RowsMask{std::move(probed_mask), passed};
+                    return RowsMask{std::move(probed_mask), passed, plain_values.column->size()};
                 });
         },
         data.filter);
-    evaluation_state.updateStats(rows_in_block, rows_passed);
+    evaluation_state.updateStats(rows_in_block, rows_passed, values_looked_up);
     return mask;
 }
 

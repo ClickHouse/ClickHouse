@@ -11627,6 +11627,8 @@ Number of hash functions in a bloom filter used as JOIN runtime filter (see enab
         {"25.10", 3, 3, "New setting"}) \
     DECLARE(Double, join_runtime_filter_pass_ratio_threshold_for_disabling, 0.7, R"(
 If ratio of passed rows to checked rows is greater than this threshold the runtime filter is considered as poorly performing and is disabled for the next `join_runtime_filter_blocks_to_skip_before_reenabling` blocks to reduce the overhead.
+
+A key that is constant, `LowCardinality`, sparse or lazily replicated takes fewer lookups than it has rows, because the filter looks up each value that the column stores once. For such a key the filter is disabled if the number of rows that it filters out is less than `1 - threshold` of the number of values that it looks up. For any other key, where every row is looked up, this is the same condition.
 )", 0, \
         {"26.9", 0.7, 0.7, "The JOIN runtime filters became a Production tier feature."}, \
         {"26.1", 0.7, 0.7, "New setting"}) \

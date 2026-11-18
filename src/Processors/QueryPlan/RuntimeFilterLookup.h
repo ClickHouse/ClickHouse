@@ -123,7 +123,9 @@ class RuntimeFilterEvaluationState
 public:
     explicit RuntimeFilterEvaluationState(RuntimeFilterConfig config_);
 
-    void updateStats(UInt64 rows_checked, UInt64 rows_passed) const;
+    /// `values_looked_up` is the number of values that were looked up for the `rows_checked` rows: for a constant,
+    /// `LowCardinality`, sparse or replicated key it is fewer than the rows, see `RuntimeFilter::find`.
+    void updateStats(UInt64 rows_checked, UInt64 rows_passed, UInt64 values_looked_up) const;
     const RuntimeFilterStats & getStats() const { return stats; }
     const RuntimeFilterConfig & getConfig() const { return config; }
     void markKeySetDropped() { key_set_dropped = true; }
@@ -431,7 +433,8 @@ public:
     /// Looks up each row of `values` and returns a `UInt8` mask over the rows, which may be a constant.
     /// `values` may be in any form that a block holds a column in. A constant, `LowCardinality`, sparse or replicated
     /// column is looked up by the values that it stores, each once, unless its rows are fewer. The statistics count
-    /// its rows: they decide whether the filter is worth evaluating, and that depends on the rows that it filters out.
+    /// its rows. Whether the filter is worth evaluating depends on the rows that it filters out for the values that
+    /// it looks up.
     ColumnPtr find(const ColumnWithTypeAndName & values) const;
 
     /// Whether building and all expected merges have finished.
