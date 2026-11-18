@@ -704,11 +704,10 @@ namespace
         return makeASTForLogicalAnd(std::move(asts));
     }
 
-    /// The columns returned by the query made by StorageTimeSeriesSelector::makeSelectIDsQuery.
+    /// The column with the ids in the query made by StorageTimeSeriesSelector::makeSelectIDsQuery.
     constexpr const char * SERIES_ID_COLUMN = "series_id";
 
-    /// The column with the tags of a time series in the queries made by makeSelectQueryFromTagsTable.
-    /// It isn't named `tags` because an alias `tags` would shadow the column `tags` of the tags table in the WHERE clause.
+    /// The tags column of makeSelectQueryFromTagsTable; an alias `tags` would shadow the tags table's column in the WHERE clause.
     constexpr const char * SERIES_TAGS_COLUMN = "series_tags";
 
     /// Makes `SELECT id, series_tags FROM null('id <type>, series_tags Array(Tuple(String, String))')`: a query returning no ids,

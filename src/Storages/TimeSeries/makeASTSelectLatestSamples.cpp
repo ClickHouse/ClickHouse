@@ -170,7 +170,6 @@ ASTPtr makeASTSelectLatestSamples(
         make_intrusive<ASTIdentifier>(Strings{series_table, TimeSeriesColumnNames::ID}));
 
     /// ORDER BY arrayFirst(tag -> tag.1 = '__name__', tags).2, tags
-    /// `tags` resolves to `prometheus_query_step_2.tags` both as the alias of the SELECT list and as a column of the join.
     builder.order_by.push_back(makeASTFunction(
         "tupleElement",
         makeASTFunction(
