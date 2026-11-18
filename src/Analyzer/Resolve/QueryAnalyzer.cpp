@@ -263,6 +263,30 @@ void removeAliasesRecursive(QueryTreeNodePtr & node)
         removeAliasesRecursive(child);
 }
 
+/// Hides lambda argument names in the scopes they belong to and restores them on destruction.
+struct HiddenExpressionArguments
+{
+    HiddenExpressionArguments() = default;
+    HiddenExpressionArguments(const HiddenExpressionArguments &) = delete;
+    HiddenExpressionArguments & operator=(const HiddenExpressionArguments &) = delete;
+
+    void hide(IdentifierResolveScope & scope, const std::string & argument_name)
+    {
+        /// A name already hidden by an enclosing alias resolution must be restored by that
+        /// resolution, not by this one.
+        if (scope.hidden_expression_arguments.insert(argument_name).second)
+            hidden_arguments.emplace_back(&scope, argument_name);
+    }
+
+    ~HiddenExpressionArguments()
+    {
+        for (const auto & [scope, argument_name] : hidden_arguments)
+            scope->hidden_expression_arguments.erase(argument_name);
+    }
+
+    std::vector<std::pair<IdentifierResolveScope *, std::string>> hidden_arguments;
+};
+
 /// Registers the nodes of an expression whose aliases must not be written to AST. If the expression is a copy of `original`,
 /// it has to be written like `original`. The aliases that another server resolves again are kept.
 void registerAliasesToHide(const QueryTreeNodePtr & expression, const QueryTreeNodePtr & original, ScopeAliases & aliases)
@@ -310,30 +334,6 @@ void registerAliasesToHide(const QueryTreeNodePtr & expression, const QueryTreeN
     const auto is_kept_elsewhere = [&](const auto & nodes) { return !nodes.second && visited_nodes[true].contains(nodes.first.get()); };
     registered.erase(std::remove_if(registered.begin() + first_registered, registered.end(), is_kept_elsewhere), registered.end());
 }
-
-/// Hides lambda argument names in the scopes they belong to and restores them on destruction.
-struct HiddenExpressionArguments
-{
-    HiddenExpressionArguments() = default;
-    HiddenExpressionArguments(const HiddenExpressionArguments &) = delete;
-    HiddenExpressionArguments & operator=(const HiddenExpressionArguments &) = delete;
-
-    void hide(IdentifierResolveScope & scope, const std::string & argument_name)
-    {
-        /// A name already hidden by an enclosing alias resolution must be restored by that
-        /// resolution, not by this one.
-        if (scope.hidden_expression_arguments.insert(argument_name).second)
-            hidden_arguments.emplace_back(&scope, argument_name);
-    }
-
-    ~HiddenExpressionArguments()
-    {
-        for (const auto & [scope, argument_name] : hidden_arguments)
-            scope->hidden_expression_arguments.erase(argument_name);
-    }
-
-    std::vector<std::pair<IdentifierResolveScope *, std::string>> hidden_arguments;
-};
 
 /// Returns true if `name` binds to something other than a lambda argument in `scope` itself.
 /// A non-lambda scope owning `name` as an expression argument counts as such a binding.
