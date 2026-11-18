@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 
 #include <algorithm>
+#include <ranges>
 #include <unordered_set>
 
 namespace DB
@@ -283,7 +284,14 @@ try
 
     if (use_shared_stream)
     {
-        shared_stream.emplace(Stream{.stream = create_stream.operator()<MergeTreeReaderStreamAllOfMultipleColumns>(), .first_position = 0});
+        /// The columns of a granule are written in the order of their positions in the part, so the reading
+        /// of a granule never needs the data before the column with the smallest position among the columns to read.
+        /// The prefetch starts there and does not read the leading columns that are not requested.
+        size_t first_column_position = std::ranges::min(column_positions | std::views::filter([](const auto & position) { return position.has_value(); })
+            | std::views::transform([](const auto & position) { return *position; }));
+        size_t first_position = has_substream_marks ? columns_substreams.getFirstSubstreamPosition(first_column_position) : first_column_position;
+
+        shared_stream.emplace(Stream{.stream = create_stream.operator()<MergeTreeReaderStreamAllOfMultipleColumns>(), .first_position = first_position});
         for (size_t i = 0; i < columns_to_read.size(); ++i)
             if (column_positions[i])
                 streams[i] = shared_stream->stream.get();
