@@ -51,7 +51,7 @@ void Logger::log(LogLevel level, const char * file, int line, const char * messa
     logImpl(level, file, line, message, message);
 }
 
-/// NOLINTNEXTLINE(cert-dcl50-cpp)
+/// NOLINTNEXTLINE(cert-dcl50-cpp,modernize-avoid-variadic-functions)
 void Logger::logf(LogLevel level, const char * file, int line, const char * fmt, ...) noexcept
 {
     MemoryTrackerBlockerInThread block_memory_tracker(VariableContext::Global);
