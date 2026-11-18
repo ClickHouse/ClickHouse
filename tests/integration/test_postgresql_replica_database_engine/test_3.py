@@ -3728,6 +3728,19 @@ def test_explicit_tables_list_backup_with_shared_publication(started_cluster):
             f"The backup of {databases[1]} was still refused after the restart"
         )
 
+    # Reattaching the other database compares its tables list (without `later`) with the shared publication.
+    # It must not remove `later` from the publication, which the first database still replicates through it.
+    instance.query(f"DETACH DATABASE {databases[1]}")
+    instance.query(f"ATTACH DATABASE {databases[1]}")
+    check_tables_are_synchronized(instance, good, materialized_database=databases[1])
+    instance.query(
+        f"INSERT INTO postgres_database.{later} SELECT number, number FROM numbers(5, 5)"
+    )
+    instance.query(f"INSERT INTO postgres_database.{good} SELECT number, number FROM numbers(5, 5)")
+    for database in databases:
+        check_tables_are_synchronized(instance, good, materialized_database=database)
+    check_tables_are_synchronized(instance, later, materialized_database=databases[0])
+
     for database in databases:
         pg_manager.drop_materialized_db(database)
     for table in (good, later):

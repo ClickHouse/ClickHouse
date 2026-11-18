@@ -4228,7 +4228,7 @@ void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 }
 
 
-void PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & ntx, const String & table_name)
+void PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & ntx, const String & table_name, const Strings & columns)
 {
     /// The table can be already published but not materialized, for example, if its initial snapshot has failed.
     /// The relation is resolved the same way as in `ALTER PUBLICATION` below.
@@ -4244,7 +4244,16 @@ void PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & 
         return;
     }
 
-    std::string query_str = fmt::format("ALTER PUBLICATION {} ADD TABLE ONLY {}", doubleQuoteStringPostgreSQL(publication_name), doubleQuoteWithSchema(table_name));
+    std::string column_list;
+    if (!columns.empty())
+    {
+        Strings quoted_columns;
+        for (const auto & column : columns)
+            quoted_columns.push_back(doubleQuoteStringPostgreSQL(column));
+        column_list = "(" + boost::algorithm::join(quoted_columns, ",") + ")";
+    }
+
+    std::string query_str = fmt::format("ALTER PUBLICATION {} ADD TABLE ONLY {}{}", doubleQuoteStringPostgreSQL(publication_name), doubleQuoteWithSchema(table_name), column_list);
     ntx.exec(query_str);
     LOG_TRACE(log, "Added table {} to publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
 }
@@ -4910,7 +4919,7 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::se
     /// We do quote tables_list table AFTER collected expected_tables, because expected_tables are future clickhouse tables.
 
     /// Try to fetch tables list from publication if there is not tables list.
-    /// If there is a tables list -- check that lists are consistent and if not -- remove publication, it will be recreated.
+    /// If there is a tables list -- check that lists are consistent and if not -- add the missing tables to the publication.
     if (publication_exists_before_startup)
     {
         /// When coordination is enabled the publication is shared with the other replicas of the same
@@ -4982,7 +4991,7 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::se
                 }
             }
             /// Check tables list from publication is the same as expected tables list.
-            /// If not - drop publication and return expected tables list.
+            /// If not - add the missing tables to the publication and return expected tables list.
             else
             {
                 {
@@ -5083,23 +5092,27 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::se
                     {
                         LOG_ERROR(log,
                                   "Publication {} already exists, but specified tables list differs from publication tables list in tables: {}. "
-                                  "Recreating the publication from the tables list setting. "
+                                  "Will use tables list from setting and add its missing tables to the publication. "
                                   "To avoid redundant work, you can try ALTER PUBLICATION query to remove redundant tables. "
                                   "Or you can you ALTER SETTING. "
                                   "\nPublication tables: {}.\nTables list: {}",
                                   doubleQuoteString(publication_name), diff_tables, publication_tables, listed_tables);
 
-                        /// Unlike coordinated setups, a plain MaterializedPostgreSQL database owns its
-                        /// publication. Returning the setting without removing a mismatching publication
-                        /// only rebuilds the local wrappers: createPublicationIfNeeded later adopts the
-                        /// old publication on ATTACH, leaving the restored table silently non-replicating
-                        /// after a failed DETACH TABLE ... PERMANENTLY recovery and restart. Drop it here
-                        /// so startSynchronization recreates it from `tables_list` before the consumer
-                        /// starts.
-                        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
-                        /// Do not return yet: the normalization pass below SQL-quotes `tables_list` before
-                        /// `createPublicationIfNeeded` uses it to recreate the publication. In particular,
-                        /// an unquoted keyword or mixed-case table identifier must not be emitted verbatim.
+                        /// Returning the setting without reconciling the publication would only rebuild the local
+                        /// wrappers: a listed table missing from the publication (for example, after a failed
+                        /// `DETACH TABLE ... PERMANENTLY` recovery and restart) would then stay silently
+                        /// non-replicating. Add the missing tables to the publication before the consumer starts.
+                        /// Do not drop or recreate the publication, and do not remove the extra tables: the
+                        /// publication can be shared with other consumers (see
+                        /// `materialized_postgresql_use_unique_replication_consumer_identifier`), which replicate
+                        /// their own tables through it. The extra tables are not materialized here.
+                        const std::set<String> publication_tables_set = result_tables;
+                        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx_)
+                        {
+                            for (const auto & table_name : expected_tables)
+                                if (!publication_tables_set.contains(table_name))
+                                    addTableToPublication(tx_, table_name, getTableAllowedColumns(table_name));
+                        });
                         result_tables = std::set(expected_tables.begin(), expected_tables.end());
                     }
                 }

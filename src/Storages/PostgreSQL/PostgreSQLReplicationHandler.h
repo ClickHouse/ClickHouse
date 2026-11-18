@@ -221,7 +221,7 @@ private:
 
     void dropPublication(pqxx::nontransaction & ntx);
 
-    void addTableToPublication(pqxx::nontransaction & ntx, const String & table_name);
+    void addTableToPublication(pqxx::nontransaction & ntx, const String & table_name, const Strings & columns = {});
 
     void removeTableFromPublication(pqxx::nontransaction & ntx, const String & table_name);
 
