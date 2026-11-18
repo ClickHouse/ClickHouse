@@ -34,7 +34,7 @@ struct PostgreSQLSettings
 
     POSTGRESQL_SETTINGS_SUPPORTED_TYPES(PostgreSQLSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
+    [[nodiscard]] VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
 
     [[nodiscard]] Field get(std::string_view name) const;
 

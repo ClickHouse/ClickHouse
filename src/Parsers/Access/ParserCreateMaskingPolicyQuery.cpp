@@ -235,8 +235,6 @@ std::map<String, Documentation> ParserCreateMaskingPolicy::getDocumentation() co
     documentation["CREATE MASKING POLICY"] =
     {
         .description = R"DOCS_MD(
-import { CloudOnlyBadge } from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
-
 <CloudOnlyBadge/>
 
 Creates a masking policy, which allows dynamically transforming or masking column values for specific users or roles when they query a table.
@@ -333,8 +331,6 @@ CREATE MASKING POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [database.]tab
     documentation["ALTER MASKING POLICY"] =
     {
         .description = R"DOCS_MD(
-import { CloudOnlyBadge } from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
-
 <CloudOnlyBadge/>
 
 Modifies an existing masking policy.
