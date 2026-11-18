@@ -304,12 +304,13 @@ void PrometheusHTTPProtocolAPI::writeQueryResponse(
 
     if (has_output)
     {
-        writeQueryResponseBlock(response, result_type, block, /*first=*/ true);
+        /// The result columns can be constant, e.g. the tags of `sum(x)`.
+        writeQueryResponseBlock(response, result_type, materializeBlock(block), /*first=*/ true);
 
         while (pulling_executor.pull(block))
         {
             if (block.rows() > 0)
-                writeQueryResponseBlock(response, result_type, block, /*first=*/ false);
+                writeQueryResponseBlock(response, result_type, materializeBlock(block), /*first=*/ false);
         }
     }
 
