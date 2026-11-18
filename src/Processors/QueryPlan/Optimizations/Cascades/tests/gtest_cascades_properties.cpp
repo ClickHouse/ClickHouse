@@ -161,6 +161,24 @@ TEST(CascadesProperties, DistributionSatisfaction)
     EXPECT_TRUE(ExpressionProperties::isDistributionSatisfiedBy(required_a, existing_equiv));
 }
 
+/// A requirement that accepts no exchange from the distribution enforcer is satisfied only by an
+/// expression that has the distribution without one. It is a separate requirement in the memo.
+TEST(CascadesProperties, DistributionWithoutEnforcer)
+{
+    const auto plain = distributed(4, false, {NameSet{"a"}});
+    auto without_enforcer = plain;
+    without_enforcer.distribution.without_enforcer = true;
+
+    EXPECT_FALSE(ExpressionProperties::isDistributionSatisfiedBy(without_enforcer.distribution, plain.distribution));
+    EXPECT_TRUE(ExpressionProperties::isDistributionSatisfiedBy(without_enforcer.distribution, without_enforcer.distribution));
+    /// A requirement that accepts an exchange accepts both.
+    EXPECT_TRUE(ExpressionProperties::isDistributionSatisfiedBy(plain.distribution, without_enforcer.distribution));
+    EXPECT_TRUE(ExpressionProperties::isDistributionSatisfiedBy(plain.distribution, plain.distribution));
+
+    EXPECT_FALSE(plain == without_enforcer);
+    EXPECT_NE(hashOf(plain), hashOf(without_enforcer));
+}
+
 TEST(CascadesProperties, StreamLayoutSatisfaction)
 {
     const auto unknown = ExpressionProperties{};
