@@ -438,6 +438,7 @@ private:
         VectorWithMemoryTracking<VectorWithMemoryTracking<EquivMember>> equiv_classes; /// members of each distinct equivalence class
         VectorWithMemoryTracking<VectorWithMemoryTracking<TUInt>> rel_to_classes; /// relation id -> indices into equiv_classes
         VectorWithMemoryTracking<TUInt> class_relations;             /// per equivalence class: relations of its members
+        VectorWithMemoryTracking<TUInt> connecting_class_relations;  /// per class of one type (see `isClassOfOneType`): relations of its members
 
         VectorWithMemoryTracking<UInt64> class_visited;        /// generation stamp per equivalence class
         UInt64 equiv_generation = 0;              /// bumped on each computeSelectivityMask call
@@ -645,6 +646,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     /// visits the classes touching the left side instead of rescanning the whole member map
     dpsub_data.equiv_classes.clear();
     dpsub_data.class_relations.clear();
+    dpsub_data.connecting_class_relations.clear();
     dpsub_data.class_members.clear();
     dpsub_data.rel_to_classes.assign(num_relations, {});
     UnorderedMapWithMemoryTracking<const EquivClass *, UInt32> class_index;
@@ -673,6 +675,8 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
                 relations |= members.back().relation_bit;
                 columns.push_back(equiv_member);
             }
+            if (isClassOfOneType(*class_ptr))
+                dpsub_data.connecting_class_relations.push_back(relations);
         }
         dpsub_data.rel_to_classes[*rel].push_back(it->second);
     }
@@ -1029,7 +1033,7 @@ std::optional<JoinKind> DPSubJoinOrderOptimizer::writtenSemiAntiKind(UInt32 left
 
 bool DPSubJoinOrderOptimizer::areTransitivelyConnectedMask(UInt32 left_mask, UInt32 right_mask) const
 {
-    for (const UInt32 relations : dpsub_data.class_relations)
+    for (const UInt32 relations : dpsub_data.connecting_class_relations)
     {
         if ((relations & left_mask) && (relations & right_mask))
             return true;

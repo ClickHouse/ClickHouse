@@ -130,6 +130,11 @@ static bool haveOneType(const JoinActionRef & lhs, const JoinActionRef & rhs)
     return removeLowCardinalityAndNullable(lhs.getType())->equals(*removeLowCardinalityAndNullable(rhs.getType()));
 }
 
+bool isClassOfOneType(const EquivalenceClasses<JoinActionRef>::Class & columns)
+{
+    return std::ranges::all_of(columns, [&](const JoinActionRef & column) { return haveOneType(column, columns.front()); });
+}
+
 void QueryGraph::buildColumnEquivalences()
 {
     for (const auto & edge : edges)
@@ -167,11 +172,6 @@ void QueryGraph::buildColumnEquivalences()
         if (outer_join_conditions.contains(edge))
             continue;
 
-        /// The search and the predicate cleanup both use these classes: a class may connect two relations only where
-        /// the cleanup can add an equality of them, else the join of the two would have no condition.
-        if (!haveOneType(*lhs_resolved, *rhs_resolved))
-            continue;
-
         column_equivalences.add(*lhs_resolved, *rhs_resolved);
 
         LOG_TRACE(&Poco::Logger::get("JoinOrderOptimizer"),
@@ -190,7 +190,7 @@ bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & ri
             continue;
 
         auto equiv_class = column_equivalences.getClass(member);
-        if (!equiv_class)
+        if (!equiv_class || !isClassOfOneType(*equiv_class))
             continue;
 
         for (const auto & other : *equiv_class)
@@ -213,8 +213,7 @@ bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & ri
 ///   2. At an inner join, synthesize one predicate per equivalence class spanning the left
 ///      and right subtrees that the remaining predicates do not connect. If predicates remain,
 ///      not when a side is a prepared storage.
-/// Both phases use only equalities of one type up to Nullable and LowCardinality (see `haveOneType`), the same as
-/// `QueryGraph::column_equivalences`.
+/// Both phases use only equalities of one type up to Nullable and LowCardinality (see `isClassOfOneType`).
 static void cleanupJoinPredicates(
     const DPJoinEntryPtr & root,
     const EquivalenceClasses<JoinActionRef> & column_equivalences,
@@ -320,7 +319,7 @@ static void cleanupJoinPredicates(
                 if (!equiv_class || !visited.insert(equiv_class).second)
                     continue;
 
-                if (has_predicates && is_connected(*equiv_class))
+                if (!isClassOfOneType(*equiv_class) || (has_predicates && is_connected(*equiv_class)))
                     continue;
 
                 for (const auto & other : *equiv_class)
