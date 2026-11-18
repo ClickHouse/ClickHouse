@@ -33,7 +33,7 @@ mysql({host:port, database, table, user, password[, replace_query, on_duplicate_
 
 `=, !=, >, >=, <, <=` のような単純な `WHERE` 句は、現在 MySQLサーバー上で実行されます。
 
-それ以外の条件と `LIMIT` のサンプリング制約は、MySQL へのクエリの完了後にのみ ClickHouse で実行されます。
+それ以外の条件は、MySQL へのクエリの完了後に ClickHouse で実行されます。`LIMIT` のサンプリング制約は、安全に実行でき、かつ [external&#95;storage&#95;push&#95;down&#95;limit](/ja/reference/settings/session-settings/external-storage#external_storage_push_down_limit) が有効な場合に限り MySQL にプッシュダウンされます。それ以外の場合は ClickHouse で実行されます。
 
 ## TLS/SSL {#tls-ssl}
 

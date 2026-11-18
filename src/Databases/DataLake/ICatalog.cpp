@@ -3,6 +3,7 @@
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Common/Exception.h>
+#include <Common/Hex.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Poco/String.h>
@@ -69,6 +70,9 @@ std::optional<StorageType> tryParseStorageTypeFromString(const std::string & typ
         // convert s3://, file://, etc. to s3, file etc.
         storage_type_str = storage_type_str.substr(0,pos);
     }
+    if (storage_type_str == "hdfs")
+        return StorageType::HDFS;
+
     if (capitalize_first_letter(storage_type_str) == "File")
         storage_type_str = "Local";
     else if (capitalize_first_letter(storage_type_str) == "S3a" || storage_type_str == "oss" || storage_type_str == "gs")
@@ -79,7 +83,9 @@ std::optional<StorageType> tryParseStorageTypeFromString(const std::string & typ
         });
         storage_type_str = "S3";
     }
-    else if (storage_type_str == "abfss") /// Azure Blob File System Secure
+    /// Azure Blob File System, secure and plain spelling: both name the same ADLS Gen2 storage.
+    /// The scheme selects the storage engine here; it never selects the wire protocol.
+    else if (storage_type_str == "abfss" || storage_type_str == "abfs")
         storage_type_str = "Azure";
 
     return magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));
@@ -97,6 +103,31 @@ StorageType parseStorageTypeFromString(const std::string & type)
     }
 
     return *storage_type;
+}
+
+std::string encodeLocationForURI(std::string_view location)
+{
+    /// `S3::URI` reads every `%` of a URL with a raw `?` literally, see `URI::URI`.
+    const bool keep_escapes = !location.contains('?');
+    std::string result;
+    result.reserve(location.size());
+    for (size_t i = 0; i < location.size(); ++i)
+    {
+        const char c = location[i];
+        const auto byte = static_cast<UInt8>(c);
+        const bool is_escape = keep_escapes && c == '%' && i + 2 < location.size()
+            && isHexDigit(location[i + 1]) && isHexDigit(location[i + 2]);
+        if (byte <= 0x20 || byte >= 0x7F || c == '?' || c == '#' || (c == '%' && !is_escape))
+        {
+            char hex[2];
+            writeHexByteUppercase(byte, hex);
+            result += '%';
+            result.append(hex, 2);
+        }
+        else
+            result += c;
+    }
+    return result;
 }
 
 void TableMetadata::setLocation(const std::string & location_)
@@ -204,7 +235,10 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_, DB::
     /// The bucket variable contains the container name for Azure.
     if (!azure_account_with_suffix.empty())
     {
-        if (!force_add_bucket && location.contains("/" + bucket))
+        /// An Azure host never names a container, only a segment of the endpoint path can.
+        std::vector<std::string> endpoint_path_segments;
+        Poco::URI(location, /* enable_url_encoding */ false).getPathSegments(endpoint_path_segments);
+        if (!force_add_bucket && std::ranges::contains(endpoint_path_segments, bucket))
             return std::filesystem::path(location) / path / "";
         return std::filesystem::path(location) / bucket / path / "";
     }
@@ -297,6 +331,11 @@ StorageType TableMetadata::getStorageType() const
     return parseStorageTypeFromLocation(location_without_path);
 }
 
+bool TableMetadata::isS3Location() const
+{
+    return tryParseStorageTypeFromString(storage_type_str) == StorageType::S3;
+}
+
 bool TableMetadata::hasLocation() const
 {
     return !location_without_path.empty();
@@ -315,6 +354,32 @@ bool TableMetadata::hasDataLakeSpecificProperties() const
     return data_lake_specific_metadata.has_value();
 }
 
+/// Removes the scheme from `uri` if it names the storage whose scheme is `storage_scheme` (e.g. `s3://`): the same
+/// scheme, or for ADLS Gen2 either spelling, because `abfs://` and `abfss://` name the same storage and a catalog can
+/// report the table location with one and the metadata location with the other.
+static bool removeStorageScheme(std::string & uri, const std::string & storage_scheme)
+{
+    if (uri.starts_with(storage_scheme))
+    {
+        uri.erase(0, storage_scheme.size());
+        return true;
+    }
+
+    if (storage_scheme == "abfs://" || storage_scheme == "abfss://")
+    {
+        for (const std::string_view scheme : {"abfs://", "abfss://"})
+        {
+            if (uri.starts_with(scheme))
+            {
+                uri.erase(0, scheme.size());
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metadata_file_location) const
 {
     std::string metadata_location = iceberg_metadata_file_location;
@@ -323,11 +388,8 @@ std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metad
         std::string data_location = getLocation();
 
         // Use the actual storage type prefix (e.g., s3://, file://, etc.)
-        if (metadata_location.starts_with(storage_type_str))
-            metadata_location = metadata_location.substr(storage_type_str.size());
-        if (data_location.starts_with(storage_type_str))
-            data_location = data_location.substr(storage_type_str.size());
-        else if (!endpoint.empty() && data_location.starts_with(endpoint))
+        removeStorageScheme(metadata_location, storage_type_str);
+        if (!removeStorageScheme(data_location, storage_type_str) && !endpoint.empty() && data_location.starts_with(endpoint))
             data_location = data_location.substr(endpoint.size());
 
         if (metadata_location.starts_with(data_location))
@@ -444,12 +506,17 @@ void ICatalog::createTable(const String & /*namespace_name*/, const String & /*t
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTable is not implemented");
 }
 
+void ICatalog::createTableAtDefaultLocation(const String & /*namespace_name*/, const String & /*table_name*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTableAtDefaultLocation is not implemented");
+}
+
 void ICatalog::createNamespaceIfNotExists(const String & /*namespace_name*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createNamespaceIfNotExists is not implemented");
 }
 
-bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*new_snapshot*/) const
+bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, const String & /*base_catalog_metadata_location*/, Poco::JSON::Object::Ptr /*new_snapshot*/, Poco::JSON::Object::Ptr /*new_metadata*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateMetadata is not implemented");
 }
@@ -458,6 +525,7 @@ bool ICatalog::updateSchema(
     const String & /*namespace_name*/,
     const String & /*table_name*/,
     const String & /*new_metadata_path*/,
+    const String & /*base_catalog_metadata_location*/,
     Poco::JSON::Object::Ptr /*new_schema*/,
     Int32 /*previous_schema_id*/) const
 {

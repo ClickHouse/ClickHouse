@@ -1,11 +1,14 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #include <type_traits>
+#include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -74,9 +77,16 @@ enum class FilterResult
 
 [[nodiscard]] FilterResult getFilterResult(const ColumnWithTypeAndName & column);
 
+/// True if the subtree can produce totals, also through a remote server, the query result cache or a nested plan.
+[[nodiscard]] bool canProduceTotals(QueryPlan::Node & root);
+
 [[nodiscard]] bool dagContainsNonReadySet(const ActionsDAG & dag);
 
 [[nodiscard]] bool dagContainsNonDeterministicFunction(const ActionsDAG & dag);
+
+[[nodiscard]] bool dagReadsUnspecifiedValueUnderNull(const ActionsDAG & dag);
+
+[[nodiscard]] bool nodeReadsUnspecifiedValueUnderNull(const ActionsDAG::Node * root);
 
 /// True when the expression holds a function that is non-deterministic within the query (`rand`), stateful
 /// (`rowNumberInAllBlocks`, `aiEmbed`), or has observable side effects (`sleep`), so an observer can see how
@@ -87,11 +97,18 @@ enum class FilterResult
 /// by it still collapses. Shared with findGatherOverRead, which has to predict that rewrite.
 [[nodiscard]] bool canHoistGatherThroughStep(const IQueryPlanStep & step);
 
+/// Columns of each node's output that are a constant there, or below it where a filter pushed down from above can read them.
+using ConstantColumns = UnorderedMapWithMemoryTracking<const QueryPlan::Node *, NameSet>;
+
+[[nodiscard]] ConstantColumns collectConstantColumns(const QueryPlan::Node & root);
+
 [[nodiscard]] FilterResult filterResultForNotMatchedRows(
     const ActionsDAG & filter_dag,
     const String & filter_column_name,
     const Block & input_stream_header,
-    bool allow_unknown_function_arguments = false);
+    bool allow_unknown_function_arguments = false,
+    /// The plan node of the side, to also refuse a constant below it.
+    const QueryPlan::Node * side_node = nullptr);
 
 [[nodiscard]] FilterResult filterResultForMatchedRows(
     ActionsDAG pre_actions_dag,

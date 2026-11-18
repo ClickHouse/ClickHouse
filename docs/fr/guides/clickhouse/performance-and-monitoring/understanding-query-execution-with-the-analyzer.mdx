@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['exécution des requêtes', 'analyseur', 'optimisation des requêtes', 'explain', 'performance']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 ClickHouse traite les requêtes extrêmement rapidement, mais l’exécution d’une requête n’a rien de simple. Essayons de comprendre comment une requête `SELECT` est exécutée. Pour l’illustrer, ajoutons des données dans une Table dans ClickHouse :
 
 ```sql
@@ -29,7 +27,15 @@ INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
 
 Maintenant que nous avons des données dans ClickHouse, nous voulons exécuter quelques requêtes et comprendre comment elles s’exécutent. L’exécution d’une requête se décompose en de nombreuses étapes. Chaque étape de l’exécution d’une requête peut être analysée et dépannée à l’aide de la requête `EXPLAIN` correspondante. Ces étapes sont résumées dans le schéma ci-dessous :
 
-<Image img="/images/guides/developer/analyzer1.webp" alt="Étapes de la requête Explain" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Étapes de la requête Explain](/images/guides/developer/analyzer1.webp)
+
+</Frame>
+
+</div>
 
 Voyons maintenant chaque composant à l’œuvre lors de l’exécution d’une requête. Nous allons prendre quelques requêtes, puis les examiner à l’aide de l’instruction `EXPLAIN`.
 
@@ -358,7 +364,15 @@ digraph
 
 Vous pouvez ensuite copier cette sortie et la coller [ici](https://dreampuf.github.io/GraphvizOnline), ce qui générera le graphe suivant :
 
-<Image img="/images/guides/developer/analyzer3.webp" alt="Sortie du graphe" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Sortie du graphe](/images/guides/developer/analyzer3.webp)
+
+</Frame>
+
+</div>
 
 Un rectangle blanc correspond à un nœud du pipeline, le rectangle gris aux étapes du plan de requête, et le `x` suivi d’un nombre indique le nombre d’entrées/sorties utilisées. Si vous ne souhaitez pas les afficher sous une forme compacte, vous pouvez toujours ajouter `compact=0` :
 
@@ -398,7 +412,15 @@ digraph
 }
 ```
 
-<Image img="/images/guides/developer/analyzer4.webp" alt="Sortie du graphe compact" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Sortie du graphe compact](/images/guides/developer/analyzer4.webp)
+
+</Frame>
+
+</div>
 
 Pourquoi ClickHouse ne lit-il pas la table avec plusieurs threads ? Essayons d&#39;ajouter davantage de données à notre table :
 
@@ -457,7 +479,15 @@ digraph
 }
 ```
 
-<Image img="/images/guides/developer/analyzer5.webp" alt="Résultat du graphe parallèle" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Résultat du graphe parallèle](/images/guides/developer/analyzer5.webp)
+
+</Frame>
+
+</div>
 
 L’Executor a donc décidé de ne pas paralléliser les opérations, car le volume de données n&#39;était pas suffisant. En ajoutant davantage de lignes, l’Executor a ensuite décidé d’utiliser plusieurs threads, comme le montre le graphe.
 
