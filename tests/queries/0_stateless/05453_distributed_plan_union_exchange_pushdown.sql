@@ -118,7 +118,7 @@ SELECT 'P16b', max(streams) FROM
 -- P16c: with both caps disabled, the union still resizes its two four-stream shuffle receivers to `max_threads`.
 SELECT k, count() FROM (SELECT k FROM t1 UNION ALL SELECT k FROM t1) GROUP BY k FORMAT Null
 SETTINGS max_threads = 4, max_streams_for_union_step = 0, max_streams_for_union_step_to_max_threads_ratio = 0,
-    distributed_plan_force_shuffle_aggregation = 1, log_comment = '05453_union_scatter_p16c';
+    max_threads_min_free_memory_per_thread = 0, distributed_plan_force_shuffle_aggregation = 1, log_comment = '05453_union_scatter_p16c';
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
 SELECT 'P16c', max(streams) FROM
 (
