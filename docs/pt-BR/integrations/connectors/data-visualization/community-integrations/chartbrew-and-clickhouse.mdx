@@ -12,6 +12,7 @@ integration:
 
 import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
 import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -23,15 +24,7 @@ import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMa
 
 Neste guia, você vai conectar o Chartbrew ao ClickHouse, executar uma consulta SQL e criar uma visualização. Ao final, seu dashboard poderá ficar parecido com este:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Dashboard do Chartbrew](/images/integrations/data-visualization/chartbrew_01.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-visualization/chartbrew_01.webp" size="lg" alt="Dashboard do Chartbrew" />
 
 <Tip>
   **Adicione alguns dados**
@@ -49,15 +42,7 @@ Neste guia, você vai conectar o Chartbrew ao ClickHouse, executar uma consulta 
 
     2. Clique em **Create connection** e selecione **ClickHouse** entre as opções de banco de dados disponíveis.
 
-       <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Selecione a conexão ClickHouse no Chartbrew](/images/integrations/data-visualization/chartbrew_02.webp)
-
-       </Frame>
-
-       </div>
+       <Image img="/images/integrations/data-visualization/chartbrew_02.webp" size="lg" alt="Selecione a conexão ClickHouse no Chartbrew" />
 
     3. Insira os detalhes de conexão do seu banco de dados ClickHouse:
 
@@ -68,44 +53,20 @@ Neste guia, você vai conectar o Chartbrew ao ClickHouse, executar uma consulta 
        * **Username**: Seu nome de usuário do ClickHouse.
        * **Password**: Sua senha do ClickHouse.
 
-       <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Configurações de conexão do ClickHouse no Chartbrew](/images/integrations/data-visualization/chartbrew_03.webp)
-
-       </Frame>
-
-       </div>
+       <Image img="/images/integrations/data-visualization/chartbrew_03.webp" size="lg" alt="Configurações de conexão do ClickHouse no Chartbrew" />
 
     4. Clique em **Test connection** para verificar se o Chartbrew consegue se conectar ao ClickHouse.
 
     5. Se o teste for bem-sucedido, clique em **Save connection**. O Chartbrew recuperará automaticamente o esquema do ClickHouse.
 
-       <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Esquema JSON do ClickHouse no Chartbrew](/images/integrations/data-visualization/chartbrew_04.webp)
-
-       </Frame>
-
-       </div>
+       <Image img="/images/integrations/data-visualization/chartbrew_04.webp" size="lg" alt="Esquema JSON do ClickHouse no Chartbrew" />
   </Step>
 
   <Step title="Crie um dataset e execute uma consulta SQL" id="3-create-a-dataset-and-run-a-sql-query">
     1. Clique no botão **Create dataset** ou acesse a aba **Datasets** para criar um.
     2. Selecione a conexão ClickHouse que você criou anteriormente.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Selecione a conexão ClickHouse para o dataset](/images/integrations/data-visualization/chartbrew_05.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/chartbrew_05.webp" size="lg" alt="Selecione a conexão ClickHouse para o dataset" />
 
     Escreva uma consulta SQL para obter os dados que você deseja visualizar. Por exemplo, esta consulta calcula o preço médio pago por ano no dataset `uk_price_paid`:
 
@@ -116,29 +77,13 @@ Neste guia, você vai conectar o Chartbrew ao ClickHouse, executar uma consulta 
     ORDER BY year;
     ```
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Consulta SQL do ClickHouse no Chartbrew](/images/integrations/data-visualization/chartbrew_07.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/chartbrew_07.webp" size="lg" alt="Consulta SQL do ClickHouse no Chartbrew" />
 
     Clique em **Run query** para buscar os dados.
 
     Se você não tiver certeza de como escrever a consulta, pode usar o **assistente de IA do Chartbrew** para gerar consultas SQL com base no esquema do seu banco de dados.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Assistente de IA para SQL do ClickHouse no Chartbrew](/images/integrations/data-visualization/chartbrew_06.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/chartbrew_06.webp" size="lg" alt="Assistente de IA para SQL do ClickHouse no Chartbrew" />
 
     Assim que os dados forem obtidos, clique em **Configure dataset** para configurar os parâmetros da visualização.
   </Step>
@@ -149,27 +94,11 @@ Neste guia, você vai conectar o Chartbrew ao ClickHouse, executar uma consulta 
     3. Escolha um tipo de gráfico (por exemplo, gráfico de linhas, gráfico de barras ou gráfico de pizza) e adicione-o ao seu dashboard.
     4. Clique em **Complete dataset** para finalizar a configuração.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Dashboard do Chartbrew com dados do ClickHouse](/images/integrations/data-visualization/chartbrew_08.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/chartbrew_08.webp" size="lg" alt="Dashboard do Chartbrew com dados do ClickHouse" />
 
     Você pode criar quantos datasets quiser para visualizar diferentes aspectos dos seus dados. Com esses datasets, você pode criar vários dashboards para acompanhar diferentes métricas.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Dashboard do Chartbrew com dados do ClickHouse](/images/integrations/data-visualization/chartbrew_01.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/chartbrew_01.webp" size="lg" alt="Dashboard do Chartbrew com dados do ClickHouse" />
   </Step>
 
   <Step title="Automatize as atualizações de dados" id="5-automate-data-updates">
@@ -179,15 +108,7 @@ Neste guia, você vai conectar o Chartbrew ao ClickHouse, executar uma consulta 
     2. Configure o intervalo de atualização (por exemplo, a cada hora ou diariamente).
     3. Salve as configurações para ativar a atualização automática.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Configurações de atualização do dataset no Chartbrew](/images/integrations/data-visualization/chartbrew_09.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/chartbrew_09.webp" size="lg" alt="Configurações de atualização do dataset no Chartbrew" />
   </Step>
 </Steps>
 

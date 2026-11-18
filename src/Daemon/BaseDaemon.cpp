@@ -505,8 +505,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 #endif
 
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
-    /// Without building the symbol index: the signal listener builds it in the background (see `SignalListener::run`).
-    build_id = SymbolIndex::getSelfBuildIDHex();
+    build_id = SymbolIndex::instance().getBuildIDHex();
 #endif
 
     startSignalListener();

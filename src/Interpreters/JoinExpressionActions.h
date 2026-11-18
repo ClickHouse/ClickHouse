@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/ActionsDAG.h>
 #include <ranges>
 #include <boost/dynamic_bitset.hpp>
@@ -254,7 +253,7 @@ public:
     };
 
     template <typename F>
-    static JoinActionRef transform(const VectorWithMemoryTracking<JoinActionRef> & actions, F && func)
+    static JoinActionRef transform(const std::vector<JoinActionRef> & actions, F && func)
     {
         auto data_ptr = getData(actions);
         auto nodes = std::ranges::to<std::vector>(actions | std::views::transform([](const auto & action) { return action.getNode(); }));
@@ -269,7 +268,7 @@ public:
 
     operator bool() const { return node_ptr != nullptr; } /// NOLINT
 
-    VectorWithMemoryTracking<JoinActionRef> getArguments(bool recursive = false) const;
+    std::vector<JoinActionRef> getArguments(bool recursive = false) const;
 
     void setSourceRelations(const BitSet & source_relations) const;
     const BitSet & getSourceRelations() const;
@@ -291,7 +290,7 @@ public:
 
 private:
     std::shared_ptr<JoinExpressionActions::Data> getData() const;
-    static std::shared_ptr<JoinExpressionActions::Data> getData(const VectorWithMemoryTracking<JoinActionRef> & actions);
+    static std::shared_ptr<JoinExpressionActions::Data> getData(const std::vector<JoinActionRef> & actions);
     static ActionsDAG & getActionsDAG(JoinExpressionActions::Data & data_);
 
     NodeRawPtr node_ptr = nullptr;

@@ -5,7 +5,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
-#include <optional>
 #include <variant>
 
 namespace DB
@@ -46,10 +45,6 @@ public:
 
     /// The populating tiers' writers overlapping `range` - the write-up targets for one FETCH read.
     VectorWithMemoryTracking<CacheWriter *> writersFor(ByteRange range) const;
-
-    /// Given a position `offset`, returns the end of the filesystem-cache (incrementally filled) miss
-    /// segment whose interior contains that position.
-    std::optional<size_t> missSegmentEndFor(size_t offset) const;
 
     /// Resolve `[end(), new_end)` across EVERY provider in `chain` (one `PlanTier` per provider,
     /// fastest-first) and append it - so the plan itself guarantees all layers are asked. `object` and

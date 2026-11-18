@@ -1,7 +1,6 @@
 #pragma once
 
 #include <bit>
-#include <Common/VectorWithMemoryTracking.h>
 #include <concepts>
 #include <optional>
 #include <vector>
@@ -102,7 +101,7 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::initDPTable(TDPTable & dp_tab
 
         LOG_TEST(log, "Edge contains relations: {} edge info: {}", toString(edge_sources), edge.dump());
 
-        VectorWithMemoryTracking<UInt> relations;
+        std::vector<UInt> relations;
         relations.reserve(edge_sources.count());
 
         // Fill relations with bit positions set in edge_sources

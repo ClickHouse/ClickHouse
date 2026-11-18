@@ -7,6 +7,8 @@ title: 'Горизонтальное масштабирование'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 ## Ручное горизонтальное масштабирование {#manual-horizontal-scaling}
@@ -25,27 +27,11 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 
 Чтобы выполнить горизонтальное масштабирование кластера, отправьте через API запрос `PATCH`, изменив число реплик. На снимках экрана ниже показан вызов API для масштабирования кластера с `3` реплик до `6`, а также соответствующий ответ.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![PATCH-запрос на масштабирование](/images/cloud/manage/scaling-patch-request.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/manage/scaling-patch-request.webp" size="lg" alt="PATCH-запрос на масштабирование" border />
 
 *Запрос `PATCH` для обновления `numReplicas`*
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Ответ на PATCH-запрос масштабирования](/images/cloud/manage/scaling-patch-response.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/manage/scaling-patch-response.webp" size="md" alt="Ответ на PATCH-запрос масштабирования" border />
 
 *Ответ на запрос `PATCH`*
 
@@ -57,26 +43,10 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 
 Чтобы выполнить горизонтальное масштабирование сервиса через интерфейс, можно изменить количество реплик сервиса на странице **Настройки**.
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Параметры масштабирования](/images/cloud/manage/scaling-configure.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/manage/scaling-configure.webp" size="md" alt="Параметры масштабирования" border />
 
 *Параметры масштабирования сервиса в консоли ClickHouse Cloud*
 
 После масштабирования сервиса панель мониторинга метрик в облачной консоли должна показывать корректное выделение ресурсов для сервиса. На снимке экрана ниже показано, что кластер масштабирован до общего объёма памяти `96 GiB`, то есть до `6` реплик с выделением по `16 GiB` памяти для каждой.
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Выделение памяти при масштабировании](/images/cloud/manage/scaling-memory-allocation.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/manage/scaling-memory-allocation.webp" size="md" alt="Выделение памяти при масштабировании" border />

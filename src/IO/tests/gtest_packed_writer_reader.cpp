@@ -3,10 +3,8 @@
 #include <base/scope_guard.h>
 #include <IO/PackedFilesWriter.h>
 #include <IO/PackedFilesReader.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Disks/DiskLocal.h>
 
@@ -182,46 +180,4 @@ TEST(PackedFilesWriter, PrepareFinalizeDoesNotTouchDestination)
     auto in = reader.readFile(disk, data_filename, "file1", ReadSettings{}, {});
     assertString("123", *in);
     assertEOF(*in);
-}
-
-TEST(PackedFilesWriter, FilesOrderHint)
-{
-    PackedFilesWriter writer;
-
-    for (const auto & name : {"a%2Eb", "first", "second", "third"})
-        writer.writeFile(name)->finalize();
-
-    /// The hint names the files as they are stored, so `a.b` matches nothing. Repeated hints are
-    /// ignored too, and the files not in the hint keep their order.
-    const Strings hint = {"a.b", "third", "a%2Eb", "third", "first"};
-    auto plan = writer.prepareFinalize(hint, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
-
-    ASSERT_EQ(plan.ordered_file_names, (Strings{"third", "a%2Eb", "first", "second"}));
-}
-
-/// The names in the index of a packed archive are paths relative to the part directory.
-TEST(PackedFilesWriter, IndexFileNames)
-{
-    auto round_trip = [](const String & file_name)
-    {
-        PackedFilesIO::Index index;
-        index.emplace(file_name, PackedFilesIO::FileOffset{.offset = 0, .size = 1, .uncompressed_size = 1});
-
-        WriteBufferFromOwnString out;
-        PackedFilesWriter::writePackedIndex(out, index, PackedFilesIO::MAX_VERSION);
-        out.finalize();
-
-        ReadBufferFromString in(out.str());
-        return PackedFilesReader::readIndex(in);
-    };
-
-    for (const auto * file_name : {"data.bin", "skp_idx_x.idx2", "proj.proj/data.bin", "a..b"})
-    {
-        auto index = round_trip(file_name);
-        ASSERT_EQ(index.size(), 1);
-        ASSERT_TRUE(index.contains(file_name));
-    }
-
-    for (const auto & file_name : {String(""), String("/data.bin"), String("./data.bin"), String("proj/../data.bin"), String("da\0ta.bin", 9)})
-        ASSERT_THROW(round_trip(file_name), Exception) << file_name;
 }

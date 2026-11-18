@@ -32,7 +32,6 @@ namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
-    extern const int CORRUPTED_DATA;
 }
 
 class Arena;
@@ -243,12 +242,8 @@ static inline void deserializeAndInsertIntoColumns( /// NOLINT
 
     /// The buffer is contiguous and never refills, so the header is read in
     /// place and stays addressable while the values are deserialized.
-    /// The data may be read from a file (`ssd_cache` dictionaries), so check that it has the header.
     size_t sizes_header_size = columns_size * sizeof(UInt32);
-    if (in.available() < sizes_header_size)
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Cache data corrupted. A record of {} bytes is shorter than the sizes of its {} columns ({} bytes)",
-            in.available(), columns_size, sizes_header_size);
+    chassert(in.available() >= sizes_header_size);
     const char * sizes_header = in.position();
     in.ignore(sizes_header_size);
 

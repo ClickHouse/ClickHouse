@@ -1,9 +1,6 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Common/ListWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
@@ -39,7 +36,7 @@ class MergeTreeWhereOptimizer : private boost::noncopyable
 {
 public:
     MergeTreeWhereOptimizer(
-        UnorderedMapWithMemoryTracking<std::string, UInt64> column_sizes_,
+        std::unordered_map<std::string, UInt64> column_sizes_,
         const StorageSnapshotPtr & storage_snapshot,
         ConditionSelectivityEstimatorPtr estimator_,
         const Names & queried_columns_,
@@ -49,21 +46,19 @@ public:
 
     struct FilterActionsOptimizeResult
     {
-        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> prewhere_nodes;
-        ListWithMemoryTracking<const ActionsDAG::Node *> prewhere_nodes_list; /// Keep insertion order of moved prewhere_nodes
+        std::unordered_set<const ActionsDAG::Node *> prewhere_nodes;
+        std::list<const ActionsDAG::Node *> prewhere_nodes_list; /// Keep insertion order of moved prewhere_nodes
         bool fully_moved_to_prewhere = false;
     };
 
     /// `columns_read_before_filter` are the columns that the reader observes before the moved conditions
     /// are applied (the existing PREWHERE and the row policy): no string value filter can be applied
     /// during the scan to them (see `extractStringValueFilters`).
-    /// `top_k_filter_column` is the column of the `__topKFilter` that will be prepended to PREWHERE, empty if none.
     FilterActionsOptimizeResult optimize(const ActionsDAG & filter_dag,
         const std::string & filter_column_name,
         const ContextPtr & context,
         bool is_final,
-        const NameSet & columns_read_before_filter = {},
-        const String & top_k_filter_column = {});
+        const NameSet & columns_read_before_filter = {});
 
 private:
     struct Condition
@@ -156,7 +151,6 @@ private:
         bool use_statistics = false;
         bool apply_string_filters_during_scan = false;
         const NameSet * columns_read_before_filter = nullptr;
-        String top_k_filter_column;
     };
 
     struct OptimizeResult
@@ -212,13 +206,10 @@ private:
     const NameToIndexMap primary_key_names_positions;
     StorageMetadataPtr storage_metadata;
     LoggerPtr log;
-    UnorderedMapWithMemoryTracking<std::string, UInt64> column_sizes;
+    std::unordered_map<std::string, UInt64> column_sizes;
     UInt64 total_size_of_queried_columns = 0;
     UInt64 total_rows = 0;
 };
-
-/// The sorting key columns a condition may filter by before `FINAL` without changing its result
-NameSet getSortingKeyNamesSafeBeforeFinal(const StorageSnapshotPtr & storage_snapshot);
 
 
 }
