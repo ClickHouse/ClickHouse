@@ -2565,12 +2565,12 @@ Unlike the `SKIP REGEXP` of the `JSON` data type, the setting [`type_json_use_pa
 
 In the `'string'` mode, an array is returned whole, with no depth limit.
 
-:::note
+<Note>
 The paths, and so the `skip_regex` matches, depend on the setting `json_type_escape_dots_in_keys`.
 An index expression is computed at insert and at merge with the server-level settings: the settings of an `INSERT` query do not apply.
 If the function is used in an index expression, and `skip_regex` can match a dot or `%2E`, queries that use the index must keep the server-level value of this setting.
 Other settings, such as `allow_simdjson` and `input_format_json_max_depth`, do not change the result.
-:::
+</Note>
 
 Use [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues) for columns of the `JSON` data type.
         )";
@@ -2631,12 +2631,12 @@ SELECT JSONExtractLeafValues('{"a": [1, 2], "b": "x"}', '', 'string') AS res;
 The same as [`JSONExtractLeafValues`](#JSONExtractLeafValues), but returns a tuple `(path, value)` for every scalar leaf.
 See the description of `JSONExtractLeafValues` for the rules of the paths, the escaping of dots in keys, and the arguments `skip_regex` and `arrays`.
 
-:::note
+<Note>
 The paths, and so the `skip_regex` matches, depend on the setting `json_type_escape_dots_in_keys`.
 An index expression is computed at insert and at merge with the server-level settings: the settings of an `INSERT` query do not apply.
 If the function is used in an index expression, and `skip_regex` can match a dot or `%2E`, queries that use the index must keep the server-level value of this setting.
 Other settings, such as `allow_simdjson` and `input_format_json_max_depth`, do not change the result.
-:::
+</Note>
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractLeafPathsAndValues(json[, skip_regex[, arrays]])";
         FunctionDocumentation::Arguments arguments = {
