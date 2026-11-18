@@ -104,15 +104,15 @@ struct TransactionID
         return !(*this == rhs);
     }
 
-    TIDHash getHash() const;
+    [[nodiscard]] TIDHash getHash() const;
 
-    bool isEmpty() const
+    [[nodiscard]] bool isEmpty() const
     {
         chassert((local_tid == 0) == (start_csn == 0 && host_id == UUIDHelpers::Nil));
         return local_tid == 0;
     }
 
-    bool isNonTransactional() const
+    [[nodiscard]] bool isNonTransactional() const
     {
         /// Non-transactional changes carry `start_csn == NonTransactionalCSN`. We discriminate on
         /// `start_csn`, not `local_tid`, so a non-transactional operation can carry a unique
