@@ -98,10 +98,17 @@ public:
             writeVarUInt(entry, out);
     }
 
-    void read(ReadBuffer & in)
+    /// `max_size` is the size of the encoded data: each entry takes at least one byte, which bounds the count before
+    /// it drives the allocation.
+    void read(ReadBuffer & in, size_t max_size)
     {
         size_t num_entries = 0;
         readVarUInt(num_entries, in);
+        if (num_entries > max_size)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Granule offsets of the typed shared data of Object declare {} entries in {} bytes",
+                num_entries, max_size);
         entries.resize(num_entries);
         for (auto & entry : entries)
             readVarUInt(entry, in);
@@ -475,7 +482,7 @@ public:
                 {
                     const size_t begin = in.count();
                     GranuleOffsets offsets;
-                    offsets.read(in);
+                    offsets.read(in, size);
                     size_t data_size = 0;
                     readVarUInt(data_size, in);
                     copy_granules(in, data_size, offsets);

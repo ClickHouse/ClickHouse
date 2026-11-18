@@ -53,6 +53,8 @@ SELECT 'with a sub-object', (SELECT arraySort(groupArray((x, toString(json.^s), 
 
 SELECT toString(json.c), json.s.p1 FROM t_s3 SETTINGS log_comment = '05489_regions' FORMAT Null;
 SELECT toString(json), toString(json.c) FROM t_s3 SETTINGS log_comment = '05489_plain' FORMAT Null;
+-- The tiny blocks are for the reads above; the query log is scanned with normal ones.
+SET max_block_size = DEFAULT;
 SYSTEM FLUSH LOGS query_log;
 SELECT 'layouts read', log_comment, ProfileEvents['ObjectTypedSharedDataRegionReads'] > 0, ProfileEvents['ObjectTypedSharedDataPlainLayoutReads'] > 0
 FROM system.query_log

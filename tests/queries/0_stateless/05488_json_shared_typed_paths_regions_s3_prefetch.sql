@@ -65,6 +65,8 @@ SELECT 'PREWHERE', (SELECT arraySort(groupArray((x, toString(json.e), json.s.p2)
 
 -- Without the columns cache, which would serve the columns the queries above read.
 SELECT toString(json.h.k1), json.b.size0 FROM t_s3 SETTINGS log_comment = '05488_s3', use_columns_cache = 0 FORMAT Null;
+-- The tiny blocks are for the reads above; the query log is scanned with normal ones.
+SET max_block_size = DEFAULT;
 SYSTEM FLUSH LOGS query_log;
 SELECT 'layouts read', ProfileEvents['ObjectTypedSharedDataRegionReads'] > 0, ProfileEvents['ObjectTypedSharedDataPlainLayoutReads'] > 0
 FROM system.query_log

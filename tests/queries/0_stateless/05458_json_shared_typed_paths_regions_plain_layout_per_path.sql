@@ -47,6 +47,8 @@ SELECT json.a FROM t_v2 FORMAT Null SETTINGS log_comment = '05458_path';
 SELECT json.a, json.^x FROM t_v2 FORMAT Null SETTINGS log_comment = '05458_narrow_sub_object';
 SELECT json.a, json.^x FROM t_v2 FORMAT Null SETTINGS log_comment = '05458_wide_sub_object', object_shared_data_max_sub_object_paths_to_read_separately = 0;
 SELECT json, json.a FROM t_v2 FORMAT Null SETTINGS log_comment = '05458_whole_column';
+-- The tiny blocks are for the reads above; the query log is scanned with normal ones.
+SET max_block_size = DEFAULT;
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['ObjectTypedSharedDataRegionReads'] > 0, ProfileEvents['ObjectTypedSharedDataPlainLayoutReads'] > 0
 FROM system.query_log
