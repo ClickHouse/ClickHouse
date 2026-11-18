@@ -784,6 +784,92 @@ def test_sql_commands(cluster, with_keeper):
     check_dropped()
 
 
+@pytest.mark.parametrize("with_keeper", [False, True])
+def test_create_or_replace(cluster, with_keeper):
+    zk = None
+    if with_keeper:
+        node = cluster.instances["node_with_keeper"]
+        zk = cluster.get_kazoo_client("zoo1")
+    else:
+        node = cluster.instances["node"]
+
+    def get_create_query():
+        return node.query("select create_query from system.named_collections where name = 'col'").strip()
+
+    def get_zk_payload():
+        zk.sync(ZK_PATH)
+        return zk.get(ZK_PATH + "/col.sql")[0]
+
+    node.query("CREATE OR REPLACE NAMED COLLECTION col AS key1=1, key2='value2' OVERRIDABLE")
+
+    assert "CREATE NAMED COLLECTION col AS key1 = 1, key2 = \\'value2\\' OVERRIDABLE" == get_create_query()
+    if with_keeper:
+        assert b"CREATE NAMED COLLECTION col AS key1 = 1, key2 = 'value2' OVERRIDABLE" in get_zk_payload()
+
+    assert "already exists" in node.query_and_get_error("CREATE NAMED COLLECTION col AS key1=1")
+
+    node.query("CREATE OR REPLACE NAMED COLLECTION col AS key1=4, key3='value3' NOT OVERRIDABLE")
+
+    def check_replaced():
+        assert (
+            "['key1','key3']"
+            == node.query(
+                "select mapKeys(collection) from system.named_collections where name = 'col'"
+            ).strip()
+        )
+        assert (
+            "4"
+            == node.query(
+                "select collection['key1'] from system.named_collections where name = 'col'"
+            ).strip()
+        )
+        assert (
+            "CREATE NAMED COLLECTION col AS key1 = 4, key3 = \\'value3\\' NOT OVERRIDABLE"
+            == get_create_query()
+        )
+        if zk is not None:
+            assert (
+                b"CREATE NAMED COLLECTION col AS key1 = 4, key3 = 'value3' NOT OVERRIDABLE"
+                in get_zk_payload()
+            )
+
+    check_replaced()
+    node.restart_clickhouse()
+    check_replaced()
+
+    node.query("CREATE OR REPLACE NAMED COLLECTION col AS key3='value3'")
+    assert "CREATE NAMED COLLECTION col AS key3 = \\'value3\\'" == get_create_query()
+
+    assert "immutable" in node.query_and_get_error("CREATE OR REPLACE NAMED COLLECTION collection1 AS key1=1")
+    if zk is not None:
+        zk.sync(ZK_PATH)
+        assert "collection1.sql" not in zk.get_children(ZK_PATH)
+
+    if not with_keeper:
+        node.query("DROP USER IF EXISTS user_or_replace")
+        node.query("CREATE USER user_or_replace")
+        node.query("GRANT create named collection ON col TO user_or_replace")
+        assert (
+            "necessary to have the grant DROP NAMED COLLECTION"
+            in node.query_and_get_error(
+                "CREATE OR REPLACE NAMED COLLECTION col AS key1=1", user="user_or_replace"
+            )
+        )
+        node.query("GRANT drop named collection ON col TO user_or_replace")
+        node.query(
+            "CREATE OR REPLACE NAMED COLLECTION col AS key1=1", user="user_or_replace"
+        )
+        node.query("DROP USER user_or_replace")
+
+    node.query("DROP NAMED COLLECTION col")
+    assert "0" == node.query("select count() from system.named_collections where name = 'col'").strip()
+
+    if with_keeper:
+        node2 = cluster.instances["node_with_keeper_2"]
+        while node2.query("select count() from system.named_collections where name = 'col'").strip() != "0":
+            time.sleep(0.5)
+
+
 def test_keeper_storage(cluster):
     node1 = cluster.instances["node_with_keeper"]
     node2 = cluster.instances["node_with_keeper_2"]

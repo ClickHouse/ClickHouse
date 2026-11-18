@@ -51,7 +51,6 @@ algorithm: InOrder
 algorithm: InOrder
 -- enabled, only part of distinct columns form prefix of sorting key
 algorithm: InOrder
-=== enable analyzer ===
 -- enabled, check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct
 Sorting: __table1.a ASC, __table1.b ASC
 Sorting: a ASC, b ASC

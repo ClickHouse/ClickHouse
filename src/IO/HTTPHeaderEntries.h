@@ -36,17 +36,17 @@ public:
     void eraseByName(std::string_view name);
 
     void clear() { entries.clear(); }
-    bool empty() const { return entries.empty(); }
-    size_t size() const { return entries.size(); }
+    [[nodiscard]] bool empty() const { return entries.empty(); }
+    [[nodiscard]] size_t size() const { return entries.size(); }
 
     bool operator==(const NormalizedHTTPHeaderEntries & other) const { return entries == other.entries; }
 
-    const_iterator begin() const { return entries.begin(); }
-    const_iterator end() const { return entries.end(); }
+    [[nodiscard]] const_iterator begin() const { return entries.begin(); }
+    [[nodiscard]] const_iterator end() const { return entries.end(); }
 
 private:
-    /// `HTTPHeaderFilter` strips control characters from a name in place, which leaves the case,
-    /// and so the invariant, untouched.
+    /// `HTTPHeaderFilter` only validates these entries; it does not modify them, so the lower-case
+    /// invariant holds.
     friend class HTTPHeaderFilter;
 
     HTTPHeaderEntries entries;

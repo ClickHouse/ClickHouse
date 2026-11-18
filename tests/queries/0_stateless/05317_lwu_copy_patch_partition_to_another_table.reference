@@ -1,0 +1,15 @@
+patch parts in t_dst	0
+0	0
+1	10
+2	2
+3	3
+4	10
+5	0
+6	0
+7	0
+8	0
+9	0
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+v in t_src	7

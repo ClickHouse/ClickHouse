@@ -1,0 +1,10 @@
+in_final	1	1
+in_final	2	1
+join_final	1	2
+join_final	2	2
+join_sample	3	1
+join_table_final	1	1
+join_table_final	2	1
+scalar_final	1	2
+scalar_final	2	2
+scalar_sample	3	1

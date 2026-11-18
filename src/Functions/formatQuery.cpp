@@ -56,25 +56,31 @@ public:
         implicit_select = settings[Setting::implicit_select];
     }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// The captured parser settings decide whether a query is formatted or rejected, and how the
+    /// data types in it are rendered, see `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const override
     {
-        FunctionArgumentDescriptors args{
-            {"query", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-        };
-        validateFunctionArguments(*this, arguments, args);
-
-        DataTypePtr string_type = std::make_shared<DataTypeString>();
-        if (error_handling == ErrorHandling::Null)
-            return std::make_shared<DataTypeNullable>(string_type);
-        return string_type;
+        hash.update(max_query_size);
+        hash.update(max_parser_depth);
+        hash.update(max_parser_backtracks);
+        hash.update(print_pretty_type_names);
+        hash.update(implicit_select);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return error_handling == ErrorHandling::Null
+            ? "(String) -> Nullable(String)"
+            : "(String) -> String";
+    }
+
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr col_query = arguments[0].column;
 
