@@ -131,8 +131,8 @@ CapnProtoフォーマットのスキーマ推論時に、サポートされて�
 サポートされるモードは次のとおりです。
 
 * match&#95;case: 大文字・小文字を区別して照合
-  * ignore&#95;case: 大文字・小文字を区別せずに照合
-  * auto: まず大文字・小文字を区別して照合を試み、失敗した場合は大文字・小文字を区別しない照合を試みます。
+* ignore&#95;case: 大文字・小文字を区別せずに照合
+* auto: まず大文字・小文字を区別して照合を試み、失敗した場合は大文字・小文字を区別しない照合を試みます。
 
 ## input_format_connection_handling {#input_format_connection_handling}
 
@@ -855,7 +855,7 @@ ORC フォーマットのスキーマ推論時に、サポートされていな�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Parquetファイルでgeoカラムを使用するための新しい設定"}]}]} />
 
-geoカラムパーサーを使用して、Array(UInt8) を Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon 型に変換します
+Parquetファイルの読み込み時に、ジオメトリ列を ClickHouse の幾何データ型 (`Point`、`MultiPoint`、`LineString`、`Polygon`、`MultiLineString`、`MultiPolygon`、`Geometry` のいずれか) としてデコードします。この設定は、GeoParquet の `geo` メタデータで記述されたカラムと、Parquet の `GEOMETRY` または `GEOGRAPHY` 論理型が付与されたカラムに適用されます。無効にした場合、Geo 型を明示的に指定しない限り、これらのカラムは未加工の WKB (または WKT) バイト列を格納した `String` として読み込まれます。
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 
@@ -878,6 +878,14 @@ Parquetファイルの読み取り時に、Parquet メタデータ内の WHERE �
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Parquet のカラムを CH のカラムと照合する際に、大文字と小文字を区別しません。
+
+## input_format_parquet_detect_variant_by_structure {#input_format_parquet_detect_variant_by_structure}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "`VARIANT` 論理型を持たない Spark の variant カラムを、`Tuple` ではなく `Dynamic` として読み取るための新しい設定"}]}]} />
+
+`VARIANT` 論理型を持たないものの、シュレッドされていない variant のレイアウト (いずれも `BYTE_ARRAY` 型の `metadata` フィールドと `value` フィールド) を持つ Parquet グループを、`Tuple` ではなく variant、すなわち `Dynamic` として読み取ります。Spark 4.0 は variant カラムをこの形式で書き込みます。なお、`VARIANT` 論理型のアノテーションが付与されたグループは、常に variant として読み取られます。
 
 ## input_format_parquet_dictionary_filter_push_down {#input_format_parquet_dictionary_filter_push_down}
 
@@ -913,9 +921,9 @@ Parquetファイルの読み込み時に、Parquetメタデータ内のWHERE/PRE
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Parquet フッターの初回読み取りサイズをアダプティブに決定する代わりに、固定のバイト数を指定するための新しい設定です。0 の場合はアダプティブな動作を維持します。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Parquet フッターの初回読み取りサイズを指定するための新しい設定です。0 の場合、ローカルファイルでは 64 KiB を読み取り、その他のソースでは読み取りサイズをアダプティブに決定します。"}]}]} />
 
-リーダー v3 でファイルを開く際に、Parquet フッター (`FileMetaData`) をフェッチするためにファイル末尾から最初に読み取るサイズ (バイト単位) です。`0` (デフォルト) の場合、読み取りサイズはファイルに応じてアダプティブに決定されます。具体的には、ファイルサイズの 1% を `[128 KiB, 2 MiB]` の範囲に収めた値が使用されるため、数百のカラムを持つ wide なファイルであっても、通常は 1 回の読み取りでフッター全体を取得できます。アダプティブなサイズではなく固定の初回読み取りサイズを使用したい場合は、0 以外の値を設定してください。レイテンシが非常に高いオブジェクトストレージでは、最初に末尾をより大きく読み取っておくことで 2 回目のラウンドトリップを回避できるため有用です。なお、この値はファイルサイズを超えないように制限されます。
+リーダー v3 でファイルを開く際に、Parquet フッター (`FileMetaData`) をフェッチするためにファイル末尾から最初に読み取るサイズ (バイト単位) です。`0` (デフォルト) の場合、ファイルをローカルファイルシステムから直接読み取るときは末尾 64 KiB を読み取り、その他のソース (オブジェクトストレージ、URL、HDFS) では読み取りサイズをアダプティブに決定します。具体的には、ファイルサイズの 1% を `[128 KiB, 2 MiB]` の範囲に収めた値が使用されるため、数百のカラムを持つ wide なファイルであっても、通常は 1 回の読み取りでフッター全体を取得できます。アダプティブなサイズではなく固定の初回読み取りサイズを使用したい場合は、0 以外の値を設定してください。レイテンシが非常に高いオブジェクトストレージでは、最初に末尾をより大きく読み取っておくことで 2 回目のラウンドトリップを回避できるため有用です。なお、この値はファイルサイズを超えないように制限されます。
 
 ## input_format_parquet_local_file_min_bytes_for_seek {#input_format_parquet_local_file_min_bytes_for_seek}
 

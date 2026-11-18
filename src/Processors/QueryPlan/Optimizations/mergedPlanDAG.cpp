@@ -8,6 +8,8 @@
 #include <Common/typeid_cast.h>
 
 #include <ranges>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::ErrorCodes
 {
@@ -320,7 +322,7 @@ void trackPreJoinNodes(
     for (const auto & key : join_step.getJoinOperator().expression)
         roots.push_back(cloneOf(clone_mapping, key.getNode()));
 
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> original_of;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> original_of;
     NodeSet created_here;
     for (const auto & [original, merged_node] : clone_mapping)
     {
@@ -357,7 +359,7 @@ void trackPreJoinNodes(
 /// Records the residual filter of the join as filters and its keys as join conditions.
 void collectJoinConditions(Built & built, const JoinOperator & join_operator, const ActionsDAG::NodeMapping & clone_mapping)
 {
-    const std::array<std::pair<const std::vector<JoinActionRef> *, ActionsDAG::NodeRawConstPtrs *>, 2> conditions_and_targets{{
+    const std::array<std::pair<const VectorWithMemoryTracking<JoinActionRef> *, ActionsDAG::NodeRawConstPtrs *>, 2> conditions_and_targets{{
         {&join_operator.residual_filter, &built.dag.filter_nodes},
         {&join_operator.expression, &built.dag.join_condition_nodes},
     }};
@@ -370,7 +372,7 @@ void collectJoinConditions(Built & built, const JoinOperator & join_operator, co
 /// Builds a step for which `canEnterStep` holds on top of what its children built, in their order. Returns nullopt
 /// when the step cannot be represented, which is not a failure: the caller stops the walk there and the step becomes
 /// a source.
-std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, std::vector<Built> & children)
+std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, VectorWithMemoryTracking<Built> & children)
 {
     auto * step = node.step.get();
 
@@ -532,8 +534,8 @@ MergedPlanDAG buildMergedPlanDAG(QueryPlan::Node & root)
         bool children_built = false;
     };
 
-    std::vector<Frame> stack{{&root}};
-    std::vector<Built> results;
+    VectorWithMemoryTracking<Frame> stack{{&root}};
+    VectorWithMemoryTracking<Built> results;
     while (!stack.empty())
     {
         auto & frame = stack.back();
@@ -557,7 +559,7 @@ MergedPlanDAG buildMergedPlanDAG(QueryPlan::Node & root)
 
         stack.pop_back();
 
-        std::vector<Built> children;
+        VectorWithMemoryTracking<Built> children;
         const auto first_child = results.end() - node->children.size();
         children.insert(children.end(), std::make_move_iterator(first_child), std::make_move_iterator(results.end()));
         results.erase(first_child, results.end());

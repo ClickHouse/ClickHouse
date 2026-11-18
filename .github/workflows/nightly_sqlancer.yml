@@ -422,6 +422,82 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Data lake fuzzer (arm_asan_ubsan)' --workflow "NightlySQLancer" --ci --timestamp
 
+  sqllogic_test:
+    runs-on: [self-hosted, arm-medium]
+    needs:
+    - build_arm_release
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U1FMTG9naWMgdGVzdA==') }}
+    name: "SQLLogic test"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'SQLLogic test' --workflow "NightlySQLancer" --ci --timestamp
+
+  sqlstorm_test:
+    runs-on: [self-hosted, arm-medium]
+    needs:
+    - build_arm_release
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U1FMU3Rvcm0gdGVzdA==') }}
+    name: "SQLStorm test"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'SQLStorm test' --workflow "NightlySQLancer" --ci --timestamp
+
   finish_workflow:
     runs-on: [self-hosted, arm-tiny]
     needs:
@@ -436,6 +512,8 @@ jobs:
     - sqlancer_arm_release
     - sqlancerpp_arm_asan_ubsan
     - sqlancerpp_arm_release
+    - sqllogic_test
+    - sqlstorm_test
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:
