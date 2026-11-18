@@ -142,24 +142,17 @@ inline bool asksAboutFewRows(size_t asked_rows, size_t rows)
     return asked_rows < rows / max_rows_per_asked_row;
 }
 
-/// Calls `run(state)` with a state over `key_columns` for a caller that asks about the `rows` of its block, or, if
-/// it skips rows, about the `count_asked_rows()` of them: a `SparseState<State>` when that is fewer than one row in
-/// `max_rows_per_asked_row`, a `ChunkedState<State>` when it is not and the keys outgrow the cache, else a `State`.
-template <typename State, typename KeyColumns, typename KeySizes, typename CountAskedRows, typename Run>
-ALWAYS_INLINE void withStateForAskedRows(
-    const KeyColumns & key_columns,
-    const KeySizes & key_sizes,
-    size_t rows,
-    bool skips_rows,
-    CountAskedRows && count_asked_rows,
-    Run && run)
+/// Calls `run.template operator()<S>()` with the state type `S` for a caller that asks about the `rows` of its block,
+/// or, if it skips rows, about the `count_asked_rows()` of them: `SparseState<State>` when that is fewer than one row
+/// in `max_rows_per_asked_row`, `ChunkedState<State>` when it is not and the keys outgrow the cache, else `State`.
+template <typename State, typename CountAskedRows, typename Run>
+ALWAYS_INLINE void withStateForAskedRows(size_t rows, bool skips_rows, CountAskedRows && count_asked_rows, Run && run)
 {
     if constexpr (!std::is_same_v<SparseState<State>, State>)
     {
         if (skips_rows && asksAboutFewRows(count_asked_rows(), rows))
         {
-            SparseState<State> state(key_columns, key_sizes, nullptr, {.skips_rows = true});
-            run(state);
+            run.template operator()<SparseState<State>>();
             return;
         }
     }
@@ -167,13 +160,11 @@ ALWAYS_INLINE void withStateForAskedRows(
     {
         if (keysOutgrowCache<State>(rows) && !(skips_rows && asksAboutFewRows(count_asked_rows(), rows)))
         {
-            ChunkedState<State> state(key_columns, key_sizes, nullptr, {.skips_rows = skips_rows});
-            run(state);
+            run.template operator()<ChunkedState<State>>();
             return;
         }
     }
-    State state(key_columns, key_sizes, nullptr, {.skips_rows = skips_rows});
-    run(state);
+    run.template operator()<State>();
 }
 
 namespace columns_hashing_impl

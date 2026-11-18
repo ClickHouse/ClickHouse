@@ -221,7 +221,7 @@ namespace
 /// rows are inserted into the set). `mask[i] == 0` marks rows excluded from the deduplication - known
 /// duplicates by the `LowCardinality` dictionary index, or `NULL`-key rows in the `skip_null_keys` mode -
 /// which are never inserted; `mask` may be `nullptr`.
-template <typename Method>
+template <typename Method, typename State>
 void buildDistinctFilter(
     Method & method,
     const ColumnRawPtrs & key_columns,
@@ -231,38 +231,34 @@ void buildDistinctFilter(
     SetVariants & variants,
     const IColumn::Filter * mask)
 {
-    auto run = [&](auto & state) ALWAYS_INLINE
+    State state(key_columns, key_sizes, /*context=*/ nullptr, {.skips_rows = mask != nullptr});
+
+    if (mask)
     {
-        if (mask)
+        for (size_t i = 0; i < rows; ++i)
         {
-            for (size_t i = 0; i < rows; ++i)
+            if (!(*mask)[i])
             {
-                if (!(*mask)[i])
-                {
-                    /// The row is excluded from the deduplication, skip insertion.
-                    filter[i] = 0;
-                    continue;
-                }
-
-                auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
-                filter[i] = emplace_result.isInserted();
+                /// The row is excluded from the deduplication, skip insertion.
+                filter[i] = 0;
+                continue;
             }
+
+            auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+            filter[i] = emplace_result.isInserted();
         }
-        else
+    }
+    else
+    {
+        for (size_t i = 0; i < rows; ++i)
         {
-            for (size_t i = 0; i < rows; ++i)
-            {
-                auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+            auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
 
-                /// Emit the record if there is no such key in the current set yet.
-                /// Skip it otherwise.
-                filter[i] = emplace_result.isInserted();
-            }
+            /// Emit the record if there is no such key in the current set yet.
+            /// Skip it otherwise.
+            filter[i] = emplace_result.isInserted();
         }
-    };
-
-    ColumnsHashing::withStateForAskedRows<typename Method::State>(
-        key_columns, key_sizes, rows, mask != nullptr, [&] { return countBytesInFilter(*mask); }, run);
+    }
 }
 
 /// Keep checked insertion out of line to leave the bulk-insertion loop's generated code compact.
@@ -581,7 +577,15 @@ DistinctSetFilter::FilterResult DistinctSetFilter::filterImpl(Chunk chunk, const
             processed_rows = buildDistinctFilterWithInsertionCheck(
                 method, column_ptrs, key_sizes, filter_values, num_rows, *data, *can_insert);
         else
-            buildDistinctFilter(method, column_ptrs, key_sizes, filter_values, num_rows, *data, mask);
+        {
+            using Method = std::decay_t<decltype(method)>;
+            ColumnsHashing::withStateForAskedRows<typename Method::State>(
+                num_rows,
+                mask != nullptr,
+                [&] { return countBytesInFilter(*mask); },
+                [&]<typename State>() ALWAYS_INLINE
+                { buildDistinctFilter<Method, State>(method, column_ptrs, key_sizes, filter_values, num_rows, *data, mask); });
+        }
     });
 
     const auto new_set_size = data->getTotalRowCount();

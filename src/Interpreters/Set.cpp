@@ -339,24 +339,37 @@ void NO_INLINE Set::insertFromBlockImpl(
     ConstNullMapPtr null_map,
     ColumnUInt8::Container * out_filter)
 {
+    auto insert = [&]<bool has_null_map, bool build_filter>() ALWAYS_INLINE
+    {
+        ColumnsHashing::withStateForAskedRows<typename Method::State>(
+            rows,
+            has_null_map,
+            [&] { return rows - countBytesInFilter(null_map->data(), 0, rows); },
+            [&]<typename State>() ALWAYS_INLINE
+            {
+                insertFromBlockImplCase<Method, State, has_null_map, build_filter>(
+                    method, key_columns, rows, variants, null_map, out_filter);
+            });
+    };
+
     if (null_map)
     {
         if (out_filter)
-            insertFromBlockImplCase<Method, true, true>(method, key_columns, rows, variants, null_map, out_filter);
+            insert.template operator()<true, true>();
         else
-            insertFromBlockImplCase<Method, true, false>(method, key_columns, rows, variants, null_map, out_filter);
+            insert.template operator()<true, false>();
     }
     else
     {
         if (out_filter)
-            insertFromBlockImplCase<Method, false, true>(method, key_columns, rows, variants, null_map, out_filter);
+            insert.template operator()<false, true>();
         else
-            insertFromBlockImplCase<Method, false, false>(method, key_columns, rows, variants, null_map, out_filter);
+            insert.template operator()<false, false>();
     }
 }
 
 
-template <typename Method, bool has_null_map, bool build_filter>
+template <typename Method, typename State, bool has_null_map, bool build_filter>
 void NO_INLINE Set::insertFromBlockImplCase(
     Method & method,
     const ColumnRawPtrs & key_columns,
@@ -365,32 +378,28 @@ void NO_INLINE Set::insertFromBlockImplCase(
     [[maybe_unused]] ConstNullMapPtr null_map,
     [[maybe_unused]] ColumnUInt8::Container * out_filter)
 {
-    auto run = [&](auto & state) ALWAYS_INLINE
+    State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
+
+    /// For all rows
+    for (size_t i = 0; i < rows; ++i)
     {
-        /// For all rows
-        for (size_t i = 0; i < rows; ++i)
+        if constexpr (has_null_map)
         {
-            if constexpr (has_null_map)
+            if ((*null_map)[i])
             {
-                if ((*null_map)[i])
+                if constexpr (build_filter)
                 {
-                    if constexpr (build_filter)
-                    {
-                        (*out_filter)[i] = false;
-                    }
-                    continue;
+                    (*out_filter)[i] = false;
                 }
+                continue;
             }
-
-            [[maybe_unused]] auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
-
-            if constexpr (build_filter)
-                (*out_filter)[i] = emplace_result.isInserted();
         }
-    };
 
-    ColumnsHashing::withStateForAskedRows<typename Method::State>(
-        key_columns, key_sizes, rows, has_null_map, [&] { return rows - countBytesInFilter(null_map->data(), 0, rows); }, run);
+        [[maybe_unused]] auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+
+        if constexpr (build_filter)
+            (*out_filter)[i] = emplace_result.isInserted();
+    }
 }
 
 
@@ -831,15 +840,25 @@ void NO_INLINE Set::executeImpl(
     size_t rows,
     ConstNullMapPtr null_map) const
 {
+    auto execute = [&]<bool has_null_map>() ALWAYS_INLINE
+    {
+        ColumnsHashing::withStateForAskedRows<typename Method::State>(
+            rows,
+            has_null_map,
+            [&] { return rows - countBytesInFilter(null_map->data(), 0, rows); },
+            [&]<typename State>() ALWAYS_INLINE
+            { executeImplCase<Method, State, has_null_map>(method, key_columns, vec_res, negative, rows, null_map); });
+    };
+
     /// `execute` casts most keys with `castColumnAccurateOrNull`, so a probe without NULLs has an all-zero null map.
     if (null_map && !memoryIsZero(null_map->data(), 0, rows))
-        executeImplCase<Method, true>(method, key_columns, vec_res, negative, rows, null_map);
+        execute.template operator()<true>();
     else
-        executeImplCase<Method, false>(method, key_columns, vec_res, negative, rows, null_map);
+        execute.template operator()<false>();
 }
 
 
-template <typename Method, bool has_null_map>
+template <typename Method, typename State, bool has_null_map>
 void NO_INLINE Set::executeImplCase(
     Method & method,
     const ColumnRawPtrs & key_columns,
@@ -849,35 +868,30 @@ void NO_INLINE Set::executeImplCase(
     ConstNullMapPtr null_map) const
 {
     Arena pool;
+    State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
 
-    auto run = [&](auto & state) ALWAYS_INLINE
+    /// Clustered key columns (e.g. a primary key prefix) arrive in runs of equal consecutive
+    /// rows. The consecutive-keys optimization in ColumnsHashing handles them inside `findKey`:
+    /// the last-element cache compares the key with the previous row's before probing the hash
+    /// table, and `HashMethodHashed` additionally compares the raw key bytes before even
+    /// calculating the hash.
+    ///
+    /// Since LLVM 23 a reference argument is known to be dereferenceable only at function entry, so after the calls
+    /// above the loads of the hash table fields (`buf`, `mask`, `has_zero`), which are conditional on the consecutive-keys
+    /// and zero-key checks, could no longer be hoisted and were repeated on every row. The assumption hoists them again.
+    __builtin_assume_dereferenceable(&method.data, sizeof(method.data));
+    for (size_t i = 0; i < rows; ++i)
     {
-        /// Clustered key columns (e.g. a primary key prefix) arrive in runs of equal consecutive
-        /// rows. The consecutive-keys optimization in ColumnsHashing handles them inside `findKey`:
-        /// the last-element cache compares the key with the previous row's before probing the hash
-        /// table, and `HashMethodHashed` additionally compares the raw key bytes before even
-        /// calculating the hash.
-        ///
-        /// Since LLVM 23 a reference argument is known to be dereferenceable only at function entry, so after the calls
-        /// above the loads of the hash table fields (`buf`, `mask`, `has_zero`), which are conditional on the consecutive-keys
-        /// and zero-key checks, could no longer be hoisted and were repeated on every row. The assumption hoists them again.
-        __builtin_assume_dereferenceable(&method.data, sizeof(method.data));
-        for (size_t i = 0; i < rows; ++i)
+        if (has_null_map && (*null_map)[i])
         {
-            if (has_null_map && (*null_map)[i])
-            {
-                vec_res[i] = negative;
-            }
-            else
-            {
-                auto find_result = state.findKey(method.data, i, pool);
-                vec_res[i] = negative ^ find_result.isFound();
-            }
+            vec_res[i] = negative;
         }
-    };
-
-    ColumnsHashing::withStateForAskedRows<typename Method::State>(
-        key_columns, key_sizes, rows, has_null_map, [&] { return rows - countBytesInFilter(null_map->data(), 0, rows); }, run);
+        else
+        {
+            auto find_result = state.findKey(method.data, i, pool);
+            vec_res[i] = negative ^ find_result.isFound();
+        }
+    }
 }
 
 
