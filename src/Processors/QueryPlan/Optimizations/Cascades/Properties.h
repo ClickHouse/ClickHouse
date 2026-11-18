@@ -22,11 +22,17 @@ struct DistributionDescription
     Names hash_type_names;
     bool is_replicated = false;     /// All data is replicated to all nodes, so any distribution is satisfied. E.g. for small tables that are broadcasted to all nodes.
     size_t node_count = 1;          /// Number of nodes among which data is distributed. E.g. for a shuffle exchange or a partitioned read.
+    /// In a requirement: the input must have this distribution already, `DistributionEnforcer` must not add
+    /// an exchange to make it. In the properties of an expression: the expression has its distribution
+    /// without such an exchange, so it satisfies such a requirement. Exchanges that an operator below
+    /// needs for its own work, for example the shuffles of a shuffle join, do not count.
+    /// Only a requirement with distribution columns can have it: without columns nothing gets the mark.
+    bool without_enforcer = false;
 
     bool operator==(const DistributionDescription & other) const = default;
 
     void dump(WriteBuffer & out) const;
-    String dump() const;
+    [[nodiscard]] String dump() const;
 };
 
 /// How one node's streams relate to each other. `sorting` always describes each single
@@ -56,14 +62,14 @@ struct ExpressionProperties
 
     bool operator==(const ExpressionProperties & other) const = default;
 
-    bool isSatisfiedBy(const ExpressionProperties & existing_properties) const;
+    [[nodiscard]] bool isSatisfiedBy(const ExpressionProperties & existing_properties) const;
 
     static bool isSortingSatisfiedBy(const SortDescription & required, const SortDescription & existing);
     static bool isDistributionSatisfiedBy(const DistributionDescription & required, const DistributionDescription & existing);
     static bool isStreamLayoutSatisfiedBy(const ExpressionProperties & required, const ExpressionProperties & existing);
 
     void dump(WriteBuffer & out) const;
-    String dump() const;
+    [[nodiscard]] String dump() const;
 };
 
 struct ExpressionPropertiesHash
@@ -72,6 +78,7 @@ struct ExpressionPropertiesHash
     {
         size_t h = std::hash<size_t>()(props.distribution.node_count);
         boost::hash_combine(h, props.distribution.is_replicated);
+        boost::hash_combine(h, props.distribution.without_enforcer);
         for (const auto & col_set : props.distribution.columns)
         {
             /// Equal sets must hash equally regardless of insertion order.
