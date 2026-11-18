@@ -262,3 +262,16 @@ SYSTEM FLUSH LOGS part_log;
 SELECT 'empty part', sum(ProfileEvents['MutationCreatedEmptyParts']) FROM system.part_log WHERE event_date >= yesterday() AND database = currentDatabase() AND table = 't_non_key' AND event_type = 'MutatePart';
 SELECT count() FROM t_non_key;
 DROP TABLE t_non_key;
+
+-- 22. A condition without columns that is not a literal, e.g. `materialize(1)`, is not evaluated for counting, so the mutation completes
+-- as on master: its rows are counted when it is the only command, and not counted together with another command (a known limitation)
+SELECT '-- not a literal';
+DROP TABLE IF EXISTS t_not_literal;
+CREATE TABLE t_not_literal (id UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_not_literal SELECT number FROM numbers(10);
+ALTER TABLE t_not_literal DELETE WHERE materialize(1) SETTINGS mutations_sync = 1;
+INSERT INTO t_not_literal SELECT number FROM numbers(10);
+ALTER TABLE t_not_literal DELETE WHERE materialize(1), DELETE WHERE 0 SETTINGS mutations_sync = 1;
+SELECT command, affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_not_literal' ORDER BY toUInt64(extract(mutation_id, '\\d+')), command;
+SELECT count() FROM t_not_literal;
+DROP TABLE t_not_literal;

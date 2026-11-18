@@ -77,3 +77,8 @@ empty part	1
 (DELETE WHERE 0)	0
 empty part	1
 0
+-- not a literal
+(DELETE WHERE materialize(1))	10
+(DELETE WHERE 0)	0
+(DELETE WHERE materialize(1))	0
+0

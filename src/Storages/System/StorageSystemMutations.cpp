@@ -119,7 +119,8 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
         { "affected_rows",                std::make_shared<DataTypeUInt64>(),
             "The number of rows affected by the command in the parts mutated so far for merge tree and replicated merge tree tables: deleted by a `DELETE` command or updated by an `UPDATE` command. A row is counted for the first command that deletes it, "
             "and for each command that updates it, even if its values do not change. For `ReplicatedMergeTree`, only the parts mutated by this replica are counted, not the parts fetched from other replicas. "
-            "The value is tracked in memory and is reset when the table is reloaded (e.g. on server restart)."
+            "The value is tracked in memory and is reset when the table is reloaded (e.g. on server restart). It is best effort: `0` can also mean that the rows "
+            "were not counted, e.g. for a part deleted entirely by several `DELETE` commands applied together whose conditions are not all literals."
         },
     };
 }

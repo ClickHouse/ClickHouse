@@ -3001,10 +3001,13 @@ for `MergeTree` and `ReplicatedMergeTree` tables. It counts:
 The commands are counted in the order they are applied, and the counts are the same whether the mutations are applied to a part together or one by one, except for the cases in the note below. For `ReplicatedMergeTree`, only the parts mutated by this replica are counted, not the parts fetched from other replicas.
 
 <Note>
+`affected_rows` is best effort: `0` can also mean that the rows were not counted.
+
 `affected_rows` is tracked in memory only. When the table is reloaded (for example, on server restart), it starts again from `0` and counts only the parts mutated after the reload, so a mutation that was finished before the reload shows `0`.
 
 The counts of the commands applied to a part together can differ from the counts when they are applied one by one:
 - If consecutive lightweight deletes are coalesced into one command (see the `enable_row_mask_update_coalescing` MergeTree setting), all the rows they delete are counted for the first of them, and the others show `0`.
+- If several `DELETE` commands together delete all rows of a part, the part is replaced by an empty one without being read. Its rows are counted only if all conditions are literals (for example, `DELETE WHERE 1, DELETE WHERE 0`), and the first true one gets them; otherwise, or if the part has rows deleted by an earlier lightweight delete, all these commands show `0` for that part. For example, `DELETE WHERE id < 6, DELETE WHERE id >= 4` on a part of ten rows shows `0` and `0`, and `6` and `4` when applied one by one.
 - If a command with a constant condition deletes all rows (for example, `DELETE WHERE 1`), and it is applied together with an `UPDATE` command, the part is not read, so this command and the commands applied before it show `0` for that part.
 </Note>
 
