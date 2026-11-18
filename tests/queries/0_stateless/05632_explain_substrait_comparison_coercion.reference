@@ -1,0 +1,8 @@
+The narrower float is cast to the wider one, whichever side it is on
+[{"fp64":{"nullability":"NULLABILITY_REQUIRED"}}]	
+	[{"fp64":{"nullability":"NULLABILITY_REQUIRED"}}]
+An integer and a float have no common type, whichever side they are on
+The query plan cannot be serialized to Substrait. Blocking steps:
+  Filter ((WHERE + Change column names to column identifiers)): no exact coercion from fp64 to i32, in less(__table1.i32, __table1.f64)
+The query plan cannot be serialized to Substrait. Blocking steps:
+  Filter ((WHERE + Change column names to column identifiers)): no exact coercion from i32 to fp64, in less(__table1.f64, __table1.i32)

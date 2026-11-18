@@ -54,6 +54,15 @@ const ActionsDAG::Node & unalias(const ActionsDAG::Node & node)
     return *current;
 }
 
+bool isWideningCast(std::string_view from_short, std::string_view to_short)
+{
+    const auto from_rank = substraitSignedIntRank(from_short);
+    const auto to_rank = substraitSignedIntRank(to_short);
+    const bool int_widening = from_rank != 0 && to_rank != 0 && from_rank < to_rank;
+    const bool fp_widening = from_short == "fp32" && to_short == "fp64";
+    return int_widening || fp_widening;
+}
+
 /// How arguments of function are brought to the types of a concrete Substrait overload.
 enum class Coercion : uint8_t
 {
@@ -636,11 +645,7 @@ SubstraitExpressionConverter::coerceArgument(ConvertedExpression & arg, std::str
                 current_short,
                 desired_short_name));
 
-    const auto current_rank = substraitSignedIntRank(current_short);
-    const auto desired_rank = substraitSignedIntRank(desired_short_name);
-    const bool int_widening = current_rank != 0 && desired_rank != 0 && current_rank < desired_rank;
-    const bool fp_widening = current_short == "fp32" && desired_short_name == "fp64";
-    if (!int_widening && !fp_widening)
+    if (!isWideningCast(current_short, desired_short_name))
         return blocked(fmt::format("no exact coercion from {} to {}", current_short, desired_short_name));
 
     substrait::Type target_type = makeSimpleSubstraitType(desired_short_name, nullable);
@@ -714,28 +719,17 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
     else if (mapping.coercion == Coercion::ToCommonType)
     {
         /// ClickHouse compares mixed types natively, Substrait can't, so we cast to one common type and admit only value-preserving ones.
-        /// The pick is the widest type among the non-constant arguments.
-        /// Constants do not participate as they can be casted to any type that holds their value, while a column needs a real cast.
-        std::vector<String> non_constant_shorts;
+        /// We pick the widest type among the non-constant arguments. A constant is rewritten as a literal of that type if it fits.
         for (const auto & arg : args)
-            if (!isConstantNode(*arg.node))
-                non_constant_shorts.push_back(substraitTypeShortName(arg.type, extensions));
-
-        if (non_constant_shorts.empty())
-            coercion_target = substraitTypeShortName(args.front().type, extensions);
-        else if (std::ranges::all_of(non_constant_shorts, [&](const auto & s) { return s == non_constant_shorts.front(); }))
-            coercion_target = non_constant_shorts.front();
-        else
         {
-            /// TODO: Mixed fp32 and fp64 blocks here, though coerceArgument can widen fp32 to fp64. The picker could say fp64.
-            for (const auto & s : non_constant_shorts)
-            {
-                if (substraitSignedIntRank(s) == 0)
-                    return blocked(fmt::format("arguments of {} have incompatible types ({})", name, fmt::join(non_constant_shorts, ", ")));
-                if (coercion_target.empty() || substraitSignedIntRank(s) > substraitSignedIntRank(coercion_target))
-                    coercion_target = s;
-            }
+            if (isConstantNode(*arg.node))
+                continue;
+            auto arg_short = substraitTypeShortName(arg.type, extensions);
+            if (coercion_target.empty() || isWideningCast(coercion_target, arg_short))
+                coercion_target = std::move(arg_short);
         }
+        if (coercion_target.empty())
+            coercion_target = substraitTypeShortName(args.front().type, extensions);
     }
     if (!coercion_target.empty())
         for (auto & arg : args)
@@ -770,8 +764,7 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
     const std::string_view declared_return = overload.return_type;
     const String signature = fmt::format("{}:{}", mapping.substrait_name, fmt::join(overload.arg_types, "_"));
 
-    /// A Substrait result is nullable when any of its arguments is nullable in Substrait.
-    /// ClickHouse can disagree. `sum(x)` under `GROUP BY` is nullable in Substrait but not in ClickHouse.
+    /// A Substrait result is nullable when any of its arguments is nullable in Substrait. ClickHouse can disagree.
     const bool any_arg_nullable = std::ranges::any_of(args, [](const auto & a) { return isSubstraitTypeNullable(a.type); });
     const bool result_nullable = any_arg_nullable && !mapping.never_null;
     if (isNullableOrLowCardinalityNullable(node.result_type) && !result_nullable)
