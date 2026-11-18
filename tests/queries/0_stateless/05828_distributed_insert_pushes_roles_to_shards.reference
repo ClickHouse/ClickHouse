@@ -5,6 +5,8 @@ ACCESS_DENIED
 -- async, batch
 -- async, push_external_roles_in_interserver_queries = 0
 ACCESS_DENIED
+-- async, batch, role revoked before the send
+ACCESS_DENIED
 -- target
 1
 2
