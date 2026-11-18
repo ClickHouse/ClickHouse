@@ -174,7 +174,8 @@ void DistinctTransform::buildSetFilter(
     SetVariants & variants,
     const IColumn::Filter * mask) const
 {
-    typename Method::State state(columns, key_sizes, nullptr);
+    /// With a `LowCardinality` mask most rows are skipped, so a method must not prepare (hash) keys of rows ahead.
+    typename Method::State state(columns, key_sizes, nullptr, {.skips_rows = mask != nullptr});
 
     if (mask)
     {
@@ -214,7 +215,8 @@ void DistinctTransform::buildCombinedFilter(
     size_t & passed_bf,
     const IColumn::Filter * mask) const
 {
-    typename Method::State state(columns, key_sizes, nullptr);
+    /// With a `LowCardinality` mask most rows are skipped, so a method must not prepare (hash) keys of rows ahead.
+    typename Method::State state(columns, key_sizes, nullptr, {.skips_rows = mask != nullptr});
     typename std::remove_reference_t<decltype(method.data)>::LookupResult it;
 
     for (size_t i = 0; i < rows; ++i)
@@ -262,7 +264,8 @@ void DistinctTransform::checkSetFilter(
     size_t & passed_bf,
     const IColumn::Filter * mask) const
 {
-    typename Method::State state(columns, key_sizes, nullptr);
+    /// With a `LowCardinality` mask most rows are skipped, so a method must not prepare (hash) keys of rows ahead.
+    typename Method::State state(columns, key_sizes, nullptr, {.skips_rows = mask != nullptr});
 
     for (size_t i = 0; i < rows; ++i)
     {
@@ -291,7 +294,8 @@ void DistinctTransform::buildSetParallelFilter(
     ThreadPool & thread_pool,
     const IColumn::Filter * mask) const
 {
-    typename Method::State state(columns, key_sizes, nullptr);
+    /// With a `LowCardinality` mask most rows are skipped, so a method must not prepare (hash) keys of rows ahead.
+    typename Method::State state(columns, key_sizes, nullptr, {.skips_rows = mask != nullptr});
     using KeyHolder = decltype(state.getKeyHolder(std::declval<size_t>(), std::declval<Arena &>()));
 
     const size_t num_coarse_buckets = thread_pool.getMaxThreads();
