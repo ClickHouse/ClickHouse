@@ -110,7 +110,7 @@ Int64 Reader::varLong()
 
 std::optional<String> Reader::nullableString()
 {
-    Int64 size;
+    Int64 size = 0;
     if (flexible)
         size = static_cast<Int64>(unsignedVarInt()) - 1;
     else
@@ -131,7 +131,7 @@ String Reader::string()
 
 std::optional<String> Reader::nullableBytes()
 {
-    Int64 size;
+    Int64 size = 0;
     if (flexible)
         size = static_cast<Int64>(unsignedVarInt()) - 1;
     else
@@ -144,7 +144,7 @@ std::optional<String> Reader::nullableBytes()
 
 Int32 Reader::arrayLength()
 {
-    Int64 size;
+    Int64 size = 0;
     if (flexible)
         size = static_cast<Int64>(unsignedVarInt()) - 1;
     else
@@ -577,6 +577,7 @@ ErrorCode getCurrentExceptionKafkaErrorCode()
     }
     catch (...)
     {
+        /// Ok: any other exception is reported to the client as an unknown server error.
         return ErrorCode::UNKNOWN_SERVER_ERROR;
     }
 }

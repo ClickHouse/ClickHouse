@@ -333,7 +333,7 @@ String KafkaHandler::advertisedHost()
 
     String host = socket().address().host().toString();
     /// An IPv4 address in the form of an IPv6 address.
-    if (host.starts_with("::ffff:") && host.find('.') != String::npos)
+    if (host.starts_with("::ffff:") && host.contains('.'))
         host = host.substr(strlen("::ffff:"));
     return host;
 }

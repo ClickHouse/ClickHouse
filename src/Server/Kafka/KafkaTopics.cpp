@@ -43,6 +43,7 @@
 #include <Storages/MergeTree/Streaming/Subscription/MergeTreeBoundsSubscription.h>
 #include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageProxy.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <mutex>
@@ -112,7 +113,8 @@ std::optional<Int32> Topic::partitionIndex(const String & partition_id) const
 namespace
 {
 
-TopicResolution makeTopic(const String & name, const StorageID & table_id, StoragePtr storage, const BrokerSettings & settings)
+TopicResolution makeTopic(
+    const String & name, const StorageID & table_id, StoragePtr storage, const BrokerSettings & settings, DeferredTable deferred_table)
 {
     TopicResolution res;
     auto fail = [&](String message)
@@ -122,7 +124,8 @@ TopicResolution makeTopic(const String & name, const StorageID & table_id, Stora
         return res;
     };
 
-    auto * data = dynamic_cast<MergeTreeData *>(storage.get());
+    /// The raw pointer stays valid while `topic->storage` holds the table, including through a proxy.
+    auto * data = castStorage<MergeTreeData>(storage, deferred_table).get();
     if (!data || !storage->supportsStreaming())
         return fail(fmt::format("Table {} is not a MergeTree table", table_id.getNameForLogs()));
 
@@ -309,7 +312,7 @@ TopicResolution resolveTopic(const String & name, const BrokerSettings & setting
         return res;
     }
 
-    return makeTopic(name, storage->getStorageID(), storage, settings);
+    return makeTopic(name, storage->getStorageID(), storage, settings, DeferredTable::Load);
 }
 
 std::vector<String> listTopics(const BrokerSettings & settings, ContextPtr context)
@@ -329,7 +332,7 @@ std::vector<String> listTopics(const BrokerSettings & settings, ContextPtr conte
         if (!storage)
             continue;
 
-        if (makeTopic(it->name(), storage->getStorageID(), storage, settings).topic)
+        if (makeTopic(it->name(), storage->getStorageID(), storage, settings, DeferredTable::Skip).topic)
             res.push_back(it->name());
     }
 
