@@ -260,7 +260,7 @@ public:
     /// All overrides must be done on `mergeImpl` below.
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const
     {
-        chassert(place != rhs, "IAggregateFunction::merge called with the same source and destination state");
+        chassert(!isSelfMerge(place, rhs), "IAggregateFunction::merge called with the same source and destination state");
         mergeImpl(place, rhs, arena);
     }
 
@@ -291,6 +291,10 @@ public:
     /// to `addBatchSinglePlace` for ranges of consecutive equal keys.
     virtual bool canOptimizeEqualKeysRanges() const { return true; }
 
+    /// Return true if adding a value that the state has already received leaves the state unchanged,
+    /// so that a caller may skip repeated values.
+    virtual bool ignoresRepeatedValues() const { return false; }
+
     /// Should be used only if isAbleToParallelizeMerge() returned true.
     /// Non-virtual public entry point that asserts the source and destination states do not alias.
     /// All overrides must be done on `mergeImpl` below.
@@ -301,7 +305,7 @@ public:
         std::atomic<bool> & is_cancelled,
         Arena * arena) const
     {
-        chassert(place != rhs, "IAggregateFunction::merge called with the same source and destination state");
+        chassert(!isSelfMerge(place, rhs), "IAggregateFunction::merge called with the same source and destination state");
         mergeImpl(place, rhs, thread_pool, is_cancelled, arena);
     }
 
@@ -325,6 +329,7 @@ public:
 
     /// Merges states (on which src places points to) with other states (on which dst places points to) of current aggregation function
     /// then destroy states (on which src places points to).
+    /// If it throws, every source state of the batch has been destroyed.
     virtual void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * src_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const = 0;
 
     /// Same as `mergeAndDestroyBatch`, but pairs of states that are too large to merge serially on this
@@ -382,6 +387,11 @@ public:
 
     /// Devirtualize create and deserialize calls. Used in deserialization of ColumnAggregateFunction.
     virtual void createAndDeserializeBatch(PaddedPODArray<AggregateDataPtr> & data, AggregateDataPtr __restrict place, size_t total_size_of_state, size_t limit, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const = 0;
+
+    /// Sets a just-created state to what it would be after aggregating `count` rows whose values add up to `sum`, for
+    /// callers that already know both (e.g. the aggregation from column statistics). Implemented by `sum`, `avg` and
+    /// `sumCount`; `sum` is a `Field` of the result type of `sum` over the argument. Other functions throw.
+    virtual void setSumAndCount(AggregateDataPtr __restrict place, const Field & sum, UInt64 count) const;
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
     virtual bool allocatesMemoryInArena() const = 0;
@@ -666,6 +676,12 @@ public:
     virtual llvm::Value * compileGetResult(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const;
 
 protected:
+    /// Distinct zero-size states can share an address: a zero-byte arena allocation does not advance the arena.
+    [[nodiscard]] bool isSelfMerge(ConstAggregateDataPtr place, ConstAggregateDataPtr rhs) const { return place == rhs && sizeOfData() != 0; }
+
+    /// Throws if the failpoint `aggregator_merge_batch_throw` is enabled.
+    static void injectMergeBatchFault();
+
     DataTypes argument_types;
     Array parameters;
     DataTypePtr result_type;
@@ -877,7 +893,7 @@ public:
                 /// Devirtualized call to `mergeImpl`; the public non-virtual `merge` performs
                 /// the same self-aliasing check, but we add it here to keep the assertion
                 /// when calling `mergeImpl` directly bypasses the wrapper.
-                chassert(places[i] + place_offset != rhs[i],
+                chassert(!this->isSelfMerge(places[i] + place_offset, rhs[i]),
                          "IAggregateFunction::mergeBatch called with the same source and destination state");
                 if constexpr (Derived::parallelizeMergeWithKey())
                     static_cast<const Derived *>(this)->mergeImpl(places[i] + place_offset, rhs[i], thread_pool, is_cancelled, arena);
@@ -889,16 +905,29 @@ public:
 
     void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * rhs_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
-        for (size_t i = 0; i < size; ++i)
+        size_t i = 0;
+        try
         {
-            chassert(dst_places[i] + offset != rhs_places[i] + offset,
-                     "IAggregateFunction::mergeAndDestroyBatch called with the same source and destination state");
-            if constexpr (Derived::parallelizeMergeWithKey())
-                static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, thread_pool, is_cancelled, arena);
-            else
-                static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, arena);
+            for (; i < size; ++i)
+            {
+                if (unlikely(i == 1))
+                    injectMergeBatchFault();
 
-            static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
+                chassert(!this->isSelfMerge(dst_places[i] + offset, rhs_places[i] + offset),
+                         "IAggregateFunction::mergeAndDestroyBatch called with the same source and destination state");
+                if constexpr (Derived::parallelizeMergeWithKey())
+                    static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, thread_pool, is_cancelled, arena);
+                else
+                    static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, arena);
+
+                static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
+            }
+        }
+        catch (...)
+        {
+            /// `destroy` does not throw, so the sources from `i` on are not destroyed yet.
+            destroyBatch(i, size, rhs_places, offset);
+            throw;
         }
     }
 
@@ -1115,17 +1144,17 @@ public:
         data(place).~Data();
     }
 
-    bool hasTrivialDestructor() const override
+    [[nodiscard]] bool hasTrivialDestructor() const override
     {
         return std::is_trivially_destructible_v<Data>;
     }
 
-    size_t sizeOfData() const override
+    [[nodiscard]] size_t sizeOfData() const override
     {
         return sizeof(Data);
     }
 
-    size_t alignOfData() const override
+    [[nodiscard]] size_t alignOfData() const override
     {
         return alignof(Data);
     }

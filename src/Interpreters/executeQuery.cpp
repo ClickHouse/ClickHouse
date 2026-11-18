@@ -27,6 +27,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
+#include <IO/MemoryReadWriteBuffer.h>
 #include <IO/copyData.h>
 
 #include <Processors/ProcessorsProfileLogInfo.h>
@@ -84,6 +85,8 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryExecutionCounters.h>
+#include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
+#include <Processors/QueryPlan/Profiling/Render/FlatJSONPlanRenderer.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/SessionQueryIdsHistory.h>
 #include <IO/AsyncReadCounters.h>
@@ -207,6 +210,7 @@ namespace Setting
     extern const SettingsBool log_formatted_queries;
     extern const SettingsBool log_profile_events;
     extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsUInt64 log_query_plans_max_size;
     extern const SettingsBool log_queries;
     extern const SettingsMilliseconds log_queries_min_query_duration_ms;
     extern const SettingsLogQueriesType log_queries_min_type;
@@ -312,6 +316,8 @@ namespace FailPoints
     extern const char terminate_with_std_exception[];
     extern const char libcxx_hardening_out_of_bounds_assertion[];
     extern const char trigger_sanitizer_error[];
+    extern const char segfault_read_access[];
+    extern const char segfault_write_access[];
 }
 
 static TSA_NO_THREAD_SAFETY_ANALYSIS void triggerSanitizerError()
@@ -755,7 +761,7 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
     return res;
 }
 
-static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage /*query_result_cache_usage*/, bool pulling_pipeline)
+static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage /*query_result_cache_usage*/, bool pulling_pipeline, const ContextPtr & context)
 {
     /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
     /// prevent partial/garbage results in case of exceptions during query execution.
@@ -779,6 +785,9 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
         query_pipeline.tryGetResultRowsAndBytes(result_rows, result_bytes);
         result_progress = std::make_optional<ResultProgress>(result_rows, result_bytes, 0);
     }
+
+    if (auto plan_log_capture = context->getPlanLogCapture())
+        plan_log_capture->captureStatistics(query_pipeline);
 
     /// Reset pipeline before fetching profile counters
     query_pipeline.reset();
@@ -906,6 +915,74 @@ static void excludeFromOuterQueryQuota(const ASTPtr & query_ast, const QueryStat
 }
 
 
+/// The document is written into a buffer that grows from here up to the limit, rather than
+/// starting at `DBMS_DEFAULT_BUFFER_SIZE`, which every plan would then allocate in full.
+static constexpr size_t PLAN_RENDER_INITIAL_CHUNK_SIZE = 4096;
+
+/// A row whose plan could not be written says why, in place of the plan.
+static void writeQueryPlanError(String & query_plan, const String & reason)
+{
+    query_plan.clear();
+    try
+    {
+        WriteBufferFromString out(query_plan);
+        FlatJSONPlanRenderer::renderError(reason, out);
+        out.finalize();
+    }
+    catch (...)
+    {
+        /// Ok to swallow: writing the error itself failed. An empty column takes its default of an
+        /// empty JSON object; a half-written document would not be valid JSON.
+        query_plan.clear();
+    }
+}
+
+static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
+{
+    auto plan_log_capture = context->getPlanLogCapture();
+    if (!plan_log_capture)
+        return;
+
+    const auto & captured = plan_log_capture->getCapturedPlan();
+    if (!captured)
+        return;
+
+    /// Runs on the logging path of a query that has already returned its result, so failing to
+    /// write the plan must not fail the query. Producing the document is also the one part of
+    /// profiling that allocates in proportion to the plan, hence the blocker.
+    MemoryTrackerBlockerInThread block_memory_tracker;
+
+    const size_t max_size = context->getSettingsRef()[Setting::log_query_plans_max_size];
+
+    try
+    {
+        /// A query decides how much text its own plan contains, so the document is written into a
+        /// buffer that cannot grow past the limit rather than measured once it already has.
+        /// `MemoryWriteBuffer` throws rather than allocate the chunk that would cross it.
+        MemoryWriteBuffer plan_buffer(max_size, PLAN_RENDER_INITIAL_CHUNK_SIZE);
+        FlatJSONPlanRenderer renderer;
+        renderer.render(*captured, plan_buffer);
+        plan_buffer.finalize();
+
+        WriteBufferFromString out(elem.query_plan);
+        copyData(*plan_buffer.tryGetReadBuffer(), out);
+        out.finalize();
+    }
+    catch (const WriteBuffer::CurrentBufferExhausted &)
+    {
+        /// Not logged: a plan over the limit is a query's own doing, not a fault of the server,
+        /// and the row carries the reason. The exception says only that a buffer ran out, naming
+        /// neither the plan nor the setting, so the message is written here instead.
+        writeQueryPlanError(
+            elem.query_plan,
+            fmt::format("The query plan does not fit in {} bytes, the limit set by log_query_plans_max_size", max_size));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        writeQueryPlanError(elem.query_plan, getCurrentExceptionMessage(/*with_stacktrace=*/ false));
+    }
+}
 static void logQueryFinishImpl(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
@@ -987,7 +1064,10 @@ static void logQueryFinishImpl(
                 elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
             if (auto query_log = context->getQueryLog())
+            {
+                attachQueryPlan(context, elem);
                 query_log->add([&](QueryLogElement & e) { e = elem; });
+            }
         }
 
         /// Already logged; `elem` lives on in a `BlockIO` callback and this snapshot would outlive the query.
@@ -1041,7 +1121,7 @@ void logQueryFinish(
     bool log_as_internal)
 {
     const auto time_now = std::chrono::system_clock::now();
-    auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
+    auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline, context);
     logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, time_now);
 
     /// The queries finished here (the deferred flush of asynchronous inserts, the tasks of a distributed
@@ -1165,6 +1245,7 @@ void logQueryException(
         if (settings[Setting::log_query_settings] && !elem.query_settings)
             elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
+        attachQueryPlan(context, elem);
         query_log->add([&](QueryLogElement & e) { e = elem; });
     }
 
@@ -1333,6 +1414,7 @@ void logExceptionBeforeStart(
                     "Not adding query settings to 'system.query_log' since setting `log_query_settings` is false"
                     " (the setting was changed for the query).");
 
+            attachQueryPlan(context, elem);
             query_log->add([&](QueryLogElement & e) { e = elem; });
         }
         else if (!settings[Setting::log_queries])
@@ -1470,7 +1552,7 @@ public:
         InterpreterTransactionControlQuery tc(tcl_ast, query_context);
         tc.execute();
     }
-    bool transactionRunning() const { return transaction_running; }
+    [[nodiscard]] bool transactionRunning() const { return transaction_running; }
 
 private:
     bool transaction_running{false};
@@ -1708,7 +1790,7 @@ struct ConstructionSettings
     Float64 offset = 0;
     bool present = false;
 
-    bool empty() const
+    [[nodiscard]] bool empty() const
     {
         return select_expr.empty() && filter_expr.empty() && order_expr.empty() && limit == 0 && offset == 0;
     }
@@ -1983,7 +2065,10 @@ void wrapNestedConstructionSettings(
 /// `(SELECT … SETTINGS limit = 1) UNION ALL (SELECT … SETTINGS filter = 'x')`. When that is the case,
 /// every arm that carries one is wrapped as a derived table with its own
 /// `SELECT` / `WHERE` / `ORDER BY` / `LIMIT` / `OFFSET`, so each arm is shaped independently instead
-/// of the caps collapsing into a single one on the whole union. This runs before the query's own
+/// of the caps collapsing into a single one on the whole union. A parenthesized arm with a `SETTINGS`
+/// clause stays wrapped into its own `ASTSelectWithUnionQuery` (see `ParserUnionQueryElement`), so its
+/// settings are already arm-local and handled as nested ones; this pass sees the arms written without
+/// parentheses, e.g. `SELECT … SETTINGS limit = 1 UNION ALL SELECT …`. This runs before the query's own
 /// `SETTINGS` clause is applied to the context, so the per-arm values are removed from the AST and
 /// never leak into the context as (spurious) query-level settings.
 ///
@@ -2082,8 +2167,8 @@ static void wrapPerArmConstructionSettingsImpl(
         return;
 
     /// Once per-arm mode is on, the LAST arm's own `SETTINGS` is ambiguous: for an unparenthesized union
-    /// the parser carries the trailing *query-level* `SETTINGS` on the last arm, which is indistinguishable
-    /// in the AST from a parenthesized arm-local `SETTINGS`. Treating it as arm-local would silently
+    /// the parser carries the trailing *query-level* `SETTINGS` on the last arm, while the `SETTINGS` of
+    /// the non-last arms written the same way are arm-local. Treating it as arm-local would silently
     /// re-scope a whole-union cap — e.g. `(… SETTINGS limit = 1) UNION ALL … SETTINGS limit = 3` would cap
     /// each arm (1 + 3) instead of the whole union (3). Reject the mixed form rather than guess. Per-arm
     /// settings on a union whose last arm has no settings, or nesting each arm's settings in a subquery
@@ -3213,6 +3298,9 @@ static BlockIO executeQueryImpl(
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
         if (!(out_ast && out_ast->as<ASTShowProcesslistQuery>()))
         {
+            /// Before the workload classifier is acquired in insert: metadata queries are exempt from workload scheduling.
+            if (out_ast && isMetadataQuery(*out_ast))
+                context->setMetadataQuery();
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
             process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, out_ast.get(), context, start_watch.getStart(), internal);
             context->setProcessListElement(process_list_entry->getQueryStatus());
@@ -3482,7 +3570,7 @@ static BlockIO executeQueryImpl(
 
                         /// Records `QueryCacheOnDiskHits` (for a hit on disk), `QueryCacheAgeSeconds`, and what reading the entry amounts
                         /// to (`QueryCacheReadRows`, `QueryCacheReadBytes`, `QueryCacheOnDiskReadBytes`).
-                        reader->hasCacheEntryForKey();
+                        (void)reader->hasCacheEntryForKey();
                         QueryResultCacheReader::recordProbeResult(true);
 
                         result_details.query_cache_entry_created_at = reader->entryCreatedAt();
@@ -3496,6 +3584,11 @@ static BlockIO executeQueryImpl(
                         pipeline.readFromQueryResultCache(reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());
                         res.pipeline = std::move(pipeline);
                         query_result_cache_usage = QueryResultCacheUsage::Read;
+
+                        /// A cache hit builds no plan and runs no pipeline, so there is nothing to
+                        /// capture.
+                        QueryPlanLogCapture::declineCapture(
+                            context, "the result came from the query result cache, so no plan was executed");
 
                         return true;
                     }
@@ -3532,6 +3625,9 @@ static BlockIO executeQueryImpl(
                     context->setQueryMetadataCache(query_metadata_cache);
                 }
 
+                if (QueryPlanLogCapture::canCapturePlan(context, out_ast, internal))
+                    context->enablePlanLogCapture();
+
                 if (out_ast)
                     interpreter = InterpreterFactory::instance().get(
                         out_ast,
@@ -3540,6 +3636,12 @@ static BlockIO executeQueryImpl(
                             .setInternal(internal)
                             .positionalArgumentsAlreadyResolved(!internal && is_secondary_query)
                             .secondaryQueryRoot(!internal && is_secondary_query));
+
+                /// This assignment is done here instead of using the `context` that is available inside the Interpreters
+                /// to avoid situations where Interpreters are created inside the other interpreter and end up overwriting
+                /// the captured plan. For example: recursive CTEs
+                if (interpreter)
+                    interpreter->setPlanLogCapture(context->getPlanLogCapture());
 
                 const auto & query_settings = context->getSettingsRef();
                 if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
@@ -3773,11 +3875,12 @@ static BlockIO executeQueryImpl(
 
             /// The prepare callback flushes pipeline progress and resets the pipeline
             auto finish_callback_finalize_pipeline = [
-                                     query_result_cache_usage,
-                                     // Need to be cached, since will be changed after complete()
-                                     pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
+                query_result_cache_usage,
+                context,
+                // Need to be cached, since will be changed after complete()
+                pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
             {
-                return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
+                return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline, context);
             };
 
             /// The finish callback logs the query result
@@ -4345,6 +4448,16 @@ std::pair<ASTPtr, BlockIO> executeQuery(
         fiu_do_on(FailPoints::trigger_sanitizer_error,
         {
             triggerSanitizerError();
+        });
+
+        fiu_do_on(FailPoints::segfault_read_access,
+        {
+            [[maybe_unused]] int value = *reinterpret_cast<volatile int *>(16);
+        });
+
+        fiu_do_on(FailPoints::segfault_write_access,
+        {
+            *reinterpret_cast<volatile int *>(16) = 1;
         });
     }
 

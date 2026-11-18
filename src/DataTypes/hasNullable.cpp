@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/hasNullable.h>
 
 namespace DB
@@ -50,6 +51,16 @@ bool hasTypeThatCanContainNulls(const DataTypePtr & type)
     if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(type.get()))
         return hasTypeThatCanContainNulls(type_map->getKeyType()) || hasTypeThatCanContainNulls(type_map->getValueType());
     return false;
+}
+
+bool hasTypeThatCanContainFloat(const DataTypePtr & type)
+{
+    return anyInTypeTree(*type, [](const IDataType & node) { return isFloat(node); });
+}
+
+bool hasRuntimeTypedType(const DataTypePtr & type)
+{
+    return anyInTypeTree(*type, [](const IDataType & node) { return isObject(node) || isVariant(node) || isDynamic(node); });
 }
 
 }

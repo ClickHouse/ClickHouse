@@ -2,10 +2,14 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Processors/TopKThresholdTracker.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Functions/FunctionFactory.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
 
@@ -78,10 +82,31 @@ void MergeTreeSkipIndexReader::setTopKPrimaryKeyPruning(size_t primary_key_colum
     top_k_threshold_tracker = std::move(tracker);
 }
 
+void MergeTreeSkipIndexReader::setGlobalRowIndexPruning(DynamicPredicateBuilder predicate_builder)
+{
+    global_row_index_predicate_builder = std::move(predicate_builder);
+
+    /// An atom of the predicate is recognized as an atom on this key by the name of its argument, so the expression
+    /// must be built exactly as `convertRuntimeFilterToKeyConditionDAG` builds it.
+    auto uint64_type = std::make_shared<DataTypeUInt64>();
+    ActionsDAG key_dag;
+    const auto & part_offset = key_dag.addInput("_part_offset", uint64_type);
+    const auto & part_starting_offset = key_dag.addInput("_part_starting_offset", uint64_type);
+    const auto & global_row_index
+        = key_dag.addFunction(FunctionFactory::instance().get("plus", context), {&part_offset, &part_starting_offset}, {});
+    if (global_row_index.result_name != runtime_filter_global_row_index_node_name)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected name {} of the global row index key, expected {}",
+            global_row_index.result_name, runtime_filter_global_row_index_node_name);
+    key_dag.getOutputs() = {&global_row_index};
+
+    global_row_index_key_expression = std::make_shared<ExpressionActions>(std::move(key_dag), ExpressionActionsSettings{});
+}
+
 bool MergeTreeSkipIndexReader::hasRuntimeFilters() const
 {
-    /// The dynamic predicate can prune only through the primary key or dynamic skip indexes.
-    return dynamic_predicate_builder && (prune_primary_key || !dynamic_skip_indexes.empty());
+    /// The dynamic predicate can prune only through the primary key, the global row index
+    /// (`_part_starting_offset + _part_offset`) or the skip indexes on its keys (`dynamic_skip_indexes`).
+    return (dynamic_predicate_builder && (prune_primary_key || !dynamic_skip_indexes.empty())) || global_row_index_predicate_builder;
 }
 
 SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
@@ -115,7 +140,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
-        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index_and_condition.index, metadata_snapshot, all_updated_columns, value_updated_columns, context, part_info->getDataPart().get()); !result)
+        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index_and_condition.index, metadata_snapshot, all_updated_columns, value_updated_columns, context, &part_info->getSecondaryIndexColumnTypes()); !result)
         {
             LOG_TRACE(log, "Cannot use skip index for part {}. Reason: {}", part_info->getPartName(), result.error().text);
             continue;
@@ -157,8 +182,15 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
         total_granules = ranges.getNumberOfMarks();
     }
 
-    /// Prune with a predicate known only at read time (e.g. a JOIN's collected keys).
-    if (dynamic_predicate_builder && !ranges.empty())
+    /// Prune with a predicate known only at read time (e.g. a JOIN's collected keys). The primary key and skip indexes
+    /// get a predicate on their keys only, and the global row index a predicate on it only: the conditions recognize their
+    /// keys by name, so with one predicate a column named like the global row index expression would be taken for it.
+    /// Pruning by the global row index relies on the rows of a granule having consecutive indexes, starting at
+    /// `part_starting_offset_in_query` plus the granule's first row. In a projection part `_part_offset` is not the position
+    /// of the row in that part (it may be the offset in the parent part stored by the projection), so the projection part
+    /// is not pruned this way.
+    const bool use_global_row_index = global_row_index_predicate_builder && !part_info->isProjectionPart();
+    if ((dynamic_predicate_builder || use_global_row_index) && !ranges.empty())
     {
         /// Pruning by the primary key needs the part itself.
         auto data_part = part_info->getDataPart();
@@ -168,16 +200,35 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                 part_info->getPartName());
 
         ActionsDAG predicate_dag;
-        const ActionsDAG::Node * predicate = dynamic_predicate_builder(predicate_dag);
-        if (predicate)
+        const ActionsDAG::Node * predicate = dynamic_predicate_builder ? dynamic_predicate_builder(predicate_dag) : nullptr;
+        ActionsDAG global_row_index_predicate_dag;
+        const ActionsDAG::Node * global_row_index_predicate
+            = use_global_row_index ? global_row_index_predicate_builder(global_row_index_predicate_dag) : nullptr;
+
+        if (predicate || global_row_index_predicate)
         {
             const size_t granules_before = ranges.getNumberOfMarks();
             ActionsDAGWithInversionPushDown filter_dag(predicate, context, /*boolean_context=*/true);
+            ActionsDAGWithInversionPushDown global_row_index_filter_dag(global_row_index_predicate, context, /*boolean_context=*/true);
 
-            if (prune_primary_key)
+            if ((prune_primary_key && predicate) || global_row_index_predicate)
             {
+                /// Both conditions are checked in one pass over the ranges. Without its own predicate, the primary key
+                /// condition is always unknown and keeps every granule.
+                const ActionsDAGWithInversionPushDown no_predicate(nullptr, context, /*boolean_context=*/true);
                 const auto & primary_key = metadata_snapshot->getPrimaryKey();
-                KeyCondition dynamic_key_condition(filter_dag, context, primary_key);
+                KeyCondition dynamic_key_condition(prune_primary_key ? filter_dag : no_predicate, context, primary_key);
+
+                /// The condition has a single key: the global row index (see `setGlobalRowIndexPruning`). It is passed as
+                /// the total offset condition: `markRangesFromPKRange` checks it against the range of global row indexes
+                /// of each granule.
+                std::optional<KeyCondition> total_offset_condition;
+                if (global_row_index_predicate)
+                    total_offset_condition.emplace(
+                        global_row_index_filter_dag,
+                        context,
+                        Names{String(runtime_filter_global_row_index_node_name)},
+                        global_row_index_key_expression);
 
                 ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     data_part,
@@ -186,7 +237,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                     metadata_snapshot,
                     dynamic_key_condition,
                     /*part_offset_condition=*/nullptr,
-                    /*total_offset_condition=*/nullptr,
+                    total_offset_condition ? &*total_offset_condition : nullptr,
                     /*exact_ranges=*/nullptr,
                     /*pk_to_minmax_slot=*/nullptr,
                     context->getSettingsRef(),
@@ -196,11 +247,11 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             MergeTreeDataSelectExecutor::PartialDisjunctionResult no_disjunctions;
             for (const auto & index_helper : dynamic_skip_indexes)
             {
-                if (ranges.empty())
+                if (!predicate || ranges.empty())
                     break;
                 if (dynamic_skip_index_filter && !dynamic_skip_index_filter(*index_helper))
                     continue;
-                if (auto can_use = MergeTreeDataSelectExecutor::canUseIndex(index_helper, metadata_snapshot, all_updated_columns, value_updated_columns, context, part_info->getDataPart().get()); !can_use)
+                if (auto can_use = MergeTreeDataSelectExecutor::canUseIndex(index_helper, metadata_snapshot, all_updated_columns, value_updated_columns, context, &part_info->getSecondaryIndexColumnTypes()); !can_use)
                     continue;
 
                 auto condition = index_helper->createIndexCondition(filter_dag.predicate, context);
@@ -257,7 +308,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     /// index file that does not describe the values a read returns, so pruning marks by the running
     /// threshold against it would drop rows the query has to see.
     if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker
-        && MergeTreeDataSelectExecutor::canUseIndex(skip_indexes.skip_index_for_top_k_filtering, metadata_snapshot, all_updated_columns, value_updated_columns, context, part_info->getDataPart().get()))
+        && MergeTreeDataSelectExecutor::canUseIndex(skip_indexes.skip_index_for_top_k_filtering, metadata_snapshot, all_updated_columns, value_updated_columns, context, &part_info->getSecondaryIndexColumnTypes()))
     {
         res->min_max_index_for_top_k = MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
             part_info,
@@ -576,39 +627,49 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
 
     /// Start reading chunks from the projection index reader.
     /// Each chunk contains a column of UInt64 offsets that we insert into the bitmap.
-    while (!processor->is_cancelled && !task->isFinished())
+    try
     {
-        auto chunk = processor->readCurrentTask(*task, algorithm);
-        if (chunk.chunk)
+        while (!processor->is_cancelled && !task->isFinished())
         {
-            if (chunk.chunk.getNumRows() > 0)
+            auto chunk = processor->readCurrentTask(*task, algorithm);
+            if (chunk.chunk)
             {
-                chassert(chunk.chunk.getColumns().size() == 1);
-                auto offset_column = chunk.chunk.getColumns()[0]->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
-                const auto & offsets = assert_cast<const ColumnUInt64 &>(*offset_column);
-
-                auto add_offsets = [&]<typename Offset>(Offset)
+                if (chunk.chunk.getNumRows() > 0)
                 {
-                    if (ranges.parent_ranges.isContiguousFullRange())
+                    chassert(chunk.chunk.getColumns().size() == 1);
+                    auto offset_column = chunk.chunk.getColumns()[0]->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+                    const auto & offsets = assert_cast<const ColumnUInt64 &>(*offset_column);
+
+                    auto add_offsets = [&]<typename Offset>(Offset)
                     {
-                        for (auto offset : offsets.getData())
-                            res->add<Offset>(static_cast<Offset>(offset));
-                    }
-                    else
-                    {
-                        for (auto offset : offsets.getData())
+                        if (ranges.parent_ranges.isContiguousFullRange())
                         {
-                            if (ranges.parent_ranges.contains(offset))
+                            for (auto offset : offsets.getData())
                                 res->add<Offset>(static_cast<Offset>(offset));
                         }
-                    }
-                };
-                if (can_use_32bit_part_offset)
-                    add_offsets(UInt32{});
-                else
-                    add_offsets(UInt64{});
+                        else
+                        {
+                            for (auto offset : offsets.getData())
+                            {
+                                if (ranges.parent_ranges.contains(offset))
+                                    res->add<Offset>(static_cast<Offset>(offset));
+                            }
+                        }
+                    };
+                    if (can_use_32bit_part_offset)
+                        add_offsets(UInt32{});
+                    else
+                        add_offsets(UInt64{});
+                }
             }
         }
+    }
+    catch (const Exception & e)
+    {
+        /// The filter also runs on rows the query does not read, so a failure only disables the projection index for this part.
+        if (isQueryOuterGuardError(e.code()))
+            throw;
+        return nullptr;
     }
 
     /// If the read was cancelled, return nullptr to avoid using an incomplete index bitmap.
@@ -637,7 +698,7 @@ ProjectionIndexBitmapPtr MergeTreeProjectionIndexReader::read(const RangesInData
         auto & reader = projection_index_readers.at(proj_name);
         auto res = reader.read(ranges);
 
-        /// If any bitmap is incomplete (due to cancellation), the projection index becomes invalid.
+        /// If any bitmap is missing (cancellation, or a filter the projection cannot evaluate), the projection index becomes invalid.
         if (!res)
             return nullptr;
 
