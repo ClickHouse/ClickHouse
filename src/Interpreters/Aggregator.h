@@ -279,6 +279,12 @@ public:
         /// that is why it also matters for merge-only aggregators (`convertBlockToTwoLevel`).
         bool enable_packed_string_keys = true;
 
+        /// Use the `KeysAndPackedStringHashTable`-based hash tables for fixed-width keys and one non-nullable
+        /// `String` key (`keys32_packed_string`, `keys64_packed_string`, `keys128_packed_string`); if false, fall
+        /// back to `prealloc_serialized`. As for `enable_packed_string_keys`, the methods hash keys differently,
+        /// so all participants of a distributed query must agree on this value.
+        bool enable_fixed_and_packed_string_keys = true;
+
         /// Set for aggregation in order (`AggregatingInOrderTransform`). In that mode a fresh
         /// aggregation-method state is constructed for every contiguous run of equal order-key
         /// values (via `executeOnBlockSmall` / `mergeOnBlockSmall`), so a method whose state
@@ -387,6 +393,7 @@ public:
             bool enable_parallel_single_level_merge_,
             bool enable_parallel_single_level_merge_by_index_,
             bool enable_packed_string_keys_,
+            bool enable_fixed_and_packed_string_keys_,
             bool enable_adaptive_aggregator_,
             UInt64 adaptive_aggregator_freeze_threshold_,
             UInt64 adaptive_aggregator_freeze_threshold_bytes_,
@@ -402,7 +409,8 @@ public:
             size_t max_block_size_,
             float min_hit_rate_to_use_consecutive_keys_optimization_,
             bool serialize_string_with_zero_byte_,
-            bool enable_packed_string_keys_);
+            bool enable_packed_string_keys_,
+            bool enable_fixed_and_packed_string_keys_);
 
         [[nodiscard]] Params cloneWithKeys(const Names & keys_, bool only_merge_ = false) const
         {
@@ -539,11 +547,12 @@ public:
 
     /// Ends the sources of an adaptive in-memory merge of `data` once every bucket merged, and frees what the producers
     /// left: the source tables with their cell indexes and arenas, the staging buffers and the count bins of the top-K
-    /// pruning. Every bucket took the states out of its source cells, so the source tables stop owning states and
-    /// their destruction only frees memory. `data` is the result of `prepareVariantsToMerge`, which made it the only
-    /// owner of the source tables. The caller guarantees that no merge task reads the sources any more. With many
-    /// producers the work is spread over the thread pool: one thread would otherwise free everything at the end of
-    /// the query, which with 192 producers takes several milliseconds.
+    /// pruning. Every bucket took the states out of its source cells (a skipped unit leaves those that need no
+    /// destructor), so the source tables stop owning states and their destruction only frees memory. `data` is the
+    /// result of `prepareVariantsToMerge`, which made it the only owner of the source tables. The caller guarantees
+    /// that no merge task reads the sources any more. With many producers the work is spread over the thread pool:
+    /// one thread would otherwise free everything at the end of the query, which with 192 producers takes several
+    /// milliseconds.
     void releaseAdaptiveMergeSources(ManyAggregatedDataVariants & data, AdaptiveAggregationSession & session) const;
 
     /// The destination of the adaptive merge: an empty two-level variants of the aggregation's method with an arena slot
@@ -822,6 +831,13 @@ private:
     bool shared_kept_keys_cutoff_inert = false;
 
     HashMethodContextPtr aggregation_state_cache;
+
+    /// The method of `mergeBlocks`, which merges with a better hash function where the chosen method has one
+    /// (see `chooseMergeBlocksMethod`), and the context of its hashing states: the two methods can differ in
+    /// the type of the state, as `keys64_packed_string` does from its replacement
+    /// `prealloc_serialized_hash64`.
+    AggregatedDataVariants::Type merge_blocks_method = AggregatedDataVariants::Type::EMPTY;
+    HashMethodContextPtr merge_blocks_state_cache;
 
     AggregateFunctionsPlainPtrs aggregate_functions;
 
@@ -1239,6 +1255,10 @@ private:
         const Filter & filter,
         const UpdateCandidates & update_candidates) const;
 
+    /// Whether the states of a source cell have destructors to run. Where they have none, the cells of a unit that
+    /// goes unread need no visit.
+    bool adaptiveSourceStatesHaveDestructors() const { return !is_simple_count && !all_aggregates_has_trivial_destructor; }
+
     /// Destroys the states of a source cell whose group cannot reach the top, and clears the cell's slot.
     void discardAdaptiveSourceState(AggregateDataPtr & place) const;
 
@@ -1293,18 +1313,21 @@ private:
         Arena * arena, PaddedPODArray<AggregateDataPtr> & places, const Columns & arguments, bool use_compiled_functions) const;
 
     /// Estimates the work of the selected aggregate states and, when requested, adds rank counts to the
-    /// producer's top-K bins, or, with `max_count_per_bucket`, raises its largest rank count of each bucket.
-    /// The statistics visit the same cells before the producer hands its table to the merge.
+    /// producer's top-K bins, or, with `max_count_per_bucket`, raises its largest rank count of each bucket, or,
+    /// with `table_threshold`, offers it the rank count of every group. The statistics visit the same cells before
+    /// the producer hands its table to the merge.
     size_t collectAdaptiveTableStatistics(
         AggregatedDataVariants & variants,
         AdaptiveTopKCountBins * bins,
-        std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket) const;
+        std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket,
+        AdaptiveTopKThreshold * table_threshold) const;
     template <typename Method>
     size_t collectAdaptiveTableStatistics(
         Method & method,
         Arena * arena,
         AdaptiveTopKCountBins * bins,
-        std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket) const;
+        std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket,
+        AdaptiveTopKThreshold * table_threshold) const;
 
     /// The rank of the group with the aggregate states at `mapped`, which the top-K pruning bounds: its count, or the
     /// distinct count of its `uniqExact` or `uniqExactIf` rank, finalized into `scratch`.
@@ -1823,6 +1846,7 @@ private:
         Arena * aggregates_pool,
         Method & method,
         Table & data,
+        const HashMethodContextPtr & state_cache,
         AggregateDataPtr overflow_row,
         LastElementCacheStats & consecutive_keys_cache_stats,
         bool no_more_keys,
@@ -1836,6 +1860,7 @@ private:
         Arena * aggregates_pool,
         Method & method,
         Table & data,
+        const HashMethodContextPtr & state_cache,
         AggregateDataPtr overflow_row,
         LastElementCacheStats & consecutive_keys_cache_stats,
         bool no_more_keys,

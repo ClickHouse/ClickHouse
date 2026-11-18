@@ -124,7 +124,8 @@ std::unique_ptr<AggregatingStep> makeAggregationStep(
         /*max_block_size_=*/65536,
         /*min_hit_rate_to_use_consecutive_keys_optimization_=*/0.5f,
         /*serialize_string_with_zero_byte_=*/false,
-        /*enable_packed_string_keys_=*/true);
+        /*enable_packed_string_keys_=*/true,
+        /*enable_fixed_and_packed_string_keys_=*/true);
 
     GroupingSetsParamsList grouping_sets_params;
     if (grouping_sets)
@@ -165,6 +166,7 @@ std::unique_ptr<AggregatingStep> makeAggregationStepWithGroupLimit(
         /*enable_parallel_single_level_merge_=*/false,
         /*enable_parallel_single_level_merge_by_index_=*/true,
         /*enable_packed_string_keys_=*/true,
+        /*enable_fixed_and_packed_string_keys_=*/true,
         /*enable_adaptive_aggregator_=*/false,
         /*adaptive_aggregator_freeze_threshold_=*/0,
         /*adaptive_aggregator_freeze_threshold_bytes_=*/0,
