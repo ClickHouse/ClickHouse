@@ -212,19 +212,19 @@ public:
     /// The statistics of each path of a `JSON` column built or merged in memory (statistics read from disk keep them
     /// serialized, see `cloneWithPaths`). Each describes all rows of the column, a row without the path counting as NULL.
     using PathStatistics = std::map<String, ColumnStatisticsPtr>;
-    const PathStatistics & getPathStatistics() const { return path_statistics; }
-    bool hasPathStatistics() const { return !path_types.empty(); }
+    [[nodiscard]] const PathStatistics & getPathStatistics() const { return path_statistics; }
+    [[nodiscard]] bool hasPathStatistics() const { return !path_types.empty(); }
     /// A copy with the statistics of `paths` only, deserialized. It shares the statistics objects built in memory with
     /// this one.
-    std::shared_ptr<ColumnStatistics> cloneWithPaths(const NameSet & paths) const;
+    [[nodiscard]] std::shared_ptr<ColumnStatistics> cloneWithPaths(const NameSet & paths) const;
 
 private:
     friend class MergeTreeStatisticsFactory;
 
     void buildPaths(const ColumnObject & column);
     void addNullRows(UInt64 count);
-    ColumnStatisticsPtr createPathStatistics(const DataTypePtr & path_type) const;
-    ColumnStatisticsPtr deserializePathStatistics(const String & path, const String & data) const;
+    [[nodiscard]] ColumnStatisticsPtr createPathStatistics(const DataTypePtr & path_type) const;
+    [[nodiscard]] ColumnStatisticsPtr deserializePathStatistics(const String & path, const String & data) const;
 
     ColumnStatisticsDescription stats_desc;
     StatsMap stats;
