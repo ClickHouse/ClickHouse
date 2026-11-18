@@ -18,9 +18,9 @@ public:
 
     bool operator==(const StaticString & other) const = default;
 
-    constexpr bool empty() const { return stored_view.empty(); }
+    [[nodiscard]] constexpr bool empty() const { return stored_view.empty(); }
 
-    constexpr std::string_view view() const { return stored_view; }
+    [[nodiscard]] constexpr std::string_view view() const { return stored_view; }
 };
 
 }

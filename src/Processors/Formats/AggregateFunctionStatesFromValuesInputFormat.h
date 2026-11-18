@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/IInputFormat.h>
 
 
@@ -44,9 +45,10 @@ public:
     void needOnlyCount() override { underlying->needOnlyCount(); }
     void prefetch(const InputFormatStreamMemoryPtr & stream_memory, bool start_reading_data) override { underlying->prefetch(stream_memory, start_reading_data); }
     void setQueryParameters(const NameToNameMap & parameters) override { underlying->setQueryParameters(parameters); }
-    std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override { return underlying->getMatchedBuckets(); }
-    std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override { return underlying->getTopKBestValuesOfBuckets(); }
+    std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> getMatchedBuckets() const override { return underlying->getMatchedBuckets(); }
+    VectorWithMemoryTracking<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override { return underlying->getTopKBestValuesOfBuckets(); }
     bool isTopKFilterApplied() const override { return underlying->isTopKFilterApplied(); }
+    [[nodiscard]] bool isJoinRuntimeFilterApplied() const override { return underlying->isJoinRuntimeFilterApplied(); }
     bool isMinMaxFromStatisticsApplied() const override { return underlying->isMinMaxFromStatisticsApplied(); }
     void cacheFilterColumnStatistics() override { underlying->cacheFilterColumnStatistics(); }
 

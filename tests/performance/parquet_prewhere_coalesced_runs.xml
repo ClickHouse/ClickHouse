@@ -1,0 +1,20 @@
+<!-- Columns read after PREWHERE from a Parquet file, filtered on a column uncorrelated with them, so passing rows come in
+     short runs. Runs separated by a short gap are read as one range. `k % 17 = 0` has the longest gap that is still
+     read, the last query only long gaps. -->
+<test>
+    <fill_query><![CDATA[
+        INSERT INTO FUNCTION file('test_parquet_prewhere_coalesced_runs.parquet', Parquet)
+        SELECT
+            number AS k,
+            toUInt8(cityHash64(number) % 100) AS u,
+            toUInt32(cityHash64(number, 1)) AS u32,
+            cityHash64(number, 2) AS u64
+        FROM numbers(20000000)
+    ]]></fill_query>
+
+    <query>SELECT sum(u32), sum(u64) FROM file('test_parquet_prewhere_coalesced_runs.parquet', Parquet) PREWHERE u &lt; 5 FORMAT Null</query>
+    <query>SELECT sum(u32), sum(u64) FROM file('test_parquet_prewhere_coalesced_runs.parquet', Parquet) PREWHERE u &lt; 20 FORMAT Null</query>
+    <query>SELECT sum(u32), sum(u64) FROM file('test_parquet_prewhere_coalesced_runs.parquet', Parquet) PREWHERE u &lt; 50 FORMAT Null</query>
+    <query>SELECT sum(u32), sum(u64) FROM file('test_parquet_prewhere_coalesced_runs.parquet', Parquet) PREWHERE k % 17 = 0 FORMAT Null</query>
+    <query>SELECT sum(u32), sum(u64) FROM file('test_parquet_prewhere_coalesced_runs.parquet', Parquet) PREWHERE intDiv(k, 4096) % 2 = 0 FORMAT Null</query>
+</test>
