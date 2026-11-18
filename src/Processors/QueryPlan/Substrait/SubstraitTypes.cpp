@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <fmt/format.h>
 #include <google/protobuf/util/message_differencer.h>
@@ -174,22 +173,7 @@ convertTypeToSubstrait(const DataTypePtr & type, SubstraitPlanExtensions & exten
             map_type->set_nullability(substraitNullabilityOf(nullable));
             return std::move(result);
         }
-        case TypeIndex::Tuple: {
-            const auto & tuple = assert_cast<const DataTypeTuple &>(*nested);
-            /// Substrait struct fields are anonymous. Only unnamed tuples map exactly.
-            if (tuple.hasExplicitNames())
-                return blocked(fmt::format("type {} has named elements that Substrait structs cannot represent", type->getName()));
-            auto * struct_type = result.mutable_struct_();
-            for (const auto & element_type : tuple.getElements())
-            {
-                auto element = convertTypeToSubstrait(element_type, extensions);
-                if (!element)
-                    return std::unexpected(std::move(element.error()));
-                *struct_type->add_types() = std::move(*element);
-            }
-            struct_type->set_nullability(substraitNullabilityOf(nullable));
-            return std::move(result);
-        }
+        case TypeIndex::Tuple: return blocked(fmt::format("type {} is not supported yet", type->getName()));
         default: return blocked(fmt::format("type {} has no exact Substrait representation", type->getName()));
     }
 }

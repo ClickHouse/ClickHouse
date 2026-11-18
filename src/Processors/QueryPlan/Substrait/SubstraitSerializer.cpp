@@ -554,6 +554,8 @@ SubstraitPlanSerializer::convertAggregation(const AggregatingStep & aggregating,
         return blocked("top-K aggregation is not supported");
     if (params.only_merge)
         return blocked("merging pre-aggregated states is not supported");
+    if (params.keys.empty() && params.empty_result_for_aggregation_by_empty_set)
+        return blocked("aggregation without keys that returns no rows over empty input is not supported");
 
     substrait::Rel aggregate_rel;
     auto * aggregate = aggregate_rel.mutable_aggregate();
