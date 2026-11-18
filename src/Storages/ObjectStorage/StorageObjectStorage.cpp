@@ -502,9 +502,28 @@ bool StorageObjectStorage::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    return metadata_snapshot->getColumnsWithoutDefaultExpressions(
-        /*exclude=*/ hive_partitioning_columns.get()->hive_partition_columns_to_read_from_file_path);
+    auto query_context = CurrentThread::tryGetQueryContext();
+    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+    const auto & exclude = hive_partitioning_columns.get()->hive_partition_columns_to_read_from_file_path;
+    auto result = metadata_snapshot->getColumnsWithoutDefaultExpressions(exclude);
+    if (metadata_snapshot->getColumns().hasDefaults() && readsIgnoreColumnDefaults(query_context))
+    {
+        const auto exclude_map = exclude.getNameToTypeMap();
+        for (const auto & column : metadata_snapshot->getColumns())
+            if (column.default_desc.kind == ColumnDefaultKind::Default && !exclude_map.contains(column.name))
+                result.insert(column.name);
+    }
+    return result;
+}
+
+/// The `DEFAULT`s of a data lake whose schema is reloaded from the lake are its write defaults: a value that a data file
+/// lacks reads as the lake defines it (`initial-default` or NULL).
+bool StorageObjectStorage::readsIgnoreColumnDefaults(const ContextPtr & context) const
+{
+    if (!context || !configuration->isDataLakeConfiguration())
+        return false;
+    configuration->lazyInitializeIfNeeded(object_storage, context);
+    return configuration->shouldReloadSchemaForConsistency(context);
 }
 
 IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
@@ -965,6 +984,13 @@ void StorageObjectStorage::read(
         local_context,
         PrepareReadingFromFormatHiveParams{ hive_columns->file_columns, hive_columns->hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
 
+    if (read_from_format_info.columns_description.hasDefaults() && readsIgnoreColumnDefaults(local_context))
+    {
+        for (const auto & column : ColumnsDescription(read_from_format_info.columns_description))
+            if (column.default_desc.expression)
+                read_from_format_info.columns_description.modify(
+                    column.name, [](ColumnDescription & description) { description.default_desc = {}; });
+    }
 
     if (query_info.prewhere_info)
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);

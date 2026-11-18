@@ -270,6 +270,8 @@ protected:
 
     VirtualColumnsDescription createVirtualColumns(ColumnsDescription & columns, const std::string & sample_path, const ContextPtr & context) const;
 
+    bool readsIgnoreColumnDefaults(const ContextPtr & context) const;
+
     /// Creates ReadBufferIterator for schema inference implementation.
     static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
         const ObjectStoragePtr & object_storage,

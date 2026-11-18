@@ -443,7 +443,7 @@ String defaultValueToString(const Poco::Dynamic::Var & value)
 {
     throw Exception(
         ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-        "Invalid initial-default {} for field {} of type {}",
+        "Invalid default {} for field {} of type {}",
         defaultValueToString(value),
         field_name,
         defaultValueToString(iceberg_type));
@@ -500,12 +500,14 @@ bool isIcebergTimestampText(std::string_view s)
 
 /// Parses a value in the JSON single-value serialization of the Iceberg spec (Appendix D) of the Iceberg type
 /// `iceberg_type` into a Field of the ClickHouse type `type`. `required` is the Iceberg nullability of the position.
+/// Nested fields the value does not give take their default `key`.
 Field parseIcebergDefaultValue(
     const Poco::Dynamic::Var & value,
     const Poco::Dynamic::Var & iceberg_type,
     const DataTypePtr & type,
     bool required,
-    const String & field_name)
+    const String & field_name,
+    const char * key)
 {
     checkStackSize();
 
@@ -523,7 +525,7 @@ Field parseIcebergDefaultValue(
             Tuple result;
             result.reserve(fields->size());
             for (UInt32 i = 0; i < fields->size(); ++i)
-                result.push_back(getIcebergInitialDefault(fields->getObject(i), element_types[i]).value_or(element_types[i]->getDefault()));
+                result.push_back(getIcebergDefault(fields->getObject(i), element_types[i], key).value_or(element_types[i]->getDefault()));
             return result;
         }
         return type->getDefault();
@@ -635,13 +637,13 @@ Field parseIcebergDefaultValue(
         for (UInt32 i = 0; i < fields->size(); ++i)
         {
             auto child = fields->getObject(i);
-            const String key = std::to_string(child->getValue<Int64>(f_id));
+            const String id = std::to_string(child->getValue<Int64>(f_id));
             const bool child_required = child->getValue<bool>(f_required);
             const String child_name = child->getValue<String>(f_name);
-            if (value_object->has(key))
-                result.push_back(
-                    parseIcebergDefaultValue(value_object->get(key), child->get(f_type), element_types[i], child_required, child_name));
-            else if (auto child_default = getIcebergInitialDefault(child, element_types[i]))
+            if (value_object->has(id))
+                result.push_back(parseIcebergDefaultValue(
+                    value_object->get(id), child->get(f_type), element_types[i], child_required, child_name, key));
+            else if (auto child_default = getIcebergDefault(child, element_types[i], key))
                 result.push_back(std::move(*child_default));
             else if (child_required)
                 throwInvalidDefault({}, child->get(f_type), child_name);
@@ -660,8 +662,8 @@ Field parseIcebergDefaultValue(
         Array result;
         result.reserve(value_array->size());
         for (UInt32 i = 0; i < value_array->size(); ++i)
-            result.push_back(
-                parseIcebergDefaultValue(value_array->get(i), type_object->get(f_element), element_type, element_required, field_name));
+            result.push_back(parseIcebergDefaultValue(
+                value_array->get(i), type_object->get(f_element), element_type, element_required, field_name, key));
         return result;
     }
     if (type_name == f_map)
@@ -680,8 +682,8 @@ Field parseIcebergDefaultValue(
         result.reserve(keys->size());
         for (UInt32 i = 0; i < keys->size(); ++i)
             result.push_back(Tuple{
-                parseIcebergDefaultValue(keys->get(i), type_object->get(f_key), map_type.getKeyType(), true, field_name),
-                parseIcebergDefaultValue(values->get(i), type_object->get(f_value), map_type.getValueType(), value_required, field_name)});
+                parseIcebergDefaultValue(keys->get(i), type_object->get(f_key), map_type.getKeyType(), true, field_name, key),
+                parseIcebergDefaultValue(values->get(i), type_object->get(f_value), map_type.getValueType(), value_required, field_name, key)});
         return result;
     }
     throwInvalidDefault(value, iceberg_type, field_name);
@@ -737,7 +739,7 @@ void collectInitialDefaults(
         {
             auto field = fields->getObject(i);
             auto child_path = Nested::concatenateName(path, field->getValue<String>(f_name));
-            if (auto value = getIcebergInitialDefault(field, element_types[i]))
+            if (auto value = getIcebergDefault(field, element_types[i], f_initial_default))
                 result.emplace(child_path, ColumnMapper::IcebergInitialDefault{std::move(*value), element_types[i]});
             collectInitialDefaults(field->get(f_type), element_types[i], child_path, result);
         }
@@ -937,18 +939,18 @@ void checkSchema(const Poco::JSON::Object & schema, bool is_table_schema)
 namespace Iceberg
 {
 
-std::optional<Field> getIcebergInitialDefault(const Poco::JSON::Object::Ptr & field, const DataTypePtr & type)
+std::optional<Field> getIcebergDefault(const Poco::JSON::Object::Ptr & field, const DataTypePtr & type, const char * key)
 {
-    if (!hasInitialDefault(field))
+    if (!field->has(key) || field->get(key).isEmpty())
         return {};
-    const auto value = field->get(f_initial_default);
+    const auto value = field->get(key);
     const auto iceberg_type = field->get(f_type);
     const auto field_name = field->getValue<String>(f_name);
     /// The default of a struct field carries no values of its fields: those come from the fields' own defaults.
     if (field->isObject(f_type) && field->getObject(f_type)->getValue<String>(f_type) == f_struct
         && (value.type() != typeid(Poco::JSON::Object::Ptr) || value.extract<Poco::JSON::Object::Ptr>()->size() != 0))
         throwInvalidDefault(value, iceberg_type, field_name);
-    return parseIcebergDefaultValue(value, iceberg_type, type, field->getValue<bool>(f_required), field_name);
+    return parseIcebergDefaultValue(value, iceberg_type, type, field->getValue<bool>(f_required), field_name, key);
 }
 
 std::string IcebergSchemaProcessor::default_link{};
@@ -1512,7 +1514,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         }
         else
         {
-            auto initial_default = getIcebergInitialDefault(field, type);
+            auto initial_default = getIcebergDefault(field, type, f_initial_default);
             if (!initial_default && required && !field->isObject(f_type))
             {
                 throw Exception(
@@ -1722,7 +1724,7 @@ IcebergSchemaProcessor::collectIcebergInitialDefaults(Poco::JSON::Array::Ptr sch
             continue;
         auto name = field->getValue<String>(f_name);
         auto type = processor.getFieldType(field, f_type, field->getValue<bool>(f_required));
-        if (auto value = getIcebergInitialDefault(field, type))
+        if (auto value = getIcebergDefault(field, type, f_initial_default))
             result.emplace(name, ColumnMapper::IcebergInitialDefault{std::move(*value), type});
         collectInitialDefaults(field->get(f_type), type, name, result);
     }
