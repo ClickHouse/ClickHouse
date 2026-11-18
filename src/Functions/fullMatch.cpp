@@ -37,12 +37,12 @@ struct FullMatchImpl
         auto anchored_needles = ColumnString::create();
         anchored_needles->reserve(needle_offsets.size());
         size_t prev_offset = 0;
-        for (size_t i = 0; i < needle_offsets.size(); ++i)
+        for (const UInt64 needle_offset : needle_offsets)
         {
-            const std::string_view needle(reinterpret_cast<const char *>(&needle_data[prev_offset]), needle_offsets[i] - prev_offset);
+            const std::string_view needle(reinterpret_cast<const char *>(&needle_data[prev_offset]), needle_offset - prev_offset);
             const String anchored_needle = anchorRegexpToMatchWholeString(needle);
             anchored_needles->insertData(anchored_needle.data(), anchored_needle.size());
-            prev_offset = needle_offsets[i];
+            prev_offset = needle_offset;
         }
         return anchored_needles;
     }
