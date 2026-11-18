@@ -39,6 +39,7 @@
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
+#include <Common/FailPoint.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
@@ -210,6 +211,11 @@ namespace DistributedSetting
     extern const DistributedSettingsBool flush_on_detach;
     extern const DistributedSettingsBool fsync_directories;
     extern const DistributedSettingsUInt64 max_delay_to_insert;
+}
+
+namespace FailPoints
+{
+    extern const char distributed_async_insert_queue_pause_after_version_snapshot[];
 }
 
 namespace ErrorCodes
@@ -2101,8 +2107,15 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
     auto & node_data = cluster_nodes_data[key];
     if (!node_data.directory_queue)
     {
+        /// Sample the version before the topology. `parseAddresses` and `getClustersVersion` take
+        /// `clusters_mutex` separately, so an `ALTER CLUSTER` can land between them. Recording the
+        /// version first keeps it behind the addresses when that happens, and the next insert
+        /// refreshes the pool. Recording it afterwards can store the new version with the old host,
+        /// after which every insert skips the refresh and keeps sending to the removed host.
+        const auto clusters_version = getContext()->getClustersVersion();
+        FailPointInjection::pauseFailPoint(FailPoints::distributed_async_insert_queue_pause_after_version_snapshot);
         node_data.addresses = parseAddresses(name);
-        node_data.clusters_version = getContext()->getClustersVersion();
+        node_data.clusters_version = clusters_version;
         node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(node_data.addresses, *this);
         node_data.directory_queue = std::make_shared<DistributedAsyncInsertDirectoryQueue>(
             *this, disk, relative_data_path + name,

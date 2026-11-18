@@ -221,6 +221,7 @@ static struct InitFiu
     PAUSEABLE(dummy_pausable_failpoint) \
     PAUSEABLE(sql_cluster_create_pause_after_namespace_check) \
     PAUSEABLE_ONCE(distributed_async_insert_batch_pause_after_first_file) \
+    PAUSEABLE_ONCE(distributed_async_insert_queue_pause_after_version_snapshot) \
     REGULAR(ddl_worker_quote_entry_query) \
     PAUSEABLE_ONCE(paimon_incremental_read_pause_before_processing_lock) \
     PAUSEABLE_ONCE(paimon_incremental_read_pause_before_watermark_commit) \
