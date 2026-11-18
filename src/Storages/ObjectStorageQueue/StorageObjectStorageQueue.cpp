@@ -1113,9 +1113,12 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
             = std::make_shared<FormatParserSharedResources>(queue_context->getSettingsRef(), /*num_streams_=*/threads);
 
         auto processing_progress = std::make_shared<ProcessingProgress>();
+        std::vector<size_t> processor_ids;
+        processor_ids.reserve(threads);
         for (size_t i = 0; i < threads; ++i)
         {
             size_t processor_id = streaming_tasks_index * threads + i;
+            processor_ids.push_back(processor_id);
             auto source = createSource(
                 processor_id,
                 read_from_format_info,
@@ -1184,7 +1187,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
                     message,
                     error_code);
 
-                file_iterator->releaseFinishedBuckets();
+                file_iterator->releaseFinishedBuckets(processor_ids);
                 file_iterator->refreshExpiringBucketLocks();
 
                 if (interrupted)
@@ -1203,7 +1206,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
                     std::lock_guard lock(mutex);
                     configured_max_files = commit_settings.max_processed_files_before_commit;
                 }
-                max_files_override.halveAfterFailure(configured_max_files, processing_progress->processed_files.load());
+                max_files_override.halveAfterFailure(configured_max_files, processing_progress->acquired_files.load());
             }
             catch (Exception & e)
             {
@@ -1219,7 +1222,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         });
 
         commit(/*insert_succeeded=*/ true, rows, sources, *metadata, transaction_start_time);
-        file_iterator->releaseFinishedBuckets();
+        file_iterator->releaseFinishedBuckets(processor_ids);
         file_iterator->refreshExpiringBucketLocks();
 
         /// Restore the full batch size only after a batch which actually committed files,
@@ -1227,7 +1230,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         /// Otherwise idle tasks (with `parallel_inserts` there is one task per processing thread)
         /// would keep resetting the halving after committing empty batches,
         /// and the bad file would never end up alone in a batch.
-        if (processing_progress->processed_files.load() > 0)
+        if (processing_progress->acquired_files.load() > 0)
             max_files_override.resetAfterSuccess(batch_size_override);
 
         total_rows += rows;
@@ -1246,7 +1249,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         /// This task acquired no files, although the iterator is not finished: e.g. in ordered mode
         /// the remaining files belong to buckets held by other tasks. End the cycle, so that the task
         /// backs off instead of building empty insert pipelines in a loop until the others are done.
-        if (processing_progress->processed_files.load() == 0)
+        if (processing_progress->acquired_files.load() == 0)
             break;
     }
 
