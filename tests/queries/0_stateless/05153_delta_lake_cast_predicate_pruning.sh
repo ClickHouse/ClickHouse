@@ -1,223 +1,360 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-msan
 # Tag no-fasttest: delta-kernel pulls in extra dependencies.
-# Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so `deltaLakeLocal` is absent.
-
-# Pruning of Delta files by a comparison over `CAST` / `toDate` / `toDate32` of a `Date32` column.
-# A `Date` result is fenced: files with values outside the `Date` domain stay scanned, because
-# the conversion wraps, saturates or throws there. Each query stores its rows in `results`, and the
-# final report prints them next to the number of scanned files or the error from `system.query_log`.
-# A query repeated with `delta_lake_enable_engine_predicate = 0` must return the same rows; the
-# report prints every pair that does not.
+# Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so DeltaLakeLocal is absent.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 set -e
 
-ROOT="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_delta_cast"
+ROOT="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_delta_cast"
 trap 'rm -rf "${ROOT}" 2>/dev/null' EXIT
 rm -rf "${ROOT}"
 
-# Data files. Most hold one row and are named after it.
-${CLICKHOUSE_CLIENT} --query "
-    INSERT INTO FUNCTION file('${ROOT}/t/{_partition_id}.parquet', Parquet, 'd Date32') PARTITION BY toString(d) VALUES ('2026-01-01'), ('2026-01-02'), ('2205-06-08');
-    INSERT INTO FUNCTION file('${ROOT}/lower/{_partition_id}.parquet', Parquet, 'd Date32') PARTITION BY toString(d) VALUES ('1969-12-31'), ('1970-01-01'), ('1970-01-02');
-    INSERT INTO FUNCTION file('${ROOT}/upper/{_partition_id}.parquet', Parquet, 'd Date32') PARTITION BY toString(d) VALUES ('2149-06-05'), ('2149-06-06'), ('2149-06-07');
-    INSERT INTO FUNCTION file('${ROOT}/negation/{_partition_id}.parquet', Parquet, 'd Date32') PARTITION BY toString(d) VALUES ('2026-01-01'), ('2026-01-02'), ('2205-06-09');
-    INSERT INTO FUNCTION file('${ROOT}/aliases/{_partition_id}.parquet', Parquet, 'd Date32') PARTITION BY toString(d) VALUES ('1846-07-28'), ('2026-01-02'), ('2384-11-12');
-    INSERT INTO FUNCTION file('${ROOT}/valid/{_partition_id}.parquet', Parquet, 'd Date32') PARTITION BY toString(d) VALUES ('1970-01-02'), ('2026-01-01');
-    INSERT INTO FUNCTION file('${ROOT}/no_stats/{_partition_id}.parquet', Parquet, 'd Date32') PARTITION BY toString(d) VALUES ('2026-01-01'), ('2026-01-02');
-    INSERT INTO FUNCTION file('${ROOT}/no_min/{_partition_id}.parquet', Parquet, 'd Date32') PARTITION BY toString(d) VALUES ('2026-01-01'), ('2026-01-02');
-    INSERT INTO FUNCTION file('${ROOT}/no_max/{_partition_id}.parquet', Parquet, 'd Date32') PARTITION BY toString(d) VALUES ('2026-01-01'), ('2026-01-02');
-    INSERT INTO FUNCTION file('${ROOT}/mixed/{_partition_id}.parquet', Parquet, 'd Date32') PARTITION BY toString(d) VALUES ('2026-01-01'), ('2026-01-02');
-    INSERT INTO FUNCTION file('${ROOT}/mixed/low.parquet', Parquet, 'd Date32') VALUES ('1969-12-31'), ('1970-01-01');
-    INSERT INTO FUNCTION file('${ROOT}/mixed/high.parquet', Parquet, 'd Date32') VALUES ('2149-06-06'), ('2149-06-07');
-    INSERT INTO FUNCTION file('${ROOT}/spanning/{_partition_id}.parquet', Parquet, 'd Date32') PARTITION BY toString(d) VALUES ('2026-01-01');
-    INSERT INTO FUNCTION file('${ROOT}/spanning/wide.parquet', Parquet, 'd Date32') VALUES ('1970-01-01'), ('1970-01-02'), ('2149-06-07');
-    INSERT INTO FUNCTION file('${ROOT}/nullable/{_partition_id}.parquet', Parquet, 'd Nullable(Date32)') PARTITION BY toString(assumeNotNull(d)) VALUES ('2026-01-01'), ('2026-01-02'), ('2205-06-08');
-    INSERT INTO FUNCTION file('${ROOT}/nullable/null.parquet', Parquet, 'd Nullable(Date32)') VALUES (NULL);
-    INSERT INTO FUNCTION file('${ROOT}/nullable_with_nulls/{_partition_id}.parquet', Parquet, 'd Nullable(Date32)') PARTITION BY toString(assumeNotNull(d)) VALUES ('2026-01-01'), ('2026-01-02');
-    INSERT INTO FUNCTION file('${ROOT}/nullable_with_nulls/with_null.parquet', Parquet, 'd Nullable(Date32)') VALUES ('2026-01-03'), (NULL);
-    INSERT INTO FUNCTION file('${ROOT}/nullable_no_null_count/{_partition_id}.parquet', Parquet, 'd Nullable(Date32)') PARTITION BY toString(assumeNotNull(d)) VALUES ('2026-01-01'), ('2026-01-02');
-    INSERT INTO FUNCTION file('${ROOT}/overflow_rhs/{_partition_id}.parquet', Parquet, 'd Nullable(Date32)') PARTITION BY toString(assumeNotNull(d)) VALUES ('1970-01-02'), ('2026-01-01');
-    INSERT INTO FUNCTION file('${ROOT}/partitioned/2026-01-01.parquet', Parquet, 'x Int32') VALUES (1);
-    INSERT INTO FUNCTION file('${ROOT}/partitioned/2026-01-02.parquet', Parquet, 'x Int32') VALUES (1);
-    INSERT INTO FUNCTION file('${ROOT}/partitioned/2205-06-08.parquet', Parquet, 'x Int32') VALUES (1);
-    INSERT INTO FUNCTION file('${ROOT}/partitioned/null.parquet', Parquet, 'x Int32') VALUES (1);
-" < /dev/null
+# A clickhouse-local launch costs seconds on slow builds, and one launch per query used to blow
+# past the 180s test limit. The test therefore records everything first - `make_table`, `check`
+# and `expect_error` only declare work - and `run_all` at the bottom executes it in five batched
+# launches: one for the data files, then one per engine-predicate mode for the checks and one
+# per mode for the expected errors. Per-query numbers are recovered from consecutive reads of
+# the cumulative counters in `system.events` and `system.errors`, which is exact because the
+# statements of one launch run sequentially in a single process.
 
-# Hand-written Delta logs, because ClickHouse's Delta writer emits no per-column stats.
-PROTOCOL='{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}'
-DATE32='{"metaData":{"id":"date32","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"d\",\"type\":\"date\",\"nullable\":false,\"metadata\":{}}]}","partitionColumns":[],"configuration":{}}}'
-NULLABLE='{"metaData":{"id":"nullable","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"d\",\"type\":\"date\",\"nullable\":true,\"metadata\":{}}]}","partitionColumns":[],"configuration":{}}}'
-PARTITIONED='{"metaData":{"id":"partitioned","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"x\",\"type\":\"integer\",\"nullable\":true,\"metadata\":{}},{\"name\":\"d\",\"type\":\"date\",\"nullable\":true,\"metadata\":{}}]}","partitionColumns":["d"],"configuration":{}}}'
+TABLES=()
+declare -A TABLE_TYPE TABLE_STATS TABLE_DATES
+FIXTURE_QUERIES=""
 
-# log <table> <metaData> <add>...: writes the table's first commit.
-log() {
-    mkdir -p "${ROOT}/$1/_delta_log"
-    printf '%s\n' "${PROTOCOL}" "$2" "${@:3}" > "${ROOT}/$1/_delta_log/00000000000000000000.json"
+# make_table <table> <column type> <full|none|no_min|no_max> <dates>...
+# Each argument is one file: sorted, comma-separated ISO dates, or a single NULL.
+# `no_min` / `no_max` omit only that bound; `none` emits only `numRecords`.
+make_table() {
+    local table=$1 type=$2 stats_mode=$3
+    shift 3
+    mkdir -p "${ROOT}/${table}/_delta_log"
+    TABLES+=("${table}")
+    TABLE_TYPE[$table]="${type}"
+    TABLE_STATS[$table]="${stats_mode}"
+    TABLE_DATES[$table]="$*"
+    local date value
+    for date in "$@"; do
+        value="'${date//,/\',\'}'"
+        [[ "${date}" == NULL ]] && value=NULL
+        FIXTURE_QUERIES+="
+            INSERT INTO FUNCTION file('${ROOT}/${table}/${date}.parquet', Parquet, 'd ${type}')
+            SELECT CAST(arrayJoin([${value}]), '${type}');"
+    done
 }
 
-# add <file> <stats>: an add action; `stats` is a JSON document embedded as a JSON string.
-add() {
-    printf '{"add":{"path":"%s.parquet","partitionValues":{},"size":1,"modificationTime":0,"dataChange":true,"stats":"%s"}}' "$1" "${2//\"/\\\"}"
+# The second phase of `make_table`: protocol, metaData, then one add action per file. The log is
+# hand-written because ClickHouse's Delta writer emits no per-column stats, and it can only be
+# written after the fixture batch ran - it embeds the data files' byte sizes. `schemaString` and
+# `stats` are JSON documents embedded as JSON strings, hence the escaped quotes.
+write_log() {
+    local table=$1
+    local type="${TABLE_TYPE[$table]}" stats_mode="${TABLE_STATS[$table]}"
+    local nullable=false
+    [[ "${type}" == Nullable* ]] && nullable=true
+    local log="${ROOT}/${table}/_delta_log/00000000000000000000.json"
+    cat > "${log}" <<EOF
+{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
+{"metaData":{"id":"${CLICKHOUSE_DATABASE}-${table}","format":{"provider":"parquet","options":{}},"schemaString":"{\\"type\\":\\"struct\\",\\"fields\\":[{\\"name\\":\\"d\\",\\"type\\":\\"date\\",\\"nullable\\":${nullable},\\"metadata\\":{}}]}","partitionColumns":[],"configuration":{}}}
+EOF
+    local date stats size
+    local -a all_dates dates
+    read -r -a all_dates <<< "${TABLE_DATES[$table]}"
+    for date in "${all_dates[@]}"; do
+        IFS=, read -r -a dates <<< "${date}"
+        stats="{\"numRecords\":${#dates[@]}"
+        if [[ "${stats_mode}" != none ]]; then
+            if [[ "${date}" == NULL ]]; then
+                stats+=",\"nullCount\":{\"d\":1}"
+            else
+                [[ "${stats_mode}" == no_min ]] || stats+=",\"minValues\":{\"d\":\"${date%%,*}\"}"
+                [[ "${stats_mode}" == no_max ]] || stats+=",\"maxValues\":{\"d\":\"${date##*,}\"}"
+                stats+=",\"nullCount\":{\"d\":0}"
+            fi
+        fi
+        stats+="}"
+        size=$(wc -c < "${ROOT}/${table}/${date}.parquet")
+        cat >> "${log}" <<EOF
+{"add":{"path":"${date}.parquet","partitionValues":{},"size":${size},"modificationTime":1700000000000,"dataChange":true,"stats":"${stats//\"/\\\"}"}}
+EOF
+    done
 }
 
-# one <date>: the single-row file `<date>.parquet` with full stats.
-one() {
-    add "$1" "{\"numRecords\":1,\"minValues\":{\"d\":\"$1\"},\"maxValues\":{\"d\":\"$1\"},\"nullCount\":{\"d\":0}}"
+ITEMS=()
+CHECK_TABLES=() CHECK_WHERES=() CHECK_SETTINGS=()
+ERR_HEADERS=() ERR_TABLES=() ERR_WHERES=() ERR_ENABLED=() ERR_CODES=() ERR_SETTINGS=()
+OFF_ROWS=() OFF_DELTAS=() ON_ROWS=() ON_DELTAS=()
+
+# check <table> <where> [settings]: rows with the engine predicate on must match the rows with
+# it off, the off run must scan every file, and the on rows and scan count go to the reference.
+check() {
+    ITEMS+=("check ${#CHECK_TABLES[@]}")
+    CHECK_TABLES+=("$1")
+    CHECK_WHERES+=("$2")
+    CHECK_SETTINGS+=("${3:-}")
 }
 
-# partition <file> <value>: the file of partition `d = <value>`, a JSON string or `null`.
-partition() {
-    printf '{"add":{"path":"%s.parquet","partitionValues":{"d":%s},"size":1,"modificationTime":0,"dataChange":true,"stats":"{\\"numRecords\\":1}"}}' "$1" "$2"
+# expect_error <header> <table> <where> <enabled> <error> [settings]: the query must fail with
+# the given error identity; scan counts are not pinned after cancellation.
+expect_error() {
+    ITEMS+=("error ${#ERR_HEADERS[@]}")
+    ERR_HEADERS+=("$1")
+    ERR_TABLES+=("$2")
+    ERR_WHERES+=("$3")
+    ERR_ENABLED+=("$4")
+    ERR_CODES+=("$5")
+    ERR_SETTINGS+=("${6:-}")
 }
 
-log t "${DATE32}" "$(one 2026-01-01)" "$(one 2026-01-02)" "$(one 2205-06-08)"
-log lower "${DATE32}" "$(one 1969-12-31)" "$(one 1970-01-01)" "$(one 1970-01-02)"
-log upper "${DATE32}" "$(one 2149-06-05)" "$(one 2149-06-06)" "$(one 2149-06-07)"
-log negation "${DATE32}" "$(one 2026-01-01)" "$(one 2026-01-02)" "$(one 2205-06-09)"
-log aliases "${DATE32}" "$(one 1846-07-28)" "$(one 2026-01-02)" "$(one 2384-11-12)"
-log valid "${DATE32}" "$(one 1970-01-02)" "$(one 2026-01-01)"
-log no_stats "${DATE32}" \
-    "$(add 2026-01-01 '{"numRecords":1}')" \
-    "$(add 2026-01-02 '{"numRecords":1}')"
-log no_min "${DATE32}" \
-    "$(add 2026-01-01 '{"numRecords":1,"maxValues":{"d":"2026-01-01"},"nullCount":{"d":0}}')" \
-    "$(add 2026-01-02 '{"numRecords":1,"maxValues":{"d":"2026-01-02"},"nullCount":{"d":0}}')"
-log no_max "${DATE32}" \
-    "$(add 2026-01-01 '{"numRecords":1,"minValues":{"d":"2026-01-01"},"nullCount":{"d":0}}')" \
-    "$(add 2026-01-02 '{"numRecords":1,"minValues":{"d":"2026-01-02"},"nullCount":{"d":0}}')"
-log mixed "${DATE32}" "$(one 2026-01-01)" "$(one 2026-01-02)" \
-    "$(add low '{"numRecords":2,"minValues":{"d":"1969-12-31"},"maxValues":{"d":"1970-01-01"},"nullCount":{"d":0}}')" \
-    "$(add high '{"numRecords":2,"minValues":{"d":"2149-06-06"},"maxValues":{"d":"2149-06-07"},"nullCount":{"d":0}}')"
-log spanning "${DATE32}" "$(one 2026-01-01)" \
-    "$(add wide '{"numRecords":3,"minValues":{"d":"1970-01-01"},"maxValues":{"d":"2149-06-07"},"nullCount":{"d":0}}')"
-log nullable "${NULLABLE}" "$(one 2026-01-01)" "$(one 2026-01-02)" "$(one 2205-06-08)" \
-    "$(add null '{"numRecords":1,"nullCount":{"d":1}}')"
-log nullable_with_nulls "${NULLABLE}" "$(one 2026-01-01)" "$(one 2026-01-02)" \
-    "$(add with_null '{"numRecords":2,"minValues":{"d":"2026-01-03"},"maxValues":{"d":"2026-01-03"},"nullCount":{"d":1}}')"
-log nullable_no_null_count "${NULLABLE}" \
-    "$(add 2026-01-01 '{"numRecords":1,"minValues":{"d":"2026-01-01"},"maxValues":{"d":"2026-01-01"}}')" \
-    "$(add 2026-01-02 '{"numRecords":1,"minValues":{"d":"2026-01-02"},"maxValues":{"d":"2026-01-02"}}')"
-log overflow_rhs "${NULLABLE}" "$(one 1970-01-02)" "$(one 2026-01-01)"
-log partitioned "${PARTITIONED}" \
-    "$(partition 2026-01-01 '"2026-01-01"')" \
-    "$(partition 2026-01-02 '"2026-01-02"')" \
-    "$(partition 2205-06-08 '"2205-06-08"')" \
-    "$(partition null null)"
+# The data query of one recorded case, with its per-case settings attached.
+data_query() {
+    printf "SELECT arraySort(groupArray(ifNull(toString(d), 'NULL'))) FROM deltaLakeLocal('%s') WHERE %s%s;" \
+        "${ROOT}/$1" "$2" "${3:+ SETTINGS $3}"
+}
 
-Q="INSERT INTO results SELECT queryID(), arraySort(groupArray(toString(d))) FROM deltaLakeLocal"
+# Disable every applicable Parquet pruning path, so only the engine predicate can skip files.
+run_batch() {
+    local enabled=$1
+    shift
+    ${CLICKHOUSE_LOCAL} --date_time_overflow_behavior=ignore --convert_query_to_cnf=0 \
+        --short_circuit_function_evaluation=disable \
+        --input_format_parquet_filter_push_down=0 --input_format_parquet_page_filter_push_down=0 \
+        --input_format_parquet_bloom_filter_push_down=0 --input_format_parquet_dictionary_filter_push_down=0 \
+        --delta_lake_enable_engine_predicate="${enabled}" --delta_lake_throw_on_engine_predicate_error=1 "$@"
+}
 
-${CLICKHOUSE_CLIENT} --query "
-    CREATE TABLE results (query_id String, rows Array(String)) ENGINE = Memory;
+# Runs every recorded check in one launch. Each data query is followed by a read of the
+# cumulative `DeltaLakeScannedFiles` counter; consecutive differences give per-query scan counts.
+run_checks() {
+    local enabled=$1
+    local -n rows_out=$2 deltas_out=$3
+    local i batch="" out
+    for i in "${!CHECK_TABLES[@]}"; do
+        batch+="$(data_query "${CHECK_TABLES[$i]}" "${CHECK_WHERES[$i]}" "${CHECK_SETTINGS[$i]}")
+            SELECT sumIf(value, event = 'DeltaLakeScannedFiles') FROM system.events;"
+    done
+    out=$(run_batch "${enabled}" --query "${batch}")
+    local -a lines
+    mapfile -t lines <<< "${out}"
+    if [[ "${#lines[@]}" != "$(( 2 * ${#CHECK_TABLES[@]} ))" ]]; then
+        printf 'Expected %s lines from the check batch (engine predicate %s), got %s:\n%s\n' \
+            "$(( 2 * ${#CHECK_TABLES[@]} ))" "${enabled}" "${#lines[@]}" "${out}" >&2
+        return 1
+    fi
+    local previous=0 cumulative
+    for i in "${!CHECK_TABLES[@]}"; do
+        rows_out+=("${lines[2 * i]}")
+        cumulative="${lines[2 * i + 1]}"
+        deltas_out+=("$(( cumulative - previous ))")
+        previous="${cumulative}"
+    done
+}
 
-    -- Only the engine predicate may skip files; NULL and overflow errors must not depend on evaluation order.
-    SET allow_delta_kernel_rs = 1, delta_lake_throw_on_engine_predicate_error = 1,
-        input_format_parquet_filter_push_down = 0, input_format_parquet_page_filter_push_down = 0,
-        input_format_parquet_bloom_filter_push_down = 0, input_format_parquet_dictionary_filter_push_down = 0,
-        optimize_move_to_prewhere = 0, convert_query_to_cnf = 0, short_circuit_function_evaluation = 'disable',
-        date_time_overflow_behavior = 'ignore', cast_keep_nullable = 0, session_timezone = 'UTC',
-        use_structure_from_insertion_table_in_table_functions = 0, log_queries = 1;
+# Runs each error case with a `-- { serverError <code> }` hint that consumes the expected exception (no stderr), while its following `system.errors` counter must grow to prove the query failed.
+run_errors() {
+    local enabled=$1
+    local i batch="" out
+    local -a case_ids=()
+    for i in "${!ERR_HEADERS[@]}"; do
+        [[ "${ERR_ENABLED[$i]}" == "${enabled}" ]] || continue
+        case_ids+=("$i")
+        batch+="$(data_query "${ERR_TABLES[$i]}" "${ERR_WHERES[$i]}" "${ERR_SETTINGS[$i]}") -- { serverError ${ERR_CODES[$i]} }
+            SELECT sumIf(value, name = '${ERR_CODES[$i]}') FROM system.errors;"
+    done
+    out=$(run_batch "${enabled}" --query "${batch}")
+    local -a lines
+    mapfile -t lines <<< "${out}"
+    if [[ "${#lines[@]}" != "${#case_ids[@]}" ]]; then
+        printf 'Expected %s failing queries (engine predicate %s), got output:\n%s\n' \
+            "${#case_ids[@]}" "${enabled}" "${out}" >&2
+        return 1
+    fi
+    local j code
+    declare -A previous=()
+    for j in "${!case_ids[@]}"; do
+        i="${case_ids[$j]}"
+        code="${ERR_CODES[$i]}"
+        if [[ ! "${lines[$j]}" =~ ^[0-9]+$ ]] || [[ "${lines[$j]}" -le "${previous[$code]:-0}" ]]; then
+            printf 'Expected %s (engine predicate %s) from: %s\n' "${code}" "${enabled}" "${ERR_WHERES[$i]}" >&2
+            return 1
+        fi
+        previous[$code]="${lines[$j]}"
+    done
+}
 
-    -- A plain column, then the conversions. 2205-06-08 wraps to the \`Date\` 2026-01-01, so its file is kept for \`Date\`.
-    ${Q}('${ROOT}/t') WHERE d = '2026-01-01';
-    ${Q}('${ROOT}/t') WHERE CAST(d AS Date) = '2026-01-01';
-    ${Q}('${ROOT}/t') WHERE toDate(d) = '2026-01-01';
-    ${Q}('${ROOT}/t') WHERE toDate(d, 'UTC') = '2026-01-01';
-    ${Q}('${ROOT}/t') WHERE d::Date32 = '2026-01-01';
-    ${Q}('${ROOT}/t') WHERE d::Date != '2026-01-01';
-    ${Q}('${ROOT}/t') WHERE toDate(d) = '2026-01-03';
-    ${Q}('${ROOT}/t') WHERE toDate32(d) = '2026-01-03';
-    ${Q}('${ROOT}/t') WHERE toDate32(d) < '2026-01-02';
-    ${Q}('${ROOT}/t') WHERE '2026-01-02' > toDate32(d);
-    ${Q}('${ROOT}/t') WHERE d::Date32 <= '2026-01-01';
-    ${Q}('${ROOT}/t') WHERE toDate(d) < '2026-01-02';
-    ${Q}('${ROOT}/t') WHERE toDate(d) >= '2026-01-02';
-    ${Q}('${ROOT}/t') WHERE NOT (toDate(d) < '2026-01-02');
-    ${Q}('${ROOT}/t') WHERE toDate32(d) = toDate('2026-01-01');
-    ${Q}('${ROOT}/t') WHERE toDate(d) = toDate32('2026-01-01');
-    ${Q}('${ROOT}/t') WHERE toDate(d) = toDate32('2205-06-08');
-    ${Q}('${ROOT}/negation') WHERE NOT (toDate(d) = '2026-01-01' AND d > toDate32('1970-01-01'));
-    ${Q}('${ROOT}/aliases') WHERE toDate(d) = '2026-01-01';
-    ${Q}('${ROOT}/valid') WHERE toDate(d) != toDateTime('2026-01-01 00:00:01', 'UTC');
-    ${Q}('${ROOT}/valid') WHERE CAST(d AS Date) = '2026-01-01' SETTINGS date_time_overflow_behavior = 'throw';
+# Prints the results in declaration order; the reference interleaves checks and expected errors.
+emit_results() {
+    local item kind idx
+    for item in "${ITEMS[@]}"; do
+        read -r kind idx <<< "${item}"
+        if [[ "${kind}" == error ]]; then
+            printf '%s\n' "${ERR_HEADERS[$idx]}"
+            printf '1\n'
+            continue
+        fi
+        local table="${CHECK_TABLES[$idx]}" where="${CHECK_WHERES[$idx]}" settings="${CHECK_SETTINGS[$idx]}"
+        local files=("${ROOT}/${table}/"*.parquet)
+        printf '%s: %s%s\n' "${table}" "${where}" "${settings:+ SETTINGS ${settings}}"
+        # Compare rows, not scan counts. The reference independently checks rows and selected files.
+        diff -u <(printf '%s\n' "${OFF_ROWS[$idx]}") <(printf '%s\n' "${ON_ROWS[$idx]}")
+        if [[ "${OFF_DELTAS[$idx]}" != "${#files[@]}" ]]; then
+            printf 'Unexpected unpruned file count %s for: %s\n' "${OFF_DELTAS[$idx]}" "${where}" >&2
+            return 1
+        fi
+        printf '%s\n' "${ON_ROWS[$idx]}"
+        printf '%s\n' "${ON_DELTAS[$idx]}"
+    done
+}
 
-    -- Values next to the \`Date\` bounds.
-    ${Q}('${ROOT}/lower') WHERE toDate(d) = '1970-01-01' SETTINGS date_time_overflow_behavior = 'saturate';
-    ${Q}('${ROOT}/upper') WHERE CAST(d AS Date) = '2149-06-06' SETTINGS date_time_overflow_behavior = 'saturate';
-    ${Q}('${ROOT}/upper') WHERE toDate(d) > '2149-06-05' SETTINGS date_time_overflow_behavior = 'saturate';
-    ${Q}('${ROOT}/mixed') WHERE toDate(d) = '1970-01-01';
-    ${Q}('${ROOT}/mixed') WHERE toDate(d) = '2149-06-06';
-    ${Q}('${ROOT}/spanning') WHERE toDate(d) = '1970-01-02';
+run_all() {
+    ${CLICKHOUSE_LOCAL} --query "${FIXTURE_QUERIES}"
+    local table
+    for table in "${TABLES[@]}"; do
+        write_log "${table}"
+    done
+    run_checks 0 OFF_ROWS OFF_DELTAS
+    run_checks 1 ON_ROWS ON_DELTAS
+    run_errors 0
+    run_errors 1
+    emit_results
+}
 
-    -- An overflow must still throw with the engine predicate, also when only the literal overflows.
-    ${Q}('${ROOT}/lower') WHERE CAST(d AS Date) = '2026-01-01' SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-    ${Q}('${ROOT}/lower') WHERE NOT (toDate(d) = '2026-01-01' AND d > toDate32('1900-01-01')) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-    ${Q}('${ROOT}/upper') WHERE CAST(d AS Date) = '2026-01-01' SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-    ${Q}('${ROOT}/upper') WHERE NOT (toDate(d) = '2026-01-01' AND d > toDate32('1900-01-01')) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-    ${Q}('${ROOT}/upper') WHERE toDate(d) < '2026-01-01' SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-    ${Q}('${ROOT}/overflow_rhs') WHERE toDate(d) = '1969-12-31' SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+# `Date` wraps modulo 65536 days: the alias matches equality but stays scanned even for `!=`.
+make_table t Date32 full 2026-01-01 2026-01-02 2205-06-08
+check t "d = '2026-01-01'"
+check t "CAST(d AS Date) = '2026-01-01'"
+check t "d::Date = '2026-01-01'"
+check t "toDate(d) = '2026-01-01'"
+check t "d::Date32 = '2026-01-01'"
+check t "toDate32(d) = toDate32('2026-01-01')"
+check t "d::Date != '2026-01-01'"
+check t "toDate('2026-01-01') = toDate(d)"
+check t "toDate('2026-01-01') != toDate(d)"
+check t "toDate(d) = '2026-01-03'"
+check t "toDate32(d) = '2026-01-03'"
 
-    -- Missing stats: without both bounds a \`Date\` result cannot be proven in range.
-    ${Q}('${ROOT}/no_stats') WHERE toDate(d) = '2026-01-01';
-    ${Q}('${ROOT}/no_min') WHERE toDate(d) = '2026-01-01';
-    ${Q}('${ROOT}/no_min') WHERE toDate32(d) = '2026-01-02';
-    ${Q}('${ROOT}/no_max') WHERE toDate(d) = '2026-01-01';
-    ${Q}('${ROOT}/no_max') WHERE toDate32(d) = '2026-01-01';
+make_table lower Date32 full 1969-12-31 1970-01-01 1970-01-02
+check lower "toDate(d) = '1970-01-01'" "date_time_overflow_behavior='saturate'"
+check lower "toDate(d) != '1970-01-01'" "date_time_overflow_behavior='saturate'"
+make_table upper Date32 full 2149-06-05 2149-06-06 2149-06-07
+check upper "CAST(d AS Date) = '2149-06-06'" "date_time_overflow_behavior='saturate'"
+check upper "CAST(d AS Date) != '2149-06-06'" "date_time_overflow_behavior='saturate'"
 
-    -- Nullable columns. A non-nullable cast throws on a NULL row, so a full scan fails,
-    -- and the query succeeds only when min/max prune the file with the NULL.
-    ${Q}('${ROOT}/nullable') WHERE toDate(d) = '2026-01-01';
-    ${Q}('${ROOT}/nullable') WHERE CAST(d AS Nullable(Date)) = toNullable(toDate('2026-01-01'));
-    ${Q}('${ROOT}/nullable') WHERE CAST(d AS Date) = '2026-01-01' SETTINGS delta_lake_enable_engine_predicate = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
-    ${Q}('${ROOT}/nullable') WHERE CAST(d AS Date) = '2026-01-01';
-    ${Q}('${ROOT}/nullable') WHERE NOT (CAST(d AS Date) = '2026-01-01');
-    ${Q}('${ROOT}/nullable_with_nulls') WHERE d::Date = '2026-01-01' SETTINGS delta_lake_enable_engine_predicate = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
-    ${Q}('${ROOT}/nullable_with_nulls') WHERE d::Date = '2026-01-01';
-    ${Q}('${ROOT}/nullable_with_nulls') WHERE d::Date32 = '2026-01-01';
-    ${Q}('${ROOT}/nullable_with_nulls') WHERE NOT (d::Date = '2026-01-03');
-    ${Q}('${ROOT}/nullable_with_nulls') WHERE d::Date = '2026-01-03'; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
-    ${Q}('${ROOT}/nullable_no_null_count') WHERE d::Date = '2026-01-01';
-    ${Q}('${ROOT}/partitioned') WHERE d::Date = '2026-01-01' SETTINGS delta_lake_enable_engine_predicate = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
-    ${Q}('${ROOT}/partitioned') WHERE d::Date = '2026-01-01';
-    ${Q}('${ROOT}/partitioned') WHERE d::Date32 = '2026-01-02';
-    ${Q}('${ROOT}/partitioned') WHERE d::Date != '2026-01-01';
-    ${Q}('${ROOT}/partitioned') WHERE NOT (d::Date = '2026-01-01');
+make_table negation Date32 full 2026-01-01 2026-01-02 2205-06-09
+check negation "NOT (toDate(d) = '2026-01-01' AND d > toDate32('1970-01-01'))"
 
-    -- Full scans of the cases where wrong pruning would lose rows.
-    ${Q}('${ROOT}/t') WHERE CAST(d AS Date) = '2026-01-01' SETTINGS delta_lake_enable_engine_predicate = 0;
-    ${Q}('${ROOT}/t') WHERE d::Date != '2026-01-01' SETTINGS delta_lake_enable_engine_predicate = 0;
-    ${Q}('${ROOT}/t') WHERE toDate32(d) < '2026-01-02' SETTINGS delta_lake_enable_engine_predicate = 0;
-    ${Q}('${ROOT}/negation') WHERE NOT (toDate(d) = '2026-01-01' AND d > toDate32('1970-01-01')) SETTINGS delta_lake_enable_engine_predicate = 0;
-    ${Q}('${ROOT}/aliases') WHERE toDate(d) = '2026-01-01' SETTINGS delta_lake_enable_engine_predicate = 0;
-    ${Q}('${ROOT}/lower') WHERE toDate(d) = '1970-01-01' SETTINGS date_time_overflow_behavior = 'saturate', delta_lake_enable_engine_predicate = 0;
-    ${Q}('${ROOT}/upper') WHERE toDate(d) > '2149-06-05' SETTINGS date_time_overflow_behavior = 'saturate', delta_lake_enable_engine_predicate = 0;
-    ${Q}('${ROOT}/mixed') WHERE toDate(d) = '1970-01-01' SETTINGS delta_lake_enable_engine_predicate = 0;
-    ${Q}('${ROOT}/mixed') WHERE toDate(d) = '2149-06-06' SETTINGS delta_lake_enable_engine_predicate = 0;
-    ${Q}('${ROOT}/spanning') WHERE toDate(d) = '1970-01-02' SETTINGS delta_lake_enable_engine_predicate = 0;
-    ${Q}('${ROOT}/no_min') WHERE toDate32(d) = '2026-01-02' SETTINGS delta_lake_enable_engine_predicate = 0;
+# Aliases at -65536 and +131072 days also lie outside the DateLUT's 1900..2299 fast range.
+make_table aliases Date32 full 1846-07-28 2026-01-02 2384-11-12
+check aliases "toDate(d) = '2026-01-01'"
+check aliases "toDate(d) != '2026-01-01'"
 
-    SYSTEM FLUSH LOGS query_log;
-    CREATE VIEW report AS SELECT
-        event_time_microseconds,
-        extract(query, '_delta_cast/([a-z_0-9]+)') AS table,
-        extract(query, ' WHERE ([^;]*)') AS condition,
-        rows,
-        exception_code,
-        -- Scan counts are not pinned after an error.
-        if(exception_code = 0, toString(ProfileEvents['DeltaLakeScannedFiles']), errorCodeToName(exception_code)) AS outcome
-    FROM system.query_log LEFT JOIN results USING (query_id)
-    WHERE current_database = currentDatabase() AND event_date >= yesterday()
-        AND query_kind = 'Insert' AND type != 'QueryStart' AND query LIKE '%INSERT INTO results %';
+make_table valid Date32 full 1970-01-02 2026-01-01
+check valid "toDate(d) != toDateTime('2026-01-01 00:00:01', 'UTC')"
+check valid "CAST(d AS Date) = '2026-01-01'" "date_time_overflow_behavior='throw'"
+check valid "toDate(d) != '2026-01-01'" "date_time_overflow_behavior='throw'"
 
-    SELECT table, condition, rows, outcome FROM report ORDER BY event_time_microseconds FORMAT TSVRaw;
+make_table nullable 'Nullable(Date32)' full NULL 2026-01-01 2026-01-02 2205-06-08
+check nullable "toDate(d) = '2026-01-01'"
+check nullable "CAST(d AS Nullable(Date)) = toNullable(toDate('2026-01-01'))"
+check nullable "CAST(d AS Nullable(Date)) != '2026-01-01'"
 
-    SELECT 'engine predicate changed rows', table, key, groupUniqArray(rows)
-    FROM (SELECT table, rows, replaceRegexpOne(condition, '(,| SETTINGS) delta_lake_enable_engine_predicate = 0', '') AS key
-          FROM report WHERE exception_code = 0)
-    GROUP BY table, key
-    HAVING length(groupUniqArray(rows)) > 1
-    FORMAT TSVRaw;
-" < /dev/null
+make_table no_stats Date32 none 2026-01-01 2026-01-02
+check no_stats "toDate(d) = '2026-01-01'"
+
+# A non-nullable cast must still reject the stats-bearing NULL file.
+for enabled in 0 1; do
+    expect_error "nullable: cast rejects NULL (engine predicate ${enabled})" \
+        nullable "CAST(d AS Date) = '2026-01-01'" "${enabled}" \
+        CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN "cast_keep_nullable=0"
+done
+
+# `groupArray` must not hide the all-null file in the unfiltered fixture check.
+check nullable "1"
+
+# Two files cross the Date boundaries; two safe singletons must still be prunable.
+make_table mixed Date32 full 1969-12-31,1970-01-01 2149-06-06,2149-06-07 2026-01-01 2026-01-02
+for mode in ignore saturate; do
+    for boundary in 1970-01-01 2149-06-06; do
+        check mixed "toDate(d) = '${boundary}'" "date_time_overflow_behavior='${mode}'"
+        check mixed "toDate(d) != '${boundary}'" "date_time_overflow_behavior='${mode}'"
+    done
+done
+
+# Both endpoints wrap to day zero, but the file also contains a matching interior value.
+make_table spanning Date32 full 1970-01-01,1970-01-02,2149-06-07 2026-01-01
+check spanning "toDate(d) = '1970-01-02'"
+check spanning "NOT (toDate(d) != '1970-01-02')"
+
+# One missing bound cannot prove that a Date cast is safe.
+for mode in no_min no_max; do
+    make_table "$mode" Date32 "$mode" 2026-01-01 2026-01-02
+    check "$mode" "toDate(d) = '2026-01-01'"
+    check "$mode" "toDate(d) != '2026-01-01'"
+done
+# Identity conversions can still prune from the remaining bound.
+check no_min "toDate32(d) = '2026-01-02'"
+check no_max "toDate32(d) = '2026-01-01'"
+
+# Actual overflows at both bounds must survive equality, inequality, and nested negation.
+for table in lower upper; do
+    for where in "CAST(d AS Date) = '2026-01-01'" "toDate(d) != '2026-01-01'" \
+        "NOT (toDate(d) = '2026-01-01' AND d > toDate32('1900-01-01'))"; do
+        for enabled in 0 1; do
+            expect_error "${table}: ${where} (engine predicate ${enabled}, throw)" \
+                "${table}" "${where}" "${enabled}" VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE \
+                "date_time_overflow_behavior='throw'"
+        done
+    done
+done
+
+# The optional timezone argument of `toDate` / `toDate32` is inert for a `Date32` source.
+check t "toDate(d, 'UTC') = '2026-01-01'"
+check t "toDate32(d, 'UTC') = '2026-01-01'"
+check t "toDate32(d, 'UTC') != '2026-01-01'"
+
+# Ordering: identity conversions map exactly; `Date`-narrowing ones are fenced so out-of-domain files stay scanned in either polarity.
+check t "toDate32(d) < '2026-01-02'"
+check t "toDate32(d) >= '2026-01-02'"
+check t "'2026-01-02' > toDate32(d)"
+check t "d::Date32 <= '2026-01-01'"
+check t "toDate(d) < '2026-01-02'"
+check t "toDate(d) >= '2026-01-02'"
+check t "'2026-01-02' > toDate(d)"
+check t "NOT (toDate(d) < '2026-01-02')"
+check t "NOT (toDate(d) > '2026-01-01')"
+check aliases "toDate(d) <= '2026-01-01'"
+check lower "toDate(d) < '1970-01-02'" "date_time_overflow_behavior='saturate'"
+check upper "toDate(d) > '2149-06-05'" "date_time_overflow_behavior='saturate'"
+# Identity ordering can still prune from a single remaining bound.
+check no_min "toDate32(d) > '2026-01-01'"
+check no_max "toDate32(d) < '2026-01-02'"
+# An actual overflow must survive an ordering comparison whose in-domain answer is false.
+for enabled in 0 1; do
+    expect_error "upper: toDate(d) < '2026-01-01' (engine predicate ${enabled}, throw)" \
+        upper "toDate(d) < '2026-01-01'" "${enabled}" VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE \
+        "date_time_overflow_behavior='throw'"
+done
+
+# Mixed `Date` / `Date32` literals convert exactly; one beyond the `Date` domain stays untranslated and scans everything.
+check t "toDate32(d) = toDate('2026-01-01')"
+check t "toDate(d) = toDate32('2026-01-01')"
+check t "toDate(d) != toDate32('2026-01-01')"
+check t "toDate32(d) < toDate('2026-01-02')"
+check t "toDate(d) = toDate32('2205-06-08')"
+check t "toDate(d) != toDate32('2205-06-08')"
+check t "toDate(d) < toDate32('2205-06-08')"
+
+# The snapshot scan must build the engine predicate with the query's overflow settings. A nullable
+# source hides the out-of-range RHS parse from zero-row header analysis, so if pruning coerced the
+# literal with the default `ignore` it would clamp `'1969-12-31'` to a real day and drop both files,
+# suppressing the exception. Both rows stay inside the `Date` domain, so the only overflow is the RHS.
+make_table overflow_rhs 'Nullable(Date32)' full 1970-01-02 2026-01-01
+for enabled in 0 1; do
+    expect_error "overflow_rhs: toDate(d) = '1969-12-31' (engine predicate ${enabled}, throw)" \
+        overflow_rhs "toDate(d) = '1969-12-31'" "${enabled}" VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE \
+        "date_time_overflow_behavior='throw'"
+done
+
+run_all
