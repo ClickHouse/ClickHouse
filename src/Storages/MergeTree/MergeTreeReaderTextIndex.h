@@ -50,7 +50,8 @@ public:
     void updateReadRequestMap(MarkRangesPtr request_map) override;
 
     /// Sets a pre-computed granule from the skip index reader (Path 2: use_skip_indexes_on_data_read = 1).
-    /// Looks up its own index name in the map.
+    /// Looks up its own index name in the map. A read task also calls it for a reader that it took over from
+    /// the previous task: the granule that the reader already holds leaves the state of the reader as it is.
     void setPrecomputedGranule(const IndexGranulesMap & granules);
 
 private:
