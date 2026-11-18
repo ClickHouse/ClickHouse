@@ -39,6 +39,38 @@ def expect_exception(exception_type, message, callback):
         )
 
 
+def assert_slug_aliases():
+    with tempfile.TemporaryDirectory() as temp:
+        docs = Path(temp)
+        quoted_page = docs / "integrations/clickpipes/networking/index.mdx"
+        trailing_page = docs / "development/index.mdx"
+        quoted_page.parent.mkdir(parents=True)
+        trailing_page.parent.mkdir(parents=True)
+        quoted_page.write_text(
+            "---\nslug: \"/integrations/clickpipes/networking\"\n---\n"
+            "\n## Networking {#networking}\n",
+            encoding="utf-8",
+        )
+        trailing_page.write_text(
+            "---\nslug: /development/\n---\n"
+            "\n## Development {#development}\n",
+            encoding="utf-8",
+        )
+        lychee = load_lychee_module()
+        lychee.dump_inputs = lambda docs_root: []
+        mirror = docs / "lychee-mirror"
+        lychee.build_tree(str(docs), str(mirror))
+        assert lychee.page_slug('---\nslug: "/quoted"\n---\n') == "/quoted"
+        assert lychee.page_slug("---\nslug: /development/\n---\n") == "/development"
+        assert lychee.page_slug("---\nslug: /\n---\n") == "/"
+        assert (mirror / "integrations/clickpipes/networking.mdx").read_text(
+            encoding="utf-8"
+        ) == '<a id="networking"></a>\n'
+        assert (mirror / "development.mdx").read_text(
+            encoding="utf-8"
+        ) == '<a id="development"></a>\n'
+
+
 def generated_page(names, body_h1=None):
     sections = []
     for setting in names:
@@ -102,6 +134,7 @@ def setting_names(mod, content):
 def main():
     mod = load_module()
     mod.SESSION_SETTINGS_PREFIX_GROUP_MIN = 2
+    assert_slug_aliases()
 
     repo_root = HERE.parents[4]
     for family_name in mod.SETTINGS_SPLIT_FAMILIES:

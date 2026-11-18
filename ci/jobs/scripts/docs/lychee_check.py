@@ -101,7 +101,7 @@ ANCHOR_ID_RE = re.compile(r'\{#([A-Za-z0-9_-]+)\}|<a\s+id=["\']([A-Za-z0-9_-]+)[
 # as valid fragment targets, but lychee only recognizes headings and `<a id>`.
 ELEMENT_ID_RE = re.compile(r'\bid=["\']([A-Za-z0-9_-]+)["\']')
 FRONTMATTER_SLUG_RE = re.compile(
-    r"\A---\s*\n.*?^slug:\s*(?P<slug>/\S+)\s*$.*?^---\s*$",
+    r"\A---\s*\n.*?^slug:\s*(?P<slug>(?:\"/\S*\"|'/\S*'|/\S*))\s*$.*?^---\s*$",
     re.DOTALL | re.MULTILINE,
 )
 
@@ -132,9 +132,15 @@ def collect_snippet_anchors(text, docs_root, page_dir, seen):
 
 
 def page_slug(text):
-    """Return the absolute Mintlify slug declared in one MDX page, if any."""
+    """Return the normalized absolute Mintlify slug declared in one MDX page."""
     match = FRONTMATTER_SLUG_RE.match(text)
-    return match.group("slug") if match else None
+    if not match:
+        return None
+
+    slug = match.group("slug")
+    if slug[0] in "\"'":
+        slug = slug[1:-1]
+    return slug.rstrip("/") or "/"
 
 
 def collect_generated_setting_anchors(page_path):
