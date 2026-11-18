@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/78538
 # Reading Arrow file with Array(Int) into a table with Nested(c1 Int) column

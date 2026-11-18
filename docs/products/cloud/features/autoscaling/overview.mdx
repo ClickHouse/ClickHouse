@@ -28,12 +28,12 @@ Choose an option based on whether you want to change the capacity of your existi
 | [On-Demand Compute](/products/cloud/features/infrastructure/on-demand-compute) | Temporarily assigns workers from a managed pool through your existing service and endpoint. | An eligible `SELECT` query needs additional compute without resizing the service. |
 
 <Note>
-Scaling support varies by service tier and profile. [Horizontal autoscaling](/products/cloud/features/autoscaling/horizontal-autoscaling) is in Private Preview. On-Demand Compute is also in Private Preview and supports eligible `SELECT` queries only.
+Scaling support varies by service tier and profile. [Horizontal autoscaling](/products/cloud/features/autoscaling/horizontal-autoscaling) is in Beta. On-Demand Compute is in Private Preview and supports eligible `SELECT` queries only.
 </Note>
 
 ## How scaling works in ClickHouse Cloud {#how-scaling-works-in-clickhouse-cloud}
 
-ClickHouse Cloud supports manual horizontal scaling for Scale and Enterprise tier services. Scale tier services also support vertical autoscaling; Enterprise tier vertical autoscaling support depends on the profile, as described below. [Horizontal autoscaling](/products/cloud/features/autoscaling/horizontal-autoscaling) is available in Private Preview for Scale and Enterprise tier services.
+ClickHouse Cloud supports manual horizontal scaling for Scale and Enterprise tier services. Scale tier services also support vertical autoscaling; Enterprise tier vertical autoscaling support depends on the profile, as described below. [Horizontal autoscaling](/products/cloud/features/autoscaling/horizontal-autoscaling) is available in Beta for Scale and Enterprise tier services.
 
 For Enterprise tier services scaling works as follows:
 
@@ -41,6 +41,14 @@ For Enterprise tier services scaling works as follows:
 - **Vertical scaling**:
   - Standard `1:4` profiles support vertical autoscaling.
   - Custom profiles (`highMemory` and `highCPU`) don't support vertical autoscaling or manual vertical scaling. However, these services can be scaled vertically by contacting support.
+
+For [BYOC (Bring Your Own Cloud)](/products/cloud/guides/infrastructure/deployment-options/byoc/overview) services scaling works as follows:
+
+- **Horizontal scaling**: Horizontal scaling supports manual scaling. Automatic horizontal scaling is available only for BYOC deployments with autoscaling enabled. It adjusts replica count within configured limits while keeping each replica's size fixed. Contact support to confirm availability for your deployment.
+- **Vertical scaling**: Vertical autoscaling is available only when enabled for your organization. Contact support to confirm availability. Vertical scaling uses discrete sizes that match the node sizes of your BYOC infrastructure.
+  - In BYOC, each server runs on its own node. ClickHouse sizes each server to use the full node, so that no node capacity is wasted.
+  - In ClickHouse Cloud, multiple servers share one node, so servers scale in continuous increments.
+  - When you set the minimum and maximum sizes for a BYOC service, you select from a list of discrete sizes. You do not select from a continuous range.
 
 <Note>
 Scaling in ClickHouse Cloud happens in what we call a ["Make Before Break" (MBB)](/products/cloud/features/autoscaling/make-before-break) approach.

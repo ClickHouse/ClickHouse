@@ -56,38 +56,39 @@ Pour obtenir des instructions de configuration étape par étape, consultez le g
 
 ## Connexion privée à l’API Kubernetes {#k8s-api-private-connection}
 
-Par défaut, l’endpoint du serveur API Kubernetes de votre cluster BYOC est accessible depuis l’internet public. Sur AWS, l’accès est restreint par filtrage IP afin de n’autoriser que les adresses IP de la passerelle NAT de ClickHouse ; sur GCP et Azure, il est plutôt contrôlé par l’IAM du cloud (voir [Exposition du serveur API Kubernetes](/fr/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)). Pour renforcer la sécurité, vous pouvez limiter l’accès au serveur API Kubernetes afin qu’il soit accessible exclusivement via des connexions à un réseau privé.
+Par défaut, l’endpoint du serveur API Kubernetes de votre cluster BYOC est accessible depuis l’internet public. Sur AWS, l’accès est restreint par filtrage IP afin de n’autoriser que les adresses IP de la passerelle NAT de ClickHouse ; sur GCP et Azure, il est plutôt contrôlé par l’IAM du cloud (voir [Exposition du serveur API Kubernetes](/fr/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)). Pour renforcer la sécurité, vous pouvez limiter le serveur API Kubernetes à un accès privé. Sur AWS et Azure, il n’est alors accessible que via des connexions à un réseau privé. Sur GCP, l’endpoint IP public est désactivé, mais les services de gestion utilisent l’endpoint DNS autorisé par IAM, qui reste en dehors de votre réseau VPC.
 
 Les options de connexion privée disponibles dépendent de votre fournisseur de cloud :
 
-### Tailscale (par défaut) {#k8s-api-private-connection-tailscale}
-
-Lorsqu’un point de terminaison d’API privé est activé, les services de gestion de ClickHouse se connectent au serveur d’API Kubernetes via le même réseau Tailscale Zero Trust que celui utilisé pour l’accès de dépannage. Consultez [Tailscale Private Network](/fr/products/bring-your-own-cloud/reference/network-security#tailscale-private-network) pour plus de détails sur le fonctionnement de cette connexion.
-
-<Note>
-  Si vous vous appuyez uniquement sur Tailscale pour la connectivité privée, ClickHouse Support risque de perdre l’accès à votre environnement si l’agent Tailscale devient indisponible. Cela pourrait retarder le dépannage ou allonger les délais de réponse du support.
-</Note>
-
 ### AWS VPC Lattice {#k8s-api-private-connection-vpc-lattice}
 
-<Info>
-  La connectivité VPC Lattice est actuellement en private preview. Contactez ClickHouse Support pour l’activer pour votre déploiement.
-</Info>
-
-Pour les déploiements AWS, le serveur API Kubernetes peut également être accessible en privé via [AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/), sans faire intervenir de composants tiers :
+Pour les déploiements AWS, le serveur API Kubernetes peut être accessible en privé via [AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/), sans faire intervenir de composants tiers :
 
 * ClickHouse Cloud provisionne automatiquement une VPC Lattice Resource Gateway et une Resource Configuration ciblant l’endpoint du serveur API EKS au sein de votre BYOC VPC, puis partage la Resource Configuration avec le compte de gestion ClickHouse Cloud via AWS Resource Access Manager (RAM).
 * Le trafic entre les services de gestion de ClickHouse et votre serveur API Kubernetes reste entièrement sur le réseau privé AWS.
 * Le partage RAM est créé depuis votre compte et limité à un seul cluster BYOC ; sa suppression révoque immédiatement le chemin d’accès privé.
 * Comme l’accès ne dépend pas d’un agent en cours d’exécution dans votre cluster Kubernetes, ClickHouse Support conserve l’accès pour le dépannage même si les composants du cluster sont indisponibles.
 
-### Endpoint privé du plan de contrôle GCP {#k8s-api-private-connection-gcp}
+### Tailscale {#k8s-api-private-connection-tailscale}
 
-Pour les déploiements GCP, l&#39;endpoint du plan de contrôle du cluster GKE basé sur l&#39;adresse IP peut être désactivé afin qu&#39;il ne soit plus joignable depuis l&#39;Internet public. Les services de gestion ClickHouse accèdent alors au plan de contrôle via son endpoint basé sur DNS (`*.gke.goog`). L&#39;accès à cet endpoint est autorisé non pas par une liste d&#39;autorisation d&#39;adresses IP sources, mais par la permission IAM `container.clusters.connect` accordée au compte de service dont ClickHouse emprunte l&#39;identité dans votre projet.
+<Warning>
+  L’utilisation de Tailscale comme connexion privée vers le serveur API EKS est déconseillée. Sur AWS, utilisez plutôt [AWS VPC Lattice](#k8s-api-private-connection-vpc-lattice). Si votre déploiement AWS utilise actuellement Tailscale pour l’accès privé à l’API Kubernetes, contactez ClickHouse Support pour migrer vers VPC Lattice.
+</Warning>
 
-* L&#39;accès est entièrement régi par l&#39;IAM cloud de votre projet : il suffit de révoquer cette permission pour supprimer ce chemin d&#39;accès.
-* La requête aboutit au frontend de Google et non à l&#39;intérieur de votre réseau VPC. Évaluez-la donc comme un chemin d&#39;accès à votre plan de contrôle, et non comme une liaison réseau privée.
-* L&#39;accès de dépannage des ingénieurs ClickHouse continue de passer par Tailscale.
+Lorsqu’un point de terminaison d’API privé est activé, les services de gestion de ClickHouse se connectent au serveur d’API Kubernetes via le même réseau Tailscale Zero Trust que celui utilisé pour l’accès de dépannage. Sur GCP, Tailscale achemine le trafic des outils de déploiement, de la supervision et du dépannage, tandis que les services de gestion passent par l’endpoint basé sur DNS — voir [Endpoint privé du control-plane GCP](#k8s-api-private-connection-gcp). Consultez [Tailscale Private Network](/fr/products/bring-your-own-cloud/reference/network-security#tailscale-private-network) pour plus de détails sur le fonctionnement de cette connexion.
+
+<Note>
+  Si vous vous appuyez uniquement sur Tailscale pour la connectivité privée, ClickHouse Support risque de perdre l’accès à votre environnement si l’agent Tailscale devient indisponible. Cela pourrait retarder le dépannage ou allonger les délais de réponse du support.
+</Note>
+
+### Endpoint control-plane privé sur GCP {#k8s-api-private-connection-gcp}
+
+Sur GCP, les services de gestion ClickHouse accèdent par défaut au plan de contrôle GKE via son endpoint IP public. Vous pouvez désactiver cet endpoint afin que le plan de contrôle ne soit plus joignable via une adresse IP publique :
+
+* Le plan de contrôle conserve son endpoint IP interne, joignable uniquement depuis votre réseau VPC, ainsi que son endpoint basé sur DNS (`*.gke.goog`), qui reste toujours activé.
+* Les services de gestion ClickHouse accèdent au plan de contrôle via l’endpoint basé sur DNS. Cet accès est autorisé par la permission IAM `container.clusters.connect` accordée au compte de service dont ClickHouse emprunte l’identité dans votre projet, et non par une liste d’autorisation d’adresses IP sources : révoquer cette permission supprime donc ce chemin d’accès. La requête aboutit au frontend de Google et non à l’intérieur de votre réseau VPC ; considérez-la donc comme un chemin d’accès à votre plan de contrôle, et non comme une liaison réseau privée.
+* Les outils de déploiement, la supervision et l’accès de dépannage des ingénieurs ClickHouse passent par Tailscale pour atteindre l’endpoint IP interne. Les agents Tailscale étant déployés dans le cluster lors de la configuration initiale, ce mode ne peut être activé qu’une fois celle-ci terminée.
+* Un périmètre VPC Service Controls qui restreint `container.googleapis.com` restreint également l’endpoint basé sur DNS. Ajoutez une règle d’entrée autorisant les identités de gestion de ClickHouse ; votre équipe ClickHouse peut vous les communiquer pour votre déploiement.
 
 ### Azure Private Link {#k8s-api-private-connection-azure}
 
