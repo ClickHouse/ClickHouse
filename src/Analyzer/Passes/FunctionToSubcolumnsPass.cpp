@@ -1273,8 +1273,10 @@ ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
 /// (see IStorage::supportsOptimizationToTupleElementSubcolumns). Applied by both passes through
 /// getTypedNodesForOptimization, so their decisions cannot diverge.
 bool storageAllowsTransformer(
-    const IStorage & storage, const IDataType & type, const String & function_name, SubcolumnSupportCache & cache)
+    const IStorage & storage, const NameAndTypePair & column, const String & function_name, SubcolumnSupportCache & cache)
 {
+    const IDataType & type = *column.type;
+
     auto & answers = getSubcolumnSupportAnswers(storage, cache);
 
     /// Without buckets the key subcolumn `m.key_<key>` reads the whole Map, so `m['key']` is not rewritten to it.
@@ -1288,6 +1290,8 @@ bool storageAllowsTransformer(
 
     if (answers.all_transformers)
         return true;
+    if ((function_name == "length" || function_name == "empty" || function_name == "notEmpty") && isString(removeNullable(type.getPtr())))
+        return storage.supportsOptimizationToStringSizeSubcolumn(column.getNameInStorage());
     if (!answers.tuple_element_only)
         answers.tuple_element_only = storage.supportsOptimizationToTupleElementSubcolumns();
     /// A `Nullable(Tuple(...))` element is a tuple element as well; `QBit` is not.
@@ -1332,7 +1336,7 @@ getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & c
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storageAllowsTransformer(*storage, *column.type, function_node->getFunctionName(), subcolumn_support_cache)
+    if (!storageAllowsTransformer(*storage, column, function_node->getFunctionName(), subcolumn_support_cache)
         || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 
@@ -1395,7 +1399,7 @@ getTypedNodesForChainedOptimization(
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storageAllowsTransformer(*storage, *column.type, function_node->getFunctionName(), subcolumn_support_cache)
+    if (!storageAllowsTransformer(*storage, column, function_node->getFunctionName(), subcolumn_support_cache)
         || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 

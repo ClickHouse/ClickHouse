@@ -228,6 +228,9 @@ public:
     /// A storage that cannot serve synthesised subcolumns such as `.null`/`.size0` as standalone
     /// inputs may enable this while keeping supportsOptimizationToSubcolumns() false.
     virtual bool supportsOptimizationToTupleElementSubcolumns() const { return supportsOptimizationToSubcolumns(); }
+    /// Same, but restricted to the `size` subcolumn of a `String` column (`length(s)` -> reading `s.size`), which
+    /// the storage reads without the values of the column.
+    virtual bool supportsOptimizationToStringSizeSubcolumn(const String & /*column_name*/) const { return supportsOptimizationToSubcolumns(); }
     /// Returns true if the storage writes `Map` columns with the bucketed serialization, where a single key
     /// can be read without reading the whole column. Gates the `m['key']` -> `m.key_<key>` rewrite.
     virtual bool hasBucketedMapSerialization() const { return false; }

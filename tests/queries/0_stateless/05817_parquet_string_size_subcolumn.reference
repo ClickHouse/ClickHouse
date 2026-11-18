@@ -1,0 +1,30 @@
+-- results identical with and without the optimization
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+-- the reading step reads only the sizes
+Output: s.size, n.size
+-- a column with DEFAULT that is missing in the file
+30000	0
+10000
+-- a hive partition column
+40000	10000	79974

@@ -500,6 +500,17 @@ bool StorageObjectStorage::canMoveConditionsToPrewhere() const
     return supports_prewhere;
 }
 
+bool StorageObjectStorage::supportsOptimizationToStringSizeSubcolumn(const String & column_name) const
+{
+    /// See `prepareReadingFromFormat`: the format reads the sizes of a column that is in the file and has no `DEFAULT`.
+    /// Data lakes read through their own metadata, which does not pass the sizes to the format.
+    if (!supports_tuple_elements || configuration->isDataLakeConfiguration()
+        || hive_partitioning_columns.get()->hive_partition_columns_to_read_from_file_path.contains(column_name))
+        return false;
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return !metadata_snapshot->getColumns().hasDefault(column_name);
+}
+
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);

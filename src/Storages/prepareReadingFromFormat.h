@@ -1,4 +1,6 @@
 #pragma once
+
+#include <functional>
 #include <Core/Block.h>
 #include <Storages/StorageSnapshot.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -111,10 +113,14 @@ namespace DB
         const ContextPtr & context,
         bool supports_subset_of_columns,
         bool supports_tuple_elements = false,
-        const PrepareReadingFromFormatHiveParams & hive_parameters = {});
+        const PrepareReadingFromFormatHiveParams & hive_parameters = {},
+        bool supports_string_sizes = false);
 
     /// Returns columns_to_read from file.
-    Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns);
+    /// `can_read_string_sizes` tells, by the name of a column in storage, whether the format reads the `size`
+    /// subcolumn of its `String` value (or of a `String` element of its tuples) on its own. If not set, it never does.
+    Names filterTupleColumnsToRead(
+        NamesAndTypesList & requested_columns, const std::function<bool(const String &)> & can_read_string_sizes = {});
 
     ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const PrewhereInfoPtr & prewhere_info);
 

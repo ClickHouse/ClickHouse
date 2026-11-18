@@ -7,6 +7,7 @@
 #include <base/arithmeticOverflow.h>
 #include <bit>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/FloatUtils.h>
 #include <Common/StringValueFilter.h>
@@ -808,7 +809,9 @@ struct PlainStringDecoder : public PageDecoder
                     skip(num_values);
                     return;
                 }
-                chars_buf.reserve(num_pass * 32); // rough estimate
+                const bool needs_chars = converter->needsChars();
+                if (needs_chars)
+                    chars_buf.reserve(num_pass * 32); // rough estimate
                 offsets.reserve(num_pass);
                 size_t offset = 0;
                 for (size_t i = 0; i < num_values; ++i)
@@ -820,7 +823,8 @@ struct PlainStringDecoder : public PageDecoder
                     requireRemainingBytes(len);
                     if (filter[filter_offset + i])
                     {
-                        chars_buf.insert(chars_buf.end(), data + 4, data + len);
+                        if (needs_chars)
+                            chars_buf.insert(chars_buf.end(), data + 4, data + len);
                         offset += len - 4;
                         offsets.push_back(offset);
                     }
@@ -2456,6 +2460,16 @@ void TrivialStringConverter::convertColumn(std::span<const char> chars, const UI
 std::optional<Field> TrivialStringConverter::convertField(std::span<const char> data, bool /*is_max*/) const
 {
     return Field(String(data.data(), data.size()));
+}
+
+void StringSizeConverter::convertColumn(std::span<const char> /*chars*/, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
+{
+    auto & data = assert_cast<ColumnUInt64 &>(col).getData();
+    size_t prev_size = data.size();
+    data.resize(prev_size + num_values);
+    UInt64 * out = data.data() + prev_size;
+    for (size_t i = 0; i < num_values; ++i)
+        out[i] = offsets[i] - offsets[ssize_t(i) - 1] - separator_bytes;
 }
 
 /// Reverse bytes. Like std::byteswap, but works for Int128 and Int256 too.

@@ -1434,6 +1434,15 @@ bool StorageFile::canMoveConditionsToPrewhere() const
     return supports_prewhere;
 }
 
+bool StorageFile::supportsOptimizationToStringSizeSubcolumn(const String & column_name) const
+{
+    /// See `prepareReadingFromFormat`: the format reads the sizes of a column that is in the file and has no `DEFAULT`.
+    if (!supports_prewhere || hive_partition_columns_to_read_from_file_path.contains(column_name))
+        return false;
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return !metadata_snapshot->getColumns().hasDefault(column_name);
+}
+
 std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
 {
     /// Currently don't support prewhere for virtual columns, columns with default expressions,
@@ -2978,7 +2987,8 @@ void StorageFile::read(
         context,
         supportsSubsetOfColumns(context),
         /*supports_tuple_elements=*/ supports_prewhere,
-        PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
+        PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()},
+        /*supports_string_sizes=*/ supports_prewhere);
 
     if (query_info.prewhere_info)
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
