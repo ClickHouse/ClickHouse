@@ -1,0 +1,4 @@
+warm_up: OK
+describe_parameterized_view_named_like_table_function: OK
+select_from_table_function: OK
+policy_of_predefined_system_table: OK

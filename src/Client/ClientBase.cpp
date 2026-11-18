@@ -5668,10 +5668,10 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
             add_lookup(database_expression, name_literal);
             if (table.database.empty())
                 add_lookup("''", name_literal);
-            /// The predefined tables of the server-owned databases are judged by name, not by what
-            /// they hold. The policies of a user object there are looked up after this query.
-            if (!isServerOwnedDatabaseForAIAgent(table.database))
-                add_row_policy_lookup(database_expression, name_literal);
+            /// The predefined tables of the server-owned databases are judged by name, but the
+            /// server still applies the row policies of these real tables, and a policy filter can
+            /// call any function, so their policies are looked up like those of any other table.
+            add_row_policy_lookup(database_expression, name_literal);
         }
 
         if (seen_databases.emplace(table.database).second)
@@ -5725,7 +5725,6 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
     /// the server like those of the query, so they are collected for the same check of
     /// `checkFunctionsForAIReadOnlyTool`.
     std::set<String> stored_expression_functions;
-    std::vector<std::pair<String, String>> user_objects_in_server_owned_databases;
     const auto check_stored_expressions = [&](const String & database, const String & table)
     {
         const auto [begin, end] = column_expressions.equal_range({database, table});
@@ -5774,7 +5773,6 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
         /// checked below like a table of any other database, in addition to the check by name. The
         /// views of `information_schema` are among them: a user can replace one under its predefined
         /// name (`CREATE OR REPLACE VIEW`), so they are refused like any other view.
-        bool is_user_object_in_server_owned_database = false;
         if (isServerOwnedDatabaseForAIAgent(database))
         {
             /// The server-owned databases list all of their tables in `system.tables`, so an
@@ -5803,9 +5801,15 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
                     reference.table);
 
             const auto table_it = reference.table.empty() ? table_engines.end() : table_engines.find({database, reference.table});
-            if (table_it == table_engines.end() || isPredefinedServerOwnedTableForAIAgent(database, reference.table, table_it->second))
+            if (table_it == table_engines.end())
                 continue;
-            is_user_object_in_server_owned_database = true;
+            if (isPredefinedServerOwnedTableForAIAgent(database, reference.table, table_it->second))
+            {
+                /// Its engine is judged by name, but its row policies are evaluated by the server
+                /// on every read like those of any other table.
+                check_stored_expressions(database, reference.table);
+                continue;
+            }
         }
 
         const auto database_it = database_engines.find(database);
@@ -5849,36 +5853,6 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
                 table_it->second);
 
         check_stored_expressions(database, reference.table);
-        if (is_user_object_in_server_owned_database)
-            user_objects_in_server_owned_databases.emplace_back(database, reference.table);
-    }
-
-    /// The row policies of the tables of the server-owned databases are not looked up by the query
-    /// above, because reading `system.row_policies` needs a grant of its own, and the predefined
-    /// tables would require it for no reason. A user object there is checked like any other table,
-    /// so its policies are looked up now, in a second round trip that only such an object costs.
-    if (!user_objects_in_server_owned_databases.empty())
-    {
-        branches.clear();
-        seen_lookups.clear();
-        for (const auto & [database, table] : user_objects_in_server_owned_databases)
-            add_row_policy_lookup(quoteString(database), quoteString(table));
-
-        const Block policies = materializeBlock(
-            fetchInternalQueryResult(fmt::to_string(fmt::join(branches, " UNION ALL ")), {}, /*from_ai_agent=*/ true));
-        if (policies.rows() > 0 && policies.columns() < 4)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result of the row policy query of the AI agent");
-
-        row_policy_filters.clear();
-        column_expressions.clear();
-        for (size_t row = 0; row < policies.rows(); ++row)
-            row_policy_filters.emplace_back(
-                String(policies.getByPosition(1).column->getDataAt(row)),
-                String(policies.getByPosition(2).column->getDataAt(row)),
-                String(policies.getByPosition(3).column->getDataAt(row)));
-
-        for (const auto & [database, table] : user_objects_in_server_owned_databases)
-            check_stored_expressions(database, table);
     }
 
     checkFunctionsForAIReadOnlyTool(Strings(stored_expression_functions.begin(), stored_expression_functions.end()));
