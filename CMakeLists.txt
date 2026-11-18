@@ -257,7 +257,11 @@ option(OMIT_HEAVY_DEBUG_SYMBOLS
     "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
 
-option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
+option(BUILD_STANDALONE_KEEPER "Deprecated: build keeper as a separate binary instead of a symlink to clickhouse" OFF)
+if (BUILD_STANDALONE_KEEPER)
+    message (WARNING "BUILD_STANDALONE_KEEPER is deprecated and will be removed: `clickhouse-keeper` is a symlink to the `clickhouse` binary, "
+        "which runs Keeper in the same way, and a separate binary costs another full ThinLTO link in every build.")
+endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
 # (NOTE: LINKER_NAME can be either path or name, and in different variants)
