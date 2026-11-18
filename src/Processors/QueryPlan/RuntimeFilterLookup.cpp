@@ -143,7 +143,7 @@ std::string_view toString(RuntimeFilterKind kind)
         case RuntimeFilterKind::PartialExactSet: return "partial exact set";
         case RuntimeFilterKind::DenseBitset: return "dense bitset";
         case RuntimeFilterKind::BloomFilter: return "bloom filter";
-        case RuntimeFilterKind::FixedHashMap: return "fixed hash map";
+        case RuntimeFilterKind::SharedFixedHashMap: return "shared fixed hash map";
         case RuntimeFilterKind::Disabled: return "disabled";
     }
 }
@@ -154,8 +154,8 @@ std::string_view toString(RuntimeFilterDisabledReason reason)
     {
         case RuntimeFilterDisabledReason::None: return "";
         case RuntimeFilterDisabledReason::ExactSetOverflow: return "too many keys for exact set";
-        case RuntimeFilterDisabledReason::BloomFilterPredictedTooFull: return "bloom filter predicted too full";
-        case RuntimeFilterDisabledReason::BloomFilterTooFull: return "bloom filter too full";
+        case RuntimeFilterDisabledReason::BloomFilterPredictedTooFull: return "bloom filter predicted saturated";
+        case RuntimeFilterDisabledReason::BloomFilterTooFull: return "bloom filter saturated";
     }
 }
 
@@ -1193,7 +1193,7 @@ SharedFixedHashTableRuntimeFilter::SharedFixedHashTableRuntimeFilter(
 RuntimeFilterDescription SharedFixedHashTableRuntimeFilter::describe() const
 {
     RuntimeFilterDescription description;
-    description.kind = RuntimeFilterKind::FixedHashMap;
+    description.kind = RuntimeFilterKind::SharedFixedHashMap;
     return description;
 }
 

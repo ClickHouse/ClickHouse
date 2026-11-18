@@ -573,6 +573,7 @@ StepAnalysisReport runtimeFilterAnalysisReport(const RuntimeFilter & filter)
 {
     const auto description = filter.describe();
 
+    /// `printRuntimeFilterGroup` expects the type first and the reason right after it.
     MetricList filter_metrics;
     filter_metrics.emplace_back(MetricKey::FilterType, std::string(toString(description.kind)));
     if (description.disabled_reason != RuntimeFilterDisabledReason::None)

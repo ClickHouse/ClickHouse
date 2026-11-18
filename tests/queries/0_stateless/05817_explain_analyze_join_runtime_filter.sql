@@ -32,64 +32,64 @@ INSERT INTO t_probe_uint16 SELECT number FROM numbers(65536);
 INSERT INTO t_build_uint16 SELECT number * 7 FROM numbers(1000);
 
 SELECT 'exact set';
-SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ' · (size|set bits) [^·]*[^ ·]', '')
+SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ', (size|set bits) [^,)]+', '')
 FROM (EXPLAIN ANALYZE SELECT count() FROM t_probe AS p INNER JOIN t_build AS b ON p.k = b.k)
-WHERE explain LIKE '%Runtime filter:%';
+WHERE explain LIKE '%Runtime filter (%';
 
 SELECT 'bloom filter';
-SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ' · (size|set bits) [^·]*[^ ·]', '')
+SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ', (size|set bits) [^,)]+', '')
 FROM (EXPLAIN ANALYZE SELECT count() FROM t_probe AS p INNER JOIN t_build AS b ON p.k = b.k SETTINGS join_runtime_filter_exact_values_limit = 100)
-WHERE explain LIKE '%Runtime filter:%';
+WHERE explain LIKE '%Runtime filter (%';
 
 -- A (U)Int8 or (U)Int16 key whose exact set overflows gets a dense bitset instead of a Bloom filter.
 SELECT 'dense bitset';
-SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ' · (size|set bits) [^·]*[^ ·]', '')
+SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ', (size|set bits) [^,)]+', '')
 FROM (EXPLAIN ANALYZE SELECT count() FROM t_probe_uint16 AS p INNER JOIN t_build_uint16 AS b ON p.k = b.k SETTINGS join_runtime_filter_exact_values_limit = 100)
-WHERE explain LIKE '%Runtime filter:%';
+WHERE explain LIKE '%Runtime filter (%';
 
--- A Bloom filter with any bit set is too full. Whether it is dropped after it was built, or not built because the
+-- A Bloom filter with any bit set is saturated. Whether it is dropped after it was built, or not built because the
 -- hash table statistics of an earlier run predict that, depends on those statistics. Either way, no row is checked.
 SELECT 'disabled bloom filter';
 SELECT
-    countIf(explain LIKE '%Runtime filter: type disabled · reason bloom filter %too full%'),
+    countIf(explain LIKE '%Runtime filter (disabled: bloom filter %saturated%'),
     countIf(explain LIKE '%Probe: checked 0.00 · passed 0.00 · skipped %')
 FROM (EXPLAIN ANALYZE SELECT count() FROM t_probe AS p INNER JOIN t_build AS b ON p.k = b.k
     SETTINGS join_runtime_filter_exact_values_limit = 100, join_runtime_bloom_filter_max_ratio_of_set_bits = 0);
 
 -- A `Nullable` key has no Bloom filter, so a positive filter whose exact set overflows passes every row.
 SELECT 'nullable key';
-SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ' · (size|set bits) [^·]*[^ ·]', '')
+SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ', (size|set bits) [^,)]+', '')
 FROM (EXPLAIN ANALYZE SELECT count() FROM t_probe_nullable AS p INNER JOIN t_build_nullable AS b ON p.k = b.k SETTINGS join_runtime_filter_exact_values_limit = 100)
-WHERE explain LIKE '%Runtime filter:%';
+WHERE explain LIKE '%Runtime filter (%';
 
 -- `NOT IN` keeps the keys it has when the exact set overflows.
 SELECT 'anti join';
-SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ' · (size|set bits) [^·]*[^ ·]', '')
+SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ', (size|set bits) [^,)]+', '')
 FROM (EXPLAIN ANALYZE SELECT count() FROM t_probe AS p LEFT ANTI JOIN t_build AS b ON p.k = b.k)
-WHERE explain LIKE '%Runtime filter:%';
+WHERE explain LIKE '%Runtime filter (%';
 
-SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ' · (size|set bits) [^·]*[^ ·]', '')
+SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ', (size|set bits) [^,)]+', '')
 FROM (EXPLAIN ANALYZE SELECT count() FROM t_probe AS p LEFT ANTI JOIN t_build AS b ON p.k = b.k SETTINGS join_runtime_filter_exact_values_limit = 100)
-WHERE explain LIKE '%Runtime filter:%';
+WHERE explain LIKE '%Runtime filter (%';
 
 -- The keys span less than 2^16, so the join converts its hash table into a `FixedHashMap` and uses it in place of
 -- the filter it built.
-SELECT 'fixed hash map';
-SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ' · (size|set bits) [^·]*[^ ·]', '')
+SELECT 'shared fixed hash map';
+SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ', (size|set bits) [^,)]+', '')
 FROM (EXPLAIN ANALYZE SELECT count() FROM t_probe AS p INNER JOIN t_build AS b ON p.k = b.k SETTINGS join_runtime_filter_from_fixed_hash_table = 1)
-WHERE explain LIKE '%Runtime filter:%';
+WHERE explain LIKE '%Runtime filter (%';
 
-SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ' · (size|set bits) [^·]*[^ ·]', '')
+SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ', (size|set bits) [^,)]+', '')
 FROM (EXPLAIN ANALYZE SELECT count() FROM t_probe AS p INNER JOIN t_build AS b ON p.k = b.k
     SETTINGS join_runtime_filter_from_fixed_hash_table = 1, join_runtime_filter_exact_values_limit = 100)
-WHERE explain LIKE '%Runtime filter:%';
+WHERE explain LIKE '%Runtime filter (%';
 
 SELECT 'probe';
 SELECT countIf(match(explain, '^[│└├─ ]*Probe: checked [0-9.]+( thousand)? · passed [0-9.]+( thousand)?( · pass rate [0-9.]+%)? · skipped [0-9.]+( thousand)? · before ready [0-9.]+( thousand)?$'))
 FROM (EXPLAIN ANALYZE SELECT count() FROM t_probe AS p INNER JOIN t_build AS b ON p.k = b.k);
 
 SELECT 'no runtime filter';
-SELECT countIf(explain LIKE '%Runtime filter:%')
+SELECT countIf(explain LIKE '%Runtime filter (%')
 FROM (EXPLAIN ANALYZE SELECT count() FROM t_probe AS p INNER JOIN t_build AS b ON p.k = b.k SETTINGS enable_join_runtime_filters = 0);
 
 DROP TABLE t_probe;

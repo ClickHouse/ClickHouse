@@ -1,19 +1,19 @@
 exact set
-Runtime filter: type exact set · unique keys 1.00 thousand
+Runtime filter (exact set, 1000 unique keys)
 bloom filter
-Runtime filter: type bloom filter
+Runtime filter (bloom filter)
 dense bitset
-Runtime filter: type dense bitset · unique keys 1.00 thousand
+Runtime filter (dense bitset, 1000 unique keys)
 disabled bloom filter
 1	1
 nullable key
-Runtime filter: type disabled · reason too many keys for exact set
+Runtime filter (disabled: too many keys for exact set)
 anti join
-Runtime filter: type exact set · unique keys 1.00 thousand
-Runtime filter: type partial exact set · unique keys 1.00 thousand
-fixed hash map
-Runtime filter: type fixed hash map · replaced exact set
-Runtime filter: type fixed hash map · replaced bloom filter
+Runtime filter (exact set, 1000 unique keys)
+Runtime filter (partial exact set, 1000 unique keys)
+shared fixed hash map
+Runtime filter (shared fixed hash map, replaced exact set)
+Runtime filter (shared fixed hash map, replaced bloom filter)
 probe
 1
 no runtime filter

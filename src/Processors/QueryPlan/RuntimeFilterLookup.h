@@ -64,8 +64,8 @@ enum class RuntimeFilterKind : UInt8
     /// (U)Int8 and (U)Int16 keys that overflowed the exact set: one bit per value of the key type.
     DenseBitset,
     BloomFilter,
-    /// The join's `FixedHashMap`, published by `HashJoin` in place of the built filter.
-    FixedHashMap,
+    /// The join's `FixedHashMap`, shared by `HashJoin` in place of the built filter, see `SharedFixedHashTableRuntimeFilter`.
+    SharedFixedHashMap,
     /// Passes every row.
     Disabled,
 };

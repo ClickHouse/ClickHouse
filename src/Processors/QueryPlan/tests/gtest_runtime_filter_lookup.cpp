@@ -779,7 +779,7 @@ TEST(RuntimeFilterLookup, ReplacementKeepsStatsAndNamesTheReplacedFilter)
     expectMask(filter->find(makeUInt64ColumnWithType({5, 7, 9}, type)), {0, 1, 0});
 
     const auto description = filter->describe();
-    EXPECT_EQ(description.kind, RuntimeFilterKind::FixedHashMap);
+    EXPECT_EQ(description.kind, RuntimeFilterKind::SharedFixedHashMap);
     ASSERT_TRUE(description.replaced_kind);
     EXPECT_EQ(*description.replaced_kind, RuntimeFilterKind::ExactSet);
 
