@@ -666,6 +666,34 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         [[maybe_unused]] RecordKey last_missed_key{};
         [[maybe_unused]] UInt64 last_missed_hash = 0;
         [[maybe_unused]] bool has_missed_key = false;
+        /// Whether the missed row `i` is counted as a repeat of the last record instead of being staged.
+        const auto skip_repeat = [&]([[maybe_unused]] size_t i, [[maybe_unused]] UInt64 hash) ALWAYS_INLINE -> bool
+        {
+            if constexpr (skip_repeats)
+            {
+                /// After a mid-loop staging, the repeated record is no longer in the batch, so the row is staged.
+                if (previous_miss_row + 1 == i && hash == previous_miss_hash && !misses.empty())
+                {
+                    const bool repeat = rowRepeatsPrevious(repeat_columns, i);
+                    repeats += repeat;
+                    ++repeat_checks;
+                    if (repeat_checks == adaptive_repeat_check_sample && 2 * repeats < repeat_checks)
+                        check_repeats = false;
+                    if (repeat)
+                    {
+                        previous_miss_row = i;
+                        misses.addRepeatOfLast();
+                        return true;
+                    }
+                }
+                previous_miss_row = i;
+                previous_miss_hash = hash;
+                ++staged_rows;
+                if (staged_rows == adaptive_repeat_check_sample && 8 * repeat_checks < staged_rows)
+                    check_repeats = false;
+            }
+            return false;
+        };
         for (size_t i = from; i < row_end; ++i)
         {
             if constexpr (skip_repeats)
@@ -685,7 +713,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
                 {
                     if constexpr (record_places)
                         places_data[i] = nullptr;
-                    misses.add<RecordKey>(static_cast<UInt32>(i), last_missed_hash, key, keep_key_bytes);
+                    if (!skip_repeat(i, last_missed_hash))
+                        misses.add<RecordKey>(static_cast<UInt32>(i), last_missed_hash, key, keep_key_bytes);
                     keyHolderDiscardKey(key_holder);
                     continue;
                 }
@@ -707,29 +736,10 @@ void NO_INLINE Aggregator::executeFrozenImpl(
 
             if constexpr (record_places)
                 places_data[i] = nullptr;
-            if constexpr (skip_repeats)
+            if (skip_repeat(i, hash))
             {
-                /// After a mid-loop staging, the repeated record is no longer in the batch, so the row is staged.
-                if (previous_miss_row + 1 == i && hash == previous_miss_hash && !misses.empty())
-                {
-                    const bool repeat = rowRepeatsPrevious(repeat_columns, i);
-                    repeats += repeat;
-                    ++repeat_checks;
-                    if (repeat_checks == adaptive_repeat_check_sample && 2 * repeats < repeat_checks)
-                        check_repeats = false;
-                    if (repeat)
-                    {
-                        previous_miss_row = i;
-                        misses.addRepeatOfLast();
-                        keyHolderDiscardKey(key_holder);
-                        continue;
-                    }
-                }
-                previous_miss_row = i;
-                previous_miss_hash = hash;
-                ++staged_rows;
-                if (staged_rows == adaptive_repeat_check_sample && 8 * repeat_checks < staged_rows)
-                    check_repeats = false;
+                keyHolderDiscardKey(key_holder);
+                continue;
             }
             misses.add<RecordKey>(static_cast<UInt32>(i), hash, key, keep_key_bytes);
             if constexpr (is_keys_and_packed_string<RecordKey>)

@@ -8,14 +8,16 @@ SET group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 
 
 -- 400 keys of 512 consecutive rows. xn: 12 NaN, then intDiv(p, 100). y and c are constant over 5 rows, and so is s,
 -- except that row 7 differs from row 6 only by a String of the same length.
--- y16, y32 and fs differ from the previous row in one row each, in their high bytes.
+-- y16, y32 and fs differ from the previous row in one row each, in their high bytes. e is empty in the first half of
+-- each key and s in the second.
 DROP VIEW IF EXISTS v_repeated_rows;
 CREATE VIEW v_repeated_rows AS
 SELECT intDiv(number, 512) AS k, number % 512 AS p, if(p < 12, nan, toFloat64(intDiv(p, 100))) AS xn,
     intDiv(p, 5) AS y, toString(if(p = 7, 8, y % 7)) AS s, y % 2 = 0 AS c,
     toUInt16(if(p = 17, 256 + y, y)) AS y16,
     toUInt32(if(p = 22, 65536 + y, y)) AS y32,
-    toFixedString(concat('fixed-string-', toString(if(p = 27, 9, y % 7))), 16) AS fs
+    toFixedString(concat('fixed-string-', toString(if(p = 27, 9, y % 7))), 16) AS fs,
+    if(p < 256, '', s) AS e
 FROM numbers_mt(400 * 512);
 
 -- uniqUpTo keeps a float and compares it with `==`, so each NaN counts.
@@ -45,6 +47,25 @@ SELECT
         < sumIf(ProfileEvents['AdaptiveAggregationStagedRecords'], log_comment = '05770_nan')
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05770_nan', '05770_skip') AND event_date >= yesterday();
+
+-- A key of a fixed-width value and an empty String that repeats the last missed key skips its probe, and is skipped as
+-- a repeat as well: the query stages less than half as many records as one with a function that does not ignore them.
+SELECT 'fixed-width and String keys';
+SET enable_fixed_and_packed_string_keys_in_aggregation = 1;
+SET log_comment = '05770_packed_skip';
+SELECT count(), sum(cityHash64(*)) FROM (SELECT k, e, uniqExact(y), max(y), uniqIf(y, c) FROM v_repeated_rows GROUP BY k, e) SETTINGS enable_adaptive_aggregator = 1;
+SET log_comment = '05770_packed_no_skip';
+SELECT k, e, sum(y) FROM v_repeated_rows GROUP BY k, e SETTINGS enable_adaptive_aggregator = 1 FORMAT Null;
+SET log_comment = '';
+SELECT count(), sum(cityHash64(*)) FROM (SELECT k, e, uniqExact(y), max(y), uniqIf(y, c) FROM v_repeated_rows GROUP BY k, e) SETTINGS enable_adaptive_aggregator = 0;
+SYSTEM FLUSH LOGS query_log;
+SELECT
+    countIf(log_comment = '05770_packed_skip' AND ProfileEvents['AdaptiveAggregationLocalFreezes'] > 0),
+    2 * sumIf(ProfileEvents['AdaptiveAggregationStagedRecords'], log_comment = '05770_packed_skip')
+        < sumIf(ProfileEvents['AdaptiveAggregationStagedRecords'], log_comment = '05770_packed_no_skip')
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05770_packed_skip', '05770_packed_no_skip')
+    AND event_date >= yesterday();
 
 -- The skipped rows still count in the thaw decision, so a stream of key runs thaws as it does without the skip.
 SELECT 'thaw';
