@@ -9,6 +9,7 @@
 #include <IO/SharedThreadPools.h>
 #include <Processors/Formats/Impl/ArrowIPC/ArrowCData.h>
 #include <Processors/Formats/Impl/ArrowIPC/ArrowIPCBlockInputFormat.h>
+#include <Processors/Formats/Impl/ArrowIPC/ArrowIPCSchemaReader.h>
 #include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
 #include <Columns/ColumnsNumber.h>
 #include <boost/algorithm/string/case_conv.hpp>
@@ -307,11 +308,14 @@ int32_t VortexBlockInputFormat::onChunk(::ArrowArray * array, UInt64 split_index
                     ? rowNumbersPieceLength(assert_cast<const ColumnUInt64 &>(*row_index).getData().data() + begin, num_rows - begin)
                     : num_rows - begin;
 
+                /// The decoder returns constants for `Null` fields and bufferless structs, while `buildChunk`
+                /// expects full columns, as the `Arrow` input format hands them over.
                 ArrowIPC::RecordBatchDecoder::DecodedColumns piece_columns = decoded;
-                if (length != num_rows)
+                for (auto & column : piece_columns)
                 {
-                    for (auto & column : piece_columns)
+                    if (length != num_rows)
                         column.column = column.column->cut(begin, length);
+                    column.column = column.column->convertToFullColumnIfConst();
                 }
 
                 DeliveredPiece & piece = delivered_chunk.pieces.emplace_back();
@@ -874,15 +878,18 @@ NamesAndTypesList VortexSchemaReader::readSchema()
     initializeIfNeeded();
 
     /// As the Apache Arrow library reader inferred the types of Vortex files: a field is nullable as in the file unless
-    /// `schema_inference_make_columns_nullable` is 0, and with 1 the types are then made nullable recursively, which
-    /// stops at a type that is nullable already (so the elements of a nullable struct keep their nullability).
+    /// `schema_inference_make_columns_nullable` is 0, which removes `Nullable` at every depth, and with 1 the types are
+    /// then made nullable recursively, which stops at a type that is nullable already (so the elements of a nullable
+    /// struct keep their nullability).
     const UInt64 make_columns_nullable = format_settings.schema_inference_make_columns_nullable;
     NamesAndTypesList result;
     for (const auto & field : file_schema->fields)
     {
         auto type = ArrowIPC::fieldToCHType(
             field, format_settings, make_columns_nullable != 0 && ArrowIPC::isNullableField(field), /* allow_null_type */ true);
-        if (make_columns_nullable == 1)
+        if (make_columns_nullable == 0)
+            type = ArrowIPC::removeNullableForInference(type, format_settings);
+        else if (make_columns_nullable == 1)
             type = makeNullableRecursively(type, format_settings);
         result.emplace_back(field.name, std::move(type));
     }
