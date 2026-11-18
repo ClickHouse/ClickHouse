@@ -53,9 +53,9 @@ while kill -0 $pid_a 2>/dev/null; do
 done
 [[ $waiting == 1 ]] || echo "No insert of the first client waited for its busy timeout"
 
-# The second client inserts while the insert of the first one waits, so they are batched.
-insert b 100
+# The second client inserts while the insert of the first one waits, so they are batched. The first client stops after it.
 touch "${STOP_FILE}"
+insert b 100
 wait
 
 ${CLICKHOUSE_CLIENT} --query "
