@@ -129,9 +129,9 @@ private:
     std::atomic<size_t> first_incomplete_row_group {0};
 
     std::mutex delivery_mutex;
-    std::priority_queue<Task, VectorWithMemoryTracking<Task>, Task::Comparator> delivery_queue;
+    std::priority_queue<Task, VectorWithMemoryTracking<Task>, Task::Comparator> delivery_queue TSA_GUARDED_BY(delivery_mutex);
     std::condition_variable delivery_cv;
-    std::exception_ptr exception;
+    std::exception_ptr exception TSA_GUARDED_BY(delivery_mutex);
     RowGroupSelection row_groups_to_read;
 
     /// Used when `reader.row_groups_ordered_by_top_k`, see admitTopKRowGroups.
@@ -139,10 +139,10 @@ private:
     {
         size_t min_outstanding = 1;
         std::mutex mutex;
-        size_t next_row_group = 0;
+        size_t next_row_group TSA_GUARDED_BY(mutex) = 0;
         /// Admitted row groups that are not fully read yet.
-        size_t outstanding = 0;
-        size_t admitted = 0;
+        size_t outstanding TSA_GUARDED_BY(mutex) = 0;
+        size_t admitted TSA_GUARDED_BY(mutex) = 0;
     };
     TopKAdmission top_k_admission;
 

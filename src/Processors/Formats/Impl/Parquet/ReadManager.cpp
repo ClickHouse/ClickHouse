@@ -4,6 +4,7 @@
 #include <Common/Logger.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
+#include <Common/UniqueLock.h>
 #include <Columns/ColumnsCommon.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -1535,7 +1536,7 @@ ReadManager::ReadResult ReadManager::read()
 {
     Task task;
     {
-        std::unique_lock lock(delivery_mutex);
+        UniqueLock lock(delivery_mutex);
 
         while (true)
         {
@@ -1622,7 +1623,7 @@ ReadManager::ReadResult ReadManager::read()
             else
             {
                 /// Wait for progress. Re-check parsing_runner.isIdle() every few seconds.
-                delivery_cv.wait_for(lock, std::chrono::seconds(10));
+                delivery_cv.wait_for(lock.getUnderlyingLock(), std::chrono::seconds(10));
             }
         }
     }

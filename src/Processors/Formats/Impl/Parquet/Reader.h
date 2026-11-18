@@ -124,7 +124,7 @@ struct SharedFileColumnChunks
     /// that needs it, the others wait for it. Protected by `bloom_filter_bounds_mutex`, which is
     /// taken before `mutex`.
     std::mutex bloom_filter_bounds_mutex;
-    std::shared_ptr<const VectorWithMemoryTracking<size_t>> bloom_filter_bounds;
+    std::shared_ptr<const VectorWithMemoryTracking<size_t>> bloom_filter_bounds TSA_GUARDED_BY(bloom_filter_bounds_mutex);
 };
 using SharedFileColumnChunksPtr = std::shared_ptr<SharedFileColumnChunks>;
 
