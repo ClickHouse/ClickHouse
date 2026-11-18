@@ -280,6 +280,8 @@ NameSet getColumnsRequiredToRecalculateTTL(const StorageInMemoryMetadata & metad
     return res;
 }
 
+}
+
 ColumnDependencies getAllColumnDependencies(
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & updated_columns,
@@ -1824,7 +1826,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     }
 
     /// After the read_columns stage above, so these are recomputed from the converted values.
-    emit_materialized_recompute_stages(type_changed_affected_materialized);
+    emit_materialized_recompute_stages(type_changed_affected_materialized, std::nullopt);
 
     /// We care about affected indices and projections because we also need to rewrite them
     /// when one of index columns updated or filtered with delete.
