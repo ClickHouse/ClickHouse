@@ -25,9 +25,13 @@
 #include <Columns/getLeastSuperColumn.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/Utils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
@@ -82,6 +86,7 @@
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
@@ -102,6 +107,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/NamesAndTypes.h>
 #include <Functions/FunctionFactory.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -594,6 +600,117 @@ bool isSubcolumnOfDefaultValue(const NameAndTypePair & column)
     const auto & type = column.getTypeInStorage();
     return !type->getCustomSerialization()
         || DataTypeFactory::instance().get(type->getName())->hasSubcolumn(column.getSubcolumnName());
+}
+
+std::pair<DataTypePtr, DataTypePtr> nameTupleElementsByPositionImpl(const DataTypePtr & from, const DataTypePtr & to, bool & renamed)
+{
+    if (from->equals(*to))
+        return {from, to};
+
+    const auto * from_nullable = typeid_cast<const DataTypeNullable *>(from.get());
+    const auto * to_nullable = typeid_cast<const DataTypeNullable *>(to.get());
+    if (from_nullable || to_nullable)
+    {
+        const auto & from_nested = from_nullable ? from_nullable->getNestedType() : from;
+        const auto & to_nested = to_nullable ? to_nullable->getNestedType() : to;
+        auto [new_from_nested, new_to_nested] = nameTupleElementsByPositionImpl(from_nested, to_nested, renamed);
+        return {
+            new_from_nested == from_nested ? from : (from_nullable ? std::make_shared<DataTypeNullable>(new_from_nested) : new_from_nested),
+            new_to_nested == to_nested ? to : (to_nullable ? std::make_shared<DataTypeNullable>(new_to_nested) : new_to_nested)};
+    }
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
+    if (from_array && to_array)
+    {
+        auto [from_nested, to_nested] = nameTupleElementsByPositionImpl(from_array->getNestedType(), to_array->getNestedType(), renamed);
+        return {
+            from_nested == from_array->getNestedType() ? from : std::make_shared<DataTypeArray>(from_nested),
+            to_nested == to_array->getNestedType() ? to : std::make_shared<DataTypeArray>(to_nested)};
+    }
+
+    const auto * from_map = typeid_cast<const DataTypeMap *>(from.get());
+    const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
+    if (from_map && to_map)
+    {
+        auto [from_key, to_key] = nameTupleElementsByPositionImpl(from_map->getKeyType(), to_map->getKeyType(), renamed);
+        auto [from_value, to_value] = nameTupleElementsByPositionImpl(from_map->getValueType(), to_map->getValueType(), renamed);
+        return {
+            from_key == from_map->getKeyType() && from_value == from_map->getValueType() ? from : std::make_shared<DataTypeMap>(from_key, from_value),
+            to_key == to_map->getKeyType() && to_value == to_map->getValueType() ? to : std::make_shared<DataTypeMap>(to_key, to_value)};
+    }
+
+    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get());
+    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get());
+    if (!from_tuple || !to_tuple || from_tuple->getElements().empty() || to_tuple->getElements().empty())
+        return {from, to};
+
+    DataTypes from_elements = from_tuple->getElements();
+    DataTypes to_elements = to_tuple->getElements();
+    const auto & to_names = to_tuple->getElementNames();
+
+    std::unordered_map<std::string_view, size_t> from_positions;
+    if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames())
+    {
+        const auto & from_names = from_tuple->getElementNames();
+        from_positions.reserve(from_names.size());
+        for (size_t i = 0; i < from_names.size(); ++i)
+            from_positions.emplace(from_names[i], i);
+    }
+
+    const bool by_name = std::ranges::any_of(to_names, [&](const auto & name) { return from_positions.contains(name); });
+    const bool rename = !from_tuple->hasExplicitNames() && !to_tuple->hasExplicitNames() && from_elements.size() != to_elements.size();
+    if (!by_name && !rename && from_elements.size() != to_elements.size())
+        return {from, to};
+
+    if (by_name)
+    {
+        for (size_t i = 0; i < to_elements.size(); ++i)
+            if (auto it = from_positions.find(to_names[i]); it != from_positions.end())
+                std::tie(from_elements[it->second], to_elements[i])
+                    = nameTupleElementsByPositionImpl(from_elements[it->second], to_elements[i], renamed);
+    }
+    else
+    {
+        for (size_t i = 0; i < std::min(from_elements.size(), to_elements.size()); ++i)
+            std::tie(from_elements[i], to_elements[i]) = nameTupleElementsByPositionImpl(from_elements[i], to_elements[i], renamed);
+    }
+
+    renamed |= rename;
+    auto rebuild = [&](const DataTypePtr & type, const DataTypeTuple & tuple, const DataTypes & elements) -> DataTypePtr
+    {
+        if (rename)
+            return std::make_shared<DataTypeTuple>(elements, tuple.getElementNames());
+        if (elements == tuple.getElements())
+            return type;
+        if (tuple.hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, tuple.getElementNames());
+        return std::make_shared<DataTypeTuple>(elements);
+    };
+    return {rebuild(from, *from_tuple, from_elements), rebuild(to, *to_tuple, to_elements)};
+}
+
+/// Elements of two unnamed tuples are paired by position: missing trailing elements get default values and extra ones
+/// are dropped, as for missing and extra columns. Returns copies of both types in which such tuples are named by position.
+std::optional<std::pair<DataTypePtr, DataTypePtr>> nameTupleElementsByPosition(const DataTypePtr & from, const DataTypePtr & to)
+{
+    bool renamed = false;
+    auto named = nameTupleElementsByPositionImpl(from, to, renamed);
+    if (!renamed)
+        return {};
+    return named;
+}
+
+const ActionsDAG::Node & addCastWithTupleElementsByPosition(
+    ActionsDAG & dag, const ActionsDAG::Node & node, const DataTypePtr & to, ContextPtr context)
+{
+    const auto named = nameTupleElementsByPosition(node.result_type, to);
+    if (!named)
+        return dag.addCast(node, to, {}, context);
+
+    const auto & from_named = dag.addCast(node, named->first, {}, context);
+    const auto & to_named = dag.addCast(from_named, named->second, {}, context);
+    return dag.addCast(to_named, to, {}, context);
 }
 
 }
@@ -1431,9 +1548,15 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 NameSet resolved_column_names_set;
                 resolved_column_names.reserve(column_names_to_read.size());
 
+                const bool child_supports_subcolumns = storage->supportsSubcolumns();
                 for (auto & column_name : column_names_to_read)
                 {
                     auto name_to_read = getChildColumnToRead(column_name, child_columns, merge_columns);
+                    /// The subcolumn is extracted from the whole column in `convertAndFilterSourceStream`.
+                    if (name_to_read && !child_supports_subcolumns && !child_columns.has(*name_to_read))
+                        if (auto child_column = child_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, *name_to_read);
+                            child_column && child_column->isSubcolumn())
+                            name_to_read = child_column->getNameInStorage();
                     if (!name_to_read)
                         continue;
 
@@ -2080,6 +2203,8 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
         auto child_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
         child_select_query_options.is_local_plan_for_distributed_query = true;
+        child_select_query_options.view_source_in_subqueries
+            = modified_query_info.planner_context && modified_query_info.planner_context->isViewSourceInSubqueries();
 
         /// The query tree passes already ran on the whole query, and this child plan's header must
         /// stay convertible to the common header derived from it. Re-running the optimization passes
@@ -2089,15 +2214,15 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
 
         /// Converting query to AST because types might be different in the source table.
         /// Need to resolve types again.
-        auto ast = modified_query_info.query_tree->toAST();
+        /// The child's analyzer rebuilds the `grouping` specializations that do not resolve from the query text.
+        auto query_tree_for_ast = modified_query_info.query_tree->clone();
+        removeGroupingFunctionSpecializations(query_tree_for_ast, /*keep_ordinary=*/ true);
+        auto ast = query_tree_for_ast->toAST();
         /// The analyzer substitutes the inserted block of a materialized view for its source table only when given it.
         /// A child that is the source table itself reads the table, as it does at `FetchColumns`.
         auto view_source = modified_context->isViewInnerQuery() ? nullptr : modified_context->getViewSource();
         if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
-        {
-            modified_context->clearViewSource();
             view_source = nullptr;
-        }
         InterpreterSelectQueryAnalyzer interpreter(ast,
             modified_context,
             child_select_query_options,
@@ -2699,7 +2824,35 @@ void ReadFromMerge::convertAndFilterSourceStream(
         {
             /// See `getColumnToReadInsteadOfSubcolumn`: the child either produces the name already,
             /// or it is a column of its own that the child does not have - and gets a default below.
-            if (child_header.has(required_column.name) || merge_columns.has(required_column.name))
+            if (child_header.has(required_column.name))
+                continue;
+
+            /// A child that cannot read subcolumns returned the whole column (see `createChildrenPlans`).
+            if (!snapshot->storage.supportsSubcolumns())
+            {
+                auto child_column = snapshot->tryGetColumn(
+                    GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All),
+                    required_column.name);
+                if (child_column && child_column->isSubcolumn() && child_header.has(child_column->getNameInStorage()))
+                {
+                    /// Extracted with the child's type; the converting actions below cast it to the `Merge` type.
+                    const String parent_name = child_column->getNameInStorage();
+                    const String subcolumn_name = child_column->getSubcolumnName();
+                    auto subcolumn_name_type = std::make_shared<DataTypeString>();
+                    auto subcolumn_name_column = subcolumn_name_type->createColumnConst(0, subcolumn_name);
+                    const auto & subcolumn_name_node = extract_subcolumns_dag.addColumn(
+                        std::move(subcolumn_name_column), std::move(subcolumn_name_type), "'" + subcolumn_name + "'");
+                    const auto & get_subcolumn_node = extract_subcolumns_dag.addFunction(
+                        FunctionFactory::instance().get("getSubcolumn", local_context),
+                        {&extract_subcolumns_dag.findInOutputs(parent_name), &subcolumn_name_node}, {});
+                    extracted_subcolumns.push_back(&extract_subcolumns_dag.addAlias(get_subcolumn_node, required_column.name));
+                    if (!header.has(parent_name))
+                        columns_to_drop.insert(parent_name);
+                    continue;
+                }
+            }
+
+            if (merge_columns.has(required_column.name))
                 continue;
 
             for (auto [name_in_storage_view, subcolumn_name_view] : Nested::getAllColumnAndSubcolumnPairs(required_column.name))
@@ -2716,8 +2869,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
                 auto [it, inserted] = converted_columns.emplace(name_in_storage, nullptr);
                 if (inserted)
-                    it->second = &extract_subcolumns_dag.addCast(
-                        extract_subcolumns_dag.findInOutputs(name_in_storage), merge_column->type, {}, local_context);
+                    it->second = &addCastWithTupleElementsByPosition(
+                        extract_subcolumns_dag, extract_subcolumns_dag.findInOutputs(name_in_storage), merge_column->type, local_context);
 
                 auto subcolumn_name_type = std::make_shared<DataTypeString>();
                 auto subcolumn_name_column = subcolumn_name_type->createColumnConst(0, subcolumn_name);
@@ -2795,6 +2948,29 @@ void ReadFromMerge::convertAndFilterSourceStream(
         {
             /// Matching by name, but some columns are unneeded.
             converted_columns.push_back(source_elem);
+        }
+    }
+
+    {
+        ActionsDAG tuple_elements_dag(current_step_columns);
+        auto & outputs = tuple_elements_dag.getOutputs();
+        bool has_tuple_elements_by_position = false;
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (!nameTupleElementsByPosition(current_step_columns[i].type, converted_columns[i].type))
+                continue;
+
+            const auto & cast_node = addCastWithTupleElementsByPosition(tuple_elements_dag, *outputs[i], converted_columns[i].type, local_context);
+            outputs[i] = &tuple_elements_dag.addAlias(cast_node, current_step_columns[i].name);
+            has_tuple_elements_by_position = true;
+        }
+
+        if (has_tuple_elements_by_position)
+        {
+            auto tuple_elements_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(tuple_elements_dag));
+            tuple_elements_step->setStepDescription("Convert tuples with different numbers of elements to the Merge table types");
+            child.plan.addStep(std::move(tuple_elements_step));
+            current_step_columns = child.plan.getCurrentHeader()->getColumnsWithTypeAndName();
         }
     }
 
@@ -2954,6 +3130,21 @@ QueryPlanRawPtrs ReadFromMerge::getChildPlans(bool /*for_explain*/)
     return plans;
 }
 
+QueryPlanRawPtrs ReadFromMerge::getBuiltChildPlans()
+{
+    /// Deliberately does not call `filterTablesAndCreateChildrenPlans`: planning the children here
+    /// would be work done only because someone looked at the plan.
+    if (!child_plans)
+        return {};
+
+    QueryPlanRawPtrs plans;
+    for (auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized())
+            plans.push_back(&child_plan.plan);
+
+    return plans;
+}
+
 std::vector<QueryPlan *> ReadFromMerge::getAllChildPlans()
 {
     filterTablesAndCreateChildrenPlans();
@@ -3073,7 +3264,7 @@ QueryPlan ReadFromMerge::expandForParallelReplicas()
     chassert(child_plans && !child_plans->empty());
 
     SharedHeaders input_headers;
-    std::vector<std::unique_ptr<QueryPlan>> plans;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans;
     input_headers.reserve(child_plans->size());
     plans.reserve(child_plans->size());
     for (auto & child : *child_plans)
@@ -3326,6 +3517,16 @@ When selecting tables to read, the `Merge` table itself is not selected, even if
 It is possible to create two `Merge` tables that will endlessly try to read each others' data, but this is not a good idea.
 
 The typical way to use the `Merge` engine is for working with a large number of `TinyLog` tables as if with a single table.
+
+## Access rights {#access-rights}
+
+Reading from a `Merge` table requires the [`SELECT`](/reference/statements/grant#select) privilege on the `Merge` table and, on each underlying table that is read, on the columns that the query reads.
+
+Data is read only from the matched tables that the current user can see, that is, has the [`SHOW TABLES`](/reference/statements/grant#show) privilege on. Any privilege on a table implies `SHOW TABLES` on it. A matched table that the user cannot see is skipped without an error or a warning. A matched table that the user can see but has no `SELECT` privilege on makes the query fail with `ACCESS_DENIED`.
+
+When a `Merge` table is created without a column list, its structure is derived only from the matched tables that the user who creates it can see, and the user needs the [`SHOW COLUMNS`](/reference/statements/grant#show) privilege on the tables it is derived from.
+
+To read all matched tables, grant the `SELECT` privilege on each of them. To make a query fail instead of skipping a matched table that the user has no `SELECT` privilege on, grant the `SHOW TABLES` privilege on that table.
 
 ## Examples {#examples}
 

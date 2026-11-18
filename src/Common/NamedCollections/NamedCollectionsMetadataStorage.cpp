@@ -69,14 +69,14 @@ class NamedCollectionsMetadataStorage::INamedCollectionsStorage
 public:
     virtual ~INamedCollectionsStorage() = default;
 
-    virtual bool exists(const std::string & path) const = 0;
+    [[nodiscard]] virtual bool exists(const std::string & path) const = 0;
 
-    virtual std::vector<std::string> list() const = 0;
+    [[nodiscard]] virtual std::vector<std::string> list() const = 0;
 
-    virtual std::string read(const std::string & path) const = 0;
+    [[nodiscard]] virtual std::string read(const std::string & path) const = 0;
 
     /// The stored bytes as they are, without decryption (see `NamedCollectionsMetadataStorageEncrypted`).
-    virtual std::string readRaw(const std::string & path) const = 0;
+    [[nodiscard]] virtual std::string readRaw(const std::string & path) const = 0;
 
     virtual void write(const std::string & path, const std::string & data, bool replace) = 0;
 
@@ -84,28 +84,28 @@ public:
 
     virtual bool removeIfExists(const std::string & path) = 0;
 
-    virtual bool isReplicated() const = 0;
+    [[nodiscard]] virtual bool isReplicated() const = 0;
 
-    virtual std::string getReplicationId() const
+    [[nodiscard]] virtual std::string getReplicationId() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The storage for named collections is not replicated");
     }
 
-    virtual bool isEncrypted() const { return false; }
+    [[nodiscard]] virtual bool isEncrypted() const { return false; }
 
 #if CLICKHOUSE_CLOUD && USE_SSL
-    virtual std::optional<NamedCollectionsEncryptionKeyInfo> getEncryptionKeyInfo() const { return {}; }
+    [[nodiscard]] virtual std::optional<NamedCollectionsEncryptionKeyInfo> getEncryptionKeyInfo() const { return {}; }
 #endif
 
     /// Only the encrypted storage types authenticate backup entries (see
     /// `NamedCollectionsMetadataStorageEncrypted`): the entries of the other types are backed up
     /// as plaintext SQL and these methods are never reached for them.
-    virtual std::string authenticateStoredForBackup(const std::string & /* stored */) const
+    [[nodiscard]] virtual std::string authenticateStoredForBackup(const std::string & /* stored */) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The storage for named collections is not encrypted");
     }
 
-    virtual std::string decryptStoredFromBackup(const std::string & /* data */) const
+    [[nodiscard]] virtual std::string decryptStoredFromBackup(const std::string & /* data */) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The storage for named collections is not encrypted");
     }
@@ -130,9 +130,9 @@ public:
 
     ~LocalStorage() override = default;
 
-    bool isReplicated() const override { return false; }
+    [[nodiscard]] bool isReplicated() const override { return false; }
 
-    std::vector<std::string> list() const override
+    [[nodiscard]] std::vector<std::string> list() const override
     {
         if (!fs::exists(root_path))
             return {};
@@ -156,17 +156,17 @@ public:
         return elements;
     }
 
-    bool exists(const std::string & file_name) const override
+    [[nodiscard]] bool exists(const std::string & file_name) const override
     {
         return fs::exists(getPath(file_name));
     }
 
-    std::string read(const std::string & file_name) const override
+    [[nodiscard]] std::string read(const std::string & file_name) const override
     {
         return readHook(readRaw(file_name));
     }
 
-    std::string readRaw(const std::string & file_name) const override
+    [[nodiscard]] std::string readRaw(const std::string & file_name) const override
     {
         ReadBufferFromFile in(getPath(file_name));
         std::string data;
@@ -174,7 +174,7 @@ public:
         return data;
     }
 
-    virtual std::string readHook(const std::string & data) const
+    [[nodiscard]] virtual std::string readHook(const std::string & data) const
     {
         return data;
     }
@@ -204,7 +204,7 @@ public:
         fs::rename(tmp_path, getPath(file_name));
     }
 
-    virtual std::string writeHook(const std::string & data) const
+    [[nodiscard]] virtual std::string writeHook(const std::string & data) const
     {
         return data;
     }
@@ -225,7 +225,7 @@ public:
     }
 
 protected:
-    std::string getPath(const std::string & file_name) const
+    [[nodiscard]] std::string getPath(const std::string & file_name) const
     {
         const auto file_name_as_path = fs::path(file_name);
         if (file_name_as_path.is_absolute())
@@ -440,14 +440,16 @@ public:
     {
     }
 
-    bool isEncrypted() const override { return true; }
+    [[nodiscard]] bool isEncrypted() const override { return true; }
 
 #if CLICKHOUSE_CLOUD
-    std::optional<NamedCollectionsEncryptionKeyInfo> getEncryptionKeyInfo() const override
+    [[nodiscard]] std::optional<NamedCollectionsEncryptionKeyInfo> getEncryptionKeyInfo() const override
     {
         loadIfNeeded();
         return NamedCollectionsEncryptionKeyInfo{
-            .algorithm = FileEncryption::toString(algorithm), .key_fingerprint = key_fingerprint, .kms_key_info = kms_key_info};
+            .algorithm = FileEncryption::toString(keys.current_algorithm),
+            .key_fingerprint = keys.current_key_fingerprint,
+            .kms_key_info = kms_key_info};
     }
 #endif
 
@@ -458,13 +460,13 @@ public:
     /// less trusted medium, so an exported entry carries an HMAC-SHA256 tag computed with a key
     /// derived from the key the entry is encrypted with, and the restore rejects an entry whose
     /// tag does not verify.
-    std::string authenticateStoredForBackup(const std::string & stored) const override
+    [[nodiscard]] std::string authenticateStoredForBackup(const std::string & stored) const override
     {
         const auto mac = calculateBackupMAC(findKeyForEntry(readHeader(stored)), stored);
         return stored + std::string(reinterpret_cast<const char *>(mac.data()), mac.size());
     }
 
-    std::string decryptStoredFromBackup(const std::string & data) const override
+    [[nodiscard]] std::string decryptStoredFromBackup(const std::string & data) const override
     {
         if (data.size() <= backup_mac_size)
             throw Exception(
@@ -476,7 +478,7 @@ public:
 
         /// The key is looked up first so that a restore on a server without the key reports the
         /// missing key rather than a failed authentication (the tag never verifies across keys).
-        const String key = findKeyForEntry(readHeader(stored));
+        const SecretString key = findKeyForEntry(readHeader(stored));
 
         const auto expected_mac = calculateBackupMAC(key, stored);
         chassert(expected_mac.size() == backup_mac_size);
@@ -489,12 +491,12 @@ public:
         return decrypt(key, stored);
     }
 
-    std::string readHook(const std::string & data) const override
+    [[nodiscard]] std::string readHook(const std::string & data) const override
     {
         return decrypt(findKeyForEntry(readHeader(data)), data);
     }
 
-    std::string writeHook(const std::string & data) const override
+    [[nodiscard]] std::string writeHook(const std::string & data) const override
     {
         FileEncryption::Header header{
             .algorithm = keys.current_algorithm,
@@ -532,12 +534,12 @@ private:
     /// The key named by the header of an entry. Any of the configured keys, so that an entry
     /// written before a key rotation still decrypts (see `FileEncryption::Keys`). Decrypting
     /// blindly with a different key would hand back garbage.
-    String findKeyForEntry(const FileEncryption::Header & header) const
+    [[nodiscard]] SecretString findKeyForEntry(const FileEncryption::Header & header) const
     {
         return keys.findKeyByFingerprint(header.key_fingerprint, "the named collection entry");
     }
 
-    static std::string decrypt(const String & key, const std::string & data)
+    static std::string decrypt(const SecretString & key, const std::string & data)
     {
         ReadBufferFromString in(data);
 
@@ -560,11 +562,11 @@ private:
         return decrypted_buffer;
     }
 
-    static std::vector<uint8_t> calculateBackupMAC(const String & key, const std::string & stored)
+    static std::vector<uint8_t, NoDumpAllocator<uint8_t>> calculateBackupMAC(const SecretString & key, const std::string & stored)
     {
         /// Domain separation from the encryption use of the key.
         const auto auth_key = hmacSHA256(
-            std::vector<uint8_t>(key.begin(), key.end()), "ClickHouse named collections backup entry v1");
+            std::vector<uint8_t>(key.data(), key.data() + key.size()), "ClickHouse named collections backup entry v1");
         return hmacSHA256(auth_key, stored);
     }
 

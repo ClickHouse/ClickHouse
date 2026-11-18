@@ -69,7 +69,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFileImpl
 {
     auto wrapped_path = wrappedPath(path);
     FileEncryption::Header header;
-    String key;
+    SecretString key;
     UInt64 old_file_size = 0;
     if (mode == WriteMode::Append && delegate_disk->existsFile(wrapped_path))
     {

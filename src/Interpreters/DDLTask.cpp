@@ -20,6 +20,7 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/sort.h>
@@ -810,6 +811,12 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
         chassert(!ddl_query->database);
         ddl_query->setDatabase(database->getDatabaseName());
     }
+    else if (auto * rename = query->as<ASTRenameQuery>(); rename && !rename->database)
+    {
+        /// The entry may still name the initiator's local database.
+        rename->resetDatabases();
+        rename->setDatabaseIfNotExists(database->getDatabaseName());
+    }
     formatRewrittenQuery(context);
 }
 
@@ -819,6 +826,8 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
     query_context->setDDLOrOnClusterInternal(true);
     query_context->setQueryKindReplicatedDatabaseInternal();
     query_context->setCurrentDatabase(database->getDatabaseName());
+    if (entry.parent_table_uuid)
+        query_context->setParentTable(*entry.parent_table_uuid);
 
     auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, database->zookeeper_path, is_initial_query, entry_path);
     query_context->initZooKeeperMetadataTransaction(txn);
@@ -934,7 +943,9 @@ ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
     if (name.empty())
         return {};
 
-    if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(name).get()))
+    /// Hold the database during the call. Otherwise a concurrent `DROP DATABASE` could destroy it.
+    auto database = DatabaseCatalog::instance().tryGetDatabase(name);
+    if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(database.get()))
     {
         if (all_groups)
             return replicated_db->tryGetAllGroupsCluster();

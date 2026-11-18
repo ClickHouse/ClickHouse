@@ -25,10 +25,10 @@ struct NamedCollectionDependency
     NamedCollectionDependency(const String & collection_name_, const StorageID & table_id_)
         : collection_name(collection_name_), table_id(table_id_) {}
 
-    const String & getCollectionName() const { return collection_name; }
-    const String & getDatabaseName() const { return table_id.database_name; }
-    const String & getTableName() const { return table_id.table_name; }
-    UUID getUUID() const { return table_id.uuid; }
+    [[nodiscard]] const String & getCollectionName() const { return collection_name; }
+    [[nodiscard]] const String & getDatabaseName() const { return table_id.database_name; }
+    [[nodiscard]] const String & getTableName() const { return table_id.table_name; }
+    [[nodiscard]] UUID getUUID() const { return table_id.uuid; }
 };
 
 struct Collection {};

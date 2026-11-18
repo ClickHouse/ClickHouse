@@ -44,7 +44,7 @@ namespace
 
     struct Key
     {
-        String plain;
+        SecretString plain;
         std::optional<String> encrypted;
     };
 
@@ -143,7 +143,7 @@ namespace
         if (config.has(key_path) + config.has(key_hex_path) + config.has(key_id_path) > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is specified multiple times");
 
-        auto find_current_key = [&](const String & current_key_) -> const Key &
+        auto find_current_key = [&](const SecretString & current_key_) -> const Key &
         {
             for (const auto & [_, key] : keys_by_id)
             {
@@ -166,12 +166,12 @@ namespace
 
         if (config.has(key_path))
         {
-            String current_key = config.getString(key_path);
+            SecretString current_key(config.getString(key_path));
             return find_current_key(current_key);
         }
         if (config.has(key_hex_path))
         {
-            String current_key = unhexKey(config.getString(key_hex_path));
+            SecretString current_key(unhexKey(config.getString(key_hex_path)));
             return find_current_key(current_key);
         }
         if (config.has(key_id_path))
@@ -202,7 +202,7 @@ namespace
 }
 
 
-String Keys::findKeyByFingerprint(UInt128 key_fingerprint, const String & what_for_logs) const
+SecretString Keys::findKeyByFingerprint(UInt128 key_fingerprint, const String & what_for_logs) const
 {
     auto it = all_keys.find(key_fingerprint);
     if (it == all_keys.end())

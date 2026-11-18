@@ -129,9 +129,9 @@ namespace
         }
 
         void next() override { delegate->next(); }
-        bool isValid() const override { return delegate->isValid(); }
+        [[nodiscard]] bool isValid() const override { return delegate->isValid(); }
 
-        String path() const override
+        [[nodiscard]] String path() const override
         {
             auto delegate_path = delegate->path();
 
@@ -145,7 +145,7 @@ namespace
             return delegate_path.substr(path_prefix.size());
         }
 
-        String name() const override { return delegate->name(); }
+        [[nodiscard]] String name() const override { return delegate->name(); }
 
     private:
         DirectoryIteratorPtr delegate;
@@ -161,17 +161,17 @@ public:
     {
     }
 
-    UInt64 getSize() const override { return reservation->getSize(); }
-    std::optional<UInt64> getUnreservedSpace() const override { return reservation->getUnreservedSpace(); }
+    [[nodiscard]] UInt64 getSize() const override { return reservation->getSize(); }
+    [[nodiscard]] std::optional<UInt64> getUnreservedSpace() const override { return reservation->getUnreservedSpace(); }
 
-    DiskPtr getDisk(size_t i) const override
+    [[nodiscard]] DiskPtr getDisk(size_t i) const override
     {
         if (i != 0)
             throw Exception(ErrorCodes::INCORRECT_DISK_INDEX, "Can't use i != 0 with single disk reservation");
         return disk;
     }
 
-    Disks getDisks() const override { return {disk}; }
+    [[nodiscard]] Disks getDisks() const override { return {disk}; }
 
     void update(UInt64 new_size) override { reservation->update(new_size); }
 
@@ -316,7 +316,7 @@ void DiskEncrypted::prepareRead(
     pipeline.needDecryption(
         path,
         settings.local_fs_settings.buffer_size,
-        [encryption_settings](UInt128 key_fingerprint, const String & path_for_logs) -> String
+        [encryption_settings](UInt128 key_fingerprint, const String & path_for_logs) -> SecretString
         {
             return encryption_settings->findKeyByFingerprint(key_fingerprint, "file " + quoteString(path_for_logs));
         });

@@ -1,11 +1,13 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <Core/Defines.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Formats/ColumnNameMaps.h>
 #include <DataTypes/IDataType.h>
 #include <IO/CompressionMethod.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
+#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <generated/parquet_types.h>
 #include <Common/PODArray.h>
 
@@ -29,6 +31,7 @@ struct WriteOptions
     bool output_datetime_as_uint32 = false;
     bool output_date_as_uint16 = false;
     bool output_enum_as_byte_array = false;
+    VariantSettings variant_settings;
 
     /// Note: the meaning of some compression methods here is different from
     /// wrapReadBufferWithCompressionMethod:
@@ -98,8 +101,8 @@ struct IcebergOptionality
     /// dotted path and must not add a second OPTIONAL level.
     bool owned_by_enclosing_nullable = false;
 
-    bool isOptional(const String & path) const;
-    bool isLocalTimestamp(const String & path) const;
+    [[nodiscard]] bool isOptional(const String & path) const;
+    [[nodiscard]] bool isLocalTimestamp(const String & path) const;
 };
 
 /// The unfolded bloom filter is sized for all values of the column chunk and its blocks are touched
@@ -159,7 +162,7 @@ struct ColumnChunkWriteState
     ColumnChunkWriteState & operator=(ColumnChunkWriteState &&) = default;
 
     /// Estimated memory usage.
-    size_t allocatedBytes() const;
+    [[nodiscard]] size_t allocatedBytes() const;
 };
 
 struct RowGroupWithIndexes

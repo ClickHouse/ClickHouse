@@ -4,6 +4,7 @@
 
 #if USE_SSL
 #include <IO/FileEncryptionCommon.h>
+#include <Common/SecretString.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <unordered_map>
@@ -16,14 +17,14 @@ namespace DB::FileEncryption
 /// encrypts new data, and any of the keys decrypts data whose header names its fingerprint.
 struct Keys
 {
-    String current_key;
+    SecretString current_key;
     UInt128 current_key_fingerprint{};
     Algorithm current_algorithm{};
-    std::unordered_map<UInt128 /* fingerprint */, String /* key */> all_keys; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+    std::unordered_map<UInt128 /* fingerprint */, SecretString /* key */> all_keys; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     /// Returns the key with the given fingerprint. Throws if there is none; `what_for_logs` names
     /// the encrypted data in the message, e.g. "file 'path'".
-    String findKeyByFingerprint(UInt128 key_fingerprint, const String & what_for_logs) const;
+    [[nodiscard]] SecretString findKeyByFingerprint(UInt128 key_fingerprint, const String & what_for_logs) const;
 };
 
 /// Reads the keys of a configuration section:
