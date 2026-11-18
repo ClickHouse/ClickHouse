@@ -2006,8 +2006,7 @@ void MutationsInterpreter::addStageIfNeeded(std::optional<UInt64> mutation_versi
     }
 }
 
-/// The index of a command in a stage needs values from 0 to `num_commands`. A stage rarely has more than 255 commands,
-/// but keep the column small,as small as possible, and `UInt64` otherwise.
+/// The index of a command in a stage needs values from 0 to `num_commands`, use the smallest type that fits.
 static DataTypePtr getCommandIndexType(size_t num_commands)
 {
     if (num_commands <= std::numeric_limits<UInt8>::max())
@@ -2655,7 +2654,8 @@ AffectedRowsByMutationCommandsMap MutationsInterpreter::getAffectedRows() const
     AffectedRowsByMutationCommandsMap result;
 
     /// A lambda to add `rows` to the number of rows affected by the command.
-    const auto addAffectedRows = [&result](const MutationCommandIdentifier & command_identifier, UInt64 rows) -> void {
+    const auto add_affected_rows = [&result](const MutationCommandIdentifier & command_identifier, UInt64 rows)
+    {
         const auto & [mutation_number, command_index] = command_identifier;
         auto & rows_by_command = result[mutation_number];
         if (rows_by_command.size() <= command_index)
@@ -2672,7 +2672,7 @@ AffectedRowsByMutationCommandsMap MutationsInterpreter::getAffectedRows() const
         /// The index 0 counts the rows not affected by any command.
         auto rows_by_command_index = affected_rows_counting.counter->get();
         for (size_t i = 0; i < affected_rows_counting.command_identifiers.size(); ++i)
-            addAffectedRows(affected_rows_counting.command_identifiers[i], rows_by_command_index[i + 1]);
+            add_affected_rows(affected_rows_counting.command_identifiers[i], rows_by_command_index[i + 1]);
     }
     return result;
 }
