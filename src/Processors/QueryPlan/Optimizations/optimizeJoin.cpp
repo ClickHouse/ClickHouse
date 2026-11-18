@@ -365,7 +365,7 @@ struct QueryGraphBuilder
         : context(std::make_shared<BuilderContext>(optimization_settings_, root_node, join_settings_, sorting_settings_))
     {}
 
-    bool hasCompatibleSettings(const JoinStepLogical & join_step) const
+    [[nodiscard]] bool hasCompatibleSettings(const JoinStepLogical & join_step) const
     {
         return context && join_step.getJoinSettings() == context->join_settings; // && join_step.getSortingSettings() == context->sorting_settings;
     }
@@ -1535,10 +1535,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                     if (mapped_it == join_expression_map.end())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in join expression map", output_node->result_name);
                     dag_outputs.push_back(mapped_it->second);
-                    /// Include COLUMN Const nodes (like `__join_result_dummy`) in actions_after_join.
-                    /// These are `fromNone` and will be placed in left_dag, ensuring the left pre-join
-                    /// always produces at least one output column (so blocks have correct row count).
-                    if (mapped_it->second->type == ActionsDAG::ActionType::COLUMN)
+                    /// The join returns only the dummy constant (it keeps the row count of its blocks); other constants are
+                    /// computed after the join, which pads a returned column with defaults for the rows without a match.
+                    if (mapped_it->second->type == ActionsDAG::ActionType::COLUMN
+                        && JoinStepLogical::isDummyResultColumn(*mapped_it->second))
                         actions_after_join.push_back(mapped_it->second);
                 }
             }
