@@ -14,6 +14,10 @@
 -- The first `IN` subquery sleeps for 2 seconds while its set is built in place, which is the elapsed
 -- time the second subquery's writer must still account for when it is finalized right afterwards.
 
+-- The subquery query result cache is not used with plan-based parallel replicas:
+-- https://github.com/ClickHouse/ClickHouse/issues/131463
+SET parallel_replicas_plan_based = 0;
+
 DROP TABLE IF EXISTS t_qrc_dur;
 CREATE TABLE t_qrc_dur (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_qrc_dur SELECT number FROM numbers(1000);

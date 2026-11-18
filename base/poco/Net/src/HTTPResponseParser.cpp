@@ -203,7 +203,7 @@ bool HTTPResponseParser::step(char ch)
                 return true;
             }
             if (_limits.fields > 0 && _fields == _limits.fields)
-                throw MessageException("Too many header fields");
+                throw HTTPHeaderLimitException("Too many header fields");
             _name.clear();
             _value.clear();
             _state = State::Name;
@@ -221,8 +221,9 @@ bool HTTPResponseParser::step(char ch)
                 _state = State::LineStart;
                 return true;
             }
+            /// Any other character stops the name only at the limit.
             if (ch != ':')
-                throw MessageException("Field name too long/no colon found");
+                throw HTTPHeaderLimitException("Field name too long");
             _state = State::SpaceBeforeValue;
             return true;
 
@@ -249,7 +250,8 @@ bool HTTPResponseParser::step(char ch)
                 _state = State::AfterLine;
                 return true;
             }
-            throw MessageException(_state == State::Value ? "Field value too long/no CRLF found" : "Folded field value too long/no CRLF found");
+            /// Any other character stops the value only at the limit.
+            throw HTTPHeaderLimitException(_state == State::Value ? "Field value too long" : "Folded field value too long");
 
         case State::ValueCR:
         case State::FoldCR:
