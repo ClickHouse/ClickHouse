@@ -6,9 +6,7 @@ tags: ['Seguridad y autenticación', 'Gestión de Cloud']
 keywords: ['AWS PrivateLink', 'servicio de endpoint de VPC', 'MSK', 'Kafka', 'ClickPipes']
 ---
 
-<div id="overview">
-  ## Descripción general
-</div>
+## Descripción general {#overview}
 
 Esta guía explica cómo exponer un clúster de Amazon MSK a ClickPipes mediante [servicios de endpoint de VPC de AWS PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html).
 
@@ -22,9 +20,7 @@ Para los clústeres MSK estándar en la misma región, la conectividad multi-VPC
 
 Este mismo patrón de PrivateLink también puede usarse para clústeres de Kafka autogestionados o on-premise expuestos a través de AWS, pero los ejemplos de este artículo usan MSK.
 
-<div id="how-the-setup-works">
-  ## Cómo funciona la configuración
-</div>
+## Cómo funciona la configuración {#how-the-setup-works}
 
 Los clientes de Kafka primero se conectan a los brókeres bootstrap, obtienen los metadatos del clúster y luego se conectan directamente a los hostnames de los brókeres publicados en esos metadatos.
 
@@ -48,19 +44,14 @@ Cada broker obtiene su propio:
 
 El NLB debe usar passthrough de TCP. Esto permite que el client de Kafka siga usando el hostname original del broker de MSK para el SNI de TLS y la validación del certificado.
 
-<div id="requirements">
-  ## Requisitos
-</div>
+## Requisitos {#requirements}
 
 * Un clúster de MSK en subredes privadas.
 * Nombres de host de los brokers y direcciones IP privadas del clúster de MSK.
-* Permisos para crear NLB, grupos de destino, listeners y servicios de endpoint de VPC en la VPC de MSK.
-* La principal de la cuenta de AWS de ClickPipes permitida en cada servicio de VPC endpoint: `arn:aws:iam::072088201116:root`.
-* La función de DNS privado personalizado habilitada para tu servicio de ClickHouse Cloud. Ponte en contacto con el soporte de ClickHouse si el campo `Custom private DNS name` no está disponible al crear un reverse private endpoint.
+* Permisos para crear NLB, grupos de destino, listeners y servicios de punto de conexión de VPC en la VPC de MSK.
+* La principal de la cuenta de AWS de ClickPipes permitida en cada servicio de punto de conexión de VPC: `arn:aws:iam::072088201116:root`.
 
-<div id="get-broker-hostnames-and-private-ips">
-  ## Obtén los nombres de host y las IP privadas de los brokers
-</div>
+## Obtén los nombres de host y las IP privadas de los brokers {#get-broker-hostnames-and-private-ips}
 
 Usa la CLI de AWS para listar los nodos broker de MSK:
 
@@ -75,23 +66,17 @@ Anote el hostname de cada bróker, la dirección IP privada y el puerto de Kafka
 
 ClickPipe usará estos hostnames de bróker como sus brókers de Kafka. No use la cadena del bróker bootstrap de MSK para esta configuración basada en la UI.
 
-<div id="create-one-endpoint-service-per-broker">
-  ## Cree un endpoint service por cada broker
-</div>
+## Cree un endpoint service por cada broker {#create-one-endpoint-service-per-broker}
 
 Repita estos pasos para cada broker de MSK.
 
-<div id="create-an-internal-nlb">
-  ### Cree un NLB interno
-</div>
+### Cree un NLB interno {#create-an-internal-nlb}
 
 Cree un Network Load Balancer interno en la VPC de MSK. El NLB debe usar subredes privadas y no debe estar expuesto a Internet.
 
 Si hay un grupo de seguridad asociado al NLB, desactive `Enforce Security Group Inbound Rules on Private Link Traffic`. Esto es necesario para permitir que el tráfico del endpoint de VPC de ClickPipes llegue al NLB.
 
-<div id="create-an-ip-target-group">
-  ### Cree un grupo de destino de IP
-</div>
+### Cree un grupo de destino de IP {#create-an-ip-target-group}
 
 Cree un grupo de destino con:
 
@@ -102,15 +87,11 @@ Cree un grupo de destino con:
 
 Use comprobaciones de estado de TCP en el puerto de tráfico.
 
-<div id="create-a-tcp-listener">
-  ### Crear un listener TCP
-</div>
+### Crear un listener TCP {#create-a-tcp-listener}
 
 Cree un listener de NLB en el puerto Kafka del broker y reenvíe el tráfico al grupo de destino específico de ese broker.
 
-<div id="create-the-vpc-endpoint-service">
-  ### Cree el servicio de endpoint de VPC
-</div>
+### Cree el servicio de endpoint de VPC {#create-the-vpc-endpoint-service}
 
 Cree un servicio de endpoint de VPC basado en el NLB específico del broker.
 
@@ -128,9 +109,7 @@ Anote el nombre del servicio de endpoint. Tendrá un aspecto similar a:
 com.amazonaws.vpce.<region>.vpce-svc-0123456789abcdef0
 ```
 
-<div id="create-clickpipes-reverse-private-endpoints">
-  ## Crear endpoints privados inversos de ClickPipes
-</div>
+## Crear endpoints privados inversos de ClickPipes {#create-clickpipes-reverse-private-endpoints}
 
 En la consola de ClickHouse Cloud, crea un endpoint privado inverso para cada servicio de endpoint de VPC de broker:
 
@@ -167,9 +146,7 @@ Para OpenAPI, crea un endpoint privado inverso por broker con `type` establecido
 
 Para Terraform, utiliza [`clickhouse_clickpipes_reverse_private_endpoint`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint) para crear el endpoint y [`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_private_dns) para configurar la correspondencia del hostname del broker.
 
-<div id="create-the-kafka-clickpipe">
-  ## Crear el Kafka ClickPipe
-</div>
+## Crear el Kafka ClickPipe {#create-the-kafka-clickpipe}
 
 Siga la [guía de ClickPipes AWS PrivateLink](/es/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe)
 para crear el ClickPipe con endpoints privados inversos.
@@ -191,9 +168,7 @@ b-1.example-cluster.abcde.c2.kafka.eu-central-1.amazonaws.com:9098,b-2.example-c
 
 Cada nombre de host de la lista de brokers debe coincidir con el `Custom private DNS name` configurado en uno de los RPE.
 
-<div id="terraform-automation">
-  ## Automatización de Terraform
-</div>
+## Automatización de Terraform {#terraform-automation}
 
 El [módulo de Terraform aws-msk-vpc-endpoint-service](https://github.com/ClickHouse/clickpipes-terraform-modules/tree/main/modules/aws-msk-vpc-endpoint-service) muestra cómo automatizar esta configuración. Crea NLB específicos para cada broker, grupos de destino, servicios de endpoint de VPC, RPE de ClickPipes y asignaciones de DNS privado personalizado.
 

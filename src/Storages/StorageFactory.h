@@ -18,6 +18,10 @@ namespace DB
 class Context;
 class ASTCreateQuery;
 class ASTStorage;
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+class IStoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 class AccessRightsElements;
 class SettingsChanges;
 struct StorageID;
@@ -60,8 +64,13 @@ public:
         const String & comment;
         bool is_restore_from_backup = false;
 
-        ContextMutablePtr getContext() const;
-        ContextMutablePtr getLocalContext() const;
+        [[nodiscard]] ContextMutablePtr getContext() const;
+        [[nodiscard]] ContextMutablePtr getLocalContext() const;
+
+        /// A disk or a storage policy the table definition names. Refused, unless loading from existing metadata, when the
+        /// query may not use it (see `DiskFromAST::ensureDiskIsAllowed`).
+        [[nodiscard]] DiskPtr getDisk(const String & name) const;
+        [[nodiscard]] StoragePolicyPtr getStoragePolicy(const String & name) const;
     };
 
     /// Analog of the IStorage::supports*() helpers
@@ -90,6 +99,11 @@ public:
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
         GetExportAccessFn * get_export_access_fn = nullptr;
+
+        /// Static over-approximation of IStorage::storesDataOnDisk(): set if the engine can ever store data locally.
+        bool stores_data_on_disk = false;
+        /// Whether the engine may back a temporary table (opt-in).
+        bool supports_temporary = false;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -103,7 +117,7 @@ public:
 
     using Storages = std::unordered_map<std::string, Creator>;
 
-    StoragePtr get(
+    [[nodiscard]] StoragePtr get(
         const ASTCreateQuery & query,
         const String & relative_data_path,
         ContextMutablePtr local_context,
@@ -112,6 +126,10 @@ public:
         const ConstraintsDescription & constraints,
         LoadingStrictnessLevel mode,
         bool is_restore_from_backup = false) const;
+
+    /// Throw if the CREATE query uses a clause that the table engine does not support. `get` runs the same checks.
+    void checkEngineFeatures(
+        const ASTCreateQuery & query, const ColumnsDescription & columns, LoadingStrictnessLevel mode, const ContextPtr & local_context) const;
 
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.
@@ -130,20 +148,22 @@ public:
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
         .get_export_access_fn = nullptr,
+        .stores_data_on_disk = false,
+        .supports_temporary = false,
     }, Documentation documentation = {});
 
-    const Storages & getAllStorages() const
+    [[nodiscard]] const Storages & getAllStorages() const
     {
         return storages;
     }
 
-    const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & name) const
+    [[nodiscard]] const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & name) const
     {
         auto it = storages.find(name);
         return it == storages.end() ? nullptr : &it->second.secret_arguments;
     }
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
         VectorWithMemoryTracking<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
@@ -152,7 +172,7 @@ public:
     }
 
     using FeatureMatcherFn = std::function<bool(StorageFeatures)>;
-    std::vector<String> getAllRegisteredNamesByFeatureMatcherFn(FeatureMatcherFn feature_matcher_fn) const
+    [[nodiscard]] std::vector<String> getAllRegisteredNamesByFeatureMatcherFn(FeatureMatcherFn feature_matcher_fn) const
     {
         std::vector<String> result;
         for (const auto& pair : storages)
@@ -161,19 +181,22 @@ public:
         return result;
     }
 
-    std::optional<AccessTypeObjects::Source> getSourceAccessObject(const String & table_engine) const;
+    [[nodiscard]] std::optional<AccessTypeObjects::Source> getSourceAccessObject(const String & table_engine) const;
 
-    const StorageFeatures & getStorageFeatures(const String & storage_name) const;
+    [[nodiscard]] const StorageFeatures & getStorageFeatures(const String & storage_name) const;
+
+    /// Throws if storage cannot be temporary
+    void checkTemporaryTableEngine(const String & storage_name, const ContextPtr & context) const;
 
     /// See `GetExportAccessFn`. For the engine of the table and the inner engines of a materialized view or a `TimeSeries`
     /// table. An unknown engine needs nothing here: creating it fails later.
-    AccessRightsElements getExportAccess(const ASTCreateQuery & create) const;
+    [[nodiscard]] AccessRightsElements getExportAccess(const ASTCreateQuery & create) const;
     /// The grants of every engine for which `changes` send the data elsewhere. It does not depend on the engine of the table,
     /// so `ALTER ... ON CLUSTER` can be authorized on an initiator that does not have the table or has another engine.
-    AccessRightsElements getExportAccessOfAnyEngine(const SettingsChanges & changes) const;
+    [[nodiscard]] AccessRightsElements getExportAccessOfAnyEngine(const SettingsChanges & changes) const;
     /// The grants that `getExportAccess` can require of any definition, for an `ON CLUSTER` initiator that cannot read
     /// the definition its workers inherit.
-    AccessRightsElements getExportAccessOfUnknownDefinition() const;
+    [[nodiscard]] AccessRightsElements getExportAccessOfUnknownDefinition() const;
 
 private:
     Storages storages;
