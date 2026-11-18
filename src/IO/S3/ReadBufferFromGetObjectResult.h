@@ -41,20 +41,17 @@ public:
     ReadBufferFromGetObjectResult(Aws::S3::Model::GetObjectResult && result_, size_t size_, Stopwatch && watch_);
     ~ReadBufferFromGetObjectResult() override;
 
-    [[nodiscard]] bool supportsExternalBufferMode() const override { return true; }
+    bool supportsExternalBufferMode() const override { return true; }
 
     void releaseResult();
 
-    /// Releases the session without reading the rest of the response, so the connection is dropped.
-    void detachSession();
-
-    [[nodiscard]] bool isResultReleased() const { return !result; }
+    bool isResultReleased() const { return !result; }
 
     /// Whether everything the response contains has been read. Reported as soon as the last byte
     /// is handed out, so that the connection can go back to the pool without one more read.
-    [[nodiscard]] bool isStreamEof() const { return stream_eof; }
+    bool isStreamEof() const { return stream_eof; }
 
-    [[nodiscard]] ObjectMetadata getObjectMetadata() const { return metadata; }
+    ObjectMetadata getObjectMetadata() const { return metadata; }
 };
 }
 

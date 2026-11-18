@@ -15,8 +15,6 @@
 #include <unordered_map>
 #include <vector>
 
-class InsertDependenciesSnapshot_TargetSharedByTwoViewsKeepsFirstSnapshot_Test;
-
 namespace DB
 {
 
@@ -38,8 +36,6 @@ class InsertDependenciesBuilder : public std::enable_shared_from_this<InsertDepe
 {
 private:
     friend class ViewErrorsRegistry;
-    /// White-box unit test: a node observed on several paths must keep its first metadata snapshot.
-    friend class ::InsertDependenciesSnapshot_TargetSharedByTwoViewsKeepsFirstSnapshot_Test;
 
     /// We cannot use std::set, because operator< is inconsistent with operator==
     /// for StorageId and StorageIDPrivate.
@@ -57,11 +53,11 @@ private:
         void pushBack(StorageIDMaybeEmpty id);
         void popBack();
 
-        [[nodiscard]] [[maybe_unused]] bool empty() const { return path.empty(); }
-        [[nodiscard]] const StorageIDMaybeEmpty & back() const { return path.back(); }
-        [[nodiscard]] const StorageIDMaybeEmpty & current() const { return back(); }
-        [[nodiscard]] StorageIDMaybeEmpty parent(size_t inheritance) const;
-        [[nodiscard]] String debugInfo() const;
+        [[maybe_unused]] bool empty() const { return path.empty(); }
+        const StorageIDMaybeEmpty & back() const { return path.back(); }
+        const StorageIDMaybeEmpty & current() const { return back(); }
+        StorageIDMaybeEmpty parent(size_t inheritance) const;
+        String debugInfo() const;
     };
 
     using MapIdManyId = std::unordered_map<
@@ -108,13 +104,9 @@ public:
         return std::make_shared<const MakeSharedEnabler>(std::forward<Args>(args)...);
     }
 
-    /// If `returning_output` is not null, a copy of the data written into the destination table
-    /// (after the conversion to the table structure with the defaults filled, before the sink) is sent
-    /// from every stream into a processor, which is returned in `returning_output`.
-    /// Its single output port is not connected. It is used for `INSERT ... RETURNING`.
-    VectorWithMemoryTracking<Chain> createChainWithDependenciesForAllStreams(ProcessorPtr * returning_output = nullptr) const;
+    VectorWithMemoryTracking<Chain> createChainWithDependenciesForAllStreams() const;
 
-    Chain createChainWithDependencies(InputPort * returning_input = nullptr) const;
+    Chain createChainWithDependencies() const;
     Chain createChainForDeduplicationRetry(const DeduplicationInfo & info, const std::string & partition_id) const;
     bool isViewsInvolved() const;
 

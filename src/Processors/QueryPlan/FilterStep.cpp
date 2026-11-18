@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Formats/FormatSettings.h>
 #include <boost/functional/hash.hpp>
 
 #include <limits>
@@ -30,10 +29,6 @@
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <fmt/ranges.h>
-#include <Common/StackWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -70,7 +65,7 @@ FilterStep::UnneededColumnsPlan FilterStep::analyzeUnneededColumns(
     const String & filter_column_name,
     bool remove_filter_column,
     const Block & input_header,
-    const VectorWithMemoryTracking<size_t> & unneeded_output_positions)
+    const std::vector<size_t> & unneeded_output_positions)
 {
     UnneededColumnsPlan plan;
     plan.remove_filter_column = remove_filter_column;
@@ -104,7 +99,7 @@ FilterStep::UnneededColumnsPlan FilterStep::analyzeUnneededColumns(
     /// Map positions from the final (post-erase) header to the pre-erase header. The mapping depends on
     /// the incoming value of the flag, not on the value the pruning settles on. An erased filter column is not
     /// in the final header, so no position maps to it.
-    VectorWithMemoryTracking<size_t> pre_erase_positions;
+    std::vector<size_t> pre_erase_positions;
     pre_erase_positions.reserve(unneeded_output_positions.size());
     for (size_t pos : unneeded_output_positions)
         pre_erase_positions.push_back(remove_filter_column && pos >= filter_col_pre_erase_pos ? pos + 1 : pos);
@@ -112,7 +107,7 @@ FilterStep::UnneededColumnsPlan FilterStep::analyzeUnneededColumns(
     /// The positions ascend, so the unneeded DAG outputs are a prefix of them, and the rest are pass-through columns.
     const size_t first_unneeded_passthrough
         = std::ranges::lower_bound(pre_erase_positions, old_dag_outputs_size) - pre_erase_positions.begin();
-    VectorWithMemoryTracking<size_t> unneeded_dag_indices(pre_erase_positions.begin(), pre_erase_positions.begin() + first_unneeded_passthrough);
+    std::vector<size_t> unneeded_dag_indices(pre_erase_positions.begin(), pre_erase_positions.begin() + first_unneeded_passthrough);
 
     /// Nobody reads the filter column any more, so it can be removed from the header.
     if (!plan.remove_filter_column && std::ranges::binary_search(unneeded_dag_indices, filter_col_pre_erase_pos))
@@ -146,8 +141,8 @@ FilterStep::UnneededColumnsPlan FilterStep::analyzeUnneededColumns(
 
     /// A dropped column the child keeps is consumed by a new input, and inputs are paired with header columns by name,
     /// in order. So a pass-through column after a needed one of the same name cannot be consumed, and is kept.
-    UnorderedSetWithMemoryTracking<std::string_view> needed_passthrough_names;
-    VectorWithMemoryTracking<size_t> kept_unneeded_positions;
+    std::unordered_set<std::string_view> needed_passthrough_names;
+    std::vector<size_t> kept_unneeded_positions;
     for (size_t position = 0; position < header_columns.size(); ++position)
     {
         if (!header_columns.passesThrough(position))
@@ -207,9 +202,9 @@ ActionsDAG::NodeRawConstPtrs FilterStep::UnneededColumnsPlan::neededDAGOutputs(c
     return needed;
 }
 
-VectorWithMemoryTracking<size_t> FilterStep::UnneededColumnsPlan::unneededInputPositions() const
+std::vector<size_t> FilterStep::UnneededColumnsPlan::unneededInputPositions() const
 {
-    VectorWithMemoryTracking<size_t> positions;
+    std::vector<size_t> positions;
     for (size_t position = 0; position < input_columns.size(); ++position)
         if (input_columns[position] == InputColumnUsage::ReadDropped || input_columns[position] == InputColumnUsage::PassesThroughDropped)
             positions.push_back(position);
@@ -236,7 +231,7 @@ FilterDAGOutputPruningResult FilterStep::pruneDAGOutputsByPosition(
     const String & filter_column_name,
     bool & remove_filter_column,
     const Block & input_header,
-    const VectorWithMemoryTracking<size_t> & unneeded_output_positions)
+    const std::vector<size_t> & unneeded_output_positions)
 {
     const auto plan = analyzeUnneededColumns(dag, filter_column_name, remove_filter_column, input_header, unneeded_output_positions);
 
@@ -245,31 +240,31 @@ FilterDAGOutputPruningResult FilterStep::pruneDAGOutputsByPosition(
     return plan.toResult(removed_any_action);
 }
 
-VectorWithMemoryTracking<size_t> FilterStep::getUnneededInputPositions(
+std::vector<size_t> FilterStep::getUnneededInputPositions(
     const ActionsDAG & dag,
     const String & filter_column_name,
     bool remove_filter_column,
     const Block & input_header,
-    const VectorWithMemoryTracking<size_t> & unneeded_output_positions)
+    const std::vector<size_t> & unneeded_output_positions)
 {
     return analyzeUnneededColumns(dag, filter_column_name, remove_filter_column, input_header, unneeded_output_positions)
         .unneededInputPositions();
 }
 
-VectorWithMemoryTracking<std::optional<size_t>> FilterStep::mapOutputsToInputs(
+std::vector<std::optional<size_t>> FilterStep::mapOutputsToInputs(
     const ActionsDAG & dag, const String & filter_column_name, bool remove_filter_column, const Block & input_header)
 {
     const auto & inputs = dag.getInputs();
     const auto header_columns = mapHeaderColumnsToInputs(inputs, input_header);
 
-    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> header_position_of_input;
+    std::unordered_map<const ActionsDAG::Node *, size_t> header_position_of_input;
     for (size_t position = 0; position < header_columns.size(); ++position)
         if (!header_columns.passesThrough(position))
             header_position_of_input.emplace(inputs[header_columns.read_by[position]], position);
 
     /// The output header is the outputs of the DAG, without the first filter column if it is removed, then the columns
     /// the filter passes through, in their order.
-    VectorWithMemoryTracking<std::optional<size_t>> result;
+    std::vector<std::optional<size_t>> result;
     bool filter_column_erased = !remove_filter_column;
     for (const auto * output : dag.getOutputs())
     {
@@ -321,10 +316,15 @@ static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::N
 /// Can the atom be evaluated before the atoms that precede it in the AND chain? It is evaluated on more rows then,
 /// so it must be cheap (no functions that are worth to execute lazily) and all its functions must be unable to throw,
 /// be stateless, have no observable side effects and be deterministic in the scope of the query. See setting `short_circuit_function_evaluation_reorder_arguments`.
-bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * atom)
+static bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
 {
-    return allReachableNodes({atom}, [](const ActionsDAG::Node * node)
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(node);
+    while (!nodes.empty())
     {
+        node = nodes.top();
+        nodes.pop();
+
         if (node->type == ActionsDAG::ActionType::ARRAY_JOIN || node->type == ActionsDAG::ActionType::PLACEHOLDER)
             return false;
 
@@ -333,7 +333,7 @@ bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * atom)
             DataTypesWithConstInfo arguments;
             arguments.reserve(node->children.size());
             for (const auto * child : node->children)
-                arguments.push_back({child->result_type, child->column != nullptr, child->column.get()});
+                arguments.push_back({child->result_type, child->column != nullptr});
 
             const auto & function = *node->function_base;
             if (function.isStateful()
@@ -344,16 +344,23 @@ bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * atom)
                 return false;
         }
 
-        return true;
-    });
+        for (const auto * child : node->children)
+            nodes.push(child);
+    }
+    return true;
 }
 
 /// Is the atom heavy, that is, does it contain functions that are worth to execute lazily (like `JSONExtractString`)?
 /// Only heavy atoms are worth to evaluate on fewer rows, so a cheap atom is moved only in front of heavy ones.
-static bool isHeavyAndChainAtom(const ActionsDAG::Node * atom)
+static bool isHeavyAndChainAtom(const ActionsDAG::Node * node)
 {
-    return anyReachableNode({atom}, [](const ActionsDAG::Node * node)
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(node);
+    while (!nodes.empty())
     {
+        node = nodes.top();
+        nodes.pop();
+
         if (node->type == ActionsDAG::ActionType::FUNCTION && !node->column)
         {
             DataTypesWithConstInfo arguments;
@@ -365,25 +372,34 @@ static bool isHeavyAndChainAtom(const ActionsDAG::Node * atom)
                 return true;
         }
 
-        return false;
-    });
+        for (const auto * child : node->children)
+            nodes.push(child);
+    }
+    return false;
 }
 
 /// Does the atom contain stateful functions, functions with observable side effects (like `sleep`),
 /// or functions that are not deterministic in the scope of the query (like `rand` or `rowNumberInBlock`)?
 /// Such an atom must not be evaluated on fewer rows than in the original order, so no atom can be moved in front of it.
-static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * atom)
+static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node)
 {
-    return anyReachableNode({atom}, [](const ActionsDAG::Node * node)
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(node);
+    while (!nodes.empty())
     {
+        node = nodes.top();
+        nodes.pop();
+
         if (node->type == ActionsDAG::ActionType::FUNCTION
             && (node->function_base->isStateful()
                 || node->function_base->hasObservableSideEffects()
                 || !node->function_base->isDeterministicInScopeOfQuery()))
             return true;
 
-        return false;
-    });
+        for (const auto * child : node->children)
+            nodes.push(child);
+    }
+    return false;
 }
 
 /// Try to split the left most AND atom to a separate DAG.
@@ -398,8 +414,8 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
         return {};
 
     /// Non-trivial atoms from left to right.
-    VectorWithMemoryTracking<const ActionsDAG::Node *> atoms;
-    StackWithMemoryTracking<const ActionsDAG::Node *> nodes;
+    std::vector<const ActionsDAG::Node *> atoms;
+    std::stack<const ActionsDAG::Node *> nodes;
     nodes.push(filter);
     while (!nodes.empty())
     {
@@ -442,9 +458,9 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
     return splitSingleAndFilter(dag, atoms.front());
 }
 
-static VectorWithMemoryTracking<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name, bool reorder)
+static std::vector<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name, bool reorder)
 {
-    VectorWithMemoryTracking<ActionsAndName> res;
+    std::vector<ActionsAndName> res;
 
     while (auto condition = trySplitSingleAndFilter(dag, filter_name, reorder))
         res.push_back(std::move(*condition));
@@ -486,7 +502,7 @@ FilterStep::FilterStep(
 
 void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    VectorWithMemoryTracking<ActionsAndName> and_atoms;
+    std::vector<ActionsAndName> and_atoms;
 
     /// Splitting AND filter condition to steps under the setting, which is enabled with merge_filters optimization.
     /// This is needed to support short-circuit properly.
@@ -511,9 +527,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
             bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
 
             /// Each split atom gets the same query condition cache key.
-            return std::make_shared<FilterTransform>(
-                header, transformed_header, expression, and_atom.name, true, on_totals, nullptr, condition,
-                /*update_row_numbers_info_=*/ false, optimize_constant_columns_after_filter);
+            return std::make_shared<FilterTransform>(header, transformed_header, expression, and_atom.name, true, on_totals, nullptr, condition);
         });
     }
 
@@ -523,9 +537,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-        return std::make_shared<FilterTransform>(
-            header, transformed_header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, condition,
-            /*update_row_numbers_info_=*/ false, optimize_constant_columns_after_filter);
+        return std::make_shared<FilterTransform>(header, transformed_header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, condition);
     });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
@@ -572,7 +584,7 @@ void FilterStep::describeActions(FormatSettings & settings) const
 
     auto cloned_dag = actions_dag.clone();
 
-    VectorWithMemoryTracking<ActionsAndName> and_atoms;
+    std::vector<ActionsAndName> and_atoms;
     if (!settings.pretty && !actions_dag.hasStatefulFunctions())
         and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name, reorderAndChainForDescription());
 
@@ -614,7 +626,7 @@ void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     auto cloned_dag = actions_dag.clone();
 
-    VectorWithMemoryTracking<ActionsAndName> and_atoms;
+    std::vector<ActionsAndName> and_atoms;
     if (!actions_dag.hasStatefulFunctions())
         and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name, reorderAndChainForDescription());
 
@@ -667,14 +679,6 @@ void FilterStep::serialize(Serialization & ctx) const
     UInt8 flags = 0;
     if (remove_filter_column)
         flags |= 1;
-    /// The value of `optimize_constant_columns_after_filter` from the context the filter was planned in:
-    /// bit 2 is set if the value is known, bit 3 holds the value.
-    if (optimize_constant_columns_after_filter)
-    {
-        flags |= 2;
-        if (*optimize_constant_columns_after_filter)
-            flags |= 4;
-    }
     writeIntBinary(flags, ctx.out);
 
     /// A cache key must not depend on the name this plan build composed for the filter column
@@ -704,10 +708,7 @@ QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
 
     ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
 
-    auto step = std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
-    if (flags & 2)
-        step->setOptimizeConstantColumnsAfterFilter(bool(flags & 4));
-    return step;
+    return std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
 }
 
 bool FilterStep::canRemoveUnusedColumns() const
@@ -715,7 +716,7 @@ bool FilterStep::canRemoveUnusedColumns() const
     return true;
 }
 
-FilterStep::UnneededColumnsPlan FilterStep::analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const
+FilterStep::UnneededColumnsPlan FilterStep::analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
 {
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in FilterStep");
@@ -727,13 +728,13 @@ FilterStep::UnneededColumnsPlan FilterStep::analyzeUnneededColumns(const VectorW
     return analyzeUnneededColumns(actions_dag, filter_column_name, remove_filter_column, *input_headers.front(), unneeded_output_positions);
 }
 
-FilterStep::UnneededInputPositions FilterStep::getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const
+FilterStep::UnneededInputPositions FilterStep::getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
 {
     return {analyzeUnneededColumns(unneeded_output_positions).unneededInputPositions()};
 }
 
 FilterStep::RemoveUnusedColumnsResult
-FilterStep::removeUnusedColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions, const VectorWithMemoryTracking<PrunedInput> & inputs)
+FilterStep::removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs)
 {
     const auto plan = analyzeUnneededColumns(unneeded_output_positions);
     const auto & pruned = inputs.at(0);
@@ -754,15 +755,6 @@ FilterStep::removeUnusedColumns(const VectorWithMemoryTracking<size_t> & unneede
     return result;
 }
 
-
-std::optional<bool> FilterStep::combineOptimizeConstantColumnsAfterFilter(std::optional<bool> lhs, std::optional<bool> rhs)
-{
-    if (!lhs)
-        return rhs;
-    if (!rhs)
-        return lhs;
-    return *lhs && *rhs;
-}
 
 QueryPlanStepPtr FilterStep::clone() const
 {

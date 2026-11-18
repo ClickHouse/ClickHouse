@@ -119,9 +119,9 @@ public:
     {
     }
 
-    [[nodiscard]] bool enableLogging() const { return enable_logging; }
+    bool enableLogging() const { return enable_logging; }
 
-    [[nodiscard]] DB::ContextPtr getContext() const { return context; }
+    DB::ContextPtr getContext() const { return context; }
 
     /// Get result of a parsed scanCallback expression.
     /// Its result is always a Tuple.
@@ -221,10 +221,10 @@ public:
         return result_dag;
     }
 
-    [[nodiscard]] const LoggerPtr & logger() const { return log; }
+    const LoggerPtr & logger() const { return log; }
 
     /// Get (the first) exception, which happened during parsing.
-    [[nodiscard]] std::exception_ptr getException() const { return visitor_exception; }
+    std::exception_ptr getException() const { return visitor_exception; }
 
     /// Set parsing expression.
     void setException(std::exception_ptr exception)
@@ -391,11 +391,12 @@ public:
         auto & to_list = to_it->second;
         auto & from_list = from_it->second;
 
-        /// `read_schema` is empty when every column of the table is a partition column.
         if (to_list.empty())
         {
             for (const auto & elem : read_schema)
                 addIdentifier(to_list_id, elem.name);
+
+            chassert(!to_list.empty());
         }
 
         if (after_field_name)

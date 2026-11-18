@@ -109,14 +109,9 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
     if (update_time != std::chrono::system_clock::from_time_t(0))
     {
         time_t hr_time = std::chrono::system_clock::to_time_t(update_time) - configuration.update_lag;
-        /// A column that can hold text (its type name contains `String` or `Dynamic`) is compared with local wall-clock text,
-        /// any other type with a Unix timestamp (the same instant in any time zone), zero-padded because a shorter number can
-        /// be rejected or read as `YYYYMMDD`.
-        std::string bound = fmt::format(
-            "if(toTypeName({0}) LIKE '%String%' OR toTypeName({0}) LIKE '%Dynamic%', '{1}', '{2:010}')",
-            configuration.update_field, DateLUT::instance().timeToString(hr_time), std::max<time_t>(hr_time, 0));
+        std::string str_time = DateLUT::instance().timeToString(hr_time);
         update_time = std::chrono::system_clock::now();
-        return query_builder->composeUpdateQueryWithBound(configuration.update_field, bound);
+        return query_builder->composeUpdateQuery(configuration.update_field, str_time);
     }
 
     update_time = std::chrono::system_clock::now();
@@ -295,7 +290,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             configuration.emplace(Configuration{
                 .host = host,
                 .user = named_collection->getAnyOrDefault<String>({"user", "username"}, "default"),
-                .password = named_collection->getOrDefault<SecretString>("password"),
+                .password = named_collection->getOrDefault<String>("password", ""),
                 .proto_send_chunked = named_collection->getOrDefault<String>("proto_send_chunked", "notchunked"),
                 .proto_recv_chunked = named_collection->getOrDefault<String>("proto_recv_chunked", "notchunked"),
                 .quota_key = named_collection->getOrDefault<String>("quota_key", ""),
@@ -321,7 +316,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             configuration.emplace(Configuration{
                 .host = host,
                 .user = config.getString(settings_config_prefix + ".user", "default"),
-                .password = SecretString(config.getString(settings_config_prefix + ".password", "")),
+                .password = config.getString(settings_config_prefix + ".password", ""),
                 .proto_send_chunked = config.getString(settings_config_prefix + ".proto_caps.send", "notchunked"),
                 .proto_recv_chunked = config.getString(settings_config_prefix + ".proto_caps.recv", "notchunked"),
                 .quota_key = config.getString(settings_config_prefix + ".quota_key", ""),
@@ -343,7 +338,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         {
             /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).
             Session session(global_context, ClientInfo::Interface::LOCAL);
-            session.authenticate(configuration->user, String(configuration->password), Poco::Net::SocketAddress{});
+            session.authenticate(configuration->user, configuration->password, Poco::Net::SocketAddress{});
             context = session.makeQueryContext();
         }
         else

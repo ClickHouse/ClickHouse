@@ -1,9 +1,10 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/StringUtils.h>
 #include <Poco/UTF8Encoding.h>
+#include <Poco/Unicode.h>
 
 #include <widechar_width.h>
-#include <algorithm>
+#include <array>
 #include <bit>
 #include <cstring>
 #include <type_traits>
@@ -75,93 +76,27 @@ struct UTF8Decoder
     UInt32 codepoint {0};
 };
 
-namespace
+static int wcwidth(wchar_t wc)
 {
-
-/// The terminal columns of a `widechar_wcwidth` result, as in terminals with Unicode 9 or newer widths: most emoji take two.
-size_t terminalWidth(int width)
-{
+    int width = widechar_wcwidth(wc);
     switch (width)
     {
         case widechar_nonprint:
         case widechar_combining:
         case widechar_unassigned:
-        case widechar_non_character:
             return 0;
         case widechar_ambiguous:
         case widechar_private_use:
-            return 1;
         case widechar_widened_in_9:
-            return 2;
+            return 1;
         default:
-            return static_cast<size_t>(width);
+            return width;
     }
 }
 
-/// The width of a code point and the interval of code points around it that have the same width,
-/// so that the next code point of the same script usually needs no binary search over the tables.
-struct CodePointWidthCache
+
+namespace
 {
-    UInt32 lo = 1;
-    UInt32 hi = 0;
-    size_t width = 0;
-
-    size_t get(UInt32 code_point)
-    {
-        if (code_point < lo || code_point > hi)
-            lookUp(code_point);
-        return width;
-    }
-
-private:
-    /// Like `widechar_in_table`, and narrows the interval to the range or the gap around `code_point`.
-    template <typename Table>
-    bool inTable(const Table & table, UInt32 code_point)
-    {
-        const auto * where = std::lower_bound(std::begin(table), std::end(table), code_point,
-            [](widechar_range range, UInt32 value) { return range.hi < value; });
-        if (where != std::end(table) && where->lo <= code_point)
-        {
-            lo = std::max(lo, where->lo);
-            hi = std::min(hi, where->hi);
-            return true;
-        }
-        if (where != std::begin(table))
-            lo = std::max(lo, std::prev(where)->hi + 1);
-        if (where != std::end(table))
-            hi = std::min(hi, where->lo - 1);
-        return false;
-    }
-
-    /// The same checks in the same order as `widechar_wcwidth`: every code point of the interval
-    /// is in the same table and in none of the tables checked before it.
-    void lookUp(UInt32 code_point)
-    {
-        lo = 0;
-        hi = 0x10FFFF;
-        int res = 1;
-        if (inTable(widechar_ascii_table, code_point))
-            res = 1;
-        else if (inTable(widechar_private_table, code_point))
-            res = widechar_private_use;
-        else if (inTable(widechar_nonprint_table, code_point))
-            res = widechar_nonprint;
-        else if (inTable(widechar_nonchar_table, code_point))
-            res = widechar_non_character;
-        else if (inTable(widechar_combining_table, code_point) || inTable(widechar_combiningletters_table, code_point))
-            res = widechar_combining;
-        else if (inTable(widechar_doublewide_table, code_point))
-            res = 2;
-        else if (inTable(widechar_ambiguous_table, code_point))
-            res = widechar_ambiguous;
-        else if (inTable(widechar_unassigned_table, code_point))
-            res = widechar_unassigned;
-        else if (inTable(widechar_widened_table, code_point))
-            res = widechar_widened_in_9;
-        width = terminalWidth(res);
-    }
-};
-
 
 enum ComputeWidthMode
 {
@@ -192,7 +127,6 @@ template <ComputeWidthMode mode>
 size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t limit) noexcept
 {
     UTF8Decoder decoder;
-    CodePointWidthCache width_cache;
     bool is_escape_sequence = false;
     size_t width = 0;
     size_t rollback = 0;
@@ -280,7 +214,7 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
                     else if (decoder.codepoint == '\t')
                         next_width += 8 - (prefix + width) % 8;
                     else
-                        next_width += width_cache.get(decoder.codepoint);
+                        next_width += wcwidth(decoder.codepoint);
 
                     if (mode == BytesBeforeLimit && next_width > limit)
                         return i - rollback;
@@ -349,6 +283,31 @@ std::optional<uint32_t> convertUTF8ToCodePoint(const char * in_bytes, size_t in_
     if (res >= 0)
         return res;
     return {};
+}
+
+bool isASCIIReachableByCaseFolding(char c)
+{
+    /// Derived from Poco's tables rather than hardcoded, so it cannot drift from the folding it describes.
+    static const std::array<bool, 128> reachable = []
+    {
+        std::array<bool, 128> result{};
+        for (int code_point = 0x80; code_point <= 0x10FFFF; ++code_point)
+        {
+            const int folded = Poco::Unicode::toLower(code_point);
+            if (folded >= 0x80)
+                continue;
+
+            result[folded] = true;
+            /// The needle character is folded too, so the other case is equally unsafe.
+            const int other_case = Poco::Unicode::toUpper(folded);
+            if (other_case < 0x80)
+                result[other_case] = true;
+        }
+        return result;
+    }();
+
+    const auto index = static_cast<unsigned char>(c);
+    return index < 0x80 && reachable[index];
 }
 
 }
