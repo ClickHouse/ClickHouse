@@ -36,28 +36,23 @@ INSERT INTO t_any_inner_l SELECT number % 10, number + 200 FROM numbers(100);
 INSERT INTO t_any_inner_l SELECT number % 10, number + 300 FROM numbers(100);
 INSERT INTO t_any_inner_r SELECT number % 10, number FROM numbers(1000);
 
-SELECT '-- rule-based';
--- ANY LEFT JOIN of the same tables is broadcast: the right side is small enough.
-SELECT countIf(explain LIKE '%BroadcastExchange%') FROM (
-    EXPLAIN SELECT count() FROM t_any_inner_l AS l ANY LEFT JOIN t_any_inner_r AS r ON l.k = r.k
-    SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 0);
-SELECT countIf(explain LIKE '%BroadcastExchange%') FROM (
-    EXPLAIN SELECT count() FROM t_any_inner_l AS l ANY INNER JOIN t_any_inner_r AS r ON l.k = r.k
-    SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 0);
+SELECT '-- rule-based: ANY LEFT JOIN (broadcast, the right side is small)';
+EXPLAIN SELECT count() FROM t_any_inner_l AS l ANY LEFT JOIN t_any_inner_r AS r ON l.k = r.k
+SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 0;
+SELECT '-- rule-based: ANY INNER JOIN (shuffle)';
+EXPLAIN SELECT count() FROM t_any_inner_l AS l ANY INNER JOIN t_any_inner_r AS r ON l.k = r.k
+SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 0;
 SELECT count() FROM t_any_inner_l AS l ANY INNER JOIN t_any_inner_r AS r ON l.k = r.k
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 0, distributed_plan_fallback_to_local_execution = 0;
 SELECT count() FROM t_any_inner_l AS l ANY INNER JOIN (SELECT k FROM t_any_inner_r GROUP BY k) AS r ON l.k = r.k
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 0, distributed_plan_fallback_to_local_execution = 0;
 
-SELECT '-- Cascades';
-SELECT countIf(explain LIKE '%Broadcast HashJoin%') FROM (
-    EXPLAIN SELECT count() FROM t_any_inner_l AS l ANY LEFT JOIN t_any_inner_r AS r ON l.k = r.k
-    SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1)
-SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
-SELECT countIf(explain LIKE '%Broadcast HashJoin%') FROM (
-    EXPLAIN SELECT count() FROM t_any_inner_l AS l ANY INNER JOIN t_any_inner_r AS r ON l.k = r.k
-    SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1)
-SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+SELECT '-- Cascades: ANY LEFT JOIN (broadcast)';
+EXPLAIN SELECT count() FROM t_any_inner_l AS l ANY LEFT JOIN t_any_inner_r AS r ON l.k = r.k
+SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1;
+SELECT '-- Cascades: ANY INNER JOIN (shuffle)';
+EXPLAIN SELECT count() FROM t_any_inner_l AS l ANY INNER JOIN t_any_inner_r AS r ON l.k = r.k
+SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1;
 SELECT count() FROM t_any_inner_l AS l ANY INNER JOIN t_any_inner_r AS r ON l.k = r.k
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_fallback_to_local_execution = 0;
 
