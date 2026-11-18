@@ -1204,11 +1204,12 @@ public:
         {
             getContext()->checkAccess(AccessType::INSERT, destination->getStorageID());
             /// Refuse rows the flush could not write now, while the user can still be told: a flush that is denied drops
-            /// them with only a log record. Once per insert, as it costs about as much as planning an insert into the
-            /// destination.
+            /// them with only a log record. The check runs in the context the flush runs in, whose settings come from the
+            /// buffer context and the user's profile, not from this query, e.g. whether a shard with a local replica is
+            /// written here. Once per insert, as it costs about as much as planning an insert into the destination.
             if (!forwarded_insert_checked)
             {
-                checkForwardedInsertAccess(destination, getContext());
+                checkForwardedInsertAccess(destination, storage.makeFlushContext(*write_identity));
                 forwarded_insert_checked = true;
             }
             destination = DatabaseCatalog::instance().tryGetTable(storage.destination_id, storage.getContext());
@@ -1793,6 +1794,21 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 }
 
 
+ContextMutablePtr StorageBuffer::makeFlushContext(const BufferWriteIdentity & identity) const
+{
+    auto flush_context = Context::createCopy(getContext());
+    flush_context->makeQueryContext();
+    /// A flush is a deferred background write, not an interactive query, even though it carries the
+    /// originating user below: this keeps functions that may run only in user-issued queries (AI functions)
+    /// rejected in it, as in merges and mutations.
+    flush_context->setBackgroundOperation();
+    /// Bound the forwarded INSERT by the user who initiated it, so a nested Buffer/Alias/Distributed
+    /// destination is re-authorized as that user instead of the full-access buffer context.
+    restoreWriteIdentity(flush_context, identity);
+    return flush_context;
+}
+
+
 void StorageBuffer::writeBlockToDestination(
     const Block & block,
     StoragePtr table,
@@ -1814,20 +1830,13 @@ void StorageBuffer::writeBlockToDestination(
     }
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
-    auto insert_context = Context::createCopy(getContext());
-    insert_context->makeQueryContext();
-    if (query_context)
-        insert_context->shareQueryMaxThreadsSnapshot(*query_context);
-    /// A flush is a deferred background write, not an interactive query, even though it carries the
-    /// originating user below: this keeps functions that may run only in user-issued queries (AI functions)
-    /// rejected in it, as in merges and mutations.
-    insert_context->setBackgroundOperation();
-    /// Bound the forwarded INSERT by the user who initiated it, so a nested Buffer/Alias/Distributed
-    /// destination is re-authorized as that user instead of the full-access buffer context. Done before the
-    /// destination schema is read so an `Alias` is resolved under that identity rather than the buffer context.
-    restoreWriteIdentity(insert_context, *write_identity);
+    /// Done before the destination schema is read so an `Alias` is resolved under the restored identity rather than the
+    /// buffer context.
+    auto insert_context = makeFlushContext(*write_identity);
     if (state)
         state->context = insert_context;
+    if (query_context)
+        insert_context->shareQueryMaxThreadsSnapshot(*query_context);
 
     /// Authorize the whole write under the restored identity before writing any of it, and before the destination schema
     /// is read, intersected, or used to emit a "columns discarded" warning, which would otherwise tell an unauthorized

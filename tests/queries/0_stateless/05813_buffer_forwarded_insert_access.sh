@@ -25,7 +25,10 @@ DROP DATABASE IF EXISTS ${protected_db};
 CREATE DATABASE ${protected_db};
 CREATE TABLE ${protected_db}.t (s String) ENGINE = MergeTree ORDER BY s;
 DROP USER IF EXISTS ${user}, ${definer_ok}, ${definer_no};
-CREATE USER ${user}, ${definer_ok}, ${definer_no};
+-- The flush writes the shard of a Distributed table with a local replica here, as the user, if the user's profile says
+-- so; the insert checks it the same way.
+CREATE USER ${user} SETTINGS prefer_localhost_replica = 1;
+CREATE USER ${definer_ok}, ${definer_no};
 GRANT INSERT, SELECT, OPTIMIZE ON ${db}.* TO ${user};
 EOF
 
@@ -35,10 +38,10 @@ CREATE TABLE ${db}.dist (s String) ENGINE = Distributed(test_shard_localhost, ${
 CREATE TABLE ${db}.dist_buf (s String) ENGINE = Buffer(${db}, dist, 1, 3600, 3600, 1000000, 1000000, 1000000000, 1000000000);
 EOF
 echo -n "insert denied:              "
-denied run_user --query "INSERT INTO ${db}.dist_buf SETTINGS async_insert = 0, prefer_localhost_replica = 1 VALUES ('dist')"
+denied run_user --query "INSERT INTO ${db}.dist_buf SETTINGS async_insert = 0 VALUES ('dist')"
 echo -n "nothing buffered:           "; ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${db}.dist_buf WHERE s = 'dist'"
 ${CLICKHOUSE_CLIENT} --query "GRANT INSERT ON ${protected_db}.t TO ${user}"
-run_user --query "INSERT INTO ${db}.dist_buf SETTINGS async_insert = 0, prefer_localhost_replica = 1 VALUES ('dist')"
+run_user --query "INSERT INTO ${db}.dist_buf SETTINGS async_insert = 0 VALUES ('dist')"
 ${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE ${db}.dist_buf"
 echo -n "written once allowed:       "; ${CLICKHOUSE_CLIENT} --query "SELECT groupArray(s) FROM ${protected_db}.t"
 ${CLICKHOUSE_CLIENT} --query "REVOKE INSERT ON ${protected_db}.t FROM ${user}"

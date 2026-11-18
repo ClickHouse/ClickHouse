@@ -213,6 +213,9 @@ private:
     bool checkThresholds(const Buffer & buffer, bool direct, time_t current_time, size_t additional_rows = 0, size_t additional_bytes = 0) const;
     bool checkThresholdsImpl(bool direct, size_t rows, size_t bytes, time_t time_passed) const;
 
+    /// The context a block buffered under `identity` is flushed in: the identity over the buffer context.
+    ContextMutablePtr makeFlushContext(const BufferWriteIdentity & identity) const;
+
     /// What writeBlockToDestination leaves to classify a failure of the flush.
     struct FlushState
     {
