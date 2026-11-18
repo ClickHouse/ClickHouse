@@ -19,7 +19,7 @@ public:
     using Option = boost::shared_ptr<boost::program_options::option_description>;
 
     explicit OptionsAliasParser(const boost::program_options::options_description & options);
-    const Option * findOption(std::string_view name, bool allow_prefix = true) const;
+    [[nodiscard]] const Option * findOption(std::string_view name, bool allow_prefix = true) const;
     /*
      * Parses arguments by replacing dashes with underscores, and matches the resulting name with known options
      * Implements boost::program_options::ext_parser logic
