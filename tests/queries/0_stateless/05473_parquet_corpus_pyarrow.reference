@@ -1382,7 +1382,33 @@ parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `st`.`c`	ok
 parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet content	100	ok
 parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet stress	ok
 parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
-parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet known issue empty data page v2 in a nested column	INCORRECT_DATA
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet WHERE `id` = 7	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `id`	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `l_i32`	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `l_i32`.size0	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `l_m`	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `l_m`.size0	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `l_s`	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `l_s`.size0	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `l_st`	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `l_st`.`x`	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `l_st`.`y`	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `l_st`.size0	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `ll_i64`	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `ll_i64`.size0	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `m_i_l`	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `m`	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `st_l`	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `st_l`.`arr`	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `st_l`.`mm`	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `st`	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `st`.`a`	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `st`.`b`	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet `st`.`c`	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet content	100	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
 parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet WHERE `id` = 7	ok
 parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet WHERE `id` >= 70	ok
 parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `id`	ok
