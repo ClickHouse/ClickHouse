@@ -44,7 +44,7 @@ ${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 -q "
 # Then the database is shown to be fully usable.
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "
     SYSTEM FLUSH LOGS text_log;
-    SELECT count() > 0 FROM system.text_log WHERE logger_name='DatabaseReplicated (${DB})' AND message LIKE '%reusing them%';
+    SELECT count() > 0 FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name='DatabaseReplicated (${DB})' AND message LIKE '%reusing them%';
     CREATE TABLE ${DB}.t (k UInt64) ENGINE=ReplicatedMergeTree ORDER BY k;
     SELECT count() FROM system.tables WHERE database='${DB}';
     DROP DATABASE ${DB} SYNC;
@@ -158,6 +158,7 @@ ${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 -q "
     SELECT name FROM system.zookeeper WHERE path='${TBL_ZK}/s1/replicas';
     SELECT count() FROM system.zookeeper WHERE path='${TBL_ZK}/s1' AND name='metadata';
     SELECT value != '0' FROM system.zookeeper WHERE path='${ZK}/txn/replicas/s1|r1' AND name='digest';
+    SYSTEM DISABLE FAILPOINT database_atomic_fail_after_committing_metadata_transaction;
     DROP DATABASE ${DB}_txn SYNC;
 "
 
@@ -201,6 +202,7 @@ ${CLICKHOUSE_CLIENT} --database_replicated_allow_replicated_engine_arguments=3 -
 ${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 -q "
     SELECT count() FROM system.zookeeper WHERE path='${ZK}/nopub/metadata' AND name='t';
     SELECT count() FROM system.zookeeper WHERE path='${NOPUB_ZK}/s1/replicas';
+    SYSTEM DISABLE FAILPOINT database_on_disk_fail_before_commit_create_table;
 "
 
 # So a plain retry, which regenerates the UUID, completes and the table is usable

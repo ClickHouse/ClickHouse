@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-ordinary-database, no-shared-merge-tree
+# Tags: zookeeper, no-parallel, no-ordinary-database, no-fasttest, no-shared-merge-tree
+# no-fasttest: enables fail points
 # no-shared-merge-tree: asserts the ReplicatedMergeTree layout under `replicas`, and uses an auxiliary Keeper
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -133,6 +134,7 @@ ${CLICKHOUSE_CLIENT} -q "
 " 2>&1 | grep -cm1 "Fault injected"
 
 ${CLICKHOUSE_CLIENT} -q "
+    SYSTEM DISABLE FAILPOINT replicated_merge_tree_fail_after_creating_replica;
     SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ctor/replicas';
     CREATE TABLE test_ctor (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ctor', 'r1') ORDER BY date;
     SELECT count() FROM system.tables WHERE database=currentDatabase() AND name='test_ctor';
@@ -151,6 +153,7 @@ ${CLICKHOUSE_CLIENT} \
     -q "CREATE TABLE test_ctor_second (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ctor_keep', 'r2') ORDER BY date" 2>&1 | grep -cm1 "Fault injected"
 
 ${CLICKHOUSE_CLIENT} -q "
+    SYSTEM DISABLE FAILPOINT replicated_merge_tree_fail_after_creating_replica;
     SELECT name FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ctor_keep/replicas' ORDER BY name;
     SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ctor_keep' AND name='metadata';
     INSERT INTO test_ctor_first SELECT toDate('2024-01-02');
@@ -250,6 +253,7 @@ ${CLICKHOUSE_CLIENT} -q "
 
 # Nothing was published, so the registration is this statement's to remove and the retry succeeds
 ${CLICKHOUSE_CLIENT} -q "
+    SYSTEM DISABLE FAILPOINT database_on_disk_fail_before_commit_create_table;
     SELECT count() FROM system.tables WHERE database=currentDatabase() AND name='test_before_commit';
     SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/before_commit/replicas';
     CREATE TABLE test_before_commit (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/before_commit', 'r1') ORDER BY date;
@@ -265,6 +269,7 @@ ${CLICKHOUSE_CLIENT} \
 # The database accepted the table, so its data and registration must stay: it is reachable and
 # recovers with DETACH/ATTACH, and DROP TABLE cleans up both.
 ${CLICKHOUSE_CLIENT} -q "
+    SYSTEM DISABLE FAILPOINT database_on_disk_fail_after_commit_create_table;
     SELECT count() FROM system.tables WHERE database=currentDatabase() AND name='test_after_commit';
     SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/after_commit/replicas';
     SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/after_commit' AND name='metadata';
@@ -294,6 +299,7 @@ ${CLICKHOUSE_CLIENT} -q "
 # itself is shared infrastructure that a plain DROP TABLE does not remove either. The retry then
 # succeeds, and its own drop leaves the same state.
 ${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 -q "
+    SYSTEM DISABLE FAILPOINT replicated_merge_tree_fail_after_creating_replica;
     SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX' AND name='zero_copy';
     SELECT count() FROM system.zookeeper WHERE path='$ZC_ROOT/zero_copy_local_blob_storage';
     CREATE TABLE test_zero_copy (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/zero_copy', 'r1') ORDER BY date
