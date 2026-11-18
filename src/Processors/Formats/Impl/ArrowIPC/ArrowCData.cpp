@@ -194,11 +194,12 @@ void fillSchema(
     exported->children.reserve(children.size());
     for (const auto & child : children)
     {
-        auto child_schema = std::make_unique<::ArrowSchema>();
-        *child_schema = {};
-        /// A child is pushed only once it is filled, so a throwing `fillSchema` leaves nothing to release.
-        fillSchema(*child_schema, formatString(child), child.name, child.nullable, child.custom_metadata, child.type.children);
-        exported->children.push_back(std::move(child_schema));
+        /// The child is owned by `exported` before it is filled, so it is released if anything below throws.
+        /// A throwing `fillSchema` leaves it unreleasable (`release` is set last), which the destructor skips.
+        exported->children.push_back(std::make_unique<::ArrowSchema>());
+        auto & child_schema = *exported->children.back();
+        child_schema = {};
+        fillSchema(child_schema, formatString(child), child.name, child.nullable, child.custom_metadata, child.type.children);
     }
     for (auto & child : exported->children)
         exported->children_pointers.push_back(child.get());
@@ -270,10 +271,11 @@ public:
         {
             for (const auto & child : children)
             {
-                auto child_array = std::make_unique<::ArrowArray>();
-                *child_array = {};
-                build(child, *child_array);
-                exported->children.push_back(std::move(child_array));
+                /// The child is owned by `exported` before it is built, so it is released if anything later throws.
+                exported->children.push_back(std::make_unique<::ArrowArray>());
+                auto & child_array = *exported->children.back();
+                child_array = {};
+                build(child, child_array);
             }
         };
 
@@ -432,10 +434,11 @@ void exportRecordBatchToC(
     exported->buffers.push_back(nullptr);
     for (const auto & field : schema.fields)
     {
-        auto child = std::make_unique<::ArrowArray>();
-        *child = {};
-        builder.build(field, *child);
-        exported->children.push_back(std::move(child));
+        /// The child is owned by `exported` before it is built, so it is released if anything later throws.
+        exported->children.push_back(std::make_unique<::ArrowArray>());
+        auto & child = *exported->children.back();
+        child = {};
+        builder.build(field, child);
     }
     builder.finish();
     for (auto & child : exported->children)
