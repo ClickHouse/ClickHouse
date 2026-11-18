@@ -527,6 +527,13 @@ public:
 
     std::string getFileName() const override { return target_path; }
 
+    /// The file is published by the last step of `publishConditionally`, and nothing before it can be seen. The write is
+    /// synchronous, so its outcome is always known.
+    std::optional<WriteOutcome> getWriteOutcome() const override
+    {
+        return published ? WriteOutcome::Applied : WriteOutcome::NotApplied;
+    }
+
 private:
     void finalizeImpl() override
     {
@@ -534,6 +541,7 @@ private:
 
         const size_t data_size = count();
         publishConditionally(temp_path, target_path, mode, if_match_etag);
+        published = true;
         removeTemporaryFile();
 
         if (blob_log)
@@ -570,6 +578,7 @@ private:
     const String bucket;
     BlobStorageLogWriterPtr blob_log;
     bool temporary_file_removed = false;
+    bool published = false;
 };
 
 }

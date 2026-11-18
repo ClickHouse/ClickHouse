@@ -2,8 +2,9 @@
 # Tags: no-fasttest
 # Tag no-fasttest: Iceberg needs Avro.
 
-# A commit compresses its metadata file. When the compressing buffer cannot be created, the commit fails with that
-# error, and the buffer of the storage is still alive when the commit reads the outcome of the write from it.
+# A commit compresses its metadata file. When the compressing buffer cannot be created, the buffer of the storage is
+# still alive when the commit reads the outcome of the write from it. Nothing is published, so the commit fails with
+# that error and removes its data file.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,8 +19,10 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
     INSERT INTO t VALUES (1);"
 
 # The table compresses its metadata with gzip, and the commit takes the level from the query. gzip has no level 18.
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --allow_insert_into_iceberg=1 --query "
     INSERT INTO t SETTINGS output_format_compression_level = 18, output_format_parquet_compression_method = 'none' VALUES (2)" 2>&1 \
-    | grep -o 'Compression level 18 is out of range for gzip' | head -1
+    | grep -oE 'Compression level 18 is out of range for gzip.*\([A-Z_]+\)$'
 
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM t ORDER BY ALL; DROP TABLE t;"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM t ORDER BY ALL"
+find "${ROOT}" -name '*.parquet' | wc -l
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t"
