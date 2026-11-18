@@ -421,34 +421,26 @@ void hideLambdaArgumentsShadowingAliasExpression(
     }
 }
 
-/// Returns true if an identifier or the qualifier of a matcher in the expression starts with `name`, as `x` in `tuple(x.*)`.
-bool expressionRefersToIdentifier(const QueryTreeNodePtr & expression, const std::string & name)
+/** Replaces the matchers qualified by `name`, as `x.*` in `tuple(x.*, COLUMNS('c'))`, with the identifier `name`.
+  * Used for the body of a deferred `APPLY` lambda whose argument is not known yet: the other matchers of the body
+  * are expanded, and the ones that depend on the argument are not.
+  */
+void replaceMatchersQualifiedByIdentifier(QueryTreeNodePtr & node, const std::string & name)
 {
-    std::vector<const IQueryTreeNode *> nodes_to_process{expression.get()};
-    while (!nodes_to_process.empty())
+    if (const auto * matcher_node = node->as<MatcherNode>())
     {
-        const auto * node = nodes_to_process.back();
-        nodes_to_process.pop_back();
-
-        if (const auto * identifier_node = node->as<IdentifierNode>())
+        if (!matcher_node->isUnqualified() && matcher_node->getQualifiedIdentifier().front() == name)
         {
-            if (identifier_node->getIdentifier().front() == name)
-                return true;
-        }
-        else if (const auto * matcher_node = node->as<MatcherNode>())
-        {
-            if (!matcher_node->isUnqualified() && matcher_node->getQualifiedIdentifier().front() == name)
-                return true;
-        }
-
-        for (const auto & child : node->getChildren())
-        {
-            if (child)
-                nodes_to_process.push_back(child.get());
+            node = std::make_shared<IdentifierNode>(Identifier(name));
+            return;
         }
     }
 
-    return false;
+    for (auto & child : node->getChildren())
+    {
+        if (child)
+            replaceMatchersQualifiedByIdentifier(child, name);
+    }
 }
 
 }
@@ -3336,16 +3328,19 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     {
                         /** As in `resolveLambda`. A wrong number of arguments is reported by the second expansion.
                           * If a preceding transformer of the chain was deferred, its result, which is the argument of the lambda,
-                          * is not known yet. A body that refers to the argument, as `x -> tuple(x.*)`, is not expanded then:
-                          * binding the argument to the original column would expand its matchers for a wrong type.
+                          * is not known yet. The matchers qualified by the argument, as `x.*` in `x -> tuple(x.*, COLUMNS('c'))`,
+                          * are not expanded then: binding the argument to the original column would expand them for a wrong type.
+                          * The other matchers of the body, as `COLUMNS('c')`, do not depend on the argument and are expanded.
                           */
                         const auto & lambda_argument_names = lambda_copy->getArguments().getNames();
                         auto & lambda_body = lambda_copy->getExpression();
-                        if (lambda_argument_names.size() == 1
-                            && !(transformer_input_is_deferred && expressionRefersToIdentifier(lambda_body, lambda_argument_names.front())))
+                        if (lambda_argument_names.size() == 1 && transformer_input_is_deferred)
+                            replaceMatchersQualifiedByIdentifier(lambda_body, lambda_argument_names.front());
+
+                        if (lambda_argument_names.size() == 1)
                         {
                             auto & lambda_scope = createIdentifierResolveScope(expression_copy, /*parent_scope=*/&scope);
-                            QueryExpressionsAliasVisitor visitor(lambda_scope.aliases);
+                            QueryExpressionsAliasVisitor visitor(lambda_scope.aliases, lambda_scope.context);
                             visitor.visit(lambda_body);
                             lambda_scope.expression_argument_name_to_node.emplace(lambda_argument_names.front(), node);
                             /// A matcher at the root of the body, as in `x -> COLUMNS('c') REPLACE (1 AS c)`, is expanded as well.
@@ -8976,22 +8971,39 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
               */
             auto collect_replaced_identifier = [&](const std::string & identifier_name)
             {
-                /// The name together with the matcher whose replacement produced it.
+                /** The name together with the matcher whose replacement produced it.
+                  * The replacements of a name are followed at most twice: the first time all of them except the ones
+                  * of the matcher that produced the name, and if the name is reached again through another matcher,
+                  * the ones skipped the first time. `nullptr` marks a name whose replacements were all followed.
+                  * So the walk is linear in the number of replacements, even when many matchers replace a name with itself.
+                  */
                 using NameWithMatcher = std::pair<std::string, const IQueryTreeNode *>;
-                std::set<NameWithMatcher> visited_names;
+                std::unordered_map<std::string, const IQueryTreeNode *> skipped_matcher_by_name;
                 std::vector<NameWithMatcher> names_to_process{{identifier_name, nullptr}};
                 while (!names_to_process.empty())
                 {
-                    auto name_with_matcher = std::move(names_to_process.back());
+                    auto [name, producing_matcher] = std::move(names_to_process.back());
                     names_to_process.pop_back();
 
-                    auto replaced_it = replaced_column_names.find(name_with_matcher.first);
-                    if (replaced_it == replaced_column_names.end() || !visited_names.insert(name_with_matcher).second)
+                    auto replaced_it = replaced_column_names.find(name);
+                    if (replaced_it == replaced_column_names.end())
                         continue;
+
+                    auto [skipped_it, inserted] = skipped_matcher_by_name.try_emplace(name, producing_matcher);
+                    /// Only the replacements of this matcher are followed.
+                    const IQueryTreeNode * only_matcher = nullptr;
+                    if (!inserted)
+                    {
+                        if (!skipped_it->second || skipped_it->second == producing_matcher)
+                            continue;
+
+                        only_matcher = skipped_it->second;
+                        skipped_it->second = nullptr;
+                    }
 
                     for (const auto & [matcher, replacement_expression] : replaced_it->second)
                     {
-                        if (matcher == name_with_matcher.second)
+                        if (only_matcher ? matcher != only_matcher : matcher == producing_matcher)
                             continue;
 
                         if (const auto * constant_node = replacement_expression->as<ConstantNode>())
