@@ -455,7 +455,7 @@ public:
 private:
     /// The filters compare the keys bitwise (the Bloom filter hashes their raw bytes), while the join they are built for
     /// matches `-0.` with `0.`, so negative zeros are replaced with positive zeros in both the inserted and the looked up keys.
-    ColumnPtr canonicalizeKeys(ColumnPtr values) const;
+    [[nodiscard]] ColumnPtr canonicalizeKeys(ColumnPtr values) const;
 
     const DataTypePtr filter_column_target_type;
     const bool canonicalize_negative_zeros;
