@@ -1442,8 +1442,8 @@ ColumnPtr FunctionCast::convertArrayToQBit(
     {
         auto off = offsets[row];
 
-        /// For NULL rows and rows of the wrong size, insert default (zero) values: the result will be masked by NULL.
-        if ((null_map && (*null_map)[row]) || (failed_rows && off - prev_offset != n))
+        /// NULL and failed rows get the default (zero) vector, which is what remains if a caller strips the null mask.
+        if ((null_map && (*null_map)[row]) || (failed_rows && (*failed_rows)[row]))
         {
             for (size_t j = 0; j < num_columns; ++j)
                 assert_cast<ColumnFixedString &>(*tuple_columns[j]).insertDefault();

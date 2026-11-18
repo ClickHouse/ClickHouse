@@ -6129,7 +6129,7 @@ private:
 
     WrapperType createQBitWrapper(const DataTypePtr & from_type_untyped, const DataTypeQBit & to_type, bool requested_result_is_nullable) const;
 
-    /// If set, a row whose array does not have n elements is marked in failed_rows (and zero-filled) instead of throwing.
+    /// If set, a row whose array does not have n elements is marked in failed_rows instead of throwing; every marked row is zero-filled.
     template <typename FloatType>
     static ColumnPtr convertArrayToQBit(
         ColumnsWithTypeAndName & arguments,
