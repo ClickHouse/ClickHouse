@@ -46,6 +46,7 @@
 #include <Processors/QueryPlan/WindowStep.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/DistributedPlanLocalObject.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
@@ -610,14 +611,8 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         Broadcast
     } strategy = Shuffle;
 
-    /// In a broadcast join, the right side is replicated to all workers and the
-    /// left side is scattered.  For RIGHT and FULL joins the right side can
-    /// produce unmatched output rows.  When the right side is replicated, every
-    /// worker independently decides which right rows are unmatched based only on
-    /// its local slice of the left side, producing duplicate unmatched rows.
-    const bool broadcast_unsafe
-        = join_info.kind == JoinKind::Right
-        || join_info.kind == JoinKind::Full;
+    /// In a broadcast join, the right side is replicated to all workers and the left side is scattered.
+    const bool broadcast_unsafe = !JoinCommon::canSplitLeftInput(join_info.kind, join_info.strictness);
 
     /// Check if right table is small enough for broadcast
     if (!broadcast_unsafe && row_count_b && row_count_b <= optimization_settings.distributed_plan_max_rows_to_broadcast)

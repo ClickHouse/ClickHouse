@@ -211,6 +211,16 @@ constexpr bool hasNonJoinedBlocks(JoinKind kind, JoinStrictness strictness)
     return isRightOrFull(kind) && strictness != JoinStrictness::Asof && strictness != JoinStrictness::Semi;
 }
 
+/// Whether joining each part of a split left input with the whole right input gives the join of the whole input.
+/// RIGHT and FULL emit unmatched right rows from every part, INNER ANY uses each right row at most once over the
+/// whole left input, and PASTE pairs rows by position.
+constexpr bool canSplitLeftInput(JoinKind kind, JoinStrictness strictness)
+{
+    if (isLeft(kind) || isCrossOrComma(kind))
+        return true;
+    return isInner(kind) && strictness != JoinStrictness::Any;
+}
+
 bool hasNonJoinedBlocks(const TableJoin & table_join);
 
 /// Insert default values for rows marked in filter; the defaults of `default_type` if it is set.
