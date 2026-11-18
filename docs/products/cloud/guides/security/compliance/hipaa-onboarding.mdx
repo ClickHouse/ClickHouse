@@ -100,12 +100,14 @@ Customers are strongly encouraged to deploy services to compliant environments w
 
 If migration from standard to HIPAA compliant regions is required, follow these steps to perform self-service migrations:
 
-1. Select the service to be migrated.
-2. Click **Backups** on the left.
-3. Select the three dots to the left of the backup to be restored.
-4. Select the **Region type** to restore the backup to a HIPAA compliant region.
-5. Once the restoration is complete, run a few queries to verify the schemas and record counts are as expected.
-6. Delete the old service.
+1. Test first: take a backup and restore it to a HIPAA compliant region on a throwaway service, recording how long each takes. This is your expected downtime. 
+2. Stop all inserts into the service: ClickPipes, ingestion jobs, application writers. (downtime starts here)
+3. Run a backup and wait for it to complete.
+4. On the new Backup, select the three dots on the left.
+5. Select the Region type to restore the backup to a HIPAA compliant region.
+6. Once the restoration is complete, run a few queries to verify the schemas and record counts are as expected. Also check users, grants, dictionaries and ClickPipes.
+7. Repoint applications and ingestion to the new service and resume inserts. (downtime ends here)
+8. Delete the old service after 1–7 days, not immediately, termination is irreversible and takes its backups with it.
 
 <Info>
 **Restrictions**
