@@ -357,10 +357,9 @@ private:
         const Aws::String & bucket, const Aws::String & key, const Aws::String & idempotency_id,
         bool warn_if_unproven) const;
 
-    /// Decides a failed write from the answers to its attempts and from the id. `Applied` means that an earlier attempt
-    /// of this write is proven to be applied.
+    /// What the id proves about a failed write. `Applied` means that an earlier attempt of this write is applied.
     template <typename RequestType, typename OutcomeType>
-    WriteOutcome resolveFailedWrite(const RequestType & request, const OutcomeType & outcome, bool warn_if_unproven) const;
+    AttemptsRecord::Proof proveFailedWrite(const RequestType & request, const OutcomeType & outcome, bool warn_if_unproven) const;
 
     std::optional<S3::URI> getURIForBucket(const std::string & bucket) const;
 

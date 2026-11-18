@@ -196,14 +196,6 @@ void recordFailedAttempt(const Aws::Client::AWSError<ErrorType> & error)
         recordAttemptThatMayHaveBeenApplied();
 }
 
-/// Each call decides anew, and the attempts of earlier calls with the request stay in the record. At an exit without an
-/// outcome, e.g. by an exception, the outcome is unknown after an attempt that may have been applied.
-void decideAtExit(AttemptsRecord & attempts_record)
-{
-    if (!attempts_record.outcome)
-        attempts_record.outcome = attempts_record.may_have_been_applied ? WriteOutcome::Unknown : WriteOutcome::NotApplied;
-}
-
 }
 
 Client::RetryStrategy::RetryStrategy(const PocoHTTPClientConfiguration::RetryStrategy & config_)
@@ -733,34 +725,33 @@ bool shouldFindObjectWriter(const RequestType & request, const Aws::S3::S3Error 
 }
 
 template <typename RequestType, typename OutcomeType>
-WriteOutcome Client::resolveFailedWrite(const RequestType & request, const OutcomeType & outcome, bool warn_if_unproven) const
+AttemptsRecord::Proof Client::proveFailedWrite(const RequestType & request, const OutcomeType & outcome, bool warn_if_unproven) const
 {
-    /// What the attempts alone tell: without an attempt that may have been applied, nothing of this write can be at the key.
-    const auto by_attempts = request.getAttemptsRecord().may_have_been_applied ? WriteOutcome::Unknown : WriteOutcome::NotApplied;
+    using Proof = AttemptsRecord::Proof;
     if (!shouldFindObjectWriter(request, outcome.GetError()))
-        return by_attempts;
+        return Proof::None;
 
     switch (findObjectWriter(request.GetBucket(), request.GetKey(), request.getIdempotencyId(), warn_if_unproven))
     {
         case ObjectWriter::ThisWrite:
-            return WriteOutcome::Applied;
+            return Proof::Applied;
         case ObjectWriter::AnotherWrite:
             /// Only one write can create a key with `If-None-Match: *`, so this one was not applied and cannot be
             /// applied later. Without it a later write can replace the object of this one.
             if (request.IfNoneMatchHasBeenSet())
-                return WriteOutcome::NotApplied;
+                return Proof::NotApplied;
             break;
         case ObjectWriter::Unproven:
             break;
     }
-    return by_attempts;
+    return Proof::None;
 }
 
 Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const
 {
     auto & attempts_record = request.getAttemptsRecord();
-    attempts_record.outcome.reset();
-    SCOPE_EXIT(decideAtExit(attempts_record));
+    /// Each call proves anew, and the attempts of earlier calls with the request stay in the record.
+    attempts_record.proof = AttemptsRecord::Proof::None;
     auto outcome = [&]
     {
         RequestScope scope(&attempts_record);
@@ -774,14 +765,17 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
 
     /// A replayed completion reports NO_SUCH_UPLOAD, its upload id consumed, or a 412 when it was
     /// conditional -- and so does an abort over somebody else's object. Only the stamped id separates them.
-    auto write_outcome = WriteOutcome::Applied;
-    if (!outcome.IsSuccess())
+    if (outcome.IsSuccess())
+    {
+        attempts_record.proof = AttemptsRecord::Proof::Applied;
+    }
+    else
     {
         /// A 412 can be an ordinary lost race for the key; an upload id the server no longer has cannot.
         const bool warn_if_unproven = outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD;
 
-        write_outcome = resolveFailedWrite(request, outcome, warn_if_unproven);
-        if (write_outcome == WriteOutcome::Applied)
+        attempts_record.proof = proveFailedWrite(request, outcome, warn_if_unproven);
+        if (attempts_record.proof == AttemptsRecord::Proof::Applied)
         {
             LOG_INFO(
                 log,
@@ -790,7 +784,6 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
             outcome = Aws::S3::Model::CompleteMultipartUploadOutcome(Aws::S3::Model::CompleteMultipartUploadResult());
         }
     }
-    attempts_record.outcome = write_outcome;
 
     if (outcome.IsSuccess() && provider_type == ProviderType::GCS && client_settings.gcs_issue_compose_request)
     {
@@ -826,8 +819,8 @@ Model::CopyObjectOutcome Client::CopyObject(CopyObjectRequest & request) const
 Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
 {
     auto & attempts_record = request.getAttemptsRecord();
-    attempts_record.outcome.reset();
-    SCOPE_EXIT(decideAtExit(attempts_record));
+    /// Each call proves anew, and the attempts of earlier calls with the request stay in the record.
+    attempts_record.proof = AttemptsRecord::Proof::None;
     auto outcome = [&]
     {
         RequestScope scope(&attempts_record);
@@ -843,11 +836,14 @@ Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
     }();
 
     /// A replayed conditional PUT fails its own condition; only the stamped id tells that from a lost race.
-    auto write_outcome = WriteOutcome::Applied;
-    if (!outcome.IsSuccess())
+    if (outcome.IsSuccess())
     {
-        write_outcome = resolveFailedWrite(request, outcome, /* warn_if_unproven= */ false);
-        if (write_outcome == WriteOutcome::Applied)
+        attempts_record.proof = AttemptsRecord::Proof::Applied;
+    }
+    else
+    {
+        attempts_record.proof = proveFailedWrite(request, outcome, /* warn_if_unproven= */ false);
+        if (attempts_record.proof == AttemptsRecord::Proof::Applied)
         {
             LOG_INFO(
                 log,
@@ -856,7 +852,6 @@ Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
             outcome = Aws::S3::Model::PutObjectOutcome(Aws::S3::Model::PutObjectResult());
         }
     }
-    attempts_record.outcome = write_outcome;
     return outcome;
 }
 

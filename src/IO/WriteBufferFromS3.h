@@ -101,9 +101,9 @@ private:
     /// Empty if disabled by the `use_idempotency_id` request setting.
     const String idempotency_id;
 
-    /// The outcome that the client decided for the last call of the request that publishes the object, or -1. The
-    /// upload can run on another thread.
-    std::atomic<int> write_outcome = -1;
+    /// The outcome of the last call of the request that publishes the object. Without such a call nothing is published.
+    /// The upload can run on another thread.
+    std::atomic<WriteOutcome> write_outcome = WriteOutcome::NotApplied;
     void reportOutcome(const S3::RequestWithIdempotencyId & request);
     LoggerPtr log = getLogger("WriteBufferFromS3");
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);

@@ -249,14 +249,39 @@ static constexpr auto IDEMPOTENCY_ID_METADATA_KEY = "clickhouse-idempotency-id";
 /// racing for one key.
 static constexpr size_t IDEMPOTENCY_ID_LENGTH = 22;
 
-/// What the attempts of a write that publishes an object told, and the outcome of its last call. The retry loops of
-/// the writer send the request again, so the record covers all calls with it.
+/// What the attempts of a write that publishes an object told. The retry loops of the writer send the request again,
+/// so the record covers all calls with it. The outcome of the write follows from the record.
 struct AttemptsRecord
 {
-    /// An attempt got no answer that proves that it was not applied.
+    /// What a call proved about the write.
+    enum class Proof : uint8_t
+    {
+        None,
+        /// A success, or the idempotency id of this write in the object at the key.
+        Applied,
+        /// The object of another write at a key that only one write can create (`If-None-Match: *`).
+        NotApplied,
+    };
+
+    /// An attempt got no answer that proves that it was not applied. It stays across the calls.
     bool may_have_been_applied = false;
-    /// Set by the client at the end of each call, also on an exception.
-    std::optional<WriteOutcome> outcome;
+    /// What the last call proved. Each call starts without a proof.
+    Proof proof = Proof::None;
+
+    /// Without a proof, the outcome is unknown after an attempt that may have been applied.
+    WriteOutcome outcome() const
+    {
+        switch (proof)
+        {
+            case Proof::Applied:
+                return WriteOutcome::Applied;
+            case Proof::NotApplied:
+                return WriteOutcome::NotApplied;
+            case Proof::None:
+                break;
+        }
+        return may_have_been_applied ? WriteOutcome::Unknown : WriteOutcome::NotApplied;
+    }
 };
 
 /// The id the writer stamped in the object's metadata. Set it and the client accepts a failure whose

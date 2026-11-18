@@ -758,16 +758,12 @@ bool WriteBufferFromS3::completeMultipartUpload()
 
 void WriteBufferFromS3::reportOutcome(const S3::RequestWithIdempotencyId & request)
 {
-    if (const auto outcome = request.getAttemptsRecord().outcome)
-        write_outcome.store(static_cast<int>(*outcome));
+    write_outcome.store(request.getAttemptsRecord().outcome());
 }
 
 std::optional<WriteOutcome> WriteBufferFromS3::getWriteOutcome() const
 {
-    const auto value = write_outcome.load();
-    if (value < 0)
-        return WriteOutcome::NotApplied;
-    return static_cast<WriteOutcome>(value);
+    return write_outcome.load();
 }
 
 S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
