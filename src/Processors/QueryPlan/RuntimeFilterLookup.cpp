@@ -1161,6 +1161,11 @@ RowsMask findRows(const ColumnWithTypeAndName & values, Probe && probe)
 
     if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
     {
+        /// A dictionary that blocks share, or that is left as it was when rows were filtered out, can hold more values
+        /// than the block has rows. Then the rows are the fewer to look up.
+        if (column_low_cardinality->getDictionary().size() > rows)
+            return findRows({column_low_cardinality->convertToFullColumn(), removeLowCardinality(values.type), values.name}, probe);
+
         const auto dictionary_mask = findRows(
             {column_low_cardinality->getDictionary().getNestedColumn(), removeLowCardinality(values.type), values.name}, probe);
         return expandRowsMask(
@@ -1180,6 +1185,10 @@ RowsMask findRows(const ColumnWithTypeAndName & values, Probe && probe)
 
     if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.get()))
     {
+        /// Likewise for a nested column of which only some rows are still in use.
+        if (column_replicated->getNestedColumn()->size() > rows)
+            return findRows({column_replicated->convertToFullColumnIfReplicated(), values.type, values.name}, probe);
+
         const auto nested_mask = findRows({column_replicated->getNestedColumn(), values.type, values.name}, probe);
         return expandRowsMask(
             nested_mask, rows, [&](const ColumnPtr & mask) { return mask->index(*column_replicated->getIndexesColumn(), 0); });

@@ -24,6 +24,7 @@ DROP TABLE IF EXISTS t_left;
 DROP TABLE IF EXISTS t_right;
 DROP TABLE IF EXISTS t_probe_tuple;
 DROP TABLE IF EXISTS t_build_tuple;
+DROP TABLE IF EXISTS t_probe_many_values;
 
 CREATE TABLE t_probe_string (k String) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_probe_low_cardinality (k LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple();
@@ -40,6 +41,7 @@ CREATE TABLE t_right (id UInt64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_probe_tuple (k Tuple(a UInt64, b LowCardinality(String))) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5, min_bytes_for_wide_part = 0;
 CREATE TABLE t_build_tuple (k Tuple(a UInt64, b LowCardinality(String))) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_probe_many_values (id UInt64, k LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple();
 
 -- A skewed key: 99% of the rows have one value, which passes.
 INSERT INTO t_probe_string SELECT if(number % 100 = 0, 'miss', 'hit') FROM numbers(100000);
@@ -58,6 +60,8 @@ INSERT INTO t_right SELECT number % 1000 FROM numbers(100000);
 -- A sparse and a `LowCardinality` element inside the key: 98% of the rows have the tuple that passes.
 INSERT INTO t_probe_tuple SELECT (if(number % 100 = 0, number + 1, 0), if(number % 100 = 1, 'miss', 'hit')) FROM numbers(100000);
 INSERT INTO t_build_tuple VALUES ((0, 'hit')), ((7, 'other'));
+-- The dictionary has 998 values. Every 1000th row is one of the 100 rows with the values '0', '3', ..., '297'.
+INSERT INTO t_probe_many_values SELECT number, toString(number % 997) FROM numbers(100000);
 
 SELECT count() FROM t_probe_string AS p INNER JOIN t_build_string AS b ON p.k = b.k
 SETTINGS log_comment = 'key String';
@@ -77,6 +81,11 @@ SELECT count() FROM (SELECT l.k AS k FROM t_left AS l FULL JOIN t_right AS r ON 
 SETTINGS enable_lazy_columns_replication = 1, log_comment = 'key String replicated';
 SELECT count() FROM t_probe_tuple AS p INNER JOIN t_build_tuple AS b ON p.k = b.k
 SETTINGS log_comment = 'key Tuple of sparse and LowCardinality';
+-- The filter of the subquery leaves a few rows of each block, and the dictionary as it was. The rows are the fewer to
+-- look up then. `LIMIT` keeps the runtime filter above that filter.
+SELECT count() FROM (SELECT k FROM t_probe_many_values WHERE id % 1000 = 0 LIMIT 100000) AS p
+INNER JOIN (SELECT toLowCardinality(toString(number * 3)) AS k FROM numbers(2)) AS b ON p.k = b.k
+SETTINGS log_comment = 'key String LowCardinality with fewer rows than values';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -103,3 +112,4 @@ DROP TABLE t_left;
 DROP TABLE t_right;
 DROP TABLE t_probe_tuple;
 DROP TABLE t_build_tuple;
+DROP TABLE t_probe_many_values;
