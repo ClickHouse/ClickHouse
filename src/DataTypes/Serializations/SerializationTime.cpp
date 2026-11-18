@@ -26,7 +26,7 @@ namespace
 /// 999:59:59, the largest `Time` value.
 constexpr Int128 max_time_seconds = 999 * 3600 + 59 * 60 + 59;
 
-/// An integer token is a number of seconds; out-of-range values saturate to the `Time` range, as in `toTime`.
+/// An integer token is a number of seconds; out-of-range values saturate to the `Time` range.
 template <typename ReturnType>
 ReturnType readTimeSecondsText(time_t & x, ReadBuffer & istr)
 {
