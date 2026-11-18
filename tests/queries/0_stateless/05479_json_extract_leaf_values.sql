@@ -130,13 +130,13 @@ SELECT 'index is used';
 SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1
     SELECT count() FROM tab_leaf WHERE hasAllTokens(JSONExtractLeafValues(s, '.*_noindex$'), 'beta')
-    SETTINGS query_plan_optimize_count_from_text_index = 0, use_skip_indexes = 1
+    SETTINGS query_plan_optimize_count_from_text_index = 0, use_skip_indexes = 1, enable_parallel_replicas = 0
 ) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 SELECT 'a different regex does not use the index';
 SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1
     SELECT count() FROM tab_leaf WHERE hasAllTokens(JSONExtractLeafValues(s, ''), 'beta')
-    SETTINGS query_plan_optimize_count_from_text_index = 0, use_skip_indexes = 1
+    SETTINGS query_plan_optimize_count_from_text_index = 0, use_skip_indexes = 1, enable_parallel_replicas = 0
 ) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 
 DROP TABLE tab_leaf;
