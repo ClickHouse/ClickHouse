@@ -41,6 +41,8 @@ public:
 
     bool needStructureHint() const override { return configuration->structure == "auto"; }
 
+    bool canDeleteDataOnDrop() const override { return configuration->isIcebergConfiguration(); }
+
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
     bool supportsReadingSubsetOfColumns(const ContextPtr & context) override

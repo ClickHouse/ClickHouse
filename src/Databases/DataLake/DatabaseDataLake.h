@@ -75,22 +75,23 @@ public:
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 
+    void validateCreateTableEngine(const ASTStorage & storage) const override;
+
     void createTable(
-        ContextPtr /*context*/,
-        const String & /*name*/,
+        ContextPtr context,
+        const String & name,
         const StoragePtr & /*table*/,
-        const ASTPtr & /*query*/) override {}
+        const ASTPtr & query) override;
 
     void dropTable( /// NOLINT
         ContextPtr context_,
         const String & name,
-        bool /*sync*/) override;
+        bool /*sync*/,
+        bool if_exists) override;
 
     void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const;
-
-    String getDefaultTableEngineName(const String & name) const override;
 
     /// Creates an Iceberg table in the catalog if there are no engine arguments and the catalog writes the first metadata file.
     /// Otherwise returns nullptr. In such cases the storage factory creates the table.
@@ -135,6 +136,8 @@ private:
 
     void validateSettings(bool is_existing_definition);
 
+    void validateCreateTableEngineArguments(const ASTFunction & engine) const;
+
     /// Builds `catalog_impl` based on the configured catalog type. Constructing a catalog can
     /// validate credentials and perform network I/O (e.g. RestCatalog reads the catalog config),
     /// so on ATTACH (server startup) it is deferred to the first access via `getCatalog` instead
@@ -172,12 +175,17 @@ private:
         const DataLake::TableMetadata & table_metadata,
         bool lightweight) const;
 
+    String getNewTableLocation(
+        const DatabaseDataLakeSettings & settings,
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const String & namespace_name,
+        const String & table_name) const;
+
+    /// The location that the catalog reports for a new table, or nullopt if the catalog does not report one.
     std::optional<DataLake::TableMetadata> tryGetNewTableMetadata(
         const DatabaseDataLakeSettings & settings,
         const DataLake::ICatalog & catalog,
         const String & name) const;
-
-    Exception cannotTellNewTableLocation(const String & name) const;
 
     /// Throws when the catalog places the table on a different storage than the table engine writes to.
     void checkStorageTypeMatchesEngine(const String & name, DatabaseDataLakeStorageType engine_type, DatabaseDataLakeStorageType catalog_type) const;

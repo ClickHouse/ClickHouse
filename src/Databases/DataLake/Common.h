@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
+#include <Core/SettingsEnums.h>
 #include <Core/Types.h>
 #include <Poco/Dynamic/Var.h>
 
@@ -21,5 +22,12 @@ String icebergTypeToGlueType(const Poco::Dynamic::Var & type);
 /// `A.B.C.D` is a table "namespace".
 /// `E` is a table name.
 std::pair<std::string, std::string> parseTableName(const std::string & name);
+
+String constructTableLocation(
+    const String & location_scheme,
+    const String & storage_endpoint,
+    const String & namespace_name,
+    const String & table_name,
+    DB::S3UriStyle uri_style = DB::S3UriStyle::AUTO);
 
 }

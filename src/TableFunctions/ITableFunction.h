@@ -128,6 +128,9 @@ public:
     /// query do not register anything.
     virtual String getUsedNamedCollectionName() const { return {}; }
 
+    /// Whether `DROP TABLE` can delete the data of the returned storage (see `data_lake_delete_data_on_drop`).
+    [[nodiscard]] virtual bool canDeleteDataOnDrop() const { return false; }
+
     /// The function sets the expression of `INSERT INTO FUNCTION ... PARTITION BY`.
     /// Only the interpreter of `INSERT INTO FUNCTION` calls it.
     void setPartitionBy(const ASTPtr & partition_by_) { partition_by = partition_by_; }

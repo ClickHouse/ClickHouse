@@ -323,6 +323,7 @@ static struct InitFiu
     REGULAR(slowdown_skip_index_read_result_build) \
     REGULAR(slowdown_index_analysis_per_part) \
     ONCE(iceberg_writes_cleanup) \
+    ONCE(iceberg_create_fail_after_version_hint_write) \
     PAUSEABLE_ONCE(iceberg_writes_pause_before_commit) \
     PAUSEABLE_ONCE(glue_catalog_pause_before_update_table) \
     REGULAR(iceberg_slow_manifest_read) \

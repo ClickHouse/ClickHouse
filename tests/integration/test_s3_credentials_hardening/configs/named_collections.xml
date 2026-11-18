@@ -51,6 +51,10 @@
             <format>TSV</format>
             <structure>x UInt8</structure>
         </nc_persistent_env>
+        <nc_iceberg_env>
+            <url>http://minio1:9001/root/iceberg_drop_env/</url>
+            <use_environment_credentials>1</use_environment_credentials>
+        </nc_iceberg_env>
         <nc_sse_keys>
             <url>http://minio1:9001/root/sse_test/data.tsv</url>
             <access_key_id>minio</access_key_id>

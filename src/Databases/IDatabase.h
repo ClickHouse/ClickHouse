@@ -34,6 +34,7 @@ struct IndicesDescription;
 struct StorageInMemoryMetadata;
 struct StorageID;
 class ASTCreateQuery;
+class ASTStorage;
 struct AlterCommand;
 class AlterCommands;
 class SettingsChanges;
@@ -242,6 +243,8 @@ public:
 
     virtual bool isDatalakeCatalog() const { return false; }
 
+    virtual void validateCreateTableEngine(const ASTStorage & /*storage*/) const {}
+
     /// True for databases such as `MySQL`/`PostgreSQL` whose table list lives on a remote service.
     /// This is distinct from `isExternal`, which classifies whether the engine supports ClickHouse internal table types.
     virtual bool isRemoteDatabase() const { return false; }
@@ -433,7 +436,8 @@ public:
     virtual void dropTable( /// NOLINT
         ContextPtr /*context*/,
         const String & /*name*/,
-        [[maybe_unused]] bool sync = false);
+        [[maybe_unused]] bool sync = false,
+        [[maybe_unused]] bool if_exists = false);
 
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
     ///
@@ -542,8 +546,6 @@ public:
     virtual String getTableDataPath(const String & /*table_name*/) const { return {}; }
     /// Returns path for persistent data storage for CREATE/ATTACH query if the database supports it, empty string otherwise
     virtual String getTableDataPath(const ASTCreateQuery & /*query*/) const { return {}; }
-
-    virtual String getDefaultTableEngineName(const String & /*table_name*/) const { return {}; }
 
     /// Creates the table in the external catalog of the database, and returns the table loaded from the catalog.
     /// Returns nullptr if the database does not create tables this way. In such cases the storage factory creates the table.

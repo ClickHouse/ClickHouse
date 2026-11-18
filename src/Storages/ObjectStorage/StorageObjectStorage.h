@@ -16,8 +16,10 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/MutationCommands.h>
 
+#include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 
 #include <Common/MultiVersion.h>
 #include <Storages/IPartitionStrategy.h>
@@ -101,6 +103,15 @@ public:
         const ContextPtr & context,
         const PartitionedWriteAccessCheck & write_access_check);
 
+    /// Shared `drop` implementation: removes the table from `catalog` (if any) and drops `configuration`,
+    /// deleting the data only if `delete_data_on_drop` was captured as `true` by `prepareForDrop`.
+    static void dropImpl(
+        const std::optional<bool> & delete_data_on_drop,
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const StorageObjectStorageConfigurationPtr & configuration,
+        const StorageID & storage_id,
+        const LoggerPtr & log);
+
     void truncate(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
@@ -109,7 +120,14 @@ public:
 
     void drop() override;
 
-    void checkTableCanBeDropped(ContextPtr query_context) const override;
+    void prepareForDrop(ContextPtr query_context) override;
+
+    /// Shared `prepareForDrop` implementation: returns whether `drop` has to delete the data.
+    static bool prepareForDropImpl(
+        const ObjectStoragePtr & object_storage,
+        const StorageObjectStorageConfigurationPtr & configuration,
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const ContextPtr & query_context);
 
     bool supportsPartitionBy() const override { return true; }
 
@@ -180,12 +198,6 @@ public:
     std::shared_ptr<IDataLakeMetadata> getExternalMetadata(ContextPtr query_context);
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
-
-    /// The body of `drop`, shared with `StorageObjectStorageCluster`.
-    static void dropTable(
-        const StorageObjectStorageConfigurationPtr & configuration,
-        const std::shared_ptr<DataLake::ICatalog> & catalog,
-        const StorageID & storage_id);
 
     /// True when the target commits the refresh cursor atomically with the data (Iceberg on a CAS catalog),
     /// so the refresh reads/persists the cursor here instead of in the Keeper znode.
@@ -320,6 +332,8 @@ protected:
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID storage_id;
     BackgroundJobsAssignee background_operations_assignee;
+
+    std::atomic<std::optional<bool>> delete_data_on_drop;
 };
 
 }

@@ -103,7 +103,7 @@ register() {
         SET allow_delta_lake_writes = 1;
         SET allow_delta_lake_create_table = 1;
         CREATE TABLE IF NOT EXISTS ${DB}.\`ns.t_$1\` (id Int32)
-            ENGINE = DeltaLakeLocal('${CLICKHOUSE_USER_FILES_UNIQUE}_$1', Parquet);
+            ENGINE = DeltaLakeLocal('${CLICKHOUSE_USER_FILES_UNIQUE}_$1');
     " 2>&1 | grep -o -m1 'DATALAKE_DATABASE_ERROR'
 }
 

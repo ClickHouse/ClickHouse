@@ -75,7 +75,13 @@ public:
         const std::string & namespace_name,
         const std::string & table_name) const override;
 
-    void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
+    bool createTable(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr metadata_content,
+        DB::CompressionMethod metadata_compression_method,
+        bool if_not_exists) const override;
 
     void createNamespaceIfNotExists(const String & namespace_name) const override;
 
@@ -89,7 +95,7 @@ public:
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const override;
 
-    void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
+    void dropTable(const String & namespace_name, const String & table_name, bool purge, bool if_exists) const override;
 
     /// Returns a callback that re-vends fresh AWS credentials from the configured
     /// credentials provider chain. Invoked by `ReadBufferFromS3` when an S3 call
@@ -134,6 +140,8 @@ private:
     [[nodiscard]] CatalogTables getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
     [[nodiscard]] CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
     void setCredentials(TableMetadata & metadata) const;
+
+    [[nodiscard]] Poco::JSON::Object::Ptr getIcebergMetadataObject(const TableMetadata & table_metadata) const;
 
     [[nodiscard]] String resolveMetadataPathFromTableLocation(const String & table_location, const TableMetadata & table_metadata) const;
 

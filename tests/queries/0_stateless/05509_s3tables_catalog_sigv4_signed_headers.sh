@@ -73,7 +73,10 @@ class Handler(BaseHTTPRequestHandler):
         if path.endswith("/config"):
             out = b'{"defaults":{},"overrides":{}}'
         elif path.endswith("/tables/tbl"):
-            need, out = "x-iceberg-access-delegation", b""
+            # A table lookup for reading adds `X-Iceberg-Access-Delegation`; the existence check before a create does not.
+            out = b""
+            if self.headers.get("x-iceberg-access-delegation") is not None:
+                need = "x-iceberg-access-delegation"
         elif self.command == "POST":
             # Only the namespace creation posts; 409 means "another client created it", i.e. accepted.
             need, status, out = "content-type", 409, b"{}"

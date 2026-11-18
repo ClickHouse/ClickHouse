@@ -42,11 +42,13 @@ public:
 
     /// TODO: Managed Iceberg tables could be created through the inner Iceberg REST catalog without a location.
     /// Override `writesInitialMetadata` and `createTableAtDefaultLocation` and forward them to `getIcebergRestCatalog`.
-    void createTable(
+    bool createTable(
         const String & namespace_name,
         const String & table_name,
-        const String & table_location,
-        Poco::JSON::Object::Ptr metadata_content) const override;
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr metadata_content,
+        DB::CompressionMethod metadata_compression_method,
+        bool if_not_exists) const override;
 
     std::optional<std::string> getDefaultTableLocation(
         const std::string & namespace_name,
@@ -55,7 +57,7 @@ public:
     /// Only checks that the schema exists. Unity schemas carry ownership and grants, so `CREATE TABLE` must not create them.
     void createNamespaceIfNotExists(const String & namespace_name) const override;
 
-    void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
+    void dropTable(const String & namespace_name, const String & table_name, bool purge, bool if_exists) const override;
 
     void getTableMetadata(
         const std::string & namespace_name,
