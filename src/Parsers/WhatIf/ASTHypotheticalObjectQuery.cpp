@@ -28,6 +28,7 @@ ASTPtr ASTHypotheticalObjectQuery::clone() const
         res->set(res->projection_decl, projection_decl->clone());
 
     cloneTableOptions(*res);
+    cloneOutputOptions(*res);
 
     return res;
 }
