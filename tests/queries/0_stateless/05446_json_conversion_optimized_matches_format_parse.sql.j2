@@ -106,6 +106,16 @@ SETTINGS json_use_optimized_type_conversion = {{ optimized }}{{ ', ' ~ settings 
 {{ check("changed Nullable(Int32) to Int64 with null", "JSON(a Nullable(Int32))", "JSON(a Int64)", ['{"a": 5}', '{"a": null}']) }}
 {{ check("changed Array(Nullable(Int8)) to Array(String) with null", "JSON(a Array(Nullable(Int8)))", "JSON(a Array(String))", ['{"a": [5, null]}']) }}
 {{ check("changed LowCardinality(Nullable(String)) to String with null", "JSON(a LowCardinality(Nullable(String)))", "JSON(a String)", ['{"a": "hi"}', '{"a": null}']) }}
+-- An Enum default is its first value, not zero, also for an array element.
+{{ check("changed Array(Nullable(Enum8)) to Array(Enum8) with null", "JSON(a Array(Nullable(Enum8('x' = 1, 'y' = 2))))", "JSON(a Array(Enum8('x' = 1, 'y' = 2)))", ['{"a": [null, "x"]}']) }}
+{{ check("changed Array(Array(Nullable(Enum8))) to Array(Array(Enum8)) with null", "JSON(a Array(Array(Nullable(Enum8('x' = 1, 'y' = 2)))))", "JSON(a Array(Array(Enum8('x' = 1, 'y' = 2))))", ['{"a": [[null, "y"]]}']) }}
+
+-- A CAST into a Variant needs the source type to be one of its members, while the parser picks a member per
+-- value, and a Variant keeps its NULLs in the discriminator.
+{{ check("changed Int32 to Variant(Int64, String)", "JSON(a Int32)", "JSON(a Variant(Int64, String))", ['{"a": 1}']) }}
+{{ check("changed Variant(Int64, String) to Variant(Int64)", "JSON(a Variant(Int64, String))", "JSON(a Variant(Int64))", ['{"a": 1}']) }}
+{{ check("changed Array(Int32) to Array(Variant(Int64, String))", "JSON(a Array(Int32))", "JSON(a Array(Variant(Int64, String)))", ['{"a": [1, 2]}']) }}
+{{ check("changed Variant(Int64, String) with a skipped null to Array(Int64)", "JSON(a Variant(Int64, String))", "JSON(a Array(Int64))", ['{"a": null}'], 'type_json_skip_null_typed_paths = 1, input_format_null_as_default = 0') }}
 
 -- A new typed path whose type can consume an object (String) takes its JSON text instead of being
 -- rejected; the optimized path defers such a block to format+parse. A scalar, an object and an absent

@@ -2010,9 +2010,11 @@ using JSONParserForConversion = DummyJSONParser;
 
 /// Returns true if the type is "structural" — it influences JSON path routing
 /// and therefore requires full format+parse when added/removed/changed as a typed path.
+/// A Variant is included too: a CAST into it needs the exact source type to be a member, while the
+/// parser picks a member per value, and a Variant keeps its NULLs in the discriminator.
 bool isStructuralTypeForJSON(const DataTypePtr & type)
 {
-    return anyInTypeTree(*type, [](const IDataType & t) { return isObject(t) || isDynamic(t) || isTuple(t) || isMap(t); });
+    return anyInTypeTree(*type, [](const IDataType & t) { return isObject(t) || isDynamic(t) || isTuple(t) || isMap(t) || isVariant(t); });
 }
 
 /// Strips Nullable from src column/type where dst type is non-Nullable, so that CAST
@@ -2086,6 +2088,25 @@ bool hasNullableMismatchForCast(const DataTypePtr & src_type, const DataTypePtr 
             assert_cast<const DataTypeArray &>(*dst_type).getNestedType());
 
     return false;
+}
+
+/// True if, at every level where removeNullableForCast strips a Nullable, the destination type's default
+/// is the plain zero a stripped NULL becomes. An Enum element under an Array is not: its default is its
+/// first value, so the Array's own empty default says nothing about it.
+bool strippedNullsGetTrivialDefaults(const DataTypePtr & src_type, const DataTypePtr & dst_type)
+{
+    if (src_type->isNullable() && !dst_type->isNullable())
+        return dst_type->isDefaultInsertTrivial();
+
+    if (src_type->isLowCardinalityNullable() && !dst_type->isLowCardinalityNullable() && !dst_type->isNullable())
+        return dst_type->isDefaultInsertTrivial();
+
+    if (isArray(*src_type) && isArray(*dst_type))
+        return strippedNullsGetTrivialDefaults(
+            assert_cast<const DataTypeArray &>(*src_type).getNestedType(),
+            assert_cast<const DataTypeArray &>(*dst_type).getNestedType());
+
+    return true;
 }
 
 /// True when `src_type` and `dst_type` differ only by a removable Nullable/LowCardinality(Nullable)
@@ -3298,7 +3319,7 @@ ColumnPtr convertObjectColumns(
             const bool nullable_mismatch = hasNullableMismatchForCast(from_tp, to_tp);
             const bool can_strip_nullable = nullable_mismatch
                 && (converts_instants || nullableMismatchIsOnlyDifference(from_tp, to_tp))
-                && to_tp->isDefaultInsertTrivial()
+                && strippedNullsGetTrivialDefaults(from_tp, to_tp)
                 && (format_settings.null_as_default
                     || (format_settings.json.type_json_skip_null_typed_paths
                         && !hasNullableMismatchForCast(removeNullableOrLowCardinalityNullable(from_tp), to_tp)));
