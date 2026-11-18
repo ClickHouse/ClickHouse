@@ -65,11 +65,13 @@ query = (
     f"SELECT * FROM remote('{address}', "
     "view(SELECT arraySum(range(number + 100000)) FROM numbers(128))) FORMAT Null"
 )
+query_ids = []
 for asynchronous in (0, 1):
     for hedged in (0, 1):
         # The shared trace pipe can discard all remote samples under concurrent test load.
         for attempt in range(4):
             query_id = "profile_traces_decode_" + uuid.uuid4().hex
+            query_ids.append(query_id)
             options = dict(settings, query_id=query_id, async_socket_for_remote=asynchronous, use_hedged_requests=hedged)
             result = subprocess.run(
                 native_arguments(options) + ["--print-profile-traces", "--query", query],
@@ -84,20 +86,25 @@ for asynchronous in (0, 1):
                 decoding = [symbol for symbol in sample["symbols"] if "Connection::receiveProfileTraces" in symbol]
                 assert not decoding, (asynchronous, hedged, sample["trace_type"], decoding)
             remote_samples = sum(sample["query_id"] != query_id and any(sample["symbols"]) for sample in samples)
-            log_query("SYSTEM FLUSH LOGS trace_log")
-            # `Connection::receiveProfileTraces` must still be sampled in `system.trace_log`.
-            # The time bound uses the primary key of `system.trace_log`, which grows large under test load.
-            # Look up the mangled names of this query's frames only: scanning `system.symbols` exceeds
-            # the time limit in debug builds.
-            decoder_samples = int(log_query(
-                "SELECT countIf(arrayExists(address -> position(addressToSymbol(address), 'receiveProfileTraces') > 0, trace)) "
-                f"FROM system.trace_log WHERE event_date >= toDate('{start_time}') "
-                f"AND event_time >= '{start_time}' AND query_id = '{query_id}'"
-            ))
-            if remote_samples and decoder_samples:
+            if remote_samples:
                 break
         else:
-            raise AssertionError((asynchronous, hedged, "missing resolved remote samples or decoder coverage",
-                                  remote_samples, decoder_samples))
+            raise AssertionError((asynchronous, hedged, "missing resolved remote samples", remote_samples))
         print(f"async={asynchronous} hedged={hedged}: remote samples received without decoder feedback")
+
+# `Connection::receiveProfileTraces` must still be sampled in `system.trace_log`. Decoder allocations
+# are sampled with a low probability and the shared pipe can discard samples under load, so the
+# coverage is checked over all queries of the test rather than per transport mode.
+log_query("SYSTEM FLUSH LOGS trace_log")
+# The time bound uses the primary key of `system.trace_log`, which grows large under test load.
+# Look up the mangled names of this query's frames only: scanning `system.symbols` exceeds
+# the time limit in debug builds.
+id_list = ", ".join(f"'{query_id}'" for query_id in query_ids)
+decoder_samples = int(log_query(
+    "SELECT countIf(arrayExists(address -> position(addressToSymbol(address), 'receiveProfileTraces') > 0, trace)) "
+    f"FROM system.trace_log WHERE event_date >= toDate('{start_time}') "
+    f"AND event_time >= '{start_time}' AND query_id IN ({id_list})"
+))
+assert decoder_samples, "missing decoder coverage in system.trace_log"
+print("decoder allocations are sampled in system.trace_log")
 PY
