@@ -18,7 +18,6 @@
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
-#include <Common/memcpySmall.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/Aggregator.h>
 #include <base/sort.h>
@@ -39,13 +38,20 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Whether `State` reads the bytes of its keys in place, from the block's padded column buffers, which
+    /// hold them for the whole block: the bytes of a string key by `getKeyBytes`, and the packed values and
+    /// the string of a key of fixed-width values and a string by `getKeyParts`.
+    template <typename State>
+    constexpr bool adaptive_state_reads_key_bytes_in_place = requires(const State & state) { state.getKeyBytes(size_t{}); }
+        || requires(const State & state) { state.getKeyParts(size_t{}); };
+
     /// Whether the kernel of `State` may keep the bytes of its missed string-like keys in the batch (see
-    /// `AdaptiveMissBatch`): a state with `getKeyBytes` reads them from the block's padded column buffers, so it never
-    /// keeps them. The probe loops check the bound on the kept bytes only under this: the check stages the batch, and a
-    /// probe lambda that merely names the staging captures it, which changes the code of every other state's loop.
+    /// `AdaptiveMissBatch`): a state that reads them in place never keeps them. The probe loops check the
+    /// bound on the kept bytes only under this: the check stages the batch, and a probe lambda that merely
+    /// names the staging captures it, which changes the code of every other state's loop.
     template <typename RecordKey, typename State>
     constexpr bool adaptive_misses_may_keep_key_bytes
-        = adaptive_key_stages_bytes<RecordKey> && !requires(const State & state) { state.getKeyBytes(size_t{}); };
+        = adaptive_key_stages_bytes<RecordKey> && !adaptive_state_reads_key_bytes_in_place<State>;
 
     /// Whether the kernel of `state` keeps the bytes of its missed string-like keys in the batch. A state whose key
     /// views are block-stable, which the batch serialization of the serialized methods guarantees, returns the bytes
@@ -67,18 +73,6 @@ namespace
     bool ALWAYS_INLINE missBatchKeyBytesFull(const AdaptiveMissBatch & misses, bool keep_key_bytes)
     {
         return keep_key_bytes && misses.getKeys().size() >= adaptive_miss_batch_max_key_bytes;
-    }
-
-    /// Copies the bytes of a string-like key into a staged record from a buffer that keeps padding past them: the
-    /// block's key column, or the bytes that the batch of misses kept. The overflow-tolerant small copy reads and
-    /// writes up to 15 bytes past the end. The records are appended in increasing byte order with every chunk ending in
-    /// unused padding, so the scribble lands in space that the next append overwrites or that no record uses.
-    void ALWAYS_INLINE copyPaddedKeyBytes(const char * data, size_t size, char * staged)
-    {
-        if (size <= 64)
-            memcpySmallAllowReadWriteOverflow15(staged, data, size);
-        else
-            memcpy(staged, data, size);
     }
 
     /// Copies a string-like key of the block into a staged record. A state that exposes its padded column buffers is
@@ -267,7 +261,7 @@ size_t ALWAYS_INLINE Aggregator::collectCombinedMisses(
     auto & misses = adaptive.misses;
     const auto keep_key_bytes = adaptiveMissesKeepKeyBytes<RecordKey>(find_state);
     constexpr bool can_combine_partition_misses = adaptive_key_stages_bytes<RecordKey>
-        && requires { find_state.getKeyBytes(0); };
+        && adaptive_state_reads_key_bytes_in_place<State>;
     [[maybe_unused]] const bool stable_key_views = find_state.keyViewsAreBlockStable();
     struct PartitionMissEntry
     {
@@ -304,6 +298,28 @@ size_t ALWAYS_INLINE Aggregator::collectCombinedMisses(
         {
             auto && key_holder = find_state.getKeyHolder(i, scratch_pool);
             const auto & key = keyHolderGetKey(key_holder);
+
+            if constexpr (is_keys_and_packed_string<RecordKey>)
+            {
+                /// A key with an empty string that repeats the last missed key, as the rows of a missing
+                /// value often do, joins the key's record without being hashed or probed again: it is missing
+                /// from the local table as well. Its fixed-width values decide it, as an empty string carries
+                /// no hash. As below, a count record counts the repeat, and a key-only record stands for it.
+                if (key.str.isEmpty() && (can_combine_partition_misses ? misses.size() != first_record : !misses.empty())
+                    && last_staged_key.str.isEmpty() && key.keys == last_staged_key.keys)
+                {
+                    if constexpr (with_count)
+                    {
+                        if constexpr (combine_partition_misses)
+                            misses.incrementCount(last_record);
+                        else
+                            misses.incrementLastCount();
+                    }
+                    keyHolderDiscardKey(key_holder);
+                    continue;
+                }
+            }
+
             const UInt64 hash = local_method.data.hash(key);
 
             if (!bypass_local_probe)
@@ -568,10 +584,29 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     auto probe_rows = [&]<bool record_places>(AggregateDataPtr * places_data) -> size_t
     {
         size_t hits = 0;
+        /// The last missed key of fixed-width values and a string, and its hash, for the rows that repeat it.
+        [[maybe_unused]] RecordKey last_missed_key{};
+        [[maybe_unused]] UInt64 last_missed_hash = 0;
+        [[maybe_unused]] bool has_missed_key = false;
         for (size_t i = row_begin; i < row_end; ++i)
         {
             auto && key_holder = local_find_state.getKeyHolder(i, scratch_pool);
             const auto & key = keyHolderGetKey(key_holder);
+
+            if constexpr (is_keys_and_packed_string<RecordKey>)
+            {
+                /// As in `collectCountMisses`: a key with an empty string that repeats the last missed key
+                /// misses as well, and its record takes that key's hash without hashing or probing it again.
+                if (key.str.isEmpty() && has_missed_key && last_missed_key.str.isEmpty() && key.keys == last_missed_key.keys)
+                {
+                    if constexpr (record_places)
+                        places_data[i] = nullptr;
+                    misses.add<RecordKey>(static_cast<UInt32>(i), last_missed_hash, key, keep_key_bytes);
+                    keyHolderDiscardKey(key_holder);
+                    continue;
+                }
+            }
+
             const UInt64 hash = local_method.data.hash(key);
 
             if (!bypass_local_probe)
@@ -589,6 +624,12 @@ void NO_INLINE Aggregator::executeFrozenImpl(
             if constexpr (record_places)
                 places_data[i] = nullptr;
             misses.add<RecordKey>(static_cast<UInt32>(i), hash, key, keep_key_bytes);
+            if constexpr (is_keys_and_packed_string<RecordKey>)
+            {
+                last_missed_key = key;
+                last_missed_hash = hash;
+                has_missed_key = true;
+            }
             keyHolderDiscardKey(key_holder);
             if constexpr (adaptive_misses_may_keep_key_bytes<RecordKey, typename LocalMethod::StateNoCache>)
             {
@@ -695,9 +736,17 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
     /// the next record or the chunk's padding go, as the overflow of `copyPaddedKeyBytes` does.
     const auto batch_keeps_key_bytes = adaptiveMissesKeepKeyBytes<RecordKey>(local_find_state);
     const char * kept_key_bytes = staged_keys;
-    const auto write_key = [&](size_t record, size_t key_size, char * to)
+    const auto write_key = [&](size_t record, [[maybe_unused]] size_t key_size, char * to, [[maybe_unused]] const auto & format) ALWAYS_INLINE
     {
-        if constexpr (adaptive_key_stages_bytes<RecordKey>)
+        if constexpr (is_keys_and_packed_string<RecordKey>)
+        {
+            /// The state reads the packed values and the string in place, and the format writes them (see
+            /// `StagedKeysAndPackedStringKey::writeKey`).
+            const auto [keys, str] = local_find_state.getKeyParts(key_row_of(record));
+            chassert(sizeof(keys) + str.size() == key_size);
+            format.writeKey(to, keys, str);
+        }
+        else if constexpr (adaptive_key_stages_bytes<RecordKey>)
         {
             if (batch_keeps_key_bytes)
             {
@@ -743,7 +792,7 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
             const size_t bytes = format.bytesForKey(key_size, count);
             char * record = partitions.append(partition, bytes);
             char * const stored_key = format.writeHeader(record, hash, key_size, count);
-            write_key(i, key_size, stored_key);
+            write_key(i, key_size, stored_key, format);
             const size_t stored_key_size = format.keyBytes(key_size);
             check_record(format, record, i, hash);
             key_bytes += stored_key_size;
@@ -884,7 +933,7 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
                 /// The key goes before the variable-size arguments, which overwrite whatever its copy scribbled past
                 /// it.
                 char * key = format.writeHeader(record, hash, key_size, bytes);
-                write_key(i, key_size, key);
+                write_key(i, key_size, key, format);
                 const size_t stored_key_size = format.keyBytes(key_size);
 
                 if constexpr (Record::with_variable_arguments)

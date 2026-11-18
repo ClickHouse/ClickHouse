@@ -232,6 +232,7 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event RejectedInserts;
+    extern const Event GranulesDroppedByPartitionKey;
     extern const Event SystemPartsEnumerationSlowdownSleeps;
     extern const Event DelayedInserts;
     extern const Event DelayedInsertsMilliseconds;
@@ -512,6 +513,8 @@ namespace FailPoints
     /// Throws a retryable error (`MEMORY_LIMIT_EXCEEDED`) while loading every outdated part in the
     /// background. Used to test that the loading is retried later instead of terminating the server.
     extern const char merge_tree_load_outdated_parts_retryable_error[];
+    /// Throws `CANNOT_SCHEDULE_TASK` instead of handing an outdated part to the loading thread pool.
+    extern const char merge_tree_load_outdated_parts_schedule_error[];
     /// Pauses every worker that loads an outdated part in the background until the failpoint is disabled.
     /// Used to cancel the loading (e.g. with `DETACH TABLE`) while the workers are in flight.
     extern const char merge_tree_load_outdated_parts_pause[];
@@ -4343,8 +4346,8 @@ try
         }
 
         /// The captured locals will outlive runner, so capturing by reference is ok
-        runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, &failed_parts_mutex, &failed_parts,
-                                    &retryable_exception, &has_retryable_exception, replicated, is_async]()
+        auto load_part = [this, my_part = part, &num_loaded_parts, &failed_parts_mutex, &failed_parts,
+                          &retryable_exception, &has_retryable_exception, replicated, is_async]()
         {
             FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_loading_queued_outdated_part);
 
@@ -4400,7 +4403,31 @@ try
                 res.part->remove();
             else
                 preparePartForRemoval(res.part);
-        }, Priority{});
+        };
+
+        try
+        {
+            fiu_do_on(FailPoints::merge_tree_load_outdated_parts_schedule_error,
+            {
+                throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected scheduling error for outdated part {}", part->name);
+            });
+
+            runner.enqueueAndKeepTrack(std::move(load_part), Priority{});
+        }
+        catch (const Exception & e)
+        {
+            /// E.g. no thread can be started because queries exhausted the global thread pool.
+            /// The pool has not taken the load, so the part is retried later like a retryable load error.
+            if (e.code() != ErrorCodes::CANNOT_SCHEDULE_TASK)
+                throw;
+
+            std::lock_guard lock(failed_parts_mutex);
+            failed_parts.push_back(part);
+            if (!retryable_exception)
+                retryable_exception = std::current_exception();
+            has_retryable_exception = true;
+            break;
+        }
     }
 
     /// Wait for every queued load without holding `outdated_data_parts_mutex`: a load that found the
@@ -7277,7 +7304,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     if (new_storage_policy != getStoragePolicy())
     {
         /// Only a changed policy is checked, so a table that already has it can still be altered otherwise.
-        DiskFromAST::ensureStoragePolicyIsAllowed(new_storage_policy->getName(), local_context);
+        DiskFromAST::ensureStoragePolicyIsAllowed(new_storage_policy->getName(), local_context, /* check_remote_hosts */ true);
 
         /// The roots of a `table_disk` table are taken when it is created, so its disks are fixed.
         if ((*settings_from_storage)[MergeTreeSetting::table_disk])
@@ -13410,6 +13437,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     auto filter_column = ColumnUInt8::create();
     auto & filter_column_data = filter_column->getData();
 
+    /// published only when the block is returned, otherwise the ordinary read counts the same parts
+    size_t granules_dropped_by_partition_key = 0;
     DataPartsVector real_parts;
     real_parts.reserve(rows);
     for (size_t row = 0, part_idx = 0; row < rows; ++row, ++part_idx)
@@ -13438,12 +13467,15 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         }
 
         if (minmax_idx_condition && !minmax_idx_condition->generateForPart(part).checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
-            continue;
-
-        if (partition_pruner)
         {
-            if (partition_pruner->canBePruned(*part))
-                continue;
+            granules_dropped_by_partition_key += part->index_granularity->getMarksCountWithoutFinal();
+            continue;
+        }
+
+        if (partition_pruner && partition_pruner->canBePruned(*part))
+        {
+            granules_dropped_by_partition_key += part->index_granularity->getMarksCountWithoutFinal();
+            continue;
         }
 
         /// It's extremely rare that some parts have final marks while others don't. To make it
@@ -13572,6 +13604,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 name);
     }
 
+    ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, granules_dropped_by_partition_key);
     return res;
 }
 

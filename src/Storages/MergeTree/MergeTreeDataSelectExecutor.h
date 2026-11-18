@@ -322,6 +322,8 @@ public:
         bool is_parallel_reading_from_replicas;
         bool has_projections;
         bool check_row_limits;
+        /// an estimation-only analysis is discarded and done again by the read, it must not be counted twice
+        bool report_index_usage = true;
         bool use_primary_key = true;
         ReadFromMergeTree::AnalysisResult & result;
     };
@@ -339,7 +341,10 @@ public:
 
     struct IndexAnalysisStats
     {
-        explicit IndexAnalysisStats(size_t num_skip_index_stats) : skip_indexes(num_skip_index_stats) {}
+        IndexAnalysisStats(size_t num_skip_index_stats, size_t num_skip_indexes)
+            : skip_indexes(num_skip_index_stats), used_skip_indexes(num_skip_indexes)
+        {
+        }
 
         IndexAnalysisStat primary_key;
         /// By position in the part's skip index order; one block per part with `per_part_index_stats`.
@@ -347,6 +352,8 @@ public:
         std::atomic<size_t> marks_after_primary_key = 0;
         std::atomic<size_t> parts_after_primary_key = 0;
         std::atomic<size_t> marks_after_disjunctions = 0;
+        /// By position in `UsefulSkipIndexes::useful_indices`: the index excluded granules in a part.
+        std::vector<std::atomic<bool>> used_skip_indexes;
     };
 
     /// Query-level inputs of `analyzeSinglePart`, shared by all parts and threads.
@@ -359,6 +366,8 @@ public:
         LoggerPtr log;
 
         bool use_primary_key = true;
+        /// Count the granules excluded by the primary key in `ProfileEvents`, see `IndexAnalysisContext`.
+        bool report_index_usage = true;
         const ConditionTemplate<KeyCondition> & key_condition;
         const ConditionTemplate<KeyCondition> * part_offset_condition = nullptr;
         /// Only with the real `part_starting_offset_in_query` of every part.
