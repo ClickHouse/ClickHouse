@@ -98,12 +98,28 @@ StorageJoin::StorageJoin(
     optimizeUnlocked();
 }
 
+RWLockImpl::LockHolder StorageJoin::lockTimed(
+    const RWLock & lock, RWLockImpl::Type type, const String & query_id, std::chrono::milliseconds acquire_timeout) const
+{
+    auto holder = lock->getLock(type, query_id, acquire_timeout, /*throw_in_fast_path=*/ false);
+    if (!holder)
+        throw Exception(
+            ErrorCodes::DEADLOCK_AVOIDED,
+            "Cannot lock Join table {} for {}: a query with the same initial query id holds the lock, "
+            "or the locking attempt timed out ({} ms). Owner query ids: {}",
+            getStorageID().getNameForLogs(),
+            type == RWLockImpl::Read ? "reading" : "writing",
+            acquire_timeout.count(),
+            lock->getOwnerQueryIdsDescription());
+    return holder;
+}
+
 RWLockImpl::LockHolder StorageJoin::tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const
 {
     const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
     const std::chrono::milliseconds acquire_timeout
         = context ? std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()) : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
-    return tryLockTimed(lock, type, query_id, Poco::Timespan(acquire_timeout.count() * 1000));
+    return lockTimed(lock, type, query_id, acquire_timeout);
 }
 
 RWLockImpl::LockHolder StorageJoin::tryLockForCurrentQueryTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context)
@@ -335,7 +351,7 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     HashJoinPtr join_clone
         = HashJoin::create(analyzed_join, std::make_shared<const Block>(std::move(right_sample_block)), HashJoinBuildLayout::oneBucket(1));
 
-    RWLockImpl::LockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, query_id, Poco::Timespan(acquire_timeout.count() * 1000));
+    RWLockImpl::LockHolder holder = lockTimed(rwlock, RWLockImpl::Read, query_id, acquire_timeout);
     join_clone->setLock(holder);
     join_clone->reuseJoinedData(*join);
 

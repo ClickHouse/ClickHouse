@@ -124,6 +124,10 @@ private:
     void insertBlock(const Block & block, ContextPtr context) override;
     void finishInsert() override {}
     size_t getSize(ContextPtr context) const override;
+    /// The lock is keyed on the initial query id, which other queries of one distributed query and other threads share,
+    /// so a request refused on RWLock's same-query fast path is reported as `DEADLOCK_AVOIDED`, not as recursion.
+    RWLockImpl::LockHolder lockTimed(
+        const RWLock & lock, RWLockImpl::Type type, const String & query_id, std::chrono::milliseconds acquire_timeout) const;
     RWLockImpl::LockHolder tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const;
     /// Same as tryLockTimedWithContext, but returns `nullptr` if lock is already acquired by current query.
     static RWLockImpl::LockHolder tryLockForCurrentQueryTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context);
