@@ -1272,7 +1272,10 @@ static bool isColumnSafeOnMoreRows(const QueryPlan::Node * node, const String & 
 
         node = node->children.front();
     }
-    return true;
+
+    /// these sources give a filter to their own plans, where it can go below a JOIN
+    return names.empty()
+        || (!typeid_cast<const ReadFromMerge *>(node->step.get()) && !typeid_cast<const ReadFromLocalParallelReplicaStep *>(node->step.get()));
 }
 
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
