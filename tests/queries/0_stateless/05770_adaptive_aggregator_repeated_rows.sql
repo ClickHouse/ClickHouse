@@ -83,11 +83,11 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comm
 -- thaw as they do without the skip.
 SET log_comment = '05770_thaw_string';
 SELECT count(), sum(u) FROM (SELECT k, uniqExact(s) AS u FROM (SELECT intDiv(number, 32) AS k, number % 32 AS p,
-    if(p < 24, concat(repeat('x', 64), toString(k)), toString(number)) AS s FROM numbers_mt(500000)) GROUP BY k)
-    SETTINGS enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 1024, max_block_size = 8192;
+    if(p < 24, concat(repeat('x', 64), toString(k)), toString(number)) AS s FROM numbers_mt(2000000)) GROUP BY k)
+    SETTINGS enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 1024, max_block_size = 65536;
 SET log_comment = '';
 SELECT count(), sum(u) FROM (SELECT k, uniqExact(s) AS u FROM (SELECT intDiv(number, 32) AS k, number % 32 AS p,
-    if(p < 24, concat(repeat('x', 64), toString(k)), toString(number)) AS s FROM numbers_mt(500000)) GROUP BY k)
+    if(p < 24, concat(repeat('x', 64), toString(k)), toString(number)) AS s FROM numbers_mt(2000000)) GROUP BY k)
     SETTINGS enable_adaptive_aggregator = 0;
 SYSTEM FLUSH LOGS query_log;
 SELECT countIf(ProfileEvents['AdaptiveAggregationLocalFreezes'] > 0), countIf(ProfileEvents['AdaptiveAggregationThaws'] > 0)
