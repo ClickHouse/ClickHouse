@@ -74,7 +74,7 @@ public:
     UInt32 internType(std::string_view urn, std::string_view type_name);
 
     /// Gives back the `type_name` that internType registered. An unknown anchor is our bug and throws.
-    const String & typeNameByAnchor(UInt32 anchor) const;
+    [[nodiscard]] const String & typeNameByAnchor(UInt32 anchor) const;
 
     /// Writes the header declarations of the functions, types that `plan` references and of their URNs.
     void declareUsedIn(substrait::Plan & plan) const;
@@ -99,14 +99,14 @@ struct SubstraitSchema
     std::vector<SubstraitColumn> columns;
 
     /// On duplicate names, gives the first position.
-    std::optional<size_t> positionByName(const String & name) const
+    [[nodiscard]] std::optional<size_t> positionByName(const String & name) const
     {
         if (const auto it = positions.find(name); it != positions.end())
             return it->second;
         return {};
     }
 
-    size_t size() const { return columns.size(); }
+    [[nodiscard]] size_t size() const { return columns.size(); }
 
     void append(String name, substrait::Type type)
     {

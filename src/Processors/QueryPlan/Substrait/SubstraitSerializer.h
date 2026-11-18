@@ -48,7 +48,8 @@ public:
     const Verdict & visit(const QueryPlan::Node & root);
 
     /// Nodes that do not convert while every child subtree does, with reasons. Empty when the whole visited subtree is eligible.
-    std::vector<std::pair<const QueryPlan::Node *, SubstraitBlockingReason>> blockingSteps(const QueryPlan::Node & root) const;
+    [[nodiscard]] std::vector<std::pair<const QueryPlan::Node *, SubstraitBlockingReason>>
+    blockingSteps(const QueryPlan::Node & root) const;
 
     /// Builds the final plan for a node with subtree_eligible = true, consuming the subtree's converted relations.
     substrait::Plan takePlan(const QueryPlan::Node & root);

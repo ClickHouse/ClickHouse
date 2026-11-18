@@ -811,7 +811,7 @@ SubstraitPlanSerializer::convertJoin(const JoinStepLogical & join, NodeState & l
 
     /// Combines condition conjuncts into one boolean expression.
     const auto combine_conjuncts
-        = [&](const std::vector<JoinActionRef> & conjuncts) -> std::expected<substrait::Expression, SubstraitBlockingReason>
+        = [&](const VectorWithMemoryTracking<JoinActionRef> & conjuncts) -> std::expected<substrait::Expression, SubstraitBlockingReason>
     {
         std::vector<SubstraitExpressionConverter::ConvertedExpression> converted_conjuncts;
         for (const auto & conjunct : conjuncts)
