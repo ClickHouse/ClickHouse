@@ -847,6 +847,8 @@ SubstraitPlanSerializer::convertJoin(const JoinStepLogical & join, NodeState & l
         *join_body->mutable_expression() = std::move(*condition);
         if (!join_operator.residual_filter.empty())
         {
+            if (post_join_schema != &combined)
+                return blocked(fmt::format("{} JOIN with a post-join filter is not supported", toString(join_operator.strictness)));
             auto residual = combine_conjuncts(join_operator.residual_filter);
             if (!residual)
                 return std::unexpected(std::move(residual.error()));

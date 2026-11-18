@@ -1,0 +1,2 @@
+The query plan cannot be serialized to Substrait. Blocking steps:
+  JoinLogical: SEMI JOIN with a post-join filter is not supported
