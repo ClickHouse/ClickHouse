@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
@@ -102,6 +103,15 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return true;
+    }
+
+    /// Comparing strings cannot throw, while the `Array` form converts both arguments to a common type, which can.
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
+    {
+        if (arguments.size() == 2 && isStringOrFixedString(removeLowCardinalityAndNullable(arguments[0].type))
+            && isStringOrFixedString(removeLowCardinalityAndNullable(arguments[1].type)))
+            return false;
+        return {};
     }
 
     [[nodiscard]] size_t getNumberOfArguments() const override

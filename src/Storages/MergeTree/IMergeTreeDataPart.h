@@ -540,6 +540,9 @@ public:
 
     void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
 
+    /// The path that identifies the part in the caches shared between tables.
+    String getPathForCacheKey() const;
+
     /// `is_accounted` means that the columns are accounted as memory usage of the query.
     void setIndex(Columns index_columns, bool is_accounted = false);
     void unloadIndex();
@@ -1027,8 +1030,6 @@ private:
     std::shared_ptr<StatisticsCacheCell> loadStatisticsFile(
         const PackedFilesReader * packed_reader, const String & filename, const ColumnDescription & column_desc) const;
     PackedFilesReader * getStatisticsPackedReader() const;
-    /// The path that identifies the part in the caches shared between tables.
-    String getPathForCacheKey() const;
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
 
