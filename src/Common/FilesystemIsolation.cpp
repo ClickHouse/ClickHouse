@@ -73,6 +73,7 @@ std::optional<FilesystemIsolationStatus> getFilesystemIsolationStatus()
 #include <IO/ReadHelpers.h>
 #include <base/defines.h>
 #include <base/scope_guard.h>
+#include <base/sleep.h>
 
 #include <Poco/Glob.h>
 
@@ -599,6 +600,20 @@ std::vector<std::string> getMountPointsInside(const std::string & path)
     return mount_points;
 }
 
+/// Sets `errno` on failure. Making a mount read-only fails with `EBUSY` while anything has write access to it, even a
+/// read through it that updates the access time, and new mounts are reachable from outside through `/proc/<pid>/root`.
+bool remountBind(const char * path, unsigned long flags) // NOLINT(google-runtime-int)
+{
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (0 != ::mount(nullptr, path, nullptr, MS_REMOUNT | MS_BIND | flags, nullptr))
+    {
+        if (errno != EBUSY || std::chrono::steady_clock::now() >= deadline)
+            return false;
+        sleepForMilliseconds(10);
+    }
+    return true;
+}
+
 /// Remounts the bind mount at `path` and every mount inside it with the flags `add`. A bind mount keeps the flags
 /// of the mount it is made from, and the kernel refuses to clear `MS_RDONLY`, `MS_NOSUID`, `MS_NODEV` and
 /// `MS_NOEXEC` of a mount that belongs to a more privileged user namespace, so these are carried over.
@@ -626,7 +641,7 @@ void addMountFlags(const std::string & path, unsigned long add) // NOLINT(google
         if (st.f_flag & ST_NOEXEC)
             flags |= MS_NOEXEC;
 
-        if (0 != ::mount(nullptr, mount_point.c_str(), nullptr, MS_REMOUNT | MS_BIND | flags, nullptr))
+        if (!remountBind(mount_point.c_str(), flags))
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot remount {} with the flags {:#x}", mount_point, flags);
     }
 }
@@ -699,7 +714,7 @@ void remountReadOnly(const std::string & path)
     /// of the access time are kept by a remount without them.
     for (const auto & mount : getMountsInside(path))
     {
-        if (0 != ::mount(nullptr, mount.mount_point.c_str(), nullptr, MS_REMOUNT | MS_BIND | MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC, nullptr))
+        if (!remountBind(mount.mount_point.c_str(), MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC))
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot remount {} read-only", mount.mount_point);
     }
 }
@@ -1463,7 +1478,7 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     if (0 != ::rmdir(old_root))
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot remove {}", old_root);
 
-    if (0 != ::mount(nullptr, "/", nullptr, MS_REMOUNT | MS_BIND | MS_RDONLY | MS_NOSUID | MS_NODEV, nullptr))
+    if (!remountBind("/", MS_RDONLY | MS_NOSUID | MS_NODEV))
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot make the root of the isolated filesystem read-only");
 
     if (0 != ::chdir(working_directory.empty() ? "/" : working_directory.c_str()))
