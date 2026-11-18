@@ -1,0 +1,2 @@
+wait_for_async_insert=0: terminal progress, profile events and traces precede completion
+wait_for_async_insert=1: terminal progress, profile events and traces precede completion

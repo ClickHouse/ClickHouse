@@ -1,0 +1,5 @@
+local duplicate and shorthand controls passed
+serialized=0 hedged=0: duplicates, defaults, gating and invalid values preserved
+serialized=0 hedged=1: duplicates, defaults, gating and invalid values preserved
+serialized=1 hedged=0: duplicates, defaults, gating and invalid values preserved
+serialized=1 hedged=1: duplicates, defaults, gating and invalid values preserved
