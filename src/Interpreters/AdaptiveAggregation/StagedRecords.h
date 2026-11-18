@@ -33,7 +33,7 @@ namespace DB
 /// The record layout of the aggregate arguments that general payloads stage, fixed for the query by the header.
 /// Fixed-size arguments open the record at their offsets and use the `RowDataStore` representation: a
 /// `Nullable` field is a null byte followed by the value. The drain rebuilds each of these arguments with
-/// one `IColumn::fillFromRowStorePtrs` over the records. Variable-size arguments follow the key, serialized
+/// one `IColumn::gatherFromRows` over the records. Variable-size arguments follow the key, serialized
 /// one after another in their layout order. A column read by several aggregates is staged once. A single
 /// numeric key used as an argument shares its key bytes instead of occupying another field.
 struct AdaptiveArgumentLayout
@@ -315,7 +315,7 @@ size_t stagedFixedKeyBytes(size_t packed_key_bytes)
 /// chunk can go to disk and come back byte for byte. Fields are read and written unaligned, and records follow each
 /// other without padding. The fixed-size aggregate arguments open an argument record at the offsets of
 /// `AdaptiveArgumentLayout`, so each lies at one offset in all the records of the query, from which the drain rebuilds
-/// it with one `IColumn::fillFromRowStorePtrs`.
+/// it with one `IColumn::gatherFromRows`.
 ///
 /// A record of a fixed-width key stores no hash: the merge rehashes the key in a few instructions, which costs less
 /// than the bytes of a hash in a record of a dozen or two, written by the staging, read by the merge, and written to

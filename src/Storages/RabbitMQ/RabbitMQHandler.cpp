@@ -1,6 +1,7 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
+#include <base/scope_guard.h>
 #include <thread>
 
 namespace DB
@@ -15,8 +16,18 @@ RabbitMQHandler::RabbitMQHandler(uv_loop_t * loop_, LoggerPtr log_) :
     log(log_),
     connection_running(false),
     loop_running(false),
-    loop_state(Loop::STOP)
+    loop_state(Loop::STOP),
+    wake_async(new uv_async_t)
 {
+    uv_async_init(loop, wake_async, [](uv_async_t *) {});
+    /// Referenced only while `startLoop` runs: otherwise it would keep the loop alive,
+    /// and the non-blocking and blocking loops used elsewhere rely on it becoming idle.
+    uv_unref(reinterpret_cast<uv_handle_t *>(wake_async));
+}
+
+RabbitMQHandler::~RabbitMQHandler()
+{
+    uv_close(reinterpret_cast<uv_handle_t *>(wake_async), [](uv_handle_t * handle) { delete reinterpret_cast<uv_async_t *>(handle); });
 }
 
 ///Method that is called when the connection ends up in an error state.
@@ -40,11 +51,12 @@ void RabbitMQHandler::startLoop()
     LOG_DEBUG(log, "Background loop started");
     loop_running.store(true);
 
+    /// Block in the poller instead of spinning. The referenced async handle keeps the loop alive,
+    /// so `UV_RUN_ONCE` waits for I/O, and `stopLoop` wakes it up through the same handle.
+    uv_ref(reinterpret_cast<uv_handle_t *>(wake_async));
+    SCOPE_EXIT(uv_unref(reinterpret_cast<uv_handle_t *>(wake_async)));
     while (loop_state.load() == Loop::RUN)
-    {
-        if (!uv_run(loop, UV_RUN_NOWAIT))
-            std::this_thread::yield();
-    }
+        uv_run(loop, UV_RUN_ONCE);
 
     LOG_DEBUG(log, "Background loop ended");
     loop_running.store(false);
@@ -106,6 +118,9 @@ void RabbitMQHandler::stopLoop()
 {
     LOG_DEBUG(log, "Stopping background loop.");
     loop_state.store(Loop::STOP);
+    /// Wake the looping task blocked in the poller, so that it sees the stop request immediately:
+    /// `streamToViews` stops it after every block and waits for it to finish.
+    uv_async_send(wake_async);
 }
 
 void RabbitMQHandler::stopBlockingLoop()
