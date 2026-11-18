@@ -1635,7 +1635,7 @@ public:
 private:
     /// On a storage whose `PREWHERE` takes only top-level columns, a `Map` is read whole if `PREWHERE` reads it or its parent
     /// tuple, or if the query reads another column of its table (a filter on that column can reach `PREWHERE` from the query plan).
-    bool mustReadWholeMap(const ColumnInSource & map) const
+    [[nodiscard]] bool mustReadWholeMap(const ColumnInSource & map) const
     {
         if (sources_with_additional_table_filters.contains(map.source))
             return true;
