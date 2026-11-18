@@ -2160,8 +2160,22 @@ FunctionCast::WrapperType FunctionCast::createWrapperIfCanConvert(const DataType
     }
     catch (const Exception &)
     {
-        return {};
+        /// Without a wrapper, the caller inserts the default of `to`, which is a failure only when it is NULL.
+        if (!report_failures_as_null || canContainNull(*to))
+            return {};
     }
+
+    /// Asked to report its failures as NULL (see `prepareUnpackDictionaries`), the conversion fails every value.
+    if (to->canBeInsideNullable())
+        return createToNullableColumnWrapper();
+
+    /// `to` cannot hold that NULL, so the values are converted without reporting failures, as in an array element.
+    return [this, from, to](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
+    {
+        if (arguments.front().column->empty())
+            return result_type->createColumn();
+        return prepareUnpackDictionaries(from, to)(arguments, result_type, nullable_source, input_rows_count);
+    };
 }
 
 FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(

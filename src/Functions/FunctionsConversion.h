@@ -6168,8 +6168,8 @@ private:
 
     WrapperType createVariantToVariantWrapper(const DataTypeVariant & from_variant, const DataTypeVariant & to_variant) const;
 
-    /// Create wrapper only if we support this conversion. `report_failures_as_null` is as in
-    /// `prepareUnpackDictionaries`.
+    /// The conversion of a `Variant` or `Dynamic` member, empty when it is not supported, except that a conversion
+    /// asked to report failures (`report_failures_as_null`) to a type without NULL fails the values instead.
     WrapperType createWrapperIfCanConvert(const DataTypePtr & from, const DataTypePtr & to, bool report_failures_as_null) const;
 
     WrapperType createVariantToColumnWrapper(const DataTypeVariant & from_variant, const DataTypePtr & to_type, bool report_failures_as_null) const;
