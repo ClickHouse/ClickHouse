@@ -7,6 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+trap '$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT restart_replica_pause_after_detach" ||:' EXIT
+
 # Drops table $1.$3 while `SYSTEM RESTART REPLICA` holds its inner table $1.$2 detached, then counts the inner tables left in $1.
 function drop_during_restart()
 {
