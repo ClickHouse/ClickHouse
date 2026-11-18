@@ -710,11 +710,12 @@ public:
     /// itself takes, as with the 16 bytes of a `-ForEach` state over such a function.
     bool hasHeavyStates() const { return has_heavy_states; }
 
-    /// The pool threshold of a merge while its workers are busy (see `ParallelMergeThreshold`): a worker's share of the
-    /// merge work that the producers of `session` estimated, within fixed bounds, or the upper bound without a session.
-    /// The session's producers have finished. Once the workers run out of work, any group above the lower bound takes
-    /// the pool.
-    ParallelMergeThreshold parallelMergeThreshold(const AdaptiveAggregationSession * session) const;
+    /// The pool threshold of a merge while its workers are busy (see `ParallelMergeThreshold`): the share of
+    /// one of the merge's `workers` in the merge work that the producers of `session` estimated, within fixed
+    /// bounds, or the upper bound without a session. The caller guarantees that the merge has at least one
+    /// worker and that the session's producers have finished. Once the workers run out of work, any group
+    /// above the lower bound takes the pool.
+    ParallelMergeThreshold parallelMergeThreshold(const AdaptiveAggregationSession * session, size_t workers) const;
 
     using BucketToChunks = std::map<Int32, AggregatedChunks>;
     /// Merge partially aggregated chunks separated to buckets into one data structure.

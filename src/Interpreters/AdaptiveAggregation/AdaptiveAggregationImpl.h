@@ -226,9 +226,9 @@ struct AdaptiveAggregationSession
 
     /// Published under the same mutex and read after the finish barrier. Retained states contribute their
     /// merge-work estimates, and each staged record contributes one unit per aggregate using this merge.
-    /// The total and the producer count estimate each worker's share of the merge.
+    /// The total and the number of merge workers give each worker's share of the merge (see
+    /// `Aggregator::parallelMergeThreshold`).
     size_t estimated_merge_work = 0;
-    size_t finished_producers = 0;
 
     /// The producers whose tables froze at least once, and those of them that thawed. Published under the
     /// same mutex, they make the verdict of the run (see `Aggregator::adaptiveStagingVerdict`).

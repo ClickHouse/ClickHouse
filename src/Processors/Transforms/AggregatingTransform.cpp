@@ -188,15 +188,15 @@ namespace
             ManyAggregatedDataVariantsPtr destination_,
             std::shared_ptr<std::atomic<size_t>> merged_groups_,
             size_t first_bucket,
-            size_t step_)
+            size_t num_sources)
             : ISource(std::move(header), false)
             , params(std::move(params_))
             , session(std::move(session_))
             , destination(std::move(destination_))
             , merged_groups(std::move(merged_groups_))
-            , parallel_merge(params->aggregator.parallelMergeThreshold(session.get()))
+            , parallel_merge(params->aggregator.parallelMergeThreshold(session.get(), num_sources))
             , next_bucket(first_bucket)
-            , step(step_)
+            , step(num_sources)
         {
         }
 
@@ -256,6 +256,7 @@ namespace
         AdaptiveMergeTask task;
         Aggregator::AggregatedChunks chunks;
         size_t next_bucket;
+        /// The stride of the source's buckets, which is the number of the sources.
         const size_t step;
         Int32 last_handed_out_bucket = -1;
         bool handed_out_first_chunk = false;
@@ -1269,9 +1270,9 @@ private:
 
     size_t num_threads;
 
-    /// How many streams the output is spread over downstream. It is not `num_threads`. That is capped by the
-    /// number of aggregating streams (1 for a single input stream), while the `Resize` after the aggregation
-    /// fans out to `max_threads`. 1 when the results must go out in bucket order.
+    /// How many streams the output is spread over downstream. It is not `num_threads`: a merge of the tables
+    /// takes at most one thread per aggregating stream (1 for a single input stream), while the `Resize`
+    /// after the aggregation fans out to `max_threads`. 1 when the results must go out in bucket order.
     size_t output_streams;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
@@ -1311,8 +1312,9 @@ private:
 
         AggregatedDataVariantsPtr & first = data->at(0);
 
-        /// At least we need one arena in first data item per thread
-        if (num_threads > first->aggregates_pools.size())
+        /// At least we need one arena in first data item per thread. The sources of the adaptive bucket merge
+        /// take their arenas per bucket instead (see `createSources`), and they can outnumber the tables.
+        if (!adaptive_session && num_threads > first->aggregates_pools.size())
         {
             Arenas & first_pool = first->aggregates_pools;
             for (size_t j = first_pool.size(); j < num_threads; ++j)
@@ -1612,7 +1614,7 @@ AggregatingTransform::AggregatingTransform(
     , many_data(std::move(many_data_))
     , variants(*many_data->variants[current_variant])
     , variant_index(current_variant)
-    , max_threads(std::min(many_data->variants.size(), max_threads_))
+    , max_threads(max_threads_)
     , temporary_data_merge_threads(temporary_data_merge_threads_)
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , skip_merging(skip_merging_)
@@ -2032,16 +2034,23 @@ void AggregatingTransform::initGenerate()
             AdaptiveAggregationSession * session = adaptive_context ? adaptive_context->session.get() : nullptr;
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants), session);
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
+            /// A merge of the tables takes at most one thread per table, and each producer filled one. The
+            /// adaptive bucket merge is not bound by the tables: its sources claim the buckets one by one,
+            /// and each takes its table and its arena per bucket. Its work is the staged records, and a
+            /// single aggregating stream can stage nearly every row it reads, so it takes the merge threads
+            /// of the step, up to one per bucket.
+            const size_t merge_threads
+                = std::min(max_threads, bucket_merge ? ADAPTIVE_AGGREGATION_NUM_BUCKETS : many_data->num_producers);
             /// The producers of the session estimated the merge work, also when none of them froze and the tables merge
             /// partition by partition.
             processors.emplace_back(std::make_shared<ConvertingAggregatedToChunksTransform>(
                 params,
                 std::move(prepared_data_ptr),
-                max_threads,
+                merge_threads,
                 output_streams,
                 updater,
                 bucket_merge ? adaptive_context->session : nullptr,
-                params->aggregator.parallelMergeThreshold(session)));
+                params->aggregator.parallelMergeThreshold(session, merge_threads)));
         }
         else
         {

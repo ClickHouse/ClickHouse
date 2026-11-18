@@ -365,7 +365,6 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
 
     std::lock_guard lock(shared.producer_buffers_mutex);
     shared.estimated_merge_work += estimated_merge_work;
-    ++shared.finished_producers;
     shared.table_cells += local_variants.sizeWithoutOverflowRow();
     shared.top_k_floor = std::max(shared.top_k_floor, top_k_floor);
     if (froze)

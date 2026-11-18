@@ -1536,20 +1536,17 @@ AggregatedDataVariantsPtr Aggregator::createAdaptiveMergeDestination() const
     return destination;
 }
 
-Aggregator::ParallelMergeThreshold Aggregator::parallelMergeThreshold(const AdaptiveAggregationSession * session) const
+Aggregator::ParallelMergeThreshold
+Aggregator::parallelMergeThreshold(const AdaptiveAggregationSession * session, size_t workers) const
 {
     /// While the workers are busy, a group larger than a worker's share can hold up the merge, and very large states
     /// amortize the pool even when other groups are busy. Without the producers' estimate of the merge work, only a group
     /// of very large states takes the pool then. Small states do not justify its setup even with idle workers.
+    chassert(workers > 0);
     ParallelMergeThreshold threshold{.busy = adaptive_parallel_merge_max_work, .idle = adaptive_parallel_merge_min_work};
     if (session)
-    {
-        chassert(params.max_threads > 0 && session->finished_producers > 0);
         threshold.busy = std::clamp(
-            session->estimated_merge_work / std::min(params.max_threads, session->finished_producers),
-            adaptive_parallel_merge_min_work,
-            adaptive_parallel_merge_max_work);
-    }
+            session->estimated_merge_work / workers, adaptive_parallel_merge_min_work, adaptive_parallel_merge_max_work);
     return threshold;
 }
 
