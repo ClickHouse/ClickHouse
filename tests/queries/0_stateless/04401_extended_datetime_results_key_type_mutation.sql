@@ -340,19 +340,19 @@ SELECT count() FROM tvar WHERE if(c, dec, f64) = 4.5 SETTINGS force_data_skippin
 
 DROP TABLE tvar;
 
--- The sampling key is the one key that must NOT be canonicalized: its runtime filter (greaterOrEquals/
--- less on the sampling expression) is re-analyzed in the query context at read time
--- (MergeTreeDataSelectExecutor), so validating it under a pinned context would accept a config the
--- runtime filter then breaks. With cast_keep_nullable = 1, CAST(x AS UInt32) over a Nullable column
--- resolves to Nullable(UInt32); canonicalizing would strip that to plain UInt32 and pass validation,
--- but the read-time filter would still build a Nullable predicate that silently drops NULL rows on every
--- shard. Keeping the caller's context (canonicalize = false) makes validation reject the Nullable
--- sampling key, matching master and the parallel_replicas_custom_key opt-out already in this change.
+-- The sampling key is not canonicalized: `CREATE` validates it in the caller's context, because the read-time
+-- filter (greaterOrEquals/less on the sampling expression) is re-analyzed in the query context
+-- (MergeTreeDataSelectExecutor). An `ALTER` derives the stored sampling key in the global context, like the
+-- other keys, so a session `cast_keep_nullable = 1` does not make `CAST(x AS UInt32)` Nullable there: the
+-- ALTER is accepted and `SAMPLE` keeps working, as it does after a reload.
 DROP TABLE IF EXISTS tsmp;
 SET cast_keep_nullable = 0;
 CREATE TABLE tsmp (x Nullable(UInt32)) ENGINE = MergeTree() ORDER BY CAST(x AS UInt32) SETTINGS allow_nullable_key = 1;
 SET cast_keep_nullable = 1;
-ALTER TABLE tsmp MODIFY SAMPLE BY CAST(x AS UInt32); -- { serverError ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER }
+ALTER TABLE tsmp MODIFY SAMPLE BY CAST(x AS UInt32);
+SET cast_keep_nullable = 0;
+INSERT INTO tsmp VALUES (1), (2), (3);
+SELECT count() FROM tsmp SAMPLE 1;
 
 DROP TABLE tsmp;
 
