@@ -1,0 +1,25 @@
+LEFT JOIN
+2
+LEFT JOIN, direct read
+2
+RIGHT JOIN
+2
+FULL JOIN
+0
+2
+LEFT JOIN under CROSS JOIN
+2
+ASOF JOIN
+0
+LEFT JOIN, a local table first
+2
+Strict mode, direct read
+1
+Strict mode
+1
+Pushed down on the preserving side:
+Query: SELECT `id`, `description` FROM `p` WHERE `description` = 'one'
+Pushed down under INNER JOIN:
+Query: SELECT `id`, `description` FROM `p` WHERE `description` = 'one'
+Not pushed down on the non-preserving side:
+Query: SELECT `id`, `description` FROM `p`
