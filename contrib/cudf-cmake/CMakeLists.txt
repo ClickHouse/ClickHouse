@@ -711,7 +711,7 @@ set (CUDF_SOURCES
     "${CUDF_EMBED_DIR}/cudf_fragments.s"
 )
 
-# Sources unreachable from src/GPU: 209 of 487 at cuDF 26.12.
+# Sources unreachable from src/GPU: 208 of 487 at cuDF 26.12.
 # Derived, not hand-picked - every archive member outside the transitive closure of the island's
 # undefined symbols. Regenerate by resolving `nm -u` of libclickhouse_gpu_cudf.a against
 # `nm -A --defined-only` of lib_cudf.a. A new cuDF call fails the link naming what is missing.
@@ -809,7 +809,6 @@ list (REMOVE_ITEM CUDF_SOURCES
     "${CUDF_DIR}/src/lists/explode.cu"
     "${CUDF_DIR}/src/lists/sequences.cu"
     "${CUDF_DIR}/src/lists/set_operations.cu"
-    "${CUDF_DIR}/src/partitioning/partitioning.cu"
     "${CUDF_DIR}/src/partitioning/round_robin.cu"
     "${CUDF_DIR}/src/quantiles/quantiles.cu"
     "${CUDF_DIR}/src/reductions/approx_distinct_count.cu"

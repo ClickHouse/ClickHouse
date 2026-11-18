@@ -119,6 +119,10 @@ private:
 };
 
 
+/// The memory of a column on the device, of a fixed width or of varying width.
+using DeviceColumnBuffer = std::variant<DeviceFixedColumnBuffer, DeviceVariableColumnBuffer>;
+
+
 class IUploadPipe
 {
 public:
@@ -178,6 +182,10 @@ public:
     /// What is on the device, or is going there in the order of the pipe's stream.
     const IDeviceColumn & deviceColumn() const;
 
+    /// Takes the device column of what was sent, which is there in the order of the pipe's stream and is freed in that
+    /// order as well, and starts an empty one: the pipe stages the next batch while the caller holds this one.
+    DeviceColumnBuffer takeDeviceColumn();
+
     void reset() override;
 
     void waitForUploads();
@@ -204,7 +212,7 @@ private:
     size_t staged_bytes = 0;
     size_t staged_chars = 0;
 
-    std::variant<DeviceFixedColumnBuffer, DeviceVariableColumnBuffer> device;
+    DeviceColumnBuffer device;
 };
 
 

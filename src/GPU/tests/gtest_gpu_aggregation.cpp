@@ -31,6 +31,8 @@
 #include <cstring>
 #include <limits>
 #include <map>
+#include <memory>
+#include <optional>
 #include <mutex>
 #include <random>
 #include <string>
@@ -63,7 +65,7 @@ protected:
     }
 };
 
-/// Small batches, so that a test sends many and every slot of the pipeline is used again and again.
+/// Small batches, so that a test sends many, and every lane takes several of them.
 constexpr size_t small_batch_bytes = 64 * 1024;
 
 template <typename T>
@@ -121,24 +123,180 @@ DataTypePtr resultTypeOf(GPUAggregationKind aggregation, const DataTypePtr & arg
     return nullptr;
 }
 
-/// The groups of a `GroupByGPUAccumulator`, by the row of each, sorted by `key_of`.
+/// Groups on the device as the processors of `GPUAggregatingStep` do: the batches of one uploader are handed to the
+/// lanes in turn, and the lanes are merged by parts of the keys or, with an `avg` or without keys, into one.
+class DeviceGroupBy
+{
+public:
+    DeviceGroupBy(
+        const DataTypes & key_types,
+        const DataTypes & value_types,
+        std::vector<GPUGroupByAggregate> aggregates_,
+        size_t batch_bytes,
+        std::optional<CompiledGPUExpression> where_ = {},
+        size_t num_lanes = 3)
+        : keys(key_types)
+        , values(value_types)
+        , aggregates(std::move(aggregates_))
+        , where(std::move(where_))
+        , by_parts(!keys.empty() && std::ranges::none_of(aggregates, [](const auto & aggregate) { return aggregate.aggregation == GPUAggregationKind::Mean; }))
+        , uploader(uploadTypes(), batch_bytes)
+    {
+        const auto decision = std::make_shared<GPUGroupingDecision>();
+        for (size_t i = 0; i < num_lanes; ++i)
+        {
+            lanes.push_back(std::make_unique<GPUGroupingLane>(keys, values, aggregates, where, decision));
+            if (by_parts)
+                lanes.back()->splitIntoParts(num_lanes);
+        }
+    }
+
+    void add(const Columns & key_columns, const Columns & value_columns, const Columns & where_columns = {})
+    {
+        Columns columns = key_columns;
+        columns.insert(columns.end(), value_columns.begin(), value_columns.end());
+        columns.insert(columns.end(), where_columns.begin(), where_columns.end());
+        if (uploader.wouldOverflow(columns))
+            send();
+        uploader.add(columns);
+    }
+
+    /// The lanes that hold the groups, once merged, and how many each holds.
+    std::vector<std::pair<GPUGroupingLane *, size_t>> finish()
+    {
+        send();
+        std::vector<std::pair<GPUGroupingLane *, size_t>> result;
+        if (by_parts)
+        {
+            for (auto & lane : lanes)
+                lane->partition(lanes.size());
+            for (size_t part = 0; part < lanes.size(); ++part)
+            {
+                merged.push_back(std::make_unique<GPUGroupingLane>(keys, values, aggregates, where, std::make_shared<GPUGroupingDecision>()));
+                for (const auto & lane : lanes)
+                    merged.back()->absorbPart(*lane, part);
+                result.emplace_back(merged.back().get(), merged.back()->finalize());
+            }
+            return result;
+        }
+
+        size_t groups = 0;
+        for (const auto & lane : lanes)
+            groups += lane->numGroups().value_or(0);
+        if (lanes.front()->numGroups().value_or(0) != 0)
+            lanes.front()->reserveGroups(groups);
+        for (size_t i = 1; i < lanes.size(); ++i)
+            lanes.front()->absorb(*lanes[i]);
+        result.emplace_back(lanes.front().get(), lanes.front()->finalize());
+        return result;
+    }
+
+private:
+    DataTypes uploadTypes() const
+    {
+        DataTypes types = keys;
+        types.insert(types.end(), values.begin(), values.end());
+        if (where)
+            for (const auto & column : where->columns)
+                types.push_back(column.type);
+        return types;
+    }
+
+    void send()
+    {
+        if (auto batch = uploader.send())
+            lanes[next_lane++ % lanes.size()]->add(std::move(*batch));
+    }
+
+    const DataTypes keys;
+    const DataTypes values;
+    const std::vector<GPUGroupByAggregate> aggregates;
+    const std::optional<CompiledGPUExpression> where;
+    const bool by_parts;
+
+    std::vector<std::unique_ptr<GPUGroupingLane>> lanes;
+    std::vector<std::unique_ptr<GPUGroupingLane>> merged;
+    size_t next_lane = 0;
+    GPUBatchUploader uploader;
+};
+
+/// Reduces on the device without `GROUP BY`, as `GPUAggregatingStep` does: one uploader and the reductions of its batches.
+class DeviceReduce
+{
+public:
+    DeviceReduce(const DataTypes & argument_types, const DataTypes & result_types, const std::vector<GPUAggregationKind> & aggregations, size_t batch_bytes)
+        : accumulator(argument_types, result_types, aggregations), uploader(argument_types, batch_bytes)
+    {
+    }
+
+    void add(const Columns & columns)
+    {
+        if (uploader.wouldOverflow(columns))
+            send();
+        uploader.add(columns);
+    }
+
+    std::vector<Field> finalize()
+    {
+        send();
+        return accumulator.finalize();
+    }
+
+private:
+    void send()
+    {
+        if (auto batch = uploader.send())
+            accumulator.add(std::move(*batch));
+    }
+
+    GPUAccumulator accumulator;
+    GPUBatchUploader uploader;
+};
+
+/// The groups on the device, by the row of each, of every lane that holds them.
 struct Groups
 {
     MutableColumns keys;
     MutableColumns aggregates;
     size_t rows = 0;
+    /// Before a `HAVING`.
+    size_t rows_grouped = 0;
 };
 
 Groups groupsOf(
-    GroupByGPUAccumulator & accumulator, const DataTypes & key_types, const std::vector<DataTypePtr> & aggregate_types)
+    DeviceGroupBy & group_by,
+    const DataTypes & key_types,
+    const std::vector<DataTypePtr> & aggregate_types,
+    const CompiledGPUExpression * having = nullptr,
+    const std::vector<size_t> & having_columns = {})
 {
     Groups groups;
-    groups.rows = accumulator.finalize();
     for (const auto & type : key_types)
         groups.keys.push_back(type->createColumn());
     for (const auto & type : aggregate_types)
         groups.aggregates.push_back(type->createColumn());
-    accumulator.copyGroupsTo(groups.keys, groups.aggregates);
+
+    for (auto [lane, rows] : group_by.finish())
+    {
+        groups.rows_grouped += rows;
+        if (having && rows != 0)
+            rows = lane->filterGroups(*having, having_columns);
+        if (rows == 0)
+            continue;
+
+        MutableColumns lane_keys;
+        MutableColumns lane_aggregates;
+        for (const auto & type : key_types)
+            lane_keys.push_back(type->createColumn());
+        for (const auto & type : aggregate_types)
+            lane_aggregates.push_back(type->createColumn());
+        lane->copyGroupsTo(lane_keys, lane_aggregates);
+        for (size_t i = 0; i < lane_keys.size(); ++i)
+            groups.keys[i]->insertRangeFrom(*lane_keys[i], 0, rows);
+        for (size_t i = 0; i < lane_aggregates.size(); ++i)
+            groups.aggregates[i]->insertRangeFrom(*lane_aggregates[i], 0, rows);
+        groups.rows += rows;
+    }
     return groups;
 }
 
@@ -170,7 +328,7 @@ TEST_F(GPUAggregation, ReduceWithoutKeys)
     for (size_t i = 0; i < aggregations.size(); ++i)
         result_types.push_back(resultTypeOf(aggregations[i], argument_types[i]));
 
-    GPUAccumulator accumulator(argument_types, result_types, aggregations, small_batch_bytes);
+    DeviceReduce accumulator(argument_types, result_types, aggregations, small_batch_bytes);
     inBlocks(rows, 65'409, [&](size_t begin, size_t end)
     {
         const ColumnPtr u = columnOf(slice(u32, begin, end));
@@ -202,7 +360,7 @@ TEST_F(GPUAggregation, ReduceWithoutRows)
     const DataTypePtr type = std::make_shared<DataTypeInt32>();
     const DataTypePtr sum_type = std::make_shared<DataTypeInt64>();
 
-    GPUAccumulator accumulator({type, type}, {sum_type, type}, {GPUAggregationKind::Sum, GPUAggregationKind::Min}, small_batch_bytes);
+    DeviceReduce accumulator({type, type}, {sum_type, type}, {GPUAggregationKind::Sum, GPUAggregationKind::Min}, small_batch_bytes);
     const std::vector<Field> results = accumulator.finalize();
 
     ASSERT_EQ(results.size(), 2);
@@ -219,7 +377,7 @@ TEST_F(GPUAggregation, ReduceMinMaxOfStrings)
         value = "s" + std::to_string(random() % 1'000'000'007);
 
     const DataTypePtr type = std::make_shared<DataTypeString>();
-    GPUAccumulator accumulator({type, type}, {type, type}, {GPUAggregationKind::Min, GPUAggregationKind::Max}, small_batch_bytes);
+    DeviceReduce accumulator({type, type}, {type, type}, {GPUAggregationKind::Min, GPUAggregationKind::Max}, small_batch_bytes);
     inBlocks(rows, 10'000, [&](size_t begin, size_t end)
     {
         const ColumnPtr column = stringColumnOf(slice(values, begin, end));
@@ -273,7 +431,7 @@ void checkGroupBy(const std::vector<UInt64> & keys, const std::vector<Int32> & v
         aggregate_types.push_back(std::make_shared<DataTypeFloat64>());
     }
 
-    GroupByGPUAccumulator accumulator({key_type}, {value_type}, std::move(aggregates), batch_bytes);
+    DeviceGroupBy accumulator({key_type}, {value_type}, std::move(aggregates), batch_bytes);
     inBlocks(keys.size(), 65'536, [&](size_t begin, size_t end)
     {
         accumulator.add({columnOf(slice(keys, begin, end))}, {columnOf(slice(values, begin, end))});
@@ -358,7 +516,7 @@ TEST_F(GPUAggregation, GroupByWithoutRows)
 {
     const DataTypePtr key_type = std::make_shared<DataTypeUInt64>();
     const DataTypePtr value_type = std::make_shared<DataTypeInt32>();
-    GroupByGPUAccumulator accumulator(
+    DeviceGroupBy accumulator(
         {key_type}, {value_type}, {{.aggregation = GPUAggregationKind::Sum, .column = 0, .result_type = GPUElementType::Int64}}, small_batch_bytes);
 
     const Groups groups = groupsOf(accumulator, {key_type}, {std::make_shared<DataTypeInt64>()});
@@ -399,7 +557,7 @@ TEST_F(GPUAggregation, GroupByStrings)
         {.aggregation = GPUAggregationKind::Sum, .column = 1, .result_type = GPUElementType::UInt64},
     };
 
-    GroupByGPUAccumulator accumulator({string_type}, {string_type, number_type}, std::move(aggregates), small_batch_bytes);
+    DeviceGroupBy accumulator({string_type}, {string_type, number_type}, std::move(aggregates), small_batch_bytes);
     inBlocks(rows, 30'000, [&](size_t begin, size_t end)
     {
         accumulator.add({stringColumnOf(slice(keys, begin, end))}, {stringColumnOf(slice(values, begin, end)), columnOf(slice(numbers, begin, end))});
@@ -444,7 +602,7 @@ TEST_F(GPUAggregation, GroupByFixedString)
     const DataTypePtr key_type = std::make_shared<DataTypeFixedString>(8);
     const DataTypePtr value_type = std::make_shared<DataTypeUInt8>();
 
-    GroupByGPUAccumulator accumulator(
+    DeviceGroupBy accumulator(
         {key_type}, {value_type}, {{.aggregation = GPUAggregationKind::Sum, .column = 0, .result_type = GPUElementType::UInt64}}, small_batch_bytes);
     inBlocks(rows, 50'000, [&](size_t begin, size_t end)
     {
@@ -480,7 +638,7 @@ TEST_F(GPUAggregation, DestroyedWithoutFinalize)
         values[i] = static_cast<Int32>(i);
     }
 
-    GroupByGPUAccumulator accumulator(
+    DeviceGroupBy accumulator(
         {key_type}, {value_type}, {{.aggregation = GPUAggregationKind::Sum, .column = 0, .result_type = GPUElementType::Int64}}, small_batch_bytes);
     inBlocks(keys.size(), 10'000, [&](size_t begin, size_t end)
     {
@@ -552,7 +710,7 @@ void checkGroupByWhere(const std::vector<UInt64> & keys, const std::vector<Int32
         {.aggregation = GPUAggregationKind::Count, .column = GPUGroupByAggregate::no_column, .result_type = GPUElementType::UInt64},
     };
     const DataTypes key_types = keyed ? DataTypes{key_type} : DataTypes{};
-    GroupByGPUAccumulator accumulator(key_types, {value_type}, std::move(aggregates), small_batch_bytes, std::move(where));
+    DeviceGroupBy accumulator(key_types, {value_type}, std::move(aggregates), small_batch_bytes, std::move(where));
 
     inBlocks(keys.size(), 65'536, [&](size_t begin, size_t end)
     {
@@ -670,15 +828,15 @@ TEST_F(GPUAggregation, GroupByHaving)
     for (const auto & column : having.columns)
         having_columns.push_back(column.name == "k" ? 0 : 1);
 
-    GroupByGPUAccumulator accumulator(
+    DeviceGroupBy accumulator(
         {key_type}, {value_type}, {{.aggregation = GPUAggregationKind::Sum, .column = 0, .result_type = GPUElementType::Int64}}, small_batch_bytes);
     inBlocks(keys.size(), 65'536, [&](size_t begin, size_t end)
     {
         accumulator.add({columnOf(slice(keys, begin, end))}, {columnOf(slice(values, begin, end))});
     });
 
-    ASSERT_EQ(accumulator.finalize(), sums.size());
-    const size_t kept = accumulator.filterGroups(having, having_columns);
+    const Groups groups = groupsOf(accumulator, {key_type}, {sum_type}, &having, having_columns);
+    ASSERT_EQ(groups.rows_grouped, sums.size());
 
     std::map<UInt64, Int64> expected;
     for (const auto & [key, value] : sums)
@@ -686,16 +844,10 @@ TEST_F(GPUAggregation, GroupByHaving)
         if (value > threshold && key < max_key)
             expected.emplace(key, value);
     }
-    ASSERT_EQ(kept, expected.size());
+    ASSERT_EQ(groups.rows, expected.size());
 
-    MutableColumns key_columns;
-    key_columns.push_back(key_type->createColumn());
-    MutableColumns aggregate_columns;
-    aggregate_columns.push_back(sum_type->createColumn());
-    accumulator.copyGroupsTo(key_columns, aggregate_columns);
-
-    const auto & got_keys = assert_cast<const ColumnUInt64 &>(*key_columns[0]).getData();
-    const auto & got_sums = assert_cast<const ColumnInt64 &>(*aggregate_columns[0]).getData();
+    const auto & got_keys = assert_cast<const ColumnUInt64 &>(*groups.keys[0]).getData();
+    const auto & got_sums = assert_cast<const ColumnInt64 &>(*groups.aggregates[0]).getData();
     ASSERT_EQ(got_keys.size(), expected.size());
     for (size_t row = 0; row < got_keys.size(); ++row)
     {

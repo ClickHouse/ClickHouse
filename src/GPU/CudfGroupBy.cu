@@ -8,6 +8,7 @@
 #include <cudf/copying.hpp>
 #include <cudf/groupby.hpp>
 #include <cudf/null_mask.hpp>
+#include <cudf/partitioning.hpp>
 #include <cudf/stream_compaction.hpp>
 #include <cudf/table/table.hpp>
 #include <cudf/table/table_view.hpp>
@@ -71,6 +72,29 @@ __host__ std::unique_ptr<cudf::groupby_aggregation> groupByAggregationFor(GPUAgg
     throwGPUError(("unknown aggregation " + std::to_string(static_cast<int>(aggregation))).c_str());
 }
 
+/// Makes `waiting` wait for what `stream` has so far.
+__host__ void waitFor(cuda::stream_ref waiting, cuda::stream_ref stream)
+{
+    cudaEvent_t event = nullptr;
+    checkCuda(cudaEventCreateWithFlags(&event, cudaEventDisableTiming), "Cannot create a CUDA event");
+    const cudaError_t recorded = cudaEventRecord(event, stream.get());
+    const cudaError_t waited = recorded == cudaSuccess ? cudaStreamWaitEvent(waiting.get(), event, 0) : recorded;
+    cudaEventDestroy(event);
+    checkCuda(waited, "Cannot make a stream wait for another");
+}
+
+/// Partial results of groups, each a table of the keys and then the aggregates, to be combined into the groups by a
+/// groupby of cuDF: how many rows and bytes they take, and the bytes they took after they were combined last.
+struct Runs
+{
+    std::vector<std::unique_ptr<cudf::table>> tables;
+    size_t rows = 0;
+    size_t bytes = 0;
+    size_t combined_bytes = 0;
+
+    bool empty() const { return tables.empty(); }
+};
+
 /// The `CudfGroupBy` of `createCudfGroupBy`.
 class StreamingGroupBy final : public CudfGroupBy
 {
@@ -87,6 +111,7 @@ public:
         , keyless(keys_.empty())
         , keyless_key(0, stream_)
         , all_true(0, stream_)
+        , starting_row_null(0, stream_)
     {
         if (stream.get() == cudaStreamLegacy || stream.get() == nullptr)
             throwGPUError("a `GROUP BY` through cuDF on the device's default stream, where cuco cannot copy its counts back");
@@ -210,6 +235,27 @@ public:
             }
         }
 
+        /// Split into parts: each batch is reduced into partial results by a groupby of cuDF, over its runs where the first
+        /// batch had few runs per row, and those are split by the keys into the parts. Nothing grows across batches.
+        if (splits_batches)
+        {
+            if (!reduce_runs.has_value())
+            {
+                std::unique_ptr<cudf::table> runs;
+                if (!columns[0].has_nulls())
+                    runs = reduceRuns(columns);
+                reduce_runs = runs && static_cast<double>(runs->num_rows()) <= max_runs_per_row_to_reduce * static_cast<double>(rows);
+                if (*reduce_runs)
+                {
+                    gatherIntoParts(runs->view());
+                    return;
+                }
+            }
+            const auto partial = reduceRuns(columns, *reduce_runs ? cudf::sorted::YES : cudf::sorted::NO);
+            gatherIntoParts(partial->view());
+            return;
+        }
+
         if (!reduce_runs.has_value() && runs_combine && !columns[0].has_nulls())
         {
             std::unique_ptr<cudf::table> runs = reduceRuns(columns);
@@ -253,9 +299,9 @@ public:
             });
             groups = withoutKeylessKey(tableOf(std::move(group_keys), std::move(results)));
         }
-        else if (!reduced_runs.empty())
+        else if (!reduced.empty())
         {
-            auto [group_keys, results] = combineRuns();
+            auto [group_keys, results] = combineRuns(reduced);
             groups = withoutKeylessKey(tableOf(std::move(group_keys), std::move(results)));
         }
         grouping.reset();
@@ -350,6 +396,195 @@ public:
         throwGPUError(("unknown column kind of element type " + std::to_string(static_cast<int>(result_type))).c_str());
     }
 
+    __host__ bool decided() const override { return reduce_runs.has_value(); }
+
+    __host__ bool reducesRuns() const override { return reduce_runs.value_or(false); }
+
+    __host__ void reduceRuns(bool reduce) override
+    {
+        if (reduce_runs.has_value() && *reduce_runs != reduce)
+            throwGPUError("a `GROUP BY` told how to reduce its batches after it decided otherwise");
+        reduce_runs = reduce;
+    }
+
+    __host__ bool combinesPartials() const override { return runs_combine; }
+
+    __host__ void splitIntoParts(size_t num_parts) override
+    {
+        if (keyless || !runs_combine)
+            throwGPUError("a `GROUP BY` split into parts without keys or with aggregates whose partial results do not combine");
+        if (num_parts == 0 || num_parts > static_cast<size_t>(std::numeric_limits<int>::max()))
+            throwGPUError(("a `GROUP BY` split into " + std::to_string(num_parts) + " parts").c_str());
+        if (finalized || grouping || !reduced.empty() || splits_batches)
+            throwGPUError("a `GROUP BY` told to split into parts after it grouped a batch");
+
+        parts.resize(num_parts);
+        splits_batches = true;
+    }
+
+    __host__ size_t partition(size_t num_parts) override
+    {
+        if (finalized)
+            throwGPUError("the groups of a `GROUP BY` split into parts after they were closed");
+        if (keyless || !runs_combine)
+            throwGPUError("a `GROUP BY` split into parts without keys or with aggregates whose partial results do not combine");
+        if (splits_batches && parts.size() != num_parts)
+            throwGPUError(("a `GROUP BY` split into " + std::to_string(parts.size()) + " parts closed as " + std::to_string(num_parts)).c_str());
+
+        finalized = true;
+        if (splits_batches)
+        {
+            size_t rows = 0;
+            for (const auto & part : parts)
+                rows += part.rows;
+            return rows;
+        }
+
+        /// The partial results: of a `count` a count, which the parts sum, and of the others what the parts take by the
+        /// same aggregate - as the runs reduced from batches are.
+        std::unique_ptr<cudf::table> partial;
+        if (grouping)
+        {
+            auto [group_keys, results] = guarded("closing the groups as partial results", [&]
+            {
+                return std::move(*grouping).finalize_and_release(stream);
+            });
+            partial = tableOf(std::move(group_keys), std::move(results));
+        }
+        else if (!reduced.empty())
+        {
+            auto [group_keys, results] = combineRuns(reduced);
+            partial = tableOf(std::move(group_keys), std::move(results));
+        }
+        grouping.reset();
+
+        parts.resize(num_parts);
+        if (!partial)
+            return 0;
+        gatherIntoParts(partial->view());
+        return static_cast<size_t>(partial->num_rows());
+    }
+
+    __host__ void absorbPart(const CudfGroupBy & other_group_by, size_t part) override
+    {
+        const StreamingGroupBy & other = of(other_group_by);
+        if (finalized || grouping || splits_batches)
+            throwGPUError("a part of the groups of a `GROUP BY` absorbed into one that groups batches itself");
+        checkMergesWith(other);
+        if (!other.finalized)
+            throwGPUError("a part of the groups of a `GROUP BY` absorbed before they were split");
+        if (part >= other.parts.size())
+            throwGPUError(("part " + std::to_string(part) + " of the groups of a `GROUP BY` split into " + std::to_string(other.parts.size()) + " parts").c_str());
+
+        /// The parts are partial results, which are combined as the runs of the batches are.
+        if (reduce_runs.has_value() && !*reduce_runs)
+            throwGPUError("a part of the groups of a `GROUP BY` absorbed into one that groups through `streaming_groupby`");
+        reduce_runs = true;
+
+        const Runs & runs = other.parts[part];
+        if (runs.empty())
+            return;
+
+        /// Copies in the order of this stream, as the originals are freed in the order of `other`'s, once this one has
+        /// made them.
+        waitFor(stream, other.stream);
+        std::vector<std::unique_ptr<cudf::table>> copies;
+        copies.reserve(runs.tables.size());
+        for (const auto & table : runs.tables)
+            copies.push_back(guarded("copying a part of the groups of a `GROUP BY`", [&]
+            {
+                return std::make_unique<cudf::table>(table->view(), stream);
+            }));
+        waitFor(other.stream, stream);
+        for (auto & copy : copies)
+            gatherRuns(std::move(copy));
+    }
+
+    __host__ void absorb(CudfGroupBy & other_group_by) override
+    {
+        StreamingGroupBy & other = of(other_group_by);
+        if (finalized || other.finalized)
+            throwGPUError("the groups of a `GROUP BY` absorbed after they were closed");
+        checkMergesWith(other);
+        if (splits_batches || other.splits_batches)
+            throwGPUError("a `GROUP BY` split into parts absorbed whole");
+        if (other.reduce_runs.has_value() && reduce_runs.has_value() && *other.reduce_runs != *reduce_runs)
+            throwGPUError("a `GROUP BY` absorbed into one that reduces its batches otherwise");
+
+        /// What `other` made is in the order of its stream, which these read in the order of theirs.
+        waitFor(stream, other.stream);
+
+        if (!reduce_runs.has_value())
+            reduce_runs = other.reduce_runs;
+
+        /// The tables of `other` are freed in the order of its stream, which does not wait for this one's: copies of
+        /// them, made in the order of this one's, are kept instead, and the originals freed once it has made them.
+        if (!other.reduced.empty())
+        {
+            std::vector<std::unique_ptr<cudf::table>> copies;
+            copies.reserve(other.reduced.tables.size());
+            for (const auto & table : other.reduced.tables)
+                copies.push_back(guarded("copying the groups of a `GROUP BY`", [&]
+                {
+                    return std::make_unique<cudf::table>(table->view(), stream);
+                }));
+            waitFor(other.stream, stream);
+            other.reduced = {};
+            for (auto & copy : copies)
+                gatherRuns(std::move(copy));
+        }
+
+        if (!other.grouping)
+            return;
+
+        const size_t theirs = static_cast<size_t>(other.grouping->distinct_keys());
+        const size_t ours = grouping ? static_cast<size_t>(grouping->distinct_keys()) : 0;
+        if (capacity < ours + theirs)
+        {
+            /// Grown as `group` grows it, for the groups of both. `other` has a starting row, as it has groups; this one
+            /// may have none, where it has grouped no batch itself.
+            const size_t new_capacity = std::max({capacity + capacity / 2, (ours + theirs) + (ours + theirs) / 4, min_capacity});
+            cudf::groupby::streaming_groupby grown = grownTo(new_capacity, starting_row ? *this : other);
+            guarded("merging the groups of two `GROUP BY`s", [&] { grown.merge(*other.grouping, stream); return 0; });
+            grouping.emplace(std::move(grown));
+            capacity = new_capacity;
+        }
+        else
+        {
+            guarded("merging the groups of two `GROUP BY`s", [&] { grouping->merge(*other.grouping, stream); return 0; });
+        }
+        max_groups = ours + theirs;
+
+        /// Freed in the order of `other`'s stream, once this one has merged it.
+        waitFor(other.stream, stream);
+        other.grouping.reset();
+        other.capacity = 0;
+        other.max_groups = 0;
+    }
+
+    __host__ size_t numGroups() const override
+    {
+        if (finalized)
+            throwGPUError("the groups of a `GROUP BY` counted after they were closed");
+        return grouping ? static_cast<size_t>(grouping->distinct_keys()) : 0;
+    }
+
+    __host__ void reserveGroups(size_t groups_to_hold) override
+    {
+        if (finalized)
+            throwGPUError("room for the groups of a `GROUP BY` asked for after they were closed");
+        if (!grouping)
+            throwGPUError("room for the groups of a `GROUP BY` asked for before it grouped a batch");
+
+        /// Grown as `group` grows it: its hash table holds twice as many slots as groups, with a quarter to spare.
+        const size_t new_capacity = std::max(groups_to_hold + groups_to_hold / 4, min_capacity);
+        if (new_capacity <= capacity)
+            return;
+        cudf::groupby::streaming_groupby grown = grownTo(new_capacity, *this);
+        grouping.emplace(std::move(grown));
+        capacity = new_capacity;
+    }
+
 private:
     const std::vector<GPUElementType> keys;
     const std::vector<GPUElementType> values;
@@ -384,12 +619,14 @@ private:
     /// than a groupby made for all of them at once.
     std::optional<bool> reduce_runs;
 
-    /// The runs reduced from the batches, each the keys and then the aggregates, how many rows and bytes they take,
-    /// and the bytes they took after they were combined last.
-    std::vector<std::unique_ptr<cudf::table>> reduced_runs;
-    size_t reduced_rows = 0;
-    size_t reduced_bytes = 0;
-    size_t combined_bytes = 0;
+    /// The runs reduced from the batches.
+    Runs reduced;
+
+    /// Of one split into parts by a hash of the keys, see `splitIntoParts` and `partition`: the partial results of each
+    /// part, which others merge each on its own.
+    std::vector<Runs> parts;
+    /// Whether every batch is split into `parts` as it comes, rather than once the groups are closed.
+    bool splits_batches = false;
 
     /// Without keys but with aggregates, the rows are grouped by a key of their own, the same for every row, which comes
     /// first among the columns grouped and is gone from the groups once they are closed: every batch is then one run.
@@ -400,6 +637,12 @@ private:
     /// As many `true` bytes as the most rows compacted: the values of the `BOOL8` column whose nulls are what a mask
     /// leaves out.
     rmm::device_buffer all_true;
+
+    /// A row of the first slice grouped, whose first key `starting_row_null` makes null: `streaming_groupby` leaves it
+    /// out, as it does the rows a `WHERE` leaves out. A `streaming_groupby` takes others to merge only once it has taken
+    /// a batch, and this is the batch that one grown by `absorb` or `reserveGroups` takes, which has none of its own.
+    std::unique_ptr<cudf::table> starting_row;
+    rmm::device_buffer starting_row_null;
 
     /// Of the keys and of the values of varying width: their offsets widened for a view of the device's.
     mutable std::vector<std::unique_ptr<cudf::column>> variable_offsets;
@@ -525,6 +768,8 @@ private:
                 if (new_capacity + slice_rows > max_capacity)
                     throwGPUError(("a `GROUP BY` of more than " + std::to_string(max_capacity - slice_rows) + " groups").c_str());
 
+                if (!starting_row)
+                    keepStartingRow(slice);
                 cudf::groupby::streaming_groupby grown = make(new_capacity);
                 guarded("grouping " + std::to_string(slice_rows) + " rows into a grown `streaming_groupby`", [&]
                 {
@@ -580,17 +825,17 @@ private:
         return std::make_unique<cudf::table>(std::move(reduced));
     }
 
-    /// The groups of the runs gathered: the keys, and the results of the aggregates. The runs are gone afterwards.
-    __host__ std::pair<std::unique_ptr<cudf::table>, std::vector<cudf::groupby::aggregation_result>> combineRuns()
+    /// The groups of the partial results `runs`: the keys, and the results of the aggregates. The runs are gone afterwards.
+    __host__ std::pair<std::unique_ptr<cudf::table>, std::vector<cudf::groupby::aggregation_result>> combineRuns(Runs & runs)
     {
         std::vector<cudf::table_view> views;
-        views.reserve(reduced_runs.size());
-        for (const auto & runs : reduced_runs)
-            views.push_back(runs->view());
+        views.reserve(runs.tables.size());
+        for (const auto & table : runs.tables)
+            views.push_back(table->view());
 
         std::unique_ptr<cudf::table> concatenated;
         if (views.size() > 1)
-            concatenated = guarded("concatenating " + std::to_string(reduced_rows) + " runs of equal keys", [&]
+            concatenated = guarded("concatenating " + std::to_string(runs.rows) + " partial results of groups", [&]
             {
                 return cudf::concatenate(views, stream);
             });
@@ -610,37 +855,120 @@ private:
             requests[i].aggregations.push_back(groupByAggregationFor(kind == GPUAggregationKind::Count ? GPUAggregationKind::Sum : kind));
         }
 
-        auto combined = guarded("combining " + std::to_string(reduced_rows) + " runs of equal keys into their groups", [&]
+        auto combined = guarded("combining " + std::to_string(runs.rows) + " partial results into their groups", [&]
         {
             return by_keys.aggregate(requests, stream);
         });
 
         /// Freed in the order of the stream, after the groupby has read them.
-        reduced_runs.clear();
-        reduced_rows = 0;
-        reduced_bytes = 0;
+        runs.tables.clear();
+        runs.rows = 0;
+        runs.bytes = 0;
         return combined;
     }
 
-    __host__ void gatherRuns(std::unique_ptr<cudf::table> runs)
+    /// Adds `table` to `runs`, and combines them once they take more than `min_bytes` and twice what they took after they
+    /// were combined last, so that what they hold stays within about twice the groups.
+    __host__ void gatherRuns(Runs & runs, std::unique_ptr<cudf::table> table, size_t min_bytes = min_bytes_to_combine_runs)
     {
-        reduced_rows += static_cast<size_t>(runs->num_rows());
-        reduced_bytes += runs->alloc_size();
-        reduced_runs.push_back(std::move(runs));
+        runs.rows += static_cast<size_t>(table->num_rows());
+        runs.bytes += table->alloc_size();
+        runs.tables.push_back(std::move(table));
 
-        if (reduced_runs.size() < 2
-            || (reduced_bytes <= std::max(min_bytes_to_combine_runs, 2 * combined_bytes) && reduced_rows < max_rows_to_combine_runs))
+        if (runs.tables.size() < 2 || (runs.bytes <= std::max(min_bytes, 2 * runs.combined_bytes) && runs.rows < max_rows_to_combine_runs))
             return;
 
-        auto [group_keys, results] = combineRuns();
+        auto [group_keys, results] = combineRuns(runs);
         std::vector<std::unique_ptr<cudf::column>> columns = group_keys->release();
         for (auto & result : results)
             columns.push_back(std::move(result.results.front()));
-        auto groups = std::make_unique<cudf::table>(std::move(columns));
-        combined_bytes = groups->alloc_size();
-        reduced_rows = static_cast<size_t>(groups->num_rows());
-        reduced_bytes = combined_bytes;
-        reduced_runs.push_back(std::move(groups));
+        auto combined = std::make_unique<cudf::table>(std::move(columns));
+        runs.combined_bytes = combined->alloc_size();
+        runs.rows = static_cast<size_t>(combined->num_rows());
+        runs.bytes = runs.combined_bytes;
+        runs.tables.push_back(std::move(combined));
+    }
+
+    __host__ void gatherRuns(std::unique_ptr<cudf::table> table) { gatherRuns(reduced, std::move(table)); }
+
+    /// Splits `partial` by a hash of the keys into `parts`, each part gathered on its own. Of the bytes after which a part
+    /// is combined, a share as of all of them, so that the parts hold about as much as one list of runs would.
+    __host__ void gatherIntoParts(const cudf::table_view & partial)
+    {
+        if (partial.num_rows() == 0)
+            return;
+
+        auto [pieces, offsets] = guarded(
+            "splitting " + std::to_string(partial.num_rows()) + " partial results into " + std::to_string(parts.size()) + " parts by their keys", [&]
+            {
+                return cudf::hash_partition(
+                    partial, key_indices, static_cast<int>(parts.size()), cudf::hash_id::HASH_MURMUR3, cudf::DEFAULT_HASH_SEED, stream);
+            });
+        offsets.push_back(pieces->num_rows());
+
+        for (size_t i = 0; i < parts.size(); ++i)
+        {
+            if (offsets[i] == offsets[i + 1])
+                continue;
+            auto piece = guarded("copying a part of partial results", [&]
+            {
+                return std::make_unique<cudf::table>(cudf::slice(pieces->view(), {offsets[i], offsets[i + 1]}).front(), stream);
+            });
+            gatherRuns(parts[i], std::move(piece), min_bytes_to_combine_runs / parts.size());
+        }
+    }
+
+    /// Keeps the first row of `table` as `starting_row`.
+    __host__ void keepStartingRow(const cudf::table_view & table)
+    {
+        starting_row = guarded("copying a row to start a `streaming_groupby` with", [&]
+        {
+            return std::make_unique<cudf::table>(cudf::slice(table, {0, 1}).front(), stream);
+        });
+        starting_row_null.resize(cudf::bitmask_allocation_size_bytes(1), stream);
+        checkCuda(cudaMemsetAsync(starting_row_null.data(), 0, starting_row_null.size(), stream.get()), "Cannot clear a null mask");
+    }
+
+    /// `starting_row`, with its first key null.
+    __host__ cudf::table_view startingRow() const
+    {
+        const cudf::table_view row = starting_row->view();
+        std::vector<cudf::column_view> columns(row.begin(), row.end());
+        columns[0] = withNullMask(columns[0], static_cast<const cudf::bitmask_type *>(starting_row_null.data()), 1);
+        return cudf::table_view(columns);
+    }
+
+    /// A `streaming_groupby` for `new_capacity` groups, started with the starting row of `starting`, with the groups
+    /// of `grouping`, when there are, merged into it.
+    __host__ cudf::groupby::streaming_groupby grownTo(size_t new_capacity, const StreamingGroupBy & starting)
+    {
+        if (new_capacity > max_capacity)
+            throwGPUError(("a `GROUP BY` of more than " + std::to_string(max_capacity) + " groups").c_str());
+        cudf::groupby::streaming_groupby grown = make(new_capacity);
+        guarded("merging the groups of a `GROUP BY` into a `streaming_groupby` grown to " + std::to_string(new_capacity) + " groups", [&]
+        {
+            grown.aggregate(starting.startingRow(), stream);
+            if (grouping)
+                grown.merge(*grouping, stream);
+            return 0;
+        });
+        return grown;
+    }
+
+    __host__ static StreamingGroupBy & of(CudfGroupBy & group_by)
+    {
+        auto * streaming = dynamic_cast<StreamingGroupBy *>(&group_by);
+        if (!streaming)
+            throwGPUError("a `GROUP BY` of another kind than `createCudfGroupBy` makes");
+        return *streaming;
+    }
+
+    __host__ static const StreamingGroupBy & of(const CudfGroupBy & group_by) { return of(const_cast<CudfGroupBy &>(group_by)); }
+
+    __host__ void checkMergesWith(const StreamingGroupBy & other) const
+    {
+        if (keyless != other.keyless || keys.size() != other.keys.size() || aggregates.size() != other.aggregates.size())
+            throwGPUError("the groups of a `GROUP BY` merged into one of other keys or aggregates");
     }
 };
 

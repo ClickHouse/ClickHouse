@@ -15,126 +15,141 @@
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
-#include <Common/ConcurrentBoundedQueue.h>
-#include <Common/ThreadPool.h>
 
-#include <atomic>
-#include <exception>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <vector>
 
+/// The device side of a GPU aggregation, in pieces that the processors of `GPUAggregatingStep` run each on a thread of
+/// the pipeline:
+///
+///     GPUBatchUploader    columns of the host -> pinned memory -> the device, a CUDA stream per uploader
+///     GPUDeviceBatch      the columns of a batch on the device, handed from an uploader's stream to a lane's
+///     GPUGroupingLane     a CUDA stream and a `CudfGroupBy`: the groups of the batches it took; several lanes, merged
+///                         at the end by parts of the keys (`partition`, `absorbPart`) or into one (`absorb`)
+///     GPUAccumulator      without `GROUP BY`: reductions of the batches
+///
+/// No thread waits for another's stream: a stream waits for an event of another, see `GPUDeviceBatch::moveTo`.
+
 namespace DB::GPU
 {
 
-/// Sends batches of columns to the device and has a thread of its own process each there, so that the device takes a
-/// batch while the next one is staged and sent. The batches go round two slots, each with device columns and a stream
-/// of its own: a slot is staged into again once the batch before in it is processed, which the device of its stream
-/// waits for, and which the host waits for only to be queued.
-class GPUBatchPipeline
+/// The columns of a batch on the device, which it owns. They are there in the order of the stream of the uploader that
+/// sent them, and freed in that order, once whoever `moveTo` handed them to is done with them.
+class GPUDeviceBatch
 {
 public:
-    /// Called on the thread of the pipeline with the columns of a batch, once they are on the device in the order of
-    /// `stream`, which it processes them in.
-    using Process = std::function<void(const std::vector<DeviceColumnView> & columns)>;
+    GPUDeviceBatch(GPUDeviceBatch &&) noexcept = default;
+    GPUDeviceBatch & operator=(GPUDeviceBatch &&) noexcept = delete;
+    GPUDeviceBatch(const GPUDeviceBatch &) = delete;
+    GPUDeviceBatch & operator=(const GPUDeviceBatch &) = delete;
+    ~GPUDeviceBatch();
 
-    GPUBatchPipeline(const DataTypes & types, size_t batch_rows, Process process_, cuda::stream_ref stream_);
-    ~GPUBatchPipeline();
+    size_t rows() const { return num_rows; }
 
-    GPUBatchPipeline(const GPUBatchPipeline &) = delete;
-    GPUBatchPipeline & operator=(const GPUBatchPipeline &) = delete;
+    /// In the order of the columns the uploader takes.
+    const std::vector<DeviceColumnView> & columns() const { return views; }
 
-    void add(const Columns & columns);
-
-    size_t stagedRows() const;
-    size_t stagedVariableBytes() const;
-
-    /// Hands the batch staged over to the thread.
-    void send();
-
-    /// Sends the last batch and waits until every batch is processed.
-    void finish();
+    /// Makes `stream` wait for the batch to be on the device. What `stream` does with it is before the batch is freed.
+    void moveTo(cuda::stream_ref stream);
 
 private:
-    struct Slot
-    {
-        /// First, so that the pipes, which free their device memory in its order, go before it.
-        StreamPtr upload = createStream();
-        std::vector<ColumnUploadPipe> pipes;
-        EventPtr uploaded = createEvent();
-        EventPtr processed = createEvent();
-    };
+    friend class GPUBatchUploader;
 
-    void run();
-    void rethrowError();
-    /// Where a queue of the pipeline is closed: by an error of its thread, which it rethrows, or by the end of it.
-    [[noreturn]] void throwEnded();
-    void fail(std::exception_ptr error) noexcept;
+    GPUDeviceBatch() = default;
 
-    const Process process;
-    const cuda::stream_ref stream;
-
-    std::vector<Slot> slots;
-    std::optional<size_t> current;
-
-    ConcurrentBoundedQueue<size_t> work;
-    ConcurrentBoundedQueue<size_t> free_slots;
-
-    std::mutex error_mutex;
-    std::exception_ptr error;
-
-    ThreadFromGlobalPool thread;
+    /// Shared with the uploader, so that the memory is freed in its order even after it is gone.
+    std::shared_ptr<StreamPtr> upload_stream;
+    std::vector<DeviceColumnBuffer> buffers;
+    std::vector<DeviceColumnView> views;
+    size_t num_rows = 0;
+    EventPtr ready = createEvent();
+    EventPtr consumed;
+    cudaStream_t consumer = nullptr;
 };
 
-
-/// Aggregates without `GROUP BY` on the device: each batch of the argument of each aggregate is reduced there.
-class GPUAccumulator
+/// Stages the columns of the blocks of a stream of the pipeline in pinned memory, and sends them to the device as
+/// batches, on a CUDA stream of its own, without waiting for the device.
+class GPUBatchUploader
 {
 public:
-    GPUAccumulator(
-        const DataTypes & argument_types,
-        const DataTypes & result_types,
-        const std::vector<GPUAggregationKind> & aggregations,
-        size_t batch_bytes);
+    /// A batch of `batch_bytes` of the columns, about: of values of varying width, a byte counted per row.
+    GPUBatchUploader(const DataTypes & types, size_t batch_bytes);
 
-    /// A column of the argument of each aggregate.
+    GPUBatchUploader(const GPUBatchUploader &) = delete;
+    GPUBatchUploader & operator=(const GPUBatchUploader &) = delete;
+
+    /// Whether `columns` would take the batch staged over its rows or the pinned memory of its values of varying
+    /// width: the batch is to be sent first.
+    bool wouldOverflow(const Columns & columns) const;
+
     void add(const Columns & columns);
 
-    /// The result of each aggregate, the default of its type where there was no row.
-    std::vector<Field> finalize();
+    size_t stagedRows() const { return pipes.front().stagedRows(); }
+
+    /// The batch staged, sent to the device; nothing without rows.
+    std::optional<GPUDeviceBatch> send();
 
     static constexpr size_t max_stage_bytes = 256UL * 1024 * 1024;
 
 private:
-    const DataTypes result_types;
+    size_t stagedVariableBytes() const;
 
-    StreamPtr reduce_stream;
-    std::vector<std::unique_ptr<CudfReduction>> reductions;
+    /// First, as the pipes copy in its order.
+    const std::shared_ptr<StreamPtr> stream;
     const size_t batch_rows;
-    /// Last, so that its thread is joined before what it uses goes.
-    GPUBatchPipeline pipeline;
+    std::vector<ColumnUploadPipe> pipes;
 };
 
+/// How all the lanes of a `GROUP BY` reduce their batches, so that they merge: decided by the first batch any of them
+/// groups, see `CudfGroupBy::decided`.
+struct GPUGroupingDecision
+{
+    std::mutex mutex;
+    std::optional<bool> reduce_runs;
+};
 
-/// A `GROUP BY` on the device: the `CudfGroupBy` groups each batch of the keys and the values into the groups so far.
+/// A lane of a `GROUP BY` on the device: a CUDA stream and the groups of the batches it took, through a `CudfGroupBy`.
 /// Without keys, the aggregates are of every row, as one group, which there is none of where no row is grouped.
 ///
-/// With `where`, a predicate the device evaluates over the columns of `where.columns`, which come with each batch, only
-/// the rows it holds for are grouped.
-class GroupByGPUAccumulator
+/// With `where`, a predicate the device evaluates over the columns of `where.columns`, which come with each batch after
+/// the keys and the values, only the rows it holds for are grouped.
+class GPUGroupingLane
 {
 public:
-    GroupByGPUAccumulator(
+    GPUGroupingLane(
         const DataTypes & key_types,
         const DataTypes & value_types,
         std::vector<GPUGroupByAggregate> aggregates_,
-        size_t batch_bytes,
-        std::optional<CompiledGPUExpression> where_ = {});
+        std::optional<CompiledGPUExpression> where_,
+        std::shared_ptr<GPUGroupingDecision> decision_);
 
-    /// `where_columns`: of each of `where.columns`, in its order.
-    void add(const Columns & key_columns, const Columns & value_columns, const Columns & where_columns = {});
+    GPUGroupingLane(const GPUGroupingLane &) = delete;
+    GPUGroupingLane & operator=(const GPUGroupingLane &) = delete;
+
+    /// The columns of a batch: the keys, the values, then the columns of `where`.
+    void add(GPUDeviceBatch batch);
+
+    /// Whether the lanes can merge by parts of their keys: with keys, and of aggregates whose partial results combine,
+    /// not of an `avg`.
+    bool mergesByParts() const { return !group_keys.empty() && group_by->combinesPartials(); }
+
+    /// Before the first batch: reduces each batch into partial results split by the keys into `num_parts` parts, see
+    /// `CudfGroupBy::splitIntoParts`.
+    void splitIntoParts(size_t num_parts) { group_by->splitIntoParts(num_parts); }
+    /// Instead of `finalize`: closes the groups as parts by the keys. Returns about the number of groups.
+    size_t partition(size_t num_parts);
+    /// Of a lane that took no batch: takes part `part` of `other`, to merge at `finalize`.
+    void absorbPart(const GPUGroupingLane & other, size_t part);
+
+    /// How many groups the lane holds so far, of a lane that groups through `streaming_groupby`; nothing of one that
+    /// reduces the runs of sorted keys. Waits for the device.
+    std::optional<size_t> numGroups() const;
+    /// Makes room for `groups` in all at once, see `CudfGroupBy::reserveGroups`.
+    void reserveGroups(size_t groups);
+    /// Merges the groups of `other` into this lane's.
+    void absorb(GPUGroupingLane & other);
 
     /// Returns the number of groups.
     size_t finalize();
@@ -152,20 +167,37 @@ private:
     /// The columns aggregated, sent once each however many aggregates are of them.
     const std::vector<GPUElementType> values;
     const std::vector<GPUGroupByAggregate> aggregates;
-    const size_t batch_rows;
-
-    /// Holds the kernel of the predicate until the pipeline, which waits for the device, is gone.
+    /// Before the stream, which is synchronized when it goes, as the kernel of the predicate must stay until then.
     const std::optional<CompiledGPUExpression> where;
+    const std::shared_ptr<GPUGroupingDecision> decision;
 
-    StreamPtr group_stream;
+    StreamPtr stream;
     std::unique_ptr<CudfGroupBy> group_by;
     /// The bits of the rows of a batch, or of the groups, that a predicate keeps.
     DeviceBuffer kept;
+    /// Whether this lane reduces its batches as `decision` says.
+    bool decided = false;
 
     std::optional<size_t> num_groups;
+};
 
-    /// Last, so that its thread is joined before what it uses goes.
-    GPUBatchPipeline pipeline;
+/// Aggregates without `GROUP BY` on the device: each batch of the argument of each aggregate is reduced there.
+class GPUAccumulator
+{
+public:
+    GPUAccumulator(const DataTypes & argument_types, const DataTypes & result_types, const std::vector<GPUAggregationKind> & aggregations);
+
+    /// A column of the argument of each aggregate.
+    void add(GPUDeviceBatch batch);
+
+    /// The result of each aggregate, the default of its type where there was no row.
+    std::vector<Field> finalize();
+
+private:
+    const DataTypes result_types;
+
+    StreamPtr reduce_stream;
+    std::vector<std::unique_ptr<CudfReduction>> reductions;
 };
 
 }

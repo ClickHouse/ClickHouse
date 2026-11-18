@@ -12,6 +12,7 @@
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
+#include <utility>
 
 namespace DB::ErrorCodes
 {
@@ -346,6 +347,15 @@ const IDeviceColumn & ColumnUploadPipe::sendWithoutWaiting()
 const IDeviceColumn & ColumnUploadPipe::deviceColumn() const
 {
     return std::visit([](const auto & column) -> const IDeviceColumn & { return column; }, device);
+}
+
+DeviceColumnBuffer ColumnUploadPipe::takeDeviceColumn()
+{
+    DeviceColumnBuffer taken = std::exchange(device, deviceColumnFor(column_type, stream));
+    staged_rows = 0;
+    staged_bytes = 0;
+    staged_chars = 0;
+    return taken;
 }
 
 void ColumnUploadPipe::waitForUploads()
