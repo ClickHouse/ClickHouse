@@ -34,6 +34,8 @@ public:
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
+    bool supportsSubcolumns() const override { return true; }
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
