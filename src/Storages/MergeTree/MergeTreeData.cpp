@@ -15973,7 +15973,7 @@ void MergeTreeData::clearVectorSimilarityIndexCache() const
     if (!vector_similarity_index_cache)
         return;
 
-    /// The cache is keyed by the paths of the parts. Take the parts in all states (except PreActive): the entries of an
+    /// The cache is keyed by the paths of the parts. We also take outdated parts: the entries of an
     /// outdated part stay in the cache until the part is destroyed or the cleanup thread clears the caches of the part.
     std::unordered_set<String> paths_to_data_parts;
     {
