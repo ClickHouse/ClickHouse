@@ -261,18 +261,8 @@ void buildDistinctFilter(
         }
     };
 
-    using State = typename Method::State;
-    if constexpr (!std::is_same_v<ColumnsHashing::SparseState<State>, State>)
-    {
-        if (mask && countBytesInFilter(*mask) < rows / State::max_rows_per_asked_row)
-        {
-            ColumnsHashing::SparseState<State> state(key_columns, key_sizes, /*context=*/ nullptr, {.skips_rows = true});
-            run(state);
-            return;
-        }
-    }
-    State state(key_columns, key_sizes, /*context=*/ nullptr, {.skips_rows = mask != nullptr});
-    run(state);
+    ColumnsHashing::withStateForAskedRows<typename Method::State>(
+        key_columns, key_sizes, rows, mask != nullptr, [&] { return countBytesInFilter(*mask); }, run);
 }
 
 /// Keep checked insertion out of line to leave the bulk-insertion loop's generated code compact.

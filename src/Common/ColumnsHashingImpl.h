@@ -109,6 +109,36 @@ struct SparseStateOf
 template <typename State>
 using SparseState = typename SparseStateOf<State>::Type;
 
+/// A caller that asks about fewer than one row in this many of its block uses a `SparseState`. Chosen from 2, 3, 4, 6
+/// and 8 by the worst ratio of times to master over `IN` probes and set builds with 40% to 99% NULL keys (2: 1.07,
+/// 3: 1.09, 4: 1.03, 6: 1.00, 8: 1.02).
+constexpr size_t max_rows_per_asked_row = 6;
+
+/// Calls `run(state)` with a state over `key_columns` for a caller that asks about the `rows` of its block, or, if
+/// it skips rows, about the `count_asked_rows()` of them: a `SparseState<State>` when that is fewer than one row in
+/// `max_rows_per_asked_row`, else a `State`.
+template <typename State, typename KeyColumns, typename KeySizes, typename CountAskedRows, typename Run>
+ALWAYS_INLINE void withStateForAskedRows(
+    const KeyColumns & key_columns,
+    const KeySizes & key_sizes,
+    size_t rows,
+    bool skips_rows,
+    CountAskedRows && count_asked_rows,
+    Run && run)
+{
+    if constexpr (!std::is_same_v<SparseState<State>, State>)
+    {
+        if (skips_rows && count_asked_rows() < rows / max_rows_per_asked_row)
+        {
+            SparseState<State> state(key_columns, key_sizes, nullptr, {.skips_rows = true});
+            run(state);
+            return;
+        }
+    }
+    State state(key_columns, key_sizes, nullptr, {.skips_rows = skips_rows});
+    run(state);
+}
+
 namespace columns_hashing_impl
 {
 

@@ -806,9 +806,6 @@ struct HashMethodKeysFixed
     struct NoChunks {};
     [[no_unique_address]] std::conditional_t<packs_in_chunks, Chunks, NoChunks> chunks;
 
-    /// A caller that asks about fewer than one row in this many builds a `SparseState`.
-    static constexpr size_t max_rows_per_asked_row = 6;
-
     static bool usePreparedKeys(const Sizes & key_sizes)
     {
         if (has_low_cardinality || has_nullable_keys || sizeof(Key) > 16)

@@ -389,18 +389,8 @@ void NO_INLINE Set::insertFromBlockImplCase(
         }
     };
 
-    using State = typename Method::State;
-    if constexpr (has_null_map && !std::is_same_v<ColumnsHashing::SparseState<State>, State>)
-    {
-        if (rows - countBytesInFilter(null_map->data(), 0, rows) < rows / State::max_rows_per_asked_row)
-        {
-            ColumnsHashing::SparseState<State> state(key_columns, key_sizes, nullptr, {.skips_rows = true});
-            run(state);
-            return;
-        }
-    }
-    State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
-    run(state);
+    ColumnsHashing::withStateForAskedRows<typename Method::State>(
+        key_columns, key_sizes, rows, has_null_map, [&] { return rows - countBytesInFilter(null_map->data(), 0, rows); }, run);
 }
 
 
@@ -886,18 +876,8 @@ void NO_INLINE Set::executeImplCase(
         }
     };
 
-    using State = typename Method::State;
-    if constexpr (has_null_map && !std::is_same_v<ColumnsHashing::SparseState<State>, State>)
-    {
-        if (rows - countBytesInFilter(null_map->data(), 0, rows) < rows / State::max_rows_per_asked_row)
-        {
-            ColumnsHashing::SparseState<State> state(key_columns, key_sizes, nullptr, {.skips_rows = true});
-            run(state);
-            return;
-        }
-    }
-    State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
-    run(state);
+    ColumnsHashing::withStateForAskedRows<typename Method::State>(
+        key_columns, key_sizes, rows, has_null_map, [&] { return rows - countBytesInFilter(null_map->data(), 0, rows); }, run);
 }
 
 
