@@ -12,12 +12,15 @@ SET optimize_aggregation_in_order = 0, force_aggregation_in_order = 0;
 SET aggregate_functions_null_for_empty = 0;
 SET materialize_statistics_on_insert = 1, mutations_sync = 2;
 SET allow_suspicious_low_cardinality_types = 1;
+-- The rewrite of `count(column)` to `sum(not(column.null))` is checked below.
+SET optimize_functions_to_subcolumns = 1;
 
 DROP TABLE IF EXISTS t_null;
 DROP TABLE IF EXISTS t_only_null;
 DROP TABLE IF EXISTS t_minmax;
 
--- `sparse` is mostly NULL, so it is stored with sparse serialization.
+-- `sparse` is mostly NULL. It is stored with sparse serialization only if the randomized MergeTree settings set
+-- `nullable_serialization_version = 'allow_sparse'`; 05627_nullable_aggregation_from_statistics_sparse always does.
 CREATE TABLE t_null
 (
     i16 Nullable(Int16), i64 Nullable(Int64), u8 Nullable(UInt8), u256 Nullable(UInt256),
