@@ -38,7 +38,8 @@ use vortex::array::buffer::BufferHandle;
 use vortex::array::VortexSessionExecute;
 use vortex::arrow::ArrowSessionExt;
 use vortex::buffer::{Alignment, Buffer, ByteBufferMut};
-use vortex::dtype::{FieldName, Nullability};
+use vortex::dtype::extension::{ExtDType, ExtVTable};
+use vortex::dtype::{DType, FieldName, Nullability};
 use vortex::error::{vortex_err, VortexResult};
 use vortex::expr::{get_item, is_null, lit, merge, not, pack, root, select, Expression};
 use vortex::extension::datetime::{Date, TimeUnit, Timestamp, TimestampOptions};
@@ -1247,17 +1248,40 @@ impl From<FFI_VortexTimeUnit> for TimeUnit {
 // Every builder below returns null for input it cannot use, borrows rather than consumes its
 // arguments, and returns a handle that has to be freed with `vortex_ffi_expr_free`.
 
+/// Runs the body of an expression builder. A panic, like any input the builder cannot use, gives
+/// null: Vortex validates a literal by panicking, for example for a timestamp out of range.
+fn expr_wrap<F>(f: F) -> *mut FFI_VortexExpression
+where
+    F: FnOnce() -> Option<Expression>,
+{
+    match catch_unwind(AssertUnwindSafe(f)) {
+        Ok(Some(expr)) => Box::into_raw(Box::new(FFI_VortexExpression(expr))),
+        Ok(None) | Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// Creates an extension scalar, or `None` if Vortex rejects the value: a timestamp whose zone the
+/// time zone database does not know, for example. `Scalar::extension` would panic instead.
+fn extension_scalar<V: ExtVTable + Default>(
+    metadata: V::Metadata,
+    storage: Scalar,
+) -> Option<Scalar> {
+    let dtype = ExtDType::<V>::try_new(metadata, storage.dtype().clone()).ok()?;
+    Scalar::try_new(DType::Extension(dtype.erased()), storage.into_value()).ok()
+}
+
 /// Creates an expression referencing the top-level column `name`.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_expr_column(name: *const c_char) -> *mut FFI_VortexExpression {
-    if name.is_null() {
-        return std::ptr::null_mut();
-    }
-    let Ok(name) = (unsafe { CStr::from_ptr(name) }).to_str() else {
-        return std::ptr::null_mut();
-    };
-    let expr = get_item(FieldName::from(name), root());
-    Box::into_raw(Box::new(FFI_VortexExpression(expr)))
+    expr_wrap(|| {
+        if name.is_null() {
+            return None;
+        }
+        let Ok(name) = (unsafe { CStr::from_ptr(name) }).to_str() else {
+            return None;
+        };
+        Some(get_item(FieldName::from(name), root()))
+    })
 }
 
 /// Creates a signed integer literal of the given type. Returns null if the value does not fit.
@@ -1266,24 +1290,26 @@ pub unsafe extern "C" fn vortex_ffi_expr_literal_int(
     ptype: FFI_VortexPrimitiveType,
     value: i64,
 ) -> *mut FFI_VortexExpression {
-    let nullability = Nullability::NonNullable;
-    let scalar = match ptype {
-        FFI_VortexPrimitiveType::I8 => match i8::try_from(value) {
-            Ok(v) => Scalar::primitive(v, nullability),
-            Err(_) => return std::ptr::null_mut(),
-        },
-        FFI_VortexPrimitiveType::I16 => match i16::try_from(value) {
-            Ok(v) => Scalar::primitive(v, nullability),
-            Err(_) => return std::ptr::null_mut(),
-        },
-        FFI_VortexPrimitiveType::I32 => match i32::try_from(value) {
-            Ok(v) => Scalar::primitive(v, nullability),
-            Err(_) => return std::ptr::null_mut(),
-        },
-        FFI_VortexPrimitiveType::I64 => Scalar::primitive(value, nullability),
-        _ => return std::ptr::null_mut(),
-    };
-    Box::into_raw(Box::new(FFI_VortexExpression(lit(scalar))))
+    expr_wrap(|| {
+        let nullability = Nullability::NonNullable;
+        let scalar = match ptype {
+            FFI_VortexPrimitiveType::I8 => match i8::try_from(value) {
+                Ok(v) => Scalar::primitive(v, nullability),
+                Err(_) => return None,
+            },
+            FFI_VortexPrimitiveType::I16 => match i16::try_from(value) {
+                Ok(v) => Scalar::primitive(v, nullability),
+                Err(_) => return None,
+            },
+            FFI_VortexPrimitiveType::I32 => match i32::try_from(value) {
+                Ok(v) => Scalar::primitive(v, nullability),
+                Err(_) => return None,
+            },
+            FFI_VortexPrimitiveType::I64 => Scalar::primitive(value, nullability),
+            _ => return None,
+        };
+        Some(lit(scalar))
+    })
 }
 
 /// Creates an unsigned integer literal of the given type. Returns null if the value does not fit.
@@ -1292,24 +1318,26 @@ pub unsafe extern "C" fn vortex_ffi_expr_literal_uint(
     ptype: FFI_VortexPrimitiveType,
     value: u64,
 ) -> *mut FFI_VortexExpression {
-    let nullability = Nullability::NonNullable;
-    let scalar = match ptype {
-        FFI_VortexPrimitiveType::U8 => match u8::try_from(value) {
-            Ok(v) => Scalar::primitive(v, nullability),
-            Err(_) => return std::ptr::null_mut(),
-        },
-        FFI_VortexPrimitiveType::U16 => match u16::try_from(value) {
-            Ok(v) => Scalar::primitive(v, nullability),
-            Err(_) => return std::ptr::null_mut(),
-        },
-        FFI_VortexPrimitiveType::U32 => match u32::try_from(value) {
-            Ok(v) => Scalar::primitive(v, nullability),
-            Err(_) => return std::ptr::null_mut(),
-        },
-        FFI_VortexPrimitiveType::U64 => Scalar::primitive(value, nullability),
-        _ => return std::ptr::null_mut(),
-    };
-    Box::into_raw(Box::new(FFI_VortexExpression(lit(scalar))))
+    expr_wrap(|| {
+        let nullability = Nullability::NonNullable;
+        let scalar = match ptype {
+            FFI_VortexPrimitiveType::U8 => match u8::try_from(value) {
+                Ok(v) => Scalar::primitive(v, nullability),
+                Err(_) => return None,
+            },
+            FFI_VortexPrimitiveType::U16 => match u16::try_from(value) {
+                Ok(v) => Scalar::primitive(v, nullability),
+                Err(_) => return None,
+            },
+            FFI_VortexPrimitiveType::U32 => match u32::try_from(value) {
+                Ok(v) => Scalar::primitive(v, nullability),
+                Err(_) => return None,
+            },
+            FFI_VortexPrimitiveType::U64 => Scalar::primitive(value, nullability),
+            _ => return None,
+        };
+        Some(lit(scalar))
+    })
 }
 
 /// Creates a floating-point literal of the given type. An `F32` value has to be exactly
@@ -1319,26 +1347,30 @@ pub unsafe extern "C" fn vortex_ffi_expr_literal_float(
     ptype: FFI_VortexPrimitiveType,
     value: f64,
 ) -> *mut FFI_VortexExpression {
-    let nullability = Nullability::NonNullable;
-    let scalar = match ptype {
-        FFI_VortexPrimitiveType::F32 => {
-            let narrowed = value as f32;
-            if f64::from(narrowed) != value {
-                return std::ptr::null_mut();
+    expr_wrap(|| {
+        let nullability = Nullability::NonNullable;
+        let scalar = match ptype {
+            FFI_VortexPrimitiveType::F32 => {
+                let narrowed = value as f32;
+                if f64::from(narrowed) != value {
+                    return None;
+                }
+                Scalar::primitive(narrowed, nullability)
             }
-            Scalar::primitive(narrowed, nullability)
-        }
-        FFI_VortexPrimitiveType::F64 => Scalar::primitive(value, nullability),
-        _ => return std::ptr::null_mut(),
-    };
-    Box::into_raw(Box::new(FFI_VortexExpression(lit(scalar))))
+            FFI_VortexPrimitiveType::F64 => Scalar::primitive(value, nullability),
+            _ => return None,
+        };
+        Some(lit(scalar))
+    })
 }
 
 /// Creates a boolean literal.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_expr_literal_bool(value: bool) -> *mut FFI_VortexExpression {
-    let scalar = Scalar::bool(value, Nullability::NonNullable);
-    Box::into_raw(Box::new(FFI_VortexExpression(lit(scalar))))
+    expr_wrap(|| {
+        let scalar = Scalar::bool(value, Nullability::NonNullable);
+        Some(lit(scalar))
+    })
 }
 
 /// Creates a string literal. `is_utf8` selects a `Utf8` literal, whose bytes have to be valid
@@ -1349,24 +1381,26 @@ pub unsafe extern "C" fn vortex_ffi_expr_literal_string(
     length: u64,
     is_utf8: bool,
 ) -> *mut FFI_VortexExpression {
-    // `from_raw_parts` requires a non-null, aligned pointer even for an empty slice.
-    let bytes: &[u8] = if data.is_null() {
-        if length != 0 {
-            return std::ptr::null_mut();
-        }
-        &[]
-    } else {
-        unsafe { std::slice::from_raw_parts(data, length as usize) }
-    };
-    let scalar = if is_utf8 {
-        let Ok(string) = std::str::from_utf8(bytes) else {
-            return std::ptr::null_mut();
+    expr_wrap(|| {
+        // `from_raw_parts` requires a non-null, aligned pointer even for an empty slice.
+        let bytes: &[u8] = if data.is_null() {
+            if length != 0 {
+                return None;
+            }
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(data, length as usize) }
         };
-        Scalar::utf8(string.to_string(), Nullability::NonNullable)
-    } else {
-        Scalar::binary(bytes.to_vec(), Nullability::NonNullable)
-    };
-    Box::into_raw(Box::new(FFI_VortexExpression(lit(scalar))))
+        let scalar = if is_utf8 {
+            let Ok(string) = std::str::from_utf8(bytes) else {
+                return None;
+            };
+            Scalar::utf8(string.to_string(), Nullability::NonNullable)
+        } else {
+            Scalar::binary(bytes.to_vec(), Nullability::NonNullable)
+        };
+        Some(lit(scalar))
+    })
 }
 
 /// Creates a `vortex.date` literal: days or milliseconds since the Unix epoch. The only units a
@@ -1377,16 +1411,18 @@ pub unsafe extern "C" fn vortex_ffi_expr_literal_date(
     unit: FFI_VortexTimeUnit,
     value: i64,
 ) -> *mut FFI_VortexExpression {
-    let storage = match unit {
-        FFI_VortexTimeUnit::Days => match i32::try_from(value) {
-            Ok(days) => Scalar::primitive(days, Nullability::NonNullable),
-            Err(_) => return std::ptr::null_mut(),
-        },
-        FFI_VortexTimeUnit::Milliseconds => Scalar::primitive(value, Nullability::NonNullable),
-        _ => return std::ptr::null_mut(),
-    };
-    let scalar = Scalar::extension::<Date>(TimeUnit::from(unit), storage);
-    Box::into_raw(Box::new(FFI_VortexExpression(lit(scalar))))
+    expr_wrap(|| {
+        let storage = match unit {
+            FFI_VortexTimeUnit::Days => match i32::try_from(value) {
+                Ok(days) => Scalar::primitive(days, Nullability::NonNullable),
+                Err(_) => return None,
+            },
+            FFI_VortexTimeUnit::Milliseconds => Scalar::primitive(value, Nullability::NonNullable),
+            _ => return None,
+        };
+        let scalar = extension_scalar::<Date>(TimeUnit::from(unit), storage)?;
+        Some(lit(scalar))
+    })
 }
 
 /// Creates a `vortex.timestamp` literal: ticks of `unit` since the Unix epoch, with `timezone`
@@ -1399,24 +1435,26 @@ pub unsafe extern "C" fn vortex_ffi_expr_literal_timestamp(
     timezone: *const c_char,
     value: i64,
 ) -> *mut FFI_VortexExpression {
-    if unit == FFI_VortexTimeUnit::Days {
-        return std::ptr::null_mut();
-    }
-    let tz = if timezone.is_null() {
-        None
-    } else {
-        match (unsafe { CStr::from_ptr(timezone) }).to_str() {
-            Ok(name) => Some(std::sync::Arc::<str>::from(name)),
-            Err(_) => return std::ptr::null_mut(),
+    expr_wrap(|| {
+        if unit == FFI_VortexTimeUnit::Days {
+            return None;
         }
-    };
-    let options = TimestampOptions {
-        unit: TimeUnit::from(unit),
-        tz,
-    };
-    let storage = Scalar::primitive(value, Nullability::NonNullable);
-    let scalar = Scalar::extension::<Timestamp>(options, storage);
-    Box::into_raw(Box::new(FFI_VortexExpression(lit(scalar))))
+        let tz = if timezone.is_null() {
+            None
+        } else {
+            match (unsafe { CStr::from_ptr(timezone) }).to_str() {
+                Ok(name) => Some(std::sync::Arc::<str>::from(name)),
+                Err(_) => return None,
+            }
+        };
+        let options = TimestampOptions {
+            unit: TimeUnit::from(unit),
+            tz,
+        };
+        let storage = Scalar::primitive(value, Nullability::NonNullable);
+        let scalar = extension_scalar::<Timestamp>(options, storage)?;
+        Some(lit(scalar))
+    })
 }
 
 /// Creates a comparison `lhs op rhs`. A comparison with a null value yields null, which the scan
@@ -1427,19 +1465,20 @@ pub unsafe extern "C" fn vortex_ffi_expr_compare(
     lhs: *const FFI_VortexExpression,
     rhs: *const FFI_VortexExpression,
 ) -> *mut FFI_VortexExpression {
-    if lhs.is_null() || rhs.is_null() {
-        return std::ptr::null_mut();
-    }
-    let operator = match comparison {
-        FFI_VortexComparisonOperator::Eq => Operator::Eq,
-        FFI_VortexComparisonOperator::NotEq => Operator::NotEq,
-        FFI_VortexComparisonOperator::Lt => Operator::Lt,
-        FFI_VortexComparisonOperator::Lte => Operator::Lte,
-        FFI_VortexComparisonOperator::Gt => Operator::Gt,
-        FFI_VortexComparisonOperator::Gte => Operator::Gte,
-    };
-    let expr = unsafe { Binary.new_expr(operator, [(*lhs).0.clone(), (*rhs).0.clone()]) };
-    Box::into_raw(Box::new(FFI_VortexExpression(expr)))
+    expr_wrap(|| {
+        if lhs.is_null() || rhs.is_null() {
+            return None;
+        }
+        let operator = match comparison {
+            FFI_VortexComparisonOperator::Eq => Operator::Eq,
+            FFI_VortexComparisonOperator::NotEq => Operator::NotEq,
+            FFI_VortexComparisonOperator::Lt => Operator::Lt,
+            FFI_VortexComparisonOperator::Lte => Operator::Lte,
+            FFI_VortexComparisonOperator::Gt => Operator::Gt,
+            FFI_VortexComparisonOperator::Gte => Operator::Gte,
+        };
+        Some(unsafe { Binary.new_expr(operator, [(*lhs).0.clone(), (*rhs).0.clone()]) })
+    })
 }
 
 /// Creates a Kleene, three-valued AND of two boolean expressions.
@@ -1448,11 +1487,12 @@ pub unsafe extern "C" fn vortex_ffi_expr_and(
     lhs: *const FFI_VortexExpression,
     rhs: *const FFI_VortexExpression,
 ) -> *mut FFI_VortexExpression {
-    if lhs.is_null() || rhs.is_null() {
-        return std::ptr::null_mut();
-    }
-    let expr = unsafe { Binary.new_expr(Operator::And, [(*lhs).0.clone(), (*rhs).0.clone()]) };
-    Box::into_raw(Box::new(FFI_VortexExpression(expr)))
+    expr_wrap(|| {
+        if lhs.is_null() || rhs.is_null() {
+            return None;
+        }
+        Some(unsafe { Binary.new_expr(Operator::And, [(*lhs).0.clone(), (*rhs).0.clone()]) })
+    })
 }
 
 /// Creates a Kleene, three-valued OR of two boolean expressions.
@@ -1461,11 +1501,12 @@ pub unsafe extern "C" fn vortex_ffi_expr_or(
     lhs: *const FFI_VortexExpression,
     rhs: *const FFI_VortexExpression,
 ) -> *mut FFI_VortexExpression {
-    if lhs.is_null() || rhs.is_null() {
-        return std::ptr::null_mut();
-    }
-    let expr = unsafe { Binary.new_expr(Operator::Or, [(*lhs).0.clone(), (*rhs).0.clone()]) };
-    Box::into_raw(Box::new(FFI_VortexExpression(expr)))
+    expr_wrap(|| {
+        if lhs.is_null() || rhs.is_null() {
+            return None;
+        }
+        Some(unsafe { Binary.new_expr(Operator::Or, [(*lhs).0.clone(), (*rhs).0.clone()]) })
+    })
 }
 
 /// Creates a logical NOT of a boolean expression. NOT of a null is null.
@@ -1473,11 +1514,12 @@ pub unsafe extern "C" fn vortex_ffi_expr_or(
 pub unsafe extern "C" fn vortex_ffi_expr_not(
     child: *const FFI_VortexExpression,
 ) -> *mut FFI_VortexExpression {
-    if child.is_null() {
-        return std::ptr::null_mut();
-    }
-    let expr = unsafe { not((*child).0.clone()) };
-    Box::into_raw(Box::new(FFI_VortexExpression(expr)))
+    expr_wrap(|| {
+        if child.is_null() {
+            return None;
+        }
+        Some(unsafe { not((*child).0.clone()) })
+    })
 }
 
 /// Creates an expression that is true for the rows where the child expression is null.
@@ -1485,11 +1527,12 @@ pub unsafe extern "C" fn vortex_ffi_expr_not(
 pub unsafe extern "C" fn vortex_ffi_expr_is_null(
     child: *const FFI_VortexExpression,
 ) -> *mut FFI_VortexExpression {
-    if child.is_null() {
-        return std::ptr::null_mut();
-    }
-    let expr = unsafe { is_null((*child).0.clone()) };
-    Box::into_raw(Box::new(FFI_VortexExpression(expr)))
+    expr_wrap(|| {
+        if child.is_null() {
+            return None;
+        }
+        Some(unsafe { is_null((*child).0.clone()) })
+    })
 }
 
 /// Renders the expression the way the library prints it, for logs and error messages. The string
@@ -1499,10 +1542,13 @@ pub unsafe extern "C" fn vortex_ffi_expr_display(expr: *const FFI_VortexExpressi
     if expr.is_null() {
         return std::ptr::null_mut();
     }
-    let rendered = format!("{}", unsafe { &(*expr).0 });
-    let rendered = CString::new(rendered.replace('\0', " "))
-        .unwrap_or_else(|_| CString::new("invalid expression string").expect("valid literal"));
-    rendered.into_raw()
+    catch_unwind(AssertUnwindSafe(|| {
+        let rendered = format!("{}", unsafe { &(*expr).0 });
+        let rendered = CString::new(rendered.replace('\0', " "))
+            .unwrap_or_else(|_| CString::new("invalid expression string").expect("valid literal"));
+        rendered.into_raw()
+    }))
+    .unwrap_or(std::ptr::null_mut())
 }
 
 /// Frees an expression handle.
