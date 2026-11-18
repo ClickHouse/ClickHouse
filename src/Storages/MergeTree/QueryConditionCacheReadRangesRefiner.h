@@ -1,9 +1,8 @@
 #pragma once
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Storages/MergeTree/MergeTreeReadRangesRefiner.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-
-#include <unordered_map>
 
 namespace DB
 {
@@ -22,7 +21,7 @@ struct QueryConditionCacheReadRanges
         MarkRanges ranges;
     };
 
-    std::unordered_map<const IMergeTreeDataPart *, Entry> parts;
+    UnorderedMapWithMemoryTracking<const IMergeTreeDataPart *, Entry> parts;
 
     /// The replica skipped its own index analysis, so the remaining marks of `MergeTreeIndexBuildContext` count whole
     /// parts, including the marks dropped here. Otherwise they count only this replica's analyzed ranges, and the

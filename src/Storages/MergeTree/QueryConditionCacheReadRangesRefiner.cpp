@@ -13,7 +13,7 @@ namespace DB
 QueryConditionCacheReadRangesPtr QueryConditionCacheReadRanges::create(
     const RangesInDataParts & before, const RangesInDataParts & after, bool dropped_marks_are_counted)
 {
-    std::unordered_map<const IMergeTreeDataPart *, const RangesInDataPart *> after_by_part;
+    UnorderedMapWithMemoryTracking<const IMergeTreeDataPart *, const RangesInDataPart *> after_by_part;
     for (const auto & part : after)
         after_by_part.emplace(part.data_part.get(), &part);
 
