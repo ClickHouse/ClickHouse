@@ -23,8 +23,8 @@ public:
 
     /// Starts decompressing the frame of `source_size` bytes at `source` into `dest`, which must have room for its whole
     /// decompressed data of `dest_size` bytes. Nothing is decompressed yet. Returns false, leaving no frame in progress, if
-    /// the frame should be decompressed at once instead, for example if too many frames are already in progress.
-    /// `source` must stay valid while the frame is in progress (see `relocateSource`).
+    /// the data should be decompressed at once instead: it is not a single frame this path handles, or too many frames are
+    /// already in progress. `source` must stay valid while the frame is in progress (see `relocateSource`).
     bool start(const char * source, size_t source_size, char * dest, size_t dest_size);
 
     /// Decompresses the next blocks until at least `min_bytes` bytes (and at least one more block) of the destination are
@@ -34,14 +34,11 @@ public:
     bool inProgress() const;
     size_t decompressedBytes() const;
 
-    const char * source() const;
-    size_t sourceSize() const;
     /// The frame has been copied to `new_source`.
     void relocateSource(const char * new_source);
 
     /// Abandons the frame in progress, if any, and returns its context to the pool.
-    /// Returns the number of bytes of the frame that were not decompressed.
-    size_t reset();
+    void reset();
 
 private:
     struct Impl;

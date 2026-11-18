@@ -4,10 +4,6 @@
 #include <Compression/CompressionInfo.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
-#include <IO/AsynchronousReadBufferFromFileDescriptor.h>
-#include <IO/MMapReadBufferFromFileDescriptor.h>
-#include <IO/MMapReadBufferFromFileWithCache.h>
-#include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -15,8 +11,6 @@ namespace ProfileEvents
 {
     extern const Event CompressedReadBufferBlocks;
     extern const Event CompressedReadBufferBytes;
-    extern const Event CompressedReadBufferPartialBlocks;
-    extern const Event CompressedReadBufferSkippedBytes;
 }
 
 namespace DB
@@ -34,13 +28,24 @@ bool CompressedReadBufferFromFile::startPartialDecompression(size_t size_decompr
         return false;
 
     const UInt8 header_size = ICompressionCodec::getHeaderSize();
-    if (size_compressed_without_checksum <= header_size
-        || !partial_decompressor.start(
-            compressed_buffer + header_size, size_compressed_without_checksum - header_size, memory.data(), size_decompressed))
+    if (size_compressed_without_checksum <= header_size)
         return false;
 
+    const char * frame = compressed_buffer + header_size;
+    const size_t frame_size = size_compressed_without_checksum - header_size;
+    if (!partial_decompressor.start(frame, frame_size, memory.data(), size_decompressed))
+        return false;
+
+    if (frame < own_compressed_buffer.data() || frame + frame_size > own_compressed_buffer.data() + own_compressed_buffer.size())
+    {
+        own_compressed_buffer.resize(frame_size);
+        memcpy(own_compressed_buffer.data(), frame, frame_size);
+        /// The header and the checksum of `own_compressed_buffer` are not valid now.
+        own_compressed_buffer_header_init = false;
+        partial_decompressor.relocateSource(own_compressed_buffer.data());
+    }
+
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
-    ProfileEvents::increment(ProfileEvents::CompressedReadBufferPartialBlocks);
     continuePartialDecompression(min_bytes);
     return true;
 }
@@ -51,41 +56,6 @@ void CompressedReadBufferFromFile::continuePartialDecompression(size_t min_bytes
     const size_t decompressed = partial_decompressor.decompressAtLeast(min_bytes);
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, decompressed - decompressed_before);
     working_buffer = WorkingBuffer::fromPaddedStorage(memory, 0, decompressed);
-}
-
-void CompressedReadBufferFromFile::resetPartialDecompression()
-{
-    if (size_t skipped = partial_decompressor.reset())
-        ProfileEvents::increment(ProfileEvents::CompressedReadBufferSkippedBytes, skipped);
-}
-
-/// Whether the data that `in` has returned stays valid until `in` is read or seeked again, even if `prefetch`,
-/// `setReadUntilPosition`, `setReadUntilEnd` or `setRequestMap` is called in between. The local file buffers do not
-/// override the latter three, and their `prefetch` reads into another buffer or only advises the OS. The mmap buffers
-/// keep their mapping while they exist. Other buffers, for example `PipelineReadBuffer`, may free their data in these calls.
-static bool keepsReturnedData(const ReadBufferFromFileBase & in)
-{
-    return dynamic_cast<const AsynchronousReadBufferFromFileDescriptor *>(&in)
-        || dynamic_cast<const ReadBufferFromFileDescriptor *>(&in)
-        || dynamic_cast<const MMapReadBufferFromFileWithCache *>(&in)
-        || dynamic_cast<const MMapReadBufferFromFileDescriptor *>(&in);
-}
-
-void CompressedReadBufferFromFile::detachPartialDecompressionSource()
-{
-    if (!partial_decompressor.inProgress() || keepsReturnedData(file_in))
-        return;
-
-    const char * source = partial_decompressor.source();
-    const size_t source_size = partial_decompressor.sourceSize();
-    if (source >= own_compressed_buffer.data() && source + source_size <= own_compressed_buffer.data() + own_compressed_buffer.size())
-        return;
-
-    own_compressed_buffer.resize(source_size);
-    memcpy(own_compressed_buffer.data(), source, source_size);
-    partial_decompressor.relocateSource(own_compressed_buffer.data());
-    /// The header and the checksum of `own_compressed_buffer` are not valid now.
-    own_compressed_buffer_header_init = false;
 }
 
 /// Cached: `getLogger` takes a process-global mutex, and these buffers are created per column stream
@@ -158,7 +128,6 @@ CompressedReadBufferFromFile::CompressedReadBufferFromFile(std::unique_ptr<ReadB
 
 void CompressedReadBufferFromFile::prefetch(Priority priority)
 {
-    detachPartialDecompressionSource();
     file_in.prefetch(priority);
 }
 
@@ -180,7 +149,7 @@ void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t
             }
         }
         else
-            resetPartialDecompression();
+            partial_decompressor.reset();
     }
 
     /// Nothing to do if we already at required position

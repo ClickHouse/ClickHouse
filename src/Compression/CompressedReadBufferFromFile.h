@@ -28,9 +28,8 @@ private:
       *  - `working_buffer` contains the beginning of the block, up to the end of its decompressed part.
       *  - `file_in` points to the end of this block, and is not read or seeked until the reader leaves the block.
       *  - `size_compressed` contains the compressed size of this block.
-      *  - `partial_decompressor` reads the rest of the compressed block from `own_compressed_buffer` or from the
-      *    buffer of `file_in`. In the latter case, it is copied to `own_compressed_buffer` before a call to `file_in`
-      *    that may discard that buffer, see `detachPartialDecompressionSource`.
+      *  - `partial_decompressor` reads the rest of the compressed block from `own_compressed_buffer`, as `file_in`
+      *    may discard its own buffer at any call.
       */
     std::unique_ptr<ReadBufferFromFileBase> p_file_in;
     ReadBufferFromFileBase & file_in;
@@ -60,11 +59,6 @@ private:
 
     bool startPartialDecompression(size_t size_decompressed, size_t size_compressed_without_checksum, size_t min_bytes);
     void continuePartialDecompression(size_t min_bytes);
-    void resetPartialDecompression();
-    /// Called before `prefetch`, `setReadUntilPosition`, `setReadUntilEnd` and `setRequestMap` of `file_in`: copies the
-    /// compressed block in progress to `own_compressed_buffer` if it is in the buffer of `file_in`, unless `file_in` is
-    /// known to keep that buffer until it is read or seeked again (the local file buffers).
-    void detachPartialDecompressionSource();
 
     bool nextImpl() override;
 
@@ -87,23 +81,11 @@ public:
         file_in.setProfileCallback(profile_callback_, clock_type_);
     }
 
-    void setReadUntilPosition(size_t position) override
-    {
-        detachPartialDecompressionSource();
-        file_in.setReadUntilPosition(position);
-    }
+    void setReadUntilPosition(size_t position) override { file_in.setReadUntilPosition(position); }
 
-    void setReadUntilEnd() override
-    {
-        detachPartialDecompressionSource();
-        file_in.setReadUntilEnd();
-    }
+    void setReadUntilEnd() override { file_in.setReadUntilEnd(); }
 
-    void setRequestMap(ByteRangeSet ranges) override
-    {
-        detachPartialDecompressionSource();
-        file_in.setRequestMap(std::move(ranges));
-    }
+    void setRequestMap(ByteRangeSet ranges) override { file_in.setRequestMap(std::move(ranges)); }
 };
 
 }
