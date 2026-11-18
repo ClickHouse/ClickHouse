@@ -113,7 +113,7 @@ public:
     [[nodiscard]] VectorWithMemoryTracking<size_t> getStepGroups() const override;
     [[nodiscard]] String getStepGroupName(size_t group) const override;
 
-    [[nodiscard]] StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
+    [[nodiscard]] StepAnalyzer makeAnalyzer() const override;
 
     [[nodiscard]] const JoinEstimation & getEstimation() const { return estimation; }
     [[nodiscard]] UInt64 getClusterId() const { return cluster_id; }
@@ -121,8 +121,6 @@ public:
 private:
     bool optimized = false;
     void updateOutputHeader() override;
-
-    [[nodiscard]] JoinAnalysisCounters collectMergeJoinCounters(StepProcessors step_processors) const;
 
     /// Header that expected to be returned from IJoin
     SharedHeader join_algorithm_header;
@@ -178,7 +176,7 @@ public:
     [[nodiscard]] bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
-    [[nodiscard]] StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
+    [[nodiscard]] StepAnalyzer makeAnalyzer() const override;
 
 private:
     void updateOutputHeader() override;
