@@ -1224,6 +1224,57 @@ static bool mayFixColumn(const ActionsDAG::Node * conjunct)
     });
 }
 
+/// a filter on the column can merge with the expressions below and go below a step that removes rows (e.g. a JOIN),
+/// so the steps below must make the column from a source step or an ARRAY JOIN with only functions that cannot throw
+static bool isColumnSafeOnMoreRows(const QueryPlan::Node * node, const String & column_name)
+{
+    NameSet names{column_name};
+    while (!names.empty() && !node->children.empty())
+    {
+        if (node->children.size() != 1)
+            return false;
+
+        const ActionsDAG * dag = nullptr;
+        if (const auto * expression = typeid_cast<const ExpressionStep *>(node->step.get()))
+            dag = &expression->getExpression();
+        else if (const auto * filter = typeid_cast<const FilterStep *>(node->step.get()))
+            dag = &filter->getExpression();
+        else if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(node->step.get()))
+        {
+            for (const auto & column : array_join->getColumns())
+                names.erase(column);
+        }
+        else
+            return false;
+
+        if (dag)
+        {
+            NameSet inputs;
+            for (const auto & name : names)
+            {
+                const auto * output = dag->tryFindInOutputs(name);
+                if (!output)
+                {
+                    /// the step passes through a column that its actions do not read
+                    if (std::ranges::any_of(dag->getInputs(), [&](const auto * input) { return input->result_name == name; }))
+                        return false;
+                    inputs.insert(name);
+                    continue;
+                }
+                if (!canBeMovedToTheFrontOfAndChain(output))
+                    return false;
+                for (const auto * reachable : findReachableNodes({output}))
+                    if (reachable->type == ActionsDAG::ActionType::INPUT)
+                        inputs.insert(reachable->result_name);
+            }
+            names = std::move(inputs);
+        }
+
+        node = node->children.front();
+    }
+    return true;
+}
+
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
@@ -1395,8 +1446,13 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// e.g. an OR over the elements of several arrays: add the part that the input can compute below, keep the filter above
         if (!array_join->hasRelaxedFilterBelow())
         {
+            Names safe_inputs;
+            for (const auto * input : filter->getExpression().getInputs())
+                if (!keys_set.contains(input->result_name) && isColumnSafeOnMoreRows(child_node->children.front(), input->result_name))
+                    safe_inputs.push_back(input->result_name);
+
             auto relaxed_filter = tryToExtractPartialPredicate(
-                filter->getExpression(), filter->getFilterColumnName(), allowed_inputs, /*only_conditions_safe_on_more_rows=*/ true);
+                filter->getExpression(), filter->getFilterColumnName(), safe_inputs, /*only_conditions_safe_on_more_rows=*/ true);
             if (relaxed_filter)
             {
                 array_join->setHasRelaxedFilterBelow();
