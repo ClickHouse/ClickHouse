@@ -240,6 +240,15 @@ inline ColumnsHashing::RowRange joinKeyRows(const ScatteredBlock::Selector & sel
 template <typename Selector>
 size_t countJoinedRows(ConstNullMapPtr null_map, const JoinCommon::JoinMask & join_mask, const Selector & selector)
 {
+    if constexpr (std::is_same_v<Selector, ScatteredBlock::Selector::Range>)
+    {
+        if (join_mask.getKind() == JoinCommon::JoinMask::Kind::AllTrue)
+        {
+            const size_t null_rows = null_map ? countBytesInFilter(null_map->data(), selector.first, selector.second) : 0;
+            return selector.second - selector.first - null_rows;
+        }
+    }
+
     size_t joined_rows = 0;
     for (size_t i = 0; i < ScatteredBlock::Selector::size(selector); ++i)
     {
