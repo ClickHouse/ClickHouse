@@ -1,5 +1,6 @@
 -- Tags: no-parallel-replicas
--- Tests that fullMatch() utilizes the text index and the token bloom filter index
+-- Tag no-parallel-replicas: the EXPLAIN output with the granule counts differs with parallel replicas
+-- Tests that fullMatch utilizes the text index and the token bloom filter index
 SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab_text;

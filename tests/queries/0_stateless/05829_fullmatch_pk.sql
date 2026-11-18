@@ -26,4 +26,10 @@ SELECT count() FROM mt_fullmatch_pk WHERE fullMatch(v, 'a|bac'); -- { serverErro
 -- A pattern without a fixed literal head cannot use the index
 SELECT count() FROM mt_fullmatch_pk WHERE fullMatch(v, '.*a'); -- { serverError INDEX_NOT_USED }
 
+-- Negation of an exact pattern inverts soundly
+SELECT count() FROM mt_fullmatch_pk WHERE NOT fullMatch(v, 'a');
+
+-- Negation of a pattern pruned by a non-perfect prefix never skips matching rows
+SELECT count() FROM mt_fullmatch_pk WHERE NOT fullMatch(v, 'abc-xx|abc-yy') SETTINGS force_primary_key = 0;
+
 DROP TABLE mt_fullmatch_pk;

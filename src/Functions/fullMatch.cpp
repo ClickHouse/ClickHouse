@@ -20,7 +20,7 @@ struct NameFullMatch
 using UnderlyingMatchImpl = MatchImpl<NameFullMatch, MatchTraits::Syntax::Re2, MatchTraits::Case::Sensitive, MatchTraits::Result::DontNegate>;
 
 /// Like `match` but the pattern must match the whole haystack, not a substring of it.
-/// Implemented by anchoring the pattern at both ends and delegating to MatchImpl,
+/// Implemented by anchoring the pattern at both ends and delegating to `MatchImpl`,
 /// so all its fast paths (pattern analysis, substring prefilter, JIT) are reused.
 struct FullMatchImpl
 {

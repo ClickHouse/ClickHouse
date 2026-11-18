@@ -16,6 +16,13 @@ SELECT fullMatch('abc', '^abc$');
 SELECT fullMatch('abc', '^abc');
 SELECT fullMatch('abc', 'abc$');
 
+SELECT '-- A quantifier cannot make the start anchor optional';
+SELECT fullMatch('abc', '^?abc');
+SELECT fullMatch('xabc', '^?abc');
+SELECT fullMatch('abc', '^*abc');
+SELECT fullMatch('xabc', '^*abc');
+SELECT fullMatch('abc', '?abc'); -- { serverError CANNOT_COMPILE_REGEXP }
+
 SELECT '-- Top-level alternation is anchored as a whole';
 SELECT fullMatch('zzz', 'zzz|gold.*');
 SELECT fullMatch('gold-1', 'zzz|gold.*');

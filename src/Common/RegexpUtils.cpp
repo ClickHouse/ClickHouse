@@ -428,8 +428,18 @@ String anchorRegexpToMatchWholeString(std::string_view regexp)
     if (top_level_alternation || top_level_multiline)
         return "^(?:" + res + ")$";
 
+    /// Keep the regex as written for a possible group wrap below.
+    const String body = res;
     if (!res.starts_with('^'))
         res = '^' + res;
+
+    /// A zero-allowing quantifier after the leading '^' (possibly behind zero-width constructs, e.g. "^(?i)*a")
+    /// would make the start anchor optional, so "^...$" would not anchor the start at all. Wrap such a regex
+    /// into a group instead; it guarantees no fixed prefix, so nothing is lost for the prefix extraction.
+    const char * end = res.data() + res.size();
+    if (isZeroAllowingQuantifier(skipZeroWidthConstructs(res.data() + 1, end), end))
+        return "^(?:" + body + ")$";
+
     if (!ends_with_anchor)
         res += '$';
     return res;
