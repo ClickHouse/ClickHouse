@@ -173,3 +173,22 @@ SELECT count() FROM t_prewhere_cost_join WHERE joinGet('t_prewhere_cost_join_att
 
 DROP TABLE t_prewhere_cost_join;
 DROP TABLE t_prewhere_cost_join_attr;
+
+DROP TABLE IF EXISTS t_prewhere_cost_lambda;
+CREATE TABLE t_prewhere_cost_lambda (a Array(UInt8) CODEC(NONE), w UInt32 CODEC(NONE))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = 'basic, uniq_v2';
+INSERT INTO t_prewhere_cost_lambda SELECT [toUInt8(cityHash64(number, 11) % 256)], toUInt32(cityHash64(number, 12)) FROM numbers(200000);
+OPTIMIZE TABLE t_prewhere_cost_lambda FINAL;
+
+SELECT '-- a lambda that captures no column is charged for running its body';
+SELECT position(explain, 'less(') > 0 AND position(explain, 'less(') < position(explain, 'arrayExists(')
+FROM (
+    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_lambda WHERE arrayExists(x -> toUInt64OrZero(toString(x)) = 7, a) AND w < 3500000000
+    SETTINGS min_marks_per_part_to_load_statistics = 0
+) WHERE explain LIKE '%Prewhere filter column%';
+
+SELECT count() FROM t_prewhere_cost_lambda WHERE arrayExists(x -> toUInt64OrZero(toString(x)) = 7, a) AND w < 3500000000;
+SELECT count() FROM t_prewhere_cost_lambda WHERE arrayExists(x -> toUInt64OrZero(toString(x)) = 7, a) AND w < 3500000000 SETTINGS allow_reorder_prewhere_conditions = 0;
+
+DROP TABLE t_prewhere_cost_lambda;

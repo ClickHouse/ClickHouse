@@ -100,6 +100,11 @@ bool addBytesPerRowOfFunctions(
             && function->useDefaultImplementationForLowCardinalityColumns() && function->isDeterministicInScopeOfQuery()
             && std::ranges::any_of(node.children, [](const ActionsDAG::Node * child) { return child->result_type->lowCardinality(); });
         bytes += runs_on_dictionary ? 1 : approximateBytesPerValueForType(*removeLowCardinality(node.result_type));
+
+        /// A lambda that captures no column still runs its body on every element, like one that does.
+        for (const auto * child : node.children)
+            if (WhichDataType(child->result_type).isFunction() && !visited.at(child))
+                bytes += default_bytes_per_complex_value;
     }
 
     visited.emplace(&node, depends_on_column);

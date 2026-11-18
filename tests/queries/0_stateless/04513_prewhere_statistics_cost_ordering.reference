@@ -29,3 +29,7 @@
 1
 4703
 4703
+-- a lambda that captures no column is charged for running its body
+1
+641
+641
