@@ -1,9 +1,13 @@
 #pragma once
 
 #include "config.h"
+#include <list>
 
 #if USE_ORC
 
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/BlockMissingValues.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFilterInfo.h>
@@ -89,7 +93,7 @@ protected:
     void onCancel() noexcept override { is_stopped = 1; }
 
 private:
-    static std::vector<int> calculateSelectedStripes(int num_stripes, const std::unordered_set<int> & skip_stripes);
+    static VectorWithMemoryTracking<int> calculateSelectedStripes(int num_stripes, const UnorderedSetWithMemoryTracking<int> & skip_stripes);
 
     void prepareFileReader();
     bool prepareStripeReader();
@@ -103,18 +107,18 @@ private:
     ORC::RowGroupFilter row_group_filter;
 
     // indices of columns to read from ORC file
-    std::vector<UInt64> include_indices;
+    VectorWithMemoryTracking<UInt64> include_indices;
 
     BlockMissingValues block_missing_values;
     size_t approx_bytes_read_for_chunk = 0;
 
     const FormatSettings format_settings;
-    const std::unordered_set<int> & skip_stripes;
+    const UnorderedSetWithMemoryTracking<int> & skip_stripes;
     const bool use_prefetch;
     const size_t min_bytes_for_seek;
     FormatFilterInfoPtr format_filter_info;
 
-    std::vector<int> selected_stripes;
+    VectorWithMemoryTracking<int> selected_stripes;
     size_t read_iterator{};
     size_t prefetch_iterator{};
 
@@ -146,15 +150,24 @@ public:
     using ORCColumnPtr = const ORC::ColumnVectorBatch *;
     using ORCTypePtr = const ORC::Type *;
     using ORCColumnWithType = std::pair<ORCColumnPtr, ORCTypePtr>;
-    using NameToColumnPtr = std::unordered_map<std::string, ORCColumnWithType>;
+    using NameToColumnPtr = UnorderedMapWithMemoryTracking<std::string, ORCColumnWithType>;
 
+    /// `absent_columns` are proven missing from the file by Iceberg field id (see `column_mapper_`): no field of the file
+    /// is read into them, and they get their `absent_column_defaults_` if any. A struct or list column whose subcolumns are
+    /// requested is read with its type in `nested_table_type_hints_`, the one its fields were selected with, if it is there.
     ORCColumnToCHColumn(
         const Block & header_,
         bool allow_missing_columns_,
         bool null_as_default_,
         bool case_insensitive_matching_ = false,
         bool dictionary_as_low_cardinality_ = false,
-        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_ = FormatSettings::DateTimeOverflowBehavior::Ignore);
+        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_ = FormatSettings::DateTimeOverflowBehavior::Ignore,
+        UnorderedSetWithMemoryTracking<UInt64> count_only_fields_ = {},
+        const ColumnMapper * column_mapper_ = nullptr,
+        NameSet absent_columns_ = {},
+        UnorderedMapWithMemoryTracking<String, Field> absent_column_defaults_ = {},
+        UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints_ = {},
+        UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids_ = {});
 
     void orcTableToCHChunk(
         Chunk & res,
@@ -176,7 +189,8 @@ private:
         const ORC::Type * orc_type,
         const std::string & column_name,
         bool inside_nullable,
-        DataTypePtr type_hint = nullptr) const;
+        DataTypePtr type_hint = nullptr,
+        const String & mapper_path = {}) const;
 
     const Block & header;
     /// If false, throw exception if some columns in header not exists in arrow table.
@@ -185,6 +199,16 @@ private:
     bool case_insensitive_matching;
     bool dictionary_as_low_cardinality;
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
+    /// ORC column ids of the struct fields that are read only for the size and the null map of their struct.
+    const UnorderedSetWithMemoryTracking<UInt64> count_only_fields;
+    /// Iceberg schema of the file, to fill the fields of a struct that the file does not have.
+    const ColumnMapper * column_mapper;
+    NameSet absent_columns;
+    UnorderedMapWithMemoryTracking<String, Field> absent_column_defaults;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints;
+    /// ORC column ids of the structs of the file a field of which has no Iceberg field id: their fields are matched by name,
+    /// also when the fields read have one.
+    const UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids;
 };
 }
 #endif
