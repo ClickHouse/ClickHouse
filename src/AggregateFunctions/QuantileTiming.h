@@ -327,9 +327,15 @@ namespace detail
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The sum of weights in `quantileTimingWeighted` does not fit UInt64");
         }
 
-        void insert(UInt64 x)
+        /// A count that grows by one cannot reach the maximum of `UInt64`.
+        void insert(UInt64 x) noexcept
         {
-            insertWeighted(x, 1);
+            ++count;
+
+            if (x < SMALL_THRESHOLD)
+                ++count_small[x];
+            else if (x < BIG_THRESHOLD)
+                ++count_big[(x - SMALL_THRESHOLD) / BIG_PRECISION];
         }
 
         void insertWeighted(UInt64 x, size_t weight)
@@ -342,15 +348,27 @@ namespace detail
                 addWeight(count_big[(x - SMALL_THRESHOLD) / BIG_PRECISION], weight);
         }
 
+        /// The overflow is checked once after the loops, so that they are still vectorized.
         void merge(const QuantileTimingLarge & rhs)
         {
             addWeight(count, rhs.count);
 
+            bool overflow = false;
+
             for (size_t i = 0; i < SMALL_THRESHOLD; ++i)
-                addWeight(count_small[i], rhs.count_small[i]);
+            {
+                count_small[i] = common::addIgnoreOverflow(count_small[i], rhs.count_small[i]);
+                overflow |= count_small[i] < rhs.count_small[i];
+            }
 
             for (size_t i = 0; i < BIG_SIZE; ++i)
-                addWeight(count_big[i], rhs.count_big[i]);
+            {
+                count_big[i] = common::addIgnoreOverflow(count_big[i], rhs.count_big[i]);
+                overflow |= count_big[i] < rhs.count_big[i];
+            }
+
+            if (overflow)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The sum of weights in `quantileTimingWeighted` does not fit UInt64");
         }
 
         void serialize(WriteBuffer & buf) const
