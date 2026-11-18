@@ -2166,7 +2166,6 @@ void Reader::preparePrewhere()
             NameSet addressable_columns;
             for (const auto & col : dag.getRequiredColumns())
                 addressable_columns.insert(col.name);
-            /// Computed by an earlier step and named like no column of `extended_sample_block`.
             NameSet unslotted_outputs;
 
             for (const auto & step : prewhere_expr_info.steps)
