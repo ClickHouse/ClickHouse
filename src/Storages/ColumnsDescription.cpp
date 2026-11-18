@@ -1398,17 +1398,10 @@ void collectAliasDependenciesFromAST(
 
     if (const auto * identifier = node->as<ASTIdentifier>())
     {
-        const auto & column_name = identifier->name();
-        if (candidate_names.contains(column_name))
-        {
-            dependencies.insert(column_name);
-        }
-        else if (identifier->compound() && candidate_names.contains(identifier->name_parts.front()))
-        {
-            /// Compound identifiers such as `b.x` (a subcolumn access into tuple column `b`)
-            /// still depend on the whole column `b`, not on a literal alias named `b.x`.
-            dependencies.insert(identifier->name_parts.front());
-        }
+        /// A subcolumn access such as `b.x` or `` `b.x` `` (a single quoted token) depends on the whole column `b`,
+        /// unless a column is literally named `b.x`.
+        if (auto column_name = Nested::tryGetColumnNameInStorage(identifier->name(), candidate_names))
+            dependencies.insert(std::move(*column_name));
         return;
     }
 
