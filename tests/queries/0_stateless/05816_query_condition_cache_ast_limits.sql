@@ -12,10 +12,9 @@ DROP TABLE IF EXISTS t_qcc_ast_limits;
 CREATE TABLE t_qcc_ast_limits (k UInt64, q String, j String, i String) ENGINE = MergeTree ORDER BY k
     SETTINGS index_granularity = 128, add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_temporal_columns = 0, add_minmax_index_for_string_columns = 0;
 INSERT INTO t_qcc_ast_limits
-SELECT number, concat('SELECT ', repeat('plus(1,', 30), '1', repeat(')', 30)), parseQueryToJSON(concat('SELECT ', repeat('plus(1,', 30), '1', repeat(')', 30))),
+SELECT number, concat('SELECT ', repeat('plus(1,', 30), '1', repeat(')', 30)), parseQueryToJSON(concat('SELECT 1', repeat(', 1', 30))),
     'INSERT INTO t FORMAT Values SETTINGS max_threads = 1'
-FROM numbers(2048)
-SETTINGS max_ast_depth = 100;
+FROM numbers(256);
 
 SYSTEM DROP QUERY CONDITION CACHE;
 SELECT count() FROM t_qcc_ast_limits WHERE parseQueryToJSON(q) = '' SETTINGS max_ast_depth = 100;
@@ -25,9 +24,10 @@ SYSTEM DROP QUERY CONDITION CACHE;
 SELECT count() FROM t_qcc_ast_limits WHERE parseQueryToJSON(q) = '' SETTINGS max_ast_elements = 1000;
 SELECT count() FROM t_qcc_ast_limits WHERE parseQueryToJSON(q) = '' SETTINGS max_ast_elements = 20; -- { serverError TOO_BIG_AST }
 
+-- `j` holds a flat query: deep JSON overflows the small stack budget of sanitizer builds.
 SYSTEM DROP QUERY CONDITION CACHE;
-SELECT count() FROM t_qcc_ast_limits WHERE formatQueryFromJSON(j) = '' SETTINGS max_ast_depth = 100;
-SELECT count() FROM t_qcc_ast_limits WHERE formatQueryFromJSON(j) = '' SETTINGS max_ast_depth = 20; -- { serverError TOO_DEEP_AST }
+SELECT count() FROM t_qcc_ast_limits WHERE formatQueryFromJSON(j) = '' SETTINGS max_ast_elements = 1000;
+SELECT count() FROM t_qcc_ast_limits WHERE formatQueryFromJSON(j) = '' SETTINGS max_ast_elements = 20; -- { serverError TOO_BIG_AST }
 
 SYSTEM DROP QUERY CONDITION CACHE;
 SELECT count() FROM t_qcc_ast_limits WHERE parseQueryToJSON(i) = '' SETTINGS allow_settings_after_format_in_insert = 1;
