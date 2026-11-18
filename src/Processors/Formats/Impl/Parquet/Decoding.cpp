@@ -2084,18 +2084,20 @@ void Dictionary::appendIndexes(const UInt32 * indexes, size_t n, IColumn & out, 
                 accountStringValueFilterRows(n, values_replaced, bytes_skipped);
                 break;
             }
-            size_t total_size = 0;
-            for (size_t i = 0; i < n; ++i)
-            {
-                UInt32 idx = indexes[i];
-                total_size += offsets[idx] - (offsets[ssize_t(idx) - 1] + 4); // offsets[-1] is ok because of padding
-            }
             auto & col_offsets = c.getOffsets();
             auto & chars = c.getChars();
             const size_t old_rows = col_offsets.size();
             size_t pos = chars.size();
+            size_t new_size = pos;
+            for (size_t i = 0; i < n; ++i)
+            {
+                UInt32 idx = indexes[i];
+                size_t len = offsets[idx] - (offsets[ssize_t(idx) - 1] + 4); // offsets[-1] is ok because of padding
+                if (common::addOverflow(new_size, len, new_size))
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Overflow in total size of dictionary-encoded strings");
+            }
             /// Offsets are reserved above, so a failed chars allocation leaves the column unchanged.
-            chars.resize(pos + total_size);
+            chars.resize(new_size);
             col_offsets.resize_assume_reserved(old_rows + n);
             for (size_t i = 0; i < n; ++i)
             {
