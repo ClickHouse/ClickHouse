@@ -15,6 +15,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <algorithm>
+#include <array>
 
 namespace DB
 {
@@ -217,6 +218,63 @@ namespace
         }
         return overrides_stored_key;
     }
+
+    /// Keys of a named collection that confine which data a SQL dictionary source reads: the server builds the
+    /// `SELECT ... FROM db.schema.table [WHERE ...]` (or runs `query`) from them. A `NOT OVERRIDABLE` value of any
+    /// of these pins the dictionary to a fixed set of rows.
+    bool dictionarySourceIsConfinedByLock(const NamedCollection & collection)
+    {
+        static constexpr std::array<std::string_view, 4> confining_keys = {"table", "db", "schema", "query"};
+        for (const auto & stored_key : collection.getKeys())
+        {
+            const auto normalized_key = normalizeKey(stored_key);
+            const bool is_confining
+                = std::ranges::any_of(confining_keys, [&](std::string_view key) { return areEquivalentKeys(normalized_key, key); });
+            if (is_confining && !collection.isOverridable(stored_key, /* default_value= */ true))
+                return true;
+        }
+        return false;
+    }
+
+    /// An attribute/id/range `EXPRESSION`, or a source `WHERE` / `QUERY`, is raw SQL that the server runs on the
+    /// dictionary source verbatim (see `ExternalQueryBuilder`). Unlike a column name or the source `table`, it is
+    /// neither quoted nor confined to the pinned table, so a subquery in it reads whatever the source credentials
+    /// can reach. Returns a description of the first such element, or an empty string if there is none.
+    std::string findRawSourceSQLInDictionary(
+        const Poco::Util::AbstractConfiguration & config, const std::string & dict_root, const std::string & source_prefix)
+    {
+        const auto has_non_empty = [&](const std::string & path)
+        { return config.has(path) && !config.getString(path, "").empty(); };
+
+        const std::string structure_prefix = dict_root + ".structure";
+
+        if (has_non_empty(structure_prefix + ".id.expression"))
+            return "id EXPRESSION";
+        if (has_non_empty(structure_prefix + ".range_min.expression"))
+            return "RANGE MIN EXPRESSION";
+        if (has_non_empty(structure_prefix + ".range_max.expression"))
+            return "RANGE MAX EXPRESSION";
+
+        /// Attributes repeat as `attribute`, `attribute[1]`, ...; the composite key columns live under `structure.key`.
+        for (const std::string & container : {structure_prefix, structure_prefix + ".key"})
+        {
+            if (!config.has(container))
+                continue;
+
+            Poco::Util::AbstractConfiguration::Keys children;
+            config.keys(container, children);
+            for (const auto & child : children)
+                if ((child == "attribute" || child.starts_with("attribute[")) && has_non_empty(container + "." + child + ".expression"))
+                    return "attribute EXPRESSION";
+        }
+
+        if (has_non_empty(source_prefix + ".where"))
+            return "source WHERE";
+        if (has_non_empty(source_prefix + ".query"))
+            return "source QUERY";
+
+        return {};
+    }
 }
 
 void checkNamedCollectionOverrideLock(const NamedCollection & collection, const std::string & key)
@@ -255,6 +313,22 @@ void checkNamedCollectionOverridesInDictionarySource(
             continue;
 
         checkNamedCollectionOverride(*collection, key, context);
+    }
+
+    /// A free-form expression or `WHERE` / `QUERY` is raw SQL that runs on the source and is not a named collection
+    /// key, so the override check above never sees it. When the collection pins the data with a `NOT OVERRIDABLE`
+    /// key, such SQL could still read outside the pinned table (for example a subquery), bypassing the lock, so it is
+    /// rejected together with the lock it would evade. `config_prefix` is "<dict_root>.source.<type>", so its first
+    /// component is the dictionary root under which the structure lives.
+    if (dictionarySourceIsConfinedByLock(*collection))
+    {
+        const auto dict_root = config_prefix.substr(0, config_prefix.find('.'));
+        if (const auto raw_sql = findRawSourceSQLInDictionary(config, dict_root, config_prefix); !raw_sql.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "A dictionary {} is raw SQL executed on the source of named collection '{}', which has a NOT OVERRIDABLE "
+                "key confining the data it may read. Remove it, or mark the key OVERRIDABLE in the collection.",
+                raw_sql, collection_name);
     }
 }
 
