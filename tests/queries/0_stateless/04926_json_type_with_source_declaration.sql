@@ -12,9 +12,12 @@ DROP TABLE t_json_with_source_declaration;
 -- Nested and sub-object types don't have the source of their own.
 SELECT toTypeName(json.^a) FROM (SELECT materialize('{"a" : {"b" : 42}}')::JSON(with_source=1) AS json);
 
--- `__source` is reserved.
+-- `__source` and the paths nested in it are reserved.
 SELECT '{}'::JSON(with_source=1, __source UInt32); -- { serverError BAD_ARGUMENTS }
 SELECT '{}'::JSON(with_source=1, SKIP __source); -- { serverError BAD_ARGUMENTS }
+SELECT '{}'::JSON(with_source=1, __source.a UInt32); -- { serverError BAD_ARGUMENTS }
+SELECT '{}'::JSON(with_source=1, SKIP __source.a); -- { serverError BAD_ARGUMENTS }
+SELECT toTypeName('{}'::JSON(with_source=1, __sourcex UInt32));
 
 -- The parameter accepts only 0 and 1.
 SELECT '{}'::JSON(with_source=2); -- { serverError UNEXPECTED_AST_STRUCTURE }

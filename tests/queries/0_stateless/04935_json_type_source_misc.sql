@@ -47,3 +47,7 @@ INSERT INTO t_json_source_alter_data VALUES ('{"a" :  42, "b" : "x"}');
 ALTER TABLE t_json_source_alter_data MODIFY COLUMN json JSON(with_source=1) SETTINGS mutations_sync = 2;
 SELECT json, json.__source FROM t_json_source_alter_data;
 DROP TABLE t_json_source_alter_data;
+
+SELECT 'CAST between the types with and without the source';
+SELECT x, x.__source FROM (SELECT materialize('{"a" :  1}')::JSON::JSON(with_source=1) AS x);
+SELECT toTypeName(x), x FROM (SELECT materialize('{"a" :  1}')::JSON(with_source=1)::JSON AS x);

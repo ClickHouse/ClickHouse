@@ -499,11 +499,12 @@ DataTypePtr QueryFuzzer::makeRandomObject(
         ? fuzz_rand() % (ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT + 1)
         : source_max_dynamic_types.value_or(DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES);
     const bool with_source = (fuzz_rand() % 4 == 0) ? fuzz_rand() % 2 : source_with_source.value_or(false);
-    /// The source subcolumn name is reserved in types with `with_source=1`.
+    /// The source subcolumn name and the paths nested in it are reserved in types with `with_source=1`.
     if (with_source)
     {
-        typed_paths.erase(DataTypeObject::SOURCE_SUBCOLUMN_NAME);
-        paths_to_skip.erase(DataTypeObject::SOURCE_SUBCOLUMN_NAME);
+        std::erase_if(typed_paths, [](const auto & typed_path) { return DataTypeObject::isSourceSubcolumnPath(typed_path.first); });
+        std::erase_if(shared_typed_paths, [](const auto & path) { return DataTypeObject::isSourceSubcolumnPath(path); });
+        std::erase_if(paths_to_skip, [](const auto & path) { return DataTypeObject::isSourceSubcolumnPath(path); });
     }
 
     return std::make_shared<DataTypeObject>(

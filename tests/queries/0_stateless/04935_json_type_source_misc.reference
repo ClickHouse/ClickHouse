@@ -22,3 +22,6 @@ inside Nullable and Array
 \N	[]
 ALTER to the type with the source creates the text from existing data
 {"a":42,"b":"x"}	{"a":42,"b":"x"}
+CAST between the types with and without the source
+{"a":1}	{"a":1}
+JSON	{"a":1}

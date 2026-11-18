@@ -2410,13 +2410,16 @@ private:
             /// so here we only need to skip already-processed (key, type) combinations.
             for (auto [key, value] : element.getObject())
             {
-                String path = buildChildPath(current_path, key, insert_settings, is_root);
-                /// The JSON source is stored in a separate subcolumn, so a top level key with this name
-                /// cannot be stored as a path.
-                if (is_root && column_object.hasSource() && path == DataTypeObject::SOURCE_SUBCOLUMN_NAME)
+                /// The JSON source is stored in a separate subcolumn, so its name and the paths nested in it
+                /// cannot be stored as paths. Deeper keys cannot create such a path without a top level one.
+                if (is_root && column_object.hasSource())
                 {
-                    error = fmt::format("Key '{}' is reserved for the subcolumn with JSON source in JSON types with 'with_source=1'", path);
-                    return false;
+                    String path = buildChildPath(current_path, key, insert_settings, is_root);
+                    if (DataTypeObject::isSourceSubcolumnPath(path))
+                    {
+                        error = fmt::format("Key '{}' is reserved for the subcolumn with JSON source in JSON types with 'with_source=1'", path);
+                        return false;
+                    }
                 }
 
                 auto value_element_type = getJSONElementType(value);

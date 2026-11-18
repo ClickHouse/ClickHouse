@@ -14,3 +14,7 @@ A reserved path in Native input is rejected
 1
 A reserved key in RowBinary input is rejected
 1
+A path nested in the reserved name in Native input is rejected
+1
+A path nested in the reserved name in RowBinary input is rejected
+1

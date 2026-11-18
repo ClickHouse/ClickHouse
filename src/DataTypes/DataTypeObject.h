@@ -25,6 +25,8 @@ public:
     static constexpr const char * SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION = "__special_subcolumn_name_for_distinct_paths_calculation";
     /// Reserved subcolumn with the JSON text of the row, present only with `with_source=1`.
     static constexpr const char * SOURCE_SUBCOLUMN_NAME = "__source";
+    /// True for the source subcolumn name and the paths nested in it, which are reserved with `with_source=1`.
+    static bool isSourceSubcolumnPath(std::string_view path);
 
     /// Prefix character for sub-object subcolumns, e.g. "^`some`.path.path".
     static constexpr char SUB_OBJECT_SUBCOLUMN_PREFIX = '^';

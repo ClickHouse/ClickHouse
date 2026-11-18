@@ -97,11 +97,12 @@ SerializationObject::SerializationObject(
 
 void SerializationObject::checkPathIsNotReserved(const String & path) const
 {
-    if (source_serialization && path == DataTypeObject::SOURCE_SUBCOLUMN_NAME)
+    if (source_serialization && DataTypeObject::isSourceSubcolumnPath(path))
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
-            "Path '{}' is not allowed in JSON types with 'with_source=1' because this name is reserved for the subcolumn with JSON source",
-            path);
+            "Path '{}' is not allowed in JSON types with 'with_source=1' because the name '{}' and paths nested in it are reserved for the subcolumn with JSON source",
+            path,
+            DataTypeObject::SOURCE_SUBCOLUMN_NAME);
 }
 
 bool SerializationObject::shouldSkipPath(const String & path) const

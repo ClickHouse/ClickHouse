@@ -72,6 +72,12 @@ String DataTypeObject::getCombinedSubcolumnName(const String & key)
     return String(1, COMBINED_SUBCOLUMN_PREFIX) + backQuote(key);
 }
 
+bool DataTypeObject::isSourceSubcolumnPath(std::string_view path)
+{
+    std::string_view name = SOURCE_SUBCOLUMN_NAME;
+    return path.starts_with(name) && (path.size() == name.size() || path[name.size()] == '.');
+}
+
 DataTypeObject::DataTypeObject(
     const SchemaFormat & schema_format_,
     TypedPathsMap typed_paths_,
@@ -92,11 +98,17 @@ DataTypeObject::DataTypeObject(
 {
     if (with_source)
     {
-        if (typed_paths.contains(SOURCE_SUBCOLUMN_NAME))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' cannot be specified with the data type because this name is reserved for the subcolumn with JSON source in types with 'with_source=1'", SOURCE_SUBCOLUMN_NAME);
+        for (const auto & [path, _] : typed_paths)
+        {
+            if (isSourceSubcolumnPath(path))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' cannot be specified with the data type because the name '{}' and paths nested in it are reserved for the subcolumn with JSON source in types with 'with_source=1'", path, SOURCE_SUBCOLUMN_NAME);
+        }
 
-        if (paths_to_skip.contains(SOURCE_SUBCOLUMN_NAME))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' cannot be specified in the SKIP section because this name is reserved for the subcolumn with JSON source in types with 'with_source=1'", SOURCE_SUBCOLUMN_NAME);
+        for (const auto & path : paths_to_skip)
+        {
+            if (isSourceSubcolumnPath(path))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' cannot be specified in the SKIP section because the name '{}' and paths nested in it are reserved for the subcolumn with JSON source in types with 'with_source=1'", path, SOURCE_SUBCOLUMN_NAME);
+        }
     }
 
     /// Check if regular expressions are valid.
@@ -207,8 +219,7 @@ MutableColumnConstPtr DataTypeObject::createColumnConst(size_t size, const Field
 bool DataTypeObject::equals(const IDataType & rhs) const
 {
     if (const auto * object = typeid_cast<const DataTypeObject *>(&rhs))
-        return equalsIgnoringSharedTypedPaths(*object) && shared_typed_paths == object->shared_typed_paths
-            && with_source == object->with_source;
+        return equalsIgnoringSharedTypedPaths(*object) && shared_typed_paths == object->shared_typed_paths;
 
     return false;
 }
@@ -240,7 +251,8 @@ bool DataTypeObject::equalsIgnoringSharedTypedPaths(const DataTypeObject & rhs) 
     }
 
     return schema_format == rhs.schema_format && paths_to_skip == rhs.paths_to_skip && path_regexps_to_skip == rhs.path_regexps_to_skip
-        && max_dynamic_types == rhs.max_dynamic_types && max_dynamic_paths == rhs.max_dynamic_paths;
+        && max_dynamic_types == rhs.max_dynamic_types && max_dynamic_paths == rhs.max_dynamic_paths
+        && with_source == rhs.with_source;
 }
 
 SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSettings & settings) const
@@ -1635,10 +1647,11 @@ keys with dots appear in it in the escaped form (`{"a%2Eb" : 42}` instead of `{"
 
 ### The `__source` name is reserved {#json-source-sub-column-name-is-reserved}
 
-For columns declared with `with_source=1` the name `__source` cannot be used as a top level JSON key,
-because it would be ambiguous with the sub-column. Such keys are rejected during parsing, and the name
-cannot be used as a type hint or in the `SKIP` section either. Keys with this name on deeper levels are
-allowed, because they don't collide with the sub-column:
+For columns declared with `with_source=1` the name `__source` and the paths nested in it (like `__source.a`)
+cannot be used as top level JSON paths, because they would be ambiguous with the sub-column. Such keys
+are rejected during parsing, whether written as `{"__source.a" : 1}` or as `{"__source" : {"a" : 1}}`,
+and such paths cannot be used as type hints or in the `SKIP` section either. Keys with this name on deeper
+levels are allowed, because they don't collide with the sub-column:
 
 ```sql title="Query"
 SELECT '{"a" : {"__source" : 42}}'::JSON(with_source=1) AS json, json.a.`__source`;
