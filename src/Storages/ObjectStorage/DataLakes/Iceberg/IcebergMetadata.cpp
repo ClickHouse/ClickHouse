@@ -878,7 +878,6 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
         filename_generator.setBaseMetadataFile(last_version, metadata_file_path);
 
         auto metadata_info = filename_generator.generateMetadataPathWithInfo();
-        auto storage_metadata_name = persistent_components.path_resolver.resolve(metadata_info.path);
 
         auto result = MetadataGenerator(metadata_object).generateNextMetadata(
             filename_generator, metadata_info.path, parent_snapshot_id,
@@ -888,20 +887,13 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
 
         auto storage_manifest_list_name = persistent_components.path_resolver.resolve(result.manifest_list_path);
 
-        bool metadata_written = false;
-
         /// The next attempt must read the latest metadata, so the cache is dropped even when the objects stay.
         auto cleanup = [&](bool remove_objects)
         {
             try
             {
                 if (remove_objects)
-                {
                     object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
-                    /// An unwritten metadata file name can belong to another writer.
-                    if (metadata_written)
-                        object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
-                }
                 persistent_components.invalidateMetadataCache();
             }
             catch (...)
@@ -946,9 +938,6 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
                     cleanup(/* remove_objects */ true);
                     continue;
                 }
-
-                commit_result_unknown = false;
-                metadata_written = true;
             }
 
             if (catalog)
@@ -962,6 +951,9 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
                 {
                     /// `false` is a proven conflict, so the snapshot is not live.
                     commit_result_unknown = false;
+                    /// The conditional write above created this file, so no other writer owns it.
+                    if (!catalog_writes_metadata_file)
+                        removeRejectedMetadataFile(persistent_components.path_resolver, metadata_info, object_storage);
                     cleanup(/* remove_objects */ true);
                     continue;
                 }
