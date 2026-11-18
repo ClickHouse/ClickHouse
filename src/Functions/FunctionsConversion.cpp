@@ -1311,12 +1311,7 @@ FunctionCast::WrapperType FunctionCast::createQBitWrapper(
 
     /// Conversion from String through parsing.
     if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
-    {
-        return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count) -> ColumnPtr
-        {
-            return ConvertImplGenericFromString<true>::execute(arguments, result_type, column_nullable, input_rows_count, settings);
-        };
-    }
+        return createStringParsingWrapper(reports_failures);
 
     const auto * from_qbit_type = checkAndGetDataType<DataTypeQBit>(from_type_untyped.get());
     const auto * from_array_type = checkAndGetDataType<DataTypeArray>(from_type_untyped.get());
@@ -1329,12 +1324,16 @@ FunctionCast::WrapperType FunctionCast::createQBitWrapper(
         /// and/or the stride (the number of stride groups). Changing the dimension would change the vector itself, so
         /// it is rejected. Identical types never reach here — they take createIdentityWrapper in prepareImpl.
         if (from_qbit_type->getDimension() != to_type.getDimension())
+        {
+            if (reports_failures)
+                return createToNullableColumnWrapper();
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
                 "CAST AS between two QBits can only be performed if they have the same number of elements (dimension). "
                 "From: {}, To: {}",
                 from_qbit_type->getName(),
                 to_type.getName());
+        }
 
         return createQBitToQBitWrapper(*from_qbit_type, to_type, reports_failures);
     }
@@ -1374,7 +1373,8 @@ ColumnPtr FunctionCast::convertArrayToQBit(
     const ColumnNullable * nullable_source,
     size_t n,
     size_t size,
-    size_t stride)
+    size_t stride,
+    NullMap * failed_rows)
 {
     /// Note: the 8-bit word is `uint8_t` (not ClickHouse's `UInt8`, which is `char8_t` and does not satisfy `std::countr_zero`).
     using Word = std::conditional_t<
@@ -1408,8 +1408,12 @@ ColumnPtr FunctionCast::convertArrayToQBit(
     {
         size_t array_size = offsets[row] - prev_offset;
         if (!(null_map && (*null_map)[row]) && array_size != n)
-            throw Exception(
-                ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Array arguments must have size {} for QBit conversion, got {}", n, array_size);
+        {
+            if (!failed_rows)
+                throw Exception(
+                    ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Array arguments must have size {} for QBit conversion, got {}", n, array_size);
+            (*failed_rows)[row] = 1;
+        }
         prev_offset = offsets[row];
     }
 
@@ -1438,8 +1442,8 @@ ColumnPtr FunctionCast::convertArrayToQBit(
     {
         auto off = offsets[row];
 
-        /// For NULL rows, insert default (zero) values — the result will be masked by NULL.
-        if (null_map && (*null_map)[row])
+        /// For NULL rows and rows of the wrong size, insert default (zero) values: the result will be masked by NULL.
+        if ((null_map && (*null_map)[row]) || (failed_rows && off - prev_offset != n))
         {
             for (size_t j = 0; j < num_columns; ++j)
                 assert_cast<ColumnFixedString &>(*tuple_columns[j]).insertDefault();
@@ -1503,7 +1507,8 @@ FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(
             to_array_type = std::make_shared<DataTypeArray>(to_nested_type),
             dimension,
             element_size,
-            stride](
+            stride,
+            reports_failures](
                ColumnsWithTypeAndName & arguments,
                const DataTypePtr & result_type,
                const ColumnNullable * nullable_source,
@@ -1522,13 +1527,15 @@ FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(
         /// mirroring createTupleWrapper's non-Nullable-target branch. Aggregate the inner element null
         /// map to a per-row null map before stripping it; wrapInNullable in prepareRemoveNullable then
         /// merges this with the source null map.
-        ColumnPtr row_null_map_column;
-        if (const auto * nullable_nested = checkAndGetColumn<ColumnNullable>(converted_nested.get()))
+        ColumnUInt8::MutablePtr row_null_map;
+        const auto * nullable_nested = checkAndGetColumn<ColumnNullable>(converted_nested.get());
+        if (reports_failures || nullable_nested)
+            row_null_map = ColumnUInt8::create(col_array.size(), UInt8(0));
+        if (nullable_nested)
         {
             const auto & element_null_map = nullable_nested->getNullMapData();
             const auto & offsets = col_array.getOffsets();
             const size_t rows = offsets.size();
-            auto row_null_map = ColumnUInt8::create(rows, UInt8(0));
             auto & row_null_map_data = row_null_map->getData();
             size_t prev_offset = 0;
             for (size_t row = 0; row < rows; ++row)
@@ -1540,7 +1547,6 @@ FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(
                 row_null_map_data[row] = any_null;
                 prev_offset = off;
             }
-            row_null_map_column = std::move(row_null_map);
         }
 
         /// We need raw ColumnVector data for bit transposition; strip the inner nullable.
@@ -1550,10 +1556,12 @@ FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(
 
         /// Pass nullable_source so that convertArrayToQBit can use the null map
         /// to skip NULL rows (whose nested arrays may have default/empty values).
-        auto qbit_column = convertArrayToQBit<T>(converted_arguments, result_type, nullable_source, dimension, element_size, stride);
+        auto qbit_column = convertArrayToQBit<T>(
+            converted_arguments, result_type, nullable_source, dimension, element_size, stride,
+            reports_failures ? &row_null_map->getData() : nullptr);
 
-        if (row_null_map_column)
-            return ColumnNullable::create(qbit_column, row_null_map_column);
+        if (row_null_map)
+            return ColumnNullable::create(qbit_column, std::move(row_null_map));
         return qbit_column;
     };
 }

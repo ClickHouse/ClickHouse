@@ -6129,6 +6129,7 @@ private:
 
     WrapperType createQBitWrapper(const DataTypePtr & from_type_untyped, const DataTypeQBit & to_type, bool requested_result_is_nullable) const;
 
+    /// If set, a row whose array does not have n elements is marked in failed_rows (and zero-filled) instead of throwing.
     template <typename FloatType>
     static ColumnPtr convertArrayToQBit(
         ColumnsWithTypeAndName & arguments,
@@ -6136,7 +6137,8 @@ private:
         const ColumnNullable * nullable_source,
         size_t n,
         size_t size,
-        size_t stride);
+        size_t stride,
+        NullMap * failed_rows);
 
     template <typename T>
     WrapperType createArrayToQBitWrapper(const DataTypeArray & from_array_type, const DataTypeQBit & to_qbit_type, bool reports_failures) const;
