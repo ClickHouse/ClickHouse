@@ -136,7 +136,6 @@ extern const int LIMIT_EXCEEDED;
 
 namespace FailPoints
 {
-extern const char iceberg_truncate_lose_metadata_write_response[];
 extern const char iceberg_metadata_prefetch_pause[];
 }
 
@@ -930,61 +929,22 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
             {
                 String metadata_content = dumpMetadataObjectToString(metadata_object);
                 auto hint_path = filename_generator.generateVersionHint();
-                const bool use_version_hint = (*data_lake_settings)[DataLakeStorageSetting::iceberg_use_version_hint];
 
                 /// Without a transactional catalog, the conditional write of the metadata file is the commit.
                 commit_result_unknown = true;
-                bool metadata_file_written = writeMetadataFileAndVersionHint(
-                    persistent_components.path_resolver,
-                    metadata_info,
-                    metadata_content,
-                    hint_path,
-                    object_storage,
-                    context,
-                    use_version_hint);
-                fiu_do_on(FailPoints::iceberg_truncate_lose_metadata_write_response, { metadata_file_written = false; });
-
-                if (!metadata_file_written)
-                {
-                    /// `false` means a lost version race or a lost response. The snapshot id in the file at this version tells which.
-                    if (!object_storage->exists(StoredObject(storage_metadata_name)))
-                    {
-                        /// A delayed write can still land, so the manifest list stays.
-                        persistent_components.invalidateMetadataCache();
-                        continue;
-                    }
-
-                    const auto landed_metadata = getMetadataJSONObject(
-                        storage_metadata_name,
-                        object_storage,
-                        /* metadata_cache */ nullptr,
-                        context,
-                        log,
-                        metadata_info.compression_method,
-                        persistent_components.table_uuid);
-                    const Int64 our_snapshot_id = result.snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
-                    const bool landed_metadata_is_ours = landed_metadata->has(Iceberg::f_current_snapshot_id)
-                        && !landed_metadata->isNull(Iceberg::f_current_snapshot_id)
-                        && landed_metadata->getValue<Int64>(Iceberg::f_current_snapshot_id) == our_snapshot_id;
-
-                    if (!landed_metadata_is_ours)
-                    {
-                        /// Another writer owns this version, so nothing references our manifest list.
-                        commit_result_unknown = false;
-                        cleanup(/* remove_objects */ true);
-                        continue;
-                    }
-
-                    /// The truncate is committed. The failed write skipped the version hint update.
-                    LOG_INFO(log, "Metadata file {} was written by this truncate despite the reported failure", storage_metadata_name);
-                    tryWriteVersionHintFile(
+                /// TODO: a shared helper must handle a lost response of `writeMetadataFileAndVersionHint` for all its callers.
+                if (!writeMetadataFileAndVersionHint(
                         persistent_components.path_resolver,
                         metadata_info,
+                        metadata_content,
                         hint_path,
                         object_storage,
                         context,
-                        /* create */ use_version_hint,
-                        /* assert_version_exactly */ false);
+                        (*data_lake_settings)[DataLakeStorageSetting::iceberg_use_version_hint]))
+                {
+                    commit_result_unknown = false;
+                    cleanup(/* remove_objects */ true);
+                    continue;
                 }
 
                 commit_result_unknown = false;
