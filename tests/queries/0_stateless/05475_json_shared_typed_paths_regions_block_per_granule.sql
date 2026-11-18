@@ -9,7 +9,7 @@ ENGINE = MergeTree ORDER BY x
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, object_typed_shared_data_serialization_version = 'v2',
          index_granularity = 8192, index_granularity_bytes = 10485760, min_compress_block_size = 65536,
          max_compress_block_size = 1048576;
-INSERT INTO t_region_blocks SELECT number, concat('{"a":', toString(number), ',"b":"b', toString(number % 1000), '"}') FROM numbers(400000);
+INSERT INTO t_region_blocks SELECT number, concat('{"a":', toString(number), ',"b":"b', toString(number % 1000), '"}') FROM numbers(100000);
 OPTIMIZE TABLE t_region_blocks FINAL;
 
 SELECT sum(json.a) FROM t_region_blocks

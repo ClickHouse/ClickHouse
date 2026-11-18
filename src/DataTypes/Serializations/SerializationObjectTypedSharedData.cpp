@@ -260,6 +260,15 @@ public:
 
     void addMark()
     {
+        /// A region has one mark per granule of the part. Caught here, before the mark is written, so that a decoded
+        /// granule count larger than the part's (an empty-granule run from a corrupt spill segment) fails at once
+        /// instead of writing marks until the disk fills; the final count is checked again in `endRegion`.
+        if (num_marks >= num_granules)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Region '{}' of path {} of the typed shared data of Object has more granules than the {} of the part",
+                current_region.name, paths[path_index].name, num_granules);
+
         /// As a Wide part's writer before a mark: a full block is flushed, and a new block starts once the open one is
         /// worth compressing.
         data_stream->nextIfAtEnd();
@@ -462,13 +471,21 @@ public:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} of the typed shared data of Object has spilled segments without a spiller", path.name);
             for (auto spilled_segment_id : substream->spilled_segments)
             {
-                auto read_segment = [&](ReadBuffer & in, size_t)
+                auto read_segment = [&](ReadBuffer & in, size_t size)
                 {
+                    const size_t begin = in.count();
                     GranuleOffsets offsets;
                     offsets.read(in);
                     size_t data_size = 0;
                     readVarUInt(data_size, in);
                     copy_granules(in, data_size, offsets);
+                    /// The reader is not limited to the segment, so a corrupt offset or data size that read past its
+                    /// bytes is caught here rather than reading into the next segment.
+                    if (in.count() - begin != size)
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Spilled segment of path {} of the typed shared data of Object has {} bytes, but decoding read {}",
+                            path.name, size, in.count() - begin);
                 };
                 if (!spiller->readSpilledSegment(spilled_segment_id, read_segment))
                     return false;
@@ -1001,6 +1018,9 @@ void completeGranule(
     state.granule.clear();
 }
 
+/// A sanity bound on the substreams of one path declared in a v2 header, to reject a corrupt count before allocating.
+constexpr size_t MAX_SUBSTREAMS_PER_PATH = 1000000;
+
 SerializationObjectTypedSharedData::HeaderPtr readHeader(ReadBuffer & stream, size_t num_paths, bool wide)
 {
     using Version = MergeTreeObjectTypedSharedDataSerializationVersion;
@@ -1058,6 +1078,14 @@ SerializationObjectTypedSharedData::HeaderPtr readHeader(ReadBuffer & stream, si
     {
         size_t num_substreams = 0;
         readVarUInt(num_substreams, stream);
+        /// `num_substreams` comes from the stored header; bound it so a corrupt value cannot drive the allocation
+        /// before the records are read. The exact count is not known in advance (a Dynamic path's substreams depend
+        /// on its data), so this is a loose sanity limit.
+        if (num_substreams > MAX_SUBSTREAMS_PER_PATH)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "The header of the typed shared data of Object declares {} substreams for a path, over the limit of {}",
+                num_substreams, MAX_SUBSTREAMS_PER_PATH);
         record.substreams.resize(num_substreams);
         for (auto & substream : record.substreams)
         {
