@@ -7,7 +7,8 @@
 # The checks of the `SETTINGS` clause of a `PostgreSQL` database: a stated value equal to the current one stays in the
 # definition, also over a named collection, an override of a key of a named collection needs `SHOW NAMED COLLECTIONS SECRETS`,
 # and the user's constraints and that privilege are checked before `ON CLUSTER` is dispatched, whose workers run without the
-# user. The engine does not connect at `CREATE`, so the host does not need to be reachable.
+# user, as is the access to the named collection and the override of its keys by the engine arguments, also in a definition
+# without a `SETTINGS` clause. The engine does not connect at `CREATE`, so the host does not need to be reachable.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,18 +16,21 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DB="${CLICKHOUSE_DATABASE}_pg"
 NC="nc_pool_${CLICKHOUSE_DATABASE}"
+NC_OTHER="nc_pool_other_${CLICKHOUSE_DATABASE}"
 NC_KEYS="host = '127.0.0.1', port = 5432, database = 'db', user = 'user', password = 'password'"
 USER="u_pg_settings_${CLICKHOUSE_DATABASE}"
 PROFILE="p_pg_settings_${CLICKHOUSE_DATABASE}"
 
 function cleanup()
 {
-    for suffix in same collection restricted restricted_attach cluster cluster_attach not_granted; do
+    for suffix in same collection restricted restricted_attach cluster cluster_attach not_granted \
+        cluster_override cluster_override_attach cluster_other cluster_other_attach cluster_collection; do
         ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DB}_${suffix}"
     done
     ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${USER}"
     ${CLICKHOUSE_CLIENT} --query "DROP SETTINGS PROFILE IF EXISTS ${PROFILE}"
     ${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION IF EXISTS ${NC}"
+    ${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION IF EXISTS ${NC_OTHER}"
 }
 trap cleanup EXIT
 
@@ -41,6 +45,7 @@ function exists()
 }
 
 ${CLICKHOUSE_CLIENT} --query "CREATE NAMED COLLECTION ${NC} AS ${NC_KEYS}, postgresql_connection_pool_size = 7"
+${CLICKHOUSE_CLIENT} --query "CREATE NAMED COLLECTION ${NC_OTHER} AS ${NC_KEYS}"
 
 echo "--- a stated value equal to the value of the session stays in the definition"
 ${CLICKHOUSE_CLIENT} --postgresql_connection_pool_size 16 --query "
@@ -64,6 +69,11 @@ ${CLICKHOUSE_CLIENT} --query "
     GRANT CREATE DATABASE ON ${DB}_restricted_attach.* TO ${USER};
     GRANT CREATE DATABASE ON ${DB}_cluster.* TO ${USER};
     GRANT CREATE DATABASE ON ${DB}_cluster_attach.* TO ${USER};
+    GRANT CREATE DATABASE ON ${DB}_cluster_override.* TO ${USER};
+    GRANT CREATE DATABASE ON ${DB}_cluster_override_attach.* TO ${USER};
+    GRANT CREATE DATABASE ON ${DB}_cluster_other.* TO ${USER};
+    GRANT CREATE DATABASE ON ${DB}_cluster_other_attach.* TO ${USER};
+    GRANT CREATE DATABASE ON ${DB}_cluster_collection.* TO ${USER};
     GRANT POSTGRES, CLUSTER ON *.* TO ${USER};
     GRANT NAMED COLLECTION ON ${NC} TO ${USER};"
 
@@ -89,6 +99,29 @@ ${CLICKHOUSE_CLIENT} --user "${USER}" --query "
     SETTINGS postgresql_connection_pool_size = 4" 2>&1 | grep -o -m1 'ACCESS_DENIED'
 exists cluster
 exists cluster_attach
+
+echo "--- also without a SETTINGS clause: an override of a key by the engine arguments, and a collection not granted"
+${CLICKHOUSE_CLIENT} --user "${USER}" --query "
+    CREATE DATABASE ${DB}_cluster_override ON CLUSTER test_shard_localhost ENGINE = PostgreSQL(${NC}, host = '127.0.0.2')" 2>&1 \
+    | grep -o -m1 'ACCESS_DENIED'
+${CLICKHOUSE_CLIENT} --user "${USER}" --query "
+    ATTACH DATABASE ${DB}_cluster_override_attach ON CLUSTER test_shard_localhost ENGINE = PostgreSQL(${NC}, host = '127.0.0.2')" 2>&1 \
+    | grep -o -m1 'ACCESS_DENIED'
+${CLICKHOUSE_CLIENT} --user "${USER}" --query "
+    CREATE DATABASE ${DB}_cluster_other ON CLUSTER test_shard_localhost ENGINE = PostgreSQL(${NC_OTHER})" 2>&1 \
+    | grep -o -m1 'ACCESS_DENIED'
+${CLICKHOUSE_CLIENT} --user "${USER}" --query "
+    ATTACH DATABASE ${DB}_cluster_other_attach ON CLUSTER test_shard_localhost ENGINE = PostgreSQL(${NC_OTHER})" 2>&1 \
+    | grep -o -m1 'ACCESS_DENIED'
+exists cluster_override
+exists cluster_override_attach
+exists cluster_other
+exists cluster_other_attach
+
+echo "--- a granted collection without overrides is accepted"
+${CLICKHOUSE_CLIENT} --user "${USER}" --query "
+    CREATE DATABASE ${DB}_cluster_collection ON CLUSTER test_shard_localhost ENGINE = PostgreSQL(${NC})" > /dev/null
+exists cluster_collection
 
 echo "--- a user who may not create the database gets that error first"
 ${CLICKHOUSE_CLIENT} --user "${USER}" --query "

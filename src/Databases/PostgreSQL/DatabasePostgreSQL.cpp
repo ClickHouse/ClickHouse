@@ -718,11 +718,13 @@ void checkSettingsOfDefinition(const ASTStorage & engine_define, const NamedColl
     }
 }
 
-/// The checks of a definition that need the user, before `CREATE DATABASE ... ON CLUSTER` is dispatched: the override of a key
-/// of the named collection by the `SETTINGS` clause (`NOT OVERRIDABLE`, `SHOW NAMED COLLECTIONS SECRETS`), and the constraints.
+/// The checks of a definition that need the user, before `CREATE DATABASE ... ON CLUSTER` is dispatched: the access to the named
+/// collection, the override of its keys by the engine arguments and by the `SETTINGS` clause (`NOT OVERRIDABLE`,
+/// `SHOW NAMED COLLECTIONS SECRETS`), and the constraints. A definition without a `SETTINGS` clause is checked too, as the
+/// creator checks it.
 void checkDefinition(const ASTStorage & engine_define, const ContextPtr & context)
 {
-    if (!engine_define.settings || !engine_define.engine || !engine_define.engine->arguments)
+    if (!engine_define.engine || !engine_define.engine->arguments)
         return;
     const auto named_collection = tryGetNamedCollectionWithOverrides(
         engine_define.engine->arguments->children, context, /*throw_unknown_collection=*/ true, /*complex_args=*/ nullptr,
