@@ -1145,7 +1145,7 @@ size_t getActiveReplicasCountForParallelReplicas(const ContextPtr & context, con
     /// replica count the reading coordinator does: validate liveness against the cluster definition, force the
     /// local (initiator) replica active, then cap by `max_parallel_replicas`. The two test-only failpoints
     /// there perturb liveness to exercise the coordinator and are intentionally not applied here.
-    std::vector<bool> is_active = getActiveReplicasForParallelReplicas(context, shard_cluster);
+    std::vector<bool> is_active = getReplicasLiveness(context->getSettingsRef()[Setting::cluster_for_parallel_replicas], shard_cluster);
     if (!is_active.empty() && is_active.size() != all_nodes_count)
         is_active.clear();
     if (!is_active.empty())
