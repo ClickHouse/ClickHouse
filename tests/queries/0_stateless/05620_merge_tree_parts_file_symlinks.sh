@@ -24,7 +24,7 @@ SOURCE_PART_INFO=$(${CLICKHOUSE_LOCAL} --path "${SOURCE_ROOT}" --query "
         index_granularity_bytes = ${INDEX_GRANULARITY_BYTES},
         min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
     INSERT INTO mtp_file_symlinks_source SELECT number FROM numbers(10);
-    SELECT path, marks FROM system.parts WHERE table = 'mtp_file_symlinks_source' AND active")
+    SELECT path, marks FROM system.parts WHERE database = currentDatabase() AND table = 'mtp_file_symlinks_source' AND active")
 SOURCE_PART_PATH=$(echo "${SOURCE_PART_INFO}" | cut -f1)
 MARKS=$(echo "${SOURCE_PART_INFO}" | cut -f2)
 
