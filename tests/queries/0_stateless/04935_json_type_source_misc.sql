@@ -4,7 +4,9 @@ SELECT 'subcolumn of the source';
 SELECT json.__source.size FROM (SELECT materialize('{"a" : 42}')::JSON(with_source=1) AS json);
 
 DROP TABLE IF EXISTS t_json_source_misc;
-CREATE TABLE t_json_source_misc (json JSON(with_source=1)) ENGINE = MergeTree ORDER BY tuple();
+-- The size of the source is a separate stream only with these settings.
+CREATE TABLE t_json_source_misc (json JSON(with_source=1)) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS string_serialization_version = 'with_size_stream', propagate_types_serialization_versions_to_nested_types = 1;
 INSERT INTO t_json_source_misc VALUES ('{"a" :  42}');
 
 SELECT 'the source is listed in subcolumns';
