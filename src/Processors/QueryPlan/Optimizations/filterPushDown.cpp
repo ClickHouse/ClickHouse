@@ -50,6 +50,11 @@
 #include <Interpreters/TableJoin.h>
 #include <fmt/format.h>
 
+#include <algorithm>
+#include <concepts>
+#include <iterator>
+#include <ranges>
+
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -1231,38 +1236,68 @@ static bool mayFixColumn(const ActionsDAG::Node * conjunct)
     });
 }
 
-/// a subtotal row has the default value in a removed key, so a filter that rejects this value also applies to the rows below the step
 template <typename Step>
-static size_t tryCopyKeyFilterBelowRollupOrCube(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
+concept RollupOrCubeStep = std::same_as<Step, RollupStep> || std::same_as<Step, CubeStep>;
+
+/// true if no row with the default value in `column` passes the filter
+static bool rejectsDefaultOf(const ColumnWithTypeAndName & column, const FilterStep & filter)
 {
-    QueryPlan::Node * child_node = parent_node->children.front();
-    auto * step = typeid_cast<Step *>(child_node->step.get());
-    /// a filter below the step changes the totals
-    if (!step || step->isFilterPushedDown() || canProduceTotals(*child_node))
-        return 0;
+    return filterResultForNotMatchedRows(filter.getExpression(), filter.getFilterColumnName(), Block{column}, /*allow_unknown_function_arguments=*/ true)
+        == FilterResult::FALSE;
+}
 
-    const auto & filter = assert_cast<const FilterStep &>(*parent_node->step);
-    const auto & input_header = *step->getInputHeaders().front();
+/// the keys that the filter rejects at the default value; a subtotal row has this value in each key that its level removes
+static Names keysWithRejectedSubtotals(const RollupOrCubeStep auto & step, const FilterStep & filter)
+{
+    const auto & input_header = *step.getInputHeaders().front();
+    const auto & output_header = *step.getOutputHeader();
 
-    Names keys;
-    for (const auto & key : step->getParams().keys)
+    auto has_rejected_subtotals = [&](const String & key)
     {
-        const auto & column = step->getOutputHeader()->getByName(key);
+        const auto & column = output_header.getByName(key);
         /// `group_by_use_nulls` changes the type of a key
-        if (column.type->equals(*input_header.getByName(key).type)
-            && filterResultForNotMatchedRows(filter.getExpression(), filter.getFilterColumnName(), Block{column}, /*allow_unknown_function_arguments=*/ true) == FilterResult::FALSE)
-            keys.push_back(key);
-    }
+        return column.type->equals(*input_header.getByName(key).type) && rejectsDefaultOf(column, filter);
+    };
+
+    return step.getParams().keys | std::views::filter(has_rejected_subtotals) | std::ranges::to<Names>();
+}
+
+/// the conditions of the filter on `keys` that do not have a copy below the step; the optimizer visits the same filter again
+static std::optional<ActionsDAG::ActionsForFilterPushDown> takeNewConditionsOn(const Names & keys, const FilterStep & filter, RollupOrCubeStep auto & step)
+{
     if (keys.empty())
+        return {};
+
+    auto conditions = tryToExtractPartialPredicate(filter.getExpression(), filter.getFilterColumnName(), keys);
+    if (!conditions)
+        return {};
+
+    ActionsDAG::NodeRawConstPtrs new_conditions;
+    std::ranges::copy_if(
+        ActionsDAG::extractConjunctionAtoms(conditions->getOutputs().front()) | std::views::reverse, /// back to the order of the filter
+        std::back_inserter(new_conditions),
+        [&](const String & name) { return step.getConditionsCopiedBelow().insert(name).second; },
+        &ActionsDAG::Node::result_name);
+
+    return ActionsDAG::createActionsForConjunction(new_conditions, step.getInputHeaders().front()->getColumnsWithTypeAndName());
+}
+
+/// a row that passes the filter has all these keys, so the conditions on them also apply below the step; the filter stays to reject the subtotals
+template <RollupOrCubeStep Step>
+static size_t tryCopyKeyConditionsBelow(QueryPlan::Node * filter_node, QueryPlan::Nodes & nodes)
+{
+    auto & step_node = *filter_node->children.front();
+    auto * step = typeid_cast<Step *>(step_node.step.get());
+    /// a filter below the step changes the totals
+    if (!step || canProduceTotals(step_node))
         return 0;
 
-    auto key_filter = tryToExtractPartialPredicate(filter.getExpression(), filter.getFilterColumnName(), keys);
-    if (!key_filter)
+    const auto & filter = assert_cast<const FilterStep &>(*filter_node->step);
+    auto key_conditions = takeNewConditionsOn(keysWithRejectedSubtotals(*step, filter), filter, *step);
+    if (!key_conditions)
         return 0;
 
-    addFilterOnTop(*child_node, 0, nodes, std::move(*key_filter));
-    step->setFilterPushedDown();
-    return 3;
+    return addNewFilterStepOrThrow(filter_node, nodes, std::move(*key_conditions), 0, /*update_parent_filter=*/ false);
 }
 
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
@@ -1453,10 +1488,10 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     // {
     // }
 
-    if (auto updated_steps = tryCopyKeyFilterBelowRollupOrCube<RollupStep>(parent_node, nodes))
+    if (auto updated_steps = tryCopyKeyConditionsBelow<RollupStep>(parent_node, nodes))
         return updated_steps;
 
-    if (auto updated_steps = tryCopyKeyFilterBelowRollupOrCube<CubeStep>(parent_node, nodes))
+    if (auto updated_steps = tryCopyKeyConditionsBelow<CubeStep>(parent_node, nodes))
         return updated_steps;
 
     if (typeid_cast<SortingStep *>(child.get()))

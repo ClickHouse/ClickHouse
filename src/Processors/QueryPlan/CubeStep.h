@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <Core/Names.h>
 #include <Interpreters/Aggregator.h>
 
 namespace DB
@@ -23,9 +24,8 @@ public:
 
     [[nodiscard]] QueryPlanStepPtr clone() const override;
 
-    /// the filter push-down copies a filter below the step only one time
-    [[nodiscard]] bool isFilterPushedDown() const { return filter_pushed_down; }
-    void setFilterPushedDown() { filter_pushed_down = true; }
+    /// the key conditions that the filter push-down has copied below the step
+    [[nodiscard]] NameSet & getConditionsCopiedBelow() { return conditions_copied_below; }
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
@@ -38,7 +38,7 @@ private:
     Aggregator::Params params;
     bool final;
     bool use_nulls;
-    bool filter_pushed_down = false;
+    NameSet conditions_copied_below;
 };
 
 }
