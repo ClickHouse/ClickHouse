@@ -17,6 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
 }
 
@@ -55,24 +56,39 @@ AggregateState::AggregateState(AggregateFunctionPtr function_)
         arena = std::make_unique<Arena>();
 
     function->create(place.data());
+    created = true;
 }
 
 AggregateState::~AggregateState()
 {
-    function->destroy(place.data());
+    if (created)
+        function->destroy(place.data());
 }
 
 void AggregateState::recreate()
 {
-    function->destroy(place.data());
+    if (created)
+    {
+        function->destroy(place.data());
+        created = false;
+    }
+
     if (arena && arena->allocatedBytes() > arena_replace_bytes)
         arena = std::make_unique<Arena>();
 
     function->create(place.data());
+    created = true;
+}
+
+void AggregateState::checkCreated() const
+{
+    if (!created)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate state of window function {} is used after a failed creation", function->getName());
 }
 
 void AggregateState::add(const WindowArguments & arguments, Int64 begin, Int64 end)
 {
+    checkCreated();
     while (begin < end)
     {
         const ArgumentsSegment segment = arguments.segment(begin, end);
@@ -84,6 +100,7 @@ void AggregateState::add(const WindowArguments & arguments, Int64 begin, Int64 e
 
 void AggregateState::insertResultInto(IColumn & result)
 {
+    checkCreated();
     if (is_state)
         function->insertMergeResultInto(place.data(), result, arena.get());
     else
