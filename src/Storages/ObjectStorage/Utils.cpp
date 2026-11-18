@@ -229,7 +229,7 @@ ASTs::iterator getFirstKeyValueArgument(ASTs & args)
     return first_key_value_arg_it;
 }
 
-std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & function_args, ContextPtr context)
+std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & function_args, ContextPtr context, bool hide_keys_in_errors)
 {
     std::unordered_map<std::string, Field> key_value_args;
     for (const auto & arg : function_args)
@@ -259,9 +259,10 @@ std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & funct
         auto arg_value = value_literal->as<ASTLiteral>()->value;
 
         auto inserted = key_value_args.emplace(arg_name, arg_value).second;
-        /// The key is not repeated in the message: a key given in a query can be a secret typed in the wrong place.
-        if (!inserted)
+        if (!inserted && hide_keys_in_errors)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate key value argument: a key is given more than once");
+        if (!inserted)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate key value argument: {}", arg_name);
     }
     return key_value_args;
 }

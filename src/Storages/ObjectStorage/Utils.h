@@ -72,7 +72,10 @@ std::string formatObjectPath(
 Strings candidateKeysUnderPrefix(const std::string & prefix, const std::string & path);
 
 ASTs::iterator getFirstKeyValueArgument(ASTs & args);
-std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & function_args, ContextPtr context);
+/// `hide_keys_in_errors`: do not repeat a key in an exception, because a key given in a query can be a secret typed in the
+/// wrong place (the S3 parser, whose query text hides such an argument whole).
+std::unordered_map<std::string, Field>
+parseKeyValueArguments(const ASTs & function_args, ContextPtr context, bool hide_keys_in_errors = false);
 
 template <typename T>
 std::optional<T> getFromPositionOrKeyValue(

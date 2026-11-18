@@ -471,7 +471,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
             S3StorageParsedArguments::getMaxNumberOfArguments(with_structure),
             S3StorageParsedArguments::getSignatures(with_structure));
 
-    auto key_value_args = parseKeyValueArguments(key_value_asts, context);
+    auto key_value_args = parseKeyValueArguments(key_value_asts, context, /* hide_keys_in_errors= */ true);
     if (key_value_args.contains("structure"))
         with_structure = false;
 
