@@ -8766,6 +8766,12 @@ Whether to use only prewhere columns size to determine reading task size.
 Hard lower limit on the task size (even when the number of granules is low and the number of available threads is high we won't allocate smaller tasks
 )", 0, \
         {"24.10", 8, 8, "New setting"}) \
+    DECLARE(UInt64, merge_tree_read_end_tasks_per_stream, 32, R"(
+Makes the tasks at the end of a `MergeTree` read 1/N of one thread's share of the data (not smaller than
+`merge_tree_min_read_task_size`), so that all threads finish at about the same time. Larger values balance the
+threads better but add per-task overhead. 0 disables it.
+)", 0, \
+        {"26.11", 0, 32, "New setting: the tasks at the end of a `MergeTree` read are smaller, so that all threads finish at about the same time."}) \
     DECLARE(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, R"(
 Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
 )", 0) \
@@ -10665,6 +10671,11 @@ When disabled, the legacy `StringHashTable`-based method (the default before 26.
 All servers participating in a distributed query must agree on this value: with `distributed_aggregation_memory_efficient`, two-level bucket numbers depend on the key hash, which differs between the two methods, so servers disagreeing on this setting may split the same key into different buckets and produce an incorrectly merged result. To guarantee agreement, the initiator always sends its effective value with the secondary queries (even when it comes only from server/profile defaults), overriding the remote servers' own defaults.
 )", 0, \
         {"26.8", false, true, "New setting to toggle the `PackedStringRef`-based hash table for single-`String`-key GROUP BY. previous_value=false so `compatibility` with versions before 26.8 restores the legacy `StringHashTable`-based method, including its two-level bucketing."}) \
+    DECLARE(Bool, enable_fixed_and_packed_string_keys_in_aggregation, true, R"(
+Use a dedicated hash table for `GROUP BY` with fixed-width keys of up to 16 bytes in total and one non-nullable `String` key. Any of these keys can be `LowCardinality`. A key with an empty string is stored by its fixed-width values alone, in cells as narrow as fixed-width keys; the other keys are stored as the fixed-width values and a packed reference to the string, which keeps strings of up to 11 bytes inline, or of up to 15 bytes when the fixed-width values take at most 4 bytes. A `GROUP BY` without aggregate functions stores the keys alone, with no room for aggregate states, so it uses less memory.
+When disabled, the serialized method is used.
+)", 0, \
+        {"26.11", false, true, "New setting to use a dedicated hash table for `GROUP BY` with fixed-width keys of up to 16 bytes in total and one non-nullable `String` key. When disabled, the serialized method is used."}) \
     DECLARE(Bool, enable_parallel_blocks_marshalling, true, "Affects only distributed queries. If enabled, blocks will be (de)serialized and (de)compressed on pipeline threads (i.e. with higher parallelism that what we have by default) before/after sending to the initiator.", 0, \
         {"25.6", "false", "true", "A new setting"}) \
     DECLARE(Bool, enable_parallel_single_level_merge, true, R"(
@@ -10935,6 +10946,12 @@ Minimum estimated size of a build-side `String` column, the estimated number of 
     \
     /* ####################################################### */ \
     /* AI function settings */ \
+    DECLARE_WITH_ALIAS(Bool, allow_ai_functions, true, R"(
+Allow the use of AI functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`, `aiEmbed`, `aiSimilarity`). If disabled, a query that uses them throws an exception.
+)", 0, allow_experimental_ai_functions, \
+        {"26.11", true, true, "Added an alias for setting `allow_experimental_ai_functions`."}, \
+        {"26.9", false, true, "AI functions are beta and enabled by default. At the time the setting was named `allow_experimental_ai_functions`, which is now an alias of it. Keep the default regardless of `compatibility`.", CompatibilitySetting::Ignore}, \
+        {"26.4", false, false, "New setting. At the time the setting was named `allow_experimental_ai_functions`, which is now an alias of it."}) \
     DECLARE(UInt64, ai_function_request_timeout_sec, 60, R"(
 Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
 )", BETA, \
@@ -11594,7 +11611,7 @@ Filter left side by set of JOIN keys collected from the right side at runtime.
         {"26.2", false, true, "Enabled this optimization"}, \
         {"25.10", false, false, "New setting"}) \
     DECLARE(UInt64, join_runtime_filter_exact_values_limit, 10000, R"(
-Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded it switches to bloom filter.
+Maximum number of elements in runtime filter that are stored as is in a set. When this threshold is exceeded, it switches to a dense bitset for (U)Int8 and (U)Int16 keys, and to a bloom filter otherwise.
 )", 0, \
         {"26.9", 10000, 10000, "The JOIN runtime filters became a Production tier feature."}, \
         {"25.10", 10000, 10000, "New setting"}) \
@@ -11818,9 +11835,6 @@ Enable table function `eval`.
     MAKE_OBSOLETE(M, String, function_implementation, "") \
     MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false, \
         {"26.6", false, false, "The setting is obsolete, the feature has been removed."}) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_ai_functions, false, \
-        {"26.9", false, false, "The setting is obsolete, AI functions are beta now and enabled by default."}, \
-        {"26.4", false, false, "New setting"}) \
     MAKE_OBSOLETE(M, Bool, query_condition_cache_store_conditions_as_plaintext, false, \
         {"25.4", false, false, "New setting"}) \
     MAKE_OBSOLETE(M, Bool, update_insert_deduplication_token_in_dependent_materialized_views, 0, \
