@@ -14,10 +14,6 @@
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedWebAssembly.h>
-#include <Parsers/ASTCreateWasmFunctionQuery.h>
 
 namespace DB
 {
@@ -59,41 +55,17 @@ public:
         }
         else if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
         {
-            /// `exists` is not registered in `FunctionFactory`, because the analyzer rewrites it.
-            /// Its argument is always a subquery, which may be nondeterministic.
-            if (function->name == "exists")
-                data.result.subquery = true;
             /// Property of being deterministic for lambda expression is completely determined
             /// by the contents of its definition, so we just proceed to it.
-            else if (function->name != "lambda")
+            if (function->name != "lambda")
             {
-                data.result.nondeterministic_function_name = findNonDeterministicFunctionName(function->name, data.context);
+                /// NOTE It may be an aggregate function, so get(...) may throw.
+                /// However, an aggregate function can be used only in subquery and we do not go into subquery.
+                const auto func = FunctionFactory::instance().get(function->name, data.context);
+                if (!func->isDeterministic())
+                    data.result.nondeterministic_function_name = func->getName();
             }
         }
-    }
-
-private:
-    /// Returns the name of the function if it is nondeterministic.
-    static std::optional<String> findNonDeterministicFunctionName(const String & function_name, const ContextPtr & context)
-    {
-        /// User-defined functions are not registered in `FunctionFactory`, so they are resolved through their own factories.
-        /// The `deterministic` flag of an `EXECUTABLE` function is read from its configuration, because building the function
-        /// throws for a function with parameters.
-        if (const auto is_deterministic = UserDefinedExecutableFunctionFactory::tryGetIsDeterministic(function_name, context))
-            return *is_deterministic ? std::nullopt : std::optional<String>(function_name);
-
-        const auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
-        if (user_defined_function && user_defined_function->as<ASTCreateWasmFunctionQuery>())
-        {
-            UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(context);
-            if (const auto function = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(function_name, context))
-                return function->isDeterministic() ? std::nullopt : std::optional<String>(function_name);
-        }
-
-        /// NOTE It may be an aggregate function, so get(...) may throw.
-        /// However, an aggregate function can be used only in subquery and we do not go into subquery.
-        const auto function = FunctionFactory::instance().get(function_name, context);
-        return function->isDeterministic() ? std::nullopt : std::optional<String>(function->getName());
     }
 };
 
