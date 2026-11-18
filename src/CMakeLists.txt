@@ -1112,14 +1112,6 @@ if (ENABLE_TESTS)
 
     target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::heks)
 
-    if (ENABLE_GPU)
-        # The gtests of `src/GPU` include its headers, which take the CUDA runtime and CCCL as `dbms` does.
-        target_link_libraries(unit_tests_dbms PRIVATE ch_gpu::cudart)
-        target_include_directories(unit_tests_dbms SYSTEM BEFORE PRIVATE
-            "$<TARGET_PROPERTY:_cccl,INTERFACE_INCLUDE_DIRECTORIES>"
-            "$<TARGET_PROPERTY:_rmm,INTERFACE_INCLUDE_DIRECTORIES>")
-    endif()
-
     # `gtest_memchr_strlen_page_boundary` calls every x86_64 `memchr` / `strlen` tier directly.
     if (TARGET libllvmlibc_str_test_candidates)
         target_link_libraries(unit_tests_dbms PRIVATE libllvmlibc_str_test_candidates)
