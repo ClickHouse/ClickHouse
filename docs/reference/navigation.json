@@ -27,6 +27,7 @@
                 "reference/statements/alter/database-comment",
                 "reference/statements/alter/database-setting",
                 "reference/statements/alter/delete",
+                "reference/statements/alter/execute",
                 "reference/statements/alter/named-collection",
                 "reference/statements/alter/order-by",
                 "reference/statements/alter/partition",
@@ -131,6 +132,7 @@
               ]
             },
             "reference/statements/delete",
+            "reference/statements/describe-filesystem-cache",
             "reference/statements/describe-table",
             "reference/statements/detach",
             "reference/statements/distributed-ddl",
