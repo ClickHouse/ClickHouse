@@ -5932,18 +5932,13 @@ void Context::clearVectorSimilarityIndexCache(const StorageID & table_id) const
     {
         auto table = DatabaseCatalog::instance().getTable(table_id, shared_from_this());
 
-        /// Here we lock the table because: a `RENAME TABLE` from or to an `Ordinary` database rewrites the paths of the parts,
-        /// which are read here to build the cache keys. `RENAME` locks the object it gets from the catalog exclusively, so we
-        /// take the shared lock on that same object, before looking through it.
         auto table_lock = table->lockForShare(getCurrentQueryId(), getSettingsRef()[Setting::lock_acquire_timeout]);
 
         auto merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load);
 
         /// Only `MergeTree` tables can have vector similarity indexes, so there is nothing to clear for other tables.
-        if (!merge_tree)
-            return;
-
-        merge_tree->clearVectorSimilarityIndexCache();
+        if (merge_tree)
+            merge_tree->clearVectorSimilarityIndexCache();
     }
     else
     {

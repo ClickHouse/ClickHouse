@@ -1400,15 +1400,14 @@ Clears the userspace page cache, ClickHouse's own in-memory cache of data read f
 ## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE {#drop-vector-similarity-index-cache}
 
 Clears the cache of [vector similarity indexes](/reference/engines/table-engines/mergetree-family/annindexes), which holds the deserialized vector index granules in memory.
-Its size is configured with the server-level setting [`vector_similarity_index_cache_size`](/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size).
 
 ```sql
 SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster_name] [FOR TABLE [db.]table]
 ```
 
-With `FOR TABLE`, only the cache entries of the given `MergeTree` table are removed, and the entries of the other tables stay cached.
+With `FOR TABLE`, only the cache entries of the given `MergeTree` table are removed.
 
-With `FOR TABLE`, the statement requires the `SYSTEM DROP VECTOR SIMILARITY INDEX CACHE` privilege on the table. Without it, the statement clears the entries of all tables, so it requires the privilege on all tables (`ON *.*`).
+Requires the `SYSTEM DROP VECTOR SIMILARITY INDEX CACHE` privilege for all or a single table.
 
 ## SYSTEM CLEAR|DROP CONNECTIONS CACHE {#drop-connections-cache}
 

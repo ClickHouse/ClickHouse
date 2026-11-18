@@ -15979,12 +15979,13 @@ void MergeTreeData::clearVectorSimilarityIndexCache() const
     {
         auto parts_lock = readLockParts();
         for (const auto & part : data_parts_by_info)
-            /// Skip `PreActive` parts to avoid a race condition. Also, queries never read PreActive parts, so there can be no cache entries.
+            /// Skip `PreActive` parts: an INSERT renames them in `Transaction::renameParts` without holding `data_parts_mutex`, so
+            /// reading their paths would be a data race. Also, queries never read `PreActive` parts, so there can be no cache entries.
             if (part->getState() != DataPartState::PreActive)
                 paths_to_data_parts.insert(part->getPathForCacheKey());
     }
 
-    vector_similarity_index_cache->removeEntriesFromCache(paths_to_data_parts);
+    vector_similarity_index_cache->clear(paths_to_data_parts);
 }
 
 void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)

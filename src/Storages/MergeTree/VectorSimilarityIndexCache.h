@@ -117,9 +117,9 @@ public:
         Base::remove([path_to_data_part](const Key & key, const MappedPtr &) { return key.path_to_data_part == path_to_data_part; });
     }
 
-    /// Removes the entries of several data parts in a single pass over the cache. Also cancels the insertions of such entries
+    /// Removes the entries of several data parts. Also cancels the insertions of such entries
     /// that searches are loading now, so that none of them is cached after this call.
-    void removeEntriesFromCache(const std::unordered_set<String> & paths_to_data_parts)
+    void clear(const std::unordered_set<String> & paths_to_data_parts)
     {
         Base::removeAndCancelPendingInsertions([&](const Key & key) { return paths_to_data_parts.contains(key.path_to_data_part); });
     }
