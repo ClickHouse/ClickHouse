@@ -1,5 +1,6 @@
 #include <Interpreters/inplaceBlockConversions.h>
 
+#include <unordered_set>
 #include <utility>
 
 #include <Core/Block.h>
@@ -69,12 +70,67 @@ namespace ErrorCodes
 namespace
 {
 
+/// Names bound in a default expression itself, which shadow the columns of the table:
+/// aliases of expressions (visible in the whole expression) and parameters of lambdas (visible in their bodies).
+using BoundNames = std::unordered_set<String>;
+
+void collectExpressionAliases(const ASTPtr & ast, BoundNames & aliases)
+{
+    /// A subquery has its own scope.
+    if (ast->as<ASTSubquery>() || ast->as<ASTSelectWithUnionQuery>())
+        return;
+
+    if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(ast.get()))
+    {
+        String alias = with_alias->tryGetAlias();
+        if (!alias.empty())
+            aliases.insert(std::move(alias));
+    }
+
+    for (const auto & child : ast->children)
+        collectExpressionAliases(child, aliases);
+}
+
+/// Whether an identifier may be bound to a name of the expression rather than to a column of the table.
+/// An identifier is bound by its whole name or by its leading parts, e.g. `x.n.v` is bound to the lambda parameter `x`.
+bool isBoundInExpression(const ASTIdentifier & identifier, const BoundNames & bound_names)
+{
+    if (bound_names.empty())
+        return false;
+
+    String prefix;
+    for (const auto & part : identifier.name_parts)
+    {
+        if (!prefix.empty())
+            prefix += '.';
+        prefix += part;
+        if (bound_names.contains(prefix))
+            return true;
+    }
+    return bound_names.contains(identifier.name());
+}
+
+/// Returns the parameters of a lambda, or nullptr if the function is not a well-formed lambda.
+const ASTs * tryGetLambdaParameters(const ASTFunction & function)
+{
+    if (function.name != "lambda" || !function.arguments || function.arguments->children.size() != 2)
+        return nullptr;
+
+    const auto * parameters = function.arguments->children[0]->as<ASTFunction>();
+    if (!parameters || parameters->name != "tuple" || !parameters->arguments)
+        return nullptr;
+
+    return &parameters->arguments->children;
+}
+
 /// A default expression may reference a subcolumn of another column, e.g. `c.n.x` of the column `c.n`.
 /// When that column is missing from the block, it is computed by its own default expression under its
 /// name as an alias. An identifier is bound to an alias by its first part, so `c.n.x` cannot be bound to
 /// the alias `c.n`. Rewrite such a reference as an explicit `getSubcolumn` of its column, which then is
 /// a required column of the default expression as well.
-void replaceReferencesToSubcolumnsOfMissingColumns(ASTPtr & ast, const Block & block, const ColumnsDescription & columns)
+/// Identifiers bound to aliases or lambda parameters of the expression itself are not references to columns.
+void replaceReferencesToSubcolumnsOfMissingColumnsImpl(
+    ASTPtr & ast, const Block & block, const ColumnsDescription & columns, const BoundNames & bound_names)
 {
     /// A subquery has its own scope.
     if (ast->as<ASTSubquery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTTableIdentifier>())
@@ -83,7 +139,7 @@ void replaceReferencesToSubcolumnsOfMissingColumns(ASTPtr & ast, const Block & b
     if (const auto * identifier = ast->as<ASTIdentifier>())
     {
         const String & name = identifier->name();
-        if (block.has(name) || columns.has(name))
+        if (block.has(name) || columns.has(name) || isBoundInExpression(*identifier, bound_names))
             return;
 
         auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
@@ -99,8 +155,30 @@ void replaceReferencesToSubcolumnsOfMissingColumns(ASTPtr & ast, const Block & b
         return;
     }
 
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        if (const auto * parameters = tryGetLambdaParameters(*function))
+        {
+            /// Do not rewrite the declarations of the parameters, and let them shadow the columns in the body.
+            BoundNames body_bound_names = bound_names;
+            for (const auto & parameter : *parameters)
+                if (const auto * parameter_identifier = parameter->as<ASTIdentifier>())
+                    body_bound_names.insert(parameter_identifier->name());
+
+            replaceReferencesToSubcolumnsOfMissingColumnsImpl(function->arguments->children[1], block, columns, body_bound_names);
+            return;
+        }
+    }
+
     for (auto & child : ast->children)
-        replaceReferencesToSubcolumnsOfMissingColumns(child, block, columns);
+        replaceReferencesToSubcolumnsOfMissingColumnsImpl(child, block, columns, bound_names);
+}
+
+void replaceReferencesToSubcolumnsOfMissingColumns(ASTPtr & ast, const Block & block, const ColumnsDescription & columns)
+{
+    BoundNames aliases;
+    collectExpressionAliases(ast, aliases);
+    replaceReferencesToSubcolumnsOfMissingColumnsImpl(ast, block, columns, aliases);
 }
 
 /// Add all required expressions for missing columns calculation
