@@ -4,7 +4,7 @@
 
 SET engine_file_truncate_on_insert = 1;
 -- A column served from the columns cache is not decompressed, see the checks at the end.
-SET use_columns_cache = 0;
+-- Random settings limits: use_columns_cache=(0, 0)
 
 INSERT INTO FUNCTION file(currentDatabase() || '_05829.parquet')
 SELECT

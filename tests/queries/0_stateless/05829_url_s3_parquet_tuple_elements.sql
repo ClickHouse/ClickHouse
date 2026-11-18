@@ -4,7 +4,7 @@
 
 -- Tuple elements read through url() and s3() decode only the leaves they need, as through file().
 
-SET use_columns_cache = 0;
+-- Random settings limits: use_columns_cache=(0, 0)
 SET s3_truncate_on_insert = 1;
 
 INSERT INTO FUNCTION s3(s3_conn, filename = '05829_url_s3/' || currentDatabase() || '.parquet', format = Parquet)

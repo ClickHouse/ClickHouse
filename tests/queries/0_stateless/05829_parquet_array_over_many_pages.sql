@@ -1,10 +1,13 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest: the `ParquetMetadata` format needs the Arrow library, which the Fast test build does not include.
+
 -- Arrays whose values span more than 2 Parquet data pages. Without the page index the writer cuts a page inside
 -- a row, here after every 1000 values, so a page can hold no row start at all. Both encodings, read whole,
 -- with rows skipped by PREWHERE, and one row per block.
 
 SET engine_file_truncate_on_insert = 1;
 -- A column served from the columns cache reads no pages, see the page count check.
-SET use_columns_cache = 0;
+-- Random settings limits: use_columns_cache=(0, 0)
 
 DROP TABLE IF EXISTS src;
 CREATE TABLE src (id UInt64, a Array(UInt32), s Array(Nullable(String)), n Array(Array(UInt32)), t Array(Tuple(x UInt32, y String)))
@@ -18,6 +21,12 @@ SETTINGS output_format_parquet_write_page_index = 0, output_format_parquet_data_
 INSERT INTO FUNCTION file(currentDatabase() || '_05829_plain.parquet') SELECT * FROM src
 SETTINGS output_format_parquet_write_page_index = 0, output_format_parquet_data_page_size = 100, output_format_parquet_batch_size = 1000,
     output_format_parquet_max_dictionary_size = 0;
+
+-- The dictionary file must keep every column dictionary-encoded and the PLAIN file none, otherwise one encoding is tested twice.
+SELECT arrayMap(c -> has(tupleElement(c, 'encodings'), 'RLE_DICTIONARY'), columns)
+FROM file(currentDatabase() || '_05829_dict.parquet', ParquetMetadata);
+SELECT arrayMap(c -> has(tupleElement(c, 'encodings'), 'RLE_DICTIONARY'), columns)
+FROM file(currentDatabase() || '_05829_plain.parquet', ParquetMetadata);
 
 -- Each check reads both files and compares each with the rows it was written from.
 SELECT _file LIKE '%plain%' AS plain, arraySort(groupArray((id, a, s, n, t))) = (SELECT arraySort(groupArray((id, a, s, n, t))) FROM src)
