@@ -708,7 +708,7 @@ class PerformanceSelection(Targeting):
 
     def shard_tests(self, test_files, shard, shards, arch, directory=Path("tests/performance")):
         # Selected tests run all their queries; balance the runtimes of the earlier PR runs that did too.
-        # Every attempt of the run reads the same rows, so a rerun of some shards keeps the assignment of the others.
+        # Every attempt of the run reads the same rows, so a rerun of some shards with the same selection keeps the assignment of the others.
         start = datetime.fromtimestamp(self.info.workflow_start_time, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         cutoff = sql_string(start)
         rows = self.rows(f"""
