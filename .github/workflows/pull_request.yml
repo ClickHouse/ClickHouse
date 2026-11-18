@@ -5,6 +5,7 @@ name: PR
 on:
   pull_request:
     branches: ['master']
+    types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
@@ -4216,8 +4217,8 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, s3 storage, DBReplicated, sequential)' --workflow "PR" --ci --timestamp
 
-  stateless_tests_arm_binary_parallelreplicas_s3_storage_parallel:
-    runs-on: [self-hosted, pr-arm-medium]
+  stateless_tests_amd_debug_parallelreplicas_s3_storage_parallel:
+    runs-on: [self-hosted, pr-amd-medium]
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
@@ -4246,8 +4247,8 @@ jobs:
     - unit_tests_msan_function_prop_fuzzer
     - unit_tests_tsan
     - unit_tests_tsan_function_prop_fuzzer
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBQYXJhbGxlbFJlcGxpY2FzLCBzMyBzdG9yYWdlLCBwYXJhbGxlbCk=') }}
-    name: "Stateless tests (arm_binary, ParallelReplicas, s3 storage, parallel)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsIFBhcmFsbGVsUmVwbGljYXMsIHMzIHN0b3JhZ2UsIHBhcmFsbGVsKQ==') }}
+    name: "Stateless tests (amd_debug, ParallelReplicas, s3 storage, parallel)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -4275,10 +4276,10 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, ParallelReplicas, s3 storage, parallel)' --workflow "PR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_debug, ParallelReplicas, s3 storage, parallel)' --workflow "PR" --ci --timestamp
 
-  stateless_tests_arm_binary_parallelreplicas_s3_storage_sequential:
-    runs-on: [self-hosted, pr-arm-small]
+  stateless_tests_amd_debug_parallelreplicas_s3_storage_sequential:
+    runs-on: [self-hosted, pr-amd-small]
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
@@ -4307,8 +4308,8 @@ jobs:
     - unit_tests_msan_function_prop_fuzzer
     - unit_tests_tsan
     - unit_tests_tsan_function_prop_fuzzer
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBQYXJhbGxlbFJlcGxpY2FzLCBzMyBzdG9yYWdlLCBzZXF1ZW50aWFsKQ==') }}
-    name: "Stateless tests (arm_binary, ParallelReplicas, s3 storage, sequential)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsIFBhcmFsbGVsUmVwbGljYXMsIHMzIHN0b3JhZ2UsIHNlcXVlbnRpYWwp') }}
+    name: "Stateless tests (amd_debug, ParallelReplicas, s3 storage, sequential)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -4336,7 +4337,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, ParallelReplicas, s3 storage, sequential)' --workflow "PR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_debug, ParallelReplicas, s3 storage, sequential)' --workflow "PR" --ci --timestamp
 
   stateless_tests_arm_binary_asyncinsert_s3_storage_parallel:
     runs-on: [self-hosted, pr-arm-medium]
@@ -11104,6 +11105,8 @@ jobs:
     - stateless_tests_amd_debug_distributed_plan_s3_storage_sequential
     - stateless_tests_amd_debug_flaky_check
     - stateless_tests_amd_debug_parallel
+    - stateless_tests_amd_debug_parallelreplicas_s3_storage_parallel
+    - stateless_tests_amd_debug_parallelreplicas_s3_storage_sequential
     - stateless_tests_amd_debug_sequential
     - stateless_tests_amd_llvm_coverage_1_3
     - stateless_tests_amd_llvm_coverage_2_3
@@ -11127,8 +11130,6 @@ jobs:
     - stateless_tests_arm_binary_asyncinsert_s3_storage_parallel
     - stateless_tests_arm_binary_asyncinsert_s3_storage_sequential
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_parallelreplicas_s3_storage_parallel
-    - stateless_tests_arm_binary_parallelreplicas_s3_storage_sequential
     - stateless_tests_arm_binary_s3_storage_dbreplicated_parallel_1_2
     - stateless_tests_arm_binary_s3_storage_dbreplicated_parallel_2_2
     - stateless_tests_arm_binary_s3_storage_dbreplicated_sequential
