@@ -7,6 +7,9 @@
                 <endpoint>http://minio1:9001/root/data/disks/disk_s3/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <!-- The log is synced on every removal, such as of the `.lock` of a backup, and
+                     `test_backup_to_s3_disk_fsyncs_local_metadata` counts the syncs of backup files only. -->
+                <persistent_removal_log>false</persistent_removal_log>
             </disk_s3>
             <!-- Reached through the `broken_s3` mock, so a test can make its answers fail. It allows no
                  retries of its own, so an upload into it gets through only when something else retries it. -->
