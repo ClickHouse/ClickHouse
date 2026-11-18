@@ -20,7 +20,8 @@ TRUNCATE TABLE t_archive; -- { serverError NOT_IMPLEMENTED }
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT query_kind, exception_code, position(exception, 'url_query_marker') > 0 AS has_url_query
+SELECT query_kind, exception_code, position(exception, 'url_query_marker') > 0 AS has_url_query,
+    extract(exception, '\'' || currentDatabase() || '\\.(\\w+)') AS table_name
 FROM system.query_log
 WHERE current_database = currentDatabase() AND is_initial_query AND type != 'QueryStart' AND exception_code IN (48, 291)
 ORDER BY event_time_microseconds;

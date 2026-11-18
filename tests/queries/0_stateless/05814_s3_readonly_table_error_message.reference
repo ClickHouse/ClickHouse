@@ -1,4 +1,4 @@
-Insert	291	0
-Drop	291	0
-Insert	48	0
-Drop	48	0
+Insert	291	0	
+Drop	291	0	t_query
+Insert	48	0	
+Drop	48	0	t_archive
