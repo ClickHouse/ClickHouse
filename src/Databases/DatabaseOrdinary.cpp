@@ -241,23 +241,24 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
     create_query.storage->set(create_query.storage->engine, engine->clone());
 }
 
-StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(const ASTCreateQuery & create_query, bool create_custom_disk) const
+StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(
+    const ASTCreateQuery & create_query, bool replicated_defaults, bool create_custom_disk) const
 {
-    /// The `convert_to_replicated` flag is looked up on the first disk of the table's storage policy, and
-    /// both phases of the conversion have to resolve it identically. The policy is taken from the CREATE
-    /// query rather than from the storage object, because a lazily loaded table has no storage object yet.
+    /// The `convert_to_replicated` flag is looked up on the first disk of the storage policy the table has as a
+    /// `MergeTree`, and both phases of the conversion have to resolve it identically. The policy is taken from the
+    /// CREATE query rather than from the storage object, because a lazily loaded table has no storage object yet.
     /// The resolution mirrors `MergeTreeData::getStoragePolicy`: a `disk` setting, from the query or the
-    /// config defaults the engine starts from, takes precedence over `storage_policy`.
+    /// config defaults the engine starts from, takes precedence over `storage_policy`. The defaults are the
+    /// `replicated_merge_tree` ones with `replicated_defaults`, as in `registerStorageMergeTree`, and the
+    /// `merge_tree` ones otherwise, whatever the engine in the query is: the second phase sees the query
+    /// already rewritten to a replicated engine and still has to find the policy of the first one.
     ///
     /// An inline `disk(...)` definition is resolved only with `create_custom_disk`, because resolving it
     /// instantiates the custom disk. Without `lazy_load_tables` the table is loaded right after the metadata
     /// scan, which creates the same disk anyway, so it costs nothing. With `lazy_load_tables` it would create
     /// the disk (and fail on an unavailable `include` or `from_zk`) for a table that is otherwise deferred
     /// until first access, so nullptr is returned instead and the flag is not looked for.
-    /// Same defaults as in `registerStorageMergeTree`.
-    const auto * engine = create_query.storage ? create_query.storage->engine : nullptr;
-    const bool replicated = engine && engine->name.starts_with("Replicated") && engine->name.ends_with("MergeTree");
-    MergeTreeSettings settings = replicated ? getContext()->getReplicatedMergeTreeSettings() : getContext()->getMergeTreeSettings();
+    MergeTreeSettings settings = replicated_defaults ? getContext()->getReplicatedMergeTreeSettings() : getContext()->getMergeTreeSettings();
     if (create_query.storage && create_query.storage->settings)
     {
         /// Applied in order, so the last assignment wins, as in `MergeTreeSettings::loadFromQuery`.
@@ -318,7 +319,9 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     /// A table on an inline `disk(...)` definition in a database with `lazy_load_tables` is not looked at:
     /// the second phase reports the flag if the table is ever loaded eagerly with it.
     auto policy = getStoragePolicyFromCreateQuery(
-        create_query, /* create_custom_disk = */ !database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables]);
+        create_query,
+        /* replicated_defaults = */ false,
+        /* create_custom_disk = */ !database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables]);
     if (!policy)
         return;
 
@@ -466,15 +469,16 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
                 convertMergeTreeToReplicatedIfNeeded(ast, qualified_name, file_name);
 
-                /// A lazily loaded table has no storage policy until it is materialized, so remember the definition
-                /// of every table that may still have to finish the conversion, for `restoreMetadataAfterConvertingToReplicated`.
-                /// Other tables are skipped there without reading their metadata again.
-                if (database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables] && create_query->storage
-                    && create_query->storage->engine && create_query->storage->engine->name.starts_with("Replicated")
+                /// Remember the definition of every table that may still have to finish the conversion, for
+                /// `restoreMetadataAfterConvertingToReplicated`: a lazily loaded table has no storage policy until it
+                /// is materialized, and a loaded one knows only its replicated policy, not the one the flag was
+                /// looked for on. Other tables are skipped there without reading their metadata again.
+                if (create_query->storage && create_query->storage->engine
+                    && create_query->storage->engine->name.starts_with("Replicated")
                     && create_query->storage->engine->name.ends_with("MergeTree"))
                 {
                     std::lock_guard lock(mutex);
-                    lazy_replicated_create_queries[qualified_name.table] = ast;
+                    replicated_create_queries[qualified_name.table] = ast;
                 }
 
                 {
@@ -767,26 +771,30 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     ///
     /// A stand-in has no storage policy of its own, and materializing every deferred table just to ask it for its
     /// disks would defeat `lazy_load_tables`. Resolve the policy from the CREATE query remembered by the metadata
-    /// scan instead - the way `convertMergeTreeToReplicatedIfNeeded` did when it found the flag - so that both
-    /// phases look at the same disk even when the table is on a non-default `storage_policy`. A stand-in that is
-    /// not remembered is not a `Replicated*MergeTree` table and cannot have the conversion pending.
+    /// scan instead. A stand-in that is not remembered is not a `Replicated*MergeTree` table and cannot have the
+    /// conversion pending.
+    ASTPtr create_query;
+    {
+        std::lock_guard lock(mutex);
+        if (auto it = replicated_create_queries.find(name.table); it != replicated_create_queries.end())
+        {
+            create_query = std::move(it->second);
+            replicated_create_queries.erase(it);
+        }
+    }
+
+    const bool lazy_load_tables = database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables];
     StoragePolicyPtr storage_policy;
     const auto * proxy = dynamic_cast<const StorageProxy *>(table.get());
     if (proxy && proxy->isLazyStandIn())
     {
-        ASTPtr create_query;
-        {
-            std::lock_guard lock(mutex);
-            auto it = lazy_replicated_create_queries.find(name.table);
-            if (it == lazy_replicated_create_queries.end())
-                return;
-            create_query = std::move(it->second);
-            lazy_replicated_create_queries.erase(it);
-        }
+        if (!create_query)
+            return;
 
         /// The first phase does not resolve an inline `disk(...)` definition with `lazy_load_tables`, so it never
         /// converts such a table.
-        storage_policy = getStoragePolicyFromCreateQuery(create_query->as<const ASTCreateQuery &>(), /* create_custom_disk = */ false);
+        storage_policy = getStoragePolicyFromCreateQuery(
+            create_query->as<const ASTCreateQuery &>(), /* replicated_defaults = */ true, /* create_custom_disk = */ false);
         if (!storage_policy)
             return;
     }
@@ -798,10 +806,30 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
         storage_policy = loaded_rmt->getStoragePolicy();
     }
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table);
+    /// Look on the disk `convertMergeTreeToReplicatedIfNeeded` found the flag on: the first disk of the policy from the
+    /// `merge_tree` defaults, which may differ from the `replicated_merge_tree` ones the table has now. The query is
+    /// the same after a restart between the phases, so the flag is found then too. A disk the replicated table does
+    /// not use cannot hold its data, so the table's own first disk is checked instead, as for a table that was
+    /// attached after the metadata scan.
+    DiskPtr checking_disk;
+    if (create_query)
+    {
+        auto source_policy = getStoragePolicyFromCreateQuery(
+            create_query->as<const ASTCreateQuery &>(), /* replicated_defaults = */ false, /* create_custom_disk = */ !lazy_load_tables);
+        if (source_policy && !source_policy->getDisks().empty())
+        {
+            auto source_disk = source_policy->getDisks()[0];
+            if (storage_policy->tryGetVolumeIndexByDiskName(source_disk->getName()).has_value())
+                checking_disk = source_disk;
+        }
+    }
+    if (!checking_disk)
+    {
+        auto storage_disks = storage_policy->getDisks();
+        checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
+    }
 
-    auto storage_disks = storage_policy->getDisks();
-    auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table);
     if (!checking_disk->existsFile(convert_to_replicated_flag_path))
         return;
 

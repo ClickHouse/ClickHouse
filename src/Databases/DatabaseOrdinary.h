@@ -123,7 +123,7 @@ public:
     /// table before their side effects.
     static bool isTableReadonlyAsReplicated(const ASTCreateQuery & create_query, ContextPtr local_context);
 
-    StoragePolicyPtr getStoragePolicyFromCreateQuery(const ASTCreateQuery & create_query, bool create_custom_disk) const;
+    StoragePolicyPtr getStoragePolicyFromCreateQuery(const ASTCreateQuery & create_query, bool replicated_defaults, bool create_custom_disk) const;
 
 protected:
     /// Erase pending async load/startup task references for a table. Must hold `mutex`.
@@ -163,9 +163,9 @@ protected:
     DatabaseMetadataDiskSettings database_metadata_disk_settings;
     DiskPtr metadata_disk_ptr;
 
-    /// The CREATE queries of the `Replicated*MergeTree` tables of a database with `lazy_load_tables`, found by the
-    /// metadata scan and consumed by `restoreMetadataAfterConvertingToReplicated` at table startup.
-    std::unordered_map<String, ASTPtr> lazy_replicated_create_queries TSA_GUARDED_BY(mutex);
+    /// The CREATE queries of the `Replicated*MergeTree` tables, found by the metadata scan and consumed by
+    /// `restoreMetadataAfterConvertingToReplicated` at table startup.
+    std::unordered_map<String, ASTPtr> replicated_create_queries TSA_GUARDED_BY(mutex);
 
 private:
     bool shouldLazyLoad(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const;

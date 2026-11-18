@@ -4,7 +4,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
-from test_modify_engine_on_restart.common import set_convert_flags
+from test_modify_engine_on_restart.common import get_table_path, set_convert_flags
 
 cluster = ClickHouseCluster(__file__)
 ch1 = cluster.add_instance(
@@ -32,6 +32,10 @@ LOOPED_DISK_XML = """<clickhouse>
                 <type>local</type>
                 <path>/var/lib/clickhouse/flaky_disk/</path>
             </flaky>
+            <extra>
+                <type>local</type>
+                <path>/var/lib/clickhouse/extra_disk/</path>
+            </extra>
         </disks>
         <policies>
             <with_looped>
@@ -51,6 +55,12 @@ LOOPED_DISK_XML = """<clickhouse>
                     <main><disk>default</disk></main>
                 </volumes>
             </looped_first>
+            <extra_first>
+                <volumes>
+                    <extra><disk>extra</disk></extra>
+                    <main><disk>default</disk></main>
+                </volumes>
+            </extra_first>
         </policies>
     </storage_configuration>
 </clickhouse>"""
@@ -244,3 +254,69 @@ def test_broken_disk_in_merge_tree_defaults_only(started_cluster):
         ch1.restart_clickhouse()
 
     ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+
+
+REPLICATED_DEFAULTS_XML = """<clickhouse>
+    <replicated_merge_tree><storage_policy>extra_first</storage_policy></replicated_merge_tree>
+</clickhouse>"""
+
+
+@pytest.mark.parametrize("lazy_load_tables", [0, 1])
+def test_flag_found_with_different_replicated_defaults(
+    started_cluster, lazy_load_tables
+):
+    # The flag is put on the first disk of the `merge_tree` defaults policy, and the restore after the
+    # conversion has to look for it there, not on the first disk of the `replicated_merge_tree` one.
+    defaults_path = "/etc/clickhouse-server/config.d/replicated_merge_tree_defaults.xml"
+    try:
+        ch1.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"cat > {defaults_path} << 'EOF'\n{REPLICATED_DEFAULTS_XML}\nEOF",
+            ]
+        )
+        ch1.restart_clickhouse()
+
+        ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+        ch1.query(
+            f"CREATE DATABASE {database_name} ENGINE = Atomic SETTINGS lazy_load_tables = {lazy_load_tables}"
+        )
+
+        flag_paths = {}
+        for table in ["flagged", "half_converted"]:
+            q(f"CREATE TABLE {table} ( A Int64 ) ENGINE = MergeTree ORDER BY A")
+            q(f"INSERT INTO {table} SELECT number FROM numbers(10)")
+            flag_paths[table] = (
+                get_table_path(ch1, table, database_name) + "convert_to_replicated"
+            )
+            assert "/var/lib/clickhouse/extra_disk/" not in flag_paths[table]
+
+        set_convert_flags(ch1, database_name, ["flagged"])
+
+        # The state a restart between the conversion and the restore leaves: the definition is
+        # already replicated, the flag is still there, and Keeper has no metadata for the table.
+        q("DETACH TABLE half_converted")
+        q("ATTACH TABLE half_converted AS REPLICATED")
+        ch1.exec_in_container(["touch", flag_paths["half_converted"]])
+
+        ch1.restart_clickhouse()
+
+        for table in ["flagged", "half_converted"]:
+            assert engine_of(table) == "ReplicatedMergeTree"
+            q(f"INSERT INTO {table} SELECT number FROM numbers(10, 10)")
+            assert q(f"SELECT count() FROM {table}").strip() == "20"
+            assert (
+                ch1.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        f"test -e {flag_paths[table]} && echo exists || echo gone",
+                    ]
+                ).strip()
+                == "gone"
+            )
+    finally:
+        ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+        ch1.exec_in_container(["rm", "-f", defaults_path])
+        ch1.restart_clickhouse()
