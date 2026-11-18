@@ -134,9 +134,9 @@ static UnityV2CatalogFullSchemaName parseFullSchemaName(const std::string & full
 UnityV2Catalog::UnityV2Catalog(
     const std::string & catalog_,
     const std::string & base_url_,
-    const std::string & catalog_credential_,
+    std::string_view catalog_credential_,
     const std::string & auth_scope_,
-    const std::string & auth_header_,
+    std::string_view auth_header_,
     const std::string & oauth_server_uri_,
     DB::ContextPtr context_,
     DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
@@ -163,13 +163,13 @@ UnityV2Catalog::UnityV2Catalog(
     else
     {
         use_oauth = false;
-        access_token = AccessToken{.token = catalog_credential_, .expires_at = std::nullopt};
+        access_token = AccessToken{.token = DB::SecretString(catalog_credential_), .expires_at = std::nullopt};
     }
 }
 
 UnityV2Catalog::~UnityV2Catalog() = default;
 
-void UnityV2Catalog::maybeSetAuthHeader(const std::string & catalog_credential_, const std::string & auth_header_)
+void UnityV2Catalog::maybeSetAuthHeader(std::string_view catalog_credential_, std::string_view auth_header_)
 {
     if (!catalog_credential_.empty() || auth_header_.empty())
         return;
@@ -227,7 +227,7 @@ void UnityV2Catalog::ensureBearerToken(bool force_refresh) const
     access_token = retrieveAccessToken();
 }
 
-std::string UnityV2Catalog::getBearerToken(bool force_refresh) const
+DB::SecretString UnityV2Catalog::getBearerToken(bool force_refresh) const
 {
     std::lock_guard lock(token_mutex);
     ensureBearerToken(force_refresh);
@@ -244,7 +244,7 @@ DB::HTTPHeaderEntries UnityV2Catalog::getAuthHeaders(bool force_refresh) const
     if (token.empty())
         return {};
 
-    DB::HTTPHeaderEntries headers{{"Authorization", "Bearer " + token}};
+    DB::HTTPHeaderEntries headers{{"Authorization", fmt::format("Bearer {}", token)}};
     getContext()->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers);
     return headers;
 }
@@ -508,12 +508,14 @@ bool UnityV2Catalog::updateMetadata(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
-    Poco::JSON::Object::Ptr new_snapshot) const
+    const String & base_catalog_metadata_location,
+    Poco::JSON::Object::Ptr new_snapshot,
+    Poco::JSON::Object::Ptr new_metadata) const
 {
     /// `false` means a commit conflict (HTTP 409) and the caller retries, so the result is passed through unchanged.
     return requestWithRetry([&](bool force_refresh)
     {
-        return getIcebergRestCatalog(force_refresh)->updateMetadata(namespace_name, table_name, new_metadata_path, new_snapshot);
+        return getIcebergRestCatalog(force_refresh)->updateMetadata(namespace_name, table_name, new_metadata_path, base_catalog_metadata_location, new_snapshot, new_metadata);
     });
 }
 
@@ -521,12 +523,13 @@ bool UnityV2Catalog::updateSchema(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
+    const String & base_catalog_metadata_location,
     Poco::JSON::Object::Ptr new_schema,
     Int32 previous_schema_id) const
 {
     return requestWithRetry([&](bool force_refresh)
     {
-        return getIcebergRestCatalog(force_refresh)->updateSchema(namespace_name, table_name, new_metadata_path, new_schema, previous_schema_id);
+        return getIcebergRestCatalog(force_refresh)->updateSchema(namespace_name, table_name, new_metadata_path, base_catalog_metadata_location, new_schema, previous_schema_id);
     });
 }
 
@@ -848,7 +851,7 @@ ICatalog::CredentialsRefreshCallback UnityV2Catalog::getDeltaCredentialsCallback
 
 std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_refresh) const
 {
-    std::string token;
+    DB::SecretString token;
     std::string rest_auth_header;
     {
         std::lock_guard lock(token_mutex);
@@ -856,7 +859,7 @@ std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_re
             return iceberg_rest_catalog;
 
         if (auth_header)
-            rest_auth_header = auth_header->name + ":" + auth_header->value;
+            rest_auth_header = fmt::format("{}:{}", auth_header->name, auth_header->value);
         else
         {
             /// On `force_refresh` this resets `iceberg_rest_catalog`, so the catalog below embeds the new token.
@@ -864,7 +867,7 @@ std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_re
             token = access_token->token;
             /// Empty token: keep the embedded catalog anonymous too.
             if (!token.empty())
-                rest_auth_header = "Authorization: Bearer " + token;
+                rest_auth_header = fmt::format("Authorization: Bearer {}", token);
         }
     }
 

@@ -47,21 +47,21 @@ public:
     static X509Certificate::List fromFile(const std::string & path);
     static X509Certificate::List fromBuffer(const std::string & buffer);
 
-    uint64_t version() const;
-    std::string serialNumber() const;
-    std::string signatureAlgorithm() const;
-    std::string issuerName() const;
-    std::string subjectName() const;
-    std::string issuerName(uint nid) const;
-    std::string subjectName(uint nid) const;
-    std::string commonName() const;
-    std::string publicKeyAlgorithm() const;
-    std::string validFrom() const;
-    std::string expiresOn() const;
+    [[nodiscard]] uint64_t version() const;
+    [[nodiscard]] std::string serialNumber() const;
+    [[nodiscard]] std::string signatureAlgorithm() const;
+    [[nodiscard]] std::string issuerName() const;
+    [[nodiscard]] std::string subjectName() const;
+    [[nodiscard]] std::string issuerName(uint nid) const;
+    [[nodiscard]] std::string subjectName(uint nid) const;
+    [[nodiscard]] std::string commonName() const;
+    [[nodiscard]] std::string publicKeyAlgorithm() const;
+    [[nodiscard]] std::string validFrom() const;
+    [[nodiscard]] std::string expiresOn() const;
 
     /// Validity period as Unix timestamps (seconds since epoch).
-    time_t notBefore() const;
-    time_t notAfter() const;
+    [[nodiscard]] time_t notBefore() const;
+    [[nodiscard]] time_t notAfter() const;
 
     class Subjects
     {
@@ -79,7 +79,7 @@ public:
         static void canonicalizeSANTypePrefix(String & subject);
 
     public:
-        const container & at(Type type_) const;
+        [[nodiscard]] const container & at(Type type_) const;
         bool empty();
 
         void insert(const String & subject_type_, String && subject);
@@ -93,7 +93,7 @@ public:
         bool operator==(const X509Certificate::Subjects & rhs) const;
     };
 
-    Subjects extractAllSubjects() const;
+    [[nodiscard]] Subjects extractAllSubjects() const;
 
 private:
     X509 * certificate;

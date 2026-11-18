@@ -123,17 +123,6 @@ add_library(global-libs INTERFACE)
 include (cmake/sanitize.cmake)
 include (cmake/profile_optimization.cmake)
 
-option (ENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER "With Silk fibers, we may access the same TLS variable from the same fiber, and if executed on different OS threads, the same variable access will hit different memory locations, leading to very hard to catch bugs. This sanitizer helps catch that. Debug only." OFF)
-if (ENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER)
-    set (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN "${CMAKE_BINARY_DIR}/SilkThreadLocalStorageSanitizerPass.so")
-    execute_process (COMMAND ${CMAKE_COMMAND} -E env "CXX=${CMAKE_CXX_COMPILER}" bash "${CMAKE_SOURCE_DIR}/utils/silk-thread-local-storage-sanitizer/build.sh" "${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}" COMMAND_ERROR_IS_FATAL ANY)
-endif ()
-if (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN)
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fpass-plugin=${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpass-plugin=${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}")
-    add_compile_definitions (SILK_THREAD_LOCAL_STORAGE_SANITIZER=1)
-endif ()
-
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
 
 set (CMAKE_COLOR_MAKEFILE ${ENABLE_COLORED_BUILD}) # works only for the makefile generator
@@ -268,7 +257,11 @@ option(OMIT_HEAVY_DEBUG_SYMBOLS
     "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
 
-option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
+option(BUILD_STANDALONE_KEEPER "Deprecated: build keeper as a separate binary instead of a symlink to clickhouse" OFF)
+if (BUILD_STANDALONE_KEEPER)
+    message (WARNING "BUILD_STANDALONE_KEEPER is deprecated and will be removed: `clickhouse-keeper` is a symlink to the `clickhouse` binary, "
+        "which runs Keeper in the same way, and a separate binary costs another full ThinLTO link in every build.")
+endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
 # (NOTE: LINKER_NAME can be either path or name, and in different variants)
@@ -378,8 +371,9 @@ if (ENABLE_BUILD_PROFILING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -ftime-trace")
 
     if (LINKER_NAME MATCHES "lld")
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--time-trace")
-        set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--time-trace")
+        set (LINK_TIME_TRACE_GRANULARITY 50000 CACHE STRING "Minimum duration in microseconds of an event recorded in the linker time trace (lld --time-trace-granularity)")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--time-trace -Wl,--time-trace-granularity=${LINK_TIME_TRACE_GRANULARITY}")
+        set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--time-trace -Wl,--time-trace-granularity=${LINK_TIME_TRACE_GRANULARITY}")
     endif ()
 endif ()
 
@@ -420,6 +414,17 @@ if (ARCH_AMD64 AND NOT SANITIZE)
     # which makes benchmark results more stable.
     set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
     set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
+endif()
+
+if (OS_LINUX AND ARCH_AARCH64 AND NOT SANITIZE)
+    # Sign return addresses, so that overwriting one on the stack cannot redirect control flow.
+    # `paciasp` and `autiasp` are no-ops on cores without `FEAT_PAuth` (before ARMv8.3), so the
+    # binary still runs there. Code must not be compiled for ARMv8.3 or later (by `-march` or a
+    # `target` attribute), because then the compiler emits `retaa`, which raises SIGILL on those
+    # cores; the compatibility check guards against it.
+    # Sanitizer builds are excluded, because the sanitizer runtimes do not strip the signature
+    # when they unwind, so their reports would show garbage frames.
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbranch-protection=pac-ret")
 endif()
 
 # Puts a canary between the locals and the return address and checks it before returning, so that an
@@ -835,11 +840,6 @@ function (add_native_target TARGET)
 endfunction (add_native_target)
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
-
-# We can only check that SILK_THREAD_LOCAL_STORAGE_SANITIZER implies USE_SILK once we know whether silk is built
-if (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN AND NOT TARGET ch_contrib::silk_fibers)
-    message (FATAL_ERROR "SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN is set, but silk is not built in this configuration (disable with -DENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER=OFF)")
-endif ()
 
 # We can only include XRay flags and defines once we know that we're building LLVM
 if (ENABLE_XRAY)

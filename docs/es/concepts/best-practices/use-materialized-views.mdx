@@ -8,19 +8,33 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 ClickHouse admite dos tipos de vistas materializadas: [**incrementales**](/es/concepts/features/materialized-views/incremental-materialized-view) y [**actualizables**](/es/concepts/features/materialized-views/refreshable-materialized-view). Aunque ambas están diseñadas para acelerar las consultas mediante el precálculo y almacenamiento de resultados, difieren significativamente en cómo y cuándo se ejecutan las consultas subyacentes, para qué cargas de trabajo son adecuadas y cómo se gestiona la actualización de los datos.
 
 **Debería considerar las vistas materializadas para patrones de consulta específicos que necesiten acelerarse, siempre que ya se hayan aplicado las buenas prácticas previas [sobre tipos de datos](/es/concepts/best-practices/select-data-type) y [optimización de la clave primaria](/es/concepts/best-practices/choosing-a-primary-key).**
 
 **Las vistas materializadas incrementales** se actualizan en tiempo real. A medida que se insertan nuevos datos en la tabla de origen, ClickHouse aplica automáticamente la consulta de la vista materializada al nuevo bloque de datos y escribe los resultados en una tabla de destino independiente. Con el tiempo, ClickHouse fusiona estos resultados parciales para producir una vista completa y actualizada. Este enfoque es muy eficiente porque desplaza el coste computacional al momento de la inserción y solo procesa los datos nuevos. Como resultado, las consultas `SELECT` sobre la tabla de destino son rápidas y ligeras. Las vistas incrementales admiten todas las funciones de agregación y escalan bien, incluso hasta petabytes de datos, porque cada consulta opera sobre un subconjunto pequeño y reciente del conjunto de datos que se está insertando.
 
-<Image img="/images/bestpractices/incremental_materialized_view.webp" size="lg" alt="Vistas materializadas" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Vistas materializadas](/images/bestpractices/incremental_materialized_view.webp)
+
+</Frame>
+
+</div>
 
 **Las vistas materializadas actualizables**, en cambio, se actualizan según una programación. Estas vistas vuelven a ejecutar periódicamente su consulta completa y sobrescriben el resultado en la tabla de destino. Esto es similar a las vistas materializadas de bases de datos OLTP tradicionales como Postgres.
 
-<Image img="/images/bestpractices/refreshable_materialized_view.webp" size="lg" alt="Diagrama de vista materializada actualizable" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Diagrama de vista materializada actualizable](/images/bestpractices/refreshable_materialized_view.webp)
+
+</Frame>
+
+</div>
 
 La elección entre vistas materializadas incrementales y actualizables depende en gran medida de la naturaleza de la consulta, de la frecuencia con la que cambian los datos y de si las actualizaciones de la vista deben reflejar cada fila a medida que se inserta o si una actualización periódica es aceptable. Comprender estas diferencias es clave para diseñar vistas materializadas escalables y de alto rendimiento en ClickHouse.
 
