@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstddef>
 #include <functional>
+#include <memory>
 
 namespace DB
 {
@@ -28,8 +29,14 @@ class ReadFromMergeTree;
 
 struct DistributedPlanLocalObject;
 
+struct TableOccurrences;
+
 /// The read of the single-node plan that a read of the plan with parallel replicas stands for, or nullptr.
 using FindSingleNodeRead = std::function<const ReadFromMergeTree *(const ReadFromMergeTree &)>;
+/// `FindSingleNodeRead` before the builder of the plan with parallel replicas binds it the tables of both query trees,
+/// the single-node one first (`collectTableOccurrences`).
+using FindSingleNodeReadByOccurrence = std::function<const ReadFromMergeTree *(
+    const std::shared_ptr<const TableOccurrences> &, const std::shared_ptr<const TableOccurrences> &, const ReadFromMergeTree &)>;
 
 /// What the builder of the plan with parallel replicas for automatic parallel replicas produced. When
 /// it built nothing, `skip_reason` says which kind of reason stopped it, so that the optimization can
@@ -47,10 +54,14 @@ struct PlanWithParallelReplicas
 
     std::unique_ptr<QueryPlan> plan;
     SkipReason skip_reason = SkipReason::None;
+    /// The tables of the single-node query tree and of the tree `plan` was built from (`collectTableOccurrences`),
+    /// which tell apart the reads of a table read more than once.
+    std::shared_ptr<const TableOccurrences> single_node_table_occurrences = nullptr;
+    std::shared_ptr<const TableOccurrences> replicas_table_occurrences = nullptr;
 };
 
 using QueryPlanWithParallelReplicasBuilder
-    = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const FindSingleNodeRead &, const LoggerPtr &)>;
+    = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const FindSingleNodeReadByOccurrence &, const LoggerPtr &)>;
 
 struct QueryPlanOptimizationSettings
 {
@@ -308,6 +319,10 @@ struct QueryPlanOptimizationSettings
     size_t max_parallel_replicas = 1;
     size_t automatic_parallel_replicas_mode;
     size_t min_bytes_per_task_for_reading;
+    /// Testing only: ignore the cap on how many threads a read can usefully occupy, which otherwise
+    /// decides a small read before the cost model is consulted. It does not touch
+    /// `automatic_parallel_replicas_min_bytes_per_replica`, which still applies on its own.
+    bool automatic_parallel_replicas_ignore_thresholds;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
     float automatic_parallel_replicas_max_duplicated_read_ratio;
     float automatic_parallel_replicas_statistics_drift_ratio;
