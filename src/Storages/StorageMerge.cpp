@@ -5,6 +5,7 @@
 #include <span>
 #include <Access/ContextAccess.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -18,6 +19,7 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/traverseQueryTree.h>
+#include <Analyzer/WindowFunctionsUtils.h>
 #include <Common/Logger.h>
 #include <Common/NaNUtils.h>
 #include <Common/logger_useful.h>
@@ -1898,6 +1900,7 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     const ContextPtr & context,
     const Names & required_column_names,
     const NamesAndTypesList & child_only_columns,
+    const std::optional<NameAndTypePair> & substitute_column,
     bool is_fetch_columns_stage,
     std::vector<std::pair<size_t, QueryTreeNodePtr>> & child_only_projection)
 {
@@ -1909,22 +1912,41 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     // except for making the substitute read part of the projection at `FetchColumns`, as below for a JOIN:
     // a child that analyzes the query itself (`Distributed`) would otherwise pick the smallest column of
     // its own, while the shards pick theirs. This is the case of a `Merge` nested in another one, which
-    // removed the JOIN already.
-    if (join_tree_type == QueryTreeNodeType::TABLE || join_tree_type == QueryTreeNodeType::TABLE_FUNCTION)
+    // removed the JOIN already. The substitute is projected even when the `Merge` declares a column of
+    // the same name: the references to the `Merge` virtual columns are replaced by constants below, which
+    // would leave the child query without any read of the child's own. A column cannot be appended to the
+    // projection of an aggregating query, so such a query is reduced to its reads below, as for a JOIN: it
+    // is read at `FetchColumns`, and the aggregation is performed by the `Merge`.
+    const bool has_columns_to_project = is_fetch_columns_stage && (!child_only_columns.empty() || substitute_column);
+    const auto & original_query_node = *modified_query->as<QueryNode>();
+    const bool is_aggregating_query = original_query_node.hasGroupBy()
+        || original_query_node.hasHaving()
+        || original_query_node.hasWindow()
+        || original_query_node.hasQualify()
+        || hasAggregateFunctionNodes(original_query_node.getProjectionNode())
+        || hasWindowFunctionNodes(original_query_node.getProjectionNode())
+        || (original_query_node.hasOrderBy()
+            && (hasAggregateFunctionNodes(original_query_node.getOrderByNode()) || hasWindowFunctionNodes(original_query_node.getOrderByNode())));
+    if ((join_tree_type == QueryTreeNodeType::TABLE || join_tree_type == QueryTreeNodeType::TABLE_FUNCTION)
+        && !(has_columns_to_project && is_aggregating_query))
     {
-        if (is_fetch_columns_stage && !child_only_columns.empty())
+        if (has_columns_to_project)
         {
             auto & modified_query_node = modified_query->as<QueryNode &>();
             auto & projection = modified_query_node.getProjection().getNodes();
             auto projection_columns = modified_query_node.getProjectionColumns();
-            for (const auto & child_column : child_only_columns)
+            auto add_to_projection = [&](const NameAndTypePair & child_column)
             {
                 if (std::ranges::any_of(projection_columns, [&](const auto & column) { return column.name == child_column.name; }))
-                    continue;
+                    return;
                 child_only_projection.emplace_back(projection.size(), std::make_shared<ColumnNode>(child_column, replacement_table_expression));
                 projection.push_back(child_only_projection.back().second);
                 projection_columns.push_back(child_column);
-            }
+            };
+            for (const auto & child_column : child_only_columns)
+                add_to_projection(child_column);
+            if (substitute_column)
+                add_to_projection(*substitute_column);
             modified_query_node.resolveProjectionColumns(std::move(projection_columns));
         }
         return modified_query;
@@ -2113,8 +2135,13 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         /// named like an `ALIAS` column of the `Merge`: resolving it against the `Merge` would expand that
         /// alias and lose the read.
         NamesAndTypesList child_only_columns;
+        /// The substitute read itself, a physical column of the child, whether or not the `Merge` declares it.
+        std::optional<NameAndTypePair> substitute_column;
         if (is_smallest_column_requested)
         {
+            if (!required_column_names.empty())
+                substitute_column = storage_snapshot_->metadata->getColumns().tryGetPhysical(required_column_names.back());
+
             const auto merge_column_options = GetColumnsOptions(GetColumnsOptions::All)
                 .withSubcolumns(merge_storage_snapshot->storage.supportsSubcolumns())
                 .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
@@ -2160,7 +2187,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
 
         std::vector<std::pair<size_t, QueryTreeNodePtr>> child_only_projection;
         modified_query_info.query_tree = replaceTableExpressionAndRemoveJoin(modified_query_info.query_tree, modified_query_info.table_expression, replacement_table_expression, modified_context, required_column_names, child_only_columns,
-            common_processed_stage == QueryProcessingStage::FetchColumns, child_only_projection);
+            substitute_column, common_processed_stage == QueryProcessingStage::FetchColumns, child_only_projection);
         modified_query_info.table_expression = replacement_table_expression;
         modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 
