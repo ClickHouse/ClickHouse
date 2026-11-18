@@ -213,7 +213,7 @@ bool MergeTreeReadPool::cutRangesToRead(size_t task_idx, size_t & part_idx, size
     if (is_part_on_remote_disk[part_idx] && !pool_settings.use_const_size_tasks_for_remote_reading)
         need_marks = marks_in_part;
     else /// Get whole part to read if it is small enough.
-        need_marks = std::min(marks_in_part, min_marks_per_task);
+        need_marks = std::min(marks_in_part, adjustTaskSizeToReadEnd(min_marks_per_task));
 
     cutFromThreadTask(thread_tasks, thread_idx, need_marks, ranges_to_get_from_part);
     return true;
@@ -233,6 +233,14 @@ bool MergeTreeReadPool::cutMoreRangesToRead(size_t thread_idx, size_t part_idx, 
     return true;
 }
 
+size_t MergeTreeReadPool::adjustTaskSizeToReadEnd(size_t min_marks_per_task) const
+{
+    const bool is_end_of_read = remaining_marks <= backoff_state.current_threads * min_marks_per_task;
+    if (is_end_of_read && pool_settings.min_marks_per_task_at_read_end)
+        return pool_settings.min_marks_per_task_at_read_end;
+    return min_marks_per_task;
+}
+
 void MergeTreeReadPool::cutFromThreadTask(ThreadTask & thread_tasks, size_t thread_idx, size_t need_marks, MarkRanges & ranges_to_get_from_part)
 {
     auto & thread_task = thread_tasks.parts_and_ranges.back();
@@ -240,13 +248,14 @@ void MergeTreeReadPool::cutFromThreadTask(ThreadTask & thread_tasks, size_t thre
     const auto min_marks_per_task = getMinMarksPerTask(thread_task.part_idx);
 
     /// Do not leave too little rows in part for next time.
-    if (marks_in_part > need_marks && marks_in_part - need_marks < min_marks_per_task / 2)
+    if (marks_in_part > need_marks && marks_in_part - need_marks < adjustTaskSizeToReadEnd(min_marks_per_task) / 2)
         need_marks = marks_in_part;
 
     /// Get whole part to read if it is small enough.
     if (marks_in_part <= need_marks)
     {
         ranges_to_get_from_part = std::move(thread_task.ranges);
+        remaining_marks -= marks_in_part;
         marks_in_part = 0;
 
         thread_tasks.parts_and_ranges.pop_back();
@@ -270,6 +279,7 @@ void MergeTreeReadPool::cutFromThreadTask(ThreadTask & thread_tasks, size_t thre
                 thread_task.ranges.pop_front();
 
             marks_in_part -= marks_to_get_from_range;
+            remaining_marks -= marks_to_get_from_range;
             need_marks -= std::min(need_marks, marks_to_get_from_range);
         }
 
@@ -435,6 +445,7 @@ void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
 
             threads_tasks[i].parts_and_ranges.push_back({part_idx, ranges_to_get_from_part});
             threads_tasks[i].sum_marks_in_parts.push_back(marks_in_ranges);
+            remaining_marks += marks_in_ranges;
             if (marks_in_ranges != 0)
                 remaining_thread_tasks.insert(i);
         }

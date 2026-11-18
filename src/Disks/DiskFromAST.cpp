@@ -97,7 +97,7 @@ static ValidatedDiskConfig getValidatedDiskConfig(
     auto & config = result.config;
     {
         DynamicS3DiskCredentialInfo s3_disk_info;
-        auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context, attach, &s3_disk_info, for_system_database);
+        auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context, attach, &s3_disk_info, for_system_database, stored_definition);
         config = resolveDiskConfiguration(xml_document, context, attach);
 
         /// Applied after `processIncludes`. If the pre-resolution check already decided the disk must load

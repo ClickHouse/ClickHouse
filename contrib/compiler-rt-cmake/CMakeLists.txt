@@ -58,6 +58,7 @@ endif()
 #     declarations for anything musl does not provide)
 #   * -march= / -mcpu= / -mtune= (target microarchitecture from cmake/cpu_features.cmake)
 #   * -mpclmul / -maltivec (explicit ISA features added by cmake/cpu_features.cmake)
+#   * -mbranch-protection= (return address signing, so the RTL is protected like the rest of the binary)
 # The --target= flag is applied automatically by cmake from CMAKE_<LANG>_COMPILER_TARGET.
 #
 # Keeping the -march/-m* ISA bits aligns the RTL with the rest of the build:
@@ -66,12 +67,12 @@ endif()
 # the boundary: LLVM's X86VZeroUpperInserter pass is purely caller-side and
 # does not consult callee target-features, so an AVX2-using caller still
 # emits a vzeroupper before any external call regardless of how the callee
-# was built (see contrib/llvm-project/llvm/lib/Target/X86/X86VZeroUpper.cpp).
+# was built (see contrib/llvm-project/llvm/lib/Target/X86/X86InsertVZeroUpper.cpp).
 # Eliminating that overhead requires either dropping the upper-half live
 # state in the caller (e.g. -fsanitize-memory-track-origins=1 for MSan
 # drops the hot __msan_chain_origin calls; see cmake/sanitize.cmake),
 # or LTO so the inserter can see across the call boundary.
-set(_compiler_rt_keep_re "(--gcc-toolchain=[^ ]+|--no-default-config|-isystem +[^ ]+|-nostdlibinc|-march=[^ ]+|-mcpu=[^ ]+|-mtune=[^ ]+|-mpclmul|-maltivec)")
+set(_compiler_rt_keep_re "(--gcc-toolchain=[^ ]+|--no-default-config|-isystem +[^ ]+|-nostdlibinc|-march=[^ ]+|-mcpu=[^ ]+|-mtune=[^ ]+|-mpclmul|-maltivec|-mbranch-protection=[^ ]+)")
 foreach (lang C CXX ASM)
     string(REGEX MATCHALL "${_compiler_rt_keep_re}" _kept "${CMAKE_${lang}_FLAGS}")
     string(JOIN " " CMAKE_${lang}_FLAGS ${_kept})
