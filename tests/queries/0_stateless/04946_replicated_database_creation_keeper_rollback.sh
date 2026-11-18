@@ -62,6 +62,18 @@ ${CLICKHOUSE_CLIENT} -q "
     SYSTEM DISABLE FAILPOINT database_replicated_create_replica_nodes_lose_response;
 "
 
+# The retry is refused by the registration the failed attempt left, and the command its message names
+# removes it, after which the retry succeeds
+${CLICKHOUSE_CLIENT} \
+    -q "CREATE DATABASE ${DB} ENGINE=Replicated('${ZK}/zero', 's1', 'r1')" 2>&1 | grep -cm1 "SYSTEM DROP DATABASE REPLICA 'r1' FROM SHARD 's1' FROM ZKPATH '${ZK}/zero'"
+
+${CLICKHOUSE_CLIENT} -q "
+    SYSTEM DROP DATABASE REPLICA 'r1' FROM SHARD 's1' FROM ZKPATH '${ZK}/zero';
+    CREATE DATABASE ${DB} ENGINE=Replicated('${ZK}/zero', 's1', 'r1');
+    SELECT count() FROM system.databases WHERE name='${DB}';
+    DROP DATABASE ${DB} SYNC;
+"
+
 #### 3 - A registration belonging to a different database is still refused, and the message names the recovery command
 
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB}_a ENGINE=Replicated('${ZK}/shared', 's1', 'r1')"
