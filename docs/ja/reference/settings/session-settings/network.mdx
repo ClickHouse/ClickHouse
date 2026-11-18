@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## network_compression_method
+## network_compression_method {#network_compression_method}
 
 <SettingsInfoBlock type="String" default_value="ZSTD" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "ZSTD"},{"label": "ネットワークトラフィックを削減するため、client/server 間および server/server 間の通信における既定の圧縮方式を `LZ4` から `ZSTD` に変更しました。"}]}]} />
 
-ネイティブプロトコル経由の client/server 間および server/server 間の通信、同じフレームフォーマットを使用する `compress=1` 付きの HTTP リクエストのレスポンス、および distributed query plan (`make_distributed_plan`) のタスク間のストリーミング交換を圧縮するためのコーデックです。temporary files を介した交換では、サーバーのデフォルト コーデックが使用されます。
+ネイティブプロトコル経由の client/server 間および server/server 間の通信と、同じフレームフォーマットを使用する `compress=1` 付きの HTTP リクエストのレスポンスを圧縮するためのコーデックです。分散クエリプラン (`make_distributed_plan`) のタスク間の streaming exchange には、この設定ではなく [distributed&#95;plan&#95;exchange&#95;compression&#95;method](/ja/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_compression_method) が使用されます。
 
 設定可能な値:
 
@@ -32,13 +32,13 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 * [network&#95;zstd&#95;compression&#95;level](/ja/reference/settings/session-settings/network#network_zstd_compression_level)
 
-## network_zstd_compression_level
+## network_zstd_compression_level {#network_zstd_compression_level}
 
 <SettingsInfoBlock type="Int64" default_value="3" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "3"},{"label": "ネットワークの `ZSTD` 圧縮レベルのデフォルトを、新しいディスク上の `ZSTD(3)` 圧縮のデフォルトに合わせました。"}]}]} />
 
-ZSTD の圧縮レベルを調整します。[network&#95;compression&#95;method](/ja/reference/settings/session-settings/network#network_compression_method) が `ZSTD` に設定されている場合にのみ使用されます。
+ZSTD の圧縮レベルを調整します。[network&#95;compression&#95;method](/ja/reference/settings/session-settings/network#network_compression_method) が `ZSTD` に設定されている場合にのみ使用されます。分散クエリプランの streaming exchange では、[distributed&#95;plan&#95;exchange&#95;compression&#95;method](/ja/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_compression_method) が空の場合にのみこの設定が使用されます。
 
 設定可能な値:
 
