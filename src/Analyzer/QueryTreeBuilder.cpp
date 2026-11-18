@@ -61,7 +61,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_shuffle_query;
+    extern const SettingsBool allow_shuffle_query;
     extern const SettingsBool any_join_distinct_right_table_keys;
     extern const SettingsJoinStrictness join_default_strictness;
     extern const SettingsBool enable_order_by_all;
@@ -446,7 +446,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
             select_settings->as<ASTSetQuery &>(), updated_context, settings_changes, default_settings, query_parameters);
 
     const auto enable_order_by_all = updated_context->getSettingsRef()[Setting::enable_order_by_all];
-    const auto allow_experimental_shuffle_query = updated_context->getSettingsRef()[Setting::allow_experimental_shuffle_query];
+    const auto allow_shuffle_query = updated_context->getSettingsRef()[Setting::allow_shuffle_query];
 
     auto current_query_tree = std::make_shared<QueryNode>(
         std::move(updated_context), std::move(settings_changes), std::move(default_settings), std::move(query_parameters));
@@ -465,7 +465,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setIsGroupByAll(select_query_typed.group_by_all);
     current_query_tree->setIsLimitByAll(select_query_typed.limit_by_all);
 
-    if (select_query_typed.shuffle && !allow_experimental_shuffle_query)
+    if (select_query_typed.shuffle && !allow_shuffle_query)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for `SHUFFLE` is disabled (turn on setting `allow_experimental_shuffle_query`)");
 
     current_query_tree->setIsShuffle(select_query_typed.shuffle);

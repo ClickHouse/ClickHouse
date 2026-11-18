@@ -21,7 +21,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_nlp_functions;
+    extern const SettingsBool allow_nlp_functions;
 }
 
 /* Determine language of Unicode UTF-8 text.
@@ -117,7 +117,7 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        if (!context->getSettingsRef()[Setting::allow_experimental_nlp_functions])
+        if (!context->getSettingsRef()[Setting::allow_nlp_functions])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Natural language processing function '{}' is experimental. "
                             "Set `allow_experimental_nlp_functions` setting to enable it", name);
