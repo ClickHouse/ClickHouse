@@ -180,6 +180,11 @@ long NonBlockingFilterBIO::ctrl(BIO* bio, int cmd, long num, void* ptr) // NOLIN
 				return queued;
 		}
 		break;
+	case BIO_CTRL_EOF:
+		/// The non-blocking read sets the flag of the filter, a blocking read that of the next BIO.
+		if (BIO_test_flags(bio, BIO_FLAGS_IN_EOF))
+			return 1;
+		break;
 #if defined(BIO_CTRL_GET_KTLS_SEND)
 	case BIO_CTRL_GET_KTLS_SEND:
 	case BIO_CTRL_GET_KTLS_RECV:
@@ -241,6 +246,8 @@ int NonBlockingFilterBIO::readNonBlocking(BIO* bio, char* data, int length)
 			BIO_set_retry_read(bio);
 			return -1;
 		}
+		/// OpenSSL takes a zero result for the end of the stream only when `BIO_eof` is true.
+		BIO_set_flags(bio, BIO_FLAGS_IN_EOF);
 		return 0;
 	}
 	catch (...)
