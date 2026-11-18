@@ -320,7 +320,7 @@ parser.add_argument(
 parser.add_argument(
     "--jemalloc-purge",
     choices=["disabled", "after-fill", "before-each-query", "before-each-run"],
-    default="before-each-run",
+    default="disabled",
     help="When to issue SYSTEM JEMALLOC PURGE on all server connections. "
     "Purging equalises per-process jemalloc dirty-page state between LEFT and "
     "RIGHT, which otherwise diverges across the test and causes background "
