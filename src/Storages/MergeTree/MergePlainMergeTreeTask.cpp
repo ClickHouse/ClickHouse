@@ -13,7 +13,6 @@
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ThreadStatus.h>
-#include <Common/FailPoint.h>
 #include <Interpreters/Context.h>
 
 
@@ -23,16 +22,12 @@ namespace DB
 namespace FailPoints
 {
     extern const char mt_merge_task_pause_before_transaction_commit[];
+    extern const char plain_merge_task_pause_before_prepare[];
 }
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-namespace FailPoints
-{
-    extern const char plain_merge_task_pause_before_prepare[];
 }
 
 
