@@ -138,10 +138,11 @@ class Client : private Aws::S3::S3Client
 public:
     class RetryStrategy;
 
-    /// The state of one call of a request. The SDK reports every attempt of a call to the retry strategy on the thread
+    /// The state of one call of a request. The SDK reports every attempt of a call to the retry strategy on the fiber
     /// that sends it, but all requests share the strategy, and it gets no request, so it finds the state through the
-    /// thread. That works while every attempt runs on the thread of the call, as with the synchronous calls of the SDK.
-    /// `PocoHTTPClient` refuses a conditional attempt that runs without a record of its attempts. Scopes nest.
+    /// fiber, or the thread outside fibers. A fiber that waits for I/O lets other fibers run on its thread, so the state
+    /// is fiber-local. `PocoHTTPClient` refuses a conditional attempt that runs without a record of its attempts. Scopes
+    /// nest.
     class RequestScope
     {
     public:
@@ -151,7 +152,7 @@ public:
         RequestScope(const RequestScope &) = delete;
         RequestScope & operator=(const RequestScope &) = delete;
 
-        /// The scope of the call that the current thread sends, or null.
+        /// The scope of the call that the current fiber sends, or null.
         static RequestScope * current();
 
         /// Where the attempts of a write that publishes an object are recorded, or null.

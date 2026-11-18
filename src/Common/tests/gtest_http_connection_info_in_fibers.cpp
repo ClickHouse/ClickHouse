@@ -8,43 +8,10 @@
 #include <Common/Silk/FiberScheduler.h>
 #include <Common/Silk/tests/gtest_silk_scheduler.h>
 
-#include <silk/fibers/event.h>
 #include <silk/fibers/future.h>
 
-#include <atomic>
 #include <thread>
 #include <vector>
-
-namespace
-{
-
-/// Suspends each arriving fiber until the last one arrives.
-class FiberBarrier
-{
-public:
-    explicit FiberBarrier(size_t count) : remaining(count) {}
-
-    void arriveAndWait()
-    {
-        if (--remaining == 0)
-            event.set();
-        else
-            event.wait();
-    }
-
-    /// For participants that never started, so that the started ones are not left waiting.
-    void dropParticipants(size_t count)
-    {
-        if (remaining.fetch_sub(count) == count)
-            event.set();
-    }
-
-private:
-    std::atomic<size_t> remaining;
-    silk::FiberEvent event;
-};
-
-}
 
 /// Each fiber publishes its own connection inside its own scope and takes it back after all fibers have published.
 /// There are more fibers than scheduler threads, of which there is one per CPU, so at least two of them publish

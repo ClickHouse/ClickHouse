@@ -11,6 +11,7 @@
 #include <Poco/URI.h>
 #include <aws/core/utils/crypto/Hash.h>
 #include <Poco/MD5Engine.h>
+#include <Common/FiberLocal.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
@@ -161,7 +162,7 @@ bool attemptMayHaveBeenApplied(Aws::Http::HttpResponseCode code, const Aws::Stri
 namespace
 {
 
-thread_local Client::RequestScope * current_request_scope = nullptr;
+constinit FiberLocal<Client::RequestScope *, FiberLocalSlot::S3_REQUEST_SCOPE> current_request_scope;
 
 }
 
