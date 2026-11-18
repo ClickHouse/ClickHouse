@@ -34,10 +34,11 @@ CREATE TABLE qpc_05508_spill (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO qpc_05508_spill SELECT number FROM numbers(200000);
 
 -- Both the miss and the hit spill the aggregation state and must hit the temporary data limit.
+-- Only a two-level aggregation spills, so `group_by_two_level_threshold` is fixed below the number of keys.
 SELECT k, count() FROM qpc_05508_spill GROUP BY k FORMAT Null
-SETTINGS max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_group_by = 0, max_temporary_data_on_disk_size_for_query = 1, log_comment = 'qpc_05508_spill_seed'; -- { serverError TOO_MANY_ROWS_OR_BYTES }
+SETTINGS max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_group_by = 0, max_temporary_data_on_disk_size_for_query = 1, group_by_two_level_threshold = 100000, log_comment = 'qpc_05508_spill_seed'; -- { serverError TOO_MANY_ROWS_OR_BYTES }
 SELECT k, count() FROM qpc_05508_spill GROUP BY k FORMAT Null
-SETTINGS max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_group_by = 0, max_temporary_data_on_disk_size_for_query = 1, log_comment = 'qpc_05508_spill_hit'; -- { serverError TOO_MANY_ROWS_OR_BYTES }
+SETTINGS max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_group_by = 0, max_temporary_data_on_disk_size_for_query = 1, group_by_two_level_threshold = 100000, log_comment = 'qpc_05508_spill_hit'; -- { serverError TOO_MANY_ROWS_OR_BYTES }
 
 SYSTEM FLUSH LOGS query_log;
 SELECT
