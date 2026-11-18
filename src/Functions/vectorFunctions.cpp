@@ -98,6 +98,10 @@ public:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     [[nodiscard]] bool isVariadic() const override { return true; }
     [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return !throws_on_zero_divisor<FuncName>; }
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        return throws_on_zero_divisor<FuncName> ? std::optional<bool>(true) : std::nullopt;
+    }
 
     /// Documentation-only — element-wise binary op applied to each pair of
     /// tuple elements; the result is a tuple whose i-th element type follows
@@ -309,6 +313,10 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
     [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return !throws_on_zero_divisor<FuncName>; }
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        return throws_on_zero_divisor<FuncName> ? std::optional<bool>(true) : std::nullopt;
+    }
 
     /// Documentation-only — applies the scalar op to each tuple element with
     /// the same right-hand operand; the result tuple's i-th element type

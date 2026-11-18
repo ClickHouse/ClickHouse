@@ -52,6 +52,13 @@ SELECT s2RectUnion(5178914411069187297, x, 5179062030687166815, 5177056748191934
 SELECT ULIDStringToDateTime(x, 'UTC') FROM (SELECT arrayJoin(['01GNB2S2FGN2P93QPXDNB4EN2R', NULL]) AS x) ORDER BY ALL;
 SELECT timeSeriesIdToGroup(timeSeriesStoreTags(x, [('region', 'eu')], '__name__', 'up')) FROM (SELECT arrayJoin([toUInt64(8374283493092), NULL]) AS x) ORDER BY ALL;
 
+SELECT 'rows removed by ARRAY JOIN';
+SELECT tupleIntDiv((15, 10), d), tupleModuloByNumber((15, 10), n), clamp('x', 'a', b), s2ToGeo(c), filesystemCapacity(f) > 0, multiplyDecimal(m, m)
+FROM values('d Tuple(UInt128, UInt128), n UInt128, b String, c Nullable(UInt64), f String, m Decimal256(0), arr Array(UInt8)',
+    ((0, 0), 0, '', 0, '', toDecimal256('1e70', 0), []), ((3, 2), 4, 'z', 4704772434919038107, 'default', 2, [1]))
+ARRAY JOIN arr
+SETTINGS enable_lazy_columns_replication = 1, query_plan_lift_up_array_join = 0;
+
 SELECT 'invalid values are still reported';
 SELECT prettyPrintJSON(materialize(toLowCardinality('not json'))); -- { serverError BAD_ARGUMENTS }
 SELECT printf(materialize(toLowCardinality('%d %d')), 1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

@@ -61,5 +61,7 @@ text
 \N
 1
 \N
+rows removed by ARRAY JOIN
+(5,5)	(3,2)	x	(37.79506681471008,55.7129059052841)	1	4
 invalid values are still reported
 \N
