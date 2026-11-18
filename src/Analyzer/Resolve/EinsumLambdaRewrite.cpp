@@ -109,9 +109,16 @@ void collectNamesOfCalledFunctions(
 {
     checkStackSize();
 
-    if (const auto * function = node.as<FunctionNode>(); function && visited_functions.insert(function->getFunctionName()).second)
+    /// A function is called by its name, like `f(x)`, or passed to a higher-order function by an identifier, like `arrayMap(f, arr)`.
+    String called_name;
+    if (const auto * function = node.as<FunctionNode>())
+        called_name = function->getFunctionName();
+    else if (const auto * identifier = node.as<IdentifierNode>(); identifier && identifier->getIdentifier().isShort())
+        called_name = identifier->getIdentifier().getFullName();
+
+    if (!called_name.empty() && visited_functions.insert(called_name).second)
     {
-        if (auto called_lambda = get_called_lambda(function->getFunctionName()))
+        if (auto called_lambda = get_called_lambda(called_name))
         {
             collectIdentifierNames(*called_lambda, names);
             collectNamesOfCalledFunctions(*called_lambda, get_called_lambda, names, visited_functions);
@@ -363,14 +370,82 @@ bool isLocalName(const String & name, const AliasScope & scope)
     return false;
 }
 
+/// Collects the free names in the expression: the first parts of the identifiers, the names of the columns and of the called
+/// functions, which are not the parameters of the lambda functions inside the expression (`bound`).
+void collectFreeNames(const IQueryTreeNode & node, std::unordered_set<String> & bound, std::unordered_set<String> & names)
+{
+    checkStackSize();
+
+    if (const auto * function = node.as<FunctionNode>(); function && !bound.contains(function->getFunctionName()))
+        names.insert(function->getFunctionName());
+    if (const auto * identifier = node.as<IdentifierNode>(); identifier && !bound.contains(identifier->getIdentifier()[0]))
+        names.insert(identifier->getIdentifier()[0]);
+    if (const auto * column = node.as<ColumnNode>(); column && !bound.contains(column->getColumnName()))
+        names.insert(column->getColumnName());
+
+    if (const auto * lambda = node.as<LambdaNode>())
+    {
+        Names added;
+        for (const auto & name : lambda->getArguments().getNames())
+            if (bound.insert(name).second)
+                added.push_back(name);
+        collectFreeNames(*lambda->getExpression(), bound, names);
+        for (const auto & name : added)
+            bound.erase(name);
+        return;
+    }
+
+    for (const auto & child : node.getChildren())
+        if (child)
+            collectFreeNames(*child, bound, names);
+}
+
+/** The expression of a lambda function bound in the query outside of the lambda function of einsum, or of a SQL user defined function,
+  * is resolved where it is called, so its free names are bound at the place of the call, like `a` in `WITH x -> a[x] AS get_a`
+  * called as `arrayMap(a -> get_a(1)[i], arrays)`. Returns a free name of the called function, also transitively, that is bound
+  * inside the lambda function of einsum (see `isLocalName`), or an empty string.
+  */
+String findLocalNameInCalledFunction(
+    const String & called_name,
+    const AliasScope & scope,
+    const std::unordered_set<String> & inner_parameters,
+    const ScopedFunctionLookup & get_called_lambda,
+    std::unordered_set<String> & visited_functions)
+{
+    checkStackSize();
+
+    if (!visited_functions.insert(called_name).second)
+        return {};
+    auto called_lambda = get_called_lambda(called_name);
+    if (!called_lambda)
+        return {};
+
+    std::unordered_set<String> bound;
+    std::unordered_set<String> free_names;
+    collectFreeNames(*called_lambda, bound, free_names);
+    for (const auto & name : free_names)
+    {
+        /// A parameter of a lambda function inside the element is computed together with the element.
+        if (inner_parameters.contains(name))
+            continue;
+        if (isLocalName(name, scope))
+            return name;
+        if (String res = findLocalNameInCalledFunction(name, scope, inner_parameters, get_called_lambda, visited_functions); !res.empty())
+            return res;
+    }
+    return {};
+}
+
 /** A name in the expression that is bound inside the lambda function of einsum (see `isLocalName`), or an empty string.
   * The parameters of the lambda functions inside the expression itself, in `inner_parameters`, are bound in the expression.
+  * The free names of the functions called in the expression are checked as well, see `findLocalNameInCalledFunction`.
   */
 String findLocalName(
     const IQueryTreeNode & node,
     const AliasScope & scope,
     std::unordered_set<String> & inner_parameters,
-    const ScopedFunctionLookup & is_scoped_function)
+    const ScopedFunctionLookup & is_scoped_function,
+    const ScopedFunctionLookup & get_called_lambda)
 {
     checkStackSize();
 
@@ -378,15 +453,29 @@ String findLocalName(
     if (const auto * function = node.as<FunctionNode>())
     {
         const auto & name = function->getFunctionName();
-        if (!inner_parameters.contains(name) && resolveFunctionName(name, scope, is_scoped_function).is_local)
-            return name;
+        if (!inner_parameters.contains(name))
+        {
+            if (resolveFunctionName(name, scope, is_scoped_function).is_local)
+                return name;
+            std::unordered_set<String> visited_functions;
+            if (String res = findLocalNameInCalledFunction(name, scope, inner_parameters, get_called_lambda, visited_functions); !res.empty())
+                return res;
+        }
     }
 
     if (const auto * identifier = node.as<IdentifierNode>())
     {
         const auto & name = identifier->getIdentifier()[0];
-        if (!inner_parameters.contains(name) && isLocalName(name, scope))
+        if (inner_parameters.contains(name))
+            return {};
+        if (isLocalName(name, scope))
             return name;
+        /// A function passed to a higher-order function by its name, like `g` in `arrayMap(g, arr)`.
+        if (identifier->getIdentifier().isShort())
+        {
+            std::unordered_set<String> visited_functions;
+            return findLocalNameInCalledFunction(name, scope, inner_parameters, get_called_lambda, visited_functions);
+        }
         return {};
     }
 
@@ -396,7 +485,7 @@ String findLocalName(
         for (const auto & name : lambda->getArguments().getNames())
             if (inner_parameters.insert(name).second)
                 added.push_back(name);
-        String res = findLocalName(*lambda->getExpression(), scope, inner_parameters, is_scoped_function);
+        String res = findLocalName(*lambda->getExpression(), scope, inner_parameters, is_scoped_function, get_called_lambda);
         for (const auto & name : added)
             inner_parameters.erase(name);
         return res;
@@ -406,7 +495,7 @@ String findLocalName(
     {
         if (!child)
             continue;
-        if (String res = findLocalName(*child, scope, inner_parameters, is_scoped_function); !res.empty())
+        if (String res = findLocalName(*child, scope, inner_parameters, is_scoped_function, get_called_lambda); !res.empty())
             return res;
     }
     return {};
@@ -554,15 +643,15 @@ private:
     std::vector<bool> is_summation;
     String value_prefix;
 
-    String getValueName(size_t element) const { return value_prefix + std::to_string(element + 1); }
+    [[nodiscard]] String getValueName(size_t element) const { return value_prefix + std::to_string(element + 1); }
 
-    bool isValueName(const String & name) const
+    [[nodiscard]] bool isValueName(const String & name) const
     {
         return name.starts_with(value_prefix) && name.size() > value_prefix.size()
             && std::all_of(name.begin() + value_prefix.size(), name.end(), isNumericASCII);
     }
 
-    std::optional<size_t> getValueNumber(const IQueryTreeNode & node) const
+    [[nodiscard]] std::optional<size_t> getValueNumber(const IQueryTreeNode & node) const
     {
         const auto * identifier = node.as<IdentifierNode>();
         if (!identifier || !identifier->getIdentifier().isShort() || !isValueName(identifier->getIdentifier().getFullName()))
@@ -570,7 +659,7 @@ private:
         return std::stoull(identifier->getIdentifier().getFullName().substr(value_prefix.size())) - 1;
     }
 
-    std::optional<size_t> getIndex(const IQueryTreeNode & node) const
+    [[nodiscard]] std::optional<size_t> getIndex(const IQueryTreeNode & node) const
     {
         const auto * identifier = node.as<IdentifierNode>();
         if (!identifier || !identifier->getIdentifier().isShort())
@@ -581,7 +670,7 @@ private:
         return it - indices.begin();
     }
 
-    bool dependsOnIndices(const IQueryTreeNode & node) const
+    [[nodiscard]] bool dependsOnIndices(const IQueryTreeNode & node) const
     {
         checkStackSize();
 
@@ -631,11 +720,11 @@ private:
                 /// of the nested lambda functions, like `a` in `arrayMap(a -> a[i], arrays)`, and on the aliases inside
                 /// the lambda function: in the arguments of einsum, these names would refer to something else.
                 std::unordered_set<String> inner_parameters;
-                if (String name = findLocalName(*array, scope, inner_parameters, is_scoped_function); !name.empty())
+                if (String name = findLocalName(*array, scope, inner_parameters, is_scoped_function, get_called_lambda); !name.empty())
                     throwLocalNameInsideTensorElement(name, *node);
                 for (const auto & subscript : subscripts)
                     if (!getIndex(*subscript))
-                        if (String name = findLocalName(*subscript, scope, inner_parameters, is_scoped_function); !name.empty())
+                        if (String name = findLocalName(*subscript, scope, inner_parameters, is_scoped_function, get_called_lambda); !name.empty())
                             throwLocalNameInsideTensorElement(name, *node);
 
                 /// The alias of the element, like in `(a[i] AS v) + v`, is the alias of its value now.
@@ -739,7 +828,7 @@ private:
     }
 
     /// Whether the node is a call of the builtin function `multiply` in `scope`.
-    bool isMultiply(const IQueryTreeNode & node, const AliasScope & scope) const
+    [[nodiscard]] bool isMultiply(const IQueryTreeNode & node, const AliasScope & scope) const
     {
         const auto * function = node.as<FunctionNode>();
         return function && function->getFunctionName() == "multiply" && function->getArguments().getNodes().size() == 2
