@@ -139,7 +139,7 @@ String StorageS3Configuration::getDataSourceDescription() const
 
 String StorageS3Configuration::getDataSourceDescriptionForNamespace(const String & object_namespace) const
 {
-    return std::filesystem::path(url.uri.getHost() + std::to_string(url.uri.getPort())) / object_namespace;
+    return std::filesystem::path(url.uri.getHost() + ":" + std::to_string(url.uri.getPort())) / object_namespace;
 }
 
 std::string StorageS3Configuration::getPathInArchive() const
