@@ -8,6 +8,9 @@
 #include <Processors/QueryPlan/Optimizations/conflictDetector.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <Functions/CastOverloadResolver.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/JoinOperator.h>
 #include <Common/Exception.h>
 
@@ -44,6 +47,27 @@ UInt32 toMask(const BitSet & bits)
         mask |= (static_cast<UInt32>(1) << bit);
     }
     return mask;
+}
+
+/// Whether a join on columns of two types keeps their order: it converts each to the common type (see `JoinStepLogical`)
+/// by a cast that is monotonic and increasing on the whole type, as `UInt32` to `UInt64`, unlike `Date` to `DateTime`.
+bool castsKeepOrder(const DataTypePtr & lhs, const DataTypePtr & rhs)
+{
+    const auto common_type = tryGetLeastSupertype(DataTypes{lhs, rhs});
+    if (!common_type)
+        return false;
+    for (const auto & type : {lhs, rhs})
+    {
+        if (type->equals(*common_type))
+            continue;
+        const auto cast = createInternalCast(ColumnWithTypeAndName{type, ""}, common_type, CastType::nonAccurate, {}, nullptr);
+        if (!cast->hasInformationAboutMonotonicity())
+            return false;
+        const auto monotonicity = cast->getMonotonicityForRange(*type, {}, {});
+        if (!monotonicity.is_monotonic || !monotonicity.is_positive)
+            return false;
+    }
+    return true;
 }
 
 /// Whether the DP entries of a graph carry the real strictness of their joins. They do for an `ALL`
@@ -102,82 +126,89 @@ private:
     template <class TDPTable, class TOptimizer>
     friend class DB::EnumeratorCheckerWithCosts;
 
-    std::optional<UInt64> estimateCardinality(
+    [[nodiscard]] std::optional<UInt64> estimateCardinality(
         std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, const SelectivityEstimate & selectivity, JoinKind join_kind,
         JoinStrictness strictness = JoinStrictness::All) const;
 
     /// Native-mask counterparts used exclusively by the DPsub acceptor.
     void initDPsubScratch();
-    std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
 
     /// Conflict-detector (CD) variant: decide validity and the resulting (kind, strictness) using the
     /// per-operator descriptors in `dpsub_data.conflict_operators` (CD-A or CD-C), which support
     /// outer and semi/anti reordering. Returns nullopt to reject the split.
-    std::optional<std::pair<JoinKind, JoinStrictness>> isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] std::optional<std::pair<JoinKind, JoinStrictness>> isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 right_mask) const;
 
     /// Dispatch used by the DPsub acceptor: routes to the per-operator conflict-detector check when
     /// a conflict detector (CD-A or CD-C) is enabled, otherwise to the per-relation
     /// `isValidJoinOrderMask` (with strictness fixed to All, its only supported case).
-    std::optional<std::pair<JoinKind, JoinStrictness>> resolveJoinMask(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] std::optional<std::pair<JoinKind, JoinStrictness>> resolveJoinMask(UInt32 left_mask, UInt32 right_mask) const;
 
     /// True when an inner-join condition joins the two sides here: all its tables are present and it
     /// mentions both sides. Skips pinned conditions as those belong to an outer or semi/anti join's
-    bool hasInnerEdgeAcross(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] bool hasInnerEdgeAcross(UInt32 left_mask, UInt32 right_mask) const;
 
     /// The join kind as the query wrote it (`Left` or `Right`) of the semi/anti join step applied where
     /// `left_mask` and `right_mask` are joined, if there is one.
-    std::optional<JoinKind> writtenSemiAntiKind(UInt32 left_mask, UInt32 right_mask, JoinStrictness strictness) const;
+    [[nodiscard]] std::optional<JoinKind> writtenSemiAntiKind(UInt32 left_mask, UInt32 right_mask, JoinStrictness strictness) const;
 
     /// True when a column equivalence ties the two sides together: some equivalence class has a
     /// member on each side. The mask counterpart of `QueryGraph::areTransitivelyConnected`.
-    bool areTransitivelyConnectedMask(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] bool areTransitivelyConnectedMask(UInt32 left_mask, UInt32 right_mask) const;
 
     /// Equivalence classes (a bit mask) on which an inner equi-join of the two sides may run as `full_sorting_merge`.
-    UInt64 mergeKeyClasses(
+    [[nodiscard]] UInt64 mergeKeyClasses(
         const VectorWithMemoryTracking<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask, JoinKind kind, JoinStrictness strictness) const;
-    bool isReadInOrder(UInt32 relation_mask, Int32 order_class) const;
+    [[nodiscard]] bool isReadInOrder(UInt32 relation_mask, Int32 order_class) const;
 
-    /// Cost model of a sort-merge join of two input plans on the equivalence class, see `computeMergeJoinCost`.
-    double mergeJoinCost(
-        MergeJoinInput left, UInt32 left_mask, MergeJoinInput right, UInt32 right_mask, Int32 order_class,
+    /// The classes of all keys a merge join of the two sides joins on: those of `spanningClasses`, and those of the
+    /// predicates `edges` admitted by `mergeKeyClasses`, which can be of columns of different types.
+    [[nodiscard]] UInt64 joinKeyClasses(
+        const VectorWithMemoryTracking<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask) const;
+    /// Cost model of a sort-merge join of two input plans on the equivalence class and the other keys `key_classes`
+    /// (see `joinKeyClasses`), see `computeMergeJoinCost`.
+    [[nodiscard]] double mergeJoinCost(
+        MergeJoinInput left, UInt32 left_mask, MergeJoinInput right, UInt32 right_mask, Int32 order_class, UInt64 key_classes,
         const SelectivityEstimate & selectivity) const;
-    /// Whether a merge of the two inputs runs sharded by primary key ranges, as `optimizeJoinByShards` does.
-    bool isShardedMerge(const MergeJoinInput & left, UInt32 left_mask, const MergeJoinInput & right, UInt32 right_mask) const;
+    /// Whether a merge of the two inputs on the keys runs sharded by primary key ranges, as `optimizeJoinByShards` does.
+    [[nodiscard]] bool isShardedMerge(
+        const MergeJoinInput & left, UInt32 left_mask, const MergeJoinInput & right, UInt32 right_mask, UInt64 key_classes) const;
     /// Whether the statistics show that a table splits into one key range for a merge on the classes: each leading primary
     /// key column it is joined on has a single distinct value.
-    bool hasConstantShardKey(UInt32 relation_mask, UInt64 key_classes) const;
+    [[nodiscard]] bool hasConstantShardKey(UInt32 relation_mask, UInt64 key_classes) const;
     /// Whether a single relation read in order by the class can feed a sharded merge on it.
-    bool isShardableLeaf(UInt32 relation_mask, Int32 order_class) const
+    [[nodiscard]] bool isShardableLeaf(UInt32 relation_mask, Int32 order_class) const
     {
         return isReadInOrder(relation_mask, order_class) && (relation_mask & dpsub_data.shardable_relations);
     }
-    /// The equivalence classes with columns on both sides: one key of the join each.
-    UInt64 spanningClasses(UInt32 left_mask, UInt32 right_mask) const;
+    /// The equivalence classes with columns on both sides: one key of the join each. Only classes of a single type, as
+    /// equality of columns of different types is not transitive (`Date` vs `DateTime` in two time zones).
+    [[nodiscard]] UInt64 spanningClasses(UInt32 left_mask, UInt32 right_mask) const;
     /// The classes of all keys of a join, in the order a single relation can be read in, starting with the merge key;
     /// empty if it cannot be read in an order that covers them.
-    VectorWithMemoryTracking<Int32> keyOrder(UInt32 relation_mask, UInt64 key_classes, Int32 order_class) const;
+    [[nodiscard]] VectorWithMemoryTracking<Int32> keyOrder(UInt32 relation_mask, UInt64 key_classes, Int32 order_class) const;
     /// The number of distinct values of the class's columns in a set of relations, at most `rows`; 1 when unknown.
-    double distinctValues(UInt32 relations, Int32 order_class, UInt64 rows) const;
+    [[nodiscard]] double distinctValues(UInt32 relations, Int32 order_class, UInt64 rows) const;
     /// The work of a hash join of the two sides, see `computeHashJoinWork`. 0 without interesting orders, where costs
     /// count output rows only.
-    double hashJoinWork(UInt32 left_mask, std::optional<UInt64> left_rows, UInt32 right_mask, std::optional<UInt64> right_rows) const;
+    [[nodiscard]] double hashJoinWork(UInt32 left_mask, std::optional<UInt64> left_rows, UInt32 right_mask, std::optional<UInt64> right_rows) const;
     /// The overlap of the key range of the build side with the key range of a probe table sorted by a key of the join: what
     /// a hash join's runtime filter lets it read, and what a sharded merge reads. 1 when unknown.
-    double probeReadFraction(UInt32 probe_mask, UInt32 build_mask) const;
+    [[nodiscard]] double probeReadFraction(UInt32 probe_mask, UInt32 build_mask) const;
     /// Whether a later join may still use a result sorted by the equivalence class.
-    bool isInterestingOrder(Int32 order_class, UInt32 relations) const;
+    [[nodiscard]] bool isInterestingOrder(Int32 order_class, UInt32 relations) const;
     /// The column of the class that the result of a plan is sorted by, as `applyOrder` sees it: a merge join on the class
     /// is sorted by the key of its left input. For any other plan, the first column of the class in its relations.
     template <typename DPTable, std::unsigned_integral TUInt>
-    const JoinActionRef & orderColumn(const DPTable & dptable, TUInt S, Int32 plan_index, Int32 order_class) const;
+    [[nodiscard]] const JoinActionRef & orderColumn(const DPTable & dptable, TUInt S, Int32 plan_index, Int32 order_class) const;
 
-    bool useInterestingOrders() const { return dpsub_data.interesting_orders; }
+    [[nodiscard]] bool useInterestingOrders() const { return dpsub_data.interesting_orders; }
 
-    bool useConflictDetector() const
+    [[nodiscard]] bool useConflictDetector() const
     {
         return query_graph.conflict_detector != JoinOrderConflictDetector::NONE;
     }
-    ConflictDetector conflictDetectorKind() const
+    [[nodiscard]] ConflictDetector conflictDetectorKind() const
     {
         return query_graph.conflict_detector == JoinOrderConflictDetector::CD_C ? ConflictDetector::CDC : ConflictDetector::CDA;
     }
@@ -250,7 +281,10 @@ private:
 
         /// Only with `use_interesting_orders`, which needs the classes to fit into a 64-bit mask.
         bool interesting_orders = false;
-        VectorWithMemoryTracking<char> class_single_type;   /// per class: one type up to `Nullable` and `LowCardinality`
+        UInt64 single_type_classes = 0;                      /// the classes of one type up to `Nullable` and `LowCardinality`
+        /// The classes a merge join on keeps the order of its inputs: of one type, or whose equalities in the query convert
+        /// both columns monotonically (see `castsKeepOrder`).
+        UInt64 ordered_classes = 0;
         VectorWithMemoryTracking<VectorWithMemoryTracking<Int32>> rel_prefix_classes; /// per relation: the classes it can be read in order of, in order
         VectorWithMemoryTracking<Int32> edge_class;          /// per edge: the class of an equality of two columns, or -1
         TUInt prepared_storage_mask = 0;
@@ -441,7 +475,8 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
 
     const size_t num_classes = dpsub_data.class_members.size();
     dpsub_data.interesting_orders = query_graph.use_interesting_orders && num_classes <= std::numeric_limits<UInt64>::digits;
-    dpsub_data.class_single_type.assign(num_classes, 0);
+    dpsub_data.single_type_classes = 0;
+    dpsub_data.ordered_classes = 0;
     dpsub_data.rel_prefix_classes.assign(num_relations, {});
     dpsub_data.edge_class.assign(n, -1);
     dpsub_data.prepared_storage_mask = toMask(query_graph.prepared_storage_relations);
@@ -458,10 +493,12 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
         {
             const auto & columns = dpsub_data.class_members[c];
             auto type = removeLowCardinalityAndNullable(columns.front().getType());
-            dpsub_data.class_single_type[c] = std::ranges::all_of(columns, [&](const JoinActionRef & column)
+            const bool single_type = std::ranges::all_of(columns, [&](const JoinActionRef & column)
             {
                 return removeLowCardinalityAndNullable(column.getType())->equals(*type);
             });
+            if (single_type)
+                dpsub_data.single_type_classes |= static_cast<UInt64>(1) << c;
 
             UnorderedMapWithMemoryTracking<size_t, size_t> columns_per_relation;
             for (const auto & column : columns)
@@ -500,6 +537,8 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
             }
         }
 
+        UInt64 ordered_mixed = 0;
+        UInt64 unordered_mixed = 0;
         for (size_t i = 0; i < n; ++i)
         {
             if (!edges[i])
@@ -512,8 +551,14 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
             if (!lhs_class || lhs_class != rhs_class)
                 continue;
             if (auto it = class_index.find(lhs_class.get()); it != class_index.end())
-                dpsub_data.edge_class[i] = static_cast<Int32>(it->second);
+            {
+                const auto c = static_cast<Int32>(it->second);
+                dpsub_data.edge_class[i] = c;
+                if (!((dpsub_data.single_type_classes >> c) & 1))
+                    (castsKeepOrder(lhs.getType(), rhs.getType()) ? ordered_mixed : unordered_mixed) |= static_cast<UInt64>(1) << c;
+            }
         }
+        dpsub_data.ordered_classes = dpsub_data.single_type_classes | (ordered_mixed & ~unordered_mixed);
 
         /// Without an input sorted by a join key no merge join beats a hash join, so costs stay as they are.
         dpsub_data.interesting_orders = std::ranges::any_of(dpsub_data.rel_prefix_classes, [](const auto & prefix) { return !prefix.empty(); });
@@ -787,14 +832,7 @@ UInt64 DPSubJoinOrderOptimizer::mergeKeyClasses(
         if (dpsub_data.edge_class[edge - query_graph.edges.data()] < 0)
             return 0;
 
-    UInt64 classes = 0;
-    for (size_t c = 0; c < dpsub_data.class_relations.size(); ++c)
-    {
-        const UInt32 relations = dpsub_data.class_relations[c];
-        if (dpsub_data.class_single_type[c] && (relations & left_mask) && (relations & right_mask))
-            classes |= static_cast<UInt64>(1) << c;
-    }
-    return classes;
+    return spanningClasses(left_mask, right_mask);
 }
 
 bool DPSubJoinOrderOptimizer::isReadInOrder(UInt32 relation_mask, Int32 order_class) const
@@ -803,24 +841,40 @@ bool DPSubJoinOrderOptimizer::isReadInOrder(UInt32 relation_mask, Int32 order_cl
     return !prefix.empty() && prefix.front() == order_class;
 }
 
+UInt64 DPSubJoinOrderOptimizer::joinKeyClasses(
+    const VectorWithMemoryTracking<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask) const
+{
+    UInt64 classes = spanningClasses(left_mask, right_mask);
+    for (const auto * edge : edges)
+        classes |= static_cast<UInt64>(1) << dpsub_data.edge_class[edge - query_graph.edges.data()];
+    return classes;
+}
+
 double DPSubJoinOrderOptimizer::mergeJoinCost(
-    MergeJoinInput left, UInt32 left_mask, MergeJoinInput right, UInt32 right_mask, Int32 order_class,
+    MergeJoinInput left, UInt32 left_mask, MergeJoinInput right, UInt32 right_mask, Int32 order_class, UInt64 key_classes,
     const SelectivityEstimate & selectivity) const
 {
     /// On several keys an input sorted by the merge key only is still sorted by the other keys within its groups.
     /// The keys follow the order of the left input if it covers them (see `buildPhysicalPlan`), else of the right one.
-    const UInt64 key_classes = spanningClasses(left_mask, right_mask);
+    /// A key of columns of different types is on cast columns, which keep the input order only if the casts are monotonic.
     if (std::popcount(key_classes) > 1)
     {
-        const auto left_order = left.sorted ? keyOrder(left_mask, key_classes, order_class) : VectorWithMemoryTracking<Int32>{};
-        const auto right_order = right.sorted ? keyOrder(right_mask, key_classes, order_class) : VectorWithMemoryTracking<Int32>{};
+        VectorWithMemoryTracking<Int32> left_order;
+        VectorWithMemoryTracking<Int32> right_order;
+        if (!(key_classes & ~dpsub_data.ordered_classes))
+        {
+            if (left.sorted)
+                left_order = keyOrder(left_mask, key_classes, order_class);
+            if (right.sorted)
+                right_order = keyOrder(right_mask, key_classes, order_class);
+        }
         const auto & emitted_order = left_order.empty() ? right_order : left_order;
         if (left.sorted && (left_order.empty() || left_order != emitted_order))
             left.sort_groups = distinctValues(left_mask, order_class, left.rows);
         if (right.sorted && (right_order.empty() || right_order != emitted_order))
             right.sort_groups = distinctValues(right_mask, order_class, right.rows);
     }
-    const bool sharded = isShardedMerge(left, left_mask, right, right_mask);
+    const bool sharded = isShardedMerge(left, left_mask, right, right_mask, key_classes);
     double probe_fraction = 1.0;
     if (sharded)
         probe_fraction = left.rows >= right.rows ? probeReadFraction(left_mask, right_mask) : probeReadFraction(right_mask, left_mask);
@@ -828,12 +882,11 @@ double DPSubJoinOrderOptimizer::mergeJoinCost(
 }
 
 bool DPSubJoinOrderOptimizer::isShardedMerge(
-    const MergeJoinInput & left, UInt32 left_mask, const MergeJoinInput & right, UInt32 right_mask) const
+    const MergeJoinInput & left, UInt32 left_mask, const MergeJoinInput & right, UInt32 right_mask, UInt64 key_classes) const
 {
     if (!query_graph.shard_merge_by_pk_ranges || !left.shardable || !right.shardable)
         return false;
     /// One key range is one shard, whatever the other side holds.
-    const UInt64 key_classes = spanningClasses(left_mask, right_mask);
     for (const UInt32 side : {left_mask, right_mask})
         if (std::popcount(side) == 1 && hasConstantShardKey(side, key_classes))
             return false;
@@ -867,7 +920,7 @@ UInt64 DPSubJoinOrderOptimizer::spanningClasses(UInt32 left_mask, UInt32 right_m
         if ((relations & left_mask) && (relations & right_mask))
             classes |= static_cast<UInt64>(1) << c;
     }
-    return classes;
+    return classes & dpsub_data.single_type_classes;
 }
 
 VectorWithMemoryTracking<Int32> DPSubJoinOrderOptimizer::keyOrder(UInt32 relation_mask, UInt64 key_classes, Int32 order_class) const
@@ -916,6 +969,9 @@ double DPSubJoinOrderOptimizer::probeReadFraction(UInt32 probe_mask, UInt32 buil
     if (prefix.empty() || !(dpsub_data.class_relations[prefix.front()] & build_mask))
         return 1.0;
     const Int32 order_class = prefix.front();
+    /// Ranges of columns of different types are in different units, such as days of a `Date` and seconds of a `DateTime`.
+    if (!((dpsub_data.single_type_classes >> order_class) & 1))
+        return 1.0;
 
     const size_t num_classes = dpsub_data.class_members.size();
     const auto & probe = dpsub_data.key_ranges[std::countr_zero(probe_mask) * num_classes + order_class];
@@ -1099,6 +1155,7 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
     bool is_inner_step = isInner(entry.kind) || isCrossOrComma(entry.kind);
 
     /// The merge key goes first, on the columns the inputs are sorted by; `cleanupJoinPredicates` drops the conditions it makes redundant.
+    VectorWithMemoryTracking<char> placed_edges(entry.edges.size(), 0);
     if (entry.method == JoinMethod::Merge)
     {
         auto add_key = [&](Int32 key_class)
@@ -1110,20 +1167,40 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
         };
         add_key(entry.merge_class);
 
-        /// On several keys, the others follow in the order an input is sorted by, as `mergeJoinCost` assumed.
-        const UInt64 key_classes = spanningClasses(entry.left, entry.right);
+        /// On several keys, the others follow in the order an input is sorted by, as `mergeJoinCost` assumed. A key of columns
+        /// of different types is not implied by the others, so it takes the query's own equalities instead of a synthesized one.
+        UInt64 key_classes = joinKeyClasses(entry.edges, entry.left, entry.right);
+        if (key_classes & ~dpsub_data.ordered_classes)
+            key_classes = spanningClasses(entry.left, entry.right);
         if (std::popcount(key_classes) > 1)
         {
             auto key_order = keyOrder(entry.left, key_classes, entry.merge_class);
             if (key_order.empty())
                 key_order = keyOrder(entry.right, key_classes, entry.merge_class);
             for (size_t i = 1; i < key_order.size(); ++i)
-                add_key(key_order[i]);
+            {
+                if ((dpsub_data.single_type_classes >> key_order[i]) & 1)
+                {
+                    add_key(key_order[i]);
+                    continue;
+                }
+                for (size_t j = 0; j < entry.edges.size(); ++j)
+                {
+                    if (dpsub_data.edge_class[entry.edges[j] - query_graph.edges.data()] == key_order[i])
+                    {
+                        join_operator.expression.push_back(*entry.edges[j]);
+                        placed_edges[j] = 1;
+                    }
+                }
+            }
         }
     }
 
-    for (const auto * e : entry.edges)
+    for (size_t j = 0; j < entry.edges.size(); ++j)
     {
+        if (placed_edges[j])
+            continue;
+        const auto * e = entry.edges[j];
         if (is_inner_step || query_graph.outer_join_conditions.contains(*e))
             join_operator.expression.push_back(*e);
         else
