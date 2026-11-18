@@ -76,7 +76,7 @@ INSERT INTO default.vs_cache_05570_on_cluster VALUES (0, [2.0, 0.0]), (1, [0.0, 
 GRANT CLUSTER ON *.* TO u_05570_vs_cache;
 GRANT SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE ON vs_cache_05570_on_cluster TO u_05570_vs_cache;
 
-SET distributed_ddl_output_mode = 'throw';
+SET distributed_ddl_output_mode = 'none';
 EXECUTE AS u_05570_vs_cache SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE FOR TABLE default.vs_cache_05570_on_cluster; -- { serverError ACCESS_DENIED }
 EXECUTE AS u_05570_vs_cache SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE ON CLUSTER test_shard_localhost FOR TABLE vs_cache_05570_on_cluster;
 

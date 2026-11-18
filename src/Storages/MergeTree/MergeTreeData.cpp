@@ -4822,18 +4822,18 @@ void MergeTreeData::prewarmVectorSimilarityIndexCache(
     const double ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::vector_similarity_index_cache_prewarm_ratio];
 
     /// On-disk size of an HNSW file is far below the deserialized cache weight, so the granule is
-    /// loaded outside the cache and inserted only when the real weight still fits the ratio together
-    /// with in-flight inserts. That keeps a concurrent prewarm from evicting another table's entries.
+    /// loaded outside the cache and inserted only when the real weight still fits under the cache
+    /// mutex. That keeps a concurrent prewarm from evicting another table's entries.
     struct PrewarmBudget
     {
         VectorSimilarityIndexCache & cache;
         double ratio;
-        std::atomic<size_t> in_flight{0};
         /// Set when a granule does not fit. Tasks that have not started reading stop, and the
-        /// outer loop stops queueing. A `reader.read` already in progress still finishes.
+        /// outer loop stops queueing. A `reader.read` already in progress still finishes, then
+        /// `tryInsert` refuses it if it would evict.
         std::atomic<bool> full{false};
 
-        size_t limit() const
+        size_t byteLimit() const
         {
             return static_cast<size_t>(static_cast<double>(cache.maxSizeInBytes()) * ratio);
         }
@@ -4848,29 +4848,22 @@ void MergeTreeData::prewarmVectorSimilarityIndexCache(
             full.store(true, std::memory_order_relaxed);
         }
 
-        bool wouldFit(size_t extra) const
+        bool wouldFit() const
         {
-            return cache.sizeInBytes() + in_flight.load(std::memory_order_relaxed) + extra < limit();
+            if (isFull())
+                return false;
+            if (cache.sizeInBytes() >= byteLimit())
+                return false;
+            const size_t max_count = cache.maxCount();
+            return max_count == 0 || cache.count() < max_count;
         }
 
-        bool tryReserve(size_t bytes)
+        bool tryInsert(const VectorSimilarityIndexCacheKey & key, VectorSimilarityIndexCache::MappedPtr cell)
         {
-            size_t prev = in_flight.load(std::memory_order_relaxed);
-            while (true)
-            {
-                if (cache.sizeInBytes() + prev + bytes >= limit())
-                {
-                    markFull();
-                    return false;
-                }
-                if (in_flight.compare_exchange_weak(prev, prev + bytes, std::memory_order_relaxed))
-                    return true;
-            }
-        }
-
-        void release(size_t bytes)
-        {
-            in_flight.fetch_sub(bytes, std::memory_order_relaxed);
+            if (cache.trySetWithoutEviction(key, std::move(cell), byteLimit()))
+                return true;
+            markFull();
+            return false;
         }
     };
 
@@ -4885,7 +4878,7 @@ void MergeTreeData::prewarmVectorSimilarityIndexCache(
 
     for (const auto & part : data_parts)
     {
-        if (budget.isFull() || !budget.wouldFit(0))
+        if (!budget.wouldFit())
             break;
 
         for (const auto & index : indexes)
@@ -4914,7 +4907,7 @@ void MergeTreeData::prewarmVectorSimilarityIndexCache(
                     if (skip_marks == 0)
                         return;
 
-                    if (budget.isFull() || !budget.wouldFit(0))
+                    if (!budget.wouldFit())
                     {
                         budget.markFull();
                         return;
@@ -4942,7 +4935,7 @@ void MergeTreeData::prewarmVectorSimilarityIndexCache(
                         if (cache.contains(key))
                             continue;
 
-                        if (budget.isFull() || !budget.wouldFit(0))
+                        if (!budget.wouldFit())
                         {
                             budget.markFull();
                             return;
@@ -4953,15 +4946,11 @@ void MergeTreeData::prewarmVectorSimilarityIndexCache(
                         if (!granule)
                             continue;
 
-                        const size_t weight = granule->memoryUsageBytes() + VectorSimilarityIndexCacheCell::ENTRY_OVERHEAD_BYTES_GUESS;
-                        if (!budget.tryReserve(weight))
+                        if (!budget.tryInsert(
+                                key,
+                                std::make_shared<VectorSimilarityIndexCacheCell>(
+                                    std::move(granule), table_uuid, part->name, index->index.name)))
                             return;
-
-                        SCOPE_EXIT({ budget.release(weight); });
-                        cache.set(
-                            key,
-                            std::make_shared<VectorSimilarityIndexCacheCell>(
-                                std::move(granule), table_uuid, part->name, index->index.name));
                     }
                 });
         }

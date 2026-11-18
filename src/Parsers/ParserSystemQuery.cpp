@@ -1411,7 +1411,7 @@ Clears the vector similarity index cache.
 
 ## SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE {#prewarm-vector-similarity-index-cache}
 
-Loads deserialized HNSW granules of a `MergeTree` table into the [vector similarity index cache](#drop-vector-similarity-index-cache). `INDEX name` limits the load to one vector similarity index. Loading stops when the cache reaches `vector_similarity_index_cache_prewarm_ratio` of its configured size.
+Loads deserialized HNSW granules of a `MergeTree` table into the [vector similarity index cache](#drop-vector-similarity-index-cache). `INDEX name` limits the load to one vector similarity index. Loading stops when the cache reaches `vector_similarity_index_cache_prewarm_ratio` of its configured size, or `vector_similarity_index_cache_max_entries`. A granule is inserted only when that does not evict another entry.
 
 ```sql
 SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster_name] FOR TABLE [db.]table [INDEX index_name]

@@ -3425,7 +3425,7 @@ LIMIT 10
 )DOCS_MD");
     attachNoDescription<StorageSystemVectorSimilarityIndexCache>(context, system_database, "vector_similarity_index_cache", R"DOCS_MD(
 .description
-Shows the content of the vector similarity index cache: one row per deserialized HNSW granule. Use [`SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE`](/reference/statements/system#prewarm-vector-similarity-index-cache) to load entries and [`SYSTEM DROP VECTOR SIMILARITY INDEX CACHE`](/reference/statements/system#drop-vector-similarity-index-cache) to evict the whole cache.
+Shows the content of the vector similarity index cache: one row per deserialized HNSW granule. Use `SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE` to load entries and [`SYSTEM DROP VECTOR SIMILARITY INDEX CACHE`](/reference/statements/system#drop-vector-similarity-index-cache) to evict the whole cache.
 
 The rows are filtered by access rights: an entry is visible only to a user who holds `SHOW TABLES` and `SHOW COLUMNS` on its table. Entries of a table that no longer exists are visible only to a user holding those privileges globally. In an `Ordinary` database the table has no UUID, so `database` and `table` are empty and the row is visible only with those privileges granted globally.
 
@@ -3448,7 +3448,7 @@ GROUP BY database, table, index_name;
 
 .see_also
 - [SYSTEM DROP VECTOR SIMILARITY INDEX CACHE](/reference/statements/system#drop-vector-similarity-index-cache)
-- [SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE](/reference/statements/system#prewarm-vector-similarity-index-cache)
+- [SYSTEM statements](/reference/statements/system) — Includes `SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE`.
 )DOCS_MD");
     attachNoDescription<StorageSystemQueryConditionCache>(context, system_database, "query_condition_cache", R"DOCS_MD(
 .description
