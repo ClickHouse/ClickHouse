@@ -278,9 +278,9 @@ public:
     {
     }
 
-    size_t getNumberOfArguments() const override { return arguments; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return arguments; }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         ++callbacks->get_name;
         return name;
@@ -288,10 +288,10 @@ public:
 
     void updateHash(SipHash &) const override { ++callbacks->update_hash; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
 protected:
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t) const override { return nullptr; }
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t) const override { return nullptr; }
 
 private:
     std::shared_ptr<SpoofCallbacks> callbacks;
