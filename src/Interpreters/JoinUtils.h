@@ -166,6 +166,19 @@ void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count);
 
 bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type);
 
+/** Whether a JOIN on keys of these two types behaves like a plain equality of the key values.
+  *
+  * The JOIN casts both keys to their common type and compares the results. For most type pairs this is what `=`
+  * does too, so `a = b` can be treated as an ordinary equality: it is transitive, and `CAST(a)` is the value `b`
+  * holds in the matched row. `FixedString` vs `String` is different: `=` ignores trailing zero bytes, so
+  * `toFixedString('a', 3)` is equal to both `'a'` and `'a\0\0'`, while `'a' = 'a\0\0'` is false.
+  *
+  * Allowed: equal types (up to `Nullable` and `LowCardinality`), two numbers (the JOIN refuses a lossy mix such as
+  * `Int64` vs `Float64`), two date or time types, two `FixedString`. Any other pair is declined, so new types are
+  * safe by default.
+  */
+bool isExactJoinKeyEquality(const DataTypePtr & left_type, const DataTypePtr & right_type);
+
 /// Return mask array of type ColumnUInt8 for specified column. Source should have type UInt8 or Nullable(UInt8).
 JoinMask getColumnAsMask(const Block & block, const String & column_name);
 

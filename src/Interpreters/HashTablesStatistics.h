@@ -48,7 +48,8 @@ struct AggregationEntry
     [[nodiscard]] bool shouldBeUpdated(const AggregationEntry & new_entry) const
     {
         return new_entry.sum_of_sizes < sum_of_sizes / 2 || sum_of_sizes < new_entry.sum_of_sizes || new_entry.median_size < median_size / 2
-            || median_size < new_entry.median_size
+            || median_size < new_entry.median_size || new_entry.sum_of_sizes_with_empty_string < sum_of_sizes_with_empty_string / 2
+            || sum_of_sizes_with_empty_string < new_entry.sum_of_sizes_with_empty_string
             || new_entry.adaptive_several_producers_staging_repeat_dominated != adaptive_several_producers_staging_repeat_dominated
             || new_entry.adaptive_lone_producer_staging_repeat_dominated != adaptive_lone_producer_staging_repeat_dominated;
     }
@@ -56,10 +57,11 @@ struct AggregationEntry
     [[nodiscard]] std::string dump() const
     {
         return fmt::format(
-            "sum_of_sizes={}, median_size={}, adaptive_several_producers_staging_repeat_dominated={}, "
-            "adaptive_lone_producer_staging_repeat_dominated={}",
+            "sum_of_sizes={}, median_size={}, sum_of_sizes_with_empty_string={}, "
+            "adaptive_several_producers_staging_repeat_dominated={}, adaptive_lone_producer_staging_repeat_dominated={}",
             sum_of_sizes,
             median_size,
+            sum_of_sizes_with_empty_string,
             adaptive_several_producers_staging_repeat_dominated,
             adaptive_lone_producer_staging_repeat_dominated);
     }
@@ -75,8 +77,22 @@ struct AggregationEntry
         return lone_producer ? adaptive_lone_producer_staging_repeat_dominated : adaptive_several_producers_staging_repeat_dominated;
     }
 
+    /// The part of `median_size` with an empty string, by the share of such keys in `sum_of_sizes` (see
+    /// `sum_of_sizes_with_empty_string`).
+    [[nodiscard]] size_t medianSizeWithEmptyString() const
+    {
+        chassert(sum_of_sizes_with_empty_string <= sum_of_sizes && sum_of_sizes != 0);
+        return static_cast<size_t>(
+            static_cast<double>(median_size) * static_cast<double>(sum_of_sizes_with_empty_string) / static_cast<double>(sum_of_sizes));
+    }
+
     size_t sum_of_sizes = 0; // used to determine if it's better to convert aggregation to two-level from the beginning
     size_t median_size = 0; // roughly the size we're going to preallocate on each thread
+    /// The part of `sum_of_sizes` with an empty string in the tables of fixed-width keys and one `String`,
+    /// which keep such keys in a sub-table of their own (see `KeysAndPackedStringHashTable`), and 0 for the
+    /// other methods. Its share of `sum_of_sizes` splits the preallocation of such a table between its
+    /// sub-tables.
+    size_t sum_of_sizes_with_empty_string = 0;
     /// The adaptive verdicts of the runs of the query (see `Aggregator::adaptiveStagingVerdict`): the staged
     /// streams of a run were repeat-dominated, so freezing cannot pay for such a run, and later runs of its
     /// kind do not engage the adaptive aggregation at all. Runs without a verdict of their own carry the
