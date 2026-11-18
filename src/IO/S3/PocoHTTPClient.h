@@ -9,7 +9,6 @@
 
 #include <Common/HistogramMetrics.h>
 #include <Common/SecretString.h>
-#include <Common/Silk/FiberMutex.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/ProxyConfiguration.h>
 #include <IO/ConnectionTimeouts.h>
@@ -323,7 +322,7 @@ private:
     const SecretString google_adc_refresh_token;
     const SecretString google_service_account_key;
 
-    mutable Silk::FiberMutex mutex;
+    mutable std::mutex mutex;
     mutable std::optional<BearerToken> bearer_token TSA_GUARDED_BY(mutex);
 
     BearerToken requestBearerToken() const TSA_REQUIRES(mutex);
