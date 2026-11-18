@@ -53,8 +53,8 @@ and `DROP` of users, roles, row policies, masking policies, quotas and settings 
 permitted either. Named collection management is an exception: `readonly` does not restrict
 `CREATE NAMED COLLECTION`, `ALTER NAMED COLLECTION` or `DROP NAMED COLLECTION`.
 
-Granting a privilege with `GRANT` or `GRANT CURRENT GRANTS` and revoking one with `REVOKE` are refused
-too, locally and `ON CLUSTER`.
+Changing grants is refused too, locally and `ON CLUSTER`: granting a privilege or a role with `GRANT`,
+granting privileges with `GRANT CURRENT GRANTS`, and revoking a privilege or a role with `REVOKE`.
 
 Temporary tables are exempt from both settings: a session that may create one may also `ALTER` it,
 insert into it and drop it.

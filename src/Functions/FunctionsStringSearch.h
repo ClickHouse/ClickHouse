@@ -149,6 +149,13 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
+    {
+        if constexpr (requires(const DataTypesWithConstInfo & a) { Impl::canThrowIfKnown(a); })
+            return Impl::canThrowIfKnown(arguments);
+        return {};
+    }
+
     [[nodiscard]] size_t getNumberOfArguments() const override
     {
         if (Impl::supports_start_pos || ImplSupportsEscape<Impl>::value)

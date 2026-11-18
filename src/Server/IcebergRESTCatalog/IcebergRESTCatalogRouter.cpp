@@ -67,9 +67,29 @@ const std::vector<IcebergRESTRoute> & getIcebergRESTRoutes()
     return routes;
 }
 
-std::optional<IcebergRESTRouteMatch> matchIcebergRESTRoute(const std::string & method, const std::vector<std::string> & segments)
+namespace
 {
-    for (const auto & route : getIcebergRESTRoutes())
+
+/// Routes under `/management/v1`, served on the same port.
+const std::vector<IcebergRESTRoute> & getManagementRoutes()
+{
+    using Poco::Net::HTTPRequest;
+
+    static const std::vector<IcebergRESTRoute> routes =
+    {
+        {HTTPRequest::HTTP_POST, {"management", "v1", "warehouses"}, IcebergRESTOperation::CreateWarehouse, true},
+        {HTTPRequest::HTTP_GET, {"management", "v1", "warehouses"}, IcebergRESTOperation::ListWarehouses, true},
+        {HTTPRequest::HTTP_GET, {"management", "v1", "warehouses", "{warehouse}"}, IcebergRESTOperation::GetWarehouse, true},
+        {HTTPRequest::HTTP_PUT, {"management", "v1", "warehouses", "{warehouse}", "credential"}, IcebergRESTOperation::ReplaceWarehouseCredential, true},
+        {HTTPRequest::HTTP_DELETE, {"management", "v1", "warehouses", "{warehouse}"}, IcebergRESTOperation::DeleteWarehouse, true},
+    };
+    return routes;
+}
+
+std::optional<IcebergRESTRouteMatch> matchRoutes(
+    const std::vector<IcebergRESTRoute> & routes, const std::string & method, const std::vector<std::string> & segments)
+{
+    for (const auto & route : routes)
     {
         if (method != route.method || segments.size() != route.pattern.size())
             continue;
@@ -96,6 +116,15 @@ std::optional<IcebergRESTRouteMatch> matchIcebergRESTRoute(const std::string & m
             return match;
     }
     return std::nullopt;
+}
+
+}
+
+std::optional<IcebergRESTRouteMatch> matchIcebergRESTRoute(const std::string & method, const std::vector<std::string> & segments)
+{
+    if (auto match = matchRoutes(getIcebergRESTRoutes(), method, segments))
+        return match;
+    return matchRoutes(getManagementRoutes(), method, segments);
 }
 
 }
