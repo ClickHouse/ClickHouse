@@ -46,6 +46,8 @@ CLICKHOUSE_SETTINGS = [
     "group_by_use_nulls = 1",
     "prefer_column_name_to_alias = 1",
     "cast_keep_nullable = 1",
+    # PostgreSQL `[LEFT] JOIN LATERAL (subquery) alias ON TRUE`.
+    "enable_lateral_join = 1",
     # aggregate_functions_null_for_empty is NOT set because it makes groupArray
     # return Nullable(Array(...)) which is illegal in ClickHouse's type system.
 ]

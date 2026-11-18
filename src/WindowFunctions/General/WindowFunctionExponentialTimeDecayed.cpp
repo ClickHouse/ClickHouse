@@ -89,17 +89,17 @@ public:
         checkValueAndTimeArguments(name_, argument_types);
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.frame = true};
+        return WindowFunctionRequirements{.frame_start = true, .frame_end = true};
     }
 
-    size_t sizeOfState() const override { return sizeof(DecayedSumState); }
-    size_t alignOfState() const override { return alignof(DecayedSumState); }
+    [[nodiscard]] size_t sizeOfState() const override { return sizeof(DecayedSumState); }
+    [[nodiscard]] size_t alignOfState() const override { return alignof(DecayedSumState); }
     void createState(char * place) const override { new (place) DecayedSumState(); }
     void resetPartition(char * place) const override { new (place) DecayedSumState(); }
 
-    void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    Int64 evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
         DecayedSumState & state = *reinterpret_cast<DecayedSumState *>(place);
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
@@ -131,6 +131,7 @@ public:
             state.covered_end = end;
             data.push_back(sum);
         }
+        return state.covered_start;
     }
 
 private:
@@ -147,12 +148,12 @@ public:
         checkValueAndTimeArguments(name_, argument_types);
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.frame = true};
+        return WindowFunctionRequirements{.frame_start = true, .frame_end = true};
     }
 
-    void evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
         for (Int64 i = 0; i < bounds.rows; ++i)
@@ -174,6 +175,7 @@ public:
             }
             data.push_back(max);
         }
+        return bounds.frame_start.back();
     }
 
 private:
@@ -193,17 +195,17 @@ public:
         checkTimeArgument(argument_types, 0);
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.frame = true};
+        return WindowFunctionRequirements{.frame_start = true, .frame_end = true};
     }
 
-    size_t sizeOfState() const override { return sizeof(DecayedSumState); }
-    size_t alignOfState() const override { return alignof(DecayedSumState); }
+    [[nodiscard]] size_t sizeOfState() const override { return sizeof(DecayedSumState); }
+    [[nodiscard]] size_t alignOfState() const override { return alignof(DecayedSumState); }
     void createState(char * place) const override { new (place) DecayedSumState(); }
     void resetPartition(char * place) const override { new (place) DecayedSumState(); }
 
-    void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    Int64 evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
         DecayedSumState & state = *reinterpret_cast<DecayedSumState *>(place);
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
@@ -235,6 +237,7 @@ public:
             state.covered_end = end;
             data.push_back(count);
         }
+        return state.covered_start;
     }
 
 private:
@@ -251,17 +254,17 @@ public:
         checkValueAndTimeArguments(name_, argument_types);
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.frame = true};
+        return WindowFunctionRequirements{.frame_start = true, .frame_end = true};
     }
 
-    size_t sizeOfState() const override { return sizeof(DecayedAvgState); }
-    size_t alignOfState() const override { return alignof(DecayedAvgState); }
+    [[nodiscard]] size_t sizeOfState() const override { return sizeof(DecayedAvgState); }
+    [[nodiscard]] size_t alignOfState() const override { return alignof(DecayedAvgState); }
     void createState(char * place) const override { new (place) DecayedAvgState(); }
     void resetPartition(char * place) const override { new (place) DecayedAvgState(); }
 
-    void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    Int64 evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
         DecayedAvgState & state = *reinterpret_cast<DecayedAvgState *>(place);
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
@@ -311,6 +314,7 @@ public:
             state.covered_end = end;
             data.push_back(avg);
         }
+        return state.covered_start;
     }
 
 private:

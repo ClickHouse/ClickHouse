@@ -14,7 +14,7 @@ from helpers.iceberg_utils import (
 )
 
 
-ICEBERG_SETTINGS = {"allow_insert_into_iceberg": 1, "allow_experimental_expire_snapshots": 1}
+ICEBERG_SETTINGS = {"allow_insert_into_iceberg": 1, "allow_expire_snapshots": 1}
 FAR_FUTURE = "2099-12-31 23:59:59"
 AGGRESSIVE_RETENTION = {
     "history.expire.max-snapshot-age-ms": "1",
@@ -995,7 +995,7 @@ def test_expire_snapshots_snapshot_ids_with_fuse(started_cluster_iceberg_with_sp
 
 @pytest.mark.parametrize("storage_type", ["local"])
 def test_expire_snapshots_requires_experimental_setting(started_cluster_iceberg_with_spark, storage_type):
-    """expire_snapshots raises SUPPORT_IS_DISABLED when allow_experimental_expire_snapshots=0.
+    """expire_snapshots raises SUPPORT_IS_DISABLED when allow_expire_snapshots=0.
 
     Exercises the feature gate at IcebergMetadata.cpp:605-611.
     """
@@ -1007,13 +1007,13 @@ def test_expire_snapshots_requires_experimental_setting(started_cluster_iceberg_
     )
 
     # Without the experimental flag, expire_snapshots must be blocked
-    settings_no_flag = {"allow_insert_into_iceberg": 1, "allow_experimental_expire_snapshots": 0}
+    settings_no_flag = {"allow_insert_into_iceberg": 1, "allow_expire_snapshots": 0}
     error = instance.query_and_get_error(
         f"ALTER TABLE {TABLE_NAME} EXECUTE expire_snapshots();",
         settings=settings_no_flag,
     )
     assert "SUPPORT_IS_DISABLED" in error, f"Expected SUPPORT_IS_DISABLED, got: {error}"
-    assert "allow_experimental_expire_snapshots" in error, \
+    assert "allow_expire_snapshots" in error, \
         f"Error should mention the setting name, got: {error}"
 
     # With the flag enabled it should succeed

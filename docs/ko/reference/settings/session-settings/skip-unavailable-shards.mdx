@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-<div id="skip_unavailable_shards">
-  ## skip_unavailable_shards
-</div>
+## skip_unavailable_shards {#skip_unavailable_shards}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -27,15 +25,13 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 * 1 — 스키핑이 활성화됩니다.
 
-  세그먼트를 사용할 수 없으면 ClickHouse는 부분 데이터만으로 결과를 반환하며, 노드 가용성 문제는 보고하지 않습니다.
+  세그먼트를 사용할 수 없으면 ClickHouse는 부분 데이터만으로 결과를 반환하며, 노드 가용성 문제는 보고하지 않습니다. 읽기 시 데이터를 반환하기 전에 *모든* 세그먼트를 건너뛰었다면 반환할 부분 데이터가 없으므로, 쿼리는 빈 결과를 반환하는 대신 `ALL_CONNECTION_TRIES_FAILED` 예외를 발생시킵니다. 이 검사는 읽기에만 적용되며, `INSERT`는 대상 클러스터 전체를 사용할 수 없는 상황을 자체적으로 처리합니다.
 
 * 0 — 스키핑이 비활성화됩니다.
 
   세그먼트를 사용할 수 없으면 ClickHouse는 예외를 발생시킵니다.
 
-<div id="skip_unavailable_shards_mode">
-  ## skip_unavailable_shards_mode
-</div>
+## skip_unavailable_shards_mode {#skip_unavailable_shards_mode}
 
 <SettingsInfoBlock type="SkipUnavailableShardsMode" default_value="unavailable_or_table_missing" />
 
