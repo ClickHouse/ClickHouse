@@ -125,20 +125,31 @@ template <uint32_t plus>
 inline ALWAYS_INLINE void deltaDecode32(uint32_t * out, unsigned cnt, uint32_t & carry) noexcept
 {
     const v4u32 plusv = {plus, plus, plus, plus};
-    uint32_t c = carry;
+    const v4u32 zero = {0, 0, 0, 0};
+    v4u32 cv = {carry, carry, carry, carry};
     unsigned i = 0;
-    for (; i + 4 <= cnt; i += 4)
+    /// Two groups per step: their local sums do not depend on the carry, so the carry chain is one add and one broadcast per 8 values.
+    for (; i + 8 <= cnt; i += 8)
     {
         v4u32 x;
+        v4u32 y;
         std::memcpy(&x, out + i, 16);
+        std::memcpy(&y, out + i + 4, 16);
         x += plusv;
-        x += v4u32{0, x[0], x[1], x[2]}; // inclusive prefix sum, step 1
-        x += v4u32{0, 0, x[0], x[1]};    // step 2 -> {a, a+b, a+b+c, a+b+c+d}
-        x += v4u32{c, c, c, c};          // add the running carry
+        y += plusv;
+        x += __builtin_shufflevector(zero, x, 3, 4, 5, 6);
+        y += __builtin_shufflevector(zero, y, 3, 4, 5, 6);
+        x += __builtin_shufflevector(zero, x, 2, 3, 4, 5);
+        y += __builtin_shufflevector(zero, y, 2, 3, 4, 5);
+        y += __builtin_shufflevector(x, x, 3, 3, 3, 3);
+        x += cv;
+        y += cv;
         std::memcpy(out + i, &x, 16);
-        c = x[3];
+        std::memcpy(out + i + 4, &y, 16);
+        cv = __builtin_shufflevector(y, y, 3, 3, 3, 3);
     }
-    for (; i < cnt; ++i) // tail (cnt not a multiple of 4)
+    uint32_t c = cv[0];
+    for (; i < cnt; ++i) // tail of at most 7 values
     {
         c += out[i] + plus;
         out[i] = c;
@@ -160,8 +171,9 @@ inline ALWAYS_INLINE void unpackVertical32FusedDelta(
     v4u32 acc = {0, 0, 0, 0};
     unsigned bits = 0;
     const uint8_t * p = in;
-    uint32_t c = carry;
-    for (unsigned row = 0; row < 32; ++row)
+    const v4u32 zero = {0, 0, 0, 0};
+    v4u32 cv = {carry, carry, carry, carry};
+    auto unpack_row = [&]() ALWAYS_INLINE
     {
         v4u32 v;
         if (bits >= b)
@@ -178,15 +190,25 @@ inline ALWAYS_INLINE void unpackVertical32FusedDelta(
             acc = w >> (b - bits);
             bits = 32 - (b - bits);
         }
-        // The 4 lanes are consecutive values (4*row .. 4*row+3): prefix-sum + carry, fused.
-        v += plusv;
-        v += v4u32{0, v[0], v[1], v[2]};
-        v += v4u32{0, 0, v[0], v[1]};
-        v += v4u32{c, c, c, c};
-        std::memcpy(out + 4u * row, &v, 16);
-        c = v[3];
+        return v + plusv;
+    };
+    /// Two rows per step, as in `deltaDecode32`: the carry chain is one add and one broadcast per 8 values.
+    for (unsigned row = 0; row < 32; row += 2)
+    {
+        v4u32 x = unpack_row();
+        v4u32 y = unpack_row();
+        x += __builtin_shufflevector(zero, x, 3, 4, 5, 6);
+        y += __builtin_shufflevector(zero, y, 3, 4, 5, 6);
+        x += __builtin_shufflevector(zero, x, 2, 3, 4, 5);
+        y += __builtin_shufflevector(zero, y, 2, 3, 4, 5);
+        y += __builtin_shufflevector(x, x, 3, 3, 3, 3);
+        x += cv;
+        y += cv;
+        std::memcpy(out + 4u * row, &x, 16);
+        std::memcpy(out + 4u * row + 4, &y, 16);
+        cv = __builtin_shufflevector(y, y, 3, 3, 3, 3);
     }
-    carry = c;
+    carry = cv[0];
 }
 
 }
