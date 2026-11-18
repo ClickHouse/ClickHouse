@@ -17,7 +17,7 @@ These settings are available in [system.merge_tree_settings](/reference/system-t
 
 ## adaptive_codec_selection_period {#adaptive_codec_selection_period}
 
-<ExperimentalBadge/>
+<BetaBadge/>
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8"},{"label": "New setting"}]}]}/>
 
@@ -87,6 +87,14 @@ The `minmax` statistics type is deprecated: it is a subset of `basic`, which sho
 
 Target time to execution of one step of merge or mutation. Can be exceeded if
 one step takes longer time
+
+## cache_temporarily_for_merges {#cache_temporarily_for_merges}
+
+<ExperimentalBadge/>
+<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New experimental setting."}]}]}/>
+
+Background merge and mutation reads use the filesystem cache as a temporary buffer: a miss is read into the cache and served from it, and the cache removes it when nobody holds it anymore, unless a reader or writer outside this mode used it. Only the experimental `ReaderExecutor` supports it; other readers bypass the cache. `force_read_through_cache_for_merges` takes precedence.
 
 ## clean_deleted_rows {#clean_deleted_rows}
 <SettingsInfoBlock type="CleanDeletedRows" default_value="Never" />

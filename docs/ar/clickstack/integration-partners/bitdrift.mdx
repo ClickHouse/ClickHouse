@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['bitdrift', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'قابلية رصد الأجهزة المحمولة', 'التتبع']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -39,7 +37,15 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 
 تُبقي bitdrift بيانات القياس عن بُعد للأجهزة المحمولة عند الحافة إلى أن تُطلب، ما يتيح للفرق سحب الجلسة الكاملة غير المأخوذ منها عينة التي أدت إلى تعطل أو مشكلة في الأداء، بدلًا من الاعتماد على مجموعة ثابتة من الإشارات المأخوذ منها عينات مسبقًا. تتوفر منصة bitdrift Capture كخدمة SaaS مستضافة من bitdrift، أو كتوزيع «أحضر سحابتك الخاصة» (أو bucket الخاص بك) ضمن حساب AWS الخاص بك.
 
-<Image img="/images/clickstack/bitdrift/bitdrift-user-journey-dashboard.png" alt="لوحة معلومات User Journey من bitdrift تعرض المسارات المؤدية إلى ANR" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![لوحة معلومات User Journey من bitdrift تعرض المسارات المؤدية إلى ANR](/images/clickstack/bitdrift/bitdrift-user-journey-dashboard.png)
+
+</Frame>
+
+</div>
 
 *لوحة معلومات User Journey من bitdrift تعرض المسارات التي يسلكها المستخدمون وصولًا إلى ANR.*
 
@@ -85,7 +91,15 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 
 بعد التهيئة، تعرض صفوف سجل المخطط الزمني في bitdrift وعروض النطاقات رابط **View Trace** ينقل معرّف التتبّع الملتقط إلى واجهة ClickStack UI ‏(HyperDX).
 
-<Image img="/images/clickstack/bitdrift/bitdrift-view-trace.jpg" alt="تتبّع bitdrift مرتبط بتتبّع موزّع في واجهة ClickStack UI" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![تتبّع bitdrift مرتبط بتتبّع موزّع في واجهة ClickStack UI](/images/clickstack/bitdrift/bitdrift-view-trace.jpg)
+
+</Frame>
+
+</div>
 
 *اتّباع رابط View Trace من جلسة bitdrift إلى تتبّع موزّع في واجهة ClickStack UI ‏(HyperDX).*
 

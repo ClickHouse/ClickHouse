@@ -120,6 +120,9 @@ static inline llvm::Value * nativeCast(llvm::IRBuilderBase & b, llvm::Value * va
 llvm::Value * nativeCastWithDecimalScale(llvm::IRBuilderBase & b, const DataTypePtr & from_type, llvm::Value * value, const DataTypePtr & to_type);
 llvm::Value * nativeCastWithDecimalScale(llvm::IRBuilderBase & b, const ValueWithType & value, const DataTypePtr & to_type);
 
+/// Returns i8 1, -1 or 0 if lhs is greater than, less than or equal to rhs.
+llvm::Value * compileIntegerComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, bool is_signed);
+
 /// Get column value for specified index as LLVM constant
 llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataTypePtr & column_type, const IColumn & column, size_t index);
 
