@@ -11,7 +11,7 @@ SELECT max(number >= (
         )
     ))
 FROM numbers(2)
-SETTINGS group_by_use_nulls = 1, enable_analyzer = 1;
+SETTINGS group_by_use_nulls = 1;
 
 EXPLAIN QUERY TREE
 SELECT max(number >= (
@@ -24,4 +24,4 @@ SELECT max(number >= (
         )
     ))
 FROM numbers(2)
-SETTINGS group_by_use_nulls = 1, enable_analyzer = 1;
+SETTINGS group_by_use_nulls = 1;

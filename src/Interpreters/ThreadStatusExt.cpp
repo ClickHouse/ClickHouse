@@ -132,12 +132,23 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
     };
 }
 
+ThreadGroup::ThreadGroup(const ContextWeakPtr & global_context_)
+    : master_thread_id(CurrentThread::get().thread_id)
+    , global_context(global_context_)
+    , with_query_context(false)
+    , os_threads_nice_value(0)
+    , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>())
+    , memory_tracker(&total_memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
+{
+}
+
 // c-tor for methods createForMaterializedView, createForExplainAnalyze and createWithoutQueryMemoryTracker
 ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group, bool charge_memory_to_parent)
     : parent(std::move(parent_thread_group))
     , master_thread_id(parent->master_thread_id)
     , query_context(parent->query_context)
     , global_context(parent->global_context)
+    , with_query_context(parent->with_query_context)
     , fatal_error_callback(parent->fatal_error_callback)
     , os_threads_nice_value(parent->os_threads_nice_value)
     , memory_spill_scheduler(parent->memory_spill_scheduler)
@@ -272,12 +283,17 @@ ThreadGroupPtr ThreadGroup::create(ContextPtr context, Int32 os_threads_nice_val
     return group;
 }
 
-ThreadGroupPtr ThreadGroup::createForMergeMutate(ContextPtr storage_context)
+ThreadGroupPtr ThreadGroup::createForMergeMutate(ContextPtr storage_context, ThreadGroupPtr query_thread_group)
 {
     const Int32 os_threads_nice_value = storage_context->getServerSettings()[ServerSetting::os_threads_nice_value_merge_mutate];
     auto group = create(storage_context, os_threads_nice_value);
     group->memory_tracker.setDescription("Background process (mutate/merge)");
     group->memory_tracker.setParent(&background_memory_tracker);
+    if (query_thread_group)
+    {
+        group->performance_counters.setParent(&query_thread_group->performance_counters);
+        group->parent = std::move(query_thread_group);
+    }
     return group;
 }
 
@@ -300,6 +316,11 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
 ThreadGroupPtr ThreadGroup::createWithoutQueryMemoryTracker(ThreadGroupPtr parent_thread_group)
 {
     return ThreadGroupPtr(new ThreadGroup(std::move(parent_thread_group), /*charge_memory_to_parent=*/ false));
+}
+
+ThreadGroupPtr ThreadGroup::createWithoutQueryContext(ContextPtr global_context_)
+{
+    return ThreadGroupPtr(new ThreadGroup(ContextWeakPtr(global_context_->getGlobalContext())));
 }
 
 ThreadGroupPtr ThreadGroup::createForExplainAnalyze(ThreadGroupPtr parent_thread_group)
@@ -388,11 +409,6 @@ void ThreadStatus::applyQuerySettings()
 
     DB::Exception::enable_job_stack_trace = settings[Setting::enable_job_stack_trace];
 
-    {
-        SignalUnsafeMutationGuard guard(is_query_id_usable);
-        query_id = query_context_ptr->getCurrentQueryId();
-    }
-
     if (boundToOSThread())
         initQueryProfiler();
 
@@ -439,6 +455,13 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
             {
                 tryLogCurrentException(log);
             }
+        }
+
+        /// Set before the tracker and the sample config below route the thread's traces to the query.
+        if (auto query_context_ptr = thread_group->query_context.lock())
+        {
+            SignalUnsafeMutationGuard guard(is_query_id_usable);
+            query_id = query_context_ptr->getCurrentQueryId();
         }
 
         /// Reparenting the memory tracker flushes the untracked balance the thread carried in, so the
@@ -488,14 +511,14 @@ void ThreadStatus::detachFromGroup()
 
     if (boundToOSThread())
     {
-        finalizeQueryProfiler();
+        if (thread_group->with_query_context)
+            finalizeQueryProfiler();
         finalizePerformanceCounters();
     }
 
     performance_counters.setParent(&ProfileEvents::global_counters);
 
     /// Freed while the tracker still points at the query, so that e.g. the query text for logs is not left charged to it.
-    clearQueryId();
     query_context.reset();
     local_data = {};
     fatal_error_callback = {};
@@ -529,6 +552,9 @@ void ThreadStatus::detachFromGroup()
     }
     Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
 #endif
+
+    /// Last: memory and jemalloc samples taken above still belong to the query.
+    clearQueryId();
 }
 
 void ThreadStatus::attachToGroup(const ThreadGroupPtr & thread_group_, bool check_detached)

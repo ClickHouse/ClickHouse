@@ -61,6 +61,7 @@ doc_type: 'guide'
         <query_selects>100</query_selects>
         <query_inserts>100</query_inserts>
         <written_bytes>5000000</written_bytes>
+        <written_rows>100000</written_rows>
         <errors>100</errors>
         <result_rows>1000000000</result_rows>
         <read_rows>100000000000</read_rows>
@@ -107,6 +108,8 @@ doc_type: 'guide'
 `read_bytes` - 在所有远程服务器上运行查询时，从表中读取的总字节数。
 
 `written_bytes` - 写入操作的总字节数。
+
+`written_rows` - `INSERT` 查询写入的总行数。
 
 `execution_time` – 查询执行总时间，以秒为单位 (墙钟时间) 。
 

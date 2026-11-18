@@ -1,3 +1,4 @@
+#include <Access/Common/AccessFlags.h>
 #include <Functions/FunctionBaseAI.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -29,13 +30,17 @@ public:
 
     explicit FunctionAiFilter(ContextPtr context_) : FunctionBaseAI(context_) {}
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAiFilter>(context_); }
+    static FunctionPtr create(ContextPtr context_)
+    {
+        context_->checkAccess(AccessType::aiFilter);
+        return std::make_shared<FunctionAiFilter>(context_);
+    }
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
@@ -53,7 +58,7 @@ private:
     static constexpr float default_temp = 0.0f;
     static constexpr size_t condition_arg_index = 1;
 
-    AIParamSpecs functionParams() const override
+    [[nodiscard]] AIParamSpecs functionParams() const override
     {
         return {{"temperature", AIParamKind::Float, Field(static_cast<Float64>(default_temp))}};
     }
@@ -65,14 +70,14 @@ private:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "aiFilter: 'condition' must not be empty");
     }
 
-    String buildSystemPrompt(const ColumnsWithTypeAndName & arguments, const AIParams &) const override
+    [[nodiscard]] String buildSystemPrompt(const ColumnsWithTypeAndName & arguments, const AIParams &) const override
     {
         auto condition = String(arguments[condition_arg_index].column->getDataAt(0));
         return "You are a boolean text filter. Decide whether the given text satisfies this condition: "
             + condition + ". Respond with ONLY true or false, nothing else.";
     }
 
-    String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
+    [[nodiscard]] String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
     {
         return String(arguments[0].column->getDataAt(row));
     }
@@ -92,7 +97,7 @@ private:
     ///       }
     ///     }
     ///   }
-    Poco::JSON::Object::Ptr buildResponseFormat(const ColumnsWithTypeAndName & /*arguments*/) const override
+    [[nodiscard]] Poco::JSON::Object::Ptr buildResponseFormat(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
         Poco::JSON::Object::Ptr match_prop = new Poco::JSON::Object;
         match_prop->set("type", "boolean");
@@ -126,7 +131,7 @@ private:
     /// returned bare text, or returned truncated/invalid JSON) falls through to `raw_response` unchanged, so
     /// `parseFilterMatch`'s fail-closed handling of unrecognised text still applies. Parse errors are
     /// swallowed on purpose - the fail-closed default takes over.
-    String postProcessResponse(const String & raw_response) const override
+    [[nodiscard]] String postProcessResponse(const String & raw_response) const override
     {
         if (raw_response.empty() || raw_response.front() != '{')
             return raw_response;
@@ -194,7 +199,7 @@ Note: using `aiFilter` in `JOIN ... ON` evaluates the LLM once per candidate pai
         .arguments = {
             {"text", "Text to evaluate.", {"String"}},
             {"condition", "Constant natural-language condition the text must satisfy.", {"String"}},
-            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024`). The common parameters `credentials` and `model` also apply (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}},
+            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024`). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)).", {"Map(String, String)"}},
         },
         .returned_value = {"`1` if the text matches the condition, `0` otherwise. Returns the default value (`0`) if the request failed and `ai_function_throw_on_error` is disabled.", {"UInt8"}},
         .examples = {

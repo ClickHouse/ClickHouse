@@ -1,5 +1,4 @@
 SET optimize_functions_to_subcolumns = 1;
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_func_to_subcolumns_map_2;
 

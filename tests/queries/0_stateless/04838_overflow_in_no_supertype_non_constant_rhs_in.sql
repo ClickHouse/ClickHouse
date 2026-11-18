@@ -14,8 +14,6 @@ SELECT toUInt8(232) IN (1000, 'x') SETTINGS transform_null_in = 1; -- { serverEr
 SELECT toUInt8(232) IN (1000, 500);
 SELECT toUInt8(232) NOT IN (1000, 500);
 
-SET enable_analyzer = 1;
-
 -- a supertype exists: compared as UInt16, no wrap-around
 SELECT toUInt8(232) IN (materialize(1000), 500);
 SELECT toUInt8(232) NOT IN (materialize(1000), 500);

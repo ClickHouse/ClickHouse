@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel
+-- Tags: no-parallel
 
 set output_format_parquet_row_group_size = 100;
 

@@ -71,7 +71,7 @@ bool ExternalDictionariesLoader::doesConfigChangeRequiresReloadingObject(const P
     return !isSameConfiguration(old_config, old_key_in_config, new_config, new_key_in_config, ignore_keys);
 }
 
-std::optional<bool> ExternalDictionariesLoader::isObjectLazy(const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const
+std::optional<bool> ExternalDictionariesLoader::getObjectLazyLoadOverride(const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const
 {
     SettingFieldBoolAuto lazy_load;
     lazy_load.parseFromString(config.getString(key_in_config + ".settings.dictionary_lazy_load", SettingFieldBoolAuto::keyword));
@@ -230,7 +230,7 @@ std::string ExternalDictionariesLoader::getDictionaryLayoutType(const std::strin
 
 void ExternalDictionariesLoader::assertDictionaryStructureExists(const std::string & dictionary_name, ContextPtr query_context) const
 {
-    getDictionaryStructure(dictionary_name, query_context);
+    (void)getDictionaryStructure(dictionary_name, query_context);
 }
 
 QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr query_context) const

@@ -1,0 +1,327 @@
+---
+slug: /cloud/managed-postgres/guides/rust
+sidebarTitle: 'Rust (sqlx)'
+title: 'استخدام Rust (sqlx) مع ClickHouse Managed Postgres'
+description: 'اربط تطبيق Rust بخدمة ClickHouse Managed Postgres باستخدام sqlx وaxum، وشغّل عمليات الترحيل باستخدام sqlx-cli، ونفّذ الاستعلامات عبر اتصال TLS تم التحقق منه'
+keywords: ['managed postgres', 'rust', 'sqlx', 'sqlx-cli', 'axum', 'tokio', 'rustls', 'migrations', 'pgbouncer', 'tls']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-rust-beta" />
+
+[sqlx](https://github.com/launchbadge/sqlx) هي مجموعة أدوات SQL غير متزامنة مكتوبة بالكامل بلغة Rust، تتضمن مجمّع اتصالات مدمجًا ودعمًا لعمليات الترحيل (migrations). ستُنشئ في هذا الدليل جدول `todos` عبر عملية ترحيل باستخدام `sqlx-cli`، ثم تُنفّذ استعلامات الإنشاء والقراءة والتحديث والحذف من خلال خادم [axum](https://github.com/tokio-rs/axum) صغير. ويستخدم كل اتصال بروتوكول TLS مع تحقق كامل من الشهادة.
+
+## المتطلبات الأساسية {#prerequisites}
+
+* [Rust](https://www.rust-lang.org/tools/install) الإصدار 1.94 أو أحدث. اختُبر هذا الدليل باستخدام Rust 1.98.1، و`sqlx` 0.9.0، و`sqlx-cli` 0.9.0، و`axum` 0.8.9.
+* حساب ClickHouse Cloud
+* [`psql`](https://www.postgresql.org/download/)، لإنشاء قاعدة البيانات. ويمكنك بدلًا من ذلك تنفيذ عبارة `CREATE DATABASE` في [وحدة تحكم SQL](/ar/integrations/connectors/sql-clients/sql-console).
+
+## إنشاء خدمة ClickHouse Managed Postgres {#create-service}
+
+في وحدة تحكم ClickHouse Cloud، انقر على **New service** ثم اختر **Postgres**. سيصبح المثيل جاهزًا في غضون دقائق قليلة. راجع [دليل البدء السريع](/ar/products/managed-postgres/quickstart) للاطلاع على شرح مفصّل للخطوات.
+
+## الحصول على بيانات الاتصال {#connection-details}
+
+انقر على **Connect** في الشريط الجانبي الأيسر لخدمتك. أبقِ الخيار **Directly** محددًا وفعّل **Use SSL**. سينتهي عنوان URL للاتصال في علامة التبويب **url** الآن بـ `sslmode=verify-full&sslrootcert=<service-name>-ca-certificate.pem`، وسيكون المنفذ `5432`.
+
+انقر على **Download CA certificate**. يمكنك أيضًا تنزيل الشهادة لاحقًا من **Settings → CA Certificate**. هذه الشهادة فريدة لمثيلك، ما يتيح للمشغّل استخدامها للتحقق من أنه يتصل بخادمك فعلًا.
+
+يتصل هذا الدليل **مباشرةً** بـ Postgres على المنفذ `5432`، سواء من التطبيق أو من `sqlx-cli`. فخادم axum عملية تعمل لفترات طويلة، ويدير `PgPool` مجمّع الاتصالات الخاص به، لذا لا حاجة إلى وسيط تجميع اتصالات إضافي أمام Postgres. ويجب أن تستخدم عمليات الترحيل الاتصال المباشر دائمًا. إذا كنت تشغّل مثيلات عديدة من التطبيق، فراجع [استخدام PgBouncer](#pgbouncer).
+
+## إعداد المشروع {#project-setup}
+
+أنشئ مشروعًا وأضف إليه `sqlx` مع مشغّل Postgres وبيئة تشغيل Tokio والواجهة الخلفية `rustls` الخاصة بـ TLS، إلى جانب axum وبعض حزم crate المساعدة:
+
+```bash
+cargo new todo-api && cd todo-api
+cargo add sqlx --features postgres,runtime-tokio,tls-rustls,chrono
+cargo add axum dotenvy
+cargo add tokio --features full
+cargo add serde --features derive
+cargo add chrono --features serde
+```
+
+ثبّت `sqlx-cli` باستخدام الواجهة الخلفية نفسها لـ TLS:
+
+```bash
+cargo install sqlx-cli --no-default-features --features rustls,postgres
+```
+
+<Warning>
+  **استخدم `rustls` بدلاً من `native-tls` على macOS**
+
+  لا تقبل ClickHouse Managed Postgres سوى TLS 1.3. وعلى macOS، تعتمد الواجهة الخلفية `native-tls` على مكتبة Secure Transport الخاصة بالنظام، وهي لا تدعم TLS 1.3. ويستخدم الأمر `cargo install sqlx-cli` دون أي خيارات إضافية `native-tls`، فيفشل بعدها كل أمر بالخطأ `error occurred while attempting to establish a TLS connection: One or more parameters passed to a function were not valid.` (أو `bad protocol version`). وينطبق ذلك أيضاً على أي تطبيق مبني باستخدام الميزة `tls-native-tls`. أما على Linux، فيعتمد `native-tls` على OpenSSL وينجح في الاتصال، لكنه لا يحمّل سوى الشهادة الأولى من `ca-certificate.pem`. في المقابل، يدعم `rustls` بروتوكول TLS 1.3 على جميع المنصات ويحمّل جميع الشهادات الموجودة في الملف.
+</Warning>
+
+<Tip>
+  **هل تضيفه إلى تطبيق قائم؟**
+
+  تخطَّ الأمر `cargo new`. وفي مشروعك، شغّل أمرَي `cargo add` و`cargo install` الواردين أعلاه، ثم انتقل إلى [تهيئة الاتصال](#configure-connection). وإذا كان التطبيق يستخدم sqlx مع SQLite:
+
+  * أزل `sqlite` من ميزات `sqlx` في `Cargo.toml`، واستبدل `SqlitePool` بـ `PgPool`.
+  * غيّر العناصر النائبة `?` إلى `$1` و`$2` وهكذا.
+  * أعد كتابة عمليات الترحيل بصيغة Postgres، مثل استخدام `bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY` بدلاً من `INTEGER PRIMARY KEY AUTOINCREMENT`.
+</Tip>
+
+## تهيئة الاتصال {#configure-connection}
+
+انقل شهادة CA التي نزّلتها إلى دليل المشروع، وغيّر اسمها إلى `ca-certificate.pem`.
+
+أنشئ قاعدة بيانات للتطبيق. استبدل `<PASSWORD>` والمضيف بالقيم الظاهرة في نافذة **Connect**:
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_rust;"
+```
+
+```text
+CREATE DATABASE
+```
+
+أنشئ ملف `.env` في جذر المشروع، أو حدّث قيمة `DATABASE_URL` في ملفك الحالي، بحيث تشير إلى قاعدة البيانات `guide_rust`. يقرأ كلٌّ من التطبيق و`sqlx-cli` قيمة `DATABASE_URL` من هذا الملف:
+
+```bash title=".env"
+DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_rust?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+```
+
+يقرأ sqlx المعاملين `sslmode` و`sslrootcert` من URL. ومع `verify-full`، يتحقق من أن شهادة الخادم موقّعة من الـ CA الخاصة بالمثيل لديك، ومن تطابقها مع اسم المضيف. ويُحدَّد مسار `sslrootcert` نسبةً إلى الدليل الذي تشغّل منه الأوامر. احرص على إبقاء الملف `.env` خارج نظام التحكم في الإصدارات، وإذا احتوت كلمة المرور على محارف مثل `@` أو `/` أو `#`، فرمّزها بترميز النسبة المئوية (percent-encoding).
+
+<Warning>
+  **اضبط دائمًا `sslmode=verify-full`**
+
+  عند عدم تحديد `sslmode`، يستخدم sqlx القيمة `prefer`، أي أنه يشفّر الاتصال لكنه يقبل أي شهادة، حتى لو ضُبط `sslrootcert`. أما مع `verify-full`، فإن غياب شهادة CA أو عدم صحتها يؤدي إلى فشل الاتصال بالخطأ `UnknownIssuer`، وإذا كان المضيف لا يطابق الشهادة، كأن يكون عنوان IP مثلًا، فيفشل الاتصال بالخطأ `NotValidForNameContext` (`certificate not valid for name` في `sqlx-cli`). كما يؤدي تحديد مسار خاطئ لـ `sslrootcert` إلى الفشل بالخطأ `No such file or directory`.
+</Warning>
+
+## إنشاء الجدول باستخدام عملية ترحيل {#migrations}
+
+أنشئ ملف ترحيل:
+
+```bash
+sqlx migrate add create_todos
+```
+
+```text
+Creating migrations/20261001142218_create_todos.sql
+```
+
+افتح الملف الجديد في دليل `migrations` وأضف إليه تعريف الجدول:
+
+```sql title="migrations/<timestamp>_create_todos.sql"
+CREATE TABLE todos (
+    id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    title      text NOT NULL,
+    done       boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+```
+
+طبّقه:
+
+```bash
+sqlx migrate run
+```
+
+```text
+Applied 20261001142218/migrate create todos (233.971666ms)
+```
+
+يسجّل الأمر `sqlx migrate run` عمليات الترحيل المطبّقة في جدول `_sqlx_migrations`، ولا ينفّذ في الاستدعاءات اللاحقة سوى عمليات الترحيل الجديدة. ثبّت الدليل `migrations` مع الشيفرة الخاصة بك. وإن أردت بدلاً من ذلك تطبيق عمليات الترحيل عند بدء تشغيل التطبيق، فاستدعِ `sqlx::migrate!().run(&pool).await?` داخل `main`، شريطة أن يستخدم مجمّع الاتصالات الاتصال المباشر.
+
+## بناء واجهة برمجة التطبيقات {#query}
+
+استبدل محتوى `src/main.rs` بخادم axum صغير ينفّذ استعلامًا واحدًا لكل مسار. أما إذا كان لديك تطبيق قائم، فأنشئ مجمّع الاتصالات بالطريقة نفسها المتّبعة في `main`، ثم أضف البنية `Todo` (struct) والمعالجات والمسارات إلى الموجّه (router) الخاص بك:
+
+```rust title="src/main.rs"
+use std::str::FromStr;
+
+use axum::{
+    Json, Router,
+    extract::{Path, State},
+    http::StatusCode,
+    routing::{get, patch},
+};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+
+#[derive(Serialize, sqlx::FromRow)]
+struct Todo {
+    id: i64,
+    title: String,
+    done: bool,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize)]
+struct NewTodo {
+    title: String,
+}
+
+type ApiResult<T> = Result<Json<T>, (StatusCode, String)>;
+
+// Return 404 when no row matches, and 500 for any other database error.
+fn db_error(err: sqlx::Error) -> (StatusCode, String) {
+    match err {
+        sqlx::Error::RowNotFound => (StatusCode::NOT_FOUND, "Not found\n".into()),
+        err => {
+            eprintln!("Database error: {err}");
+            (StatusCode::INTERNAL_SERVER_ERROR, "Database error\n".into())
+        }
+    }
+}
+
+// Read
+async fn list_todos(State(pool): State<PgPool>) -> ApiResult<Vec<Todo>> {
+    let todos = sqlx::query_as::<_, Todo>("SELECT * FROM todos ORDER BY id")
+        .fetch_all(&pool)
+        .await
+        .map_err(db_error)?;
+    Ok(Json(todos))
+}
+
+// Create
+async fn create_todo(State(pool): State<PgPool>, Json(new): Json<NewTodo>) -> ApiResult<Todo> {
+    let todo = sqlx::query_as::<_, Todo>("INSERT INTO todos (title) VALUES ($1) RETURNING *")
+        .bind(new.title)
+        .fetch_one(&pool)
+        .await
+        .map_err(db_error)?;
+    Ok(Json(todo))
+}
+
+// Update: toggle the done flag
+async fn toggle_todo(State(pool): State<PgPool>, Path(id): Path<i64>) -> ApiResult<Todo> {
+    let todo = sqlx::query_as::<_, Todo>("UPDATE todos SET done = NOT done WHERE id = $1 RETURNING *")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .map_err(db_error)?;
+    Ok(Json(todo))
+}
+
+// Delete
+async fn delete_todo(State(pool): State<PgPool>, Path(id): Path<i64>) -> ApiResult<Todo> {
+    let todo = sqlx::query_as::<_, Todo>("DELETE FROM todos WHERE id = $1 RETURNING *")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .map_err(db_error)?;
+    Ok(Json(todo))
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load DATABASE_URL from .env, if the variable isn't already set
+    dotenvy::dotenv().ok();
+
+    // sslmode and sslrootcert come from the URL. Not sending extra_float_digits
+    // lets the same code also connect through PgBouncer, which rejects it.
+    let options = PgConnectOptions::from_str(&std::env::var("DATABASE_URL")?)?
+        .extra_float_digits(None);
+    let pool = PgPoolOptions::new()
+        .max_connections(10)
+        .connect_with(options)
+        .await?;
+
+    // Confirm that the connection is encrypted
+    let tls: Option<String> =
+        sqlx::query_scalar("SELECT version FROM pg_stat_ssl WHERE pid = pg_backend_pid()")
+            .fetch_one(&pool)
+            .await?;
+    println!("Connected to Postgres, TLS version: {}", tls.as_deref().unwrap_or("none"));
+
+    let app = Router::new()
+        .route("/todos", get(list_todos).post(create_todo))
+        .route("/todos/{id}", patch(toggle_todo).delete(delete_todo))
+        .with_state(pool);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3117").await?;
+    println!("Listening on http://localhost:3117/todos");
+    axum::serve(listener, app).await?;
+    Ok(())
+}
+```
+
+تُمرَّر القيم دائمًا كمعلمات (`$1`) باستخدام `.bind`، ولا تُدرَج أبدًا ضمن string الخاص بـ SQL. ويُحضَّر كل string فريد من SQL مرة واحدة لكل اتصال، ثم يُحفظ في ذاكرة تخزين مؤقت للعبارات تتسع لـ 100 عبارة، ويتولى sqlx إغلاق العبارات عند إخراجها منها.
+
+<Tip>
+  **استعلامات يُتحقَّق منها في وقت التصريف**
+
+  يستخدم هذا الدليل الدالة `query_as` التي تتحقق من SQL عند تنفيذه، ولذلك لا يحتاج الأمر `cargo build` إلى قاعدة بيانات. أما الماكرو `query!` و`query_as!` فيتحققان من SQL ومن أنواع الأعمدة مقابل قاعدة البيانات في وقت التصريف. ويقرأ كلاهما `DATABASE_URL` من الملف `.env` أثناء الإصدار، لذا احرص على إبقائه مضبوطاً على الاتصال المباشر. وللإصدار دون قاعدة بيانات، كما في بيئة CI مثلاً، شغّل `cargo sqlx prepare`، ثم ثبّت الدليل `.sqlx` المُنشأ، واضبط `SQLX_OFFLINE=true`.
+</Tip>
+
+## التشغيل والتحقق {#verify}
+
+شغّل الخادم:
+
+```bash
+cargo run
+```
+
+```text
+Connected to Postgres, TLS version: TLSv1.3
+Listening on http://localhost:3117/todos
+```
+
+السطر الأول مصدره `pg_stat_ssl`، وهو يؤكد أن الـ session مشفّرة. في طرفية ثانية، أنشئ مهمتين، ثم علّم الأولى بأنها مكتملة، واحذف الثانية:
+
+```bash
+curl -w '\n' -X POST localhost:3117/todos -H 'content-type: application/json' -d '{"title": "Try sqlx"}'
+curl -w '\n' -X POST localhost:3117/todos -H 'content-type: application/json' -d '{"title": "Write a migration"}'
+curl -w '\n' -X PATCH localhost:3117/todos/1
+curl -w '\n' -X DELETE localhost:3117/todos/2
+```
+
+يُعيد كل طلب الصف المتأثر. ويقتصر دور الخيار `-w '\n'` على إضافة سطر جديد بعد كل استجابة:
+
+```text
+{"id":1,"title":"Try sqlx","done":false,"created_at":"2026-10-01T14:22:32.475739Z"}
+{"id":2,"title":"Write a migration","done":false,"created_at":"2026-10-01T14:22:32.627680Z"}
+{"id":1,"title":"Try sqlx","done":true,"created_at":"2026-10-01T14:22:32.475739Z"}
+{"id":2,"title":"Write a migration","done":false,"created_at":"2026-10-01T14:22:32.627680Z"}
+```
+
+افتح `http://localhost:3117/todos` في متصفحك لعرض قائمة المهام المتبقية:
+
+```json
+[{"id":1,"title":"Try sqlx","done":true,"created_at":"2026-10-01T14:22:32.475739Z"}]
+```
+
+لعرض البيانات في وحدة التحكم، افتح **وحدة تحكم SQL** من الشريط الجانبي الأيسر لخدمتك، ثم وسّع `guide_rust` ثم `public`، وانقر على جدول `todos`. أما الجدول `_sqlx_migrations` المجاور له فيحتفظ بسجل عمليات الترحيل. ويحتوي جدول `todos` على الصف المتبقي:
+
+| id | title    | done | created&#95;at                |
+| -- | -------- | ---- | ----------------------------- |
+| 1  | Try sqlx | true | 2026-10-01 14:22:32.475739+00 |
+
+## استخدام PgBouncer {#pgbouncer}
+
+لتوصيل التطبيق عبر [PgBouncer](/ar/products/managed-postgres/connection#pgbouncer) المضمَّن، اختر **via PgBouncer** في نافذة **Connect** واستخدم المنفذ `6432` في متغير `DATABASE_URL` الخاص بالتطبيق. ويمكن استخدام شهادة CA نفسها في هذه الحالة أيضًا. فمثلًا، أبقِ ملف `.env` مضبوطًا على الاتصال المباشر لاستخدامه مع `sqlx-cli`، واضبط المتغير عند تشغيل التطبيق:
+
+```bash
+DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/guide_rust?sslmode=verify-full&sslrootcert=ca-certificate.pem" cargo run
+```
+
+```text
+Connected to Postgres, TLS version: none
+Listening on http://localhost:3117/todos
+```
+
+عند الاتصال عبر PgBouncer، يعرض `pg_stat_ssl` اتصال PgBouncer نفسه بـ Postgres، ولذلك يطبع الفحص القيمة `none`. ومع ذلك، يظل اتصال تطبيقك بـ PgBouncer خاضعًا للتحقق، إذ تفشل شهادة CA غير الصحيحة بالخطأ `UnknownIssuer` بالطريقة نفسها.
+
+يعمل PgBouncer في وضع تجميع المعاملات، لذا قد تُنفَّذ كل معاملة على اتصال Postgres مختلف. وعند استخدام sqlx:
+
+* **الاتصال** يتطلب `.extra_float_digits(None)`، كما في `main.rs`. إذ يرسل sqlx افتراضيًا `extra_float_digits` بوصفها معلمة بدء تشغيل، فيرفض PgBouncer الاتصال بالخطأ `unsupported startup parameter: extra_float_digits`. وللسبب نفسه، يفشل `PgConnectOptions::options` بالخطأ `unsupported startup parameter in options`.
+* **العبارات المُحضَّرة** تعمل مع الإعدادات الافتراضية. فعندما يُخرج sqlx عبارات من ذاكرة التخزين المؤقت الخاصة به، يحرّرها عبر رسالة `Close` على مستوى البروتوكول، وهي رسالة يعالجها PgBouncer حتى داخل المعاملات. لا تضبط `statement_cache_capacity(0)`، فهذا غير ضروري، كما أن sqlx يظل عند تعطيل ذاكرة التخزين المؤقت يُحضّر عبارات مُسمّاة دون أن يغلقها أبدًا.
+* **لا تستخدم `.persistent(false)`** مع الاستعلامات التي تُنفَّذ خارج معاملة. ففي هذه الحالة يُحضّر sqlx عبارة غير مُسمّاة ثم ينفّذها في رحلة ذهاب وإياب ثانية، وقد يوجّهها PgBouncer إلى اتصال Postgres مختلف. وعندئذٍ قد يفشل الاستعلام بالخطأ `unnamed prepared statement does not exist`، أو يُنفّذ دون أي تنبيه عبارةً تخص عميلًا آخر فيُعيد نتائج خاطئة.
+* **إعدادات الـ session** المضبوطة باستخدام `SET`، بما في ذلك داخل خطاف `after_connect` الخاص بمجمّع الاتصالات، لا تبقى مرتبطة باتصالك، وقد تتسرّب إلى عملاء آخرين. لذا استخدم بدلًا منها `SET LOCAL` داخل معاملة.
+* **عمليات الترحيل** يجب أن تستخدم الاتصال المباشر. فلا يمكن لـ `sqlx-cli` ولا لماكرو `query!` الاتصال عبر PgBouncer، لأنها ترسل `extra_float_digits` دائمًا. كما يحصل `sqlx::migrate!` على قفل استشاري على مستوى الـ session (`pg_advisory_lock`)، وعند المرور عبر PgBouncer قد يصل أمر فكّ القفل إلى اتصال Postgres مختلف. فيبقى القفل عندئذٍ محتجزًا على أحد الاتصالات المُجمَّعة، وتتعلّق عمليات الترحيل اللاحقة، حتى تلك التي تجري عبر الاتصال المباشر، إلى أن يُغلق PgBouncer ذلك الاتصال.
+
+## الخطوات التالية {#next-steps}
+
+* [الاتصال](/ar/products/managed-postgres/connection): سلاسل الاتصال وPgBouncer وTLS
+* [الإعدادات](/ar/products/managed-postgres/settings): معلمات Postgres وPgBouncer، مثل `max_connections`
+* [النسخ المتماثلة للقراءة](/ar/products/managed-postgres/read-replicas): توجيه استعلامات القراءة فقط إلى نسخة متماثلة باستخدام `PgPool` ثانٍ
+* [الأمان](/ar/products/managed-postgres/security): قوائم التحكم في الوصول حسب عناوين IP والشبكات الخاصة

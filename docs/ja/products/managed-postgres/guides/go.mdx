@@ -1,0 +1,379 @@
+---
+slug: /cloud/managed-postgres/guides/go
+sidebarTitle: 'Go (pgx)'
+title: 'ClickHouse Managed Postgres で Go (pgx) を使用する'
+description: 'pgx と pgxpool を使い、証明書検証付きの TLS で Go サービスを ClickHouse Managed Postgres に接続し、golang-migrate で移行を実行して、net/http で CRUD API を提供します'
+keywords: ['managed postgres', 'go', 'golang', 'pgx', 'pgxpool', 'golang-migrate', 'net/http', 'pgbouncer', 'tls']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-go-beta" />
+
+[pgx](https://github.com/jackc/pgx) は Go で最も広く使われている PostgreSQL ドライバーであり、`pgxpool` はその接続プールです。このガイドでは、検証済みの TLS で Go サービスを ClickHouse Managed Postgres に接続し、[golang-migrate](https://github.com/golang-migrate/migrate) の移行で `todos` テーブルを作成したうえで、`net/http` サーバーで作成・読み取り・更新・削除のリクエストを処理します。
+
+## 前提条件 {#prerequisites}
+
+* [Go](https://go.dev/dl/) 1.25 以降。本ガイドは Go 1.27.1、pgx 5.11.0、golang-migrate 4.20.1 で動作を確認しています。
+* ClickHouse Cloud アカウント
+* データベース作成用の [`psql`](https://www.postgresql.org/download/)。`CREATE DATABASE` ステートメントは [SQL コンソール](/ja/integrations/connectors/sql-clients/sql-console)で実行することもできます。
+
+## ClickHouse Managed Postgres サービスを作成する {#create-service}
+
+ClickHouse Cloud コンソールで **New service** をクリックし、**Postgres** を選択します。インスタンスは数分で利用可能になります。詳しい手順については、[クイックスタート](/ja/products/managed-postgres/quickstart)を参照してください。
+
+## 接続情報を取得する {#connection-details}
+
+サービスの左サイドバーで **Connect** をクリックします。**Directly** を選択したまま、**Use SSL** をオンにします。これで、**url** タブの接続 URL はポート `5432` を使用し、末尾が `sslmode=verify-full&sslrootcert=<service-name>-ca-certificate.pem` になります。**Download CA certificate** をクリックします。後から **Settings → CA Certificate** でダウンロードすることもできます。この証明書はインスタンスごとに固有のものであるため、pgx はこれを使って、接続先が自分のサーバーであることを検証できます。
+
+このガイドでは、移行とアプリのいずれも、ポート `5432` で Postgres に**直接**接続します。Go サービスは長時間稼働するプロセスであり、プロセス内で `pgxpool` がすでに接続の pool を保持しているため、別のプーラーを追加する必要はありません。サービスのインスタンスを多数実行していて、Postgres の上限を超えるクライアント接続が必要になる場合は、アプリ用に同梱の PgBouncer (**via PgBouncer**、ポート `6432`) を使用してください。その場合は接続設定を 1 つ追加する必要があります。詳しくは [PgBouncer を使用する](#pgbouncer) を参照してください。
+
+## プロジェクトのセットアップ {#project-setup}
+
+Go モジュールを作成して pgx を追加し、pgx ドライバーを有効にした `migrate` CLI をインストールします。
+
+```bash
+mkdir todo-api && cd todo-api
+go mod init example.com/todo-api
+go get github.com/jackc/pgx/v5
+go install -tags 'pgx5' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+```
+
+`-tags 'pgx5'` フラグを指定すると、`migrate` CLI が pgx v5 ドライバーを組み込んだ状態でコンパイルされます。このドライバーは `pgx5://` URL スキームを使用します。`go install` はバイナリを `$GOBIN` に配置します (`GOBIN` が設定されていない場合は `$(go env GOPATH)/bin` に配置されます) 。そのため、このディレクトリが `PATH` に含まれていることを確認してください。
+
+<Tip>
+  **既存のアプリに追加する場合**
+
+  `mkdir` と `go mod init` は不要です。対象のモジュール内で `go get github.com/jackc/pgx/v5` と上記の `go install` コマンドを実行し、[接続を設定する](#configure-connection)に進んでください。コードで `database/sql` を使用している場合は、[`stdlib.OpenDBFromPool`](https://pkg.go.dev/github.com/jackc/pgx/v5/stdlib#OpenDBFromPool) を使うと同じ pool を `*sql.DB` としてラップできるため、既存のクエリを段階的に移行できます。その際は、`?` プレースホルダーを `$1`、`$2` のように書き換えてください。
+</Tip>
+
+## 接続を設定する {#configure-connection}
+
+ダウンロードした CA 証明書をプロジェクトディレクトリに移動し、ファイル名を `ca-certificate.pem` にリネームします。
+
+アプリケーション用のデータベースを作成します。`<PASSWORD>` とホストは、**Connect** モーダルに表示される値に置き換えてください。
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_go;"
+```
+
+```text
+CREATE DATABASE
+```
+
+シェルで 2 つの環境変数を設定します。どちらも同じ `guide_go` データベースを指しており、違いは URL スキームだけです。アプリケーションは `DATABASE_URL` を読み込み、`migrate` CLI は `MIGRATE_URL` を使用します。
+
+```bash
+export DATABASE_URL="postgres://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_go?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+export MIGRATE_URL="pgx5://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_go?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+```
+
+pgx は `libpq` と同様に URL をパースします。`sslmode=verify-full` を指定すると、`sslrootcert` から CA ファイルを読み込み、証明書チェーンとホスト名の両方を検証するため、TLS 関連のコードを記述する必要はありません。`sslrootcert` のパスは、コマンドを実行するディレクトリを基準とした相対パスとして解決されます。パスワードに `@`、`/`、`#` などの特殊文字が含まれる場合は、URL エンコードしてください。
+
+<Warning>
+  **必ず `sslmode=verify-full` を設定してください**
+
+  `sslmode` を指定しない場合、pgx は `prefer` を使用します。この場合、`sslrootcert` を設定していてもサーバー証明書は検証されません。`sslmode=verify-full` を指定していても CA ファイルが誤っていると、pgx は `x509: certificate signed by unknown authority` エラーで失敗します。また、ファイルが存在しない場合は `unable to read CA file` エラーで失敗します。ホスト名ではなく IP アドレスで接続した場合は、`x509: cannot validate certificate for <IP> because it doesn't contain any IP SANs` エラーで失敗します。
+</Warning>
+
+## 移行でスキーマを作成する {#migrations}
+
+移行ファイルを作成します：
+
+```bash
+migrate create -ext sql -dir migrations -seq create_todos
+```
+
+```text
+/Users/you/todo-api/migrations/000001_create_todos.up.sql
+/Users/you/todo-api/migrations/000001_create_todos.down.sql
+```
+
+`up` 移行に次の内容を記述します:
+
+```sql title="migrations/000001_create_todos.up.sql"
+CREATE TABLE todos (
+    id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    title      text NOT NULL,
+    done       boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+```
+
+また、これを元に戻す `down` 移行は次のとおりです。
+
+```sql title="migrations/000001_create_todos.down.sql"
+DROP TABLE todos;
+```
+
+移行を適用します:
+
+```bash
+migrate -path migrations -database "$MIGRATE_URL" up
+```
+
+```text
+1/u create_todos (480.890916ms)
+```
+
+`migrate` は現在のバージョンを `schema_migrations` テーブルに記録し、以降の実行ではそれより新しい移行のみを適用します。`migrations` ディレクトリはコードと一緒にコミットしてください。
+
+<Note>
+  `migrate` は必ず直接接続 (ポート `5432`) 経由で実行してください。`migrate` は実行中に session レベルのアドバイザリーロックを保持し、2 つのデプロイメントが同時に移行を実行できないようにしています。PgBouncer を経由すると、ロックとロック解除が別々の Postgres 接続上で実行されることがあります。その場合はロックが保持されたままとなり、以降の `migrate` の実行がハングするか、`timeout: can't acquire database lock` というエラーで失敗します。
+</Note>
+
+## データベースにクエリを実行する {#query}
+
+`db.go` を作成します。このファイルは `DATABASE_URL` から pool を作成し、起動時に Postgres へ session で使用されている TLS バージョンを問い合わせることで、接続を確認します。
+
+```go title="db.go"
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// newPool creates a connection pool from DATABASE_URL and verifies that it can connect.
+func newPool(ctx context.Context) (*pgxpool.Pool, error) {
+	pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
+	if err != nil {
+		return nil, err
+	}
+
+	var tlsVersion string
+	err = pool.QueryRow(ctx,
+		"SELECT coalesce(version, 'none') FROM pg_stat_ssl WHERE pid = pg_backend_pid()",
+	).Scan(&tlsVersion)
+	if err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("connect to Postgres: %w", err)
+	}
+	log.Printf("Connected to Postgres (TLS: %s)", tlsVersion)
+	return pool, nil
+}
+```
+
+HTTP ハンドラーを記述した `todos.go` を作成します。各ハンドラーは pool 上でパラメータ化されたクエリを 1 つ実行し、`pgx.CollectRows` と `pgx.CollectExactlyOneRow` がカラム名をもとに行を `Todo` 構造体へスキャンします。
+
+```go title="todos.go"
+package main
+
+import (
+	"encoding/json"
+	"errors"
+	"log"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type Todo struct {
+	ID        int64     `json:"id" db:"id"`
+	Title     string    `json:"title" db:"title"`
+	Done      bool      `json:"done" db:"done"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+}
+
+const todoColumns = "id, title, done, created_at"
+
+// registerTodoRoutes adds the CRUD endpoints for todos to mux.
+func registerTodoRoutes(mux *http.ServeMux, pool *pgxpool.Pool) {
+	// Read
+	mux.HandleFunc("GET /todos", func(w http.ResponseWriter, r *http.Request) {
+		rows, _ := pool.Query(r.Context(), "SELECT "+todoColumns+" FROM todos ORDER BY id")
+		todos, err := pgx.CollectRows(rows, pgx.RowToStructByName[Todo])
+		writeJSON(w, http.StatusOK, todos, err)
+	})
+
+	// Create
+	mux.HandleFunc("POST /todos", func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ Title string }
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Title == "" {
+			http.Error(w, "expected a JSON body with a title", http.StatusBadRequest)
+			return
+		}
+		rows, _ := pool.Query(r.Context(),
+			"INSERT INTO todos (title) VALUES ($1) RETURNING "+todoColumns, in.Title)
+		todo, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Todo])
+		writeJSON(w, http.StatusCreated, todo, err)
+	})
+
+	// Update: toggle the done flag
+	mux.HandleFunc("PATCH /todos/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		rows, _ := pool.Query(r.Context(),
+			"UPDATE todos SET done = NOT done WHERE id = $1 RETURNING "+todoColumns, id)
+		todo, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Todo])
+		writeJSON(w, http.StatusOK, todo, err)
+	})
+
+	// Delete
+	mux.HandleFunc("DELETE /todos/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		tag, err := pool.Exec(r.Context(), "DELETE FROM todos WHERE id = $1", id)
+		if err == nil && tag.RowsAffected() == 0 {
+			err = pgx.ErrNoRows
+		}
+		writeJSON(w, http.StatusNoContent, nil, err)
+	})
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any, err error) {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		http.Error(w, "not found", http.StatusNotFound)
+	case err != nil:
+		log.Println(err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+	case status == http.StatusNoContent:
+		w.WriteHeader(status)
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		enc.Encode(body)
+	}
+}
+```
+
+値を SQL 文字列に埋め込んでフォーマットするのではなく、引数 (`$1`) として渡すことで SQL インジェクションを防げます。pgx は引数をクエリテキストとは別に送信します。`pool.Query` から返されるエラーを個別に確認する必要はありません。`pgx.CollectRows` と `pgx.CollectExactlyOneRow` がそのエラーを返すためです。
+
+`main.go` を作成します。このファイルでは、プロセス全体で 1 つの pool を作成し、ポート `3114` でルートを提供し、<kbd>Ctrl</kbd>+<kbd>C</kbd> が押されたときに pool をクローズします。既存のアプリケーションに組み込む場合は、代わりに起動時に `newPool` を 1 回呼び出し、既存の `http.ServeMux` に対して `registerTodoRoutes` を呼び出してください:
+
+```go title="main.go"
+package main
+
+import (
+	"context"
+	"errors"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+)
+
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := newPool(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer pool.Close()
+
+	mux := http.NewServeMux()
+	registerTodoRoutes(mux, pool)
+	srv := &http.Server{Addr: ":3114", Handler: mux}
+
+	go func() {
+		<-ctx.Done()
+		srv.Shutdown(context.Background())
+	}()
+
+	log.Println("Listening on http://localhost:3114/todos")
+	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+		log.Fatal(err)
+	}
+	log.Println("Shutting down")
+}
+```
+
+## 実行と検証 {#verify}
+
+`pgxpool` の残りの依存関係を `go.mod` と `go.sum` に追加してから、サーバーを起動します。
+
+```bash
+go mod tidy
+go run .
+```
+
+```text
+2026/10/01 09:44:25 Connected to Postgres (TLS: TLSv1.3)
+2026/10/01 09:44:25 Listening on http://localhost:3114/todos
+```
+
+`TLSv1.3` はサーバー側の `pg_stat_ssl` から取得した値なので、セッションが暗号化されていることを確認できます。`sslrootcert` に別の証明書を指定すると、サーバーは起動せずに `x509: certificate signed by unknown authority` というログを出力します。このことから、証明書が実際に検証されていることがわかります。
+
+別の端末で todo を 2 件作成し、1 件目を完了にして、2 件目を削除します。
+
+```bash
+curl -X POST localhost:3114/todos -d '{"title": "Try pgx"}'
+curl -X POST localhost:3114/todos -d '{"title": "Write a migration"}'
+curl -X PATCH localhost:3114/todos/1
+curl -X DELETE localhost:3114/todos/2
+```
+
+`PATCH` リクエストを実行すると、更新された行が返されます。
+
+```json
+{
+  "id": 1,
+  "title": "Try pgx",
+  "done": true,
+  "created_at": "2026-10-01T09:44:25.896031-05:00"
+}
+```
+
+ブラウザで `http://localhost:3114/todos` を開くと、未完了の todo が一覧表示されます。pgx は `timestamptz` の値をローカルのタイムゾーンで返します。レスポンスは次のようになります。
+
+```json
+[
+  {
+    "id": 1,
+    "title": "Try pgx",
+    "done": true,
+    "created_at": "2026-10-01T09:44:25.896031-05:00"
+  }
+]
+```
+
+<kbd>Ctrl</kbd>+<kbd>C</kbd> でサーバーを停止します。ログに `Shutting down` と出力され、pool がクローズされます。
+
+コンソールでデータを確認するには、サービスの左サイドバーで **SQL コンソール** を開き、`guide_go`、`public` の順に展開して、`todos` テーブルをクリックします。隣にある `schema_migrations` テーブルには、移行のバージョンが格納されています。`todos` テーブルには、残った行が入っています。
+
+| id | title   | done | created&#95;at                |
+| -- | ------- | ---- | ----------------------------- |
+| 1  | Try pgx | true | 2026-10-01 14:44:25.896031+00 |
+
+## PgBouncer を使用する {#pgbouncer}
+
+アプリのクエリを同梱の [PgBouncer](/ja/products/managed-postgres/connection#pgbouncer) 経由で送信するには、Connect モーダルで **via PgBouncer** を選択し、`DATABASE_URL` のポートを `6432` に変更したうえで、`default_query_exec_mode=cache_describe` を追加します。`MIGRATE_URL` はポート `5432` のままにしてください。
+
+```bash
+export DATABASE_URL="postgres://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/guide_go?sslmode=verify-full&sslrootcert=ca-certificate.pem&default_query_exec_mode=cache_describe"
+```
+
+pgx は URL から `default_query_exec_mode` を読み取り、サーバーには送信しません。コードの変更は不要で、同じ CA 証明書をそのまま使用できます。起動ログには `TLS: none` と表示されるようになりますが、これは `pg_stat_ssl` が PgBouncer 自身から Postgres への接続について報告しているためです。アプリから PgBouncer への接続は引き続き検証されており、誤った CA 証明書を使用した場合は同様に失敗します。
+
+<Warning>
+  **PgBouncer 経由では pgx のデフォルトのクエリモードを使用しないでください**
+
+  デフォルトでは、pgx は各クエリを接続ごとに一度だけ名前付きステートメントとして準備し、その際に返されたカラム型を再利用します。一方 PgBouncer は、クエリを実行した Postgres 接続上でこれらのステートメントを準備し、クライアント間で共有します。そのため、移行によってカラムの型が変更されたり、`SELECT *` でクエリしているテーブルにカラムが追加されたりすると、PgBouncer 経由のクエリがアプリを再起動しても `cached plan must not change result type` で失敗し続けることがあります。さらに pgx 5.9 以降では、エラーを出さずに誤った値を返すことがあります。たとえば、`bigint` カラムを `double precision` に変更すると、`42.5` が `4631178160564600832` のように `float64` 値の生のビット列として返されます。
+
+  `cache_describe` はパラメータとカラム型のみをキャッシュし、すべてのクエリを名前なしステートメントとして 1 回のラウンドトリップで実行し、各結果とともにサーバーが返すカラム型を使って行をデコードするため、この問題の影響を受けません。`exec` も使用できます。一方、`describe_exec` は PgBouncer 経由で使用しないでください。各クエリが 2 回のラウンドトリップに分割され、PgBouncer がそれぞれを別々の Postgres 接続に送る可能性があります。なお、`statement_cache_capacity=0` を指定する必要はありません。
+</Warning>
+
+PgBouncer はトランザクションプーリングモードで動作するため、トランザクションごとに異なる Postgres 接続上で実行される可能性があります。
+
+* `pool.Begin` または `pgx.BeginFunc` を使用したトランザクションは通常どおり動作します。
+* `SET` で行ったセッション設定は接続に保持されず、他のクライアントに漏れる可能性があります。代わりに、トランザクション内で `SET LOCAL` を使用してください。また、PgBouncer は接続 URL 内の `search_path` を `unsupported startup parameter: search_path` というエラーで拒否します。代わりに、テーブル名をスキーマ名で修飾してください。
+* SQL レベルの `PREPARE` と `EXECUTE`、`LISTEN`、およびセッションアドバイザリーロックは動作しません。
+
+## 次のステップ {#next-steps}
+
+* [接続](/ja/products/managed-postgres/connection): 接続文字列、PgBouncer、TLS
+* [設定](/ja/products/managed-postgres/settings): `max_connections` などの Postgres および PgBouncer のパラメータ
+* [読み取りレプリカ](/ja/products/managed-postgres/read-replicas): 2 つ目の `pgxpool.Pool` を使用して読み取り専用クエリをレプリカに送信する方法
+* [セキュリティ](/ja/products/managed-postgres/security): IP アクセスリストとプライベートネットワーキング

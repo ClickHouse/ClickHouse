@@ -15,7 +15,6 @@ INSERT INTO events SELECT toDateTime('2024-01-01 00:00:00') + INTERVAL number SE
 CREATE TABLE payloads (Payload String, Id String) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO payloads SELECT concat('Payload ', toString(number)) AS Payload, toString(number) AS Id FROM numbers(100);
 
-SET enable_analyzer = 1;
 SET optimize_read_in_order = 1;
 SET query_plan_read_in_order_through_join = 1;
 SET optimize_aggregation_in_order = 1;

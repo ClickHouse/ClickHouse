@@ -1,9 +1,11 @@
 #include <Core/Block.h>
+#include <Formats/FormatSettings.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Processors/DelayedPortsProcessor.h>
 #include <Processors/QueryPlan/BlockNestedLoopJoinStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Profiling/Analysis/JoinStatsAnalyzer.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/BlockNestedLoopJoinData.h>
 #include <Processors/Transforms/SquashingTransform.h>
@@ -30,10 +32,10 @@ bool BlockNestedLoopJoinStep::isSupportedJoinType(JoinKind kind, JoinStrictness 
 /// that side's header. Resolved against the headers the columns are actually read from rather than
 /// once and for all, because a position taken from the plan's header says nothing about the header
 /// the pipeline is eventually built on.
-static std::vector<BlockNestedLoopPredicate::Source> resolvePredicateInputs(
+static VectorWithMemoryTracking<BlockNestedLoopPredicate::Source> resolvePredicateInputs(
     const ExpressionActions & actions, const Block & left_header, const Block & right_header)
 {
-    std::vector<BlockNestedLoopPredicate::Source> inputs;
+    VectorWithMemoryTracking<BlockNestedLoopPredicate::Source> inputs;
     for (const auto & required_column : actions.getRequiredColumnsWithTypes())
     {
         const bool in_left = left_header.has(required_column.name);
@@ -309,7 +311,10 @@ void BlockNestedLoopJoinStep::describeActions(FormatSettings & settings) const
         /// pretty-name map; render the sub-DAG the way an `Expression` step's outputs are rendered.
         PrettySetNameMap subquery_set_names;
         settings.out << QueryPlanFormat::formatNodePretty(
-            predicate.actions->getActionsDAG().getOutputs().front(), settings, subquery_set_names);
+            predicate.actions->getActionsDAG().getOutputs().front(),
+            settings.pretty_names,
+            settings.runtime_filter_names,
+            subquery_set_names);
     }
     else
     {
@@ -334,7 +339,7 @@ void BlockNestedLoopJoinStep::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-std::vector<size_t> BlockNestedLoopJoinStep::getStepGroups() const
+VectorWithMemoryTracking<size_t> BlockNestedLoopJoinStep::getStepGroups() const
 {
     return {static_cast<size_t>(Stage::Build), static_cast<size_t>(Stage::Probe)};
 }
@@ -349,48 +354,66 @@ String BlockNestedLoopJoinStep::getStepGroupName(size_t group) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown block nested loop join stage {}", group);
 }
 
-StepAnalysisReport BlockNestedLoopJoinStep::getAnalysisReport(StepProcessors step_processors) const
+StepAnalyzer BlockNestedLoopJoinStep::makeAnalyzer() const
 {
-    /// Only EXPLAIN ANALYZE asks for a report, and it turns the analyze mode on for the whole query,
-    /// so every join it reaches must have been told to collect statistics.
+    /// A plan is analysed only under `EXPLAIN ANALYZE` or `log_query_plans`, and both turn the
+    /// analyze mode on for the whole query before the interpreter is built.
     chassert(analyze_mode != JoinAnalyzeMode::None, "BlockNestedLoopJoinStep analyzed without the analyze mode");
 
-    const BlockNestedLoopJoinData * data = nullptr;
-    UInt64 probe_rows = 0;
-    MatchedRowsAccumulator matched_probe_rows;
-    for (const auto * processor : step_processors)
+    StepAnalyzer analyzer = IQueryPlanStep::makeAnalyzer();
+
+    JoinAnalysisInputs join_inputs;
+    join_inputs.is_block_nested_loop = true;
+    join_inputs.block_nested_loop_kind = getKind();
+    join_inputs.block_nested_loop_strictness = getStrictness();
+
+    analyzer.finish = [inputs = std::move(join_inputs)](const StepStatsContext & context, StepAnalysisReport report)
     {
-        const auto * probe = typeid_cast<const BlockNestedLoopProbeTransform *>(processor);
-        if (!probe)
-            continue;
+        return analyzeJoinStep(context, std::move(report), inputs);
+    };
 
-        /// Every probe stream shares the one store, so any of them leads to the build side's numbers.
-        data = &probe->getJoinData();
-        probe_rows += probe->getProbeRows();
-        matched_probe_rows.add(probe->getMatchedProbeRows());
-    }
+    /// Everything the report needs comes from the probe transforms; nothing of the step is captured.
+    analyzer.reporter = [](StepProcessors step_processors) -> StepAnalysisReport
+    {
+        const BlockNestedLoopJoinData * data = nullptr;
+        UInt64 probe_rows = 0;
+        MatchedRowsAccumulator matched_probe_rows;
+        for (const auto * processor : step_processors)
+        {
+            const auto * probe = typeid_cast<const BlockNestedLoopProbeTransform *>(processor);
+            if (!probe)
+                continue;
 
-    /// A step whose pipeline was never built - a query answered without running the join - has
-    /// nothing to report.
-    if (!data)
-        return {};
+            /// Every probe stream shares the one store, so any of them leads to the build side's numbers.
+            data = &probe->getJoinData();
+            probe_rows += probe->getProbeRows();
+            matched_probe_rows.add(probe->getMatchedProbeRows());
+        }
 
-    StepAnalysisReport report = buildMatchedRowsReport({
-        .left_rows = probe_rows,
-        .matched_left = matched_probe_rows.get(),
-        .right_rows = data->getTotalRows(),
-        .matched_right = data->countMatchedBuildRows()});
+        /// A step whose pipeline was never built - a query answered without running the join - has
+        /// nothing to report.
+        if (!data)
+            return {};
 
-    MetricList buffer_metrics;
-    buffer_metrics.emplace_back(MetricKey::Memory, data->getPeakInMemoryBytes());
-    buffer_metrics.emplace_back(MetricKey::Compressed, std::string(data->hasCompressedBlocks() ? "yes" : "no"));
-    report.push_back({MetricGroupKey::Buffer, std::move(buffer_metrics)});
+        StepAnalysisReport report = buildMatchedRowsReport({
+            .left_rows = probe_rows,
+            .matched_left = matched_probe_rows.get(),
+            .right_rows = data->getTotalRows(),
+            .matched_right = data->countMatchedBuildRows()});
 
-    MetricList spill_metrics;
-    spill_metrics.emplace_back(MetricKey::RightSpilled, data->getSpilledCompressedBytes());
-    report.push_back({MetricGroupKey::Spill, std::move(spill_metrics)});
+        MetricList buffer_metrics;
+        buffer_metrics.emplace_back(MetricKey::Memory, data->getPeakInMemoryBytes());
+        buffer_metrics.emplace_back(MetricKey::Compressed, std::string(data->hasCompressedBlocks() ? "yes" : "no"));
+        report.push_back({MetricGroupKey::Buffer, std::move(buffer_metrics)});
 
-    return report;
+        MetricList spill_metrics;
+        spill_metrics.emplace_back(MetricKey::RightSpilled, data->getSpilledCompressedBytes());
+        report.push_back({MetricGroupKey::Spill, std::move(spill_metrics)});
+
+        return report;
+    };
+
+    return analyzer;
 }
 
 }

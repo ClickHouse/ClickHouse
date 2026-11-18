@@ -1,0 +1,19 @@
+<clickhouse>
+    <custom_local_disks_base_directory>/var/lib/clickhouse/disks/</custom_local_disks_base_directory>
+    <storage_configuration>
+        <disks>
+            <jbod1>
+                <path>/jbod1/</path>
+            </jbod1>
+        </disks>
+        <policies>
+            <jbod>
+                <volumes>
+                    <jbod_volume>
+                        <disk>jbod1</disk>
+                    </jbod_volume>
+                </volumes>
+            </jbod>
+        </policies>
+    </storage_configuration>
+</clickhouse>
