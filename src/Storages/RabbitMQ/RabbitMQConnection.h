@@ -40,7 +40,6 @@ public:
 
     /// RabbitMQHandler is thread safe. Any public methods can be called concurrently.
     RabbitMQHandler & getHandler() { return event_handler; }
-    const RabbitMQHandler & getHandler() const { return event_handler; }
 
     String connectionInfoForLog() const;
 

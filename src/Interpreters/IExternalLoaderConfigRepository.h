@@ -23,11 +23,11 @@ class IExternalLoaderConfigRepository
 {
 public:
     /// Returns the name of the repository.
-    [[nodiscard]] virtual std::string getName() const = 0;
+    virtual std::string getName() const = 0;
 
     /// Whether this repository is temporary:
     /// it's created and destroyed while executing the same query.
-    [[nodiscard]] virtual bool isTemporary() const { return false; }
+    virtual bool isTemporary() const { return false; }
 
     /// Return all available sources of loadables structure
     /// (all .xml files from fs, all entities from database, etc)

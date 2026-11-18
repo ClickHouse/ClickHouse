@@ -29,7 +29,3 @@ clickhouse_add_microbenchmark(benchmark_stack_trace
 clickhouse_add_microbenchmark(benchmark_sched_getcpu
     SOURCES sched_getcpu.cpp
     LIBRARIES ${CMAKE_DL_LIBS})
-
-clickhouse_add_microbenchmark(benchmark_sip_hash_strings
-    SOURCES sip_hash_strings.cpp
-    LIBRARIES clickhouse_common_io)

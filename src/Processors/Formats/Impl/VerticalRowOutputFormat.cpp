@@ -26,7 +26,7 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
 
-    using Widths = VectorWithMemoryTracking<size_t>;
+    using Widths = std::vector<size_t>;
     Widths name_widths(columns);
     size_t max_name_width = 0;
 
@@ -293,7 +293,7 @@ test: string with a NUL ␀ character
 
 `TAB`, the line feed and `ESC` are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them - a tab advances to the next tab stop, a line feed breaks the line, and an ANSI escape sequence is what lets the data carry a visualization. A column name is the exception to that exception: it is rendered on a single line, so a line feed in a name is replaced like any other control character.
 
-To print control characters verbatim instead, disable [`output_format_pretty_display_control_characters`](/reference/settings/formats#output_format_pretty_display_control_characters):
+To print control characters verbatim instead, disable [`output_format_pretty_display_control_characters`](/operations/settings/formats#output_format_pretty_display_control_characters):
 
 ```sql
 SELECT 'string with a NUL \0 character' AS test

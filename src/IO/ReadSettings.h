@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <optional>
 #include <base/unit.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
@@ -9,6 +8,7 @@
 #include <IO/DistributedCacheSettings.h>
 #endif
 #include <IO/ReadMethod.h>
+#include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/IThrottler.h>
@@ -94,10 +94,6 @@ struct HTTPReadSettings
     size_t retry_max_backoff_ms = 1600;
     bool skip_not_found_url_for_globs = true;
     bool make_head_request = true;
-    /// The limits of the response header: `http_max_fields`, `http_max_field_name_size`, `http_max_field_value_size`.
-    size_t max_fields = 1000;
-    size_t max_field_name_size = 4 * 1024;
-    size_t max_field_value_size = 128 * 1024;
 };
 
 /// Settings controlling the in-memory page cache behavior.
@@ -119,9 +115,6 @@ struct PageCacheSettings
 struct FilesystemCacheSettings
 {
     bool read_if_exists_otherwise_bypass = false;
-    /// A variant of the bypass above, set together with it: the `ReaderExecutor` caches a miss and drops the segment
-    /// once it passes it, unless another reader used it. Readers without this mode see only the bypass.
-    bool cache_temporarily = false;
     /// Cache-only mode for data with no backing storage (distributed-cache temporary data):
     /// a miss is an error, never a remote-FS bypass. Takes precedence over `read_if_exists_otherwise_bypass`.
     bool temp_cache_only = false;
@@ -139,6 +132,8 @@ struct FilesystemCacheSettings
     /// How long a read may wait for a file segment which is being downloaded by a concurrent query
     /// before bypassing the cache and reading directly from remote storage.
     size_t wait_for_concurrent_download_timeout_milliseconds = 1000;
+    size_t max_download_size_per_query = (128UL * 1024 * 1024 * 1024);
+    bool skip_download_if_exceeds_per_query_cache_write_limit = true;
     bool enable_log = false;
     bool verbose_logging = false;
 };
@@ -199,7 +194,7 @@ struct ReadSettings
     DistributedCacheSettings distributed_cache_settings;
 #endif
 
-    [[nodiscard]] ReadSettings adjustBufferSize(size_t file_size) const;
+    ReadSettings adjustBufferSize(size_t file_size) const;
 
     /// Verification/metadata-read mode: disable every read-side cache (and the
     /// cache-stage logs that come with them). Used by `checkDataPart`,

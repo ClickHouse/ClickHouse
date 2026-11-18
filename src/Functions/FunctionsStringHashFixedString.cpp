@@ -40,6 +40,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int OPENSSL_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
@@ -235,24 +236,28 @@ public:
     static constexpr auto name = Impl::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStringHashFixedString>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(String | FixedString | IPv6) -> FixedString(" + std::to_string(Impl::length) + ")";
+        if (!isStringOrFixedString(arguments[0]) && !isIPv6(arguments[0]))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
+
+        return std::make_shared<DataTypeFixedString>(Impl::length);
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Disable default Variant implementation for compatibility.
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
-    [[nodiscard]] bool useDefaultImplementationForVariant() const override { return false; }
+    bool useDefaultImplementationForVariant() const override { return false; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto hasher = Impl();
 

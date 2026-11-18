@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -25,7 +24,6 @@ namespace DB
 namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
-    extern const QueryPlanSerializationSettingsBool enable_fixed_and_packed_string_keys_in_aggregation;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
@@ -128,7 +126,7 @@ void CubeStep::updateOutputHeader()
     output_header = std::make_shared<const Block>(generateOutputHeader(params.getHeader(*input_headers.front(), final), params.keys, use_nulls));
 }
 
-void CubeStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
+void CubeStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
     /// Only the parameters the transform's block merge reads; the reader rebuilds merge-only
     /// `Aggregator::Params` from them, like `MergingAggregatedStep` does.
@@ -138,15 +136,6 @@ void CubeStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt
     /// Every version that can read a `Cube` step also knows this setting name (see the gate in
     /// `serialize`), so unlike `AggregatingStep` no old-peer narrowing applies.
     settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = params.enable_packed_string_keys;
-    /// A later name: a peer that knows it merges with the method of the aggregation that feeds this
-    /// step. A peer below the setting's version uses the serialized method for both (see
-    /// `AggregatingStep::serializeSettings`). The plan default `false` is that method too, so the name goes
-    /// on the wire only when the setting is on and the keys can take the method: a peer at the setting's
-    /// version that predates the name throws on it, because the setting is `IMPORTANT`.
-    if (params.enable_fixed_and_packed_string_keys
-        && version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FIXED_AND_PACKED_STRING_KEYS_SETTING
-        && aggregationCanUseFixedAndPackedStringKeys(*input_headers.front(), params.keys, {}))
-        settings[QueryPlanSerializationSetting::enable_fixed_and_packed_string_keys_in_aggregation] = true;
 }
 
 void CubeStep::serialize(Serialization & ctx) const
@@ -216,8 +205,7 @@ QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::max_block_size],
         ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization],
         ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte],
-        ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation],
-        ctx.settings[QueryPlanSerializationSetting::enable_fixed_and_packed_string_keys_in_aggregation]);
+        ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation]);
 
     /// The transform's `group_by_use_nulls` path builds an `Aggregator` over a finalized header;
     /// with `only_merge` set, the aggregate state types would be read from that header's finalized

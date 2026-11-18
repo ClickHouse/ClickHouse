@@ -14,13 +14,13 @@ namespace DB
 class LocalReadImplementation : public IOptimizationRule
 {
 public:
-    [[nodiscard]] String getName() const override { return "LocalRead"; }
-    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
+    String getName() const override { return "LocalRead"; }
+    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
     {
         return typeid_cast<const ReadFromMergeTree *>(expression->getQueryPlanStep()) != nullptr;
     }
-    [[nodiscard]] Promise getPromise() const override { return 1; }
-    [[nodiscard]] bool isTransformation() const override { return false; }
+    Promise getPromise() const override { return 1; }
+    bool isTransformation() const override { return false; }
 
 protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
