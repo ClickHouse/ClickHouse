@@ -3713,6 +3713,8 @@ static BlockIO executeQueryImpl(
                                 cached_entry->selected_columns,
                                 cached_entry->access_checked_columns);
 
+                            checkFunctionsForQueryPlanCacheHit(context, cached_entry->functions);
+
                             checkStorageSupportsTransactionsForQueryPlanCacheHit(context, validated_cache_entry->storage);
 
                             if (context->getCurrentTransaction() && settings[Setting::throw_on_unsupported_query_inside_transaction]
@@ -3740,6 +3742,11 @@ static BlockIO executeQueryImpl(
                                     validated_cache_entry->storage_id, cached_entry->read_columns);
 
                             interpreter = std::make_unique<InterpreterSelectQueryFromPlan>(std::move(plan), context, select_query_options);
+
+                            /// The analysis that computes the origins of the result columns is skipped on a hit.
+                            result_column_origins = cached_entry->result_column_origins;
+                            if (flags.collect_result_column_origins)
+                                result_details.result_column_origins = result_column_origins;
 
                             query_plan_cache_hit = true;
                         }
@@ -3789,7 +3796,13 @@ static BlockIO executeQueryImpl(
                 /// Nondeterministic functions can also come from identifiers (`CURRENT_USER`) or `ALIAS`
                 /// columns, which are only visible after analysis. Their folded values would be stored
                 /// in the plan and shared with other queries and users.
-                if (query_plan_cache_lookup_context && !query_plan_cache_hit && interpreter_with_analyzer
+                /// Functions folded into constants are not visible in the plan either, but they can require
+                /// access rights (e.g. `demangle`), so they are stored to be checked again on a hit.
+                std::optional<Names> query_plan_cache_functions;
+                if (query_plan_cache_lookup_context && !query_plan_cache_hit && interpreter_with_analyzer)
+                    query_plan_cache_functions = collectFunctionsForQueryPlanCacheEntry(interpreter_with_analyzer->getQueryTree());
+
+                if (query_plan_cache_functions
                     && interpreter_with_analyzer->getPlanner().getUsedRowPolicies().empty()
                     && !hasRowPolicyForQueryPlanCache(context, query_plan_cache_lookup_context->storage_id)
                     && !queryTreeContainsNonDeterministicFunctionsForQueryPlanCache(interpreter_with_analyzer->getQueryTree())
@@ -3813,6 +3826,8 @@ static BlockIO executeQueryImpl(
                         entry.selected_columns = getSelectedColumnsForQueryPlanCacheEntry(planner_context);
                         entry.read_columns = getReadColumnsForQueryPlanCacheEntry(planner_context);
                         entry.access_checked_columns = getAccessCheckedColumnsForQueryPlanCacheEntry(planner_context);
+                        entry.functions = std::move(*query_plan_cache_functions);
+                        entry.result_column_origins = interpreter_with_analyzer->getResultColumnOrigins();
                         entry.dependencies = buildQueryPlanCacheDependencies(
                             *query_plan_cache_lookup_context,
                             plan_copy,

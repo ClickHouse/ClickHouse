@@ -325,6 +325,15 @@ def main():
         query_metadata(sock, "SELECT * FROM t SETTINGS use_query_cache = 1, query_cache_ttl = 600")
         query_metadata(sock, "SELECT * FROM t SETTINGS use_query_cache = 1, query_cache_ttl = 600")
 
+        # A query plan cache hit skips the analysis, so the column origins are stored with the cached plan.
+        plan_cached = "SELECT id AS label, s FROM t ORDER BY id SETTINGS enable_query_plan_cache = 1"
+        query_metadata(sock, plan_cached)
+        query_metadata(sock, plan_cached)
+        # The prepare populates the plan cache and the execution hits it.
+        statement_id, columns = prepare(sock, plan_cached.replace("label", "prepared_label"))
+        execute(sock, statement_id, columns)
+        close(sock, statement_id)
+
         # The column origins are stored with the cached result, so a cache hit does not analyze the query again: its scalar
         # subqueries are not evaluated against the current data, and the tables it reads may even be gone.
         query(sock, "DROP TABLE IF EXISTS c")

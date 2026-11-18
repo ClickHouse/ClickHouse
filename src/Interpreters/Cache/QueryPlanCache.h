@@ -3,6 +3,7 @@
 #include <set>
 
 #include <Core/Names.h>
+#include <Core/ResultColumnOrigin.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/IASTHash.h>
@@ -115,6 +116,14 @@ struct QueryPlanCacheEntry
     /// Planner/storage dependencies captured from universalized read leaves.
     std::vector<QueryPlanCacheStorageDependency> dependencies;
 
+    /// Ordinary functions of the analyzed query, including the ones folded into constants. They are created again
+    /// on a hit to check the access rights they need (see `checkFunctionsForQueryPlanCacheHit`).
+    Names functions;
+
+    /// Where the result columns come from (see `InterpreterSelectQueryAnalyzer::getResultColumnOrigins`).
+    /// They are computed during analysis, which a hit skips, so they are restored from the entry.
+    ResultColumnOrigins result_column_origins;
+
     /// Approximate key bytes charged to the cache entry weight.
     size_t key_size_in_bytes = 0;
 
@@ -141,6 +150,10 @@ struct QueryPlanCacheEntryWeight
             weight += column.size();
         for (const auto & column : entry.access_checked_columns)
             weight += column.size();
+        for (const auto & function : entry.functions)
+            weight += function.size();
+        for (const auto & origin : entry.result_column_origins)
+            weight += origin.database.size() + origin.table.size() + origin.org_table.size() + origin.column.size();
         for (const auto & dependency : entry.dependencies)
         {
             weight += dependency.table_name.size();

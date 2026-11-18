@@ -22,6 +22,14 @@ bool astContainsInTableExpressionForQueryPlanCache(ASTPtr ast);
 /// identifiers resolved to functions and expanded `ALIAS` columns. Such plans must not be cached.
 bool queryTreeContainsNonDeterministicFunctionsForQueryPlanCache(const QueryTreeNodePtr & query_tree);
 
+/// Names of the ordinary functions of the analyzed query tree, including the functions folded into constants
+/// (e.g. from an expanded `ALIAS` column), which are not visible in the AST and the plan.
+/// Returns `nullopt` if a function is not in `FunctionFactory`: such a plan must not be cached.
+std::optional<Names> collectFunctionsForQueryPlanCacheEntry(const QueryTreeNodePtr & query_tree);
+
+/// Creates the functions of a cached plan, so that the access rights they need are checked for the current user.
+void checkFunctionsForQueryPlanCacheHit(const ContextPtr & context, const Names & functions);
+
 /// Row policies are outside the cache contract: any applicable policy, including an always-true
 /// one, bypasses lookup and insertion. Policies can be created or dropped while a query runs, so
 /// this is checked again on the hit path and before inserting a freshly built plan.

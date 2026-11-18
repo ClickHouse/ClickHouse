@@ -9,6 +9,7 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/TableNode.h>
 #include <Core/Settings.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -293,6 +294,56 @@ bool queryTreeContainsNonDeterministicFunctionsForQueryPlanCache(const QueryTree
     NonDeterministicFunctionsFinderVisitor visitor;
     visitor.visit(query_tree);
     return visitor.has_non_deterministic_functions;
+}
+
+namespace
+{
+
+/// Collects the names of the ordinary functions of a query tree, including the source expressions
+/// of the constants that the analyzer folded them into.
+class FunctionNamesCollectorVisitor : public ConstInDepthQueryTreeVisitor<FunctionNamesCollectorVisitor>
+{
+public:
+    std::set<String> & function_names;
+
+    explicit FunctionNamesCollectorVisitor(std::set<String> & function_names_) : function_names(function_names_) {}
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        if (const auto * constant_node = node->as<ConstantNode>())
+        {
+            if (constant_node->hasSourceExpression())
+                FunctionNamesCollectorVisitor(function_names).visit(constant_node->getSourceExpression());
+        }
+        else if (const auto * function_node = node->as<FunctionNode>())
+        {
+            if (function_node->isOrdinaryFunction())
+                function_names.insert(function_node->getFunctionName());
+        }
+    }
+};
+
+}
+
+std::optional<Names> collectFunctionsForQueryPlanCacheEntry(const QueryTreeNodePtr & query_tree)
+{
+    std::set<String> function_names;
+    FunctionNamesCollectorVisitor(function_names).visit(query_tree);
+
+    const auto & function_factory = FunctionFactory::instance();
+    for (const auto & name : function_names)
+        if (!function_factory.has(name))
+            return {};
+
+    return Names(function_names.begin(), function_names.end());
+}
+
+void checkFunctionsForQueryPlanCacheHit(const ContextPtr & context, const Names & functions)
+{
+    /// Creating a function checks the access rights it needs (e.g. `demangle` or `addressToSymbol`).
+    const auto & function_factory = FunctionFactory::instance();
+    for (const auto & name : functions)
+        std::ignore = function_factory.get(name, context);
 }
 
 bool astContainsInTableExpressionForQueryPlanCache(ASTPtr ast)
