@@ -811,7 +811,6 @@ std::string probeNamespaces(bool with_user_namespace, uid_t uid, gid_t gid)
     return fmt::format("the process that checks whether the filesystem can be isolated terminated with the status {}", status);
 }
 
-#if defined(__GLIBC__)
 /// The services named in `/etc/nsswitch.conf`, such as `files`, `dns`, `systemd`, `sss`.
 std::vector<std::string> getNameServices()
 {
@@ -860,7 +859,6 @@ std::vector<std::string> getNameServices()
     }
     return services;
 }
-#endif
 
 /// The entries of the dynamic section of an ELF file that tell which shared libraries it needs and where they are.
 struct DynamicEntries
@@ -1049,7 +1047,6 @@ std::vector<std::string> findLibraries(
     return libraries;
 }
 
-#if defined(__GLIBC__)
 /// The modules of the Name Service Switch for the services in `/etc/nsswitch.conf`, such as `libnss_files.so.2`
 /// and `libnss_dns.so.2`, and the libraries they need. The C library loads them on the first lookup of a host, a
 /// user or a group, which can happen after the isolation, so they are not among the mapped files. A service without a
@@ -1061,7 +1058,6 @@ std::vector<std::string> getNameServiceModules(const std::vector<std::string> & 
         names.push_back(fmt::format("libnss_{}.so.2", service));
     return findLibraries(names, getLibraryDirectories(mapped_files));
 }
-#endif
 
 /// The dynamic loader and the shared libraries of an executable that the server starts after the isolation, such as
 /// `clickhouse-odbc-bridge`, which can need libraries that the server itself does not map. Nothing for a file that is
@@ -1092,7 +1088,6 @@ std::vector<std::string> getExecutableDependencies(const std::string & path, con
     return dependencies;
 }
 
-#if defined(__GLIBC__)
 /// The directories of the sockets of the services that the modules of the Name Service Switch for the services in
 /// `/etc/nsswitch.conf` connect to, which `DT_NEEDED` does not tell: `avahi-daemon` for `nss-mdns`, `sssd` for
 /// `sss`, `nslcd` for `ldap` of `nss-pam-ldapd`, and the services of the user database of `systemd` for `systemd`.
@@ -1120,7 +1115,6 @@ std::vector<std::string> getNameServiceSocketDirectories()
     }
     return directories;
 }
-#endif
 
 /// The files mapped into the process: its executable and, if it is not linked statically, the dynamic loader and
 /// the libraries.
@@ -1351,18 +1345,20 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
                 executable_dependencies.push_back(std::move(dependency));
             }
     const auto interpreter = getInterpreter();
-    /// The dynamic loader of the server or of a program it starts looks up the libraries there.
-    if (interpreter || !executable_dependencies.empty())
-        all_paths.push_back({"/etc/ld.so.cache", FilesystemIsolationPath::Access::ReadOnly, "the cache of the dynamic loader"});
     if (interpreter)
-    {
         all_paths.push_back({*interpreter, FilesystemIsolationPath::Access::ReadOnly, "the dynamic loader of the executable"});
-#if defined(__GLIBC__)
-        for (auto & module : getNameServiceModules(mapped_files))
+    /// For the dynamic loader and the C library of the server or of a program it starts: a glibc-linked bridge
+    /// loads the modules of the Name Service Switch itself, whatever the C library of the server is. They are looked
+    /// up also next to the libraries of the started programs, where their C library is.
+    if (interpreter || !executable_dependencies.empty())
+    {
+        all_paths.push_back({"/etc/ld.so.cache", FilesystemIsolationPath::Access::ReadOnly, "the cache of the dynamic loader"});
+        std::vector<std::string> loaded_files = mapped_files;
+        loaded_files.insert(loaded_files.end(), executable_dependencies.begin(), executable_dependencies.end());
+        for (auto & module : getNameServiceModules(loaded_files))
             all_paths.push_back({std::move(module), FilesystemIsolationPath::Access::ReadOnly, "a module of the Name Service Switch or a library it needs"});
         for (auto & directory : getNameServiceSocketDirectories())
             all_paths.push_back({std::move(directory), FilesystemIsolationPath::Access::ReadOnly, "the sockets of a service of the Name Service Switch"});
-#endif
     }
     const std::vector<Mount> mounts = planMounts(all_paths, traversal);
     for (auto & alias : getLibraryAliases(mapped_files))
