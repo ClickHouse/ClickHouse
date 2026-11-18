@@ -58,11 +58,11 @@ public:
 
     void tryUpdateConnection();
 
-    bool isConnected() const { return connection != nullptr && connection->is_open(); }
+    [[nodiscard]] bool isConnected() const { return connection != nullptr && connection->is_open(); }
 
     const ConnectionInfo & getConnectionInfo() { return connection_info; }
 
-    String getInfoForLog() const { return connection_info.host_port; }
+    [[nodiscard]] String getInfoForLog() const { return connection_info.host_port; }
 
     /// Incremented every time a new connection is opened, so a user can tell that it talks to a server
     /// it has not checked yet: a reconnection resolves the endpoint again and may reach another server.
