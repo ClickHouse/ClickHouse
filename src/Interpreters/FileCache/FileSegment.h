@@ -19,7 +19,6 @@
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
 #include <Interpreters/FileCache/FileCacheSegmentSizes.h>
-#include <Common/ByteMutex.h>
 
 
 namespace Poco { class Logger; }
@@ -210,10 +209,11 @@ public:
 
     void increasePriority();
 
-    /// Marks `[offset, offset + size)` as served from the cache. The caller must hold this file segment.
+    /// Marks `[offset, offset + size)` as served from the cache. Lock-free; the caller must hold this file segment.
+    /// The cache counters take the read when a holder releases the file segment (see `complete`).
     void markRead(size_t offset, size_t size);
 
-    bool wasServedFromCache() const;
+    bool wasServedFromCache() const { return efficiency.get() != nullptr; }
 
     /**
      * ========== Methods used by `cache` ========================
@@ -305,18 +305,23 @@ private:
     DownloadState & getOrCreateDownloadDataUnlocked(const FileSegmentGuard::Lock &);
     void resetDownloadDataUnlocked(const FileSegmentGuard::Lock &);
 
-    /// The only way to change `reserved_size` after construction.
+    /// The only way to change `reserved_size` after construction. The cache counters take the change at the next
+    /// `accountReservedSize`.
     void addReservedSize(Int64 delta);
-    /// Counts the change of `reserved_size` since the last call in `FileCacheSegmentSizes` and the efficiency
-    /// counters, and returns the counted `reserved_size`.
-    Int64 accountReservedSize() TSA_REQUIRES(efficiency_mutex);
+    /// Counts the change of `reserved_size` since the last call in `FileCacheSegmentSizes` and the efficiency counters.
+    void accountReservedSize(const FileSegmentGuard::Lock &);
+    /// Counts the reads that the efficiency counters do not have yet, after `accountReservedSize`.
+    void accountReads(const FileSegmentGuard::Lock &);
+    /// `accountReads` at the release of a holder. Takes the lock only if there are reads to count.
+    void accountReadsAtRelease();
 
     void onLoadedIntoCache();
     /// Only the last holder removes a file segment, so nothing counts it after this.
     void onRemovedFromCache(const FileSegmentGuard::Lock &);
     /// Moves the file segment to the size class of its new range.
-    void onRangeShrunk(size_t old_range_size);
-    std::optional<FileSegmentEfficiencyInfo> getEfficiencyInfo(const FileSegmentGuard::Lock &) const;
+    void onRangeShrunk(size_t old_range_size, const FileSegmentGuard::Lock &);
+    /// Also counts the reads that no holder released yet.
+    std::optional<FileSegmentEfficiencyInfo> getEfficiencyInfo(const FileSegmentGuard::Lock &);
 
     /// In release builds returns a single shared logger; in debug builds a per-segment one.
     const LoggerPtr & getLog() const;
@@ -409,13 +414,13 @@ private:
     std::condition_variable cv;
     /// Dedups concurrent increasePriority() calls; a pure try-lock, so an atomic flag is enough.
     std::atomic_flag increasing_priority;
-    /// A leaf lock for the fields below: only the rotation mutex of `FileCacheEfficiency` is taken under it.
-    mutable ByteMutex efficiency_mutex;
-    /// Whether the file segment is counted in `FileCacheSegmentSizes`, and the `reserved_size` that it and the
-    /// efficiency counters hold. `reserved_size` changes without this lock, so `accountReservedSize` counts the difference.
-    bool counted_in_segment_sizes TSA_GUARDED_BY(efficiency_mutex) = false;
-    size_t reserved_size_accounted TSA_GUARDED_BY(efficiency_mutex) = 0;
-    FileCacheSegmentSizes::Class size_class TSA_GUARDED_BY(efficiency_mutex);
+    /// Guarded by `segment_guard`: whether the file segment is counted in `FileCacheSegmentSizes`, and the
+    /// `reserved_size` that it and the efficiency counters hold. `reserved_size` changes without the lock, so
+    /// `accountReservedSize` counts the difference.
+    bool counted_in_segment_sizes = false;
+    size_t reserved_size_accounted = 0;
+    /// Guarded by `segment_guard`.
+    FileCacheSegmentSizes::Class size_class;
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     /// Per-segment logger with a unique name; only in debug/sanitizer builds.
@@ -425,8 +430,19 @@ private:
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
 
-    /// Allocated at the first cache hit.
-    std::unique_ptr<FileSegmentEfficiency> efficiency TSA_GUARDED_BY(efficiency_mutex);
+    /// Owns the `FileSegmentEfficiency` of the file segment, which the first cache hit creates without a lock.
+    class EfficiencyOwner : private boost::noncopyable
+    {
+    public:
+        ~EfficiencyOwner();
+        FileSegmentEfficiency * get() const { return efficiency.load(std::memory_order_acquire); }
+        FileSegmentEfficiency & getOrCreate(size_t range_size);
+
+    private:
+        std::atomic<FileSegmentEfficiency *> efficiency = nullptr;
+    };
+    /// Readers mark their reads in it without a lock; the rest of it is guarded by `segment_guard`.
+    EfficiencyOwner efficiency;
 
     /// Guarded by `segment_guard`. Set while dynamic-resize eviction is pending.
     bool on_delayed_removal = false;

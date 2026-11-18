@@ -47,9 +47,9 @@ FileCacheEfficiency::Window FileCacheEfficiency::windowNow() const
 
 FileCacheEfficiency::Window FileCacheEfficiency::currentWindow()
 {
-    const Window now_window = windowNow();
-    rotateIfNeeded(now_window);
-    return now_window;
+    rotateIfNeeded(windowNow());
+    /// Not the clock of this thread: another thread can read a later clock and rotate first.
+    return window.load(std::memory_order_relaxed);
 }
 
 void FileCacheEfficiency::WindowStats::add(Int64 active_delta, Int64 passive_delta)
@@ -113,19 +113,6 @@ void FileCacheEfficiency::apply(Window segment_window, const Delta & delta)
         return;
     stats.add(delta.active, delta.passive);
     large_stats.add(delta.large_active, delta.large_passive);
-}
-
-FileCacheEfficiency::Window FileCacheEfficiency::countRead(const SegmentRead & read)
-{
-    rotateIfNeeded(windowNow());
-    const Window current_window = window.load(std::memory_order_relaxed);
-    const bool new_window = read.segment_window != current_window;
-    const Int64 passive = new_window ? read.reserved_bytes : 0;
-    const Int64 active = new_window ? read.active_bytes_in_new_window : read.active_bytes_in_segment_window;
-    stats.add(active, passive - active);
-    if (read.large)
-        large_stats.add(active, passive - active);
-    return current_window;
 }
 
 FileCacheEfficiency::Snapshot FileCacheEfficiency::getSnapshot()

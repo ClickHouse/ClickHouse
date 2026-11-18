@@ -4603,6 +4603,13 @@ DB::ContextMutablePtr makeEfficiencyQueryContext(const String & query_id)
     return query_context;
 }
 
+/// Counts the reads of a held file segment in the cache counters, as `system.filesystem_cache` does. Without it,
+/// they count at the release of the holder.
+void countReads(const FileSegmentPtr & segment)
+{
+    FileSegment::getInfo(segment);
+}
+
 }
 
 TEST_F(FileCacheTest, EfficiencyWindow)
@@ -4643,6 +4650,7 @@ TEST_F(FileCacheTest, EfficiencyWindow)
 
     /// Window 1: a 16-byte read of A counts its whole granule.
     a->markRead(G + 10, 16);
+    countReads(a);
     expect(next_window(), G, 7 * G);
 
     /// Window 2: no reads.
@@ -4650,6 +4658,7 @@ TEST_F(FileCacheTest, EfficiencyWindow)
 
     /// Window 3: removing an unread file segment does not change the window.
     a->markRead(0, G);
+    countReads(a);
     holder_b = nullptr;
     b.reset();
     cache.removeFileSegment(key, S, user.user_id);
@@ -4726,16 +4735,51 @@ TEST_F(FileCacheTest, EfficiencyConcurrentFirstRead)
     auto segment = get(holder, 0);
     download(segment);
 
+    /// The first reads create the tracker concurrently, while another thread counts the reads.
+    std::atomic<bool> done = false;
+    std::thread counting([&]
+    {
+        while (!done.load())
+            countReads(segment);
+    });
     std::vector<std::thread> threads;
     for (size_t i = 0; i < 8; ++i)
         threads.emplace_back([&, i] { segment->markRead(i * G, G); });
     for (auto & thread : threads)
         thread.join();
+    done = true;
+    counting.join();
+    holder = nullptr;
 
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
     const auto snapshot = cache.getEfficiency().getSnapshot();
     EXPECT_EQ(snapshot.active_bytes, S);
     EXPECT_EQ(snapshot.passive_bytes, 0);
+}
+
+TEST_F(FileCacheTest, EfficiencyReadsCountAtRelease)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_release_test"));
+    auto cache = DB::FileCache("efficiency_release", efficiencyCacheSettings(W));
+    cache.initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = FileCacheKey::fromPath("efficiency_release_key");
+    auto holder = cache.getOrSet(key, 0, S, S, {}, 0, user);
+    auto segment = get(holder, 0);
+    download(segment);
+
+    /// A read in window 0 counts when its holder releases the file segment, in window 1.
+    segment->markRead(0, G);
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
+    EXPECT_EQ(cache.getEfficiency().getSnapshot().active_bytes, 0);
+    holder = nullptr;
+
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
+    const auto snapshot = cache.getEfficiency().getSnapshot();
+    EXPECT_EQ(snapshot.active_bytes, G);
+    EXPECT_EQ(snapshot.passive_bytes, S - G);
 }
 
 TEST_F(FileCacheTest, EfficiencyIdleExcludesTemporaryData)
@@ -4843,11 +4887,12 @@ TEST_F(FileCacheTest, EfficiencyStaleClockCountsInCurrentWindow)
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
     cache.getEfficiency().getSnapshot();
 
-    /// Readers that read the clock before the rotation count in the current window: the first read
-    /// starts window 1 for the file segment, the second one adds to it.
+    /// A release that reads the clock before the rotation counts in the current window: it starts window 1 for
+    /// the file segment, and a later count adds to it.
     cache.getEfficiency().shiftTimeForTesting(-std::chrono::seconds(W / 2));
     segment->markRead(0, G);
     segment->markRead(G, G);
+    holder = nullptr;
 
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W / 2));
     segment->markRead(2 * G, G);
@@ -5163,7 +5208,7 @@ TEST_F(FileCacheTest, SegmentSizes)
         auto cache = DB::FileCache("segment_sizes", settings);
         cache.initialize();
 
-        /// A file segment counts from its first reservation.
+        /// A file segment counts when its downloader releases it, not at each reservation.
         auto key = FileCacheKey::fromPath("segment_sizes_key");
         {
             auto holder = cache.getOrSet(key, 0, 4 * S, /*file_size=*/4 * S, {}, 0, user);
@@ -5174,7 +5219,7 @@ TEST_F(FileCacheTest, SegmentSizes)
             ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
             std::string failure_reason;
             ASSERT_TRUE(segment->reserve(3 * G, 1000, failure_reason));
-            expectSegmentSizes(cache, {{bucket_2m, {1, 3 * G}}}, 3 * G);
+            expectSegmentSizes(cache, {}, 0);
 
             auto key_str = key.toString();
             fs::create_directories(fs::path(cache_base_path) / key_str.substr(0, 3) / key_str);
@@ -5225,6 +5270,31 @@ TEST_F(FileCacheTest, SegmentSizes)
     expectSegmentSizes(cache, {{bucket_512k, {1, 3 * G}}, {bucket_2m, {1, 4 * S}}}, 4 * S);
 }
 
+TEST_F(FileCacheTest, SegmentSizesCountAtTheEndOfDownload)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("segment_sizes_end_of_download_test"));
+    auto cache = DB::FileCache("segment_sizes_end_of_download", efficiencyCacheSettings(W));
+    cache.initialize();
+    const auto & user = FileCache::getCommonOrigin();
+
+    /// A downloader that finishes the download before the release, as the legacy reader does, counts its
+    /// reservation at the end of the download: the release of a downloaded file segment takes no lock.
+    auto holder = cache.getOrSet(FileCacheKey::fromPath("segment_sizes_end_of_download_key"), 0, S, /*file_size=*/S, {}, 0, user);
+    auto segment = get(holder, 0);
+    ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+    std::string failure_reason;
+    ASSERT_TRUE(segment->reserve(S, 1000, failure_reason));
+    download(cache_base_path, *segment);
+    EXPECT_EQ(cache.getSegmentSizes().getBytes(), 0);
+    segment->resetDownloader();
+    ASSERT_EQ(segment->state(), State::DOWNLOADED);
+    EXPECT_EQ(cache.getSegmentSizes().getBytes(), S);
+
+    holder = nullptr;
+    EXPECT_EQ(cache.getSegmentSizes().getBytes(), S);
+}
+
 TEST_F(FileCacheTest, EfficiencyLargeSegments)
 {
     DB::ThreadStatus thread_status;
@@ -5242,11 +5312,13 @@ TEST_F(FileCacheTest, EfficiencyLargeSegments)
     auto large = get(large_holder, 0);
     download(large);
     large->markRead(0, G);
+    large_holder = nullptr;
 
     auto short_holder = cache.getOrSet(FileCacheKey::fromPath("efficiency_short_key"), 0, S, /*file_size=*/S, {}, 0, user);
     auto short_segment = get(short_holder, 0);
     download(short_segment);
     short_segment->markRead(0, G);
+    short_holder = nullptr;
 
     /// A hit on a large file segment, which then shrinks to `S` (the downloaded size rounded up to the
     /// alignment) and is not large anymore: its bytes leave the large class.

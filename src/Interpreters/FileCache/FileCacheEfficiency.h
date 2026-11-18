@@ -40,7 +40,7 @@ public:
     /// Does not rotate.
     Window windowNow() const;
 
-    /// Rotates if the current window ended.
+    /// Rotates if the current window ended, and returns the window of the cache: it can be later than `windowNow`.
     Window currentWindow();
 
     /// A change of the bytes of one file segment, for all and for large file segments.
@@ -67,19 +67,6 @@ public:
     /// The updates below are no-ops unless `segment_window` is the current window.
     void addPassiveBytes(Window segment_window, Int64 bytes, bool large);
     void apply(Window segment_window, const Delta & delta);
-
-    /// `reserved_bytes` become passive if the read starts a new window for the file segment.
-    struct SegmentRead
-    {
-        Window segment_window = NEVER_READ;
-        Int64 reserved_bytes = 0;
-        Int64 active_bytes_in_segment_window = 0;
-        Int64 active_bytes_in_new_window = 0;
-        bool large = false;
-    };
-
-    /// Rotates if needed, counts `read` in the current window and returns it.
-    Window countRead(const SegmentRead & read);
 
     /// The last full window.
     Snapshot getSnapshot();

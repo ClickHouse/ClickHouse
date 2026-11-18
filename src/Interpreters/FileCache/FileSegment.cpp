@@ -912,6 +912,8 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock & lock)
 
     download_state = State::DOWNLOADED;
     download_finished_time = timeInSeconds(std::chrono::system_clock::now());
+    /// The reservation is final now. A later release of a downloaded file segment does not take the lock to count it.
+    accountReservedSize(lock);
 
     chassert(downloaded_size > 0);
     chassert(fs::file_size(getPath()) == downloaded_size);
@@ -1088,6 +1090,7 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
         if (aligned_delta)
             queue_iterator->decrementSize(aligned_delta);
         addReservedSize(-static_cast<Int64>(reserved_size - downloaded_size));
+        accountReservedSize(lock);
     }
 
     if (result_size == range().size())
@@ -1112,7 +1115,7 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     else
         setDownloadState(State::PARTIALLY_DOWNLOADED, lock);
 
-    onRangeShrunk(old_range_size);
+    onRangeShrunk(old_range_size, lock);
 
     /// If shrinking finished the download (downloaded size == final segment size), the file
     /// reached its final size, so encode it into the name (see `setDownloadedUnlocked`).
@@ -1161,7 +1164,10 @@ void FileSegment::complete(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is nullptr");
 
     if (file_segment->isCompleted() && !file_segment->is_temporary)
+    {
+        file_segment->accountReadsAtRelease();
         return;
+    }
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentCompleteMicroseconds);
 
@@ -1189,6 +1195,10 @@ void FileSegment::complete(
     const IOSchedulingSettings & holder_io_scheduling)
 {
     auto segment_lock = lock();
+
+    /// The release of a holder counts its reads, and the reservation of a downloader.
+    accountReservedSize(segment_lock);
+    accountReads(segment_lock);
 
     if (isCompleted(false))
     {
@@ -1549,20 +1559,18 @@ void FileSegment::assertNotDetachedUnlocked(const FileSegmentGuard::Lock & lock)
     }
 }
 
-std::optional<FileSegmentEfficiencyInfo> FileSegment::getEfficiencyInfo(const FileSegmentGuard::Lock &) const
+std::optional<FileSegmentEfficiencyInfo> FileSegment::getEfficiencyInfo(const FileSegmentGuard::Lock & lock)
 {
     /// Only a detached placeholder has no cache, and it is never in the cache metadata.
     chassert(cache);
     const auto & cache_efficiency = cache->getEfficiency();
     if (!cache_efficiency.isEnabled())
         return std::nullopt;
+    accountReads(lock);
     const size_t downloaded = downloaded_size;
     const auto current_window = cache_efficiency.windowNow();
-    {
-        std::lock_guard lock(efficiency_mutex);
-        if (efficiency)
-            return efficiency->getInfo(current_window, range().size(), downloaded);
-    }
+    if (const auto * segment_efficiency = efficiency.get())
+        return segment_efficiency->getInfo(current_window, range().size(), downloaded);
     /// The tracker is created at the first cache hit, so a file segment without it was never served: idle.
     FileSegmentEfficiencyInfo info;
     info.idle_bytes = downloaded;
@@ -1687,63 +1695,77 @@ void FileSegment::markRead(size_t offset, size_t size)
     if (!size || is_unbound)
         return;
     chassert(cache);
-
-    auto & cache_efficiency = cache->getEfficiency();
-    if (!cache_efficiency.isEnabled())
+    if (!cache->getEfficiency().isEnabled())
         return;
 
-    std::lock_guard lock(efficiency_mutex);
-    const Int64 reserved = accountReservedSize();
-    if (!efficiency)
-        efficiency = std::make_unique<FileSegmentEfficiency>(range().size());
-    efficiency->markRead(cache_efficiency, ByteRange{range().left, range().size()}, ByteRange{offset, size}, reserved, size_class.large);
+    /// Only the last holder shrinks the range, so it does not change under a reader.
+    const auto segment_range_now = range();
+    efficiency.getOrCreate(segment_range_now.size())
+        .markRead(ByteRange{segment_range_now.left, segment_range_now.size()}, ByteRange{offset, size});
 }
 
 void FileSegment::addReservedSize(Int64 delta)
 {
     /// Unsigned addition wraps, so a negative `delta` subtracts.
     reserved_size += static_cast<size_t>(delta);
-    if (is_unbound)
-        return;
-    chassert(cache);
-
-    std::lock_guard lock(efficiency_mutex);
-    accountReservedSize();
 }
 
-Int64 FileSegment::accountReservedSize()
+void FileSegment::accountReservedSize(const FileSegmentGuard::Lock &)
 {
-    /// Exactly once: a reservation that races with `markRead` is counted by the first of them to take the lock,
-    /// and the other one finds no difference.
+    /// Temporary data and a removed file segment are not counted.
+    if (is_unbound || download_state == State::DETACHED)
+        return;
+    chassert(cache);
     const size_t reserved = reserved_size.load();
     if (counted_in_segment_sizes ? reserved == reserved_size_accounted : reserved == 0)
-        return static_cast<Int64>(reserved);
+        return;
     const Int64 delta = static_cast<Int64>(reserved) - static_cast<Int64>(reserved_size_accounted);
     cache->getSegmentSizes().add(size_class, counted_in_segment_sizes ? 0 : 1, delta);
-    if (efficiency)
-        efficiency->addReservedBytes(cache->getEfficiency(), delta, size_class.large);
+    if (const auto * segment_efficiency = efficiency.get())
+        segment_efficiency->addReservedBytes(cache->getEfficiency(), delta, size_class.large);
     counted_in_segment_sizes = true;
     reserved_size_accounted = reserved;
-    return static_cast<Int64>(reserved);
+}
+
+void FileSegment::accountReads(const FileSegmentGuard::Lock & lock)
+{
+    if (is_unbound || download_state == State::DETACHED)
+        return;
+    auto * segment_efficiency = efficiency.get();
+    if (!segment_efficiency)
+        return;
+    chassert(cache);
+    /// The first reads of a window make the reserved bytes passive, so the reservation is counted before.
+    accountReservedSize(lock);
+    segment_efficiency->account(
+        cache->getEfficiency(), range().size(), static_cast<Int64>(reserved_size_accounted), size_class.large);
+}
+
+void FileSegment::accountReadsAtRelease()
+{
+    /// Most releases of a completed file segment have no reads to count, and then they do not take the lock.
+    const auto * segment_efficiency = efficiency.get();
+    if (!segment_efficiency || !segment_efficiency->hasUnaccountedReads())
+        return;
+    auto segment_lock = lock();
+    accountReads(segment_lock);
 }
 
 void FileSegment::onLoadedIntoCache()
 {
     if (is_unbound)
         return;
-    chassert(cache);
-    std::lock_guard lock(efficiency_mutex);
+    auto segment_lock = lock();
     chassert(!counted_in_segment_sizes);
-    accountReservedSize();
+    accountReservedSize(segment_lock);
 }
 
-void FileSegment::onRangeShrunk(size_t old_range_size)
+void FileSegment::onRangeShrunk(size_t old_range_size, const FileSegmentGuard::Lock & lock)
 {
     if (is_unbound)
         return;
     chassert(cache);
-    std::lock_guard lock(efficiency_mutex);
-    accountReservedSize();
+    accountReservedSize(lock);
     const auto new_class = cache->getSegmentSizes().getClass(range().size());
     const auto bytes = static_cast<Int64>(reserved_size_accounted);
     if (counted_in_segment_sizes)
@@ -1751,8 +1773,8 @@ void FileSegment::onRangeShrunk(size_t old_range_size)
         cache->getSegmentSizes().add(size_class, -1, -bytes);
         cache->getSegmentSizes().add(new_class, 1, bytes);
     }
-    if (efficiency)
-        efficiency->shrink(cache->getEfficiency(), old_range_size, range().size(), bytes, size_class.large, new_class.large);
+    if (const auto * segment_efficiency = efficiency.get())
+        segment_efficiency->shrink(cache->getEfficiency(), old_range_size, range().size(), bytes, size_class.large, new_class.large);
     size_class = new_class;
 }
 
@@ -1761,21 +1783,31 @@ void FileSegment::onRemovedFromCache(const FileSegmentGuard::Lock &)
     if (is_unbound)
         return;
     chassert(cache);
-    std::lock_guard lock(efficiency_mutex);
-    /// Subtracts what is counted: a reservation that is not counted yet was never added.
+    /// Subtracts what is counted: a reservation or a read that is not counted yet was never added.
     const auto bytes = static_cast<Int64>(reserved_size_accounted);
     if (counted_in_segment_sizes)
         cache->getSegmentSizes().add(size_class, -1, -bytes);
     counted_in_segment_sizes = false;
     reserved_size_accounted = 0;
-    if (efficiency)
-        efficiency->remove(cache->getEfficiency(), range().size(), bytes, size_class.large);
+    if (const auto * segment_efficiency = efficiency.get())
+        segment_efficiency->remove(cache->getEfficiency(), range().size(), bytes, size_class.large);
 }
 
-bool FileSegment::wasServedFromCache() const
+FileSegment::EfficiencyOwner::~EfficiencyOwner()
 {
-    std::lock_guard lock(efficiency_mutex);
-    return efficiency != nullptr;
+    delete efficiency.load(std::memory_order_relaxed);
+}
+
+FileSegmentEfficiency & FileSegment::EfficiencyOwner::getOrCreate(size_t range_size)
+{
+    if (auto * existing = get())
+        return *existing;
+    auto created = std::make_unique<FileSegmentEfficiency>(range_size);
+    FileSegmentEfficiency * expected = nullptr;
+    /// Concurrent first hits create one each: the first to publish it wins, and the others free theirs.
+    if (efficiency.compare_exchange_strong(expected, created.get(), std::memory_order_acq_rel, std::memory_order_acquire))
+        return *created.release();
+    return *expected;
 }
 
 FileSegment::~FileSegment()

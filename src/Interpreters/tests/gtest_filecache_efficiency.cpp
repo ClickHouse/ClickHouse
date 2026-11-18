@@ -1,6 +1,11 @@
 #include <gtest/gtest.h>
 
 #include <Interpreters/FileCache/FileCacheEfficiency.h>
+#include <Interpreters/FileCache/FileSegmentEfficiency.h>
+
+#include <atomic>
+#include <thread>
+#include <vector>
 
 using namespace DB;
 
@@ -64,43 +69,6 @@ TEST(FileCacheEfficiency, StaleWindowUpdatesAreIgnored)
 
     t.advance(W);
     expectSnapshot(t.efficiency.getSnapshot(), 0, 0, 100);
-}
-
-TEST(FileCacheEfficiency, CountReadInCurrentWindow)
-{
-    TestEfficiency t(W);
-    t.used_size = 300;
-    t.large_used_size = 200;
-
-    /// The first read of a file segment in a window makes its bytes passive.
-    FileCacheEfficiency::SegmentRead read{
-        .segment_window = FileCacheEfficiency::NEVER_READ,
-        .reserved_bytes = 200,
-        .active_bytes_in_segment_window = 10,
-        .active_bytes_in_new_window = 30,
-        .large = true,
-    };
-    EXPECT_EQ(t.efficiency.countRead(read), 0);
-
-    /// The next read in the same window adds only its newly active bytes.
-    read.segment_window = 0;
-    EXPECT_EQ(t.efficiency.countRead(read), 0);
-
-    t.advance(W);
-    auto snapshot = t.efficiency.getSnapshot();
-    expectSnapshot(snapshot, 40, 160, 100);
-    EXPECT_EQ(snapshot.large_active_bytes, 40);
-    EXPECT_EQ(snapshot.large_passive_bytes, 160);
-
-    /// A reader that read the clock before this rotation counts in the current window 1.
-    t.efficiency.shiftTimeForTesting(-std::chrono::seconds(W / 2));
-    EXPECT_EQ(t.efficiency.countRead(read), 1);
-
-    t.efficiency.shiftTimeForTesting(std::chrono::seconds(W / 2 + W));
-    snapshot = t.efficiency.getSnapshot();
-    expectSnapshot(snapshot, 30, 170, 100);
-    EXPECT_EQ(snapshot.large_active_bytes, 30);
-    EXPECT_EQ(snapshot.large_passive_bytes, 170);
 }
 
 TEST(FileCacheEfficiency, WindowsWithoutRotation)
@@ -169,4 +137,82 @@ TEST(FileCacheEfficiency, LargeSegments)
     EXPECT_EQ(snapshot.large_active_bytes, 0);
     EXPECT_EQ(snapshot.large_passive_bytes, 0);
     EXPECT_EQ(snapshot.large_idle_bytes, 200);
+}
+
+namespace
+{
+
+constexpr size_t G = FileSegmentEfficiency::GRANULE_SIZE;
+
+}
+
+TEST(FileSegmentEfficiency, ReadsCountAtAccount)
+{
+    TestEfficiency t(W);
+    t.used_size = 4 * G;
+    FileSegmentEfficiency segment(4 * G);
+    const ByteRange range{0, 4 * G};
+
+    /// A read only marks its granules; `account` counts them, and a repeated read of a granule adds nothing.
+    segment.markRead(range, ByteRange{G + 10, 16});
+    EXPECT_TRUE(segment.hasUnaccountedReads());
+    segment.account(t.efficiency, 4 * G, /*reserved_bytes=*/4 * G, /*large=*/false);
+    EXPECT_FALSE(segment.hasUnaccountedReads());
+    segment.markRead(range, ByteRange{G, G});
+    segment.account(t.efficiency, 4 * G, 4 * G, /*large=*/false);
+    EXPECT_EQ(segment.getInfo(/*current_window=*/0, 4 * G, 4 * G).active_bytes, G);
+
+    t.advance(W);
+    expectSnapshot(t.efficiency.getSnapshot(), G, 3 * G, 0);
+}
+
+TEST(FileSegmentEfficiency, ReadsCountInTheWindowOfTheirAccount)
+{
+    TestEfficiency t(W);
+    t.used_size = 4 * G;
+    FileSegmentEfficiency segment(4 * G);
+
+    /// A read before the end of window 0 that is counted in window 1 counts in window 1.
+    segment.markRead(ByteRange{0, 4 * G}, ByteRange{0, G});
+    t.advance(W);
+    segment.account(t.efficiency, 4 * G, 4 * G, /*large=*/false);
+    expectSnapshot(t.efficiency.getSnapshot(), 0, 0, 4 * G);
+
+    t.advance(W);
+    expectSnapshot(t.efficiency.getSnapshot(), G, 3 * G, 0);
+}
+
+TEST(FileSegmentEfficiency, ConcurrentReadsAndAccounts)
+{
+    /// Readers mark the granules without a lock while one thread, as the holder of the file segment lock, counts
+    /// them: each granule counts once.
+    constexpr size_t granules = 256;
+    TestEfficiency t(W);
+    t.used_size = granules * G;
+    FileSegmentEfficiency segment(granules * G);
+    const ByteRange range{0, granules * G};
+
+    std::atomic<bool> done = false;
+    std::thread accounting([&]
+    {
+        while (!done.load())
+            segment.account(t.efficiency, granules * G, granules * G, /*large=*/false);
+    });
+    std::vector<std::thread> readers;
+    for (size_t reader = 0; reader < 4; ++reader)
+        readers.emplace_back([&, reader]
+        {
+            for (size_t i = 0; i < granules; ++i)
+                segment.markRead(range, ByteRange{((i + reader * 64) % granules) * G, G});
+        });
+    for (auto & thread : readers)
+        thread.join();
+    done = true;
+    accounting.join();
+    segment.account(t.efficiency, granules * G, granules * G, /*large=*/false);
+
+    EXPECT_FALSE(segment.hasUnaccountedReads());
+    EXPECT_EQ(segment.getInfo(/*current_window=*/0, granules * G, granules * G).active_bytes, granules * G);
+    t.advance(W);
+    expectSnapshot(t.efficiency.getSnapshot(), granules * G, 0, 0);
 }

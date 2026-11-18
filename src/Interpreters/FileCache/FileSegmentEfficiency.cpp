@@ -3,12 +3,15 @@
 #include <base/defines.h>
 
 #include <algorithm>
+#include <bit>
 
 namespace DB
 {
 
 namespace
 {
+
+constexpr size_t WORD_BITS = 64;
 
 size_t lastGranuleNumber(size_t size)
 {
@@ -20,31 +23,85 @@ size_t lastGranuleSize(size_t size)
     return size - lastGranuleNumber(size) * FileSegmentEfficiency::GRANULE_SIZE;
 }
 
+size_t wordCount(size_t range_size)
+{
+    return lastGranuleNumber(range_size) / WORD_BITS + 1;
+}
+
+/// The bits of the granules `[first, last]` in the word `word`.
+UInt64 granuleMask(size_t word, size_t first, size_t last)
+{
+    const size_t word_first = word * WORD_BITS;
+    const size_t low = std::max(first, word_first) - word_first;
+    const size_t high = std::min(last, word_first + WORD_BITS - 1) - word_first;
+    const UInt64 up_to_high = high == WORD_BITS - 1 ? ~UInt64(0) : (UInt64(1) << (high + 1)) - 1;
+    return up_to_high & ~((UInt64(1) << low) - 1);
+}
+
+bool isSet(const std::vector<UInt64> & words, size_t granule)
+{
+    return (words[granule / WORD_BITS] >> (granule % WORD_BITS)) & 1;
+}
+
 }
 
 FileSegmentEfficiency::FileSegmentEfficiency(size_t range_size)
-    : active_granules(lastGranuleNumber(range_size) + 1, false)
+    : read_granules(wordCount(range_size))
+    , active_granules(wordCount(range_size), 0)
 {
 }
 
-void FileSegmentEfficiency::markRead(
-    FileCacheEfficiency & cache_efficiency, ByteRange range, ByteRange read, Int64 reserved_bytes, bool large)
+void FileSegmentEfficiency::markRead(ByteRange range, ByteRange read)
 {
-    const auto granules = getGranules(range, read);
-    const auto current_window = cache_efficiency.countRead({
-        .segment_window = window,
-        .reserved_bytes = reserved_bytes,
-        .active_bytes_in_segment_window = granules && window != FileCacheEfficiency::NEVER_READ
-            ? static_cast<Int64>(getNewActiveBytes(*granules, range.size, /*new_window=*/false))
-            : 0,
-        .active_bytes_in_new_window = granules ? static_cast<Int64>(getNewActiveBytes(*granules, range.size, /*new_window=*/true)) : 0,
-        .large = large,
-    });
+    const auto overlap = read.intersect(range);
+    if (overlap.size == 0)
+        return;
+    const size_t first = (overlap.offset - range.offset) / GRANULE_SIZE;
+    const size_t last = (overlap.end() - 1 - range.offset) / GRANULE_SIZE;
+    chassert(last / WORD_BITS < read_granules.size());
+    for (size_t word = first / WORD_BITS; word <= last / WORD_BITS; ++word)
+    {
+        const UInt64 mask = granuleMask(word, first, last);
+        /// A read of marked granules does not write, so the readers of hot data do not share a written cache line.
+        if ((read_granules[word].load(std::memory_order_relaxed) & mask) != mask)
+            read_granules[word].fetch_or(mask, std::memory_order_relaxed);
+    }
+}
 
-    if (window != current_window)
-        startWindow(current_window, range.size);
-    if (granules)
-        setGranules(*granules);
+bool FileSegmentEfficiency::hasUnaccountedReads() const
+{
+    return std::ranges::any_of(read_granules, [](const auto & word) { return word.load(std::memory_order_relaxed) != 0; });
+}
+
+void FileSegmentEfficiency::account(FileCacheEfficiency & cache_efficiency, size_t range_size, Int64 reserved_bytes, bool large)
+{
+    if (!hasUnaccountedReads())
+        return;
+
+    const auto current_window = cache_efficiency.currentWindow();
+    const bool new_window = window != current_window;
+    if (new_window)
+        startWindow(current_window, range_size);
+
+    /// A granule that a reader marks after its word is taken stays for the next call.
+    const size_t last = lastGranuleNumber(range_size);
+    size_t new_granules = 0;
+    bool new_last = false;
+    for (size_t word = 0; word < read_granules.size(); ++word)
+    {
+        const UInt64 new_bits = read_granules[word].exchange(0, std::memory_order_relaxed) & ~active_granules[word];
+        active_granules[word] |= new_bits;
+        new_granules += static_cast<size_t>(std::popcount(new_bits));
+        if (word == last / WORD_BITS)
+            new_last = (new_bits >> (last % WORD_BITS)) & 1;
+    }
+    auto new_active = static_cast<Int64>(new_granules) * static_cast<Int64>(GRANULE_SIZE);
+    if (new_last)
+        new_active -= static_cast<Int64>(GRANULE_SIZE - lastGranuleSize(range_size));
+
+    cache_efficiency.apply(window, new_window
+        ? FileCacheEfficiency::Delta::enroll(new_active, reserved_bytes - new_active, large)
+        : FileCacheEfficiency::Delta::move(new_active, large));
 }
 
 void FileSegmentEfficiency::addReservedBytes(FileCacheEfficiency & cache_efficiency, Int64 delta, bool large) const
@@ -98,38 +155,14 @@ FileSegmentEfficiencyInfo FileSegmentEfficiency::getInfo(
     return info;
 }
 
-std::optional<FileSegmentEfficiency::Granules> FileSegmentEfficiency::getGranules(ByteRange range, ByteRange read)
-{
-    const auto overlap = read.intersect(range);
-    if (overlap.size == 0)
-        return std::nullopt;
-    return Granules{(overlap.offset - range.offset) / GRANULE_SIZE, (overlap.end() - 1 - range.offset) / GRANULE_SIZE};
-}
-
-size_t FileSegmentEfficiency::getNewActiveBytes(Granules granules, size_t range_size, bool new_window) const
-{
-    const auto [first, last] = granules;
-    chassert(new_window || last < active_granules.size());
-    const size_t new_granules = new_window
-        ? last - first + 1
-        : static_cast<size_t>(std::count(active_granules.begin() + first, active_granules.begin() + last + 1, false));
-    const bool new_last = last == lastGranuleNumber(range_size) && (new_window || !active_granules[last]);
-    if (!new_last)
-        return new_granules * GRANULE_SIZE;
-    return (new_granules - 1) * GRANULE_SIZE + lastGranuleSize(range_size);
-}
-
-void FileSegmentEfficiency::setGranules(Granules granules)
-{
-    chassert(granules.second < active_granules.size());
-    std::fill(active_granules.begin() + granules.first, active_granules.begin() + granules.second + 1, true);
-}
-
 size_t FileSegmentEfficiency::getActiveBytes(size_t range_size) const
 {
-    chassert(lastGranuleNumber(range_size) < active_granules.size());
-    const size_t set = std::count(active_granules.begin(), active_granules.end(), true);
-    if (!active_granules[lastGranuleNumber(range_size)])
+    const size_t last = lastGranuleNumber(range_size);
+    chassert(last / WORD_BITS < active_granules.size());
+    size_t set = 0;
+    for (const UInt64 word : active_granules)
+        set += static_cast<size_t>(std::popcount(word));
+    if (!isSet(active_granules, last))
         return set * GRANULE_SIZE;
     return (set - 1) * GRANULE_SIZE + lastGranuleSize(range_size);
 }
@@ -141,8 +174,7 @@ void FileSegmentEfficiency::startWindow(FileCacheEfficiency::Window new_window, 
         previous_hit_window = window;
         previous_active_bytes = getActiveBytes(range_size);
     }
-    /// The range never grows, so the granules allocated in the constructor are enough.
-    std::fill(active_granules.begin(), active_granules.end(), false);
+    std::ranges::fill(active_granules, 0);
     window = new_window;
 }
 

@@ -11,6 +11,7 @@ namespace DB
 
 /// The file segments of one `FileCache` by range size: their number and reserved bytes per bucket, and the
 /// reserved bytes of large ones (range > `boundary_alignment`). Temporary data does not count.
+/// A file segment changes them when it is loaded, released by a holder, shrunk or removed, not at each reservation.
 class FileCacheSegmentSizes
 {
 public:
