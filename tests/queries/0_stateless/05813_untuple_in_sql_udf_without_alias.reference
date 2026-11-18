@@ -31,11 +31,19 @@ l(11).1	l(22).1
 11	22
 l(x -> (x + 1), 1).1	l(x -> (x + 2), 1).1
 2	3
+l(x -> (x + 1), [1])	l(x -> (x + 2), [1])
+[2]	[3]
+l(x -> (x + 1), [1])	l(x -> (x + 2), [1])
+[2]	[3]
+k(x -> (x + 1), 1)	k(x -> (x + 2), 1)
+2	3
 -- WITH lambdas without a SQL UDF call keep their names: stored view definitions keep WITH lambdas
 tupleElement((x), \'1\')
 11
 tupleElement((x), \'1\')
 11
+l(__projection_name_placeholder, [1])
+[2]
 -- an alias still names the columns
 a.1	b.1
 11	22

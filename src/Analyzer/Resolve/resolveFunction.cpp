@@ -3098,11 +3098,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             IdentifierResolveScope & lambda_scope = createIdentifierResolveScope(lambda_expression_clone, &scope /*parent_scope*/);
             lambda_scope.inlined_call_arguments_projection_names = arguments_projection_names;
             lambda_scope.inlines_sql_udf = inlines_sql_udf;
-            /// Stored view definitions keep `WITH` lambdas, and their columns depend on these names. SQL UDF calls are
-            /// substituted at `CREATE`, so their names may change.
-            if (inlines_sql_udf)
-                result_projection_names = { calculateInlinedCallProjectionName(node, arguments_projection_names, scope) };
             ProjectionNames lambda_projection_names = resolveLambda(lambda_expression_untyped, lambda_expression_clone, function_arguments, lambda_scope);
+
+            /// Stored view definitions keep `WITH` lambdas, and their columns depend on these names. SQL UDF calls are
+            /// substituted at `CREATE`, so a chain of inlined calls with a SQL UDF call may be renamed.
+            if (lambda_scope.inlines_sql_udf)
+            {
+                result_projection_names = { calculateInlinedCallProjectionName(node, arguments_projection_names, scope) };
+                const auto * enclosing_lambda = scope.scope_node->as<LambdaNode>();
+                if (scope.inlined_call_arguments_projection_names && enclosing_lambda && enclosing_lambda->getExpression() == node)
+                    scope.inlines_sql_udf = true;
+            }
 
             auto & resolved_lambda = lambda_expression_clone->as<LambdaNode &>();
             node = resolved_lambda.getExpression();

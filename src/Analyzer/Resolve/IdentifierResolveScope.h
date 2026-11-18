@@ -148,7 +148,7 @@ struct IdentifierResolveScope
     /// Set when this lambda scope inlines a call: the projection names of the call's arguments.
     std::optional<ProjectionNames> inlined_call_arguments_projection_names;
 
-    /// The inlined call is a SQL UDF call.
+    /// The inlined call is a SQL UDF call or, once the body is resolved, its body is an inlined call for which this holds.
     bool inlines_sql_udf = false;
 
     /** Names from `expression_argument_name_to_node` that are temporarily invisible.
