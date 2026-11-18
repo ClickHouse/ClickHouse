@@ -1,13 +1,10 @@
 #pragma once
 
 #include <Columns/ColumnsNumber.h>
-#include <Columns/IColumn.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/PODArray.h>
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/IJoin.h>
-#include <base/FnTraits.h>
 
 namespace DB
 {
@@ -15,22 +12,14 @@ namespace DB
 struct ColumnWithTypeAndName;
 class TableJoin;
 class IColumn;
-struct JoinSettings;
 
+using ColumnRawPtrs = std::vector<const IColumn *>;
 using ColumnPtrMap = std::unordered_map<String, ColumnPtr>;
 using ColumnRawPtrMap = std::unordered_map<String, const IColumn *>;
 using UInt8ColumnDataPtr = const ColumnUInt8::Container *;
 
 namespace JoinCommon
 {
-
-/// Whether one of the algorithms the `join_algorithm` setting enables can execute this kind and
-/// strictness. The sort-merge algorithms implement only a part of them - neither `SEMI` nor `ANTI`,
-/// and `partial_merge` does not do `ANY` beyond `INNER`/`LEFT` - so a plan rewrite that produces such
-/// a join under `join_algorithm = 'full_sorting_merge'` or `'partial_merge'` would turn a query that
-/// runs into `NOT_IMPLEMENTED`. `grace_hash` counts only where `JoinSettings::canRunGraceHash` says
-/// the join pickers would not pass it over on any node.
-bool canBeExecutedByEnabledAlgorithm(const JoinSettings & join_settings, JoinKind kind, JoinStrictness strictness);
 
 /// Helper interface to work with mask from JOIN ON section
 class JoinMask
@@ -63,24 +52,15 @@ public:
 
     bool hasData() { return column != nullptr || kind != Kind::Unknown; }
 
-    [[nodiscard]] size_t getSize() const { return size; }
+    size_t getSize() const { return size; }
 
-    [[nodiscard]] bool isRowFiltered(size_t row) const
+    bool isRowFiltered(size_t row) const
     {
         chassert(!column || row < size);
         return (kind == Kind::AllFalse) || (kind == Kind::Unknown && !assert_cast<const ColumnUInt8 &>(*column).getData()[row]);
     }
 
-    /// The raw mask bytes when the mask is a real column (kind `Unknown`), nullptr otherwise.
-    /// Lets hot loops hoist the pointer into a local instead of re-reading it through the object.
-    /// The bytes are boolean-like: 0 = row filtered, any non-zero value = row passes.
-    [[nodiscard]] const UInt8 * getRawDataOrNull() const
-    {
-        chassert(kind != Kind::Unknown || column);
-        return kind == Kind::Unknown ? assert_cast<const ColumnUInt8 &>(*column).getData().data() : nullptr;
-    }
-
-    [[nodiscard]] Kind getKind() const { return kind; }
+    Kind getKind() const { return kind; }
 
 private:
     ColumnPtr column;
@@ -88,42 +68,6 @@ private:
     Kind kind;
 };
 
-
-/** JOIN does not need a type that is able to represent all the values of both keys (the least supertype).
-  * It is enough to have a type that is able to represent the values that both of the key types have in common
-  * (the most subtype). A value that cannot be represented in this type is not equal to any value from the other
-  * side, so it does not match anything, and `accurateCastOrNull` converts it to NULL.
-  *
-  * For example, for `UInt64` and `Int64` the least supertype does not exist, but the values that both of them
-  * can hold are `[0, 9223372036854775807]`, and all of them fit into `UInt64`.
-  *
-  * The result is never Nullable or LowCardinality. Returns nullptr if there is no such type.
-  *
-  * `force_support_conversion` keeps a Tuple element that is Nullable on one side only, so that a whole
-  * key column can be converted to the result, which is what the merged `USING` column needs. A key
-  * conversion target must have no Nullable element at all, see `removeNullableInsideTuple`.
-  */
-DataTypePtr tryGetCommonSubtypeForJoinKeys(
-    const DataTypePtr & left_type, const DataTypePtr & right_type, bool force_support_conversion = false);
-
-/// Replaces a `Bool` of `type`, a common type of two JOIN keys, by `UInt8` where one of the keys has an `UInt8`
-/// in that place, so that a `Bool` key and an integer key are compared by value, as `=` does.
-DataTypePtr compareBoolKeysAsUInt8(DataTypePtr type, const DataTypePtr & left_type, const DataTypePtr & right_type);
-
-/** Removes the `Nullable` wrappers of the elements of a Tuple, recursively. Returns other types unchanged.
-  *
-  * The target of a JOIN key conversion must not have Nullable elements: `accurateCastOrNull` reports an
-  * inexact conversion of a Nullable element by a NULL in place of it, while a non-Nullable element is
-  * reported by a NULL of the whole Tuple. The merge algorithms compare the nested Tuples, where a NULL
-  * element is equal to a NULL element, and they cannot do otherwise: their inputs are sorted by the key,
-  * and a key that is NULL only in a nested element is not ordered to the edge of a block the way a
-  * top-level NULL is.
-  */
-DataTypePtr removeNullableInsideTuple(const DataTypePtr & type);
-
-/// Whether a JOIN key of this type can match a pair for which `equals` is not true: a NaN, a NULL nested
-/// in a Tuple, or a NULL Variant or Dynamic.
-bool keyMatchesValuesEqualsRejects(const DataTypePtr & type);
 
 bool canBecomeNullable(const DataTypePtr & type);
 DataTypePtr convertTypeToNullable(const DataTypePtr & type);
@@ -135,23 +79,17 @@ void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr & dst_co
 ColumnPtr emptyNotNullableClone(const ColumnPtr & column);
 ColumnPtr materializeColumn(const Block & block, const String & name);
 Columns materializeColumns(const Block & block, const Names & names);
-/// Like materializeColumns, but keeps LowCardinality columns as-is (only removes Const/Sparse). Used
-/// for the probe side of single-LowCardinality-column joins, whose key getter consumes the dictionary.
-Columns materializeColumnsKeepLowCardinality(const Block & block, const Names & names);
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names);
 ColumnRawPtrs getRawPointers(const Columns & columns);
 void restoreLowCardinalityInplace(Block & block, const Names & lowcard_keys);
 
 ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_names_right);
 
-Int64 getCurrentQueryMemoryUsage();
-Block materializeColumnsFromRightBlock(Block block, const Block & sample_block);
-
-/// Throw an exception if join condition column cannot be used in boolean context
+/// Throw an exception if join condition column is not UIint8
 void checkTypesOfMasks(const Block & block_left, const String & condition_name_left,
                        const Block & block_right, const String & condition_name_right);
 
-/// Throw an exception if blocks have different types of key columns. Compare up to Nullability.
+/// Throw an exception if blocks have different types of key columns . Compare up to Nullability.
 void checkTypesOfKeys(const Block & block_left, const Names & key_names_left,
                       const Block & block_right, const Names & key_names_right);
 
@@ -166,19 +104,6 @@ void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count);
 
 bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type);
 
-/** Whether a JOIN on keys of these two types behaves like a plain equality of the key values.
-  *
-  * The JOIN casts both keys to their common type and compares the results. For most type pairs this is what `=`
-  * does too, so `a = b` can be treated as an ordinary equality: it is transitive, and `CAST(a)` is the value `b`
-  * holds in the matched row. `FixedString` vs `String` is different: `=` ignores trailing zero bytes, so
-  * `toFixedString('a', 3)` is equal to both `'a'` and `'a\0\0'`, while `'a' = 'a\0\0'` is false.
-  *
-  * Allowed: equal types (up to `Nullable` and `LowCardinality`), two numbers (the JOIN refuses a lossy mix such as
-  * `Int64` vs `Float64`), two date or time types, two `FixedString`. Any other pair is declined, so new types are
-  * safe by default.
-  */
-bool isExactJoinKeyEquality(const DataTypePtr & left_type, const DataTypePtr & right_type);
-
 /// Return mask array of type ColumnUInt8 for specified column. Source should have type UInt8 or Nullable(UInt8).
 JoinMask getColumnAsMask(const Block & block, const String & column_name);
 
@@ -187,31 +112,14 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
 
 void changeLowCardinalityInplace(ColumnWithTypeAndName & column);
 
-template <Fn<size_t(size_t)> Sharder>
-IColumn::Selector hashToSelector(const PaddedPODArray<UInt32> & hashes, Sharder sharder)
-{
-    size_t num_rows = hashes.size();
-
-    IColumn::Selector selector(num_rows);
-    for (size_t i = 0; i < num_rows; ++i)
-        selector[i] = sharder(intHashCRC32(hashes[i]));
-    return selector;
-}
-
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Blocks & blocks, size_t num_shards);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & blocks, size_t num_shards);
 
-constexpr bool hasNonJoinedBlocks(JoinKind kind, JoinStrictness strictness)
-{
-    return isRightOrFull(kind) && strictness != JoinStrictness::Asof && strictness != JoinStrictness::Semi;
-}
-
 bool hasNonJoinedBlocks(const TableJoin & table_join);
 
-/// Insert default values for rows marked in filter; the defaults of `default_type` if it is set.
-ColumnPtr filterWithBlanks(
-    ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false, const DataTypePtr & default_type = nullptr);
+/// Insert default values for rows marked in filter
+ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false);
 
 }
 

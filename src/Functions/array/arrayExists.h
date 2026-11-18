@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/array/FunctionArrayMapped.h>
 
@@ -12,14 +13,6 @@ namespace DB
   */
 struct ArrayExistsImpl
 {
-    /// Declarative signature — `f(array)` overload behaves like
-    /// `f(x -> x, array)` and so requires `Array(UInt8)`. Lambda return type
-    /// may be wrapped in `Nullable` or be `Nothing` (when short-circuited
-    /// to `NULL`); see `arrayFilter` for details.
-    static constexpr auto signature =
-        "(Function((Any, ...), MaybeNullable(UInt8) | NULL | IsNothing), Array, ...) -> UInt8"
-        " OR (Array(UInt8)) -> UInt8";
-
     static bool needBoolean() { return true; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }

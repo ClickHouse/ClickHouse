@@ -31,8 +31,6 @@ public:
 
     void sync() override;
 
-    void preFinalize() override;
-
     std::string getFileName() const override { return assert_cast<WriteBufferFromFileBase *>(out)->getFileName(); }
 
 private:
@@ -47,6 +45,8 @@ private:
 
     LoggerPtr log = getLogger("WriteBufferFromEncryptedFile");
 
+    bool use_adaptive_buffer_size;
+    size_t adaptive_buffer_max_size;
 };
 
 }

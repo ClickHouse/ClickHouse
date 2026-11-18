@@ -8,18 +8,10 @@ from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
 TEMP = "/tmp"
-
-LLVM_VERSION = "23"
-
 LLVM_SOURCE_DIR = f"{TEMP}/llvm-project"
 NINJA_SOURCE_DIR = f"{TEMP}/ninja-src"
 NINJA_BUILD_DIR = f"{TEMP}/ninja-build"
 NINJA_LOG_SHARE_DIR = "share/clickhouse-build"
-JEMALLOC_VERSION = "5.4.0"
-JEMALLOC_URL = "https://github.com/jemalloc/jemalloc/releases/download/5.4.0/jemalloc-5.4.0.tar.bz2"
-JEMALLOC_SHA256 = "200776fac271093e7c2f21edd6d62657ecd2be578d9328633f2a86bfa6ef4f1d"
-JEMALLOC_SOURCE_DIR = f"{TEMP}/jemalloc-{JEMALLOC_VERSION}"
-JEMALLOC_LIBRARY = f"{JEMALLOC_SOURCE_DIR}/lib/libjemalloc_pic.a"
 STAGE1_BUILD_DIR = f"{TEMP}/toolchain-stage1"
 STAGE1_INSTALL_DIR = f"{TEMP}/toolchain-stage1-install"
 STAGE2_BUILD_DIR = f"{TEMP}/toolchain-stage2"
@@ -45,7 +37,7 @@ STAGE2_LLVM_PROJECTS = "clang;clang-tools-extra;lld;bolt;polly"
 # Cross-target triples for compiler-rt builtins. Builtins are freestanding C code
 # (no sysroot needed), built via LLVM_BUILTIN_TARGETS so the toolchain is
 # self-contained for all ClickHouse cross-compilation targets.
-# Must match the architectures supported in contrib/compiler-rt-cmake/CMakeLists.txt.
+# Must match triples in cmake/build_clang_builtin.cmake.
 CROSS_BUILTIN_TARGETS = [
     ("x86_64-unknown-linux-gnu", "Linux"),
     ("aarch64-unknown-linux-gnu", "Linux"),
@@ -53,16 +45,15 @@ CROSS_BUILTIN_TARGETS = [
     ("powerpc64le-unknown-linux-gnu", "Linux"),
     ("riscv64-unknown-linux-gnu", "Linux"),
     ("loongarch64-unknown-linux-gnu", "Linux"),
-    ("x86_64-pc-freebsd14", "FreeBSD"),
-    ("aarch64-unknown-freebsd14", "FreeBSD"),
-    ("powerpc64le-unknown-freebsd14", "FreeBSD"),
+    ("x86_64-pc-freebsd13", "FreeBSD"),
+    ("aarch64-unknown-freebsd13", "FreeBSD"),
+    ("powerpc64le-unknown-freebsd13", "FreeBSD"),
 ]
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
     CLONE_LLVM = "clone_llvm"
     BUILD_NINJA = "build_ninja"
-    BUILD_JEMALLOC = "build_jemalloc"
     STAGE1_BUILD = "stage1_build"
     PROFILE_COLLECTION = "profile_collection"
     STAGE2_BUILD = "stage2_build"
@@ -134,7 +125,7 @@ def main():
             Result.from_commands_run(
                 name="Clone LLVM",
                 command=(
-                    f"git clone --depth 1 --branch release/{LLVM_VERSION}.x"
+                    f"git clone --depth 1 --branch release/21.x"
                     f" https://github.com/llvm/llvm-project.git {LLVM_SOURCE_DIR}"
                 ),
                 retries=3,
@@ -192,40 +183,6 @@ def main():
             # Clean up source dir to save space
             clean_dirs(NINJA_SOURCE_DIR)
 
-    # Stage 0.6: Build jemalloc, which the final toolchain executables link instead of glibc malloc
-    if res and JobStages.BUILD_JEMALLOC in stages:
-        clean_dirs(JEMALLOC_SOURCE_DIR)
-        jemalloc_tarball = f"{TEMP}/jemalloc-{JEMALLOC_VERSION}.tar.bz2"
-        results.append(
-            Result.from_commands_run(
-                name=f"Download jemalloc {JEMALLOC_VERSION}",
-                command=f"curl -fsSL -o {jemalloc_tarball} {JEMALLOC_URL}",
-                retries=3,
-            )
-        )
-        res = results[-1].is_ok()
-
-        if res:
-            # jemalloc fails to start if the kernel page is larger than its own; aarch64 kernels use up to 64 KiB.
-            # Huge pages (2 MiB with 4 KiB pages) back the heap and metadata unless MALLOC_CONF says otherwise.
-            lg_page = 16 if arch == "aarch64" else 12
-            results.append(
-                Result.from_commands_run(
-                    name="Build jemalloc",
-                    command=[
-                        f"echo '{JEMALLOC_SHA256}  {jemalloc_tarball}' | sha256sum -c",
-                        f"tar -xjf {jemalloc_tarball} -C {TEMP}",
-                        f"cd {JEMALLOC_SOURCE_DIR} && ./configure"
-                        f" CC=clang-{LLVM_VERSION} CXX=clang++-{LLVM_VERSION}"
-                        f" EXTRA_CFLAGS=-g0 EXTRA_CXXFLAGS=-g0"
-                        f" --with-lg-page={lg_page} --with-lg-hugepage=21"
-                        f" --with-malloc-conf=thp:always,metadata_thp:always",
-                        f"make -C {JEMALLOC_SOURCE_DIR} -j$(nproc) build_lib_static",
-                    ],
-                )
-            )
-            res = results[-1].is_ok()
-
     # Stage 1: Build instrumented clang for PGO profile collection
     # Only needs clang + lld (for compilation/linking) and compiler-rt (profiling runtime)
     if res and JobStages.STAGE1_BUILD in stages:
@@ -239,12 +196,12 @@ def main():
             f" -DLLVM_TARGETS_TO_BUILD=Native"
             f" -DCMAKE_BUILD_TYPE=Release"
             f" -DLLVM_BUILD_INSTRUMENTED=IR"
-            f" -DCMAKE_C_COMPILER=clang-{LLVM_VERSION}"
-            f" -DCMAKE_CXX_COMPILER=clang++-{LLVM_VERSION}"
+            f" -DCMAKE_C_COMPILER=clang-21"
+            f" -DCMAKE_CXX_COMPILER=clang++-21"
             f" -DLLVM_ENABLE_LLD=ON"
             f" -DLLVM_ENABLE_TERMINFO=OFF"
-            f" -DLLVM_ENABLE_ZLIB=FORCE_ON"
-            f" -DLLVM_ENABLE_ZSTD=FORCE_ON"
+            f" -DLLVM_ENABLE_ZLIB=OFF"
+            f" -DLLVM_ENABLE_ZSTD=OFF"
             f" -DCMAKE_INSTALL_PREFIX={STAGE1_INSTALL_DIR}"
             f" -S {LLVM_SOURCE_DIR}/llvm"
             f" -B {STAGE1_BUILD_DIR}"
@@ -356,19 +313,19 @@ def main():
                     " (link failures with instrumented compiler are expected)."
                     " Profraw files from compilation steps should still be available."
                 )
-                build_result.status = Result.Status.OK
+                build_result.status = Result.Status.SUCCESS
                 build_result.info = "Build failed at link step (expected); profraw files collected"
             results.append(build_result)
 
-        # Merge profraw files with the matching `llvm-profdata` (it supports the zlib-compressed
-        # profile format the instrumented clang can emit)
+        # Merge profraw files using system llvm-profdata (stage 1 build lacks zlib
+        # support, but the profraw files may contain zlib-compressed sections)
         profraw_dir = f"{STAGE1_BUILD_DIR}/profiles/"
         if os.path.isdir(profraw_dir) and os.listdir(profraw_dir):
             results.append(
                 Result.from_commands_run(
                     name="Merge PGO profiles",
                     command=(
-                        f"llvm-profdata-{LLVM_VERSION} merge"
+                        f"llvm-profdata-21 merge"
                         f" -output={PROFDATA_PATH}"
                         f" {profraw_dir}"
                     ),
@@ -447,16 +404,15 @@ def main():
             f" -DLLVM_TARGETS_TO_BUILD=all"
             f" -DCMAKE_BUILD_TYPE=Release"
             f" -DLLVM_PROFDATA_FILE={PROFDATA_PATH}"
-            f" -DCMAKE_C_COMPILER=clang-{LLVM_VERSION}"
-            f" -DCMAKE_CXX_COMPILER=clang++-{LLVM_VERSION}"
+            f" -DCMAKE_C_COMPILER=clang-21"
+            f" -DCMAKE_CXX_COMPILER=clang++-21"
             f" -DLLVM_ENABLE_LLD=ON"
             f" -DLLVM_ENABLE_LTO=Thin"
-            # CMake links its compiler checks with these too, so add the libstdc++ that jemalloc's C++ part needs
-            f' -DCMAKE_EXE_LINKER_FLAGS="-Wl,--emit-relocs,-znow -Wl,--whole-archive {JEMALLOC_LIBRARY} -Wl,--no-whole-archive -lstdc++"'
+            f' -DCMAKE_EXE_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
             f' -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
             f" -DLLVM_ENABLE_TERMINFO=OFF"
-            f" -DLLVM_ENABLE_ZLIB=FORCE_ON"
-            f" -DLLVM_ENABLE_ZSTD=FORCE_ON"
+            f" -DLLVM_ENABLE_ZLIB=OFF"
+            f" -DLLVM_ENABLE_ZSTD=OFF"
             f" -DLLVM_BINUTILS_INCDIR=/usr/include"
             f' -DLLVM_BUILTIN_TARGETS="{builtin_targets}"'
             f" {builtin_cmake_args}"
@@ -502,9 +458,9 @@ def main():
     if res and JobStages.BOLT_OPTIMIZATION in stages:
         bolt_ok = True
         bolt_results = []
-        clang_binary = f"{STAGE2_INSTALL_DIR}/bin/clang-{LLVM_VERSION}"
+        clang_binary = f"{STAGE2_INSTALL_DIR}/bin/clang-21"
 
-        # Find the actual clang binary (it may be a different version than expected)
+        # Find the actual clang binary (it may be clang-21, clang-20, etc.)
         if not os.path.exists(clang_binary):
             candidates = sorted(
                 glob.glob(f"{STAGE2_INSTALL_DIR}/bin/clang-[0-9]*"),
@@ -693,16 +649,6 @@ def main():
             shutil.copy2(ninja_log_saved, f"{ninja_log_dir}/ninja_log")
             print(f"Installed .ninja_log to {ninja_log_dir}/ninja_log")
 
-        # LLVM installs the versioned `clang-<version>` plus unversioned
-        # `clang++`->`clang`->`clang-<version>`, but not a versioned `clang++-<version>`. ClickHouse
-        # selects compilers by versioned name, so without this the C++ compiler resolves to whatever
-        # `clang++-<version>` is elsewhere on PATH (e.g. a distro one) while C/ASM use this
-        # toolchain - a silent mismatch. Add the missing symlink.
-        clangpp = f"{STAGE2_INSTALL_DIR}/bin/clang++-{LLVM_VERSION}"
-        if not os.path.lexists(clangpp):
-            os.symlink("clang", clangpp)
-            print(f"Created symlink {clangpp} -> clang")
-
         # Strip ELF executables and shared libraries to reduce archive size
         # (relocations from --emit-relocs and LTO symbols are no longer needed).
         # Use "file" to skip scripts (Python, Perl, shell) that strip cannot handle.
@@ -718,19 +664,6 @@ def main():
             )
         )
         res = results[-1].is_ok()
-
-        # The executables link jemalloc statically, and its license must ship with them
-        if res:
-            results.append(
-                Result.from_commands_run(
-                    name="Install jemalloc license",
-                    command=(
-                        f"install -D -m 644 {JEMALLOC_SOURCE_DIR}/COPYING"
-                        f" {STAGE2_INSTALL_DIR}/share/doc/jemalloc/COPYING"
-                    ),
-                )
-            )
-            res = results[-1].is_ok()
 
         if res:
             output_path = f"{OUTPUT_DIR}/clang-pgo-bolt.tar.zst"

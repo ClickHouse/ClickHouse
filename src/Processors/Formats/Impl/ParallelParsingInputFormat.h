@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Processors/Formats/IInputFormat.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/DequeWithMemoryTracking.h>
 #include <Formats/FormatFactory.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
@@ -25,11 +23,6 @@ namespace ErrorCodes
 }
 
 class Context;
-
-/// True if the current thread is a parallel-parsing segmentator whose format has finished parsing; false on
-/// any other thread. A `FileSegmentationEngine` that reads far past `min_bytes` in a single call (Avro reads
-/// a whole OCF block) polls it to stop mid-read.
-bool isSegmentatorParsingFinished();
 
 /**
  * ORDER-PRESERVING parallel parsing of data formats.
@@ -75,7 +68,7 @@ bool isSegmentatorParsingFinished();
  *  4) repeat until it encounters unit that is marked as "past_the_end"
  * All threads must also check for cancel/eof/exception flags.
  */
-class ParallelParsingInputFormat final : public IInputFormat
+class ParallelParsingInputFormat : public IInputFormat
 {
 public:
     /* Used to recreate parser on every new data piece.*/
@@ -131,11 +124,6 @@ public:
     void setSerializationHints(const SerializationInfoByName & hints) override
     {
         serialization_hints = hints;
-    }
-
-    void setColumnMapper(const ColumnMapperPtr & column_mapper_) override
-    {
-        column_mapper = column_mapper_;
     }
 
     size_t getApproxBytesReadForChunk() const override { return last_approx_bytes_read_for_chunk; }
@@ -200,7 +188,7 @@ private:
 
                     case IProcessor::Status::NeedData: break;
                     case IProcessor::Status::Async: break;
-                    case IProcessor::Status::UpdatePipeline:
+                    case IProcessor::Status::ExpandPipeline:
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "One of the parsers returned status {} during parallel parsing",
                                              IProcessor::statusToName(status));
                 }
@@ -225,7 +213,6 @@ private:
     BlockMissingValues last_block_missing_values;
     size_t last_approx_bytes_read_for_chunk = 0;
     SerializationInfoByName serialization_hints{{}};
-    ColumnMapperPtr column_mapper;
 
     /// Non-atomic because it is used in one thread.
     std::optional<size_t> next_block_in_current_unit;
@@ -269,9 +256,9 @@ private:
 
     struct ChunkExt
     {
-        Chunks chunk;
-        VectorWithMemoryTracking<BlockMissingValues> block_missing_values;
-        VectorWithMemoryTracking<size_t> approx_chunk_sizes;
+        std::vector<Chunk> chunk;
+        std::vector<BlockMissingValues> block_missing_values;
+        std::vector<size_t> approx_chunk_sizes;
     };
 
     struct ProcessingUnit
@@ -283,7 +270,7 @@ private:
 
         ChunkExt chunk_ext;
         Memory<> segment;
-        size_t original_segment_size{};
+        size_t original_segment_size;
         std::atomic<ProcessingUnitStatus> status;
         /// Needed for better exception message.
         size_t offset = 0;
@@ -294,7 +281,7 @@ private:
 
     /// We use deque instead of vector, because it does not require a move
     /// constructor, which is absent for atomics that are inside ProcessingUnit.
-    DequeWithMemoryTracking<ProcessingUnit> processing_units;
+    std::deque<ProcessingUnit> processing_units;
 
     /// Compute it to have a more understandable error message.
     size_t successfully_read_rows_count{0};
