@@ -1,6 +1,5 @@
 ---
 description: 'Computes the skewness of a sequence.'
-slug: /sql-reference/aggregate-functions/reference/skewpop
 title: 'skewPop'
 doc_type: 'reference'
 ---

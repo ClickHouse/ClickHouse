@@ -2,7 +2,6 @@
 description: 'System table containing logging entries with information about `BACKUP`
   and `RESTORE` operations.'
 keywords: ['system table', 'backups']
-slug: /operations/system-tables/backups
 title: 'system.backups'
 doc_type: 'reference'
 ---

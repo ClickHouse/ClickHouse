@@ -1,6 +1,5 @@
 ---
 description: 'Calculates the arithmetic mean.'
-slug: /sql-reference/aggregate-functions/reference/avg
 title: 'avg'
 doc_type: 'reference'
 ---

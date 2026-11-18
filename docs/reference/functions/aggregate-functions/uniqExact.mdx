@@ -1,6 +1,5 @@
 ---
 description: 'Calculates the exact number of different argument values.'
-slug: /sql-reference/aggregate-functions/reference/uniqexact
 title: 'uniqExact'
 doc_type: 'reference'
 ---

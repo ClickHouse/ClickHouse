@@ -1,5 +1,4 @@
 ---
-slug: /cloud/billing/marketplace/migrate
 title: 'Migrate billing from pay-as-you-go (PAYG) to a committed spend contract in a cloud marketplace'
 description: 'Migrate from pay-as-you-go to committed spend contract.'
 keywords: ['marketplace', 'billing', 'PAYG', 'pay-as-you-go', 'committed spend contract']

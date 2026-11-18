@@ -1,5 +1,4 @@
 ---
-slug: /integrations/misc
 keywords: ['visual interfaces', 'GUI', 'proxy', 'third-party integrations']
 title: 'Tools'
 description: 'Landing page for the Tools section'

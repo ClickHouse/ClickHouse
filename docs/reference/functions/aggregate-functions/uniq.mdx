@@ -1,6 +1,5 @@
 ---
 description: 'Calculates the approximate number of different values of the argument.'
-slug: /sql-reference/aggregate-functions/reference/uniq
 title: 'uniq'
 doc_type: 'reference'
 ---

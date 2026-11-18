@@ -1,6 +1,5 @@
 ---
 description: 'Applies bit-wise `XOR` for series of numbers.'
-slug: /sql-reference/aggregate-functions/reference/groupbitxor
 title: 'groupBitXor'
 doc_type: 'reference'
 ---

@@ -1,6 +1,5 @@
 ---
 description: 'Applies bit-wise `AND` for series of numbers.'
-slug: /sql-reference/aggregate-functions/reference/groupbitand
 title: 'groupBitAnd'
 doc_type: 'reference'
 ---

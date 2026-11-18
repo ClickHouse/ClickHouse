@@ -1,6 +1,5 @@
 ---
 description: 'Creates an array from different argument values.'
-slug: /sql-reference/aggregate-functions/reference/groupuniqarray
 title: 'groupUniqArray'
 doc_type: 'reference'
 ---

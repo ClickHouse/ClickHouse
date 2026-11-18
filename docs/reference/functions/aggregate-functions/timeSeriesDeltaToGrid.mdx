@@ -1,6 +1,5 @@
 ---
 description: 'Aggregate function that calculates PromQL-like delta over time series data on the specified grid.'
-slug: /sql-reference/aggregate-functions/reference/timeSeriesDeltaToGrid
 title: 'timeSeriesDeltaToGrid'
 doc_type: 'reference'
 ---

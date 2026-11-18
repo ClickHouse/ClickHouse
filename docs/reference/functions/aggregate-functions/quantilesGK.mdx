@@ -1,6 +1,5 @@
 ---
 description: 'quantilesGK works similarly to quantileGK but allows us to calculate quantities at different levels simultaneously and returns an array.'
-slug: /sql-reference/aggregate-functions/reference/quantilesGK
 title: 'quantilesGK'
 doc_type: 'reference'
 ---

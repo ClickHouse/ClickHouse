@@ -1,6 +1,5 @@
 ---
 description: 'Calculates the population variance.'
-slug: /sql-reference/aggregate-functions/reference/varPop
 title: 'varPop'
 doc_type: 'reference'
 ---

@@ -1,6 +1,5 @@
 ---
 description: 'Aggregate function that calculates PromQL-like changes over time series data on the specified grid.'
-slug: /sql-reference/aggregate-functions/reference/timeSeriesChangesToGrid
 title: 'timeSeriesChangesToGrid'
 doc_type: 'reference'
 ---

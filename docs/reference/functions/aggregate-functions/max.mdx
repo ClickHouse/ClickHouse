@@ -1,6 +1,5 @@
 ---
 description: 'Aggregate function that calculates the maximum across a group of values.'
-slug: /sql-reference/aggregate-functions/reference/max
 title: 'max'
 doc_type: 'reference'
 ---

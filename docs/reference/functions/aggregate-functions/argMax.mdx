@@ -1,6 +1,5 @@
 ---
 description: 'Calculates the `arg` value for a maximum `val` value.'
-slug: /sql-reference/aggregate-functions/reference/argmax
 title: 'argMax'
 doc_type: 'reference'
 ---

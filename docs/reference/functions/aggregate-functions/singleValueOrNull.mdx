@@ -2,7 +2,6 @@
 description: 'The aggregate function `singleValueOrNull` is used to implement subquery
   operators, such as `x = ALL (SELECT ...)`. It checks if there is only one unique
   non-NULL value in the data.'
-slug: /sql-reference/aggregate-functions/reference/singlevalueornull
 title: 'singleValueOrNull'
 doc_type: 'reference'
 ---

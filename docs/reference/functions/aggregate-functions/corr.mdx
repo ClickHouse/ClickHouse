@@ -1,6 +1,5 @@
 ---
 description: 'Calculates the Pearson correlation coefficient.'
-slug: /sql-reference/aggregate-functions/reference/corr
 title: 'corr'
 doc_type: 'reference'
 ---

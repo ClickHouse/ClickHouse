@@ -1,5 +1,4 @@
 ---
-slug: /faq/use-cases/key-value
 title: 'Can I use ClickHouse as a key-value storage?'
 toc_hidden: true
 toc_priority: 101
