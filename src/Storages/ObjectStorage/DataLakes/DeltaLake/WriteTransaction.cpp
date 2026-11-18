@@ -231,23 +231,28 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
         rows = std::min(std::max<size_t>(rows, 1), write_metadata.num_rows - begin);
         const size_t end = begin + rows;
 
-        ffi::FFI_ArrowArray array{};
-        ffi::FFI_ArrowSchema schema{};
+        /// The structs are declared with the C data interface types and only cast to the kernel's identical
+        /// `ffi::FFI_Arrow*` types when passed to it: the `release` callbacks must be called through the
+        /// function type they are defined with, otherwise it is undefined behavior (`-fsanitize=function`).
+        ::ArrowArray array{};
+        ::ArrowSchema schema{};
         SCOPE_EXIT({
             if (schema.release)
                 schema.release(&schema);
         });
-        DB::ArrowIPC::exportSchemaToC(write_metadata.names, write_metadata.types, format_settings, *reinterpret_cast<::ArrowSchema *>(&schema));
-        DB::ArrowIPC::exportRecordBatchToC(
-            write_metadata.columns, write_metadata.types, format_settings, begin, end, *reinterpret_cast<::ArrowArray *>(&array));
+        DB::ArrowIPC::exportSchemaToC(write_metadata.names, write_metadata.types, format_settings, schema);
+        DB::ArrowIPC::exportRecordBatchToC(write_metadata.columns, write_metadata.types, format_settings, begin, end, array);
         begin = end;
 
         KernelEngineData engine_data;
         try
         {
-            /// Takes ownership of `array` (but not`schema`) if successfully called.
+            /// Takes ownership of `array` (but not `schema`) if successfully called.
             engine_data = DeltaLake::KernelUtils::unwrapResult(
-                ffi::get_engine_data(array, &schema, &KernelUtils::allocateError),
+                ffi::get_engine_data(
+                    *reinterpret_cast<ffi::FFI_ArrowArray *>(&array),
+                    reinterpret_cast<ffi::FFI_ArrowSchema *>(&schema),
+                    &KernelUtils::allocateError),
                 "get_engine_data");
         }
         catch (...)
