@@ -179,6 +179,28 @@ local_query "CREATE TABLE t_add (id Int64) ENGINE = IcebergLocal('${WORK_DIR}/t_
     INSERT INTO t_add SELECT number + 1000, number % 7 FROM numbers(1000);"
 stats t_add "id c"
 
+echo "a promoted column gets no sketch: its parent sketch hashes the narrower type"
+local_query "CREATE TABLE t_promote (id Int64, n Int32) ENGINE = IcebergLocal('${WORK_DIR}/t_promote/');
+    INSERT INTO t_promote SELECT number, number % 7 FROM numbers(1000);
+    ALTER TABLE t_promote MODIFY COLUMN n Int64;
+    INSERT INTO t_promote SELECT number + 1000, number % 7 FROM numbers(1000);"
+stats t_promote "id n"
+
+echo "a parent blob that the statistics entry does not list is not unioned"
+local_query "CREATE TABLE t_unlisted (id Int64, s String) ENGINE = IcebergLocal('${WORK_DIR}/t_unlisted/');
+    INSERT INTO t_unlisted SELECT number, toString(number % 10) FROM numbers(1000);"
+python3 - "$(find "${WORK_DIR}/t_unlisted/metadata/" -name '*.metadata.json' | sort -V | tail -n 1)" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+metadata = json.load(open(path))
+for entry in metadata['statistics']:
+    entry['blob-metadata'] = [blob for blob in entry['blob-metadata'] if blob['fields'] != [2]]
+json.dump(metadata, open(path, 'w'))
+PYEOF
+local_query "CREATE TABLE t_unlisted ENGINE = IcebergLocal('${WORK_DIR}/t_unlisted/');
+    INSERT INTO t_unlisted SELECT number + 1000, toString(number % 10 + 10) FROM numbers(1000);"
+stats t_unlisted "id s"
+
 echo "expire_snapshots removes the statistics of the expired snapshots"
 run t_insert "INSERT INTO t_insert $(values 30000 100); ALTER TABLE t_insert EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1);" \
     | grep statistics

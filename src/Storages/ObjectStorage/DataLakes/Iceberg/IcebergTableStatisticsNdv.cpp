@@ -20,6 +20,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
 
+#include <unordered_map>
 #include <unordered_set>
 
 namespace DB
@@ -102,6 +103,15 @@ namespace
 
 using SketchByFieldId = std::map<Int32, PuffinColumnThetaSketch::Serialized>;
 
+/// How the current top-level fields differ from the schema a snapshot was written with.
+struct SchemaChanges
+{
+    /// Absent from it and without an `initial-default`: NULL in all its rows.
+    std::unordered_set<Int32> null_fields;
+    /// With another type in it (a promotion such as `int` to `long`): its sketches hash other bytes.
+    std::unordered_set<Int32> retyped_fields;
+};
+
 struct ParentSketches
 {
     bool has_rows = false;
@@ -149,11 +159,14 @@ public:
         RelativePathWithMetadata object_info(parent_path);
         auto buf = createReadBuffer(object_info, object_storage, context, getLogger("IcebergTableStatisticsNdv"));
         PuffinReader reader(*buf);
-        ParentSketches parent{.has_rows = true, .sketches = {}, .fields_null_in_parent = fieldsNullIn(parent_snapshot)};
+        auto changes = schemaChanges(parent_snapshot);
+        const auto listed_fields = listedSketchFields(parent_entry, parent_snapshot_id);
+        ParentSketches parent{.has_rows = true, .sketches = {}, .fields_null_in_parent = std::move(changes.null_fields)};
         for (const auto & blob : reader.getBlobs())
         {
             /// A file can keep the blobs of an earlier snapshot (Trino's `ANALYZE` of some columns): they miss later rows.
-            if (blob.type != PUFFIN_DATASKETCHES_THETA_BLOB_TYPE || blob.fields.size() != 1 || blob.snapshot_id != parent_snapshot_id)
+            if (blob.type != PUFFIN_DATASKETCHES_THETA_BLOB_TYPE || blob.fields.size() != 1 || blob.snapshot_id != parent_snapshot_id
+                || !listed_fields.contains(blob.fields[0]) || changes.retyped_fields.contains(blob.fields[0]))
                 continue;
             if (auto bytes = reader.readBlob(blob))
                 parent.sketches.emplace(blob.fields[0], std::move(*bytes));
@@ -231,8 +244,7 @@ private:
         return nullptr;
     }
 
-    /// The current top-level fields without an `initial-default` that the schema `other` was written with lacks.
-    [[nodiscard]] std::unordered_set<Int32> fieldsNullIn(const Poco::JSON::Object::Ptr & other) const
+    [[nodiscard]] SchemaChanges schemaChanges(const Poco::JSON::Object::Ptr & other) const
     {
         if (!other || !other->has(Iceberg::f_schema_id) || !metadata->has(Iceberg::f_current_schema_id))
             return {};
@@ -240,13 +252,42 @@ private:
         const auto current_fields = findSchemaFields(metadata->getValue<Int64>(Iceberg::f_current_schema_id));
         if (!snapshot_fields || !current_fields)
             return {};
-        std::unordered_set<Int32> result;
-        for (unsigned i = 0; i < current_fields->size(); ++i)
-            if (const auto field = current_fields->getObject(i); !field->has(Iceberg::f_initial_default))
-                result.insert(field->getValue<Int32>(Iceberg::f_id));
+        std::unordered_map<Int32, String> snapshot_types;
         for (unsigned i = 0; i < snapshot_fields->size(); ++i)
-            result.erase(snapshot_fields->getObject(i)->getValue<Int32>(Iceberg::f_id));
-        return result;
+        {
+            const auto field = snapshot_fields->getObject(i);
+            snapshot_types.emplace(field->getValue<Int32>(Iceberg::f_id), field->get(Iceberg::f_type).toString());
+        }
+        SchemaChanges changes;
+        for (unsigned i = 0; i < current_fields->size(); ++i)
+        {
+            const auto field = current_fields->getObject(i);
+            const auto id = field->getValue<Int32>(Iceberg::f_id);
+            if (const auto type = snapshot_types.find(id); type == snapshot_types.end())
+            {
+                if (!field->has(Iceberg::f_initial_default))
+                    changes.null_fields.insert(id);
+            }
+            else if (type->second != field->get(Iceberg::f_type).toString())
+                changes.retyped_fields.insert(id);
+        }
+        return changes;
+    }
+
+    /// The fields of the theta sketches of `snapshot_id` that the statistics entry lists, as readers take them.
+    [[nodiscard]] static std::unordered_set<Int32> listedSketchFields(const Poco::JSON::Object::Ptr & entry, Int64 snapshot_id)
+    {
+        std::unordered_set<Int32> fields;
+        const auto blobs = entry->getArray(Iceberg::f_blob_metadata);
+        for (unsigned i = 0; blobs && i < blobs->size(); ++i)
+        {
+            const auto blob = blobs->getObject(i);
+            const auto blob_fields = blob->getArray(Iceberg::f_fields);
+            if (blob->getValue<String>(Iceberg::f_type) == PUFFIN_DATASKETCHES_THETA_BLOB_TYPE && blob_fields && blob_fields->size() == 1
+                && blob->getValue<Int64>(Iceberg::f_metadata_snapshot_id) == snapshot_id)
+                fields.insert(blob_fields->getElement<Int32>(0));
+        }
+        return fields;
     }
 
     Poco::JSON::Object::Ptr metadata;

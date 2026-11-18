@@ -26,6 +26,10 @@ drop partition keeps the parent's sketches
 id:2000/1000 s:20/10 p:2/1
 a column added to a table with rows gets the sketch of the new rows
 id:2000/2000 c:7/7
+a promoted column gets no sketch: its parent sketch hashes the narrower type
+id:2000/2000
+a parent blob that the statistics entry does not list is not unioned
+id:2000/2000
 expire_snapshots removes the statistics of the expired snapshots
 deleted_statistics_files_count	2
 statistics entries: 1

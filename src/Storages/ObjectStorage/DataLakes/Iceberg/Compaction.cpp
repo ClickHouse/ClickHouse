@@ -1473,6 +1473,7 @@ static bool writeMetadataFiles(
     }
 
     /// The current snapshot holds every rewritten row.
+    /// TODO: keep the statistics of the retained snapshots, whose files `clearOldFiles` deletes.
     std::optional<String> statistics_file_path;
     if (column_sketches && metadata_object->has(Iceberg::f_current_snapshot_id))
         if (auto current = snapshot_id_to_snapshot.find(metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id));
