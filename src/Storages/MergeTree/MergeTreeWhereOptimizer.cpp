@@ -929,20 +929,27 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     /// Move conditions unless the ratio of total_size_of_moved_conditions to the total_size_of_queried_columns is less than some threshold.
     while (!where_conditions.empty())
     {
-        /// Move the best condition to PREWHERE if it is viable; one that must follow the preceding ones only once it is first.
+        /// Move the best condition to PREWHERE if it is viable. One that must follow the preceding ones is moved only
+        /// after all of them, so while it is the best one, the best of them is moved instead.
         const bool prewhere_is_empty = prewhere_conditions.empty() && !where_optimizer_context.has_existing_prewhere;
         auto it = where_conditions.end();
+        bool preceding_can_move = true;
+        bool preceding_has_expensive = false;
         for (auto candidate = where_conditions.begin(); candidate != where_conditions.end(); ++candidate)
         {
-            if (candidate->must_follow_preceding_conditions && candidate != where_conditions.begin())
-                continue;
-            if (candidate->must_be_first_in_prewhere && !prewhere_is_empty)
-                continue;
-            if (it == where_conditions.end() || *candidate < *it)
+            const bool can_move = candidate->viable
+                && (!candidate->must_follow_preceding_conditions
+                    || (preceding_can_move && (candidate->expensive || !preceding_has_expensive)))
+                && (!candidate->must_be_first_in_prewhere || (prewhere_is_empty && candidate == where_conditions.begin()));
+            if (can_move && (it == where_conditions.end() || *candidate < *it))
                 it = candidate;
+            preceding_can_move = preceding_can_move && can_move;
+            preceding_has_expensive = preceding_has_expensive || candidate->expensive;
         }
+        while (it != where_conditions.end() && it != where_conditions.begin() && it->must_follow_preceding_conditions)
+            it = std::min_element(where_conditions.begin(), it);
 
-        if (it == where_conditions.end() || !it->viable)
+        if (it == where_conditions.end())
             break;
 
         /// If any non-expensive conditions stay in WHERE then don't move expensive conditions to PREWHERE
