@@ -677,7 +677,7 @@ int SocketImpl::waitForSendOrReceive(Poco::Timespan& timeout, int mode)
 		if (err != POCO_EINTR) error(err);
 	}
 #else
-	throw NotImplementedException("waitForSendOrReceive needs poll");
+#error "waitForSendOrReceive needs poll"
 #endif
 }
 
