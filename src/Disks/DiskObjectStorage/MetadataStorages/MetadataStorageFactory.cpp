@@ -1,6 +1,8 @@
 #include <Common/Macros.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageFactory.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/InMemoryRemovalQueue.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PersistentRemovalQueue.h>
 #if CLICKHOUSE_CLOUD
     #include <Disks/DiskObjectStorage/MetadataStorages/Keeper/MetadataStorageFromKeeper.h>
 #endif
@@ -153,9 +155,16 @@ static void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
         auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(local_object_storage, config, config_prefix);
         auto key_generator = local_object_storage->createKeyGenerator();
 
-        bool persistent_removal_log = config.getBool(config_prefix + ".persistent_removal_log", true);
-        size_t metadata_removal_log_compaction_threshold = config.getUInt64(config_prefix + ".metadata_removal_log_compaction_threshold", 1000);
-        return std::make_shared<MetadataStorageFromDisk>(db_disk, std::move(key_compatibility_prefix), std::move(key_generator), persistent_removal_log, metadata_removal_log_compaction_threshold);
+        RemovalQueuePtr objects_to_remove;
+        if (config.getBool(config_prefix + ".persistent_removal_log", true))
+            objects_to_remove = std::make_unique<PersistentRemovalQueue>(
+                db_disk,
+                std::string(MetadataStorageFromDisk::SYSTEM_METADATA_DIR),
+                config.getUInt64(config_prefix + ".metadata_removal_log_compaction_threshold", 1000));
+        else
+            objects_to_remove = std::make_unique<InMemoryRemovalQueue>();
+
+        return std::make_shared<MetadataStorageFromDisk>(db_disk, std::move(key_compatibility_prefix), std::move(key_generator), std::move(objects_to_remove));
     });
 }
 
