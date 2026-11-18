@@ -286,13 +286,13 @@ struct GroupPolygonIntersectData
         GeoMonotoneRing hole;
         std::unique_ptr<GeoMonotoneComponents> components;
 
-        size_t points() const
+        [[nodiscard]] size_t points() const
         {
             return exterior.size() + (components ? components->total_points : hole.points());
         }
 
         template <typename Chain>
-        bool strictlyInside(const GeoMonotoneRingImpl<Chain> & ring) const
+        [[nodiscard]] bool strictlyInside(const GeoMonotoneRingImpl<Chain> & ring) const
         {
             auto inside = [&](const CartesianPoint & point)
             {
@@ -331,7 +331,7 @@ struct GroupPolygonIntersectData
     };
     std::unique_ptr<MonotoneHoleState> monotone_hole;
 
-    CartesianMultiPolygon monotoneGeometry() const
+    [[nodiscard]] CartesianMultiPolygon monotoneGeometry() const
     {
         CartesianMultiPolygon result;
         result.emplace_back();
@@ -356,7 +356,7 @@ struct GroupPolygonIntersectData
         monotone_hole.reset();
     }
 
-    std::unique_ptr<MonotoneHoleState> makeMonotoneState() const
+    [[nodiscard]] std::unique_ptr<MonotoneHoleState> makeMonotoneState() const
     {
         if (chunks.size() != 1 || chunks[0].size() != 1 || chunks[0][0].inners().empty())
             return {};

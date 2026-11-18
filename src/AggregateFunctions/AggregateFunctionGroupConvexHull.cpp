@@ -198,7 +198,7 @@ struct GroupConvexHullData
             compress();
     }
 
-    CartesianRing getResult() const
+    [[nodiscard]] CartesianRing getResult() const
     {
         if (points.empty())
             return {};

@@ -36,17 +36,17 @@ struct GeoRectangle
     Float64 max_x;
     Float64 max_y;
 
-    bool contains(const GeoRectangle & other) const
+    [[nodiscard]] bool contains(const GeoRectangle & other) const
     {
         return min_x <= other.min_x && min_y <= other.min_y && max_x >= other.max_x && max_y >= other.max_y;
     }
 
-    Float64 magnitude() const
+    [[nodiscard]] Float64 magnitude() const
     {
         return std::max({std::abs(min_x), std::abs(min_y), std::abs(max_x), std::abs(max_y)});
     }
 
-    CartesianPolygon polygon() const
+    [[nodiscard]] CartesianPolygon polygon() const
     {
         CartesianPolygon result;
         result.outer() = {{min_x, min_y}, {min_x, max_y}, {max_x, max_y}, {max_x, min_y}, {min_x, min_y}};

@@ -15,7 +15,7 @@ struct GeoMonotoneRingImpl
     Chain lower;
     Chain upper;
 
-    size_t points() const
+    [[nodiscard]] size_t points() const
     {
         return lower.size() + upper.size() + 1;
     }
@@ -103,7 +103,7 @@ struct GeoMonotoneRingImpl
 
     /// `margin` must be `geoSeparationMargin` of a bound on every coordinate of both rings.
     template <typename OtherChain>
-    bool canAppend(const GeoMonotoneRingImpl<OtherChain> & other, Float64 margin) const
+    [[nodiscard]] bool canAppend(const GeoMonotoneRingImpl<OtherChain> & other, Float64 margin) const
     {
         const auto left_x = other.lower.front().template get<0>();
         const auto right_x = lower.back().template get<0>();
@@ -212,7 +212,7 @@ private:
     }
 
 public:
-    CartesianRing materialize() const
+    [[nodiscard]] CartesianRing materialize() const
     {
         CartesianRing result;
         result.reserve(points());
