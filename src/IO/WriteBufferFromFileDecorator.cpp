@@ -64,13 +64,6 @@ std::string WriteBufferFromFileDecorator::getFileName() const
     return std::string();
 }
 
-std::optional<WriteOutcome> WriteBufferFromFileDecorator::getWriteOutcome() const
-{
-    if (const auto * buffer = dynamic_cast<const WriteBufferFromFileBase *>(impl.get()))
-        return buffer->getWriteOutcome();
-    return std::nullopt;
-}
-
 void WriteBufferFromFileDecorator::preFinalize()
 {
     next();

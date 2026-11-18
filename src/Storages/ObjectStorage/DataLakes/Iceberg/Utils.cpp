@@ -357,13 +357,14 @@ void writeMessageToFile(
     write_settings.object_storage_write_if_match = write_if_match;
     auto buffer_metadata = object_storage->writeObject(
         StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
-    /// The buffer of the storage lives as long as the buffer that wraps it, so each branch reports before its end.
+    /// A compressing buffer owns the buffer of the storage, so both live until the report.
     const auto * storage_buffer = buffer_metadata.get();
-    const auto report_outcome = [&]
-    {
+    std::unique_ptr<WriteBuffer> compressed_buffer_metadata;
+    WriteBuffer * out = buffer_metadata.get();
+    SCOPE_EXIT({
         if (write_outcome)
             *write_outcome = storage_buffer->getWriteOutcome();
-    };
+    });
     if (compression_method != CompressionMethod::None)
     {
         auto settings = context->getSettingsRef();
@@ -376,23 +377,17 @@ void writeMessageToFile(
         /// `.snappy.metadata.json` suffix, so it must be deterministic for the read path (which
         /// always decodes basic, see `getMetadataJSONObject`) to round-trip its own metadata and
         /// stay interoperable with other Iceberg engines.
-        auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(
+        compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(
             std::move(buffer_metadata),
             compression_method,
             static_cast<int>(settings[Setting::output_format_compression_level]),
             /*zstd_window_log=*/ 0,
             SnappyMode::Basic,
             buf_size);
-        SCOPE_EXIT(report_outcome());
-        compressed_buffer_metadata->write(data.data(), data.size());
-        compressed_buffer_metadata->finalize();
+        out = compressed_buffer_metadata.get();
     }
-    else
-    {
-        SCOPE_EXIT(report_outcome());
-        buffer_metadata->write(data.data(), data.size());
-        buffer_metadata->finalize();
-    }
+    out->write(data.data(), data.size());
+    out->finalize();
 }
 
 bool isConditionalWriteConflict(const Exception & e)

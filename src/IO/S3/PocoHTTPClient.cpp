@@ -493,16 +493,7 @@ void PocoHTTPClient::makeRequestInternal(
             "An attempt of a conditional write to {} is sent without the record of its attempts",
             request.GetUri().GetURIString());
 
-    try
-    {
-        makeRequestInternalImpl(request, response, readLimiter, writeLimiter);
-    }
-    catch (...)
-    {
-        /// The body may have been sent before the exception, so the attempt may have been applied.
-        S3::recordWriteAttemptMayHaveBeenApplied();
-        throw;
-    }
+    makeRequestInternalImpl(request, response, readLimiter, writeLimiter);
 }
 
 static String getMethod(const Aws::Http::HttpRequest & request)

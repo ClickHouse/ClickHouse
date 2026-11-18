@@ -223,11 +223,6 @@ bool isRecordingWriteAttempts()
     return WriteAttemptsRecord::isActive();
 }
 
-void recordWriteAttemptMayHaveBeenApplied()
-{
-    WriteAttemptsRecord::markMayHaveBeenApplied();
-}
-
 Client::RetryStrategy::RetryStrategy(const PocoHTTPClientConfiguration::RetryStrategy & config_)
     : config(config_)
     , log(getLogger("S3ClientRetryStrategy"))
@@ -738,41 +733,33 @@ Client::ObjectWriter Client::findObjectWriter(
 }
 
 template <typename RequestType, typename OutcomeType>
-bool Client::resolveFailedWrite(RequestType & request, const OutcomeType & outcome, bool warn_if_unproven) const
+WriteOutcome Client::resolveFailedWrite(const RequestType & request, const OutcomeType & outcome, bool warn_if_unproven) const
 {
-    const bool may_have_been_applied = request.mayHaveBeenApplied();
+    /// Without an attempt that may have been applied, nothing of this write can be at the key.
+    const auto unproven = request.mayHaveBeenApplied() ? WriteOutcome::Unknown : WriteOutcome::NotApplied;
 
     const auto & error = outcome.GetError();
     /// A replay of a landed write fails its own precondition, and a replayed completion finds its upload id consumed.
     const bool may_be_replay
         = error.GetExceptionName() == "PreconditionFailed" || error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD;
     /// After another answer only a conditional write asks for the id, so that an unconditional write costs no request.
-    if (!may_be_replay && !(may_have_been_applied && isConditionalWrite(request)))
-    {
-        request.setOutcome(may_have_been_applied ? WriteOutcome::Unknown : WriteOutcome::NotApplied);
-        return false;
-    }
+    if (!may_be_replay && !(request.mayHaveBeenApplied() && isConditionalWrite(request)))
+        return unproven;
 
     switch (findObjectWriter(request.GetBucket(), request.GetKey(), request.getIdempotencyId(), warn_if_unproven))
     {
         case ObjectWriter::ThisWrite:
-            return true;
+            return WriteOutcome::Applied;
         case ObjectWriter::AnotherWrite:
             /// Only one write can create a key with `If-None-Match: *`, so this one was not applied and cannot be
             /// applied later. Without it a later write can replace the object of this one.
             if (request.IfNoneMatchHasBeenSet())
-            {
-                request.setOutcome(WriteOutcome::NotApplied);
-                return false;
-            }
+                return WriteOutcome::NotApplied;
             break;
         case ObjectWriter::Unproven:
             break;
     }
-
-    /// Without an attempt that may have been applied, nothing of this write can be at the key.
-    request.setOutcome(may_have_been_applied ? WriteOutcome::Unknown : WriteOutcome::NotApplied);
-    return false;
+    return unproven;
 }
 
 Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const
@@ -792,12 +779,14 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
 
     /// A replayed completion reports NO_SUCH_UPLOAD, its upload id consumed, or a 412 when it was
     /// conditional -- and so does an abort over somebody else's object. Only the stamped id separates them.
+    auto write_outcome = WriteOutcome::Applied;
     if (!outcome.IsSuccess())
     {
         /// A 412 can be an ordinary lost race for the key; an upload id the server no longer has cannot.
         const bool warn_if_unproven = outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD;
 
-        if (resolveFailedWrite(request, outcome, warn_if_unproven))
+        write_outcome = resolveFailedWrite(request, outcome, warn_if_unproven);
+        if (write_outcome == WriteOutcome::Applied)
         {
             LOG_INFO(
                 log,
@@ -806,9 +795,7 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
             outcome = Aws::S3::Model::CompleteMultipartUploadOutcome(Aws::S3::Model::CompleteMultipartUploadResult());
         }
     }
-
-    if (outcome.IsSuccess())
-        request.setOutcome(WriteOutcome::Applied);
+    request.setOutcome(write_outcome);
 
     if (outcome.IsSuccess() && provider_type == ProviderType::GCS && client_settings.gcs_issue_compose_request)
     {
@@ -860,17 +847,20 @@ Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
     }();
 
     /// A replayed conditional PUT fails its own condition; only the stamped id tells that from a lost race.
-    if (!outcome.IsSuccess() && resolveFailedWrite(request, outcome, /* warn_if_unproven= */ false))
+    auto write_outcome = WriteOutcome::Applied;
+    if (!outcome.IsSuccess())
     {
-        LOG_INFO(
-            log,
-            "Object was put by an earlier attempt of this write ({}). Key: {}, Bucket: {}",
-            outcome.GetError().GetExceptionName(), request.GetKey(), request.GetBucket());
-        outcome = Aws::S3::Model::PutObjectOutcome(Aws::S3::Model::PutObjectResult());
+        write_outcome = resolveFailedWrite(request, outcome, /* warn_if_unproven= */ false);
+        if (write_outcome == WriteOutcome::Applied)
+        {
+            LOG_INFO(
+                log,
+                "Object was put by an earlier attempt of this write ({}). Key: {}, Bucket: {}",
+                outcome.GetError().GetExceptionName(), request.GetKey(), request.GetBucket());
+            outcome = Aws::S3::Model::PutObjectOutcome(Aws::S3::Model::PutObjectResult());
+        }
     }
-
-    if (outcome.IsSuccess())
-        request.setOutcome(WriteOutcome::Applied);
+    request.setOutcome(write_outcome);
     return outcome;
 }
 
@@ -1177,6 +1167,12 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 /// This includes "Timeout"
                 if (!net_exception_handler())
                     break;
+            }
+            catch (...)
+            {
+                /// Any other exception from inside an attempt, e.g. of memory, can come after its body was sent.
+                WriteAttemptsRecord::markMayHaveBeenApplied();
+                throw;
             }
         }
 

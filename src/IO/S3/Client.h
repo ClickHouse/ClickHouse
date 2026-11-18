@@ -104,8 +104,6 @@ bool attemptMayHaveBeenApplied(Aws::Http::HttpResponseCode code, const Aws::Stri
 /// Whether the current thread records the attempts of a write that publishes an object (`Client::PutObject`,
 /// `Client::CompleteMultipartUpload`). `PocoHTTPClient` refuses a conditional attempt on a thread without the record.
 bool isRecordingWriteAttempts();
-/// Records that an attempt of the write of the current thread may have been applied, e.g. after an exception inside it.
-void recordWriteAttemptMayHaveBeenApplied();
 
 struct ClientSettings
 {
@@ -336,10 +334,10 @@ private:
         const Aws::String & bucket, const Aws::String & key, const Aws::String & idempotency_id,
         bool warn_if_unproven) const;
 
-    /// Decides a failed write from the answers to its attempts and from the id. Returns true when an attempt of this
-    /// write is proven to have been applied. Otherwise sets the outcome of a tracked write.
+    /// Decides a failed write from the answers to its attempts and from the id. `Applied` means that an earlier attempt
+    /// of this write is proven to be applied.
     template <typename RequestType, typename OutcomeType>
-    bool resolveFailedWrite(RequestType & request, const OutcomeType & outcome, bool warn_if_unproven) const;
+    WriteOutcome resolveFailedWrite(const RequestType & request, const OutcomeType & outcome, bool warn_if_unproven) const;
 
     std::optional<S3::URI> getURIForBucket(const std::string & bucket) const;
 
