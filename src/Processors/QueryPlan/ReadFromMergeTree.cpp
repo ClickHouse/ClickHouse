@@ -393,6 +393,7 @@ namespace Setting
     extern const SettingsBool use_uncompressed_cache;
     extern const SettingsBool use_columns_cache;
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
+    extern const SettingsUInt64 merge_tree_read_end_tasks_per_stream;
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
@@ -2075,15 +2076,16 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         /// stream that has read its share takes tasks from the shares of other streams, one task at a time,
         /// so the last streams of a read work alone for up to one task each. The pool therefore cuts the end
         /// of the read (see `MergeTreeReadPool::adjustTaskSizeToReadEnd`) into smaller tasks, of
-        /// 1/`tasks_per_share_at_read_end` of a share, which keeps that time at about 3% of a share, unless
-        /// that needs tasks below `merge_tree_min_read_task_size`. For example, 192 streams over 12,288
-        /// marks have 64 marks each: the default task is 24 marks, and the tasks at the end of the read are
-        /// the smallest task of 8 marks. 16 streams have 768 marks each, which is 32 default tasks, so all
-        /// their tasks are default ones.
-        if (pool_cuts_tasks_of_exact_size && num_streams > 1)
+        /// 1/`merge_tree_read_end_tasks_per_stream` of a share, unless that needs tasks below
+        /// `merge_tree_min_read_task_size`; 0 cuts the end like the rest of the read. The default of 32 keeps
+        /// that time at about 3% of a share. For example, 192 streams over 12,288 marks have 64 marks each:
+        /// the default task is 24 marks, and the tasks at the end of the read are the smallest task of 8
+        /// marks. 16 streams have 768 marks each, which is 32 default tasks, so all their tasks are default
+        /// ones.
+        const size_t read_end_tasks_per_stream = settings[Setting::merge_tree_read_end_tasks_per_stream];
+        if (pool_cuts_tasks_of_exact_size && num_streams > 1 && read_end_tasks_per_stream)
         {
-            static constexpr size_t tasks_per_share_at_read_end = 32;
-            const size_t task_marks = task_marks_for_share(num_streams, tasks_per_share_at_read_end);
+            const size_t task_marks = task_marks_for_share(num_streams, read_end_tasks_per_stream);
             if (task_marks < info.min_marks_for_concurrent_read)
                 min_marks_per_task_at_read_end = task_marks;
         }
