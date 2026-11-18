@@ -1481,19 +1481,25 @@ static DataTypePtr makeTypeHintFromSubcolumns(
     bool ignore_case,
     ORCFieldIdsCache & field_ids_cache);
 
-/// The ORC type of the column `path` of the data lake schema, matching each struct on its way from the root by Iceberg field
-/// id, as the reader selects it: nullptr if it is absent from the file, nullopt if this cannot be told (a struct on the way
-/// without field ids, a list or a map), in which case the reader matches it by name.
+/// The ORC type of the column `path` of the data lake schema, matching each struct on its way from the root as the reader
+/// selects it: by Iceberg field id if all the fields of the struct have one, else by name. nullptr if it is absent from the
+/// file, nullopt if a list or a map is on the way, in which case the reader matches it by name.
 static std::optional<const ORC::Type *> resolveORCFieldByIcebergId(
-    const String & path, const ColumnMapper & column_mapper, const ORC::Type & file_schema, ORCFieldIdsCache & cache)
+    const String & path, const ColumnMapper & column_mapper, const ORC::Type & file_schema, bool ignore_case, ORCFieldIdsCache & cache)
 {
     const auto levels = getIcebergFieldLevels(path, column_mapper);
     if (levels.empty())
         return std::nullopt;
     const ORC::Type * level_type = &file_schema;
-    for (const auto & [_, field_id] : levels)
+    for (size_t i = 0; i < levels.size(); ++i)
     {
-        auto orc_field = findORCFieldByIcebergId(*level_type, field_id, cache);
+        auto orc_field = findORCFieldByIcebergId(*level_type, levels[i].second, cache);
+        if (!orc_field && level_type->getKind() == ORC::STRUCT)
+        {
+            const String name = i == 0 ? levels[i].first : levels[i].first.substr(levels[i - 1].first.size() + 1);
+            const auto field = findORCStructFieldByName(level_type, name, ignore_case);
+            orc_field = field ? level_type->getSubtype(*field) : nullptr;
+        }
         if (!orc_field || !*orc_field)
             return orc_field;
         level_type = *orc_field;
@@ -1646,7 +1652,8 @@ void NativeORCBlockInputFormat::prepareFileReader()
             /// (a field renamed to the name of a dropped one), while the reader reads the field with its field id.
             auto adjusted_type = required.type;
             const auto * field_by_name = traverseDownORCTypeByName(required.name, &file_schema, adjusted_type, ignore_case);
-            const auto field_by_id = resolveORCFieldByIcebergId(required.name, *filter_column_mapper, file_schema, field_ids_cache);
+            const auto field_by_id
+                = resolveORCFieldByIcebergId(required.name, *filter_column_mapper, file_schema, ignore_case, field_ids_cache);
             if (field_by_name && field_by_id && *field_by_id != field_by_name)
             {
                 absent_column_has_namesake = true;

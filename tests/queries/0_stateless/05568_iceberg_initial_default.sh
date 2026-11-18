@@ -164,9 +164,10 @@ for table, mode in zip(sys.argv[1::2], sys.argv[2::2]):
     elif mode == "unidentified_member":
         next(f for f in fields if f["name"] == "n")["type"]["fields"][0]["initial-default"] = 6
     elif mode == "partially_identified":
-        struct = next(f for f in fields if f["name"] == "t")["type"]
-        struct["fields"] = [f for f in struct["fields"] if f["name"] != "j"]
-        struct["fields"].append({"id": new_id(), "name": "j", "required": False, "type": "int", "initial-default": 9})
+        u = next(f for f in fields if f["name"] == "u")["type"]
+        for struct in (next(f for f in fields if f["name"] == "t")["type"], next(f for f in u["fields"] if f["name"] == "s")["type"]):
+            struct["fields"] = [f for f in struct["fields"] if f["name"] != "j"]
+            struct["fields"].append({"id": new_id(), "name": "j", "required": False, "type": "int", "initial-default": 9})
     elif mode == "absent_parent":
         def struct_field(name, field, default):
             result = {"id": new_id(), "name": name, "required": False, "type": {"type": "struct", "fields": [field]}}
@@ -757,24 +758,29 @@ ${LOCAL} -q "
     SELECT 'unidentified member', count() FROM icebergLocal('unidentified_member/') WHERE n.x = 100;"
 
 # The fields of a struct in an ORC file are matched by name if one of them has no field id, also when only the fields with an id
-# are read: `t.k` has no field id, so `t.j` is read from the field `j`, not from the default of the `j` added again.
+# are read: `t.k` has no field id, so `t.j` is read from the field `j`, not from the default of the `j` added again. The fields of
+# `u.s` all have one, so `u.s.j` reads the default of the `j` added again, also in a filter pushed down to the file.
 ${LOCAL} --allow_insert_into_iceberg=1 -q "
-    CREATE TABLE t_partially_identified (t Tuple(j Nullable(Int32), k Nullable(Int32))) ENGINE = IcebergLocal('partially_identified/', 'ORC');
-    INSERT INTO t_partially_identified VALUES ((100, 7));"
+    CREATE TABLE t_partially_identified (t Tuple(j Nullable(Int32), k Nullable(Int32)), u Tuple(s Tuple(j Nullable(Int32)), k Nullable(Int32)))
+        ENGINE = IcebergLocal('partially_identified/', 'ORC');
+    INSERT INTO t_partially_identified VALUES ((100, 7), ((100), 7));"
 python3 - partially_identified/data/*.orc <<'PY'
 import sys
 import pyarrow as pa, pyarrow.orc as orc
 data = orc.ORCFile(sys.argv[1]).read()
-t = data.schema.field("t")
-t = pa.field(t.name, pa.struct([f.remove_metadata() if f.name == "k" else f for f in t.type]), t.nullable, t.metadata)
-orc.write_table(pa.Table.from_pylist(data.to_pylist(), schema=pa.schema([t])), sys.argv[1])
+def without_k_id(t):
+    return pa.field(t.name, pa.struct([f.remove_metadata() if f.name == "k" else f for f in t.type]), t.nullable, t.metadata)
+orc.write_table(pa.Table.from_pylist(data.to_pylist(), schema=pa.schema([without_k_id(t) for t in data.schema])), sys.argv[1])
 PY
 add_fields partially_identified partially_identified
 bind_to_current_schema partially_identified
 ${LOCAL} -q "
     SELECT 'partially identified', t FROM icebergLocal('partially_identified/');
     SELECT 'partially identified', t.j FROM icebergLocal('partially_identified/');
-    SELECT 'partially identified', count() FROM icebergLocal('partially_identified/') WHERE t.j = 100;"
+    SELECT 'partially identified', count() FROM icebergLocal('partially_identified/') WHERE t.j = 100;
+    SELECT 'partially identified', u FROM icebergLocal('partially_identified/');
+    SELECT 'partially identified', count() FROM icebergLocal('partially_identified/') WHERE u.s.j = 9 SETTINGS input_format_orc_filter_push_down = 0;
+    SELECT 'partially identified', count() FROM icebergLocal('partially_identified/') WHERE u.s.j = 9 SETTINGS input_format_orc_filter_push_down = 1;"
 
 # Malformed defaults.
 create=""
