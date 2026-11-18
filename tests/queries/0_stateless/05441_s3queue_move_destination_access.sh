@@ -113,6 +113,10 @@ for action in delete move tag; do
         -- { serverError ACCESS_DENIED }
     "
 done
+$CLICKHOUSE_CLIENT --user "${user_alter}" -q "
+    ALTER TABLE ${db}.t MODIFY SETTING s3queue_after_processing = 'delete'
+    -- { serverError ACCESS_DENIED }
+"
 
 echo "-- ALTER ON CLUSTER is rejected by the initiator"
 
@@ -217,6 +221,10 @@ echo "-- ALTER through an Alias"
 $CLICKHOUSE_CLIENT --allow_experimental_alias_table_engine 1 -q "CREATE TABLE ${db}.t_alias ENGINE = Alias('${db}', 't')"
 $CLICKHOUSE_CLIENT -q "
     ALTER TABLE ${db}.t_alias MODIFY SETTING after_processing_move_uri = '${dst}', ${keys}
+    -- { serverError NOT_IMPLEMENTED }
+"
+$CLICKHOUSE_CLIENT -q "
+    ALTER TABLE ${db}.t_alias MODIFY SETTING after_processing = 'delete'
     -- { serverError NOT_IMPLEMENTED }
 "
 $CLICKHOUSE_CLIENT -q "

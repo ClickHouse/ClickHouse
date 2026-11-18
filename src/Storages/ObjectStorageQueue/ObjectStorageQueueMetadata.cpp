@@ -401,7 +401,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     Coordination::Stat stat;
     auto metadata_str = zookeeper->get(fs::path(zookeeper_path) / "metadata", &stat);
     auto metadata_from_zk = ObjectStorageQueueTableMetadata::parse(metadata_str);
-    auto new_table_metadata{table_metadata};
+    auto new_table_metadata{metadata_from_zk};
 
     for (const auto & change : changes)
     {
@@ -500,6 +500,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
             if (table_metadata.buckets == value)
             {
                 LOG_TRACE(log, "Setting `buckets` already equals {}. Will do nothing", value);
+                new_table_metadata.buckets = value;
                 continue;
             }
             if (buckets_num > 1)
@@ -517,15 +518,9 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting `{}` is not changeable", change.name);
         }
-
-        chassert(ObjectStorageQueueTableMetadata::isChangeableSetting(change.name));
     }
 
-    /// Keeper gets only settings named in the query, because local copy can be outdated.
-    auto metadata_for_keeper{metadata_from_zk};
-    metadata_for_keeper.syncChangeableSettings(new_table_metadata, changes);
-
-    const auto new_metadata_str = metadata_for_keeper.toString();
+    const auto new_metadata_str = new_table_metadata.toString();
     LOG_TRACE(log, "New metadata: {}", new_metadata_str);
 
     const fs::path table_metadata_path = zookeeper_path / "metadata";
@@ -563,12 +558,11 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     const ColumnsDescription & columns,
     const std::string & format,
     const ContextPtr & context,
-    bool is_attach,
-    ObjectStorageQueueTableMetadata::Source source,
+    const ObjectStorageQueueTableMetadata::Source & source,
     bool strict,
     LoggerPtr log)
 {
-    ObjectStorageQueueTableMetadata table_metadata(settings, columns, format, std::move(source));
+    ObjectStorageQueueTableMetadata table_metadata(settings, columns, format, source);
 
     std::vector<std::string> metadata_paths;
     size_t buckets_num = 0;
@@ -619,16 +613,23 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
             }
             if (metadata_from_zk.has_value())
             {
-                table_metadata.adjustFromKeeper(metadata_from_zk.value(), strict);
+                table_metadata.adjustFromKeeper(metadata_from_zk.value());
+                /// A named collection can change without an `ALTER` of the table, so its source is always checked.
+                if (!strict && !source.from_named_collection && !metadata_from_zk->source_hash.empty()
+                    && table_metadata.source_hash != metadata_from_zk->source_hash)
+                {
+                    LOG_WARNING(log, "The source of this table differs from the source of the queue");
+                    table_metadata.source_hash = metadata_from_zk->source_hash;
+                }
                 table_metadata.checkEquals(metadata_from_zk.value());
-                if (metadata_from_zk->source.empty() && strict)
+                if (metadata_from_zk->source_hash.empty() && strict)
                     throw Exception(
                         ErrorCodes::METADATA_MISMATCH,
                         "Existing table metadata in ZooKeeper has no source, as an older version wrote it. "
                         "Attach a table of this queue on an upgraded server, or use another `keeper_path`");
-                if (metadata_from_zk->source.empty() && !table_metadata.source.empty())
+                if (metadata_from_zk->source_hash.empty() && !table_metadata.source_hash.empty())
                 {
-                    metadata_from_zk->source = table_metadata.source;
+                    metadata_from_zk->source_hash = table_metadata.source_hash;
                     stamp_code = zk_client->trySet(table_metadata_path, metadata_from_zk->toString(), stat.version);
                 }
                 return;
@@ -643,7 +644,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     "either `buckets`>1 or `processing_threads_num`>1 (works as `buckets` if it's not specified) "
                     "will not work properly. Please specify them in the CREATE query. See documentation for more details.");
 
-                if (is_attach)
+                if (!strict)
                 {
                     LOG_WARNING(log, message);
                     warned = true;

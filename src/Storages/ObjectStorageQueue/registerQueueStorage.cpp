@@ -8,7 +8,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
@@ -56,7 +55,6 @@ namespace ObjectStorageQueueSetting
 namespace
 {
 
-/// The source is saved in Keeper, so it must not contain credentials.
 #if USE_AWS_S3
 ObjectStorageQueueTableMetadata::Source getQueueSource(const StorageS3Configuration & configuration)
 {
@@ -197,9 +195,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         source.path_pattern.clear();
     }
 
-    source.clearIfMasked();
-    /// The first argument is an identifier only if it names a named collection
-    source.from_named_collection = engine_args[0]->as<ASTIdentifier>() != nullptr;
+    source.from_named_collection = configuration->initialized_from_named_collection;
 
     /// The S3 client is built once in the storage constructor and reused by background threads, so the
     /// constructor needs the effective `s3_allow_server_credentials_in_user_queries` value from the CREATE

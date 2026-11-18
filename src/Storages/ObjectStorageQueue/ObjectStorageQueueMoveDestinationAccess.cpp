@@ -61,21 +61,16 @@ bool changesSourceObjects(const SettingChange & change)
 {
     /// `after_processing` other than `keep` modifies the source files.
     return (change.name == "after_processing" || change.name == "s3queue_after_processing")
-        && !(change.value.getType() == Field::Types::String && change.value.safeGet<String>() == "keep");
+        && change.value.safeGet<String>() != "keep";
 }
 
 /// A table moves files only to the destination of its own storage type, see `ObjectStorageQueuePostProcessor::process`.
-AccessRightsElements getMoveDestinationAccess(
-    const SettingsChanges & changes, MoveDestinationKind table_kind, bool check_source_access)
+AccessRightsElements getMoveDestinationAccess(const SettingsChanges & changes, MoveDestinationKind table_kind, bool own_engine)
 {
-    const bool needs_write = std::ranges::any_of(
+    const bool sets_destination = std::ranges::any_of(
         changes,
-        [&](const SettingChange & change)
-        {
-            return (getMoveDestinationKind(change.name) == table_kind && !isEmptyValue(change.value))
-                || (check_source_access && changesSourceObjects(change));
-        });
-    if (!needs_write)
+        [&](const SettingChange & change) { return getMoveDestinationKind(change.name) == table_kind && !isEmptyValue(change.value); });
+    if (!sets_destination && !(own_engine && std::ranges::any_of(changes, changesSourceObjects)))
         return {};
 
     /// Unfiltered on purpose: a move has no single destination path to match a filter against.
@@ -91,14 +86,14 @@ AccessRightsElements getMoveDestinationAccess(
 
 }
 
-AccessRightsElements getS3QueueMoveDestinationAccess(const SettingsChanges & changes, bool check_source_access)
+AccessRightsElements getS3QueueMoveDestinationAccess(const SettingsChanges & changes, bool own_engine)
 {
-    return getMoveDestinationAccess(changes, MoveDestinationKind::S3, check_source_access);
+    return getMoveDestinationAccess(changes, MoveDestinationKind::S3, own_engine);
 }
 
-AccessRightsElements getAzureQueueMoveDestinationAccess(const SettingsChanges & changes, bool check_source_access)
+AccessRightsElements getAzureQueueMoveDestinationAccess(const SettingsChanges & changes, bool own_engine)
 {
-    return getMoveDestinationAccess(changes, MoveDestinationKind::Azure, check_source_access);
+    return getMoveDestinationAccess(changes, MoveDestinationKind::Azure, own_engine);
 }
 
 void checkObjectStorageQueueS3MoveDestinationHost(

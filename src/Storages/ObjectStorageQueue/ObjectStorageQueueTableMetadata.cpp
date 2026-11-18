@@ -9,8 +9,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ColumnsDescription.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
-#include <Common/SettingsChanges.h>
-#include <Common/maskURIPassword.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -58,24 +57,6 @@ namespace
         if (mode != "ordered" && mode != "unordered" && mode != "exclusive")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue mode: {}", mode);
     }
-
-    template <typename F>
-    void forEachChangeableSetting(F && f)
-    {
-        f("after_processing", &ObjectStorageQueueTableMetadata::after_processing);
-        f("loading_retries", &ObjectStorageQueueTableMetadata::loading_retries);
-        f("processing_threads_num", &ObjectStorageQueueTableMetadata::processing_threads_num);
-        f("tracked_files_limit", &ObjectStorageQueueTableMetadata::tracked_files_limit);
-        f("tracked_file_ttl_sec", &ObjectStorageQueueTableMetadata::tracked_files_ttl_sec);
-        f("buckets", &ObjectStorageQueueTableMetadata::buckets);
-    }
-
-    String sourceToString(const ObjectStorageQueueTableMetadata::Source & source)
-    {
-        if (source.empty())
-            return "none";
-        return fmt::format("{} {} {} {}", source.type, source.endpoint, source.bucket, source.path_pattern);
-    }
 }
 
 
@@ -83,7 +64,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     const ObjectStorageQueueSettings & engine_settings,
     const ColumnsDescription & columns_,
     const std::string & format_,
-    Source source_)
+    const Source & source)
     : format_name(format_)
     , columns(columns_.toString(true))
     , mode(engine_settings[ObjectStorageQueueSetting::mode].toString())
@@ -100,7 +81,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     , tracked_files_limit(engine_settings[ObjectStorageQueueSetting::tracked_files_limit])
     , tracked_files_ttl_sec(engine_settings[ObjectStorageQueueSetting::tracked_file_ttl_sec])
     , buckets(engine_settings[ObjectStorageQueueSetting::buckets])
-    , source(std::move(source_))
+    , source_hash(source.getHash())
 {
     processing_threads_num_changed = engine_settings[ObjectStorageQueueSetting::processing_threads_num].changed;
     if (!processing_threads_num_changed && engine_settings[ObjectStorageQueueSetting::processing_threads_num] <= 1)
@@ -143,10 +124,7 @@ String ObjectStorageQueueTableMetadata::toString() const
     json.set("partitioning_mode", partitioning_mode);
     json.set("partition_regex", partition_regex);
     json.set("partition_component", partition_component);
-    json.set("source_type", source.type);
-    json.set("source_endpoint", source.endpoint);
-    json.set("source_bucket", source.bucket);
-    json.set("source_path_pattern", source.path_pattern);
+    json.set("source_hash", source_hash);
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
@@ -238,29 +216,9 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , tracked_files_limit(getOrDefault(json, "tracked_files_limit", "s3queue_", 0ULL))
     , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0ULL)))
     , buckets(getOrDefault(json, "buckets", "", 0ULL))
-    , source{
-          getOrDefault<String>(json, "source_type", "", ""),
-          getOrDefault<String>(json, "source_endpoint", "", ""),
-          getOrDefault<String>(json, "source_bucket", "", ""),
-          getOrDefault<String>(json, "source_path_pattern", "", "")}
+    , source_hash(getOrDefault<String>(json, "source_hash", "", ""))
 {
     validateMode(mode);
-}
-
-bool ObjectStorageQueueTableMetadata::isChangeableSetting(std::string_view name)
-{
-    bool res = false;
-    forEachChangeableSetting([&](std::string_view setting, auto) { res |= setting == name; });
-    return res;
-}
-
-void ObjectStorageQueueTableMetadata::syncChangeableSettings(const ObjectStorageQueueTableMetadata & other, const SettingsChanges & changes)
-{
-    forEachChangeableSetting([&](std::string_view setting, auto member)
-    {
-        if (changes.tryGet(setting))
-            (this->*member) = (other.*member).load();
-    });
 }
 
 ObjectStorageQueueTableMetadata ObjectStorageQueueTableMetadata::parse(const String & metadata_str)
@@ -270,17 +228,26 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueTableMetadata::parse(const Str
     return ObjectStorageQueueTableMetadata(json);
 }
 
-void ObjectStorageQueueTableMetadata::Source::clearIfMasked()
+String ObjectStorageQueueTableMetadata::Source::getHash() const
 {
-    if (maskPresignedURLParameters(endpoint) || maskPresignedURLParameters(bucket) || maskPresignedURLParameters(path_pattern))
-        *this = {};
+    if (empty())
+        return {};
+
+    /// With the lengths, bucket `ab` with path `c/*` and bucket `a` with path `bc/*` have different hashes.
+    SipHash hash;
+    for (const auto & part : {type, endpoint, bucket, path_pattern})
+    {
+        hash.update(part.size());
+        hash.update(part);
+    }
+    return getHexUIntLowercase(hash.get128());
 }
 
-void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk, bool strict)
+void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk)
 {
-    auto log = getLogger("ObjectStorageQueueTableMetadata");
     if (processing_threads_num != from_zk.processing_threads_num)
     {
+        auto log = getLogger("ObjectStorageQueueTableMetadata");
         const auto message = PreformattedMessage::create(
             "Using `processing_threads_num` from keeper: {} (local: {})",
             from_zk.processing_threads_num.load(), processing_threads_num.load());
@@ -291,16 +258,6 @@ void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueT
             LOG_TRACE(log, message);
 
         processing_threads_num = from_zk.processing_threads_num.load();
-    }
-
-    if (strict)
-        return;
-
-    if (!source.from_named_collection && !from_zk.source.empty() && source != from_zk.source)
-    {
-        LOG_WARNING(log, "The source of the queue is {}, while this table reads {}",
-            sourceToString(from_zk.source), sourceToString(source));
-        source = from_zk.source;
     }
 }
 
@@ -327,13 +284,10 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
             from_zk.mode,
             mode);
 
-    if (!from_zk.source.empty() && source != from_zk.source)
+    if (!from_zk.source_hash.empty() && source_hash != from_zk.source_hash)
         throw Exception(
             ErrorCodes::METADATA_MISMATCH,
-            "Existing table metadata in ZooKeeper differs in source. "
-            "Stored in ZooKeeper: {}, local: {}",
-            sourceToString(from_zk.source),
-            sourceToString(source));
+            "Existing table metadata in ZooKeeper differs in source (storage type, endpoint, bucket or path)");
 
     if (bucketing_mode != from_zk.bucketing_mode)
         throw Exception(

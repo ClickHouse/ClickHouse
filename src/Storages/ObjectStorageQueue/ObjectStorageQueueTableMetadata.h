@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/SettingsChanges.h>
 #include <Core/SettingsEnums.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -13,7 +14,6 @@ namespace DB
 struct ObjectStorageQueueSettings;
 class WriteBuffer;
 class ReadBuffer;
-class SettingsChanges;
 
 /** The basic parameters of ObjectStorageQueue table engine for saving in ZooKeeper.
  * Lets you verify that they match local ones.
@@ -31,14 +31,7 @@ struct ObjectStorageQueueTableMetadata
         bool from_named_collection = false;
 
         [[nodiscard]] bool empty() const { return endpoint.empty(); }
-        void clearIfMasked();
-        bool operator==(const Source & other) const
-        {
-            return type == other.type
-                && endpoint == other.endpoint
-                && bucket == other.bucket
-                && path_pattern == other.path_pattern;
-        }
+        String getHash() const;
     };
 
     /// Non-changeable settings.
@@ -60,13 +53,13 @@ struct ObjectStorageQueueTableMetadata
     std::atomic<UInt64> buckets;
 
     bool processing_threads_num_changed = false;
-    Source source;
+    String source_hash;
 
     ObjectStorageQueueTableMetadata(
         const ObjectStorageQueueSettings & engine_settings,
         const ColumnsDescription & columns_,
         const std::string & format_,
-        Source source_);
+        const Source & source);
 
     ObjectStorageQueueTableMetadata(const ObjectStorageQueueTableMetadata & other)
         : format_name(other.format_name)
@@ -84,8 +77,23 @@ struct ObjectStorageQueueTableMetadata
         , tracked_files_limit(other.tracked_files_limit.load())
         , tracked_files_ttl_sec(other.tracked_files_ttl_sec.load())
         , buckets(other.buckets.load())
-        , source(other.source)
+        , source_hash(other.source_hash)
     {
+    }
+
+    /// Takes from `other` the settings that `changes` name.
+    void syncChangeableSettings(const ObjectStorageQueueTableMetadata & other, const SettingsChanges & changes)
+    {
+        if (changes.tryGet("after_processing"))
+            after_processing = other.after_processing.load();
+        if (changes.tryGet("loading_retries"))
+            loading_retries = other.loading_retries.load();
+        if (changes.tryGet("processing_threads_num"))
+            processing_threads_num = other.processing_threads_num.load();
+        if (changes.tryGet("tracked_files_limit"))
+            tracked_files_limit = other.tracked_files_limit.load();
+        if (changes.tryGet("tracked_file_ttl_sec"))
+            tracked_files_ttl_sec = other.tracked_files_ttl_sec.load();
     }
 
     explicit ObjectStorageQueueTableMetadata(const Poco::JSON::Object::Ptr & json);
@@ -101,7 +109,7 @@ struct ObjectStorageQueueTableMetadata
     ObjectStorageQueueBucketingMode getBucketingMode() const;
     ObjectStorageQueuePartitioningMode getPartitioningMode() const;
 
-    void adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk, bool strict);
+    void adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk);
 
     void checkEquals(const ObjectStorageQueueTableMetadata & from_zk) const;
 
@@ -121,15 +129,13 @@ struct ObjectStorageQueueTableMetadata
             "after_processing",
             "loading_retries",
             "processing_threads_num",
+            "parallel_inserts",
             "tracked_files_limit",
             "tracked_file_ttl_sec",
             "tracked_files_ttl_sec",
         };
         return settings_names.contains(name);
     }
-
-    static bool isChangeableSetting(std::string_view name);
-    void syncChangeableSettings(const ObjectStorageQueueTableMetadata & other, const SettingsChanges & changes);
 
     size_t getBucketsNum() const
     {

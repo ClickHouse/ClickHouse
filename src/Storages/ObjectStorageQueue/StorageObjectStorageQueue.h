@@ -72,7 +72,7 @@ public:
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
-    ObjectStorageQueueSettings getSettings() const;
+    ObjectStorageQueueSettings getSettings(const ObjectStorageQueueTableMetadata * table_metadata = nullptr) const;
 
     /// Block until `path` is marked as processed (or failed) in Keeper by this
     /// queue, then return.

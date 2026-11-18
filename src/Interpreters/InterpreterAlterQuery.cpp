@@ -1184,8 +1184,10 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
             /// without the table.
             if (command.type == ASTAlterCommand::MODIFY_SETTING && command.settings_changes)
             {
-                auto export_access
-                    = StorageFactory::instance().getExportAccessOfAnyEngine(command.settings_changes->as<ASTSetQuery &>().changes, engine);
+                const auto & changes = command.settings_changes->as<ASTSetQuery &>().changes;
+                auto export_access = engine.empty()
+                    ? StorageFactory::instance().getExportAccessOfAnyEngine(changes)
+                    : StorageFactory::instance().getExportAccess(changes, engine);
                 if (!export_access.empty())
                 {
                     required_access.append_range(std::move(export_access));

@@ -103,7 +103,7 @@ public:
     /// - adjust, if needed and allowed, passed queue settings according to
     /// what is in keeper (for example, processing_threads_num is adjustable,
     /// because its default depends on the CPU cores on the server);
-    /// - if not `strict`, a table is loaded even if its `source` differs from keeper;
+    /// - if not `strict` or from a named collection, a table is loaded even if its source differs from keeper;
     /// - if keeper has no `source` (metadata written by an older version), save the table's `source` there;
     static ObjectStorageQueueTableMetadata syncWithKeeper(
         const String & zookeeper_name,
@@ -112,8 +112,7 @@ public:
         const ColumnsDescription & columns,
         const std::string & format,
         const ContextPtr & context,
-        bool is_attach,
-        ObjectStorageQueueTableMetadata::Source source,
+        const ObjectStorageQueueTableMetadata::Source & source,
         bool strict,
         LoggerPtr log);
     /// Alter settings in keeper metadata

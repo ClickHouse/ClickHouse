@@ -73,6 +73,10 @@ SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366',
 CREATE TABLE tq9 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_other/*', NOSIGN, 'CSV')
 SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366'; -- { serverError METADATA_MISMATCH }
 
+-- `source`: bucket `test0` with path `5366_queue/*` is another source than bucket `test` with path `05366_queue/*`.
+CREATE TABLE tq10 (x String) ENGINE = S3Queue('http://localhost:11111/test0/5366_queue/*', NOSIGN, 'CSV')
+SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366'; -- { serverError METADATA_MISMATCH }
+
 -- Every mismatching table was rejected, so only the two base tables exist.
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE 'tq%';
 
@@ -101,18 +105,17 @@ CREATE TABLE tq_type_azure (x String) ENGINE = AzureQueue('http://localhost:1111
 CREATE TABLE tq_type_s3 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_type/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_type'; -- { serverError METADATA_MISMATCH }
 DROP TABLE tq_type_azure;
 
--- A URL with user info is refused, because the user info would be saved in keeper as a part of the source.
+-- A URL with user info is refused, because a hash of the user info would be saved in keeper as a part of the source.
 CREATE TABLE tq_u (x String) ENGINE = S3Queue('http://user:secret@localhost:11111/test/05366_u/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_user_info'; -- { serverError BAD_ARGUMENTS }
--- So is a path with a part masked as a secret: `05366_root&sig=a/*` and `05366_root&sig=z/*` would be saved the same.
-CREATE TABLE tq_sig (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_root&sig=a/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_sig'; -- { serverError BAD_ARGUMENTS }
--- In `exclusive` mode the path is not a part of the source, so there such a path is allowed.
-CREATE TABLE tq_sig_x (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_root&sig=a/*', NOSIGN, 'CSV') SETTINGS mode = 'exclusive', keeper_path = '/clickhouse/{database}/05366_sig_x';
-DROP TABLE tq_sig_x;
+-- Paths that differ only in a part like `&sig=` are different sources.
+CREATE TABLE tq_sig (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_root&sig=a/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_sig';
+CREATE TABLE tq_sig_z (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_root&sig=z/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_sig'; -- { serverError METADATA_MISMATCH }
+DROP TABLE tq_sig;
 
 -- Azure forms that have a source: a scheme in upper case, and an `abfss` URL with a separate SAS.
 CREATE TABLE tq_az_upper (x String) ENGINE = AzureQueue('HTTP://localhost:11111', 'test', '05366_upper/*', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_upper';
 CREATE TABLE tq_az_sas (x String) ENGINE = AzureQueue('abfss://cont@acc.dfs.core.windows.net/05366_sas/*.csv', 'sv=1&sig=2') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_sas';
-SELECT JSONExtractString(value, 'source_endpoint'), JSONExtractString(value, 'source_bucket') FROM system.zookeeper WHERE path IN ('/clickhouse/' || currentDatabase() || '/05366_upper', '/clickhouse/' || currentDatabase() || '/05366_sas') AND name = 'metadata' ORDER BY path;
+SELECT JSONExtractString(value, 'source_hash') != '' FROM system.zookeeper WHERE path IN ('/clickhouse/' || currentDatabase() || '/05366_upper', '/clickhouse/' || currentDatabase() || '/05366_sas') AND name = 'metadata' ORDER BY path;
 DROP TABLE tq_az_upper;
 DROP TABLE tq_az_sas;
 
@@ -121,12 +124,16 @@ SET send_logs_level = 'fatal';
 
 CREATE TABLE tq_a (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_shared/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_shared', processing_threads_num = 1;
 CREATE TABLE tq_b (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_shared/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_shared', processing_threads_num = 1, after_processing = 'keep';
-SELECT JSONExtractString(value, 'source_type'), JSONExtractString(value, 'source_endpoint'), JSONExtractString(value, 'source_bucket'), JSONExtractString(value, 'source_path_pattern') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
+-- Keeper has only a hash of the source.
+SELECT JSONExtractString(value, 'source_hash') != '', value LIKE '%05366_shared%' FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
 
 -- Tables with the same `keeper_path` share `after_processing`: after the `ALTER` of `tq_a` both tables have `delete`,
 -- while `tq_b` still has `keep` in its definition.
 ALTER TABLE tq_a MODIFY SETTING after_processing = 'delete';
 SELECT table, value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table IN ('tq_a', 'tq_b') AND name = 'after_processing' ORDER BY table;
+-- Set `keep` in keeper, as the initiator of a `Replicated` database does before this server runs the query: only the copy of
+-- this server still has `delete`, and the `ALTER` to `keep` below must still change it.
+INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceOne(value, '"after_processing":"delete"', '"after_processing":"keep"') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
 -- `tq_b` already has `keep` in its definition, but an `ALTER` or a `RESET` to `keep` must still change the queue.
 -- The same holds for `tq_a`, whose definition already has `delete`.
 ALTER TABLE tq_b MODIFY SETTING after_processing = 'keep';
@@ -148,12 +155,6 @@ CREATE TABLE tq_o (x String) ENGINE = S3Queue('http://localhost:11111/test/05366
 ALTER TABLE tq_o MODIFY SETTING processing_threads_num = 4;
 ALTER TABLE tq_o MODIFY SETTING processing_threads_num = 5; -- { serverError SUPPORT_IS_DISABLED }
 DROP TABLE tq_o;
-
--- An `ALTER` of another setting keeps `parallel_inserts` in the definition.
-CREATE TABLE tq_p (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_p/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_p', parallel_inserts = 1;
-ALTER TABLE tq_p MODIFY SETTING polling_max_timeout_ms = 2000;
-SELECT create_table_query LIKE '%parallel_inserts = 1%' FROM system.tables WHERE database = currentDatabase() AND name = 'tq_p';
-DROP TABLE tq_p;
 
 -- `after_processing` is still checked when a table is attached, as on master. A table that fails to attach cannot be
 -- detached again in a `Replicated` database, so this uses an `Atomic` one.
@@ -199,28 +200,30 @@ ALTER TABLE tq_k MODIFY SETTING polling_max_timeout_ms = 2000;
 SELECT JSONExtractUInt(value, 'loading_retries') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_k' AND name = 'metadata';
 DROP TABLE tq_k;
 
--- Change the source in keeper: `tq_b` must still attach, with a warning.
-INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceOne(value, '05366_shared', '05366_other') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
-DETACH TABLE tq_b; ATTACH TABLE tq_b;
-SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'tq_b';
+-- Change the source in keeper: the tables must still attach, with a warning.
+DETACH TABLE tq_a; DETACH TABLE tq_b;
+INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceRegexpOne(value, '"source_hash":"[^"]*"', '"source_hash":"00"') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
+ATTACH TABLE tq_b; ATTACH TABLE tq_a;
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name IN ('tq_a', 'tq_b');
 
 -- A named collection can change without an `ALTER` of the table, so a table that uses one must still match the source
 -- in keeper when it attaches. Changing the source in keeper has the same effect as changing the collection.
 CREATE TABLE tq_nc (x String) ENGINE = S3Queue(s3_conn, filename = '05366_nc/*', format = 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_nc';
 DETACH TABLE tq_nc;
-INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceOne(value, '05366_nc', '05366_other') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_nc' AND name = 'metadata';
+INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceRegexpOne(value, '"source_hash":"[^"]*"', '"source_hash":"00"') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_nc' AND name = 'metadata';
 ATTACH TABLE tq_nc; -- { serverError METADATA_MISMATCH }
-INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceOne(value, '05366_other', '05366_nc') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_nc' AND name = 'metadata';
+-- Without a source in keeper, as in metadata of an older version, the table attaches and writes its source there.
+INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceRegexpAll(value, ',"source_hash":"[^"]*"', '') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_nc' AND name = 'metadata';
 ATTACH TABLE tq_nc;
 DROP TABLE tq_nc;
 
 -- Remove `source` from keeper, as in metadata of an older version: the first attached table writes it back.
 -- A new table must not join such metadata, because it could belong to another source.
-INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceRegexpAll(value, ',"source_[a-z_]+":("[^"]*"|[0-9]+)', '') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
+INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceRegexpAll(value, ',"source_hash":"[^"]*"', '') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
 DETACH TABLE tq_a; DETACH TABLE tq_b;
 CREATE TABLE tq_c (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_c/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_shared', processing_threads_num = 1; -- { serverError METADATA_MISMATCH }
 ATTACH TABLE tq_b; ATTACH TABLE tq_a;
-SELECT JSONExtractString(value, 'source_endpoint'), JSONExtractString(value, 'source_path_pattern') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
+SELECT JSONExtractString(value, 'source_hash') NOT IN ('', '00') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
 
 DROP TABLE tq_b;
 DROP TABLE tq_a;

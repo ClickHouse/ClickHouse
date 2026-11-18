@@ -415,7 +415,7 @@ AccessRightsElements StorageFactory::getExportAccess(const ASTCreateQuery & crea
             return;
         auto it = storages.find(storage.engine->name);
         if (it != storages.end() && it->second.features.get_export_access_fn)
-            res.append_range(it->second.features.get_export_access_fn(storage.settings->changes, /* check_source_access */ true));
+            res.append_range(it->second.features.get_export_access_fn(storage.settings->changes, /* own_engine */ true));
     };
 
     if (create.storage)
@@ -428,13 +428,24 @@ AccessRightsElements StorageFactory::getExportAccess(const ASTCreateQuery & crea
     return res;
 }
 
-AccessRightsElements StorageFactory::getExportAccessOfAnyEngine(const SettingsChanges & changes, const String & engine) const
+AccessRightsElements StorageFactory::getExportAccess(const SettingsChanges & changes, const String & engine) const
 {
     AccessRightsElements res;
     for (const auto & [name, creator] : storages)
     {
         if (creator.features.get_export_access_fn)
-            res.append_range(creator.features.get_export_access_fn(changes, engine.empty() || engine == name));
+            res.append_range(creator.features.get_export_access_fn(changes, name == engine));
+    }
+    return res;
+}
+
+AccessRightsElements StorageFactory::getExportAccessOfAnyEngine(const SettingsChanges & changes) const
+{
+    AccessRightsElements res;
+    for (const auto & [_, creator] : storages)
+    {
+        if (creator.features.get_export_access_fn)
+            res.append_range(creator.features.get_export_access_fn(changes, /* own_engine */ true));
     }
     return res;
 }
