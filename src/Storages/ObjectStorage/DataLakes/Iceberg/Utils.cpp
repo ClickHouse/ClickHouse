@@ -357,13 +357,13 @@ void writeMessageToFile(
     write_settings.object_storage_write_if_match = write_if_match;
     auto buffer_metadata = object_storage->writeObject(
         StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
-    /// A compressing buffer owns the buffer of the storage, so both live until the report.
-    const auto * storage_buffer = buffer_metadata.get();
+    /// The compressing buffer does not own the buffer of the storage, so that the buffer of the storage outlives the
+    /// report, also when the compressing buffer cannot be created.
     std::unique_ptr<WriteBuffer> compressed_buffer_metadata;
     WriteBuffer * out = buffer_metadata.get();
     SCOPE_EXIT({
         if (write_outcome)
-            *write_outcome = storage_buffer->getWriteOutcome();
+            *write_outcome = buffer_metadata->getWriteOutcome();
     });
     if (compression_method != CompressionMethod::None)
     {
@@ -378,7 +378,7 @@ void writeMessageToFile(
         /// always decodes basic, see `getMetadataJSONObject`) to round-trip its own metadata and
         /// stay interoperable with other Iceberg engines.
         compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(
-            std::move(buffer_metadata),
+            buffer_metadata.get(),
             compression_method,
             static_cast<int>(settings[Setting::output_format_compression_level]),
             /*zstd_window_log=*/ 0,
