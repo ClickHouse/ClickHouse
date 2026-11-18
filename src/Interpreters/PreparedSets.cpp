@@ -306,13 +306,6 @@ void FutureSetFromSubquery::replaceSetAndKey(SetAndKeyPtr set)
     set_and_key = std::move(set);
 }
 
-SetAndKeyPtr FutureSetFromSubquery::detachSetAndKey()
-{
-    SetAndKeyPtr ret;
-    std::swap(ret, set_and_key);
-    return ret;
-}
-
 SetPtr FutureSetFromSubquery::get() const
 {
     if (set_and_key->set != nullptr && set_and_key->set->isCreated())

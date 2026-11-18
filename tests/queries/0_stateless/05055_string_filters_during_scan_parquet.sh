@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: Parquet is not supported in the fast test.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -144,13 +142,15 @@ GROUP BY log_comment ORDER BY log_comment;
 # dictionary entry matches `%needle%`, while most of the rows do not, and the optimization must stay on.
 # The pruning condition is an equality on the same column: it is itself one of the extracted
 # conditions, so it does not count as another reader of the column that would disable the filter.
+# No page row limit, so the page index cannot skip pages and the filter meets more than 100000 values.
 FILE_PRUNE="${CLICKHOUSE_DATABASE}/t_string_filter_prune.parquet"
 
 $CLICKHOUSE_CLIENT -q "
 INSERT INTO FUNCTION file('$FILE_PRUNE', Parquet, 'id UInt32, s String')
 SELECT number, if(number % 3 = 0, 'needle ' || toString(number), 'an ordinary value')
 FROM numbers(210000)
-SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_max_dictionary_size = 16777216;
+SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_max_dictionary_size = 16777216,
+    output_format_parquet_data_page_row_limit = 0;
 "
 
 echo 'dictionary pruning does not disable the filter'

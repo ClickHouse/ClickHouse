@@ -133,6 +133,9 @@ class PyIcebergRestWriter(Writer):
             "timestamp",
             "timestamp_ntz",
         ),
+        # PyIceberg 0.11 computes `bucket` with pyiceberg-core < 0.9, which hashes decimals with the wrong bytes
+        # (https://github.com/apache/iceberg-rust/pull/1998), so the rows land in buckets that no reader expects.
+        excluded_partition_shapes=(("bucket", "decimal"),),
         predicate_kinds=("boolean", "int", "long", "string", "date"),
         update_kinds=("boolean", "int", "long", "string", "date", "decimal"),
         op_weights={

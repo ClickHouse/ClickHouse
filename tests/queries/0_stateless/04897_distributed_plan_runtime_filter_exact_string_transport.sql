@@ -30,7 +30,7 @@ SELECT '-- admitted with the estimate-derived row bound';
 SELECT count() > 0 FROM system.text_log
 WHERE logger_name = 'joinRuntimeFilter'
     AND message LIKE '%admitted%20000 estimated build keys%20000 exact values limit%'
-    AND event_date >= yesterday() AND query_id IN (
+    AND event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN (
         SELECT query_id FROM system.query_log
         WHERE type = 'QueryFinish' AND is_initial_query AND log_comment = '04897_exact_string_transport'
             AND current_database = currentDatabase() AND event_date >= yesterday());
