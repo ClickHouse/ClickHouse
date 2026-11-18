@@ -250,7 +250,30 @@ static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & a
 /// Now it is a symlink to `clickhouse`, so keep the subcommands that dispatcher supported working:
 /// `clickhouse-keeper client`, `clickhouse-keeper keeper-client`, `clickhouse-keeper converter`,
 /// `clickhouse-keeper keeper-converter` and `clickhouse-keeper keeper` (also with the `--` prefix).
+/// `clickhouse-keeper help` lists these subcommands, as the former dispatcher did.
 /// Any other invocation runs the Keeper server, as before.
+static const std::pair<std::string_view, MainFunc> keeper_applications[] =
+{
+    {"keeper", mainEntryClickHouseKeeper},
+#if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
+    {"converter", mainEntryClickHouseKeeperConverter},
+    {"keeper-converter", mainEntryClickHouseKeeperConverter},
+#endif
+#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
+    {"client", mainEntryClickHouseKeeperClient},
+    {"keeper-client", mainEntryClickHouseKeeperClient},
+#endif
+};
+
+static int mainEntryKeeperHelp(int, char **)
+{
+    std::cout << "Use one of the following commands:" << std::endl;
+    for (const auto & application : keeper_applications)
+        std::cout << "clickhouse-keeper " << application.first << " [args]" << std::endl;
+    std::cout << "Without a command, clickhouse-keeper runs the Keeper server." << std::endl;
+    return 0;
+}
+
 /// Returns `nullptr` if the binary is not invoked as `clickhouse-keeper`.
 static MainFunc getStandaloneKeeperApp(std::vector<char *> & argv)
 {
@@ -261,22 +284,17 @@ static MainFunc getStandaloneKeeperApp(std::vector<char *> & argv)
     if (program != "clickhouse-keeper" && !program.ends_with("/clickhouse-keeper"))
         return nullptr;
 
-    const std::pair<std::string_view, MainFunc> keeper_applications[] =
-    {
-        {"keeper", mainEntryClickHouseKeeper},
-#if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
-        {"converter", mainEntryClickHouseKeeperConverter},
-        {"keeper-converter", mainEntryClickHouseKeeperConverter},
-#endif
-#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
-        {"client", mainEntryClickHouseKeeperClient},
-        {"keeper-client", mainEntryClickHouseKeeperClient},
-#endif
-    };
-
     if (argv.size() >= 2)
     {
         std::string_view first_arg(argv[1]);
+        /// A bare `help` must not fall through to the Keeper server, which ignores positional arguments.
+        /// `--help` is passed to the Keeper server, which prints its own options.
+        if (first_arg == "help")
+        {
+            argv.erase(argv.begin() + 1);
+            return mainEntryKeeperHelp;
+        }
+
         if (first_arg.starts_with("--"))
             first_arg.remove_prefix(2);
 

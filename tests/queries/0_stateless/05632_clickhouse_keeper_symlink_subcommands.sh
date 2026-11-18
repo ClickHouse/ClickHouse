@@ -38,3 +38,7 @@ which_tool keeper-converter
 which_tool --keeper-converter
 which_tool keeper
 which_tool
+
+# A bare `help` lists the subcommands and exits instead of starting the Keeper server.
+"$keeper" help 2>&1 | grep -F 'clickhouse-keeper keeper-client'
+echo "help exit code: ${PIPESTATUS[0]}"

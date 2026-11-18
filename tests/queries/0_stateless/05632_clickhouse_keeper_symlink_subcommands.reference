@@ -6,3 +6,5 @@ keeper-converter -> keeper-converter
 --keeper-converter -> keeper-converter
 keeper -> keeper
  -> keeper
+clickhouse-keeper keeper-client [args]
+help exit code: 0
