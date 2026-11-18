@@ -730,14 +730,14 @@ TEST(RuntimeFilterLookup, DescribeKeepsThePredictedBloomSaturationAcrossMerges)
     auto source = make_filter(/*filters_to_merge=*/0);
     source.insert(makeUInt64Column({3, 5}));
     source.finishInsert();
-    EXPECT_EQ(source.describe().disabled_reason, RuntimeFilterDisabledReason::BloomFilterPredictedTooFull);
+    EXPECT_EQ(source.describe().disabled_reason, RuntimeFilterDisabledReason::BloomFilterPredictedSaturated);
 
     destination.merge(source);
     destination.finishInsert();
 
     const auto description = destination.describe();
     EXPECT_EQ(description.kind, RuntimeFilterKind::Disabled);
-    EXPECT_EQ(description.disabled_reason, RuntimeFilterDisabledReason::BloomFilterPredictedTooFull);
+    EXPECT_EQ(description.disabled_reason, RuntimeFilterDisabledReason::BloomFilterPredictedSaturated);
     EXPECT_FALSE(description.bytes);
     EXPECT_FALSE(description.set_bits_ratio);
 }

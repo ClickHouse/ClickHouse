@@ -154,8 +154,8 @@ std::string_view toString(RuntimeFilterDisabledReason reason)
     {
         case RuntimeFilterDisabledReason::None: return "";
         case RuntimeFilterDisabledReason::ExactSetOverflow: return "too many keys for exact set";
-        case RuntimeFilterDisabledReason::BloomFilterPredictedTooFull: return "bloom filter predicted saturated";
-        case RuntimeFilterDisabledReason::BloomFilterTooFull: return "bloom filter saturated";
+        case RuntimeFilterDisabledReason::BloomFilterPredictedSaturated: return "bloom filter predicted saturated";
+        case RuntimeFilterDisabledReason::BloomFilterSaturated: return "bloom filter saturated";
     }
 }
 
@@ -1039,7 +1039,7 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
             if (predicted_fill_rate > max_ratio_of_set_bits_in_bloom_filter)
             {
                 ProfileEvents::increment(ProfileEvents::RuntimeFilterBloomFilterBuildsSkipped);
-                dropKeySet(filter_, RuntimeFilterDisabledReason::BloomFilterPredictedTooFull);
+                dropKeySet(filter_, RuntimeFilterDisabledReason::BloomFilterPredictedSaturated);
                 return nullptr;
             }
         }
@@ -1327,11 +1327,11 @@ RuntimeFilterDescription RuntimeFilter::describe() const
     if (data.build_state.isFinished())
         description = std::visit([](const auto & filter) { return filter.describe(); }, data.filter);
 
-    /// `finishInsert` drops a Bloom filter with too many bits set.
+    /// `finishInsert` drops a saturated Bloom filter.
     if (description.kind == RuntimeFilterKind::BloomFilter && evaluation_state.isKeySetDropped())
     {
         description.kind = RuntimeFilterKind::Disabled;
-        description.disabled_reason = RuntimeFilterDisabledReason::BloomFilterTooFull;
+        description.disabled_reason = RuntimeFilterDisabledReason::BloomFilterSaturated;
     }
 
     description.replaced_kind = replaced_kind;

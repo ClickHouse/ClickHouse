@@ -74,10 +74,10 @@ enum class RuntimeFilterDisabledReason : UInt8
     None,
     /// Too many keys for the exact set, and the key type has no approximate filter.
     ExactSetOverflow,
-    /// The build side statistics predicted that the Bloom filter would have too many bits set, so it was not built.
-    BloomFilterPredictedTooFull,
-    /// The Bloom filter was built, but has too many bits set.
-    BloomFilterTooFull,
+    /// The build side statistics predicted that the Bloom filter would be saturated, so it was not built.
+    BloomFilterPredictedSaturated,
+    /// The Bloom filter was built, but is saturated.
+    BloomFilterSaturated,
 };
 
 [[nodiscard]] std::string_view toString(RuntimeFilterKind kind);
