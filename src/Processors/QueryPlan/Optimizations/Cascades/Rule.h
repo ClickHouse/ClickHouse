@@ -62,6 +62,7 @@ OptimizationRulePtr createTwoStageTopN();
 OptimizationRulePtr createWindowImplementation();
 OptimizationRulePtr createDefaultImplementation();
 OptimizationRulePtr createDistributionPassthrough();
+OptimizationRulePtr createUnionImplementation();
 OptimizationRulePtr createDistributionEnforcer();
 OptimizationRulePtr createSortingEnforcer();
 

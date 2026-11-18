@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Common/typeid_cast.h>
 #include <memory>
@@ -22,7 +23,7 @@ namespace DB
 /// Fallback implementation rule for steps not handled by specialized rules.
 /// Creates a single implementation at {1 node} without distribution propagation.
 /// Distributed execution of these steps is handled by dedicated rules
-/// (`AggregationImplementation`, `DistinctImplementation`, `SortingEnforcer`, etc.).
+/// (`AggregationImplementation`, `DistinctImplementation`, `UnionImplementation`, `SortingEnforcer`, etc.).
 ///
 /// Steps that run on any split of their input (`ExpressionStep`, `FilterStep`, `BuildRuntimeFilterStep`,
 /// a preliminary `DistinctStep`) are excluded and handled by `DistributionPassthrough` instead.
@@ -40,7 +41,8 @@ public:
             || typeid_cast<const MergingAggregatedStep *>(step) != nullptr
             || typeid_cast<const JoinStepLogical *>(step) != nullptr
             || typeid_cast<const WindowStep *>(step) != nullptr
-            || typeid_cast<const ReadFromMergeTree *>(step) != nullptr)
+            || typeid_cast<const ReadFromMergeTree *>(step) != nullptr
+            || typeid_cast<const UnionStep *>(step) != nullptr)
             return false;
         /// A top-N sort is handled by `TopNImplementation`; any other sort left in the memo
         /// gets the single-node default.

@@ -478,6 +478,8 @@ The lists below use class names; `getName` log names may omit the `Implementatio
   `DistinctStep`), translating distribution
   and sort columns through the step's `ActionsDAG` and creating sorted passthrough
   variants; expressions with per-block or non-deterministic functions stay single-node
+- `UnionImplementation` — a `UnionStep` on one node, or on every node when the union comes
+  from the query (`isNarrowingAllowed`) and its inputs have no requirements of their own
 
 **Enforcer rules** (bridge property gaps):
 - `DistributionEnforcer` — adds `GatherExchange`, `BroadcastExchange`,
