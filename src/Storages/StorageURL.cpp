@@ -186,9 +186,20 @@ namespace
         /// UNION can print nested AST nodes that no longer expose its settings as a top-level clause.
         /// For an original AST, building the tree applies settings without resolving or executing it.
         auto query_tree = body.query_tree ? body.query_tree : buildQueryTree(body.query, context);
+        ContextMutablePtr body_context;
         if (const auto * query_node = query_tree->as<QueryNode>())
-            return Context::createCopy(query_node->getContext());
-        return Context::createCopy(query_tree->as<UnionNode &>().getContext());
+            body_context = Context::createCopy(query_node->getContext());
+        else
+            body_context = Context::createCopy(query_tree->as<UnionNode &>().getContext());
+
+        /// The resolved body tree keeps the context of the analysis that produced it. In a materialized view, the
+        /// storage of the table function (and with it the body tree) is cached and reused for every inserted block,
+        /// so that context holds the view source of the first block. Bind the body to the view source of the
+        /// current read instead, so that each block's request body is computed from that block.
+        body_context->clearViewSource();
+        if (auto view_source = context->getViewSource())
+            body_context->addViewSource(view_source);
+        return body_context;
     }
 
     /// Interpret the `body(...)` subquery. Executes it as a subquery (as `interpretSubquery` does),
