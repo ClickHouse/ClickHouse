@@ -979,9 +979,19 @@ WRITE_KEYWORDS = {
 }
 
 
+def statement_writes(s):
+    keyword = first_keyword(s)
+    # `WITH ... INSERT` and `... PARALLEL WITH <statement>` hide a write behind the first keyword.
+    return (
+        keyword in WRITE_KEYWORDS
+        or (keyword == "WITH" and re.search(r"\bINSERT\b", s, re.IGNORECASE) is not None)
+        or re.search(r"\bPARALLEL\s+WITH\b", s, re.IGNORECASE) is not None
+    )
+
+
 def query_writes(q):
     """Whether running a measured query can change what its next run reads."""
-    return q["kind"] != "sql" or any(first_keyword(s) in WRITE_KEYWORDS for s in q["statements"])
+    return q["kind"] != "sql" or any(statement_writes(s) for s in q["statements"])
 
 
 stop_merges = (
