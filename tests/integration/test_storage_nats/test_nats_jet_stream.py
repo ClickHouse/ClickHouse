@@ -73,14 +73,14 @@ async def receive_messages(cluster_inst, stream_name, consumer_name, subject, de
     return result
 
 
-async def add_stream(cluster_inst, stream_name, stream_subjects):
+async def add_stream(cluster_inst, stream_name, stream_subjects, **config):
     nc = await nats_helpers.nats_connect_ssl(cluster_inst)
     logging.debug("NATS connection status: " + str(nc.is_connected))
 
     # Create JetStream context.
     js = nc.jetstream()
 
-    stream_info = await js.add_stream(name=stream_name, subjects=stream_subjects)
+    stream_info = await js.add_stream(name=stream_name, subjects=stream_subjects, **config)
     logging.debug("added NATS jet stream: " + str(stream_info))
 
     await nc.close()
@@ -772,6 +772,28 @@ def test_nats_insert_message_over_max_payload(nats_cluster):
         timeout=60,
     )
     assert "Cannot publish to NATS subject test_subject: Maximum Payload Exceeded" in error, error
+
+    # The stream rejects a message over its max_msg_size.
+    asyncio.run(add_stream(cluster, "small_stream", ["small_subject"], max_msg_size=100))
+    try:
+        instance.query(
+            """
+            CREATE TABLE test.nats_small (key UInt64, value String)
+                ENGINE = NATS
+                SETTINGS nats_url = 'nats1:4444',
+                         nats_stream = 'small_stream',
+                         nats_subjects = 'small_subject',
+                         nats_format = 'JSONEachRow';
+            """
+        )
+        error = instance.query_and_get_error(
+            "INSERT INTO test.nats_small SELECT number, repeat('a', if(number = 0, 1000, 0)) FROM numbers(5000)",
+            timeout=60,
+        )
+        assert "Cannot publish to NATS subject small_subject" in error, error
+        assert "message size exceeds maximum allowed" in error, error
+    finally:
+        asyncio.run(delete_stream(cluster, "small_stream"))
 
 
 def test_fetching_messages_without_mv(nats_cluster):

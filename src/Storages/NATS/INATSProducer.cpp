@@ -74,30 +74,33 @@ void INATSProducer::produce(const String & message, size_t, const Columns &, siz
 
 void INATSProducer::publish()
 {
-    String payload;
-
-    natsStatus status = {};
-    while (!payloads.empty())
+    while (pending_payload || !payloads.empty())
     {
         if (!connection->isConnected() || natsConnection_Buffered(connection->getConnection()) > MAX_BUFFERED)
             break;
-        bool pop_result = payloads.pop(payload);
 
-        if (!pop_result)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not pop payload");
+        if (!pending_payload)
+        {
+            String payload;
+            if (!payloads.pop(payload))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not pop payload");
+            pending_payload = std::move(payload);
+        }
 
-        status = publishMessage(payload);
+        natsStatus status = publishMessage(*pending_payload);
         if (status != NATS_OK)
         {
             LOG_DEBUG(log, "Something went wrong during publishing to NATS subject. Nats status text: {}. Last error message: {}",
                       natsStatus_GetText(status), getNATSLastError());
-            /// The client rejects a message over the server's max_payload before sending it, so a retry cannot succeed.
+            /// A retry cannot succeed: the client rejects a message over max_payload before sending it, and NATS_ERR is
+            /// the stream rejecting the message. Once `payloads` is finished, the INSERT waits for the task to end.
             if (status == NATS_NO_RESPONDERS)
                 publish_error = "there is no JetStream stream for this subject";
-            else if (status == NATS_MAX_PAYLOAD || !payloads.pushFront(payload))
+            else if (status == NATS_MAX_PAYLOAD || status == NATS_ERR || payloads.isFinished())
                 publish_error = fmt::format("{}. Last error message: {}", natsStatus_GetText(status), getNATSLastError());
             break;
         }
+        pending_payload.reset();
     }
 }
 
@@ -112,7 +115,7 @@ void INATSProducer::startProducingTaskLoop()
 
     try
     {
-        while (publish_error.empty() && !payloads.isFinishedAndEmpty())
+        while (publish_error.empty() && (pending_payload || !payloads.isFinishedAndEmpty()))
         {
             if (!connection->isConnected())
                 std::this_thread::sleep_for(std::chrono::milliseconds(connection->getReconnectWait()));
