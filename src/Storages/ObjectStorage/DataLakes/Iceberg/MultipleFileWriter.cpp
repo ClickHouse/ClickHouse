@@ -40,7 +40,8 @@ MultipleFileWriter::MultipleFileWriter(
     : max_data_file_num_rows(max_data_file_num_rows_)
     , max_data_file_num_bytes(max_data_file_num_bytes_)
     , column_mapper(Iceberg::createColumnMapperFromFields(schema_))
-    , stats(fieldIdsOfWrittenColumns(*column_mapper, *sample_block_))
+    , required_field_ids(DataFileStatistics::getRequiredFieldIds(schema_))
+    , stats(fieldIdsOfWrittenColumns(*column_mapper, *sample_block_), required_field_ids)
     , filename_generator(filename_generator_)
     , path_resolver(path_resolver_)
     , object_storage(object_storage_)
@@ -56,7 +57,7 @@ void MultipleFileWriter::startNewFile()
     if (buffer)
         finalize();
 
-    current_file_stats = std::make_shared<DataFileStatistics>(fieldIdsOfWrittenColumns(*column_mapper, *sample_block));
+    current_file_stats = std::make_shared<DataFileStatistics>(fieldIdsOfWrittenColumns(*column_mapper, *sample_block), required_field_ids);
     current_file_num_rows = 0;
     auto metadata_path = filename_generator.generateDataFileName();
     auto storage_path = path_resolver.resolve(metadata_path);
@@ -82,7 +83,10 @@ void MultipleFileWriter::startNewFile()
     /// The ORC String/FixedString logical-type handling lives in ORCBlockOutputFormat, keyed on
     /// the column mapper, so it covers the compaction/mutation rewrite paths too.
     FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
-    output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
+    /// Not `getOutputFormatParallelIfPossible`: `ParallelFormattingOutputFormat` writes to `buffer` from its own thread,
+    /// and `consume` reads `buffer->count()` to cut the file. The Iceberg data file formats are not formatted
+    /// in parallel anyway: the Parquet writer encodes row groups in parallel itself and writes them on the calling thread.
+    output_format = FormatFactory::instance().getOutputFormat(
         write_format, *buffer, *sample_block, context, file_format_settings, format_filter_info);
 }
 

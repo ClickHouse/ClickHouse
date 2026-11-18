@@ -51,9 +51,9 @@ public:
     {
     }
 
-    bool isConstant() const { return default_values_column == nullptr; }
+    [[nodiscard]] bool isConstant() const { return default_values_column == nullptr; }
 
-    Field getDefaultValue(size_t row) const
+    [[nodiscard]] Field getDefaultValue(size_t row) const
     {
         if (default_values_column)
             return (*default_values_column)[row];
@@ -139,35 +139,35 @@ public:
     DictionaryStorageFetchRequest() = default;
 
     /// Check requested attributes size
-    ALWAYS_INLINE size_t attributesSize() const
+    [[nodiscard]] ALWAYS_INLINE size_t attributesSize() const
     {
         return dictionary_attributes_names_and_types.size();
     }
 
     /// Check if attribute with attribute_name was requested to fetch
-    ALWAYS_INLINE bool containsAttribute(const String & attribute_name) const
+    [[nodiscard]] ALWAYS_INLINE bool containsAttribute(const String & attribute_name) const
     {
         return attributes_to_fetch_name_to_index.contains(attribute_name);
     }
 
     /// Check if attribute with attribute_index should be filled during fetch
-    ALWAYS_INLINE bool shouldFillResultColumnWithIndex(size_t attribute_index) const
+    [[nodiscard]] ALWAYS_INLINE bool shouldFillResultColumnWithIndex(size_t attribute_index) const
     {
         return attributes_to_fetch_filter[attribute_index];
     }
 
-    const DataTypePtr & dataTypeAtIndex(size_t attribute_index) const
+    [[nodiscard]] const DataTypePtr & dataTypeAtIndex(size_t attribute_index) const
     {
         return dictionary_attributes_names_and_types[attribute_index].type;
     }
 
-    const DefaultValueProvider & defaultValueProviderAtIndex(size_t attribute_index) const
+    [[nodiscard]] const DefaultValueProvider & defaultValueProviderAtIndex(size_t attribute_index) const
     {
         return attributes_default_value_providers[attribute_index];
     }
 
     /// Create columns for each of dictionary attributes
-    MutableColumns makeAttributesResultColumns() const
+    [[nodiscard]] MutableColumns makeAttributesResultColumns() const
     {
         MutableColumns result;
         result.reserve(dictionary_attributes_names_and_types.size());
@@ -178,7 +178,7 @@ public:
         return result;
     }
 
-    Columns makeAttributesResultColumnsNonMutable() const
+    [[nodiscard]] Columns makeAttributesResultColumnsNonMutable() const
     {
         Columns result;
         result.reserve(dictionary_attributes_names_and_types.size());
@@ -501,12 +501,12 @@ public:
         keys_size = key_columns.front()->size();
     }
 
-    size_t getKeysSize() const
+    [[nodiscard]] size_t getKeysSize() const
     {
         return keys_size;
     }
 
-    size_t getCurrentKeyIndex() const
+    [[nodiscard]] size_t getCurrentKeyIndex() const
     {
         return current_key_index;
     }
@@ -550,6 +550,32 @@ public:
     {
         if constexpr (key_type == DictionaryKeyType::Complex)
             complex_key_arena->rollback(current_complex_key.size());
+    }
+
+    /// Calls `callback(key_index, key)` for every key, in order, and leaves the extractor past the last key.
+    /// Hot loops use it instead of `extractCurrentKey` per key: a simple key is then read through one
+    /// hoisted data pointer, where `extractCurrentKey` goes through `key_columns[0]`, the column and its
+    /// data pointer every time, and the store of `current_key_index` keeps clang-23 with libc++ 23 (whose
+    /// `std::vector` keeps a `size_t` size) from hoisting those loads and their bounds checks out of the loop.
+    template <typename Callback>
+    void forEachKey(Callback && callback)
+    {
+        if constexpr (key_type == DictionaryKeyType::Simple)
+        {
+            const UInt64 * __restrict keys = static_cast<const ColumnVector<UInt64> &>(*key_columns[0]).getData().data();
+            for (size_t key_index = current_key_index; key_index < keys_size; ++key_index)
+                callback(key_index, keys[key_index]);
+            current_key_index = keys_size;
+        }
+        else
+        {
+            while (current_key_index < keys_size)
+            {
+                size_t key_index = current_key_index;
+                callback(key_index, extractCurrentKey());
+                rollbackCurrentKey();
+            }
+        }
     }
 
     PaddedPODArray<KeyType> extractAllKeys()

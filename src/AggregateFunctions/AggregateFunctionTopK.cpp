@@ -98,7 +98,7 @@ public:
         , is_approx_top_k(is_approx_top_k_)
     {}
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if (is_approx_top_k)
             return  is_weighted ? "approx_top_sum" : "approx_top_k";
@@ -131,7 +131,7 @@ public:
         return std::make_shared<DataTypeArray>(argument_types_[0]);
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void ensureCapacity(AggregateFunctionTopKData<T>::Set & set) const
     {
@@ -348,7 +348,7 @@ public:
             float_width = rawFloatValueWidth(*argument_types_[0]->createColumn());
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if (is_approx_top_k)
             return  is_weighted ? "approx_top_sum" : "approx_top_k";
@@ -388,7 +388,7 @@ public:
         return std::make_shared<DataTypeArray>(argument_types_[0]);
     }
 
-    bool allocatesMemoryInArena() const override
+    [[nodiscard]] bool allocatesMemoryInArena() const override
     {
         return true;
     }

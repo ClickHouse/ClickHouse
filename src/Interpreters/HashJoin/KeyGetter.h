@@ -99,9 +99,9 @@ struct LowCardinalityKeyGetterForJoin
     }
 
     /// True when the current column is LowCardinality (dictionary path); false for a plain column.
-    ALWAYS_INLINE bool isLowCardinality() const { return positions != nullptr; }
+    [[nodiscard]] ALWAYS_INLINE bool isLowCardinality() const { return positions != nullptr; }
 
-    ALWAYS_INLINE size_t getIndexAt(size_t row) const
+    [[nodiscard]] ALWAYS_INLINE size_t getIndexAt(size_t row) const
     {
         switch (size_of_index_type)
         {
@@ -387,7 +387,7 @@ class HashedJoinKey
 public:
     explicit HashedJoinKey(const ColumnRawPtrs & key_columns_);
 
-    UInt128 build(size_t row) const { return ColumnsHashing::hash128(row, key_columns.size(), key_columns); }
+    [[nodiscard]] UInt128 build(size_t row) const { return ColumnsHashing::hash128(row, key_columns.size(), key_columns); }
 
     /// Sets `keys[i - begin]` to `build(i)` for the rows [begin, end). The keys of the rows `i` with `skip[i] != 0` may be
     /// left unset.
@@ -465,7 +465,7 @@ struct HashMethodHashedJoinKey : public ColumnsHashing::columns_hashing_impl::Ha
     {
     }
 
-    ALWAYS_INLINE UInt128 buildKey(size_t row) const { return key.build(row); }
+    [[nodiscard]] ALWAYS_INLINE UInt128 buildKey(size_t row) const { return key.build(row); }
 
     void buildKeys(size_t begin, size_t end, UInt128 * keys, const UInt8 * skip) { key.buildRange(begin, end, keys, skip); }
 
@@ -549,7 +549,7 @@ struct HashMethodPackedStringJoinKey : public ColumnsHashing::columns_hashing_im
     {
     }
 
-    ALWAYS_INLINE UInt128 buildKey(size_t row) const
+    [[nodiscard]] ALWAYS_INLINE UInt128 buildKey(size_t row) const
     {
         return PackedStringJoinKey::build(
             reinterpret_cast<const char *>(chars) + offsets[ssize_t(row) - 1], offsets[row] - offsets[ssize_t(row) - 1]);

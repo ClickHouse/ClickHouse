@@ -50,7 +50,7 @@ struct EqualRange
     size_t from;   /// inclusive
     size_t to;     /// exclusive
     EqualRange(size_t from_, size_t to_) : from(from_), to(to_) { chassert(from <= to); }
-    size_t size() const { return to - from; }
+    [[nodiscard]] size_t size() const { return to - from; }
 };
 
 /// The planes a column's rows live in, for a reader that copies rows by number straight from
@@ -118,18 +118,8 @@ struct ColumnCheckpointWithMultipleNested : public ColumnCheckpoint
     ColumnCheckpoints nested;
 };
 
-struct RowStorePointers
-{
-    /// Either `ptrs` or `base_ptr` should be used.
-    /// Pre-resolved pointers into `RowDataStore` rows, one entry per output row.
-    /// A nullptr entry is interpreted as a default value.
-    VectorWithMemoryTracking<const char *> ptrs;
-    /// Whether `ptrs` contains any nullptr entry.
-    bool has_defaults = false;
-    /// A contiguous run of rows: row `i` is `base_ptr + i * row_length`.
-    const char * base_ptr = nullptr;
-    size_t row_length = 0;
-};
+/// Pre-resolved pointers to rows, one entry per output row.
+using RowPointers = VectorWithMemoryTracking<const char *>;
 
 /// Helper throw functions so Column headers don't need to include Exception.h.
 [[noreturn]] void throwCannotPopBack(size_t n, const std::string & column_name, size_t column_size);
@@ -535,6 +525,9 @@ public:
       */
     virtual void expand(const Filter & /*mask*/, bool /*inverted*/) = 0;
 
+    /// Appends `filter.size()` rows: `src[i]` where `filter[i]` is non-zero (zero if `inverted`), a default value elsewhere.
+    virtual void insertFromOrDefaults(const IColumn & src, const Filter & filter, bool inverted);
+
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
     [[nodiscard]] virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
@@ -852,12 +845,13 @@ public:
         return getPtr();
     }
 
-    /// Fills column values from pre-resolved row-store pointers.
-    virtual void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map);
+    /// Appends the field at `field_offset` of rows `[begin, begin + count)` of `rows`.
+    /// With `null_map`, the field starts with the null byte.
+    virtual void gatherFromRows(const RowPointers & rows, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map);
 
-    void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count)
+    void gatherFromRows(const RowPointers & rows, size_t field_offset, size_t field_size, size_t begin, size_t count)
     {
-        fillFromRowStorePtrs(type, row_store_ptrs, field_offset, field_size, begin, count, /*null_map=*/ nullptr);
+        gatherFromRows(rows, field_offset, field_size, begin, count, /*null_map=*/ nullptr);
     }
 
     /// Writes rows `[start, start + count)` into the row at `field_offset` of consecutive rows of `row_length` bytes.
@@ -1110,10 +1104,13 @@ private:
     IColumnHelper(const IColumnHelper &) = default;
 
     /// Devirtualize insertFrom.
-    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const IColumn::Selector & selector) const override;
+    [[nodiscard]] VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const IColumn::Selector & selector) const override;
 
     /// Devirtualize insertFrom and insertRangeFrom.
     void gather(ColumnGathererStream & gatherer) override;
+
+    /// Devirtualize insertFrom, insertDefault, insertRangeFrom and insertManyDefaults.
+    void insertFromOrDefaults(const IColumn & src, const IColumn::Filter & filter, bool inverted) override;
 
     /// Devirtualize compareAt.
     void compareColumn(
@@ -1125,19 +1122,19 @@ private:
         int nan_direction_hint) const override;
 
     /// Devirtualize compareAt.
-    bool hasEqualValues() const override;
+    [[nodiscard]] bool hasEqualValues() const override;
 
     /// Devirtualize compareAt.
     [[nodiscard]] Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 
     /// Devirtualize isDefaultAt.
-    double getRatioOfDefaultRows(double sample_ratio) const override;
+    [[nodiscard]] double getRatioOfDefaultRows(double sample_ratio) const override;
 
     /// Devirtualize isDefaultAt.
-    UInt64 getNumberOfDefaultRows() const override;
+    [[nodiscard]] UInt64 getNumberOfDefaultRows() const override;
 
     /// Devirtualize isDefaultAt — early-exit loop.
-    bool hasOnlyTypeDefaults() const override;
+    [[nodiscard]] bool hasOnlyTypeDefaults() const override;
 
     /// Devirtualize isDefaultAt.
     void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override;
@@ -1146,13 +1143,13 @@ private:
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
     /// Devirtualize insertFrom.
-    ColumnPtr updateFrom(const IColumn::Patch & patch) const override;
+    [[nodiscard]] ColumnPtr updateFrom(const IColumn::Patch & patch) const override;
 
     /// Devirtualize updateAt.
     void updateInplaceFrom(const IColumn::Patch & patch) override;
 
-    /// Fills column values from pre-resolved row-store pointers
-    void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;
+    /// Appends the field at `field_offset` of rows `[begin, begin + count)` of `rows`.
+    void gatherFromRows(const RowPointers & rows, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
