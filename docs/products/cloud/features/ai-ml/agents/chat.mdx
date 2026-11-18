@@ -7,10 +7,7 @@ keywords: ['AI', 'ClickHouse Cloud', 'agents', 'chat', 'conversations', 'bookmar
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
-
-<BetaBadge/>
 
 The chat surface in ClickHouse Agents handles conversations, branching, and sharing.
 
@@ -27,6 +24,24 @@ You can now type your message in the composer, and press send. Each conversation
 You can edit any of your messages in place, and the agent will regenerate its response from that point in the conversation history.
 You can also regenerate the agent's last response only, without re-sending your message.
 
+## Long-running conversations {#long-running-conversations}
+
+The chat header shows context usage so you can see when a conversation is approaching the model's context-window limit. Compact a conversation when older detail is no longer needed; this preserves a shorter summary for continued work.
+
+Background tasks appear in the chat header while they run. From there, you can monitor their status or stop a task that is no longer needed.
+
+Use the sidebar filters and sort controls to find older conversations. Pinned conversations share one draggable section above the date-grouped history.
+
+## Outputs and files {#outputs-and-files}
+
+Artifacts open in a full-screen view. Mermaid diagrams can be exported as SVG or PNG, and code blocks can be downloaded as files.
+
+You can attach a file without adding a prompt. The agent routes the file to the appropriate enabled tool when it needs it.
+
+## Debug with Langfuse {#debug-with-langfuse}
+
+Organization administrators can open a chat's corresponding Langfuse session to inspect the conversation trace. This option is available for newly created chats.
+
 ## Bookmarks {#bookmarks}
 
 Bookmark a message or a whole conversation to flag it for quick retrieval. Bookmarks are private to you and survive conversation renames.
@@ -38,6 +53,10 @@ Bookmark a message or a whole conversation to flag it for quick retrieval. Bookm
 Pin a conversation to keep it at the top of the sidebar, separate from the date-grouped history below. Open the conversation's options menu (the three-dot icon) in the sidebar and select **Pin**. Pinned conversations collect in a **Pinned** section above the **Today**, **Yesterday**, and older groups.
 
 To unpin, open the same menu and select **Unpin**.
+
+## Projects {#projects}
+
+Projects organize related conversations in one place. You can also choose a Project when creating a scheduled chat.
 
 ## Forking {#forking}
 

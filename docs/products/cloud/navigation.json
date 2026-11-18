@@ -269,6 +269,7 @@
                 "products/cloud/features/ai-ml/agents/index",
                 "products/cloud/features/ai-ml/agents/quickstart",
                 "products/cloud/features/ai-ml/agents/chat",
+                "products/cloud/features/ai-ml/agents/scheduled-chats",
                 {
                   "group": "Agent Builder",
                   "pages": [

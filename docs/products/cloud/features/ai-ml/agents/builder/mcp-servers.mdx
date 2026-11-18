@@ -7,10 +7,6 @@ keywords: ['AI', 'ClickHouse Cloud', 'agents', 'MCP', 'Model Context Protocol']
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge/>
-
 Model Context Protocol (MCP) is the open standard for exposing tools and data sources to an AI model. Attaching an MCP server to a ClickHouse Agent gives the agent access to whatever capabilities that server exposes — issue trackers, observability backends, internal APIs, third-party SaaS, or anything else with an MCP endpoint.
 
 ## Attach an MCP server {#attach-an-mcp-server}
@@ -32,6 +28,10 @@ MCP servers can require credentials. ClickHouse Agents supports:
 - **Per-user credentials** - variables in the server config substituted from the calling user's profile, so each user authenticates with their own identity rather than a shared service account.
 
 User-provided credentials are stored encrypted and scoped to the user who entered them. One user's credentials are never visible to another user's agent runs.
+
+## Programmatic tools {#programmatic-tools}
+
+When **Run Code** is enabled, you can mark an attached MCP tool as **Programmatic**. This allows the agent to coordinate that tool from the [code interpreter](/products/cloud/features/ai-ml/agents/builder/code-interpreter), which is useful for loops, branching, retries, and intermediate processing. Only mark tools as Programmatic when you intend the agent to invoke them from code.
 
 ## Limits {#limits}
 

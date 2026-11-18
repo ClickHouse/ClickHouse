@@ -7,10 +7,6 @@ keywords: ['AI', 'ClickHouse Cloud', 'agents', 'subagents', 'delegation']
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge/>
-
 A subagent is a child agent that a parent agent invokes to handle a self-contained subtask. The child runs with its own context window and its own attached tools, then returns a compact result to the parent. The parent never sees the child's intermediate steps — only the final answer.
 
 Use subagents to keep a parent agent focused. Long research passes, tool-heavy exploration, and specialized review steps work better when their token-heavy intermediate state stays out of the parent's context.
