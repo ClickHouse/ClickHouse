@@ -6,6 +6,9 @@ SELECT formatQuerySingleLine(formatQuerySingleLine('ATTACH TABLE ts ENGINE = Tim
 SELECT formatQuerySingleLine(formatQuerySingleLine('ATTACH TABLE ts ENGINE = TimeSeries TAGS `settings` COMMENT \'c\''));
 SELECT formatQuerySingleLine(formatQuerySingleLine('ATTACH TABLE ts ENGINE = TimeSeries TAGS `inner`.t SETTINGS max_threads = 1'));
 SELECT formatQuerySingleLine(formatQuerySingleLine('ATTACH TABLE ts ENGINE = TimeSeries TAGS INNER ENGINE = Memory'));
+-- A materialized view `TO` target is not parsed as an inner engine, so its name is not backquoted.
+SELECT formatQuerySingleLine(formatQuerySingleLine('CREATE MATERIALIZED VIEW mv TO `inner` AS SELECT 1'));
+SELECT formatQuerySingleLine(formatQuerySingleLine('CREATE MATERIALIZED VIEW mv TO `ttl` AS SELECT 1'));
 
 -- The same for a real query.
 SET allow_experimental_time_series_table = 1;
