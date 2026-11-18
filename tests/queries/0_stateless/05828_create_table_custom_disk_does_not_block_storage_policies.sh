@@ -9,13 +9,20 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 # 10.255.255.1 does not answer, so the access check of the new disk hangs until `max_execution_time`.
-${CLICKHOUSE_CLIENT} --max_execution_time 15 -q "
+query_id="${CLICKHOUSE_DATABASE}_hanging_disk_create"
+${CLICKHOUSE_CLIENT} --query_id "$query_id" --max_execution_time 15 -q "
     CREATE TABLE ${CLICKHOUSE_DATABASE}.t_hanging_disk (n UInt8) ENGINE = MergeTree ORDER BY n
     SETTINGS disk = disk(type = 's3', endpoint = 'http://10.255.255.1:9/bucketname/', access_key_id = 'a', secret_access_key = 'b')
 " >/dev/null 2>&1 &
 create_pid=$!
 
-sleep 3
+# Wait until the CREATE TABLE is running, then give it a moment to reach the access check.
+for _ in {1..100}
+do
+    [ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = '$query_id'")" = "1" ] && break
+    sleep 0.1
+done
+sleep 1
 
 # These need `storage_policies_mutex`. Before the fix they waited for the whole `max_execution_time` of the query above.
 start=$(date +%s)
