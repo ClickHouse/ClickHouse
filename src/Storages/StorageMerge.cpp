@@ -2029,8 +2029,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         throw Exception(
             ErrorCodes::ILLEGAL_PREWHERE,
             "Row policy filter for {} cannot be applied by {}, because the table processes the query remotely. "
-            "Define the policy on the underlying tables instead; note that such a policy is not applied to reads "
-            "shipped with `serialize_query_plan = 1`",
+            "Define the policy on the underlying tables instead",
             storage->getStorageID().getNameForLogs(),
             storage_merge->getStorageID().getNameForLogs());
 
