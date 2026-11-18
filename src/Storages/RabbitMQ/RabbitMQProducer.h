@@ -38,6 +38,9 @@ private:
 
     bool can_reuse_publisher = false;
 
+    /// Written by the producing task, read in `finishImpl` after `deactivate` waited for the task.
+    bool stopped_by_shutdown = false;
+
     /* false: when shutdown is called; needed because table might be dropped before all acks are received
      * true: in all other cases
      */

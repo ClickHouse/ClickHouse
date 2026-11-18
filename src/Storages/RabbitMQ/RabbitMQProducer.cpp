@@ -43,6 +43,9 @@ void RabbitMQProducer::finishImpl()
         publisher_pool->release(std::move(publisher));
     else
         publisher->disconnect();
+
+    if (stopped_by_shutdown)
+        throw Exception(ErrorCodes::ABORTED, "Table is detached");
 }
 
 void RabbitMQProducer::produce(const String & message, size_t, const Columns &, size_t)
@@ -53,7 +56,7 @@ void RabbitMQProducer::produce(const String & message, size_t, const Columns &, 
     LOG_TEST(log, "Pushing message with id {}", payload.id);
     if (!payloads.push(std::move(payload)))
     {
-        /// The producing task has failed and closed the queue: rethrows its exception.
+        /// The producing task has stopped and closed the queue: `finish` throws its error.
         finish();
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
     }
@@ -79,14 +82,20 @@ void RabbitMQProducer::startProducingTaskLoop()
     {
         if (shutdown_called.load())
         {
-            /// Nothing pops `payloads` anymore, so `produce` must not wait for free space in it.
-            /// `can_reuse_publisher` stays false, so `finishImpl` disconnects the publisher instead of returning
-            /// a channel with unconfirmed messages to the pool.
-            payloads.finish();
-            throw Exception(ErrorCodes::ABORTED, "Table is detached");
+            stopped_by_shutdown = true;
+            break;
         }
 
         publisher->publishStep(payloads);
+    }
+
+    if (stopped_by_shutdown)
+    {
+        /// Nothing pops `payloads` anymore, so `produce` must not wait for free space in it.
+        /// `can_reuse_publisher` stays false, so `finishImpl` disconnects the publisher instead of returning
+        /// a channel with unconfirmed messages to the pool.
+        payloads.finish();
+        return;
     }
 
     size_t try_num = 0;
