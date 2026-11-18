@@ -6,12 +6,15 @@
 
 #if USE_AWS_S3
 
+#include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 
 #include <base/scope_guard.h>
 
@@ -27,18 +30,24 @@
 #include <aws/core/http/URI.h>
 #include <aws/core/internal/AWSHttpResourceClient.h>
 
+#include <Common/Crypto/OpenSSLInitializer.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/Stopwatch.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/S3Common.h>
 #include <IO/S3/Client.h>
+#include <IO/S3/Requests.h>
 #include <IO/S3/S3Capabilities.h>
+#include <IO/S3/copyS3File.h>
 #include <IO/S3/deleteFileFromS3.h>
+#include <Common/Exception.h>
 #include <IO/S3/PocoHTTPClient.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3Settings.h>
+#include <IO/S3RequestSettings.h>
 #include <Poco/Util/ServerApplication.h>
 
 #include <IO/S3/tests/TestPocoHTTPServer.h>
@@ -47,6 +56,8 @@ namespace DB::S3RequestSetting
 {
     extern const S3RequestSettingsUInt64 max_single_read_retries;
     extern const S3RequestSettingsUInt64 max_unexpected_write_error_retries;
+    extern const S3RequestSettingsString delete_checksum_algorithm;
+    extern const S3RequestSettingsUInt64 max_single_operation_copy_size;
 }
 
 /*
@@ -150,11 +161,36 @@ static void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const D
 
 using RequestFn = std::function<void(std::shared_ptr<const DB::S3::Client>, const DB::S3::URI &)>;
 
+/// Sends a `DeleteObjects` request the way `deleteFilesFromS3` does. The test server answers with an empty `200`,
+/// which `deleteFilesFromS3` would reject, so the request is built and sent directly.
+static RequestFn makeDeleteObjectsRequest(const String & delete_checksum_algorithm)
+{
+    return [delete_checksum_algorithm](std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri)
+    {
+        DB::S3::S3RequestSettings request_settings;
+        if (!delete_checksum_algorithm.empty())
+            request_settings[DB::S3RequestSetting::delete_checksum_algorithm] = delete_checksum_algorithm;
+
+        Aws::S3::Model::ObjectIdentifier object;
+        object.SetKey(uri.key);
+        Aws::S3::Model::Delete to_delete;
+        to_delete.AddObjects(object);
+
+        DB::S3::DeleteObjectsRequest request;
+        request.SetBucket(uri.bucket);
+        request.SetDelete(to_delete);
+        request.setUploadChecksumAlgorithm(DB::S3::RequestChecksum::getDeleteChecksumAlgorithm(request_settings, client->isS3ExpressBucket(), /*md5_rejected_by_server=*/false));
+
+        (void)client->DeleteObjects(request);
+    };
+}
+
 static std::shared_ptr<DB::S3::Client> makeTestClient(
     const DB::S3::URI & uri,
     const String & server_side_encryption_customer_key_base64,
     const DB::S3::ServerSideEncryptionKMSConfig & sse_kms_config,
-    bool is_s3express_bucket)
+    bool is_s3express_bucket,
+    const std::function<void(DB::S3::PocoHTTPClientConfiguration &)> & configure = {})
 {
     /// The client keeps a reference to the filter, so it must outlive the returned client.
     /// `const` makes sure no test reconfigures the shared instance.
@@ -176,12 +212,14 @@ static std::shared_ptr<DB::S3::Client> makeTestClient(
         s3_slow_all_threads_after_network_error,
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
-        /* for_disk_s3 = */ false,
+        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {},
         uri.uri.getScheme());
 
     client_configuration.endpointOverride = uri.endpoint;
+    if (configure)
+        configure(client_configuration);
 
     DB::NormalizedHTTPHeaderEntries headers;
     bool use_environment_credentials = false;
@@ -353,6 +391,41 @@ TEST(IOTestAwsS3Client, ChecksumHeaderIsPresentForS3Express)
         /*is_s3express_bucket=*/true);
 }
 
+TEST(IOTestAwsS3Client, DeleteObjectsSendsRequestedChecksum)
+{
+    testServerSideEncryption(
+        makeDeleteObjectsRequest("CRC32"),
+        "",
+        {},
+        "authorization: ... SignedHeaders="
+        "amz-sdk-invocation-id;"
+        "amz-sdk-request;"
+        "content-length;"
+        "content-type;"
+        "host;"
+        "x-amz-api-version;"
+        "x-amz-checksum-crc32;"
+        "x-amz-content-sha256;"
+        "x-amz-date;"
+        "x-amz-sdk-checksum-algorithm, ...\n");
+
+    testServerSideEncryption(
+        makeDeleteObjectsRequest("SHA256"),
+        "",
+        {},
+        "authorization: ... SignedHeaders="
+        "amz-sdk-invocation-id;"
+        "amz-sdk-request;"
+        "content-length;"
+        "content-type;"
+        "host;"
+        "x-amz-api-version;"
+        "x-amz-checksum-sha256;"
+        "x-amz-content-sha256;"
+        "x-amz-date;"
+        "x-amz-sdk-checksum-algorithm, ...\n");
+}
+
 namespace
 {
 
@@ -432,7 +505,7 @@ private:
 
             response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
             response.setContentType("application/xml");
-            response.send() << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            response.send() << R"(<?xml version="1.0" encoding="UTF-8"?>)"
                                "<Error><Code>" << stub.error_code << "</Code><Message>Digest rejected</Message></Error>";
         }
 
@@ -467,21 +540,381 @@ private:
 
 using Digest = DeleteObjectsStubServer::Digest;
 
+void deleteTwoKeys(
+    const std::shared_ptr<DB::S3::Client> & client, const DB::S3::URI & uri, DB::S3Capabilities & capabilities,
+    const DB::S3::S3RequestSettings & request_settings)
+{
+    DB::deleteFilesFromS3(client, uri.bucket, {"key1", "key2"}, /*if_exists=*/ false, capabilities, request_settings);
 }
 
-/// A store that requires a digest `DeleteObjects` does not support (`MissingContentMD5`) is deleted from with plain `DeleteObject`.
-TEST(IOTestAwsS3Client, DeleteObjectsFallsBackOnMissingContentMD5)
+}
+
+TEST(IOTestAwsS3Client, DeleteObjectsRetriesWithSHA256AndRemembers)
 {
-    DeleteObjectsStubServer stub(/*accept_sha256=*/ false, "MissingContentMD5");
+    const bool md5_available = DB::OpenSSLInitializer::instance().isMD5Available();
+    DeleteObjectsStubServer stub(/*accept_sha256=*/ true);
     DB::S3::URI uri(stub.getUrl() + "/bucket/key");
     auto client = makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false);
 
     DB::S3Capabilities capabilities;
-    DB::deleteFilesFromS3(client, uri.bucket, {"key1", "key2"}, /*if_exists=*/ false, capabilities);
+    DB::S3::S3RequestSettings automatic;
 
-    EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::MD5}));
-    EXPECT_EQ(stub.getPlainDeleteCount(), 2u);
-    EXPECT_EQ(capabilities.isBatchDeleteSupported(), std::optional<bool>(false));
+    deleteTwoKeys(client, uri, capabilities, automatic);
+    /// `Content-MD5` is rejected once and the same batch is retried with `SHA256`. Without `MD5` (FIPS) it starts there.
+    if (md5_available)
+        EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::MD5, Digest::SHA256}));
+    else
+        EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::SHA256}));
+    EXPECT_EQ(capabilities.isDeleteMD5Rejected(), md5_available);
+
+    /// A later call starts with `SHA256`.
+    deleteTwoKeys(client, uri, capabilities, automatic);
+    EXPECT_EQ(stub.getDigests().back(), Digest::SHA256);
+    EXPECT_EQ(stub.getDigests().size(), md5_available ? 3u : 2u);
+}
+
+/// Stores that reject the automatic `MD5` request with a generic error code are retried with `SHA256` too.
+TEST(IOTestAwsS3Client, DeleteObjectsRetriesWithSHA256OnInvalidRequest)
+{
+    const bool md5_available = DB::OpenSSLInitializer::instance().isMD5Available();
+    for (const String error_code : {"InvalidRequest", "InvalidArgument"})
+    {
+        DeleteObjectsStubServer stub(/*accept_sha256=*/ true, error_code);
+        DB::S3::URI uri(stub.getUrl() + "/bucket/key");
+        auto client = makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false);
+
+        DB::S3Capabilities capabilities;
+        DB::S3::S3RequestSettings automatic;
+
+        deleteTwoKeys(client, uri, capabilities, automatic);
+        if (md5_available)
+            EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::MD5, Digest::SHA256})) << error_code;
+        else
+            EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::SHA256})) << error_code;
+        EXPECT_EQ(capabilities.isDeleteMD5Rejected(), md5_available) << error_code;
+        EXPECT_EQ(capabilities.isBatchDeleteSupported(), std::optional<bool>(true)) << error_code;
+        EXPECT_EQ(stub.getPlainDeleteCount(), 0u) << error_code;
+    }
+}
+
+/// The server accepts no digest. With `DeleteObjects` support still undecided, that means it is unsupported.
+TEST(IOTestAwsS3Client, DeleteObjectsFallsBackWhenNoDigestIsAccepted)
+{
+    const bool md5_available = DB::OpenSSLInitializer::instance().isMD5Available();
+    for (const String error_code : {"MissingContentMD5", "InvalidDigest"})
+    {
+        DeleteObjectsStubServer stub(/*accept_sha256=*/ false, error_code);
+        DB::S3::URI uri(stub.getUrl() + "/bucket/key");
+        auto client = makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false);
+
+        DB::S3Capabilities capabilities;
+        DB::S3::S3RequestSettings automatic;
+
+        deleteTwoKeys(client, uri, capabilities, automatic);
+        if (md5_available)
+            EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::MD5, Digest::SHA256})) << error_code;
+        else
+            EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::SHA256})) << error_code;
+        EXPECT_EQ(stub.getPlainDeleteCount(), 2u) << error_code;
+        EXPECT_EQ(capabilities.isBatchDeleteSupported(), std::optional<bool>(false)) << error_code;
+        /// The `SHA256` retry did not succeed, so it is not remembered.
+        EXPECT_FALSE(capabilities.isDeleteMD5Rejected()) << error_code;
+    }
+}
+
+/// Once `DeleteObjects` has worked, a digest error is a fault of that request, not a lack of support.
+TEST(IOTestAwsS3Client, DeleteObjectsDigestErrorAfterSuccessIsThrown)
+{
+    for (const String error_code : {"MissingContentMD5", "InvalidDigest"})
+    {
+        DeleteObjectsStubServer stub(/*accept_sha256=*/ false, error_code);
+        DB::S3::URI uri(stub.getUrl() + "/bucket/key");
+        auto client = makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false);
+
+        DB::S3Capabilities capabilities;
+        capabilities.setIsBatchDeleteSupported(true);
+        DB::S3::S3RequestSettings automatic;
+
+        EXPECT_THROW(deleteTwoKeys(client, uri, capabilities, automatic), DB::Exception) << error_code;
+        EXPECT_EQ(stub.getPlainDeleteCount(), 0u) << error_code;
+        EXPECT_EQ(capabilities.isBatchDeleteSupported(), std::optional<bool>(true)) << error_code;
+        EXPECT_FALSE(capabilities.isDeleteMD5Rejected()) << error_code;
+    }
+}
+
+TEST(IOTestAwsS3Client, DeleteObjectsExplicitChecksumIsNotRetried)
+{
+    DeleteObjectsStubServer stub(/*accept_sha256=*/ true);
+    DB::S3::URI uri(stub.getUrl() + "/bucket/key");
+    auto client = makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false);
+
+    DB::S3Capabilities capabilities;
+    DB::S3::S3RequestSettings explicit_crc32;
+    explicit_crc32[DB::S3RequestSetting::delete_checksum_algorithm] = "CRC32";
+
+    /// The stub wants `SHA256`, but an explicit algorithm is never replaced.
+    EXPECT_THROW(deleteTwoKeys(client, uri, capabilities, explicit_crc32), DB::Exception);
+    EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::None}));
+    EXPECT_EQ(stub.getPlainDeleteCount(), 0u);
+    EXPECT_FALSE(capabilities.isBatchDeleteSupported().has_value());
+    EXPECT_FALSE(capabilities.isDeleteMD5Rejected());
+}
+
+TEST(IOTestAwsS3Client, DeleteChecksumAlgorithmSelection)
+{
+    using DB::S3::RequestChecksum::Algorithm;
+    using DB::S3::RequestChecksum::getDeleteChecksumAlgorithm;
+
+    DB::S3::S3RequestSettings automatic;
+    DB::S3::S3RequestSettings explicit_md5;
+    explicit_md5[DB::S3RequestSetting::delete_checksum_algorithm] = "MD5";
+    DB::S3::S3RequestSettings explicit_crc32;
+    explicit_crc32[DB::S3RequestSetting::delete_checksum_algorithm] = "CRC32";
+
+    const bool md5_available = DB::OpenSSLInitializer::instance().isMD5Available();
+
+    EXPECT_EQ(getDeleteChecksumAlgorithm(automatic, false, false), md5_available ? Algorithm::MD5 : Algorithm::SHA256);
+    /// A server rejection of `MD5` switches the automatic default to `SHA256`.
+    EXPECT_EQ(getDeleteChecksumAlgorithm(automatic, false, true), Algorithm::SHA256);
+    EXPECT_EQ(getDeleteChecksumAlgorithm(automatic, true, false), Algorithm::CRC32);
+    /// An explicit value is used as given, whatever the server did before.
+    EXPECT_EQ(getDeleteChecksumAlgorithm(explicit_crc32, false, true), Algorithm::CRC32);
+    EXPECT_THROW(getDeleteChecksumAlgorithm(explicit_md5, true, false), DB::Exception);
+    if (md5_available)
+        EXPECT_EQ(getDeleteChecksumAlgorithm(explicit_md5, false, true), Algorithm::MD5);
+    else
+        EXPECT_THROW(getDeleteChecksumAlgorithm(explicit_md5, false, false), DB::Exception);
+}
+
+TEST(IOTestAwsS3Client, DeleteObjectsDefaultChecksum)
+{
+    /// Without an available `MD5` digest (FIPS) the default is `SHA256`, otherwise the SDK's `Content-MD5`.
+    const bool fips = !DB::OpenSSLInitializer::instance().isMD5Available();
+    testServerSideEncryption(
+        makeDeleteObjectsRequest(""),
+        "",
+        {},
+        fips ? "authorization: ... SignedHeaders="
+               "amz-sdk-invocation-id;"
+               "amz-sdk-request;"
+               "content-length;"
+               "content-type;"
+               "host;"
+               "x-amz-api-version;"
+               "x-amz-checksum-sha256;"
+               "x-amz-content-sha256;"
+               "x-amz-date;"
+               "x-amz-sdk-checksum-algorithm, ...\n"
+             : "authorization: ... SignedHeaders="
+               "amz-sdk-invocation-id;"
+               "amz-sdk-request;"
+               "content-length;"
+               "content-md5;"
+               "content-type;"
+               "host;"
+               "x-amz-api-version;"
+               "x-amz-content-sha256;"
+               "x-amz-date, ...\n");
+}
+
+namespace
+{
+
+/// A native-copy endpoint that, like S3, answers a server-side copy (`UploadPartCopy`, `CopyObject`) only after
+/// `copy_delay`, the time it takes to copy the data. Records the kind of every request it receives.
+class ServerSideCopyStubServer
+{
+public:
+    enum class Kind
+    {
+        CreateMultipartUpload,
+        UploadPartCopy,
+        CompleteMultipartUpload,
+        CopyObject,
+        Other,
+    };
+
+    explicit ServerSideCopyStubServer(std::chrono::milliseconds copy_delay_)
+        : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
+        , factory(new Factory(*this))
+        , server(std::make_unique<Poco::Net::HTTPServer>(factory, *server_socket, makeMockServerParams()))
+        , copy_delay(copy_delay_)
+    {
+        server->start();
+    }
+
+    ~ServerSideCopyStubServer() { server->stop(); }
+
+    String getUrl() const { return "http://" + server_socket->address().toString(); }
+
+    std::vector<Kind> getRequests() const
+    {
+        std::lock_guard lock(mutex);
+        return requests;
+    }
+
+    size_t getCopyRequestCount() const
+    {
+        std::lock_guard lock(mutex);
+        return static_cast<size_t>(
+            std::ranges::count_if(requests, [](Kind kind) { return kind == Kind::UploadPartCopy || kind == Kind::CopyObject; }));
+    }
+
+private:
+    static Kind classify(const Poco::Net::HTTPServerRequest & request)
+    {
+        const bool has_copy_source = request.has("x-amz-copy-source");
+        const auto query_parameters = Poco::URI(request.getURI()).getQueryParameters();
+        auto has_parameter = [&](const String & name)
+        {
+            return std::ranges::any_of(query_parameters, [&](const auto & parameter) { return parameter.first == name; });
+        };
+
+        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
+        {
+            if (has_parameter("uploads"))
+                return Kind::CreateMultipartUpload;
+            if (has_parameter("uploadId"))
+                return Kind::CompleteMultipartUpload;
+        }
+        else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT && has_copy_source)
+        {
+            if (has_parameter("partNumber") && has_parameter("uploadId"))
+                return Kind::UploadPartCopy;
+            if (query_parameters.empty())
+                return Kind::CopyObject;
+        }
+        return Kind::Other;
+    }
+
+    static String getResponseBody(Kind kind)
+    {
+        switch (kind)
+        {
+            case Kind::CreateMultipartUpload:
+                return R"(<?xml version="1.0" encoding="UTF-8"?><InitiateMultipartUploadResult><Bucket>bucket</Bucket>)"
+                       R"(<Key>dst</Key><UploadId>test-upload-id</UploadId></InitiateMultipartUploadResult>)";
+            case Kind::UploadPartCopy:
+                return R"(<?xml version="1.0" encoding="UTF-8"?><CopyPartResult>)"
+                       R"(<LastModified>2026-01-01T00:00:00.000Z</LastModified><ETag>"part-etag"</ETag></CopyPartResult>)";
+            case Kind::CompleteMultipartUpload:
+                return R"(<?xml version="1.0" encoding="UTF-8"?><CompleteMultipartUploadResult><Bucket>bucket</Bucket>)"
+                       R"(<Key>dst</Key><ETag>"final-etag"</ETag></CompleteMultipartUploadResult>)";
+            case Kind::CopyObject:
+                return R"(<?xml version="1.0" encoding="UTF-8"?><CopyObjectResult>)"
+                       R"(<LastModified>2026-01-01T00:00:00.000Z</LastModified><ETag>"copy-etag"</ETag></CopyObjectResult>)";
+            case Kind::Other:
+                break;
+        }
+        return "";
+    }
+
+    class Handler : public Poco::Net::HTTPRequestHandler
+    {
+    public:
+        explicit Handler(ServerSideCopyStubServer & stub_) : stub(stub_), copy_delay(stub_.copy_delay) {}
+
+        void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
+        {
+            const Kind kind = classify(request);
+            {
+                std::lock_guard lock(stub.mutex);
+                stub.requests.push_back(kind);
+            }
+
+            /// The stub is not touched after the delay: the client may have given up on this request already.
+            if (kind == Kind::UploadPartCopy || kind == Kind::CopyObject)
+                std::this_thread::sleep_for(copy_delay);
+
+            response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+            response.setContentType("application/xml");
+            response.send() << getResponseBody(kind);
+        }
+
+    private:
+        ServerSideCopyStubServer & stub;
+        const std::chrono::milliseconds copy_delay;
+    };
+
+    class Factory : public Poco::Net::HTTPRequestHandlerFactory
+    {
+    public:
+        explicit Factory(ServerSideCopyStubServer & stub_) : stub(stub_) {}
+
+        Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
+        {
+            return new Handler(stub);
+        }
+
+    private:
+        ServerSideCopyStubServer & stub;
+    };
+
+    std::unique_ptr<Poco::Net::ServerSocket> server_socket;
+    Poco::SharedPtr<Factory> factory;
+    std::unique_ptr<Poco::Net::HTTPServer> server;
+    const std::chrono::milliseconds copy_delay;
+
+    mutable std::mutex mutex;
+    std::vector<Kind> requests;
+};
+
+using RequestKind = ServerSideCopyStubServer::Kind;
+
+/// Longer than the 3 s first-attempt receive timeout of a `PUT`, far below the configured `requestTimeoutMs`.
+constexpr auto server_side_copy_delay = std::chrono::milliseconds(3500);
+
+std::shared_ptr<DB::S3::Client> makeServerSideCopyTestClient(const DB::S3::URI & uri)
+{
+    return makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false, [](DB::S3::PocoHTTPClientConfiguration & configuration)
+    {
+        configuration.s3_use_adaptive_timeouts = true;
+        /// The SDK default of 3 s would cut the copy by itself.
+        configuration.requestTimeoutMs = 30 * 1000;
+        /// A cut attempt is resent, so it shows up as a second copy request.
+        configuration.retry_strategy.max_retries = 1;
+    });
+}
+
+}
+
+TEST(IOTestAwsS3Client, UploadPartCopyIsNotRetriedAfterTheAdaptiveTimeout)
+{
+    ServerSideCopyStubServer server(server_side_copy_delay);
+    DB::S3::URI uri(server.getUrl() + "/bucket/src");
+    auto client = makeServerSideCopyTestClient(uri);
+
+    DB::S3::S3RequestSettings settings;
+    settings[DB::S3RequestSetting::max_single_operation_copy_size] = 1;
+
+    Stopwatch watch;
+    bool copied = DB::copyS3File(
+        client, uri.bucket, uri.key, /*src_size=*/ 1024, client, uri.bucket, "dst", settings, DB::ReadSettings{},
+        /*blob_storage_log=*/ nullptr, /*schedule=*/ {}, /*fallback_file_reader=*/ {});
+
+    EXPECT_TRUE(copied);
+    EXPECT_EQ(server.getCopyRequestCount(), 1u);
+    EXPECT_EQ(
+        server.getRequests(),
+        (std::vector<RequestKind>{RequestKind::CreateMultipartUpload, RequestKind::UploadPartCopy, RequestKind::CompleteMultipartUpload}));
+    EXPECT_GE(watch.elapsedMilliseconds(), static_cast<UInt64>(server_side_copy_delay.count()));
+}
+
+TEST(IOTestAwsS3Client, CopyObjectIsNotRetriedAfterTheAdaptiveTimeout)
+{
+    ServerSideCopyStubServer server(server_side_copy_delay);
+    DB::S3::URI uri(server.getUrl() + "/bucket/src");
+    auto client = makeServerSideCopyTestClient(uri);
+
+    Stopwatch watch;
+    bool copied = DB::copyS3File(
+        client, uri.bucket, uri.key, /*src_size=*/ 1024, client, uri.bucket, "dst", DB::S3::S3RequestSettings{}, DB::ReadSettings{},
+        /*blob_storage_log=*/ nullptr, /*schedule=*/ {}, /*fallback_file_reader=*/ {});
+
+    EXPECT_TRUE(copied);
+    EXPECT_EQ(server.getCopyRequestCount(), 1u);
+    EXPECT_EQ(server.getRequests(), (std::vector<RequestKind>{RequestKind::CopyObject}));
+    EXPECT_GE(watch.elapsedMilliseconds(), static_cast<UInt64>(server_side_copy_delay.count()));
 }
 
 TEST(IOTestAwsS3Client, DetectRegionFromS3ExpressEndpoint)
@@ -502,7 +935,7 @@ TEST(IOTestAwsS3Client, DetectRegionFromS3ExpressEndpoint)
         s3_slow_all_threads_after_network_error,
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
-        /* for_disk_s3 = */ false,
+        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {},
         "https");
@@ -658,7 +1091,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
         s3_slow_all_threads_after_network_error,
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
-        /* for_disk_s3 = */ false,
+        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {},
         "http");
@@ -796,7 +1229,7 @@ TEST(IOTestAwsS3Client, AssumeRoleWithSessionPolicy)
         /* s3_slow_all_threads_after_network_error = */ true,
         /* s3_slow_all_threads_after_retryable_error = */ true,
         /* enable_s3_requests_logging = */ false,
-        /* for_disk_s3 = */ false,
+        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {},
         "http");
@@ -858,7 +1291,7 @@ TEST(IOTestAwsS3Client, ClientSharesCacheWithClone)
         true,
         true,
         false,
-        false,
+        DB::HTTPConnectionGroupType::STORAGE,
         {},
         {},
         "https");
@@ -949,7 +1382,7 @@ static DB::S3::PocoHTTPClientConfiguration createWebIdentityClientConfiguration(
         /* s3_slow_all_threads_after_network_error = */ true,
         /* s3_slow_all_threads_after_retryable_error = */ true,
         /* enable_s3_requests_logging = */ false,
-        /* for_disk_s3 = */ false,
+        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {});
 }
@@ -1144,7 +1577,7 @@ public:
         server->start();
     }
     ~FixedETagServer() { server->stop(); }
-    std::string getUrl() const { return "http://" + server_socket->address().toString(); }
+    [[nodiscard]] std::string getUrl() const { return "http://" + server_socket->address().toString(); }
 private:
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
     std::unique_ptr<Poco::Net::HTTPServer> server;
@@ -1214,7 +1647,7 @@ public:
         server->start();
     }
     ~IfMatchAwareServer() { server->stop(); }
-    std::string getUrl() const { return "http://" + server_socket->address().toString(); }
+    [[nodiscard]] std::string getUrl() const { return "http://" + server_socket->address().toString(); }
 private:
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
     std::unique_ptr<Poco::Net::HTTPServer> server;
@@ -1231,7 +1664,7 @@ std::shared_ptr<DB::S3::Client> createTestS3Client(const DB::S3::URI & uri)
         /* s3_slow_all_threads_after_network_error= */ true,
         /* s3_slow_all_threads_after_retryable_error= */ true,
         /* enable_s3_requests_logging= */ false,
-        /* for_disk_s3= */ false,
+        /* group= */ DB::HTTPConnectionGroupType::STORAGE,
         /* opt_disk_name= */ {},
         /* request_throttler= */ {},
         uri.uri.getScheme());
@@ -1459,7 +1892,7 @@ TEST(IOTestAwsS3Client, CredentialCapDoesNotAffectDataPlaneTimeouts)
         /* s3_slow_all_threads_after_network_error = */ true,
         /* s3_slow_all_threads_after_retryable_error = */ true,
         /* enable_s3_requests_logging = */ false,
-        /* for_disk_s3 = */ false,
+        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {},
         "http");

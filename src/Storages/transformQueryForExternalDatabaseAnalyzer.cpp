@@ -1,3 +1,4 @@
+#include <Formats/FormatSettings.h>
 #include <memory>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Parsers/ASTSubquery.h>
@@ -303,7 +304,7 @@ private:
     /// The members of the set the local query builds for `lhs IN rhs`, as a scalar, a row or a list of them. It is needed
     /// when the constant holds an `Enum`, or when a `String` key gets a member of another type, which the local set holds
     /// in its text serialization with the query's format settings (`true` as `bool_true_representation`).
-    QueryTreeNodePtr renderInSet(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs) const
+    [[nodiscard]] QueryTreeNodePtr renderInSet(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs) const
     {
         const auto * constant_node = rhs->as<ConstantNode>();
         if (!constant_node)

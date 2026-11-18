@@ -390,7 +390,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             {
                 /// Print insert data
                 String bytes;
-                auto read_buf = getReadBufferFromASTInsertQuery(ast_to_process);
+                auto read_buf = getReadBufferFromASTInsertQuery(ast_to_process, client_context);
                 WriteBufferFromString write_buf(bytes);
                 copyData(*read_buf, write_buf);
                 fmt::print(stdout, "{}\n", bytes);
@@ -508,7 +508,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             {
                 String bytes;
                 {
-                    auto read_buf = getReadBufferFromASTInsertQuery(query);
+                    auto read_buf = getReadBufferFromASTInsertQuery(query, client_context);
                     WriteBufferFromString write_buf(bytes);
                     copyData(*read_buf, write_buf);
                 }
@@ -1027,6 +1027,8 @@ bool Client::buzzHouse()
                                  BuzzHouse::SQLQueryToString(full_query, reload);
                                  fuzz_config->outf << full_query << std::endl;
                                  server_up &= processBuzzHouseQuery(full_query);
+                                 /// A failed reload keeps the previous version, which a reattach then drops.
+                                 qo.setIntermediateStepSuccess(!have_error);
                              },
                              [&](auto s)
                              { qo.dumpObjectIntermediateSteps(rg, gen, dict, BuzzHouse::SQLObject::DICTIONARY, s, intermediate_queries); },
