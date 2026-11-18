@@ -109,7 +109,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
     extern const MergeTreeSettingsBool enable_block_number_column;
-    extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
     extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
     extern const MergeTreeSettingsUInt64 packed_skip_index_max_bytes;
@@ -1431,7 +1430,11 @@ static void splitAndModifyMutationCommands(
         if ((*data_settings)[MergeTreeSetting::enable_block_number_column] && !part_columns.has(BlockNumberColumn::name))
             for_interpreter.emplace_back(MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = BlockNumberColumn::name, .data_type = BlockNumberColumn::type});
 
-        if ((*data_settings)[MergeTreeSetting::enable_block_offset_column] && !part_columns.has(BlockOffsetColumn::name))
+        /// A part that stores `_block_offset` without `_block_number` has unreliable stored offsets: they are read
+        /// as the row position (see `IMergeTreeDataPart::isSystemColumnInvalidated`). When `_block_number` is
+        /// materialized here, rewrite `_block_offset` too, otherwise the stored offsets become valid again.
+        if (MergeTreeData::shouldPersistBlockOffsetColumn(*data_settings)
+            && (!part_columns.has(BlockOffsetColumn::name) || !part_columns.has(BlockNumberColumn::name)))
             for_interpreter.emplace_back(MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = BlockOffsetColumn::name, .data_type = BlockOffsetColumn::type});
     }
 }

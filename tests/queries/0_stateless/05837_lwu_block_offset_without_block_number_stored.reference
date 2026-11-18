@@ -1,0 +1,61 @@
+stored _block_offset without _block_number
+v1
+_block_offset
+1	0	a
+1	1	b
+1	2	c
+X
+b
+c
+X
+b
+c
+_block_number
+_block_offset
+1
+v2
+_block_offset
+1	0	a
+1	1	b
+1	2	c
+X
+b
+c
+X
+b
+c
+_block_number
+_block_offset
+1
+mutation
+_block_number
+_block_offset
+1	0	a
+1	1	b
+1	2	c
+X
+b
+c
+both columns stored with duplicate pairs
+v1
+1	0	a
+1	0	b
+1	1	c
+Y
+a
+b
+INCORRECT_DATA
+a
+b
+c
+v2
+1	0	a
+1	0	b
+1	1	c
+Y
+a
+b
+INCORRECT_DATA
+a
+b
+c

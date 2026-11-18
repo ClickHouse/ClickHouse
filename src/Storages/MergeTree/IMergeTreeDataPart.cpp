@@ -2090,7 +2090,25 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
 
 bool IMergeTreeDataPart::isSystemColumnInvalidated(const String & column_name) const
 {
-    return invalidated_system_columns.contains(column_name);
+    if (invalidated_system_columns.contains(column_name))
+        return true;
+
+    return column_name == BlockOffsetColumn::name && storesBlockOffsetWithoutBlockNumber();
+}
+
+bool IMergeTreeDataPart::hasInvalidatedSystemColumns() const
+{
+    return !invalidated_system_columns.empty() || storesBlockOffsetWithoutBlockNumber();
+}
+
+bool IMergeTreeDataPart::storesBlockOffsetWithoutBlockNumber() const
+{
+    /// Projection parts store `_block_offset` of commit-order projections on their own.
+    /// Patch parts must never have invalidated system columns: _block_number and _block_offset are their payload.
+    if (parent_part || info.isPatch())
+        return false;
+
+    return getColumnPosition(BlockOffsetColumn::name).has_value() && !getColumnPosition(BlockNumberColumn::name).has_value();
 }
 
 NameSet IMergeTreeDataPart::getSystemColumnsToInvalidate(const MergeTreePartInfo & part_info)

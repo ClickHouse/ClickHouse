@@ -2149,6 +2149,11 @@ NamesAndTypesList MergeTreeData::getMinMaxColumns(const StorageInMemoryMetadata 
     return getMinMaxColumns(metadata, data_settings, MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET);
 }
 
+bool MergeTreeData::shouldPersistBlockOffsetColumn(const MergeTreeSettings & data_settings)
+{
+    return data_settings[MergeTreeSetting::enable_block_offset_column] && data_settings[MergeTreeSetting::enable_block_number_column];
+}
+
 ExpressionActionsPtr
 MergeTreeData::getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
 {
