@@ -31,7 +31,7 @@ struct ObjectStorageQueueTableMetadata
         bool from_named_collection = false;
 
         [[nodiscard]] bool empty() const { return endpoint.empty(); }
-        String getHash() const;
+        [[nodiscard]] String getHash() const;
     };
 
     /// Non-changeable settings.
