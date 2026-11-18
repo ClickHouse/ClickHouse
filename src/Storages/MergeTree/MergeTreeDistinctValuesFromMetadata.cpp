@@ -303,9 +303,14 @@ std::unordered_map<String, UInt64> estimateDistinctValuesFromMetadata(
         UInt64 compressed_bytes = 0;
     };
     std::unordered_map<String, CompressedSize> sizes;
+    /// The first column of the sorting key is sorted in every part, so its compressed size tells the lengths of its runs
+    /// of equal values rather than its number of distinct values: e.g. a unique sorted column compresses well. It has
+    /// no estimate when the primary key index gives none (its runs are shorter than granules).
+    const auto & sorting_key_columns = metadata->getSortingKey().column_names;
+    const String first_sorted_column = sorting_key_columns.empty() ? String{} : sorting_key_columns.front();
     for (const auto & column_name : column_names)
     {
-        if (result.contains(column_name))
+        if (result.contains(column_name) || column_name == first_sorted_column)
             continue;
         const auto * column = columns.tryGet(column_name);
         if (!column || column->default_desc.kind == ColumnDefaultKind::Alias || column->default_desc.kind == ColumnDefaultKind::Ephemeral)
