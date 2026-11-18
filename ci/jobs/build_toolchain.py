@@ -9,17 +9,12 @@ from ci.praktika.utils import MetaClasses, Shell, Utils
 
 TEMP = "/tmp"
 
-LLVM_VERSION = "23"
+LLVM_VERSION = "22"
 
 LLVM_SOURCE_DIR = f"{TEMP}/llvm-project"
 NINJA_SOURCE_DIR = f"{TEMP}/ninja-src"
 NINJA_BUILD_DIR = f"{TEMP}/ninja-build"
 NINJA_LOG_SHARE_DIR = "share/clickhouse-build"
-JEMALLOC_VERSION = "5.4.0"
-JEMALLOC_URL = "https://github.com/jemalloc/jemalloc/releases/download/5.4.0/jemalloc-5.4.0.tar.bz2"
-JEMALLOC_SHA256 = "200776fac271093e7c2f21edd6d62657ecd2be578d9328633f2a86bfa6ef4f1d"
-JEMALLOC_SOURCE_DIR = f"{TEMP}/jemalloc-{JEMALLOC_VERSION}"
-JEMALLOC_LIBRARY = f"{JEMALLOC_SOURCE_DIR}/lib/libjemalloc_pic.a"
 STAGE1_BUILD_DIR = f"{TEMP}/toolchain-stage1"
 STAGE1_INSTALL_DIR = f"{TEMP}/toolchain-stage1-install"
 STAGE2_BUILD_DIR = f"{TEMP}/toolchain-stage2"
@@ -53,16 +48,15 @@ CROSS_BUILTIN_TARGETS = [
     ("powerpc64le-unknown-linux-gnu", "Linux"),
     ("riscv64-unknown-linux-gnu", "Linux"),
     ("loongarch64-unknown-linux-gnu", "Linux"),
-    ("x86_64-pc-freebsd14", "FreeBSD"),
-    ("aarch64-unknown-freebsd14", "FreeBSD"),
-    ("powerpc64le-unknown-freebsd14", "FreeBSD"),
+    ("x86_64-pc-freebsd13", "FreeBSD"),
+    ("aarch64-unknown-freebsd13", "FreeBSD"),
+    ("powerpc64le-unknown-freebsd13", "FreeBSD"),
 ]
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
     CLONE_LLVM = "clone_llvm"
     BUILD_NINJA = "build_ninja"
-    BUILD_JEMALLOC = "build_jemalloc"
     STAGE1_BUILD = "stage1_build"
     PROFILE_COLLECTION = "profile_collection"
     STAGE2_BUILD = "stage2_build"
@@ -192,40 +186,6 @@ def main():
             # Clean up source dir to save space
             clean_dirs(NINJA_SOURCE_DIR)
 
-    # Stage 0.6: Build jemalloc, which the final toolchain executables link instead of glibc malloc
-    if res and JobStages.BUILD_JEMALLOC in stages:
-        clean_dirs(JEMALLOC_SOURCE_DIR)
-        jemalloc_tarball = f"{TEMP}/jemalloc-{JEMALLOC_VERSION}.tar.bz2"
-        results.append(
-            Result.from_commands_run(
-                name=f"Download jemalloc {JEMALLOC_VERSION}",
-                command=f"curl -fsSL -o {jemalloc_tarball} {JEMALLOC_URL}",
-                retries=3,
-            )
-        )
-        res = results[-1].is_ok()
-
-        if res:
-            # jemalloc fails to start if the kernel page is larger than its own; aarch64 kernels use up to 64 KiB.
-            # Huge pages (2 MiB with 4 KiB pages) back the heap and metadata unless MALLOC_CONF says otherwise.
-            lg_page = 16 if arch == "aarch64" else 12
-            results.append(
-                Result.from_commands_run(
-                    name="Build jemalloc",
-                    command=[
-                        f"echo '{JEMALLOC_SHA256}  {jemalloc_tarball}' | sha256sum -c",
-                        f"tar -xjf {jemalloc_tarball} -C {TEMP}",
-                        f"cd {JEMALLOC_SOURCE_DIR} && ./configure"
-                        f" CC=clang-{LLVM_VERSION} CXX=clang++-{LLVM_VERSION}"
-                        f" EXTRA_CFLAGS=-g0 EXTRA_CXXFLAGS=-g0"
-                        f" --with-lg-page={lg_page} --with-lg-hugepage=21"
-                        f" --with-malloc-conf=thp:always,metadata_thp:always",
-                        f"make -C {JEMALLOC_SOURCE_DIR} -j$(nproc) build_lib_static",
-                    ],
-                )
-            )
-            res = results[-1].is_ok()
-
     # Stage 1: Build instrumented clang for PGO profile collection
     # Only needs clang + lld (for compilation/linking) and compiler-rt (profiling runtime)
     if res and JobStages.STAGE1_BUILD in stages:
@@ -244,7 +204,7 @@ def main():
             f" -DLLVM_ENABLE_LLD=ON"
             f" -DLLVM_ENABLE_TERMINFO=OFF"
             f" -DLLVM_ENABLE_ZLIB=FORCE_ON"
-            f" -DLLVM_ENABLE_ZSTD=FORCE_ON"
+            f" -DLLVM_ENABLE_ZSTD=OFF"
             f" -DCMAKE_INSTALL_PREFIX={STAGE1_INSTALL_DIR}"
             f" -S {LLVM_SOURCE_DIR}/llvm"
             f" -B {STAGE1_BUILD_DIR}"
@@ -451,12 +411,11 @@ def main():
             f" -DCMAKE_CXX_COMPILER=clang++-{LLVM_VERSION}"
             f" -DLLVM_ENABLE_LLD=ON"
             f" -DLLVM_ENABLE_LTO=Thin"
-            # CMake links its compiler checks with these too, so add the libstdc++ that jemalloc's C++ part needs
-            f' -DCMAKE_EXE_LINKER_FLAGS="-Wl,--emit-relocs,-znow -Wl,--whole-archive {JEMALLOC_LIBRARY} -Wl,--no-whole-archive -lstdc++"'
+            f' -DCMAKE_EXE_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
             f' -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
             f" -DLLVM_ENABLE_TERMINFO=OFF"
             f" -DLLVM_ENABLE_ZLIB=FORCE_ON"
-            f" -DLLVM_ENABLE_ZSTD=FORCE_ON"
+            f" -DLLVM_ENABLE_ZSTD=OFF"
             f" -DLLVM_BINUTILS_INCDIR=/usr/include"
             f' -DLLVM_BUILTIN_TARGETS="{builtin_targets}"'
             f" {builtin_cmake_args}"
@@ -718,19 +677,6 @@ def main():
             )
         )
         res = results[-1].is_ok()
-
-        # The executables link jemalloc statically, and its license must ship with them
-        if res:
-            results.append(
-                Result.from_commands_run(
-                    name="Install jemalloc license",
-                    command=(
-                        f"install -D -m 644 {JEMALLOC_SOURCE_DIR}/COPYING"
-                        f" {STAGE2_INSTALL_DIR}/share/doc/jemalloc/COPYING"
-                    ),
-                )
-            )
-            res = results[-1].is_ok()
 
         if res:
             output_path = f"{OUTPUT_DIR}/clang-pgo-bolt.tar.zst"

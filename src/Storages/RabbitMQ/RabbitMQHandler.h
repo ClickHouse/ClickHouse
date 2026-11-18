@@ -23,12 +23,6 @@ namespace Loop
 /// DROP TABLE / INSERT shutdown / server shutdown can block when the broker connection is dead.
 static const uint64_t BLOCKING_LOOP_TIMEOUT_MS = 30000;
 
-/// Timeout for waiting on the consumer channels to close before a dropped table deletes its
-/// queues. Far below BLOCKING_LOOP_TIMEOUT_MS because the wait needs a single channel.close round
-/// trip, while a channel awaiting a reply that never comes queues its close and would make every
-/// DROP TABLE pay the timeout in full. Giving up restores the behaviour of not waiting at all.
-static const uint64_t CONSUMER_CHANNEL_CLOSE_TIMEOUT_MS = 1000;
-
 using ChannelPtr = std::unique_ptr<AMQP::TcpChannel>;
 
 class RabbitMQHandler : public AMQP::LibUvHandler
@@ -36,7 +30,6 @@ class RabbitMQHandler : public AMQP::LibUvHandler
 
 public:
     RabbitMQHandler(uv_loop_t * loop_, LoggerPtr log_);
-    ~RabbitMQHandler() override;
 
     void onError(AMQP::TcpConnection * connection, const char * message) override;
     void onReady(AMQP::TcpConnection * connection) override;
@@ -72,9 +65,6 @@ private:
     std::atomic<bool> connection_running, loop_running;
     std::atomic<UInt8> loop_state;
     std::mutex startup_mutex;
-    /// Wakes `startLoop` blocked in the poller when a stop is requested. Thread-safe to signal.
-    /// On the heap: it is closed asynchronously by the loop, which can outlive the handler.
-    uv_async_t * wake_async;
 };
 
 using RabbitMQHandlerPtr = std::shared_ptr<RabbitMQHandler>;

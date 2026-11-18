@@ -12,21 +12,10 @@ integration:
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
+import { Image } from "/snippets/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/clickpipes/_changing_tls_settings.mdx';
-import PostgresClickPipeCli from '/snippets/clickpipes/_postgres_clickpipe_cli.mdx';
 
-import SettingPartitionBy from '/snippets/clickpipes/_target_ch_partition_by.mdx';
-
-<Visibility for="agents">
-
-<PostgresClickPipeCli />
-
-</Visibility>
-
-<Visibility for="humans">
-<View title="Cloud UI">
-
-You can use ClickPipes to ingest data from your source Postgres database into ClickHouse Cloud. The source Postgres database can be [ClickHouse Managed Postgres](/products/managed-postgres/overview), or hosted on-premises or in the cloud including Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase and others.
+You can use ClickPipes to ingest data from your source Postgres database into ClickHouse Cloud. The source Postgres database can be hosted on-premises or in the cloud including Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase and others.
 
 Postgres ClickPipes can be deployed and managed manually using the ClickPipes UI, as well as programmatically using [OpenAPI](/integrations/clickpipes/programmatic-access/openapi) and [Terraform](/integrations/clickpipes/programmatic-access/terraform).
 
@@ -34,25 +23,23 @@ Postgres ClickPipes can be deployed and managed manually using the ClickPipes UI
 
 To get started, you first need to make sure that your Postgres database is set up correctly. Depending on your source Postgres instance, you may follow any of the following guides:
 
-1. [ClickHouse Managed Postgres](/integrations/clickpipes/postgres/source/managed-postgres), which has logical replication enabled and ClickPipes access allowed out of the box.
+1. [Amazon RDS Postgres](/integrations/clickpipes/postgres/source/rds)
 
-2. [Amazon RDS Postgres](/integrations/clickpipes/postgres/source/rds)
+2. [Amazon Aurora Postgres](/integrations/clickpipes/postgres/source/aurora)
 
-3. [Amazon Aurora Postgres](/integrations/clickpipes/postgres/source/aurora)
+3. [Supabase Postgres](/integrations/clickpipes/postgres/source/supabase)
 
-4. [Supabase Postgres](/integrations/clickpipes/postgres/source/supabase)
+4. [Google Cloud SQL Postgres](/integrations/clickpipes/postgres/source/google-cloudsql)
 
-5. [Google Cloud SQL Postgres](/integrations/clickpipes/postgres/source/google-cloudsql)
+5. [Azure Flexible Server for Postgres](/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
 
-6. [Azure Flexible Server for Postgres](/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
+6. [Neon Postgres](/integrations/clickpipes/postgres/source/neon-postgres)
 
-7. [Neon Postgres](/integrations/clickpipes/postgres/source/neon-postgres)
+7. [Crunchy Bridge Postgres](/integrations/clickpipes/postgres/source/crunchy-postgres)
 
-8. [Crunchy Bridge Postgres](/integrations/clickpipes/postgres/source/crunchy-postgres)
+8. [Generic Postgres Source](/integrations/clickpipes/postgres/source/generic), if you're using any other Postgres provider or using a self-hosted instance.
 
-9. [Generic Postgres Source](/integrations/clickpipes/postgres/source/generic), if you're using any other Postgres provider or using a self-hosted instance.
-
-10. [TimescaleDB](/integrations/clickpipes/postgres/source/timescale), if you're using the TimescaleDB extension on a managed service or self-hosted instance.
+9. [TimescaleDB](/integrations/clickpipes/postgres/source/timescale), if you're using the TimescaleDB extension on a managed service or self-hosted instance.
 
 <Warning>
 
@@ -63,44 +50,20 @@ Once your source Postgres database is set up, you can continue creating your Cli
 
 ## Creating your ClickPipe {#creating-your-clickpipe}
 
-Make sure you're logged in to your ClickHouse Cloud account. If you don't have an account yet, you can sign up [here](https://clickhouse.cloud/signUp?loc=docs-integrations-clickpipes-postgres).
+Make sure you're logged in to your ClickHouse Cloud account. If you don't have an account yet, you can sign up [here](https://cloud.clickhouse.com/).
 
 [//]: # (   TODO update image here)
 1. In the ClickHouse Cloud console, navigate to your ClickHouse Cloud Service.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![ClickPipes service](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes service" size="lg" border/>
 
 2. Select the `Data Sources` button on the left-side menu and click on "Set up a ClickPipe"
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Select imports](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Select imports" size="lg" border/>
 
 3. Select the `Postgres CDC` tile
 
-   <div className="ch-image-lg">
-
-   <Frame>
-
-   ![Select Postgres](/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp)
-
-   </Frame>
-
-   </div>
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp" alt="Select Postgres" size="lg" border/>
 
 ### Adding your source Postgres database connection {#adding-your-source-postgres-database-connection}
 
@@ -112,15 +75,7 @@ Make sure you're logged in to your ClickHouse Cloud account. If you don't have a
    For more information refer to the source Postgres setup guides linked at [the top of this page](#prerequisites).
 </Info>
 
-   <div className="ch-image-lg">
-
-   <Frame>
-
-   ![Fill in connection details](/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg)
-
-   </Frame>
-
-   </div>
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg" alt="Fill in connection details" size="lg" border/>
 
 #### (Optional) Setting up AWS Private Link {#optional-setting-up-aws-private-link}
 
@@ -139,15 +94,7 @@ You can specify SSH tunneling details if your source Postgres database isn't pub
 1. Enable the "Use SSH Tunnelling" toggle.
 2. Fill in the SSH connection details.
 
-   <div className="ch-image-lg">
-
-   <Frame>
-
-   ![SSH tunneling](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
-
-   </Frame>
-
-   </div>
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="SSH tunneling" size="lg" border/>
 
 3. To use Key-based authentication, click on "Revoke and generate key pair" to generate a new key pair and copy the generated public key to your SSH server under `~/.ssh/authorized_keys`.
 4. Click on "Verify Connection" to verify the connection.
@@ -163,15 +110,7 @@ Once the connection details are filled in, click on "Next".
 
 5. Make sure to select the replication slot from the dropdown list you created in the prerequisites step.
 
-   <div className="ch-image-lg">
-
-   <Frame>
-
-   ![Select replication slot](/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg)
-
-   </Frame>
-
-   </div>
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg" alt="Select replication slot" size="lg" border/>
 
 #### Advanced settings {#advanced-settings}
 
@@ -187,15 +126,7 @@ You can configure the Advanced settings if needed. A brief description of each s
 
 6. Here you can select the destination database for your ClickPipe. You can either select an existing database or create a new one.
 
-   <div className="ch-image-lg">
-
-   <Frame>
-
-   ![Select destination database](/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg)
-
-   </Frame>
-
-   </div>
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg" alt="Select destination database" size="lg" border/>
 
 7. You can select the tables you want to replicate from the source Postgres database. While selecting the tables, you can also choose to rename the tables in the destination ClickHouse database as well as exclude specific columns.
 
@@ -203,35 +134,18 @@ You can configure the Advanced settings if needed. A brief description of each s
    If you're defining an ordering key in ClickHouse differently than from the primary key in Postgres, don't forget to read all the [considerations](/integrations/clickpipes/postgres/ordering-keys) around it
 </Warning>
 
-8. <SettingPartitionBy />
+8. Additionally, you can provide a custom `PARTITION BY <expr>` expression to control destination [ClickHouse table partitioning](/concepts/core-concepts/partitions).
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/partition-by.png" alt="Partition by" size="lg" border/>
 
 ### Review permissions and start the ClickPipe {#review-permissions-and-start-the-clickpipe}
 
-9. Select the "Full access" role from the permissions dropdown and click "Complete Setup".
+8. Select the "Full access" role from the permissions dropdown and click "Complete Setup".
 
-   <div className="ch-image-lg">
-
-   <Frame>
-
-   ![Review permissions](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
-
-   </Frame>
-
-   </div>
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Review permissions" size="lg" border/>
 
 ## What's next? {#whats-next}
 
 Once you've set up your ClickPipe to replicate data from PostgreSQL to ClickHouse Cloud, you can focus on how to query and model your data for optimal performance. See the [migration guide](/get-started/migrate/postgres/overview) to assess which strategy best suits your requirements, as well as the [Deduplication strategies (using CDC)](/integrations/clickpipes/postgres/deduplication) and [Ordering Keys](/integrations/clickpipes/postgres/ordering-keys) pages for best practices on CDC workloads.
 
 For common questions around PostgreSQL CDC and troubleshooting, see the [Postgres FAQs page](/integrations/clickpipes/postgres/faq).
-
-</View>
-
-<View title="CLI">
-
-You can follow this path yourself, script it, or hand it to an AI agent. Switch to the **Cloud UI** view for the console version.
-
-<PostgresClickPipeCli />
-
-</View>
-</Visibility>

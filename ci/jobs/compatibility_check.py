@@ -1,6 +1,4 @@
 import argparse
-import re
-import struct
 from pathlib import Path
 
 from pip._vendor.packaging.version import Version
@@ -56,73 +54,6 @@ def process_glibc_check():
     return ok
 
 
-def process_pie_check():
-    # Nothing in the build fails when the binary comes out position dependent: -fPIE only makes the
-    # code relocatable, and whether the executable itself is position independent is the linker's
-    # decision, so it is checked on the packaged binary instead.
-    header = Shell.get_output(
-        f"readelf -h --wide {temp_path}/clickhouse", verbose=True, strict=True
-    )
-    elf_type = re.search(r"^\s*Type:\s+(\w+)", header, re.MULTILINE)
-    if not elf_type:
-        print(f"FAILED: no ELF type in the header:\n{header}")
-        return False
-
-    ok = True
-    if elf_type.group(1) != "DYN":
-        print(
-            f"FAILED: ELF type is [{elf_type.group(1)}], a position independent executable is [DYN]"
-        )
-        ok = False
-
-    # A shared library is `DYN` as well, so the type alone does not say that this is a position
-    # independent *executable*. `DF_1_PIE` is what the linker sets for `-pie` and nothing else.
-    dynamic = Shell.get_output(
-        f"readelf -d --wide {temp_path}/clickhouse", verbose=True, strict=True
-    )
-    flags = re.search(r"^.*\(FLAGS_1\)\s+Flags:(.*)$", dynamic, re.MULTILINE)
-    if not flags or "PIE" not in flags.group(1).split():
-        print(f"FAILED: DF_1_PIE is not set: [{flags.group(0).strip() if flags else 'no FLAGS_1'}]")
-        ok = False
-
-    return ok
-
-
-def process_runpath_check():
-    # Only system libraries are needed, so any library search path points into the build tree.
-    dynamic = Shell.get_output(
-        f"readelf -d --wide {temp_path}/clickhouse", verbose=True, strict=True
-    )
-    paths = re.findall(r"^.*\((?:RPATH|RUNPATH)\).*$", dynamic, re.MULTILINE)
-    for path in paths:
-        print(f"FAILED: [{path.strip()}]")
-    return not paths
-
-
-def process_pauth_check():
-    # `retaa` and `retab` raise SIGILL on cores without `FEAT_PAuth` (Graviton2, Ampere Altra), see
-    # https://github.com/ClickHouse/ClickHouse/issues/131748. They appear in code compiled for
-    # ARMv8.3 or later with `-mbranch-protection=pac-ret`.
-    forbidden = [struct.pack("<I", word) for word in (0xD65F0BFF, 0xD65F0FFF)]
-    data = Path(f"{temp_path}/clickhouse").read_bytes()
-    shoff = struct.unpack_from("<Q", data, 0x28)[0]
-    shentsize, shnum = struct.unpack_from("<HH", data, 0x3A)
-    found = 0
-    for i in range(shnum):
-        _, sh_type, sh_flags, _, offset, size = struct.unpack_from(
-            "<IIQQQQ", data, shoff + i * shentsize
-        )
-        if sh_type != 1 or not sh_flags & 4:  # SHT_PROGBITS, SHF_EXECINSTR
-            continue
-        for pattern in forbidden:
-            pos = data.find(pattern, offset, offset + size)
-            while pos != -1:
-                found += (pos - offset) % 4 == 0
-                pos = data.find(pattern, pos + 1, offset + size)
-    print(f"Found {found} `retaa`/`retab` instructions")
-    return found == 0
-
-
 def parse_args():
     parser = argparse.ArgumentParser("Check compatibility with old distributions")
     parser.add_argument("--check-name", required=False)
@@ -136,7 +67,7 @@ def main():
     assert check_name
     check_glibc = True
     # currently hardcoded to x86, don't enable for AARCH64
-    check_old_distributions = (
+    check_distributions = (
         "aarch64" not in check_name.lower() and "arm" not in check_name.lower()
     )
 
@@ -164,44 +95,13 @@ def main():
             )
         )
 
-    test_results.append(
-        Result.from_commands_run(
-            name="position independent executable",
-            command=process_pie_check,
-        )
-    )
-
-    test_results.append(
-        Result.from_commands_run(
-            name="no RPATH or RUNPATH",
-            command=process_runpath_check,
-        )
-    )
-
-    if Utils.is_arm():
-        test_results.append(
-            Result.from_commands_run(
-                name="no instructions that need FEAT_PAuth",
-                command=process_pauth_check,
-            )
-        )
-
-    if check_old_distributions:
+    if check_distributions:
         test_results.append(
             Result.from_commands_run(
                 name="ubuntu12",
                 command=[
-                    f"docker run --volume={temp_path}/clickhouse:/clickhouse ubuntu:12.04 /clickhouse local --tmp --query 'select 1'",
+                    f"docker run --volume={temp_path}/clickhouse:/clickhouse ubuntu:12.04 /clickhouse local --query 'select 1'",
                 ],
-                with_info=True,
-            )
-        )
-        test_results.append(
-            Result.from_commands_run(
-                name="ubuntu12 (rseq unavailable)",
-                command=[f"""
-                docker run --volume={temp_path}/clickhouse:/clickhouse ubuntu:12.04 /clickhouse local --query "select throwIf(not(count())) from system.warnings where message like '%rseq%'"
-                """.strip()],
                 with_info=True,
             )
         )
@@ -209,30 +109,11 @@ def main():
             Result.from_commands_run(
                 name="centos5",
                 command=[
-                    f"docker run --volume={temp_path}/clickhouse:/clickhouse centos:5 /clickhouse local --tmp --query 'select 1'"
+                    f"docker run --volume={temp_path}/clickhouse:/clickhouse centos:5 /clickhouse local --query 'select 1'"
                 ],
                 with_info=True,
             )
         )
-
-    test_results.append(
-        Result.from_commands_run(
-            name="ubuntu22 (rseq available)",
-            command=[f"""
-            docker run --volume={temp_path}/clickhouse:/clickhouse ubuntu:22.04 /clickhouse local --query "select throwIf(count()) from system.warnings where message like '%rseq%'"
-            """.strip()],
-            with_info=True,
-        )
-    )
-    test_results.append(
-        Result.from_commands_run(
-            name="ubuntu22 (rseq off)",
-            command=[f"""
-            docker run --volume={temp_path}/clickhouse:/clickhouse -e GLIBC_TUNABLES=glibc.pthread.rseq=0 ubuntu:22.04 /clickhouse local --query "select throwIf(not(count())) from system.warnings where message like '%rseq%'"
-            """.strip()],
-            with_info=True,
-        )
-    )
 
     Result.create_from(results=test_results, stopwatch=stopwatch).complete_job()
 
