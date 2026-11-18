@@ -288,8 +288,6 @@ GROUP BY o_year ORDER BY o_year;
 
 -- Q09: Product type profit measure (part, supplier, lineitem, partsupp, orders, nation)
 -- Filter: p_name LIKE '%green%' -> ~1.13M parts (real selectivity ~5.6%).
--- `o_orderdate` keeps its SF100 NDV: the `o_year` group key inherits it, without it the key would
--- fall back to 10% of the join output.
 SET param__internal_join_table_stat_hints = '{
     "part":     { "cardinality": 1128000,   "avg_row_bytes": 8,  "distinct_keys": { "p_partkey": 1128000,   "p_type": 150, "p_brand": 25 } },
     "supplier": { "cardinality": 1000000,   "avg_row_bytes": 8,  "distinct_keys": { "s_suppkey": 1000000,   "s_nationkey": 25 } },
