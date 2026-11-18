@@ -23,10 +23,11 @@ have no coverage, including shell tests, are included too. Every query in every
 selected XML runs, with the usual adaptive timing repetitions. These runs use six
 shards per enabled architecture. The selected tests are placed on the shards
 longest first, as in the shard assignment of the coverage collection, weighted by
-the median runtime of each test in the PR runs of the same architecture that ran
-all its queries, from 8 days to 1 day before the selection. A test without such a
-runtime gets the upper quartile, a test changed since the coverage timings at
-least that.
+the median runtime of each test in the PR runs of the same architecture with its
+largest recorded number of queries, from 8 days to 1 day before the workflow run
+started, so that a rerun of some shards keeps the placement of the others. A test
+without such a runtime gets the upper quartile, a test changed since, or absent
+from, the coverage timings at least that.
 
 The `pr-performance` label runs the full test suite on eight ARM shards; AMD
 uses coverage selection on six shards. Changes that coverage cannot see use the

@@ -12,6 +12,7 @@ import urllib.parse
 import urllib.request
 from collections import defaultdict
 from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ci.jobs.performance_coverage_sharding import assign_tests, load_timings, test_identity
@@ -707,7 +708,9 @@ class PerformanceSelection(Targeting):
 
     def shard_tests(self, test_files, shard, shards, arch, directory=Path("tests/performance")):
         # Selected tests run all their queries; balance the runtimes of the earlier PR runs that did too.
-        cutoff = sql_string(self.selection_cutoff())
+        # Every attempt of the run reads the same rows, so a rerun of some shards keeps the assignment of the others.
+        start = datetime.fromtimestamp(self.info.workflow_start_time, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        cutoff = sql_string(start)
         rows = self.rows(f"""
             SELECT test, quantileExact(wall_clock_sec) AS seconds
             FROM (
@@ -740,6 +743,7 @@ class PerformanceSelection(Targeting):
             skip_shell_queries=False,
         )
         self.selection_diagnostics["shard_balance"] = {
+            "weights_before": start,
             "weighted_tests": len(timings["tests"]),
             "predicted_seconds": plan["predicted_job_seconds"],
         }
