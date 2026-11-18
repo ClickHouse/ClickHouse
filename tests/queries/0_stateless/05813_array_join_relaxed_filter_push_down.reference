@@ -8,6 +8,15 @@
 2
 -- a branch with no condition on the first array gives nothing to the first step
 1
+-- a condition that can throw stays above
+1
+a1	c0	24
+a3	c1	4
+-- a condition that can throw keeps its guard on the later array
+0	1
+1	0
+-- a condition that can throw does not run on a row that an empty later array removes
+1	0
 -- same rows as without the filter push down
 1
 1

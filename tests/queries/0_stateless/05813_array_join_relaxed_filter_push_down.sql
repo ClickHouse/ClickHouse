@@ -40,6 +40,31 @@ SELECT count() FROM (EXPLAIN SELECT a, c FROM t_aj_or ARRAY JOIN A AS a ARRAY JO
     WHERE (a = 'a1' AND c = 'c0') OR c = 'c1')
 WHERE explain LIKE '%Element filter column%';
 
+SELECT '-- a condition that can throw stays above';
+-- C is empty when id % 3 = 0, and without the lift up intDiv runs only above the ARRAY JOIN of C
+SELECT count() FROM (EXPLAIN SELECT a, c FROM t_aj_or ARRAY JOIN A AS a ARRAY JOIN C AS c
+    WHERE (intDiv(6, id % 3) > 0 AND a = 'a1' AND c = 'c0') OR (a = 'a3' AND c = 'c1') SETTINGS query_plan_lift_up_array_join = 0)
+WHERE explain LIKE '%Element filter column%' AND explain NOT LIKE '%intDiv%';
+SELECT a, c, count() FROM t_aj_or ARRAY JOIN A AS a ARRAY JOIN C AS c
+    WHERE (intDiv(6, id % 3) > 0 AND a = 'a1' AND c = 'c0') OR (a = 'a3' AND c = 'c1')
+GROUP BY a, c ORDER BY a, c SETTINGS query_plan_lift_up_array_join = 0;
+
+SELECT '-- a condition that can throw keeps its guard on the later array';
+DROP TABLE IF EXISTS t_aj_throw;
+CREATE TABLE t_aj_throw (A Array(Int64), B Array(Int64)) ENGINE = Memory;
+INSERT INTO t_aj_throw VALUES ([0], [1]), ([1], [0]);
+SELECT a, b FROM t_aj_throw ARRAY JOIN A AS a ARRAY JOIN B AS b
+    WHERE (b = 0 AND intDiv(1, a) > 0) OR (b = 1 AND a = 0)
+ORDER BY a, b SETTINGS query_plan_lift_up_array_join = 0, short_circuit_function_evaluation = 'force_enable';
+
+SELECT '-- a condition that can throw does not run on a row that an empty later array removes';
+TRUNCATE TABLE t_aj_throw;
+INSERT INTO t_aj_throw VALUES ([0], []), ([1], [0]);
+SELECT a, b FROM t_aj_throw ARRAY JOIN A AS a ARRAY JOIN B AS b
+    WHERE (intDiv(1, a) > 0 AND b = 0) OR (a = 5 AND b = 1)
+ORDER BY a, b SETTINGS query_plan_lift_up_array_join = 0;
+DROP TABLE t_aj_throw;
+
 SELECT '-- same rows as without the filter push down';
 SELECT
     (SELECT groupArray((a, b, c, n)) FROM (SELECT arrayJoin(A) AS a, arrayJoin(B) AS b, arrayJoin(C) AS c, count() AS n FROM t_aj_or
