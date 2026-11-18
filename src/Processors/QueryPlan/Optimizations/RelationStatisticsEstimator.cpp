@@ -19,8 +19,10 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/IStorage.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/logger_useful.h>
@@ -352,6 +354,20 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
         return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name, .source = RowEstimateSource::Statistics};
+    }
+
+    /// A storage read as a whole, e.g. the block inserted into the source table of a materialized view.
+    /// The step applies no filter itself, so with a filter above it the row count is an upper bound.
+    if (const auto * reading = typeid_cast<const ReadFromStorageStep *>(step))
+    {
+        const auto & storage = reading->getStorage();
+        if (auto total_rows = storage->totalRows(reading->getContext()))
+            return RelationStats{
+                .estimated_rows = *total_rows,
+                .table_name = storage->getStorageID().getTableName(),
+                .imprecise_estimate = filter != nullptr,
+                .source = RowEstimateSource::Statistics};
+        return {};
     }
 
     /// We cannot do typeid_cast<const ReadFromSystemOneStep *>(step)
