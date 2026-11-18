@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
-# Tag no-parallel: the pause failpoint is global to the server and would hold the async inserts of other tests.
-# Tag no-fasttest: needs failpoints.
 
 # Two flushes of one key overlap, and the older one finishes while the newer one is still running.
 # An insert with the key must then wait for its busy timeout, as another client inserts with it.
@@ -10,14 +7,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-FAILPOINT=async_insert_pause_before_schedule
-trap '${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FAILPOINT}"' EXIT
-
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_overlap (n UInt64) ENGINE = MergeTree ORDER BY n;
     CREATE TABLE t_overlap_sink (x UInt8) ENGINE = Null;
-    -- The flush of a row with value 1 sleeps for 3 seconds.
-    CREATE MATERIALIZED VIEW t_overlap_mv TO t_overlap_sink AS SELECT sleepEachRow(3) AS x FROM t_overlap WHERE n = 1;"
+    -- The flush of a row with value 2 sleeps for 3 seconds, of a row with value 1 for 6 seconds.
+    CREATE MATERIALIZED VIEW t_overlap_mv_1 TO t_overlap_sink AS SELECT sleepEachRow(3) AS x FROM t_overlap WHERE n IN (1, 2);
+    CREATE MATERIALIZED VIEW t_overlap_mv_2 TO t_overlap_sink AS SELECT sleepEachRow(3) AS x FROM t_overlap WHERE n = 1;"
 
 # A large maximum busy timeout, so that an insert is never flushed at once because the previous one was longer than it ago.
 # Other tests leave busy timeouts of up to 600000 ms in the queue shards. The huge decrease rate drops such a timeout to
@@ -49,19 +44,16 @@ function wait_for_flush_start()
 insert w1 0
 insert w2 0
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT ${FAILPOINT}"
-
-# Flushed at once, and held before the pool.
-insert a 0 &
+# Flushed at once. Its flush sleeps for 3 seconds.
+insert a 2 &
 pid_a=$!
-${CLICKHOUSE_CLIENT} --query "SYSTEM WAIT FAILPOINT ${FAILPOINT} PAUSE"
+wait_for_flush_start a
 
-# A flush of the key is in progress, so this insert waits for its deadline, and is then held as well. Its flush sleeps.
+# A flush of the key is in progress, so this insert waits for its deadline. Its flush sleeps for 6 seconds.
 insert b 1 &
 wait_for_flush_start b
 
-# Both flushes run now; the first one finishes at once, the second one sleeps.
-${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FAILPOINT}"
+# The flush of a finishes first.
 wait $pid_a
 
 # The flush of b is still in progress, so this insert must wait for its busy timeout.

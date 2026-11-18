@@ -845,6 +845,8 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
         try
         {
             data->entries.emplace_back(entry);
+            /// An insert that joins a batch handed over to the deadline thread makes it batched.
+            data->flushed_without_batching = false;
         }
         catch (...)
         {
@@ -918,14 +920,27 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
             flush_without_batching = !flush_stopped;
         }
 
-        if (!flush_stopped && flush_reason)
+        if (!flush_stopped && flush_without_batching)
+        {
+            /// The batch is handed over to the deadline thread of the shard instead of being scheduled here. Pool admission
+            /// can wait for a running flush, and the caller can hold locks of the destination table, which that flush or
+            /// a query waiting for them may need: an insert of a single client must not wait for the pool with them.
+            LOG_TRACE(log, "Handing async insert over to the deadline thread because {}", flush_reason);
+            ++key_state->second.flushes_without_batching;
+            data->flushed_without_batching = true;
+            data->timeout_ms = Milliseconds::zero();
+
+            NOEXCEPT_SCOPE({
+                auto node = shard.queue.extract(queue_it);
+                node.key() = now;
+                it->second = shard.queue.insert(std::move(node));
+            });
+        }
+        else if (!flush_stopped && flush_reason)
         {
             LOG_TRACE(log, "Scheduling async insert processing job because {}", flush_reason);
             if (data->entries.size() > 1 && key_state != shard.key_states.end())
                 key_state->second.waited_alone = false;
-            data->flushed_without_batching = flush_without_batching;
-            if (flush_without_batching)
-                ++key_state->second.flushes_without_batching;
             startFlushOfKey(shard, key.hash, *data);
             data->timeout_ms = Milliseconds::zero();
             data->trackFlush(shard.in_flight_flushes);
@@ -1272,7 +1287,11 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num) TSA_NO_THR
                     shard.iterators.erase(it->second.key.hash);
 
                     const auto key_hash = it->second.key.hash;
-                    if (it->second.data->entries.size() == 1 && (*it->second.key.settings)[Setting::wait_for_async_insert])
+                    if (it->second.data->flushed_without_batching)
+                    {
+                        /// Handed over by `pushDataChunk`, which has already updated the state of the key.
+                    }
+                    else if (it->second.data->entries.size() == 1 && (*it->second.key.settings)[Setting::wait_for_async_insert])
                     {
                         /// ponytail: idle keys that stop inserting are only removed when there are many of them.
                         if (shard.key_states.size() >= 10000)
