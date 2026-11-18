@@ -65,7 +65,7 @@ def load_timings(path=TIMINGS_PATH):
     return data
 
 
-def assign_tests(paths, total, timings):
+def assign_tests(paths, total, timings, skip_shell_queries=True):
     """Longest tests first; new tests use the measured table's upper quartile."""
     if total < 1 or len({path.name for path in paths}) != len(paths):
         raise ValueError("Invalid shard count or duplicate XML names")
@@ -80,8 +80,8 @@ def assign_tests(paths, total, timings):
     durations = {}
     excluded = []
     for path in sorted(paths):
-        if test_discovery.test_is_long(path) or test_discovery.test_has_shell_query(
-            path
+        if test_discovery.test_is_long(path) or (
+            skip_shell_queries and test_discovery.test_has_shell_query(path)
         ):
             excluded.append(path)
         else:

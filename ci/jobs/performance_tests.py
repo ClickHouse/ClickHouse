@@ -3215,10 +3215,12 @@ def main():
         reason = full_suite_reason(info, test_options[0])
         if reason:
             selection = {"mode": "full", "reason": reason, "selected": test_files}
+            test_files = test_files[batch_num::total_batches]
         else:
             selector = PerformanceSelection(info)
             try:
                 test_files, all_query_tests = selector.select(test_files)
+                test_files = selector.shard_tests(test_files, batch_num, total_batches, get_perf_arch())
             except (CIDBTimeoutError, GitHubUnavailableError) as error:
                 message = f"Performance tests were not run: test selection unavailable: {error}"
                 info.add_workflow_warning(message)
@@ -3245,7 +3247,6 @@ def main():
                 ).complete_job()
                 return
             selection = {"mode": "selected", **selector.selection_diagnostics}
-        test_files = test_files[batch_num::total_batches]
         selection.update(
             shard=batch_num + 1,
             shards=total_batches,
