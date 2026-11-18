@@ -258,8 +258,9 @@ struct AttemptsRecord
         None,
         /// A success, or the idempotency id of this write in the object at the key.
         Applied,
-        /// The object of another write at a key that only one write can create (`If-None-Match: *`).
-        NotApplied,
+        /// The precondition did not hold, and no attempt of this write may have been applied before; or the object of
+        /// another write is at a key that only one write can create (`If-None-Match: *`).
+        ConditionFailed,
     };
 
     /// An attempt got no answer that proves that it was not applied. It stays across the calls.
@@ -273,8 +274,8 @@ struct AttemptsRecord
         {
             case Proof::Applied:
                 return WriteOutcome::Applied;
-            case Proof::NotApplied:
-                return WriteOutcome::NotApplied;
+            case Proof::ConditionFailed:
+                return WriteOutcome::ConditionFailed;
             case Proof::None:
                 break;
         }

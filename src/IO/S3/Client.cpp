@@ -707,12 +707,17 @@ Client::ObjectWriter Client::findObjectWriter(
 namespace
 {
 
+bool isPreconditionFailure(const Aws::S3::S3Error & error)
+{
+    return error.GetResponseCode() == Aws::Http::HttpResponseCode::PRECONDITION_FAILED || error.GetExceptionName() == "PreconditionFailed";
+}
+
 /// Whether a `HeadObject` of the key can prove the outcome of a failed write, and is worth its request.
 template <typename RequestType>
 bool shouldFindObjectWriter(const RequestType & request, const Aws::S3::S3Error & error)
 {
     /// A replay over a landed attempt fails its own precondition, or finds its upload id consumed.
-    if (error.GetExceptionName() == "PreconditionFailed" || error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD)
+    if (isPreconditionFailure(error) || error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD)
         return true;
     /// After another error only a conditional write checks, so that an unconditional write costs no request.
     return request.getAttemptsRecord().may_have_been_applied && (request.IfNoneMatchHasBeenSet() || request.IfMatchHasBeenSet());
@@ -724,21 +729,25 @@ template <typename RequestType, typename OutcomeType>
 AttemptsRecord::Proof Client::proveFailedWrite(const RequestType & request, const OutcomeType & outcome, bool warn_if_unproven) const
 {
     using Proof = AttemptsRecord::Proof;
-    if (!shouldFindObjectWriter(request, outcome.GetError()))
-        return Proof::None;
-
-    switch (findObjectWriter(request.GetBucket(), request.GetKey(), request.getIdempotencyId(), warn_if_unproven))
+    const auto & error = outcome.GetError();
+    if (shouldFindObjectWriter(request, error))
     {
-        case ObjectWriter::ThisWrite:
-            return Proof::Applied;
-        case ObjectWriter::AnotherWrite:
-            /// Only one write can create a key with `If-None-Match: *`, so this one cannot be applied, now or later.
-            if (request.IfNoneMatchHasBeenSet())
-                return Proof::NotApplied;
-            break;
-        case ObjectWriter::Unproven:
-            break;
+        switch (findObjectWriter(request.GetBucket(), request.GetKey(), request.getIdempotencyId(), warn_if_unproven))
+        {
+            case ObjectWriter::ThisWrite:
+                return Proof::Applied;
+            case ObjectWriter::AnotherWrite:
+                /// Only one write can create a key with `If-None-Match: *`, so this one cannot be applied, now or later.
+                if (request.IfNoneMatchHasBeenSet())
+                    return Proof::ConditionFailed;
+                break;
+            case ObjectWriter::Unproven:
+                break;
+        }
     }
+    /// After an attempt that may have been applied, the refusal can be the answer to a replay of this write.
+    if (isPreconditionFailure(error) && !request.getAttemptsRecord().may_have_been_applied)
+        return Proof::ConditionFailed;
     return Proof::None;
 }
 

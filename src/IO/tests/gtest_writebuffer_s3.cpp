@@ -1667,8 +1667,8 @@ TEST_P(SyncAsync, SinglepartConditionalPutDoesNotMaskForeignObject) {
         }
       }, DB::S3Exception);
 
-    /// Another writer's object under `If-None-Match` proves that this write was not applied.
-    EXPECT_EQ(buffer->getWriteOutcome(), WriteOutcome::NotApplied);
+    /// Another writer's object under `If-None-Match` proves that the condition failed.
+    EXPECT_EQ(buffer->getWriteOutcome(), WriteOutcome::ConditionFailed);
 
     /// The foreign object is untouched, and the PUT really was conditional on absence.
     EXPECT_EQ(bStore.objects["conditional_put_foreign"], "1");

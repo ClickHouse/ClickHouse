@@ -183,6 +183,7 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void(size_t)> 
 void WriteBufferFromAzureBlobStorage::publishWithRetry(std::function<void(size_t)> func, size_t num_tries, size_t cost)
 {
     bool may_have_been_applied = false;
+    bool condition_failed = false;
     try
     {
         execWithRetry(
@@ -195,11 +196,15 @@ void WriteBufferFromAzureBlobStorage::publishWithRetry(std::function<void(size_t
                 catch (const Azure::Core::RequestFailedException & e)
                 {
                     may_have_been_applied = may_have_been_applied || attemptMayHaveBeenApplied(e.StatusCode);
+                    /// 409 `BlobAlreadyExists` answers `If-None-Match: *`, and 412 `ConditionNotMet` answers `If-Match`.
+                    condition_failed = e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
+                        || e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed;
                     throw;
                 }
                 catch (...)
                 {
                     may_have_been_applied = true;
+                    condition_failed = false;
                     throw;
                 }
             },
@@ -208,7 +213,10 @@ void WriteBufferFromAzureBlobStorage::publishWithRetry(std::function<void(size_t
     }
     catch (...)
     {
-        write_outcome = may_have_been_applied ? WriteOutcome::Unknown : WriteOutcome::NotApplied;
+        if (may_have_been_applied)
+            write_outcome = WriteOutcome::Unknown;
+        else
+            write_outcome = condition_failed ? WriteOutcome::ConditionFailed : WriteOutcome::NotApplied;
         throw;
     }
     write_outcome = WriteOutcome::Applied;

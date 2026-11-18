@@ -528,10 +528,7 @@ public:
     std::string getFileName() const override { return target_path; }
 
     /// Only the last step of `publishConditionally` makes the file visible, so the outcome is exact.
-    std::optional<WriteOutcome> getWriteOutcome() const override
-    {
-        return published ? WriteOutcome::Applied : WriteOutcome::NotApplied;
-    }
+    std::optional<WriteOutcome> getWriteOutcome() const override { return outcome; }
 
 private:
     void finalizeImpl() override
@@ -539,8 +536,17 @@ private:
         WriteBufferFromFileDecorator::finalizeImpl();
 
         const size_t data_size = count();
-        publishConditionally(temp_path, target_path, mode, if_match_etag);
-        published = true;
+        try
+        {
+            publishConditionally(temp_path, target_path, mode, if_match_etag);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::FILE_ALREADY_EXISTS || e.code() == ErrorCodes::STALE_VERSION)
+                outcome = WriteOutcome::ConditionFailed;
+            throw;
+        }
+        outcome = WriteOutcome::Applied;
         removeTemporaryFile();
 
         if (blob_log)
@@ -577,7 +583,7 @@ private:
     const String bucket;
     BlobStorageLogWriterPtr blob_log;
     bool temporary_file_removed = false;
-    bool published = false;
+    WriteOutcome outcome = WriteOutcome::NotApplied;
 };
 
 }

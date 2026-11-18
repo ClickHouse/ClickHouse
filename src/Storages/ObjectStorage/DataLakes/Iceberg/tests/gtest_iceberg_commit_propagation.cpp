@@ -249,11 +249,26 @@ TEST(IcebergCommitPropagation, TrackedWriteThatWasNotAppliedPropagates)
 
 TEST(IcebergCommitPropagation, TrackedLostRaceStaysRetryable)
 {
-    /// The storage proved that another writer created the file.
-    EXPECT_FALSE(commitWithFailingWrite(
-        [](const std::string & path) { throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "{} exists in the test stub", path); },
-        [](size_t) { return false; },
-        WriteOutcome::NotApplied));
+    /// The storage proved that another writer created the file, so the commit retries on the next version. Without this
+    /// the other tests would also pass against a commit that propagates everything.
+    EXPECT_FALSE(commitWithFailingWrite(throwStorageError, [](size_t) { return false; }, WriteOutcome::ConditionFailed));
+}
+
+TEST(IcebergCommitPropagation, TrackedRefusalIsNotALostRace)
+{
+    /// The outcome decides, not the error: a conflict that the storage did not report as a failed condition rolls back.
+    try
+    {
+        bool committed = commitWithFailingWrite(
+            [](const std::string & path) { throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "{} exists in the test stub", path); },
+            [](size_t) { return false; },
+            WriteOutcome::NotApplied);
+        FAIL() << "Expected the error of the storage to propagate, got " << committed;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::FILE_ALREADY_EXISTS) << e.message();
+    }
 }
 
 TEST(IcebergCommitPropagation, TrackedWriteThatWasAppliedIsPublished)
@@ -278,26 +293,6 @@ TEST(IcebergCommitPropagation, RefusedConditionalWriteIsNotReportedAsALostRace)
             EXPECT_EQ(e.code(), code) << e.message();
         }
     }
-}
-
-TEST(IcebergCommitPropagation, LostRaceStaysRetryable)
-{
-    /// Another writer published the version first, so this commit published nothing and is retried on the next
-    /// version. Without this the other tests would also pass against a commit that propagates everything.
-
-    /// A lost race on local storage.
-    EXPECT_FALSE(commitWithFailingWrite(ErrorCodes::FILE_ALREADY_EXISTS));
-
-#if USE_AWS_S3
-    /// A lost race on S3 (412 `PreconditionFailed`). The SDK has no typed error code for it, so it reports the name in
-    /// the message.
-    EXPECT_FALSE(commitWithFailingWrite([](const std::string &)
-    {
-        throw S3Exception(
-            "Unable to parse ExceptionName: PreconditionFailed Message: At least one of the pre-conditions you specified did not hold",
-            Aws::S3::S3Errors::UNKNOWN);
-    }));
-#endif
 }
 
 TEST(IcebergCommitPropagation, FailedCheckBeforeTheWriteStaysRetryable)

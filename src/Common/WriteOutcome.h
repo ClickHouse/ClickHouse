@@ -13,6 +13,8 @@ enum class WriteOutcome : uint8_t
     Applied,
     /// No attempt was applied, and no attempt can be applied later.
     NotApplied,
+    /// Not applied, because the precondition of the write did not hold: another write got there first.
+    ConditionFailed,
     /// An attempt may have been applied, and nothing proves whether it was.
     Unknown,
 };
