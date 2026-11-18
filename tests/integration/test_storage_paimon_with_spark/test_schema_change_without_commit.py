@@ -89,9 +89,9 @@ def test_rename_column_without_commit(started_cluster_paimon_with_spark):
 
     alter_without_commit(started_cluster, name, "RENAME COLUMN a TO c")
 
-    # Values of `c` in files written before the rename depend on field-id mapping, not checked here.
     schema = [row[:2] for row in parse_tsv(instance.query(f"DESC {table_expr}"))]
     assert schema == [["id", "Int64"], ["c", "Nullable(String)"]]
+    assert instance.query(f"SELECT id, c FROM {table_expr}") == "1\tx\n"
     assert "UNKNOWN_IDENTIFIER" in instance.query_and_get_error(
         f"SELECT a FROM {table_expr}"
     )

@@ -293,7 +293,7 @@ public:
         "PROJECTION",
     };
 
-    uint64_t getSeed() const;
+    [[nodiscard]] uint64_t getSeed() const;
 
     uint32_t nextSmallNumber();
 
