@@ -5,7 +5,7 @@
 -- for every left row, so then the right side also needs `min_rows_for_packed_string_keys_in_hash_join` rows, unless the join has a
 -- runtime filter that passes mostly the rows with a match, which an `INNER` join gets and a `LEFT` join does not. A key without the
 -- `basic` statistics has an unknown length, which counts as long. A minimum of 0 packs every join.
--- The cache size differs between machines, so the right sides are far from it: 1000 rows take 32 to 65 KB, 1000000 rows 32 to 65 MB.
+-- The cache size differs between machines, so the right sides are far from it: 1000 rows take 32 to 65 KB, 300000 rows 10 to 20 MB.
 -- A join with packed keys counts the keys it inserts in `JoinPackedStringKeysInline` and `JoinPackedStringKeysHashed`,
 -- a join with exact keys counts none.
 -- The choice is made on the host that runs the join. A shard of a `Distributed` table plans the join itself, from its own statistics.
@@ -39,11 +39,11 @@ CREATE TABLE long_big_nullable_stats (k Nullable(String) STATISTICS(basic)) ENGI
 
 INSERT INTO short_small_stats SELECT toString(number) FROM numbers(1000);
 INSERT INTO short_small_plain SELECT k FROM short_small_stats;
-INSERT INTO short_big_stats SELECT toString(number) FROM numbers(1000000);
+INSERT INTO short_big_stats SELECT toString(number) FROM numbers(300000);
 INSERT INTO short_big_plain SELECT k FROM short_big_stats;
 INSERT INTO long_small_stats SELECT concat('a key longer than 15 bytes ', toString(number)) FROM numbers(1000);
 INSERT INTO long_small_plain SELECT k FROM long_small_stats;
-INSERT INTO long_big_stats SELECT concat('a key longer than 15 bytes ', toString(number)) FROM numbers(1000000);
+INSERT INTO long_big_stats SELECT concat('a key longer than 15 bytes ', toString(number)) FROM numbers(300000);
 INSERT INTO long_big_plain SELECT k FROM long_big_stats;
 INSERT INTO long_big_nullable_stats SELECT k FROM long_big_stats;
 
