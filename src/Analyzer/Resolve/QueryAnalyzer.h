@@ -385,8 +385,10 @@ private:
     std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> node_to_scope_map;
 
     /// Deduplicates the built `FunctionBase` for non-deterministic functions (e.g. `randConstant`)
-    /// by tree hash, so syntactically-identical calls fold to the same constant. See `resolveFunction`.
-    std::map<IQueryTreeNode::Hash, FunctionBasePtr> functions_cache;
+    /// by tree hash, so syntactically-identical calls fold to the same constant. For server constants
+    /// the key also holds `Context::isDistributed` of the scope, because their bases capture it.
+    /// See `resolveFunction`.
+    std::map<std::pair<IQueryTreeNode::Hash, bool>, FunctionBasePtr> functions_cache;
 
     const bool only_analyze;
 
