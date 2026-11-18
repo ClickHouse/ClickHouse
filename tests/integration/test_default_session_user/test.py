@@ -949,8 +949,9 @@ def test_config_reload_http_handlers_reference_switch():
 
 
 def users_without_password(node):
+    # TSVRaw: the default TabSeparated output would escape the quotes around the user names.
     warning = node.query(
-        "SELECT message FROM system.warnings WHERE message LIKE 'The server listens on %'"
+        "SELECT message FROM system.warnings WHERE message LIKE 'The server listens on %' FORMAT TSVRaw"
     ).strip()
     marker = "these users can connect from any host without a password: "
     if not warning:
