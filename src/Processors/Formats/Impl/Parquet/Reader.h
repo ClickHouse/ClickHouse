@@ -283,6 +283,8 @@ struct Reader
         bool is_primitive = false;
         /// Column not in the file, fill it with default values.
         bool is_missing_column = false;
+        /// If set, the value of the missing column (the data lake default of a field absent from the file).
+        std::optional<Field> missing_column_default;
         /// Not in the file but sized like an array of the file; set in block missing values so that its DEFAULT applies.
         bool report_as_missing = false;
         bool needs_cast = false; // if output_type is different from input_type
