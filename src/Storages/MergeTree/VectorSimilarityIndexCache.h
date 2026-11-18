@@ -117,6 +117,9 @@ public:
         Base::remove([path_to_data_part](const Key & key, const MappedPtr &) { return key.path_to_data_part == path_to_data_part; });
     }
 
+    /// Keeps `CacheBase::clear`, which clears the whole cache, visible next to the overload below.
+    using Base::clear;
+
     /// Removes the entries of several data parts.
     void clear(const std::unordered_set<String> & paths_to_data_parts)
     {
