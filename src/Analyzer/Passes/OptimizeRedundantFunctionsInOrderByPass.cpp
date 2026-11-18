@@ -69,21 +69,24 @@ public:
             {
                 case QueryTreeNodeType::FUNCTION:
                 {
-                    if (!isRedundantExpression(order_by_expr))
+                    /// Not a function of the previous column keys: the key is needed, and it is not changed.
+                    if (!isRedundantExpression(order_by_expr, existing_keys))
                         break;
-                    if (!keep_functions)
+                    if (!keep_functions && isRedundantExpression(order_by_expr, exact_keys))
                         continue;
-                    /// A positional argument is a deep copy of the projection expression. It keeps the aliases
-                    /// that the projection loses, so a remote server can find different definitions of them.
+                    /// The key is a function of the previous column keys, but some of them do not compare by value, or
+                    /// the query has subtotals. A positional argument is a deep copy of the projection expression. It keeps
+                    /// the aliases that the projection loses, so a remote server can find different definitions of them.
                     removeAliasesRecursive(order_by_expr);
                     break;
                 }
                 case QueryTreeNodeType::COLUMN:
                 {
+                    existing_keys.insert(order_by_expr);
                     /// Different values can compare equal: with a collation, or `-0.0` and `0.0` and the `NaN`
                     /// payloads. Functions of them can tell them apart, so such a key does not make them redundant.
                     if (!sort_node.getCollator() && !comparisonCanMergeDistinctValues(*order_by_expr->getResultType()))
-                        existing_keys.insert(order_by_expr);
+                        exact_keys.insert(order_by_expr);
                     break;
                 }
                 default:
@@ -93,15 +96,19 @@ public:
             new_order_by_nodes.push_back(elem);
         }
         existing_keys.clear();
+        exact_keys.clear();
 
         if (new_order_by_nodes.size() < order_by.getNodes().size())
             order_by.getNodes() = std::move(new_order_by_nodes);
     }
 
 private:
+    /// All the previous column keys.
     QueryTreeNodePtrWithHashSet existing_keys;
+    /// The previous column keys that compare by value. Only they make a function of them redundant.
+    QueryTreeNodePtrWithHashSet exact_keys;
 
-    bool isRedundantExpression(QueryTreeNodePtr function)
+    static bool isRedundantExpression(QueryTreeNodePtr function, const QueryTreeNodePtrWithHashSet & keys)
     {
         QueryTreeNodes nodes_to_process{ function };
         while (!nodes_to_process.empty())
@@ -129,7 +136,7 @@ private:
                 }
                 case QueryTreeNodeType::COLUMN:
                 {
-                    if (!existing_keys.contains(node))
+                    if (!keys.contains(node))
                         return false;
                     break;
                 }
