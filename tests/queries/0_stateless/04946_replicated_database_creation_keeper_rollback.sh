@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-ordinary-database, no-fasttest
+# Tags: zookeeper, no-parallel, no-ordinary-database, no-fasttest, no-shared-merge-tree
 # no-fasttest: needs ZooKeeper, SYSTEM ENABLE FAILPOINT, and text_log at debug level
+# no-shared-merge-tree: asserts the ReplicatedMergeTree layout under `replicas` and injects a ReplicatedMergeTree constructor fault
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
