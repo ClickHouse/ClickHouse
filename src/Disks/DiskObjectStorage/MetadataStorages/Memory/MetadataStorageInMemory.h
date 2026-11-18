@@ -142,7 +142,7 @@ public:
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
 
-    bool supportsChmod() const override { return false; }
+    [[nodiscard]] bool supportsChmod() const override { return false; }
 
     /// Needed so `FREEZE` and detached-part cloning (`BackupImpl` with `make_source_readonly`) work on
     /// `borrow_from_cache` `MergeTree` tables instead of throwing `NOT_IMPLEMENTED`; a validated no-op
