@@ -314,11 +314,14 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Label | `label_replace`, `label_join` |
 | Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile` |
+| Sort | `sort`, `sort_desc` |
 | Other | `time`, `step`, `range`, `pi`, `absent`, `timestamp` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
 **Note**: `min_of(a, b)` and `max_of(a, b)` return the smaller or larger of two scalar values. Both arguments must be scalars.
+
+**Note**: `sort` and `sort_desc` order the result by sample value, with `NaN` last, and order series with equal values by their labels. The order is applied only when `sort` or `sort_desc` is the outermost function of the query; otherwise the result is ordered by labels.
 
 **Note**: `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
 
@@ -395,11 +398,14 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Label | `label_replace`, `label_join` |
 | Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile` |
+| Sort | `sort`, `sort_desc` |
 | Other | `time`, `step`, `range`, `pi`, `absent`, `timestamp` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
 **Note**: `min_of(a, b)` and `max_of(a, b)` return the smaller or larger of two scalar values. Both arguments must be scalars.
+
+**Note**: `sort` and `sort_desc` have no effect in a range query: the result is always ordered by labels, as in Prometheus.
 
 **Note**: `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
 

@@ -8,6 +8,7 @@
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionSort.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/checkSharedSubqueriesAreMaterialized.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
@@ -290,7 +291,22 @@ namespace
         const auto * aggregation = (result.node->node_type == PrometheusQueryTree::NodeType::AggregationOperator)
             ? static_cast<const PrometheusQueryTree::AggregationOperator *>(result.node)
             : nullptr;
-        if (aggregation && (aggregation->operator_name == "topk" || aggregation->operator_name == "bottomk"))
+        const auto * function = (result.node->node_type == PrometheusQueryTree::NodeType::Function)
+            ? static_cast<const PrometheusQueryTree::Function *>(result.node)
+            : nullptr;
+
+        /// Set only if the root is `sort` or `sort_desc`.
+        const auto sort_direction = function ? getSortDirection(function->function_name) : std::nullopt;
+
+        if (sort_direction)
+        {
+            /// The order of rows is kept only from the outermost SELECT, so `sort` or `sort_desc` at the root is applied here.
+            /// Ties are ordered by tags, in the same direction, to make the result deterministic.
+            builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+            builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
+            builder.order_direction = (*sort_direction == SortDirection::DESCENDING) ? -1 : 1;
+        }
+        else if (aggregation && (aggregation->operator_name == "topk" || aggregation->operator_name == "bottomk"))
         {
             if (result.store_method == StoreMethod::VECTOR_GRID && (aggregation->by || aggregation->without))
             {

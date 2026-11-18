@@ -1,0 +1,71 @@
+-- sort
+[('__name__','http_requests'),('group','production'),('instance','0'),('job','api-server')]	1970-01-01 00:50:00.000	100
+[('__name__','http_requests'),('group','production'),('instance','1'),('job','api-server')]	1970-01-01 00:50:00.000	200
+[('__name__','http_requests'),('group','canary'),('instance','0'),('job','api-server')]	1970-01-01 00:50:00.000	300
+[('__name__','http_requests'),('group','canary'),('instance','1'),('job','api-server')]	1970-01-01 00:50:00.000	400
+[('__name__','http_requests'),('group','production'),('instance','0'),('job','app-server')]	1970-01-01 00:50:00.000	500
+[('__name__','http_requests'),('group','production'),('instance','1'),('job','app-server')]	1970-01-01 00:50:00.000	600
+[('__name__','http_requests'),('group','canary'),('instance','0'),('job','app-server')]	1970-01-01 00:50:00.000	700
+[('__name__','http_requests'),('group','canary'),('instance','1'),('job','app-server')]	1970-01-01 00:50:00.000	800
+[('__name__','http_requests'),('group','canary'),('instance','2'),('job','api-server')]	1970-01-01 00:50:00.000	nan
+-- sort_desc
+[('__name__','http_requests'),('group','canary'),('instance','1'),('job','app-server')]	1970-01-01 00:50:00.000	800
+[('__name__','http_requests'),('group','canary'),('instance','0'),('job','app-server')]	1970-01-01 00:50:00.000	700
+[('__name__','http_requests'),('group','production'),('instance','1'),('job','app-server')]	1970-01-01 00:50:00.000	600
+[('__name__','http_requests'),('group','production'),('instance','0'),('job','app-server')]	1970-01-01 00:50:00.000	500
+[('__name__','http_requests'),('group','canary'),('instance','1'),('job','api-server')]	1970-01-01 00:50:00.000	400
+[('__name__','http_requests'),('group','canary'),('instance','0'),('job','api-server')]	1970-01-01 00:50:00.000	300
+[('__name__','http_requests'),('group','production'),('instance','1'),('job','api-server')]	1970-01-01 00:50:00.000	200
+[('__name__','http_requests'),('group','production'),('instance','0'),('job','api-server')]	1970-01-01 00:50:00.000	100
+[('__name__','http_requests'),('group','canary'),('instance','2'),('job','api-server')]	1970-01-01 00:50:00.000	nan
+-- sort ties
+[('__name__','ties'),('instance','a')]	1970-01-01 00:50:00.000	5
+[('__name__','ties'),('instance','b')]	1970-01-01 00:50:00.000	5
+[('__name__','ties'),('instance','c')]	1970-01-01 00:50:00.000	5
+-- sort_desc ties
+[('__name__','ties'),('instance','c')]	1970-01-01 00:50:00.000	5
+[('__name__','ties'),('instance','b')]	1970-01-01 00:50:00.000	5
+[('__name__','ties'),('instance','a')]	1970-01-01 00:50:00.000	5
+-- many threads
+[('__name__','http_requests'),('group','canary'),('instance','1'),('job','app-server')]	1970-01-01 00:50:00.000	800
+[('__name__','http_requests'),('group','canary'),('instance','0'),('job','app-server')]	1970-01-01 00:50:00.000	700
+[('__name__','http_requests'),('group','production'),('instance','1'),('job','app-server')]	1970-01-01 00:50:00.000	600
+[('__name__','http_requests'),('group','production'),('instance','0'),('job','app-server')]	1970-01-01 00:50:00.000	500
+[('__name__','http_requests'),('group','canary'),('instance','1'),('job','api-server')]	1970-01-01 00:50:00.000	400
+[('__name__','http_requests'),('group','canary'),('instance','0'),('job','api-server')]	1970-01-01 00:50:00.000	300
+[('__name__','http_requests'),('group','production'),('instance','1'),('job','api-server')]	1970-01-01 00:50:00.000	200
+[('__name__','http_requests'),('group','production'),('instance','0'),('job','api-server')]	1970-01-01 00:50:00.000	100
+[('__name__','http_requests'),('group','canary'),('instance','2'),('job','api-server')]	1970-01-01 00:50:00.000	nan
+-- scalar vector
+[]	1970-01-01 00:50:00.000	1
+-- under abs
+[('group','canary'),('instance','0'),('job','api-server')]	1970-01-01 00:50:00.000	300
+[('group','canary'),('instance','0'),('job','app-server')]	1970-01-01 00:50:00.000	700
+[('group','canary'),('instance','1'),('job','api-server')]	1970-01-01 00:50:00.000	400
+[('group','canary'),('instance','1'),('job','app-server')]	1970-01-01 00:50:00.000	800
+[('group','canary'),('instance','2'),('job','api-server')]	1970-01-01 00:50:00.000	nan
+[('group','production'),('instance','0'),('job','api-server')]	1970-01-01 00:50:00.000	100
+[('group','production'),('instance','0'),('job','app-server')]	1970-01-01 00:50:00.000	500
+[('group','production'),('instance','1'),('job','api-server')]	1970-01-01 00:50:00.000	200
+[('group','production'),('instance','1'),('job','app-server')]	1970-01-01 00:50:00.000	600
+-- in subquery
+[('__name__','http_requests'),('group','canary'),('instance','0'),('job','api-server')]	1970-01-01 00:50:00.000	300
+[('__name__','http_requests'),('group','canary'),('instance','0'),('job','app-server')]	1970-01-01 00:50:00.000	700
+[('__name__','http_requests'),('group','canary'),('instance','1'),('job','api-server')]	1970-01-01 00:50:00.000	400
+[('__name__','http_requests'),('group','canary'),('instance','1'),('job','app-server')]	1970-01-01 00:50:00.000	800
+[('__name__','http_requests'),('group','canary'),('instance','2'),('job','api-server')]	1970-01-01 00:50:00.000	nan
+[('__name__','http_requests'),('group','production'),('instance','0'),('job','api-server')]	1970-01-01 00:50:00.000	100
+[('__name__','http_requests'),('group','production'),('instance','0'),('job','app-server')]	1970-01-01 00:50:00.000	500
+[('__name__','http_requests'),('group','production'),('instance','1'),('job','api-server')]	1970-01-01 00:50:00.000	200
+[('__name__','http_requests'),('group','production'),('instance','1'),('job','app-server')]	1970-01-01 00:50:00.000	600
+-- range query
+[('__name__','http_requests'),('group','canary'),('instance','0'),('job','api-server')]	[('1970-01-01 00:40:00.000',240),('1970-01-01 00:45:00.000',270),('1970-01-01 00:50:00.000',300)]
+[('__name__','http_requests'),('group','canary'),('instance','0'),('job','app-server')]	[('1970-01-01 00:40:00.000',560),('1970-01-01 00:45:00.000',630),('1970-01-01 00:50:00.000',700)]
+[('__name__','http_requests'),('group','canary'),('instance','1'),('job','api-server')]	[('1970-01-01 00:40:00.000',320),('1970-01-01 00:45:00.000',360),('1970-01-01 00:50:00.000',400)]
+[('__name__','http_requests'),('group','canary'),('instance','1'),('job','app-server')]	[('1970-01-01 00:40:00.000',640),('1970-01-01 00:45:00.000',720),('1970-01-01 00:50:00.000',800)]
+[('__name__','http_requests'),('group','canary'),('instance','2'),('job','api-server')]	[('1970-01-01 00:40:00.000',nan),('1970-01-01 00:45:00.000',nan),('1970-01-01 00:50:00.000',nan)]
+[('__name__','http_requests'),('group','production'),('instance','0'),('job','api-server')]	[('1970-01-01 00:40:00.000',80),('1970-01-01 00:45:00.000',90),('1970-01-01 00:50:00.000',100)]
+[('__name__','http_requests'),('group','production'),('instance','0'),('job','app-server')]	[('1970-01-01 00:40:00.000',400),('1970-01-01 00:45:00.000',450),('1970-01-01 00:50:00.000',500)]
+[('__name__','http_requests'),('group','production'),('instance','1'),('job','api-server')]	[('1970-01-01 00:40:00.000',160),('1970-01-01 00:45:00.000',180),('1970-01-01 00:50:00.000',200)]
+[('__name__','http_requests'),('group','production'),('instance','1'),('job','app-server')]	[('1970-01-01 00:40:00.000',480),('1970-01-01 00:45:00.000',540),('1970-01-01 00:50:00.000',600)]
+-- wrong arguments
