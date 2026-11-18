@@ -1,7 +1,6 @@
 -- Column kinds and partial inserts. In the query log the inserted table must list exactly the
--- columns the statement writes, a view the columns its SELECT produces, and a target its
--- insertable columns, whatever other kinds of columns (MATERIALIZED, EPHEMERAL, ALIAS, DEFAULT)
--- the tables have.
+-- columns the statement writes, and a target the columns the SELECT of its view writes into it,
+-- whatever other kinds of columns (MATERIALIZED, EPHEMERAL, ALIAS, DEFAULT) the tables have.
 
 -- With async inserts the INSERT's own row in the query log is written before the data is
 -- processed, and the tables and columns are recorded on the row of the flush instead.

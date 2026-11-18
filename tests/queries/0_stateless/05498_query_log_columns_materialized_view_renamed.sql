@@ -1,7 +1,7 @@
--- Every table that receives data from an INSERT must be recorded in system.query_log.columns
--- with its own column names: the table named in the statement with the columns it writes,
--- each materialized view with the columns its SELECT produces, and each view target with its
--- insertable columns.
+-- Every table that receives data from an INSERT is recorded in system.query_log.columns with its own column names:
+-- the table named in the statement with the columns the statement writes, and the target of each materialized view
+-- with the columns the SELECT of the view writes into it, under the names of the target. A materialized view itself
+-- is listed in `views`.
 
 -- With asynchronous inserts the row of an INSERT with inline data is written before the data is
 -- flushed, so the columns would be recorded on the flush row instead.

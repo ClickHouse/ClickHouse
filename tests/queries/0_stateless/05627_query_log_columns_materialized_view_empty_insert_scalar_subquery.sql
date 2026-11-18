@@ -1,6 +1,7 @@
 -- An insert that moves no rows does not analyze or run the SELECT of a dependent view, so a scalar subquery in it is
 -- not executed, wherever it is: in the projection, in a table function argument, or in a parameterized view argument.
--- The analyzer executes the last two even in analyze-only mode. The log lists such a view and its target by name only.
+-- The analyzer executes the last two even in analyze-only mode. The log lists such a view in `views` and its target
+-- by name only.
 SET async_insert = 0;
 
 DROP TABLE IF EXISTS mv_projection;

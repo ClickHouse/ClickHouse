@@ -1,6 +1,6 @@
 -- The SELECT of a materialized view may produce a narrower type than the target column has.
 -- The rows are converted to the target type, and the query log lists the columns of the
--- source, the view and the target.
+-- source and the target.
 
 -- With async inserts the INSERT's own row in the query log is written before the data is
 -- processed, and the tables and columns are recorded on the row of the flush instead.

@@ -3,7 +3,7 @@ Row 1:
 ──────
 log_comment: 05627_empty_parameterized_view
 type:        QueryFinish
-tables:      ['system.one','default.dst','default.mv_parameterized_view','default.src_parameterized_view']
+tables:      ['system.one','default.dst','default.src_parameterized_view']
 views:       ['default.mv_parameterized_view']
 columns:     ['system.one.dummy','default.src_parameterized_view.a']
 
@@ -11,7 +11,7 @@ Row 2:
 ──────
 log_comment: 05627_empty_projection
 type:        QueryFinish
-tables:      ['system.one','default.dst','default.mv_projection','default.src_projection']
+tables:      ['system.one','default.dst','default.src_projection']
 views:       ['default.mv_projection']
 columns:     ['system.one.dummy','default.src_projection.a']
 
@@ -19,6 +19,6 @@ Row 3:
 ──────
 log_comment: 05627_empty_table_function
 type:        QueryFinish
-tables:      ['system.one','default.dst','default.mv_table_function','default.src_table_function']
+tables:      ['system.one','default.dst','default.src_table_function']
 views:       ['default.mv_table_function']
 columns:     ['system.one.dummy','default.src_table_function.a']

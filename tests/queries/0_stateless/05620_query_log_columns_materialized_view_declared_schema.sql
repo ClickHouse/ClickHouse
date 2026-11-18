@@ -1,6 +1,6 @@
 -- A `TO` materialized view may declare more columns than its SELECT produces, and the view's own
 -- DEFAULT expressions are never evaluated: the target fills such a column from its own default.
--- The query log must list, for the view, only the columns its SELECT produces.
+-- The query log must list, for the target, only the columns the SELECT of the view produces.
 
 -- With async inserts the INSERT's own row in the query log is written before the data is
 -- processed, and the tables and columns are recorded on the row of the flush instead.

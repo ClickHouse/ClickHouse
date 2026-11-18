@@ -11,7 +11,7 @@ Row 2:
 log_comment: 05624_one_row
 type:        QueryFinish
 views:       ['default.mv']
-columns:     ['default.mv.tgtKey','default.mv.tgtVal','default.src.a','default.src.b','default.tgt.tgtKey','default.tgt.tgtVal']
+columns:     ['default.src.a','default.src.b','default.tgt.tgtKey','default.tgt.tgtVal']
 
 Row 3:
 ──────

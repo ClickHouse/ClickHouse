@@ -617,7 +617,8 @@ private:
     StorageMetadataPtr inner_metadata;
     StoragePtr inner_storage;
     ContextPtr context;
-    /// The query context of the INSERT, which the query log reads. Null when the insert has none.
+    /// The query context on whose row the query log lists the writes of the view: the caller's, or the one of the
+    /// child row of a `SQL SECURITY DEFINER` or `NONE` view. Null when the insert has none.
     ContextMutablePtr query_context;
     bool written_columns_recorded = false;
     bool async_insert = false;
@@ -635,15 +636,14 @@ private:
         }
     };
 
-    /// Lists in the query log what the view writes: the result columns of its SELECT, known only once the SELECT is
-    /// analyzed. The target gets the ones it stores. The query log reads the access info again when the query
-    /// finishes, so one record per view is enough.
+    /// Lists in the query log the columns the view writes into its target: the result columns of its SELECT that the
+    /// target stores, known only once the SELECT is analyzed. The view itself is listed in `views`. The query log
+    /// reads the access info again when the query finishes, so one record per view is enough.
     void recordWrittenColumns(const Names & select_columns)
     {
         if (!query_context || written_columns_recorded)
             return;
 
-        query_context->addQueryAccessInfo(view_id, select_columns);
         query_context->addQueryAccessInfo(inner_id, columnsStoredBy(inner_metadata->getColumns(), select_columns));
         written_columns_recorded = true;
     }
@@ -1576,23 +1576,6 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         materialized_view = dynamic_cast<StorageMaterializedView *>(storages.at(current).get());
     }
 
-    if (init_context->hasQueryContext())
-    {
-        /// The query log lists for every table the columns its writer supplies. The inserted table gets the column
-        /// list of the INSERT, and the target of an inserted view gets the ones it stores. A dependent view and its
-        /// target are listed by name here, and `ExecutingInnerQueryFromViewTransform` adds the columns once the
-        /// SELECT of the view is analyzed, which happens with the first block. The SELECT is not analyzed here on
-        /// purpose: that would take a storage snapshot of every table it reads, and it would execute a scalar
-        /// subquery in a table function or parameterized view argument, see `evaluateScalarSubqueryIfNeeded`. So an
-        /// insert that moves no rows lists a dependent view and its target by name only.
-        Names column_names;
-        if (current == init_table_id)
-            column_names = init_header->getNames();
-        else if (!materialized_view && parent == init_table_id)
-            column_names = columnsStoredBy(metadata->getColumns(), init_header->getNames());
-        init_context->getQueryContext()->addQueryAccessInfo(current, column_names);
-    }
-
     auto set_defaults_for_root_view = [&] (const StorageIDMaybeEmpty & root_view_, const StorageIDMaybeEmpty & inner_table_)
     {
         const auto select_context = metadata->getSQLSecurityOverriddenContext(init_context);
@@ -1656,9 +1639,24 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         /// at the first iteration it is the init_table_id most likely
         /// the following iterations will be for inner tables of materialized views
 
+        /// Every table is listed on the row of its writer: the caller's row, or the child row of a `SQL SECURITY
+        /// DEFINER` or `NONE` view, see `addSQLSecurityOverriddenBody`. The columns are the ones the writer supplies:
+        /// the column list of the INSERT for the inserted table and for the target of an inserted view, reduced to
+        /// the columns the target stores. The target of a dependent view gets its columns from
+        /// `ExecutingInnerQueryFromViewTransform` once the SELECT of the view is analyzed, which happens with the first
+        /// block. The SELECT is not analyzed here on purpose: that would take a storage snapshot of every table it
+        /// reads, and it would execute a scalar subquery in a table function or parameterized view argument, see
+        /// `evaluateScalarSubqueryIfNeeded`. So an insert that moves no rows lists such a target by name only.
         const auto & writer_context = current == init_table_id ? init_context : insert_contexts.at(parent);
         if (writer_context->hasQueryContext())
-            writer_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});
+        {
+            Names column_names;
+            if (current == init_table_id)
+                column_names = init_header->getNames();
+            else if (parent == init_table_id)
+                column_names = columnsStoredBy(metadata->getColumns(), init_header->getNames());
+            writer_context->getQueryContext()->addQueryAccessInfo(current, column_names);
+        }
 
         if (current == init_table_id)
         {
@@ -1785,8 +1783,9 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
 
     auto source_table_id = source_tables.at(view_id);
     auto input_header = input_headers.at(view_id);
-    /// Not the view's own context: for a `SQL SECURITY DEFINER` view that one is a separate query context.
-    ContextMutablePtr query_context = init_context->hasQueryContext() ? init_context->getQueryContext() : nullptr;
+    /// The writes of the view are logged on the row of the identity that makes them: the caller's row, or the child
+    /// row of a `SQL SECURITY DEFINER` or `NONE` view, whose insert context is a query context of its own.
+    ContextMutablePtr query_context = insert_context->hasQueryContext() ? insert_context->getQueryContext() : nullptr;
 
     if (select_context->getSettingsRef()[Setting::use_async_executor_for_materialized_views])
     {
