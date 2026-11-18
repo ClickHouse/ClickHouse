@@ -15,16 +15,17 @@ namespace DB
 class NativeInputFormat final : public IInputFormat
 {
 public:
-    NativeInputFormat(ReadBuffer & buf, SharedHeader header_, const FormatSettings & settings_)
+    NativeInputFormat(ReadBuffer & buf, SharedHeader header_, const FormatSettings & settings_, bool with_defaults_masks_)
         : IInputFormat(header_, &buf)
-        , reader(makeReader(buf, *header_, settings_, block_missing_values))
+        , reader(makeReader(buf, *header_, settings_, block_missing_values, with_defaults_masks_))
         , header(header_)
         , block_missing_values(header->columns())
         , settings(settings_)
+        , with_defaults_masks(with_defaults_masks_)
         {
         }
 
-    String getName() const override { return "Native"; }
+    String getName() const override { return with_defaults_masks ? "NativeWithDefaults" : "Native"; }
 
     void resetParser() override
     {
@@ -51,7 +52,7 @@ public:
 
     void setReadBuffer(ReadBuffer & in_) override
     {
-        reader = makeReader(in_, *header, settings, block_missing_values);
+        reader = makeReader(in_, *header, settings, block_missing_values, with_defaults_masks);
         IInputFormat::setReadBuffer(in_);
     }
 
@@ -62,7 +63,11 @@ public:
 private:
     /// Revision 0 has no serialization kinds in its layout, so the kind set takes effect only with a non-zero revision.
     static std::unique_ptr<NativeReader> makeReader(
-        ReadBuffer & buf, const Block & header_, const FormatSettings & settings_, BlockMissingValues & block_missing_values_)
+        ReadBuffer & buf,
+        const Block & header_,
+        const FormatSettings & settings_,
+        BlockMissingValues & block_missing_values_,
+        bool with_defaults_masks_)
     {
         return std::make_unique<NativeReader>(
             buf,
@@ -71,13 +76,15 @@ private:
             settings_,
             settings_.defaults_for_omitted_fields ? &block_missing_values_ : nullptr,
             /*type_cache_=*/ nullptr,
-            ISerialization::KindSet{ISerialization::Kind::DEFAULT});
+            ISerialization::KindSet{ISerialization::Kind::DEFAULT},
+            with_defaults_masks_);
     }
 
     std::unique_ptr<NativeReader> reader;
     SharedHeader header;
     BlockMissingValues block_missing_values;
     const FormatSettings settings;
+    const bool with_defaults_masks;
     size_t approx_bytes_read_for_chunk = 0;
 };
 
@@ -110,32 +117,40 @@ private:
 class NativeSchemaReader final : public ISchemaReader
 {
 public:
-    explicit NativeSchemaReader(ReadBuffer & in_, const FormatSettings & settings_) : ISchemaReader(in_), settings(settings_) {}
+    NativeSchemaReader(ReadBuffer & in_, const FormatSettings & settings_, bool with_defaults_masks_)
+        : ISchemaReader(in_), settings(settings_), with_defaults_masks(with_defaults_masks_)
+    {
+    }
 
     NamesAndTypesList readSchema() override
     {
-        auto reader = NativeReader(in, 0, settings, ISerialization::KindSet{ISerialization::Kind::DEFAULT});
+        auto reader = NativeReader(in, 0, settings, ISerialization::KindSet{ISerialization::Kind::DEFAULT}, with_defaults_masks);
         auto block = reader.read();
         return block.getNamesAndTypesList();
     }
 
 private:
     const FormatSettings settings;
+    const bool with_defaults_masks;
 };
 
 
 void registerInputFormatNative(FormatFactory & factory);
 void registerInputFormatNative(FormatFactory & factory)
 {
-    factory.registerInputFormat("Native", [](
-        ReadBuffer & buf,
-        const Block & sample,
-        const RowInputFormatParams &,
-        const FormatSettings & settings)
+    for (bool with_defaults_masks : {false, true})
     {
-        return std::make_shared<NativeInputFormat>(buf, std::make_shared<const Block>(sample), settings);
-    }, /*supports_reset_parser=*/ true);
-    factory.markFormatSupportsSubsetOfColumns("Native");
+        const String name = with_defaults_masks ? "NativeWithDefaults" : "Native";
+        factory.registerInputFormat(name, [with_defaults_masks](
+            ReadBuffer & buf,
+            const Block & sample,
+            const RowInputFormatParams &,
+            const FormatSettings & settings)
+        {
+            return std::make_shared<NativeInputFormat>(buf, std::make_shared<const Block>(sample), settings, with_defaults_masks);
+        }, /*supports_reset_parser=*/ true);
+        factory.markFormatSupportsSubsetOfColumns(name);
+    }
 
     factory.setDocumentation("Native", Documentation{
         .description = R"DOCS_MD(
@@ -158,6 +173,8 @@ In this format data is written and read by [blocks](/resources/develop-contribut
 For each block, the number of rows, number of columns, column names and types, and parts of columns in the block are recorded one after another. 
 
 This is the format used in the native interface for interaction between servers, for using the command-line client, and for C++ clients.
+
+To insert data in which individual values take the `DEFAULT` of their column, use the [`NativeWithDefaults`](/reference/formats/NativeWithDefaults) format.
 
 <Tip>
 You can use this format to quickly generate dumps that can only be read by the ClickHouse DBMS.
@@ -603,6 +620,81 @@ Unlike [RowBinary](/reference/formats/RowBinary/RowBinary#json) where each row i
 
 For simpler interoperability, consider using the setting `output_format_native_write_json_as_string=1`, which serializes JSON columns as plain JSON text strings (one `String` per row).
 )DOCS_MD"});
+
+    factory.setDocumentation("NativeWithDefaults", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✗      |       |
+
+## Description {#description}
+
+Similar to the [`Native`](/reference/formats/Native) format, but each column can mark individual values as taking the default of the column, like the per-value marker byte of the [`RowBinaryWithDefaults`](/reference/formats/RowBinary/RowBinaryWithDefaults) format. Such a value takes the `DEFAULT` expression of the target column, or the default value of the column type if the column has no `DEFAULT` expression.
+
+Taking the default is independent of `NULL`: a `Nullable` column can carry both `NULL`s and values that take the `DEFAULT` of the column.
+
+This format is input only.
+
+## Wire format {#wire-format}
+
+The data is a sequence of blocks. A block is laid out like a block of the [`Native`](/reference/formats/Native) format, with a marker and an optional defaults mask after the type of each column:
+
+1. A `VarUInt` with the number of columns.
+2. A `VarUInt` with the number of rows `N`.
+3. For each column:
+   1. The column name, a `String`.
+   2. The column type, a `String` with the type name, or the binary encoding of the type if [`input_format_native_decode_types_in_binary_format`](/reference/settings/formats/input-format#input_format_native_decode_types_in_binary_format) is enabled.
+   3. A `UInt8` marker: `0x00` if no value of the column takes the default, `0x01` if a defaults mask follows. Other values are rejected.
+   4. Only if the marker is `0x01`, the defaults mask: `N` bytes, one per row. A non-zero byte means that the row takes the default.
+   5. The values of the rows that don't take the default, in order, serialized like a column of that many rows in the `Native` format. If there are no such rows, there are no bytes.
+
+The rows that take the default have no value in the data: a column whose defaults mask has `K` non-zero bytes carries `N - K` values.
+
+The columns of the target table that are missing from a block take the default in every row, as in the `Native` format.
+
+## Defaults vs NULL {#defaults-vs-null}
+
+For a `Nullable(UInt32) DEFAULT 42` column, the rows `DEFAULT`, `NULL` and `7` are encoded as follows, after the name and the type of the column:
+
+```text
+01                 marker: a defaults mask follows
+01 00 00           defaults mask: row 0 takes the default
+01 00              null map of the two values that follow: the first one is NULL
+00 00 00 00        first value, ignored because it is NULL
+07 00 00 00        second value: 7
+```
+
+## Example usage {#example-usage}
+
+```sql title="Query"
+SELECT * FROM format(
+    'NativeWithDefaults',
+    'x UInt32 DEFAULT 42, y String',
+    x'020301780655496e743332010001000100000003000000017906537472696e6700016101620163'
+);
+```
+
+```response title="Response"
+┌──x─┬─y─┐
+│  1 │ a │
+│ 42 │ b │
+│  3 │ c │
+└────┴───┘
+```
+
+- The block has 2 columns and 3 rows.
+- Column `x` of type `UInt32` has the marker `01` and the defaults mask `00 01 00`, so its data holds only the values of rows 0 and 2: `01000000` and `03000000`. Row 1 takes `DEFAULT 42`.
+- Column `y` of type `String` has the marker `00`, so its data holds the values of all 3 rows.
+
+## Format settings {#format-settings}
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| [`input_format_defaults_for_omitted_fields`](/reference/settings/formats/input-format#input_format_defaults_for_omitted_fields) | Use the `DEFAULT` expression of the target column for the values that take the default and for the columns missing from a block. If disabled, they take the default value of the column type. | `1` |
+| [`input_format_native_allow_types_conversion`](/reference/settings/formats/input-format#input_format_native_allow_types_conversion) | Convert a column to the type of the target column if the types differ. The rows that take the default are not converted. | `1` |
+| [`input_format_null_as_default`](/reference/settings/formats/input-format#input_format_null_as_default) | `NULL`s of a `Nullable` column inserted into a column that is not `Nullable` take the default as well. | `1` |
+| [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) | Skip the columns that are not in the target table instead of throwing an exception. | `1` |
+)DOCS_MD"});
 }
 
 void registerOutputFormatNative(FormatFactory & factory);
@@ -624,10 +716,15 @@ void registerOutputFormatNative(FormatFactory & factory)
 void registerNativeSchemaReader(FormatFactory & factory);
 void registerNativeSchemaReader(FormatFactory & factory)
 {
-    factory.registerSchemaReader("Native", [](ReadBuffer & buf, const FormatSettings & settings)
+    for (bool with_defaults_masks : {false, true})
     {
-        return std::make_shared<NativeSchemaReader>(buf, settings);
-    });
+        factory.registerSchemaReader(
+            with_defaults_masks ? "NativeWithDefaults" : "Native",
+            [with_defaults_masks](ReadBuffer & buf, const FormatSettings & settings)
+            {
+                return std::make_shared<NativeSchemaReader>(buf, settings, with_defaults_masks);
+            });
+    }
 }
 
 
