@@ -1,6 +1,7 @@
 #include <limits>
 #include <string_view>
 #include <Columns/ColumnString.h>
+#include <Common/RegexpUtils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsStringSearch.h>
 #include <Functions/MatchImpl.h>
@@ -19,7 +20,7 @@ struct NameFullMatch
 using UnderlyingMatchImpl = MatchImpl<NameFullMatch, MatchTraits::Syntax::Re2, MatchTraits::Case::Sensitive, MatchTraits::Result::DontNegate>;
 
 /// Like `match` but the pattern must match the whole haystack, not a substring of it.
-/// Implemented by wrapping the pattern into '^(?:' and ')$' and delegating to MatchImpl,
+/// Implemented by anchoring the pattern at both ends and delegating to MatchImpl,
 /// so all its fast paths (pattern analysis, substring prefilter, JIT) are reused.
 struct FullMatchImpl
 {
@@ -31,19 +32,6 @@ struct FullMatchImpl
 
     using ResultType = UnderlyingMatchImpl::ResultType;
 
-    /// The non-capturing group makes the anchoring correct for patterns with a top-level '|'.
-    static String anchorPattern(std::string_view pattern)
-    {
-        constexpr std::string_view prefix = "^(?:";
-        constexpr std::string_view suffix = ")$";
-        String anchored_pattern;
-        anchored_pattern.reserve(prefix.size() + pattern.size() + suffix.size());
-        anchored_pattern += prefix;
-        anchored_pattern += pattern;
-        anchored_pattern += suffix;
-        return anchored_pattern;
-    }
-
     static ColumnString::MutablePtr anchorPatterns(const ColumnString::Chars & needle_data, const ColumnString::Offsets & needle_offsets)
     {
         auto anchored_needles = ColumnString::create();
@@ -52,7 +40,7 @@ struct FullMatchImpl
         for (size_t i = 0; i < needle_offsets.size(); ++i)
         {
             const std::string_view needle(reinterpret_cast<const char *>(&needle_data[prev_offset]), needle_offsets[i] - prev_offset);
-            const String anchored_needle = anchorPattern(needle);
+            const String anchored_needle = anchorRegexpToMatchWholeString(needle);
             anchored_needles->insertData(anchored_needle.data(), anchored_needle.size());
             prev_offset = needle_offsets[i];
         }
@@ -70,7 +58,14 @@ struct FullMatchImpl
         size_t regexp_jit_min_count = std::numeric_limits<size_t>::max())
     {
         UnderlyingMatchImpl::vectorConstant(
-            haystack_data, haystack_offsets, anchorPattern(needle), start_pos_, res, res_null, input_rows_count, regexp_jit_min_count);
+            haystack_data,
+            haystack_offsets,
+            anchorRegexpToMatchWholeString(needle),
+            start_pos_,
+            res,
+            res_null,
+            input_rows_count,
+            regexp_jit_min_count);
     }
 
     static void vectorFixedConstant(
@@ -81,7 +76,7 @@ struct FullMatchImpl
         ColumnUInt8 * res_null,
         size_t input_rows_count)
     {
-        UnderlyingMatchImpl::vectorFixedConstant(haystack, N, anchorPattern(needle), res, res_null, input_rows_count);
+        UnderlyingMatchImpl::vectorFixedConstant(haystack, N, anchorRegexpToMatchWholeString(needle), res, res_null, input_rows_count);
     }
 
     static void vectorVector(
