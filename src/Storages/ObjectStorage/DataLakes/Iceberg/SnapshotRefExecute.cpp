@@ -36,7 +36,6 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LIMIT_EXCEEDED;
-extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 }
 
@@ -168,6 +167,7 @@ bool commitFileMetadata(
     const String & table_name,
     Int32 last_version,
     CompressionMethod compression_method,
+    const String & base_catalog_metadata_location,
     LoggerPtr log)
 {
     FileNamesGenerator filename_generator(
@@ -195,12 +195,12 @@ bool commitFileMetadata(
     {
         auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
         const auto & [namespace_name, parsed_table_name] = DataLake::parseTableName(table_name);
-        if (!catalog->updateMetadata(namespace_name, parsed_table_name, catalog_filename, nullptr))
+        if (!catalog->updateMetadata(
+                namespace_name, parsed_table_name, catalog_filename, base_catalog_metadata_location, nullptr, metadata))
         {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Failed to update catalog metadata after writing a new metadata file. "
-                "The table metadata may be in an inconsistent state");
+            removeRejectedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
+            LOG_WARNING(log, "Catalog commit conflict while updating snapshot references, retrying");
+            return false;
         }
     }
     return true;
@@ -278,7 +278,7 @@ Pipe executeCreateSnapshotRef(
     int max_retries = MAX_TRANSACTION_RETRIES;
     while (--max_retries > 0)
     {
-        auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+        auto [last_version, metadata_path, compression_method, base_catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
             table_name,
@@ -355,6 +355,7 @@ Pipe executeCreateSnapshotRef(
                     table_name,
                     last_version,
                     compression_method,
+                    base_catalog_metadata_location,
                     log))
             {
                 continue;
@@ -386,7 +387,7 @@ Pipe executeDropSnapshotRef(
     int max_retries = MAX_TRANSACTION_RETRIES;
     while (--max_retries > 0)
     {
-        auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+        auto [last_version, metadata_path, compression_method, base_catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
             table_name,
@@ -445,6 +446,7 @@ Pipe executeDropSnapshotRef(
                     table_name,
                     last_version,
                     compression_method,
+                    base_catalog_metadata_location,
                     log))
             {
                 continue;

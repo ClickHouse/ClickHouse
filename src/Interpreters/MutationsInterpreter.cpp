@@ -295,7 +295,8 @@ IsStorageTouched isStorageTouchedByMutations(
     const StorageMetadataPtr & /*metadata_snapshot*/,
     const std::vector<MutationCommand> & commands,
     ContextPtr context,
-    std::function<void(const Progress & value)> check_operation_is_not_cancelled)
+    std::function<void(const Progress & value)> check_operation_is_not_cancelled,
+    std::function<void()> on_exception)
 {
     static constexpr IsStorageTouched no_rows = {.any_rows_affected = false, .all_rows_affected = false};
     static constexpr IsStorageTouched all_rows = {.any_rows_affected = true, .all_rows_affected = true};
@@ -363,6 +364,7 @@ IsStorageTouched isStorageTouchedByMutations(
     io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
     /// It's actually not a progress callback, but a cancellation check.
     io.pipeline.setProgressCallback(check_operation_is_not_cancelled);
+    executor.setExceptionCallback(std::move(on_exception));
     /// Read progress is reported only by sources, so also poll the check while the pipeline works without reading.
     executor.setCancelCallback(
         [&executor, &check_operation_is_not_cancelled]
@@ -827,7 +829,9 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// first command scan so their MATERIALIZED closure can be seeded into dependency analysis
     /// below, before the per-command stage loop runs.
     NameSet clear_column_names;
-    bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
+    bool materialize_ttl_recalculate_only = settings.merge_tree_settings
+        ? (*settings.merge_tree_settings)[MergeTreeSetting::materialize_ttl_recalculate_only]
+        : source.materializeTTLRecalculateOnly();
     bool has_lightweight_delete_materialization = false;
     bool has_rewrite_parts = false;
     bool has_clear_column = false;
@@ -1476,9 +1480,10 @@ void MutationsInterpreter::prepare(bool dry_run)
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot MATERIALIZE TTL as there is no TTL set for table {}", source.getStorage()->getStorageID().getNameForLogs());
 
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            bool suitable_for_ttl_optimization = source.getMergeTreeData()
-                && (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts]
-                && metadata_snapshot->hasOnlyRowsTTL();
+            const bool ttl_only_drop_parts = settings.merge_tree_settings
+                ? (*settings.merge_tree_settings)[MergeTreeSetting::ttl_only_drop_parts]
+                : source.getMergeTreeData() && (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts];
+            const bool suitable_for_ttl_optimization = ttl_only_drop_parts && metadata_snapshot->hasOnlyRowsTTL();
 
             if (materialize_ttl_recalculate_only || suitable_for_ttl_optimization)
             {
@@ -1868,6 +1873,19 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         if (changed)
             materialized_projections.insert(projection.name);
+    }
+
+    /// A mutation that does not rewrite the whole part keeps the lightweight-deleted rows in it,
+    /// so a rebuilt projection needs `_row_exists` to leave them out.
+    const auto & source_part = source.getMergeTreeDataPart();
+    const bool projections_see_deleted_mask = settings.return_all_columns
+        || std::ranges::any_of(stages, [](const Stage & stage)
+            { return stage.affects_all_columns || stage.column_to_updated.contains(RowExistsColumn::name); });
+    if (!materialized_projections.empty() && source_part && source_part->hasLightweightDelete() && !projections_see_deleted_mask)
+    {
+        auto & stage = stages.emplace_back(context);
+        stage.is_readonly = true;
+        stage.column_to_updated.emplace(RowExistsColumn::name, make_intrusive<ASTIdentifier>(RowExistsColumn::name));
     }
 
     /// Every column emitted by a non-readonly stage is written into the new part at its current
@@ -2467,7 +2485,6 @@ void MutationsInterpreter::Source::read(
             mutation_settings.apply_deleted_mask,
             createFilterDAGForStage(first_stage),
             false,
-            /*prefetch_begin_of_range=*/ false,
             /*allow_remote_fs_prefetch=*/ canPrefetchInMergeOrMutation(*data, {part}, required_columns, context_),
             context_,
             getLogger("MutationsInterpreter"));

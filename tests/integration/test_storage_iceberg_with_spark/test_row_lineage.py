@@ -230,6 +230,56 @@ def test_row_id_survives_copy_on_write_delete(
     assert _clickhouse_lineage(instance, table_expression) == spark_lineage
 
 
+@pytest.mark.parametrize("file_format", ["orc", "avro"])
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_row_lineage_of_orc_and_avro_data_files(
+    started_cluster_iceberg_with_spark, storage_type, file_format
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = f"test_row_lineage_{file_format}_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(
+        f"CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg "
+        f"TBLPROPERTIES ('format-version' = '3', 'write.format.default' = '{file_format}', "
+        f"'write.update.mode' = 'copy-on-write')"
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} select id, 'a' from range(0, 4)")
+    spark.sql(f"UPDATE {TABLE_NAME} SET data = 'z' WHERE id = 1")
+    spark.sql(f"INSERT INTO {TABLE_NAME} select id, 'b' from range(4, 8)")
+
+    _publish(started_cluster_iceberg_with_spark, storage_type, TABLE_NAME)
+    table_expression = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        table_function=True,
+    )
+
+    lineage = _clickhouse_lineage(instance, table_expression)
+
+    assert {k: seq for k, (_, seq) in lineage.items()} == {0: 1, 1: 2, 2: 1, 3: 1, 4: 3, 5: 3, 6: 3, 7: 3}
+    assert {k: row_id for k, (row_id, _) in lineage.items() if k >= 4} == {4: 8, 5: 9, 6: 10, 7: 11}
+
+    # Spark (Iceberg 1.11) reads the row lineage of ORC files without the row position, so it is compared for Avro only.
+    if file_format == "avro":
+        spark_lineage = _spark_lineage(spark, TABLE_NAME)
+        assert {k: v for k, v in spark_lineage.items() if k < 4} == {0: (0, 1), 1: (1, 2), 2: (2, 1), 3: (3, 1)}
+        assert lineage == spark_lineage
+
+    # The updated row stores NULL and inherits its sequence number, which is outside the statistics of the stored
+    # column, so the filter must not be pushed down into the format.
+    assert {
+        k: seq
+        for k, (_, seq) in _clickhouse_lineage(
+            instance,
+            table_expression,
+            where="WHERE _last_updated_sequence_number = 2",
+            settings={"input_format_orc_filter_push_down": 1, "use_iceberg_partition_pruning": 1},
+        ).items()
+    } == {1: 2}
+
+
 @pytest.mark.parametrize("storage_type", ["s3"])
 def test_row_lineage_is_null_for_v2_table(
     started_cluster_iceberg_with_spark, storage_type

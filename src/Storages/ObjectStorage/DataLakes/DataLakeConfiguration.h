@@ -2,13 +2,13 @@
 
 #include "config.h"
 
+#include <Disks/DiskFromAST.h>
 #include <IO/WriteBuffer.h>
 #include <IO/VarInt.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
@@ -100,8 +100,8 @@ public:
     /// `_delta_log`); Iceberg's create path still requires an explicit schema, so it keeps the default.
     bool supportsCreateFromExistingTableInCatalog() const override
     {
-#if USE_PARQUET
-        return std::is_same_v<DataLakeMetadata, DeltaLakeMetadata>;
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+        return std::is_same_v<DataLakeMetadata, DeltaLakeMetadataDeltaKernel>;
 #else
         return false;
 #endif
@@ -255,11 +255,13 @@ public:
     }
 
     Pipe alterPartition(
+        ObjectStoragePtr object_storage,
         const PartitionCommands & commands,
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog,
         StorageID storage_id) override
     {
+        lazyInitializeIfNeeded(object_storage, context);
         return getMetadata()->alterPartition(commands, context, std::move(catalog), std::move(storage_id));
     }
 
@@ -383,21 +385,6 @@ public:
         return getMetadata()->iterate(filter_dag, callback, list_batch_size, storage_metadata, context);
     }
 
-#if USE_PARQUET
-    /// This is an awful temporary crutch,
-    /// which will be removed once DeltaKernel is used by default for DeltaLake.
-    /// By release 25.3.
-    /// (Because it does not make sense to support it in a nice way
-    /// because the code will be removed ASAP anyway)
-    DeltaLakePartitionColumns getDeltaLakePartitionColumns() const
-    {
-        const auto delta_lake_metadata = std::dynamic_pointer_cast<const DeltaLakeMetadata>(getMetadata());
-        if (delta_lake_metadata)
-            return delta_lake_metadata->getPartitionColumns();
-        return {};
-    }
-#endif
-
     void modifyFormatSettings(FormatSettings & settings_, const Context & local_context) const override
     {
         getMetadata()->modifyFormatSettings(settings_, local_context);
@@ -500,9 +487,14 @@ public:
         if (!Context::getGlobalContextInstance()->getAllowedDisksForTableEngines().contains(disk_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not allowed for usage in storage engines. The list of allowed disks is defined by server setting `allowed_disks_for_table_engines`", disk_name);
 
+        auto disk = context->getDisk(disk_name);
+        /// The setting allows a disk by name, which may be a custom disk built for another session or against an older
+        /// `remote_url_allow_hosts`. A replayed definition uses the disk of its own stored definition, so it is exempt.
+        if (!this->is_replayed_definition)
+            DiskFromAST::ensureDiskIsAllowed(disk, context, /* check_remote_hosts */ true);
+
         BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
         this->source_disk_name = disk_name;
-        auto disk = context->getDisk(disk_name);
         /// The table works through a private copy of the disk's object storage: the decorators
         /// (e.g. `CachedObjectStorage`), connection settings and the disk's IO scheduling resources
         /// stay in effect for the table, while per-table setting updates (see `update`) cannot
@@ -639,16 +631,16 @@ using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfi
 using StorageLocalPaimonConfiguration = DataLakeConfiguration<StorageLocalConfiguration, PaimonMetadata>;
 #endif
 
-#if USE_PARQUET
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
 #if USE_AWS_S3
-using StorageS3DeltaLakeConfiguration = DataLakeConfiguration<StorageS3Configuration, DeltaLakeMetadata>;
+using StorageS3DeltaLakeConfiguration = DataLakeConfiguration<StorageS3Configuration, DeltaLakeMetadataDeltaKernel>;
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-using StorageAzureDeltaLakeConfiguration = DataLakeConfiguration<StorageAzureConfiguration, DeltaLakeMetadata>;
+using StorageAzureDeltaLakeConfiguration = DataLakeConfiguration<StorageAzureConfiguration, DeltaLakeMetadataDeltaKernel>;
 #endif
 
-using StorageLocalDeltaLakeConfiguration = DataLakeConfiguration<StorageLocalConfiguration, DeltaLakeMetadata>;
+using StorageLocalDeltaLakeConfiguration = DataLakeConfiguration<StorageLocalConfiguration, DeltaLakeMetadataDeltaKernel>;
 
 #endif
 

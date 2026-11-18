@@ -32,9 +32,9 @@ struct RangesInDataPartDescription
     size_t min_marks_per_task = 0;
 
     void serialize(WriteBuffer & out, UInt64 parallel_replicas_protocol_version) const;
-    String describe() const;
+    [[nodiscard]] String describe() const;
     void deserialize(ReadBuffer & in, UInt64 parallel_replicas_protocol_version);
-    String getPartOrProjectionName() const;
+    [[nodiscard]] String getPartOrProjectionName() const;
 };
 
 struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescription>
@@ -42,9 +42,9 @@ struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescripti
     using std::deque<RangesInDataPartDescription>::deque;
 
     void serialize(WriteBuffer & out, UInt64 parallel_replicas_protocol_version) const;
-    String describe() const;
+    [[nodiscard]] String describe() const;
     /// Only the totals, without listing every part and range (the full list can be megabytes in size).
-    String describeShort() const;
+    [[nodiscard]] String describeShort() const;
     void deserialize(ReadBuffer & in, UInt64 parallel_replicas_protocol_version);
 
     void merge(const RangesInDataPartsDescription & other);
@@ -65,11 +65,11 @@ struct PartOffsetRanges : public std::vector<PartOffsetRange>
     size_t max_part_offset = 0;
 
     /// Returns true if the ranges collectively cover the full range [0, total_rows)
-    bool isContiguousFullRange() const { return total_rows == max_part_offset + 1; }
+    [[nodiscard]] bool isContiguousFullRange() const { return total_rows == max_part_offset + 1; }
 
     /// Checks if the given offset falls within any of the stored ranges.
     /// Each range is treated as a half-open interval: [begin, end)
-    bool contains(UInt64 offset) const
+    [[nodiscard]] bool contains(UInt64 offset) const
     {
         if (empty())
             return false;
@@ -138,10 +138,10 @@ struct RangesInDataPart
         size_t part_index_in_query_ = 0,
         size_t part_starting_offset_in_query_ = 0);
 
-    RangesInDataPartDescription getDescription() const;
+    [[nodiscard]] RangesInDataPartDescription getDescription() const;
 
-    size_t getMarksCount() const;
-    size_t getRowsCount() const;
+    [[nodiscard]] size_t getMarksCount() const;
+    [[nodiscard]] size_t getRowsCount() const;
 };
 
 class IMergeTreeDataPart;
@@ -153,10 +153,10 @@ struct RangesInDataParts : public std::vector<RangesInDataPart>
     using std::vector<RangesInDataPart>::vector; /// NOLINT(modernize-type-traits)
 
     explicit RangesInDataParts(const DataPartsVector & parts);
-    RangesInDataPartsDescription getDescriptions() const;
+    [[nodiscard]] RangesInDataPartsDescription getDescriptions() const;
 
-    size_t getMarksCountAllParts() const;
-    size_t getRowsCountAllParts() const;
+    [[nodiscard]] size_t getMarksCountAllParts() const;
+    [[nodiscard]] size_t getRowsCountAllParts() const;
 };
 using RangesInDataPartsPtr = std::shared_ptr<const RangesInDataParts>;
 
