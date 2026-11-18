@@ -39,11 +39,9 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageProxy.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/extractStringValueFilters.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PredicateStatisticsLog.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -1460,13 +1458,16 @@ struct PartRangesReadInfo
 }
 
 /// The expression of the first `prefix_size` sorting key columns. It keeps its input columns.
-static ExpressionActionsPtr getSortingKeyPrefixExpression(const StorageMetadataPtr & metadata, size_t prefix_size, const ContextPtr & context)
+/// It is cut from the analyzed sorting key, whose column names the sort descriptions use: analyzing the key again in
+/// the query context can name them differently, e.g. `nullIn` instead of `in` with `transform_null_in`.
+static ExpressionActionsPtr getSortingKeyPrefixExpression(const StorageMetadataPtr & metadata, size_t prefix_size)
 {
-    auto order_key_prefix_ast = metadata->getSortingKey().expression_list_ast->clone();
-    order_key_prefix_ast->children.resize(prefix_size);
-
-    auto syntax_result = TreeRewriter(context).analyze(order_key_prefix_ast, metadata->getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
-    return std::make_shared<ExpressionActions>(ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActionsDAG(false));
+    const auto & sorting_key = metadata->getSortingKey();
+    auto dag = sorting_key.expression->getActionsDAG().clone();
+    dag.removeUnusedActions(Names(sorting_key.column_names.begin(), sorting_key.column_names.begin() + prefix_size));
+    for (const auto * input : dag.getInputs())
+        dag.addOrReplaceInOutputs(*input);
+    return std::make_shared<ExpressionActions>(std::move(dag), sorting_key.expression->getSettings());
 }
 
 Pipe ReadFromMergeTree::readByLayers(
@@ -1495,7 +1496,7 @@ Pipe ReadFromMergeTree::readByLayers(
         size_t prefix_size = input_order_info->used_prefix_of_sorting_key_size;
         for (const auto & border : split_parts.borders)
             prefix_size = std::max(prefix_size, border.size());
-        auto sorting_expr = getSortingKeyPrefixExpression(storage_snapshot->metadata, prefix_size, context);
+        auto sorting_expr = getSortingKeyPrefixExpression(storage_snapshot->metadata, prefix_size);
         const auto sorting_key_prefix_columns = sorting_expr->getRequiredColumns();
 
         /// `PREWHERE` runs before the sorting expression added below and may have removed an input
@@ -2510,7 +2511,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     if (need_preliminary_merge || output_each_partition_through_separate_port)
     {
         size_t prefix_size = input_order_info->used_prefix_of_sorting_key_size;
-        auto sorting_key_expr = getSortingKeyPrefixExpression(storage_snapshot->metadata, prefix_size, context);
+        auto sorting_key_expr = getSortingKeyPrefixExpression(storage_snapshot->metadata, prefix_size);
         const auto & sorting_columns = storage_snapshot->metadata->getSortingKey().column_names;
         std::vector<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags(); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `KeyDescription::reverse_flags` is std::vector
 

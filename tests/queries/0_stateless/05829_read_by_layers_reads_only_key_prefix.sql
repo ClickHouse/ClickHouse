@@ -29,3 +29,22 @@ WHERE current_database = currentDatabase() AND log_comment IN ('05829_uniq_exact
 ORDER BY log_comment;
 
 DROP TABLE t_layers_prefix;
+
+-- The sorting key keeps its own names when the query settings would name its expressions differently: `IN` is `nullIn`
+-- with `transform_null_in`. The first key column is fixed by the condition, so the read is in order of `k`, in layers
+-- with several threads and by merging the parts with one.
+DROP TABLE IF EXISTS t_layers_prefix_in;
+CREATE TABLE t_layers_prefix_in (a UInt32, k UInt32, s String) ENGINE = MergeTree ORDER BY (a IN (1, 2), k, s)
+SETTINGS index_granularity = 128;
+
+SYSTEM STOP MERGES t_layers_prefix_in;
+INSERT INTO t_layers_prefix_in SELECT 1, number % 500, toString(number) FROM numbers(10000);
+INSERT INTO t_layers_prefix_in SELECT 1, number % 500, toString(number) FROM numbers(10000);
+
+SET transform_null_in = 1, read_in_order_two_level_merge_threshold = 1;
+SELECT uniqExact(k) FROM t_layers_prefix_in WHERE a = 1 SETTINGS max_threads = 4;
+SELECT uniqExact(k) FROM t_layers_prefix_in WHERE a = 1 SETTINGS max_threads = 1;
+SELECT k, count() FROM t_layers_prefix_in WHERE a = 1 GROUP BY k ORDER BY k LIMIT 1 SETTINGS max_threads = 1;
+SELECT k FROM t_layers_prefix_in WHERE a = 1 ORDER BY k LIMIT 1 SETTINGS max_threads = 1;
+
+DROP TABLE t_layers_prefix_in;
