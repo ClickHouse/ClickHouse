@@ -129,6 +129,7 @@ namespace ErrorCodes
     extern const int FUNCTION_NOT_ALLOWED;
     extern const int QUERY_IS_PROHIBITED;
     extern const int READONLY;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace FailPoints
@@ -323,7 +324,8 @@ void restoreWriteIdentity(const ContextMutablePtr & insert_context, const Buffer
         insert_context->setNormalizedQueryHash(identity.normalized_query_hash);
 }
 
-/// Hops of a forwarded write are followed this deep at most; the write itself checks any beyond.
+/// A write forwarded through more tables than this is refused rather than authorized in part: reading the metadata of an
+/// `Alias` follows its chain to the end without checks, so the hops beyond would reveal the schema of their target.
 constexpr size_t max_forwarded_insert_depth = 16;
 
 /// Checks, without writing, the `INSERT` privileges of the user of `context` that a write into `table` checks as it
@@ -335,7 +337,11 @@ constexpr size_t max_forwarded_insert_depth = 16;
 void checkForwardedInsertAccess(const StoragePtr & table, const ContextPtr & context, size_t depth = 0)
 {
     if (depth >= max_forwarded_insert_depth)
-        return;
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "The write into {} is forwarded through more than {} tables, more than can be authorized before writing",
+            table->getStorageID().getNameForLogs(),
+            max_forwarded_insert_depth);
 
     /// As `InsertDependenciesBuilder` and `StorageMaterializedView::write` check it.
     const auto check_view_target = [&](const StorageMaterializedView & view)

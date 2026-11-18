@@ -110,6 +110,23 @@ CREATE TABLE ${db}.al_mid ENGINE = Alias('${victim_db}', 'victim');
 EOF
 run_low --query "CREATE TABLE ${db}.b_probe_chain (absent_col String) ENGINE = Buffer(${db}, al_chain, 1, 1, 1, 1, 1, 1, 1)"
 echo -n "two-alias chain denied: "; denied run_low --query "INSERT INTO ${db}.b_probe_chain VALUES ('probe')"
+# A chain longer than the hops authorized before writing must be refused as a whole: reading its metadata follows it to
+# victim without checks, so stopping the check early would tell a real column of victim (ACCESS_DENIED from the write)
+# from an absent one (no common columns, nothing written).
+deep=20
+for i in $(seq 1 ${deep}); do
+    if [ "${i}" -lt "${deep}" ]; then target="'${db}', 'al_deep_$((i + 1))'"; else target="'${victim_db}', 'victim'"; fi
+    ${CH} --query "CREATE TABLE ${db}.al_deep_${i} ENGINE = Alias(${target})"
+done
+run_low --multiquery <<EOF
+CREATE TABLE ${db}.b_probe_deep_real (s String) ENGINE = Buffer(${db}, al_deep_1, 1, 1, 1, 1, 1, 1, 1);
+CREATE TABLE ${db}.b_probe_deep_fake (absent_col String) ENGINE = Buffer(${db}, al_deep_1, 1, 1, 1, 1, 1, 1, 1);
+EOF
+deep_real=$(run_low --query "INSERT INTO ${db}.b_probe_deep_real VALUES ('probe')" 2>&1)
+deep_fake=$(run_low --query "INSERT INTO ${db}.b_probe_deep_fake VALUES ('probe')" 2>&1)
+echo -n "deep alias chain refused, no leak: "
+if echo "${deep_real}" | grep -q "TOO_DEEP_RECURSION" && echo "${deep_fake}" | grep -q "TOO_DEEP_RECURSION" \
+    && ! echo "${deep_real}${deep_fake}" | grep -qi "columns"; then echo "OK"; else echo "UNEXPECTED"; fi
 echo -n "victim after Part E:    "; victim
 
 echo "## Part F: a cross-identity flush shows the triggering user nothing of the buffering user"

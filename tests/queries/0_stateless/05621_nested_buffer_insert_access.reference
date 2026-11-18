@@ -20,6 +20,7 @@ real column denied:     OK
 absent column denied:   OK
 partial denied, no leak: OK
 two-alias chain denied: OK
+deep alias chain refused, no leak: OK
 victim after Part E:    ['from_ok','legit_b','original']
 ## Part F: a cross-identity flush shows the triggering user nothing of the buffering user
 flush hidden from the triggering user: OK
