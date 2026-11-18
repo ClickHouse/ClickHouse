@@ -19,6 +19,9 @@ using QueryExecutionStartedCallback = std::function<void()>;
 
 class Context;
 
+class QueryPlanLogCapture;
+using QueryPlanLogCapturePtr = std::shared_ptr<QueryPlanLogCapture>;
+
 /// Most used types have shorter names
 using ContextPtr = std::shared_ptr<const Context>;
 using ContextMutablePtr = std::shared_ptr<Context>;

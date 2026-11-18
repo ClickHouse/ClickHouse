@@ -471,7 +471,7 @@ REGISTER_FUNCTION(ArraySlice)
     FunctionDocumentation::Description description = R"(
 Returns a slice of the array, with `NULL` elements included.
 
-The first argument may also be a [QBit](/sql-reference/data-types/qbit): the result is a QBit over the selected dimensions (a projection to a subset of dimensions). In that case `offset` and `length` must be constants, because the dimension of a QBit is part of its type, and the slice must select at least one dimension. A slice aligned to the QBit's stride-group boundaries keeps the stride and reuses the stored bit-plane streams without copying.
+The first argument may also be a [QBit](/reference/data-types/qbit): the result is a QBit over the selected dimensions (a projection to a subset of dimensions). In that case `offset` and `length` must be constants, because the dimension of a QBit is part of its type, and the slice must select at least one dimension. A slice aligned to the QBit's stride-group boundaries keeps the stride and reuses the stored bit-plane streams without copying.
     )";
     FunctionDocumentation::Syntax syntax = "arraySlice(arr, offset [, length])";
     FunctionDocumentation::Arguments arguments = {

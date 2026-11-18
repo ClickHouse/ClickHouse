@@ -1669,8 +1669,8 @@ UseProjectionsResult optimizeUseAggregateProjections(
     if (best_candidate)
         selected_projection_name = best_candidate->projection->name;
 
-    bool is_parallel_reading_on_remote_replicas = reading->isParallelReadingEnabled()
-        && !optimization_settings.is_parallel_replicas_initiator_with_projection_support;
+    const bool is_local_plan_for_initiator = reading->isParallelReplicasLocalPlanForInitiator();
+    bool is_parallel_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !is_local_plan_for_initiator;
     /// Add reading from projection step.
     if (candidates.minmax_projection)
     {
@@ -1787,7 +1787,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
             short_circuited_with_prepared_source = true;
         }
 
-        if (has_parent_parts && optimization_settings.is_parallel_replicas_initiator_with_projection_support)
+        if (has_parent_parts && is_local_plan_for_initiator)
             fallbackToLocalProjectionReading(projection_reading);
     }
 

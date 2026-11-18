@@ -208,7 +208,8 @@ private:
     void mergingSorted(
         QueryPipelineBuilder & pipeline,
         const SortDescription & result_sort_desc,
-        UInt64 limit_);
+        UInt64 limit_,
+        UInt64 read_ahead_limit);
     void finishSorting(
         QueryPipelineBuilder & pipeline,
         const SortDescription & input_sort_desc,
