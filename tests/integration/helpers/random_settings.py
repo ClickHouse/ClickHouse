@@ -2,6 +2,7 @@ import random
 
 
 def randomize_settings():
+    yield "use_lz4_library_decompression", random.randint(0, 1)
     yield "max_joined_block_size_rows", random.randint(8000, 100000)
     if random.random() < 0.5:
         yield "max_block_size", random.randint(8000, 100000)
