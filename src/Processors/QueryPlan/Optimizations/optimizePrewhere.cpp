@@ -314,8 +314,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (suppress_for_vector_search && read_from_merge_tree_step && shouldSuppressPrewhereForVectorSearch(*read_from_merge_tree_step, settings))
         return;
 
-    /// Decoded sizes: a condition decodes every value of its columns, however well they compress. A storage that
-    /// reports no decoded size (`Memory`) is ordered by the size it reports.
+    /// Decoded sizes, or the compressed size where no decoded size is reported (`Memory`).
     UnorderedMapWithMemoryTracking<std::string, UInt64> column_decoded_sizes;
     for (const auto & [name, sizes] : column_sizes)
         column_decoded_sizes[name] = sizes.data_uncompressed ? sizes.data_uncompressed : sizes.data_compressed;
