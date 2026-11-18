@@ -537,7 +537,8 @@ bool ParquetV3BlockInputFormat::isTopKFilterApplied() const
 
 bool ParquetV3BlockInputFormat::isJoinRuntimeFilterApplied() const
 {
-    return reader && reader->reader.row_groups_pruned_by_join_runtime_filter > 0;
+    return reader
+        && (reader->reader.row_groups_pruned_by_join_runtime_filter > 0 || reader->reader.pages_pruned_by_join_runtime_filter > 0);
 }
 
 Parquet::RowGroupSelection ParquetV3BlockInputFormat::rowGroupSelection() const
@@ -975,7 +976,7 @@ void registerInputFormatParquet(FormatFactory & factory)
             std::nullopt,
             is_remote_fs
         );
-    });
+    }, /*supports_reset_parser=*/ true);
     factory.markFormatSupportsSubsetOfColumns("Parquet");
     factory.registerPrewhereSupportChecker("Parquet", [](const FormatSettings &)
     {
@@ -1082,9 +1083,11 @@ ClickHouse reads columns stored in the Parquet [`VARIANT`](https://github.com/ap
 
 Each value keeps its own type. Variant primitive types are read as the matching ClickHouse types (for example, `int32` as `Int32`, `decimal8` as `Decimal(18, S)`, `timestamp` as `DateTime64(6, 'UTC')`, `timestamp_ntz` as `DateTime64(6)`, `binary` and `string` as `String`, `uuid` as `UUID`), the variant `null` is read as `NULL`, variant objects are read as [`JSON`](/reference/data-types/newjson) with nested objects flattened into dot-separated paths (a `null` field is treated as absent), variant arrays whose elements are all objects are read as `Array(JSON)`, and other variant arrays are read as `Array(Dynamic)`. The top-level type is `Dynamic` rather than `JSON`, because a variant value is not necessarily an object.
 
-A variant column can also be read as [`JSON`](/reference/data-types/newjson) by requesting that type explicitly, for example in the table structure or in the structure argument of the `file` table function. Then every value must be an object, otherwise an exception is thrown. A variant `null` and a `null` of the whole column are read as an empty object. Typed paths of the requested `JSON` type are converted to their types, and paths listed in `SKIP` and `SKIP REGEXP` are skipped.
+A variant column can also be read as [`JSON`](/reference/data-types/newjson) by requesting that type explicitly, for example in the table structure or in the structure argument of the `file` table function. Then every value must be an object, otherwise an exception is thrown. A variant `null` and a `null` of the whole column are read as an empty object. Typed paths of the requested `JSON` type are converted to their types, and paths listed in `SKIP` and `SKIP REGEXP` are skipped. A variant column can also be read as an ordinary [`Variant`](/reference/data-types/variant) type by requesting it explicitly. Each value goes to the member that values of its variant type are written from (for example, `UInt8` for `int16`, `Date` for `date`, `Decimal(5, 2)` for `decimal4`, an `Array` for an array) and is converted to the member type; a value that matches no member throws an exception. When several members are written the same way, their values are all read into the member of exactly the type they are read as, so the member of a value can change on a round trip: in `Variant(UInt32, Int64)` both members are written as `int64`, and a `UInt32` value is read back as an `Int64` value. A `Variant` can be written only if this restores its values: its members are scalar types, `JSON` or arrays of them, and every group of members written the same way has such a member, otherwise an exception is thrown. For example, `Variant(UInt32, UInt64)` (both are read as `Int64`), `Variant(Array(UInt8), Array(Int64))` (all arrays are read as `Array(Dynamic)`) and `Variant(Map(String, Int64), String)` cannot be written, use `Dynamic` instead.
 
-Shredded variants (groups with a `typed_value` field) are not supported yet: reading such a column throws an exception, while the other columns of the file can still be read, and schema inference skips the column if `input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference` is enabled. Writing `Dynamic` or `JSON` columns to Parquet as `VARIANT` is not supported either.
+Shredded variants (groups with a `typed_value` field) are not supported yet: reading such a column throws an exception, while the other columns of the file can still be read, and schema inference skips the column if `input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference` is enabled.
+
+Columns of type [`Dynamic`](/reference/data-types/dynamic) and ordinary [`Variant`](/reference/data-types/variant) (but not `Geometry`), including such columns nested in `Array`, `Map` and `Tuple`, are written as unshredded `VARIANT` groups of specification version 1. A `NULL` is written as a null of the whole group, except for a map key, which must be present and gets the variant `null` instead. `JSON` values are written as variant objects: with the setting `json_type_escape_dots_in_keys` enabled, the escaped dots in keys are restored on write and escaped again on read, so a key containing a dot is distinct from a nested path. The nesting depth of the written objects is limited by the setting `max_parser_depth` (`0` means no limit). Strings that are not valid UTF-8 are written as variant `binary` values. Object keys must be valid UTF-8, otherwise an exception is thrown. Writing `JSON` columns themselves as `VARIANT` is not supported.
 
 ## File references {#file-type}
 

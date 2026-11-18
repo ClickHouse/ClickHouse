@@ -15,9 +15,9 @@ namespace DB::WebAssembly
 class WasmMemoryManager
 {
 public:
-    virtual WasmPtr createBuffer(WasmSizeT size) const = 0;
+    [[nodiscard]] virtual WasmPtr createBuffer(WasmSizeT size) const = 0;
     virtual void destroyBuffer(WasmPtr handle) const = 0;
-    virtual std::span<uint8_t> getMemoryView(WasmPtr handle) const = 0;
+    [[nodiscard]] virtual std::span<uint8_t> getMemoryView(WasmPtr handle) const = 0;
 
     virtual ~WasmMemoryManager() = default;
 };
@@ -41,8 +41,8 @@ public:
 
     operator bool() const { return ptr != 0; } /// NOLINT
 
-    std::span<uint8_t> getMemoryView() const { return wmm->getMemoryView(ptr); }
-    WasmPtr getHandle() const { return ptr; }
+    [[nodiscard]] std::span<uint8_t> getMemoryView() const { return wmm->getMemoryView(ptr); }
+    [[nodiscard]] WasmPtr getHandle() const { return ptr; }
 
 protected:
     WasmPtr ptr = 0;
