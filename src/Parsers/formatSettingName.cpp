@@ -19,7 +19,10 @@ void formatSettingName(const String & setting_name, WriteBuffer & out)
     std::vector<std::string_view> parts;
     splitInto<'.'>(parts, setting_name);
     bool all_parts_are_identifiers = std::all_of(parts.begin(), parts.end(), isValidIdentifier);
-    if (all_parts_are_identifiers && !parts.empty())
+    /// `splitInto` does not return the empty part after a trailing dot.
+    /// Without this check, the name `a.` is written as `a`, which is a different name.
+    bool has_trailing_dot = setting_name.ends_with('.');
+    if (all_parts_are_identifiers && !parts.empty() && !has_trailing_dot)
     {
         bool need_dot = false;
         for (const auto & part : parts)

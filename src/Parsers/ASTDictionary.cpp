@@ -6,6 +6,7 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/formatSettingName.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
 
@@ -157,7 +158,8 @@ void ASTDictionaryLayout::formatImpl(WriteBuffer & ostr,
                                      FormatState & state,
                                      FormatStateStacked frame) const
 {
-    ostr << "LAYOUT(" << Poco::toUpper(layout_type);
+    /// The parser reads the layout name as one identifier and accepts any bare word.
+    ostr << "LAYOUT(" << backQuoteIfNotBareWord(Poco::toUpper(layout_type));
 
     if (has_brackets)
         ostr << "(";
@@ -238,7 +240,9 @@ void ASTDictionarySettings::formatImpl(WriteBuffer & ostr,
         if (it != changes.begin())
             ostr << ", ";
 
-        ostr << it->name << " = " << applyVisitor(FieldVisitorToString(), it->value);
+        /// The parser reads the name with `ParserSetQuery::parseNameValuePair`, as for the `SET` query.
+        formatSettingName(it->name, ostr);
+        ostr << " = " << applyVisitor(FieldVisitorToString(), it->value);
     }
     ostr << ")";
 }
