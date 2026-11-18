@@ -53,3 +53,7 @@ prewhere_is_null	2	0	0	3
 prewhere_is_not_null	1	0	0	4
 prewhere_or	1	1	0	3
 prewhere_off	0	0	0	0
+prewhere_is_null	1700
+prewhere_is_not_null	2600
+prewhere_or	1700
+prewhere_off	4000

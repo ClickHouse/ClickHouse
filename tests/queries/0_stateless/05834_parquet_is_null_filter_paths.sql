@@ -72,3 +72,9 @@ SELECT replaceOne(log_comment, 'q05834_', ''), ProfileEvents['ParquetPrunedRowGr
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE 'q05834\\_%'
 ORDER BY event_time_microseconds;
+
+-- The reader evaluates PREWHERE only on the rows of the row groups and pages left after pruning.
+SELECT replaceOne(log_comment, 'q05834_', ''), ProfileEvents['ParquetRowsFilterExpression']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE 'q05834\\_prewhere\\_%'
+ORDER BY event_time_microseconds;
