@@ -5179,6 +5179,65 @@ TEST(SchedulerWorkloadResourceManager, ConfigLoadValidatesWorkloadSettings)
     }
 }
 
+/// Whether the manager has a scheduler node of workload `child` below a node of workload `parent`
+static bool hasWorkloadNodeUnder(ResourceTest & t, const String & resource, const String & parent, const String & child)
+{
+    bool seen = false;
+    t.manager->forEachNode([&](const String & r, const String & path, ISchedulerNode *)
+    {
+        auto parent_pos = path.find("/" + parent + "/");
+        if (r == resource && parent_pos != String::npos && path.find("/" + child, parent_pos + parent.size() + 1) != String::npos)
+            seen = true;
+    });
+    return seen;
+}
+
+// Moving workloads so that a parent becomes a child is applied in an order that keeps the hierarchy acyclic
+TEST(SchedulerWorkloadResourceManager, ReversedHierarchyIsApplied)
+{
+    ResourceTest t;
+    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
+    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "a", "b"));
+    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD b; CREATE WORKLOAD a IN b");
+    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "b", "a"));
+
+    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
+    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "a", "b"));
+    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD b; CREATE WORKLOAD a IN b");
+    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "b", "a"));
+
+    // An unchanged workload between the moved ones
+    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD a; CREATE WORKLOAD b IN a; CREATE WORKLOAD c IN b");
+    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD b; CREATE WORKLOAD c IN b; CREATE WORKLOAD a IN c");
+    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "c", "a"));
+}
+
+// A workload replaced by a resource of the same name is dropped only after its children leave it
+TEST(SchedulerWorkloadResourceManager, WorkloadReplacedByResourceOutlivesItsChildren)
+{
+    ResourceTest t;
+    t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
+    t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE RESOURCE a (WRITE DISK d); CREATE WORKLOAD b SETTINGS weight = 2 FOR a");
+
+    bool has_b_in_a = false;
+    t.manager->forEachNode([&](const String & resource, const String & path, ISchedulerNode *)
+    {
+        if (resource == "a" && path.ends_with("/b"))
+            has_b_in_a = true;
+    });
+    EXPECT_TRUE(has_b_in_a);
+}
+
+// A resource replaced by a workload of the same name is created before its new children are attached to it
+TEST(SchedulerWorkloadResourceManager, ResourceReplacedByWorkloadPrecedesItsChildren)
+{
+    ResourceTest t;
+    t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE RESOURCE a (WRITE DISK d); CREATE WORKLOAD b SETTINGS weight = 2 FOR a");
+    t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
+    EXPECT_FALSE(t.manager->hasResource("a"));
+    EXPECT_TRUE(hasWorkloadNodeUnder(t, "io", "a", "b"));
+}
+
 // Unit-test coverage for the lazy-allocation path in CPULeaseAllocation
 // (current_max_slots gated schedule + setMax growth). Higher-level fairness /
 // preemption behaviour is exercised by the PreemptiveCPUScheduling* tests above;

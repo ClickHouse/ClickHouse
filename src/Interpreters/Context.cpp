@@ -3451,6 +3451,15 @@ void Context::addQueryAccessInfo(const Names & partition_names)
         query_access_info->partitions.emplace(partition_name);
 }
 
+void Context::addUsedDataSkippingIndex(const StorageID & storage_id, const String & index_name)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+
+    std::lock_guard<std::mutex> lock(query_access_info->mutex);
+    query_access_info->data_skipping_indices.emplace(fmt::format("{}.{}", storage_id.getFullTableName(), backQuoteIfNeed(index_name)));
+}
+
 void Context::addViewAccessInfo(const String & view_name)
 {
     if (isGlobalContext())
@@ -3458,6 +3467,33 @@ void Context::addViewAccessInfo(const String & view_name)
 
     std::lock_guard<std::mutex> lock(query_access_info->mutex);
     query_access_info->views.emplace(view_name);
+}
+
+void Context::addSQLSecurityOverriddenBody(const StorageID & view_id, const ContextPtr & body_context, const ASTPtr & body_query)
+{
+    /// Only the context of a `DEFINER` / `NONE` body has a query context of its own.
+    if (!body_context->hasQueryContext() || body_context->getQueryContext().get() == this)
+        return;
+
+    const auto hash = body_query->getTreeHash(/*ignore_aliases=*/ false);
+    const std::pair<UInt64, UInt64> query_hash{hash.low64, hash.high64};
+    auto user = body_context->getUserName();
+    auto current_database = body_context->getCurrentDatabase();
+    auto body_query_context = body_context->getQueryContext();
+
+    std::lock_guard lock(query_access_info->mutex);
+    auto & bodies = query_access_info->sql_security_overridden_bodies;
+    for (const auto & body : bodies)
+    {
+        if (body->query_hash == query_hash && body->user == user && StorageID::DatabaseAndTableNameEqual{}(body->view, view_id))
+        {
+            body_query_context->setQueryAccessInfo(body->access_info);
+            return;
+        }
+    }
+    bodies.push_back(std::make_shared<const SQLSecurityOverriddenBody>(SQLSecurityOverriddenBody{
+        .view = view_id, .query_hash = query_hash, .user = std::move(user), .current_database = std::move(current_database),
+        .query = body_query, .access_info = body_query_context->getQueryAccessInfoPtr()}));
 }
 
 void Context::addUsedRowPolicy(const String & policy_name)
@@ -3571,11 +3607,7 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
 
 void Context::addQueryPrivilegesInfo(const String & privilege, bool granted) const
 {
-    std::lock_guard lock(query_privileges_info->mutex);
-    if (granted)
-        query_privileges_info->used_privileges.emplace(privilege);
-    else
-        query_privileges_info->missing_privileges.emplace(privilege);
+    query_privileges_info->add(privilege, granted);
 }
 
 static bool findIdentifier(const ASTFunction * function)
@@ -3647,6 +3679,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             create.set(create.sql_security, sql_security);
 
             auto view_context = view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+            if (hasQueryContext())
+                getQueryContext()->addSQLSecurityOverriddenBody(table->getStorageID(), view_context, query);
             auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
@@ -3939,6 +3973,8 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     create.set(create.sql_security, sql_security);
 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+    if (hasQueryContext())
+        getQueryContext()->addSQLSecurityOverriddenBody(original_view->getStorageID(), view_context, query);
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,
@@ -8943,7 +8979,8 @@ const S3SettingsByEndpoint & Context::getStorageS3Settings() const
     if (!shared->storage_s3_settings)
     {
         const auto & config = shared->getConfigRefWithLock(lock);
-        shared->storage_s3_settings.emplace().loadFromConfig(config, "s3", getSettingsRef());
+        /// Shared by all queries, so built from the server settings, as on a config reload.
+        shared->storage_s3_settings.emplace().loadFromConfig(config, "s3", getGlobalContext()->getSettingsRef());
     }
 
     return *shared->storage_s3_settings;
@@ -10069,8 +10106,14 @@ StatelessWorkersProviderPtr Context::getStatelessWorkersProvider() const
     auto query_context_ptr = getQueryContext();
     std::lock_guard lock(query_context_ptr->stateless_worker_allocation_mutex);
     if (!query_context_ptr->stateless_worker_provider)
-        query_context_ptr->stateless_worker_provider = query_context_ptr->getStatelessWorkersProvider(
+    {
+        auto provider = query_context_ptr->getStatelessWorkersProvider(
             query_context_ptr->getSettingsRef()[Setting::distributed_plan_worker_cluster]);
+        /// Taken one time, so that the planning and the allocation of the query see the same workers.
+        if (auto query_snapshot = provider->tryGetQuerySnapshot())
+            provider = std::move(query_snapshot);
+        query_context_ptr->stateless_worker_provider = std::move(provider);
+    }
     return query_context_ptr->stateless_worker_provider;
 }
 
