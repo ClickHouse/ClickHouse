@@ -4448,6 +4448,9 @@ SettingsChanges Context::applyNestedQuerySettingsClamped(const SettingsChanges &
 
     if (!default_settings.empty())
     {
+        /// Report the requested resets before clamping: a reset that the constraints drop or that does
+        /// not change the value still names the obsolete setting in the query.
+        reportObsoleteSettingsReset(default_settings);
         auto allowed_resets = default_settings;
         SettingsChanges clamped_resets;
         clampSettingsConstraintsForSettingsReset(allowed_resets, clamped_resets, SettingSource::QUERY);

@@ -15,5 +15,8 @@ Obsolete setting ['min_rows_for_compact_part'] is specified on the command line
 6
 -- ... and it is shown in system.warnings
 1
+-- A reset in a nested query is reported, even when it keeps the value
+7
+1
 -- ... and logged
 1

@@ -44,6 +44,11 @@ $CLICKHOUSE_CLIENT -q "
        AND message LIKE '%''s3_disable_checksum''%'
     FROM system.warnings WHERE message LIKE 'Queries or settings profiles changed obsolete settings since the server start: %'"
 
+echo "-- A reset in a nested query is reported, even when it keeps the value"
+$CLICKHOUSE_LOCAL -q "
+    SELECT * FROM (SELECT 7 SETTINGS use_statistics_cache = DEFAULT);
+    SELECT count() FROM system.warnings WHERE message LIKE '%obsolete settings since%' AND message LIKE '%''use_statistics_cache''%'"
+
 echo "-- ... and logged"
 # The log entry can be written after the response is sent, so retry until it appears.
 # Only the first use of each obsolete setting since the server start is logged, so the entry can be older than this test.
