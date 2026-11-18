@@ -2806,7 +2806,7 @@ See also:
 
 - [`system.query_log`](/reference/system-tables/query_log)
 - [`EXPLAIN PLAN`](/reference/statements/explain#explain-plan)
-)", BETA, \
+)", EXPERIMENTAL, \
         {"26.11", false, false, "New setting to capture the query plan actually executed, together with per-step runtime statistics."}) \
     DECLARE(DistributedProductMode, distributed_product_mode, DistributedProductMode::DENY, R"(
 Changes the behaviour of [distributed subqueries](/reference/statements/in).
@@ -3346,7 +3346,7 @@ A query decides how much text its own plan contains: a large `IN` list, a long a
 A plan that does not fit is not stored truncated, because half a document is not a plan. The column holds the reason instead, as `{"Error": ...}`.
 
 `0` means no limit.
-)", 0, \
+)", EXPERIMENTAL, \
         {"26.11", 1048576, 1048576, "New setting to bound the size of the query plan stored in `system.query_log`. The limit is kept under `compatibility` with earlier versions: the column itself is new, so there is no earlier behaviour to restore, and it guards a server resource."}) \
     \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(

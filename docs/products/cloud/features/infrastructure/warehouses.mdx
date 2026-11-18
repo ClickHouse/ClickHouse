@@ -166,7 +166,7 @@ _Fig. 6 - Read-write and Read-only services in a warehouse_
 
 <Note>
 1. Read-only services currently support user management operations (CREATE, DROP, etc).
-2. [Refreshable materialized views](/concepts/features/materialized-views/refreshable-materialized-view) run **only** on read-write (RW) services in a warehouse.
+2. [Refreshable materialized views](/concepts/features/materialized-views/refreshable-materialized-view) with coordinated refreshes (the default) run **only** on read-write (RW) services in a warehouse. Views created with `APPEND` and `SETTINGS all_replicas = 1` are not coordinated. Every service, including read-only ones, attempts each refresh, and on a read-only service each attempt fails with `QUERY_IS_PROHIBITED` (code 392) unless the view writes to external storage.
 3. A service's type (read-only or read-write) is fixed at creation and cannot be changed from the Cloud Console afterwards. To switch between read-only and read-write access, create a new service in the warehouse with the desired type.
 </Note>
 

@@ -1329,6 +1329,10 @@ UseProjectionsResult optimizeUseAggregateProjections(
     if (auto can_use = canUseProjectionForReadingStep(reading); !can_use)
         return reject_all(can_use.error());
 
+    /// The rows of an aggregate projection are not rows of the table, which a lazy read could read more columns of.
+    if (reading->hasLazilyReadColumns())
+        return reject_all("some columns of the read are read lazily by their part offsets");
+
     /// Test hook: make a parallel-replicas follower skip the aggregate-projection short-circuit so it
     /// plans a real read while the initiator still short-circuits. This deterministically manufactures the
     /// initiator/follower plan divergence that a homogeneous single-server test cluster cannot otherwise
