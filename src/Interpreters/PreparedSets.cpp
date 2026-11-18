@@ -898,22 +898,41 @@ PreparedSetsCache::PreparedSetsCache(std::shared_ptr<PreparedSetsCache> shared_c
     chassert(shared_cache);
 }
 
+static bool isReady(const SharedSet & future)
+{
+    return future.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+}
+
 std::variant<std::promise<SetPtr>, SharedSet> PreparedSetsCache::findOrPromiseToBuild(const String & key)
 {
-    if (shared_cache)
+    if (!shared_cache)
     {
-        auto from_cache = shared_cache->findOrPromiseToBuild(key);
+        SharedSet promised_future;
+        return findOrPromiseToBuildImpl(key, promised_future);
+    }
 
-        std::lock_guard lock(cache_mutex);
-        if (from_cache.index() == 0)
-            promised_keys.insert(key);
-        else if (promised_keys.contains(key)
-            && std::get<1>(from_cache).wait_for(std::chrono::seconds(0)) != std::future_status::ready)
-            return std::promise<SetPtr>{};
+    SharedSet promised_future;
+    auto from_cache = shared_cache->findOrPromiseToBuildImpl(key, promised_future);
 
+    std::lock_guard lock(cache_mutex);
+    if (from_cache.index() == 0)
+    {
+        own_builds.push_back(std::move(promised_future));
         return from_cache;
     }
 
+    if (isReady(std::get<1>(from_cache)))
+        return from_cache;
+
+    std::erase_if(own_builds, isReady);
+    if (!own_builds.empty())
+        return std::promise<SetPtr>{};
+
+    return from_cache;
+}
+
+std::variant<std::promise<SetPtr>, SharedSet> PreparedSetsCache::findOrPromiseToBuildImpl(const String & key, SharedSet & promised_future)
+{
     std::lock_guard lock(cache_mutex);
 
     auto it = cache.find(key);
@@ -940,6 +959,7 @@ std::variant<std::promise<SetPtr>, SharedSet> PreparedSetsCache::findOrPromiseTo
     std::promise<SetPtr> promise_to_fill_set;
     Entry & entry = cache[key];
     entry.future = promise_to_fill_set.get_future();
+    promised_future = entry.future;
     return promise_to_fill_set;
 }
 

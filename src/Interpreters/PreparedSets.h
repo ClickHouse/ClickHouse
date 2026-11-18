@@ -7,7 +7,6 @@
 #include <exception>
 #include <memory>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 #include <mutex>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -364,10 +363,12 @@ public:
     /// If it is found, get the future to be able to wait for the set to be built.
     /// Otherwise create a promise, build the set and set the promise value.
     ///
-    /// A task must not wait for a set that it builds itself: a mutation runs its pipeline with one thread,
-    /// so the build would never finish. But one task can build two sets with the same key, e.g. the same
-    /// `IN` subquery inside two different set subqueries. So if the set is promised by this task and is not
-    /// built yet, the caller gets a promise that is not in the cache, and builds the set once more.
+    /// A mutation task runs its pipeline with one thread, so while it waits for a set, the sets it has promised
+    /// to build are not built. It could wait for a set that it builds itself (the same `IN` subquery inside two
+    /// set subqueries gives two sets with the same key), or two tasks could wait for each other (each builds
+    /// one set and waits for the set the other builds). So a task that has an unfinished build of its own does
+    /// not wait for a set that is not built yet: it gets a promise that is not in the cache, and builds the set
+    /// once more. A task waits only when it builds nothing, so the task it waits for is not waiting.
     std::variant<std::promise<SetPtr>, SharedSet> findOrPromiseToBuild(const String & key);
 
 private:
@@ -376,12 +377,16 @@ private:
         SharedSet future; /// Other tasks can wait for the set to be built.
     };
 
+    /// The same as `findOrPromiseToBuild` of a cache without `shared_cache`; with a promise,
+    /// `promised_future` is the future that the other tasks wait for.
+    std::variant<std::promise<SetPtr>, SharedSet> findOrPromiseToBuildImpl(const String & key, SharedSet & promised_future);
+
     std::mutex cache_mutex;
     std::unordered_map<String, Entry> cache;
 
-    /// If set, the sets are looked up there, and `promised_keys` are the keys this task promised to build.
+    /// If set, the sets are looked up there, and `own_builds` are the futures of the sets this task promised to build.
     const std::shared_ptr<PreparedSetsCache> shared_cache;
-    std::unordered_set<String> promised_keys;
+    std::vector<SharedSet> own_builds;
 };
 
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
