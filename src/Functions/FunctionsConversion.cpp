@@ -2183,7 +2183,7 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(
 
     /// An unasked conversion converts every member strictly, as accurateCast does.
     const bool reports_failures = cast_type == CastType::accurateOrNull
-        && (report_failures_as_null || isNullableOrLowCardinalityNullable(to_type));
+        && (report_failures_as_null || canContainNull(*to_type));
 
     /// Create conversion wrapper for each variant.
     for (const auto & variant_type : variant_types)
@@ -2449,7 +2449,7 @@ FunctionCast::WrapperType FunctionCast::createVariantWrapper(const DataTypePtr &
 FunctionCast::WrapperType FunctionCast::createDynamicToColumnWrapper(const DataTypePtr & to_type, bool report_failures_as_null) const
 {
     const bool reports_failures = cast_type == CastType::accurateOrNull
-        && (report_failures_as_null || isNullableOrLowCardinalityNullable(to_type));
+        && (report_failures_as_null || canContainNull(*to_type));
     auto nested_convert = [this, report_failures_as_null, reports_failures](ColumnsWithTypeAndName & args, const DataTypePtr & result_type) -> ColumnPtr
     {
         WrapperType wrapper;

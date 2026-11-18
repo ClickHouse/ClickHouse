@@ -57,3 +57,11 @@ SELECT accurateCastOrNull(materialize(CAST(toIPv4('1.2.3.4'), 'Variant(IPv4, UIn
 SELECT accurateCastOrNull(materialize(CAST('abc', 'Variant(String)')), 'UInt64');
 SELECT accurateCastOrNull(tuple(materialize(CAST('abc', 'Variant(String)'))), 'Nullable(Tuple(UInt64))');
 SELECT accurateCastOrNull(tuple(materialize([CAST('abc', 'Variant(String)')])), 'Nullable(Tuple(Array(Nullable(UInt64))))');
+
+-- A Variant target can hold NULL, so a Dynamic value it cannot store is still reported as NULL.
+SELECT accurateCastOrNull(materialize(toUInt16(3)::Dynamic), 'Variant(UInt8, String)');
+SELECT accurateCastOrNull(materialize(toIPv4('1.2.3.4')::Dynamic), 'Variant(UInt64)');
+SELECT accurateCastOrDefault(materialize(toIPv4('1.2.3.4')::Dynamic), 'Variant(UInt64)');
+SELECT accurateCastOrNull(tuple(materialize([toUInt16(3)::Dynamic])), 'Nullable(Tuple(Array(Variant(UInt8))))');
+SELECT accurateCastOrNull(materialize(toIPv4('1.2.3.4')::Dynamic), 'Decimal32(2)');
+SELECT accurateCastOrNull(tuple(materialize(toIPv4('1.2.3.4')::Dynamic)), 'Nullable(Tuple(Decimal32(2)))');
