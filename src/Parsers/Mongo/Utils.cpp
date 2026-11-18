@@ -341,12 +341,17 @@ std::string normalizeQuotes(const std::string & input)
 namespace
 {
 
-/// The depth of the nesting is bounded before anything recursive - the copy below, the translation
-/// of a filter or an expression - walks the value, and this check itself recurses no deeper than
-/// the bound.
-void checkNestingDepth(const rapidjson::Value & value, size_t depth, size_t max_depth)
+/** The depth of the nesting is bounded before anything recursive - the copy below, the translation
+  * of a filter or an expression - walks the value, and this check itself recurses no deeper than
+  * the bound. A `max_depth` of zero does not bound it.
+  *
+  * The name of a field must not contain a zero byte: BSON stores a name as a NUL-terminated string,
+  * so no Mongo document has such a field, and the translation passes names on as C strings, which
+  * would end at the zero byte. `{"x\u0000ignored": 1}` would then filter - or delete - by `x`.
+  */
+void checkDocument(const rapidjson::Value & value, size_t depth, size_t max_depth)
 {
-    if (depth > max_depth)
+    if (max_depth && depth > max_depth)
         throw Exception(
             ErrorCodes::TOO_DEEP_RECURSION,
             "Maximum parse depth ({}) exceeded by the nesting of the Mongo query. Consider rising max_parser_depth parameter.",
@@ -355,12 +360,20 @@ void checkNestingDepth(const rapidjson::Value & value, size_t depth, size_t max_
     if (value.IsObject())
     {
         for (const auto & member : value.GetObject())
-            checkNestingDepth(member.value, depth + 1, max_depth);
+        {
+            std::string_view name(member.name.GetString(), member.name.GetStringLength());
+            if (const size_t zero = name.find('\0'); zero != std::string_view::npos)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The name of a field that starts with '{}' contains a zero byte, which a Mongo field name cannot contain",
+                    name.substr(0, zero));
+            checkDocument(member.value, depth + 1, max_depth);
+        }
     }
     else if (value.IsArray())
     {
         for (const auto & element : value.GetArray())
-            checkNestingDepth(element, depth + 1, max_depth);
+            checkDocument(element, depth + 1, max_depth);
     }
 }
 
@@ -383,8 +396,7 @@ parseData(const char * begin, const char * end, rapidjson::Document::AllocatorTy
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while parsing json in parseData {}", input);
     }
-    if (max_depth)
-        checkNestingDepth(document, 0, max_depth);
+    checkDocument(document, 0, max_depth);
     return copyValue(document, allocator);
 }
 

@@ -1136,12 +1136,35 @@ ASTPtr makeCollectionColumns(const std::string & database, const std::string & c
             makeASTFunction("notEquals", make_intrusive<ASTIdentifier>("default_kind"), makeLiteral(Field(kind))),
             makeASTFunction("getSetting", makeLiteral(Field(setting))));
     };
+    /** An unqualified collection is a temporary table of the session if there is one of that name, and
+      * a table of the current database otherwise. `system.columns` lists the temporary tables of the
+      * session under the empty database, so that one is checked when it has the table:
+      *
+      *     database = (SELECT if(count() > 0, '', currentDatabase()) FROM system.columns
+      *                 WHERE database = '' AND table = '<collection>')
+      */
+    ASTPtr database_name;
+    if (database.empty())
+    {
+        SelectChain temporary(makeCollectionSource("system", "columns"));
+        temporary.select_list = make_intrusive<ASTExpressionList>();
+        temporary.select_list->children.push_back(makeASTFunction(
+            "if",
+            makeASTFunction("greater", makeASTFunction("count"), makeLiteral(Field(UInt64(0)))),
+            makeLiteral(Field(String())),
+            makeASTFunction("currentDatabase")));
+        temporary.where = makeASTFunction(
+            "and",
+            makeASTFunction("equals", make_intrusive<ASTIdentifier>("database"), makeLiteral(Field(String()))),
+            makeASTFunction("equals", make_intrusive<ASTIdentifier>("table"), makeLiteral(Field(collection))));
+        database_name = makeSubquery(temporary.build());
+    }
+    else
+        database_name = makeLiteral(Field(database));
+
     auto condition = makeASTFunction(
         "and",
-        makeASTFunction(
-            "equals",
-            make_intrusive<ASTIdentifier>("database"),
-            database.empty() ? makeASTFunction("currentDatabase") : makeLiteral(Field(database))),
+        makeASTFunction("equals", make_intrusive<ASTIdentifier>("database"), std::move(database_name)),
         makeASTFunction("equals", make_intrusive<ASTIdentifier>("table"), makeLiteral(Field(collection))),
         makeASTFunction("notEquals", make_intrusive<ASTIdentifier>("default_kind"), makeLiteral(Field(String("EPHEMERAL")))),
         computed_kind_is_included("MATERIALIZED", "asterisk_include_materialized_columns"),

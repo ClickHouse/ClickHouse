@@ -14,6 +14,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
+#include <base/BFloat16.h>
 #include <base/wide_integer_to_string.h>
 #include <fmt/format.h>
 #include <Common/DateLUT.h>
@@ -430,7 +431,7 @@ struct WideInteger
 
 /** The smallest and the largest integer among the values of one field, see `checkValuesFitColumns`,
   * the first of its string values that is not the text of an integer, if any, and the first of its
-  * integers that a `Float64` and a `Float32` do not hold exactly, if any. The latter are recorded
+  * integers that a `Float64`, a `Float32` and a `BFloat16` do not hold exactly, if any. The latter are recorded
   * value by value: the integers between two that a float holds are not all held by it.
   */
 struct IntegerRange
@@ -440,6 +441,7 @@ struct IntegerRange
     std::optional<String> non_integer;
     std::optional<String> inexact_in_float64;
     std::optional<String> inexact_in_float32;
+    std::optional<String> inexact_in_bfloat16;
 };
 
 /** The integer a string is the text of: the `JSONEachRow` reader reads a quoted number into a number
@@ -576,6 +578,10 @@ void recordNumbers(
         range.inexact_in_float64 = number->text;
     if (!range.inexact_in_float32 && (!checkable || static_cast<Int128>(static_cast<Float32>(*small)) != *small))
         range.inexact_in_float32 = number->text;
+    /// The reader reads a `BFloat16` through a `Float32`, and keeps its upper 16 bits.
+    if (!range.inexact_in_bfloat16
+        && (!checkable || static_cast<Int128>(static_cast<Float32>(BFloat16(static_cast<Float32>(*small)))) != *small))
+        range.inexact_in_bfloat16 = number->text;
 }
 
 /** Records the range of the integers of every field of an already flattened document, including
@@ -731,6 +737,8 @@ void checkValuesFitColumns(
             inexact = range.inexact_in_float64;
         else if (WhichDataType(value_type).isFloat32())
             inexact = range.inexact_in_float32;
+        else if (WhichDataType(value_type).isBFloat16())
+            inexact = range.inexact_in_bfloat16;
         if (inexact)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,

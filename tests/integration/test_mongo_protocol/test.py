@@ -3338,6 +3338,21 @@ def test_values_keep_their_categories(started_cluster):
     assert node.query("SELECT id, x FROM db.inexact_integers_in_floats ORDER BY id", password="123") == "1\t1\n2\t9007199254740992\n"
     floats.drop()
 
+    # A `BFloat16` keeps 8 significant bits: `256` is held exactly, `257` is not.
+    node.query("DROP TABLE IF EXISTS db.inexact_integers_in_bfloat16", password="123")
+    node.query(
+        "CREATE TABLE db.inexact_integers_in_bfloat16 (id Int32, x BFloat16, xs Array(BFloat16)) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    bfloats = database["inexact_integers_in_bfloat16"]
+    bfloats.insert_one({"id": 1, "x": 256, "xs": [256]})
+    with pytest.raises(pymongo.errors.OperationFailure, match="does not hold exactly"):
+        bfloats.insert_one({"id": 2, "x": 257, "xs": []})
+    with pytest.raises(pymongo.errors.OperationFailure, match="does not hold exactly"):
+        bfloats.insert_one({"id": 3, "x": 1, "xs": [1, 257]})
+    assert node.query("SELECT id, x, xs FROM db.inexact_integers_in_bfloat16 ORDER BY id", password="123") == "1\t256\t[256]\n"
+    bfloats.drop()
+
     dynamic = database["null_first_values"]
     dynamic.drop()
     dynamic.insert_many([{"id": 1, "v": None}, {"id": 2, "v": 2}, {"id": 3, "v": 0}, {"id": 4, "v": False}, {"id": 5, "v": "x"}])

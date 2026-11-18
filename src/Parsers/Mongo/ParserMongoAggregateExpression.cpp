@@ -754,7 +754,11 @@ ASTPtr makeToInt(ASTPtr argument)
   */
 ASTPtr makeToLong(ASTPtr argument)
 {
-    const bool is_literal = argument->as<ASTLiteral>() != nullptr;
+    const auto * literal = argument->as<ASTLiteral>();
+    /// `$toLong` of `null` is `null`.
+    if (literal && literal->value.isNull())
+        return makeNull();
+    const bool is_literal = literal != nullptr;
     return withValue(std::move(argument), [is_literal](const ASTPtr & value) -> ASTPtr
     {
         auto bounded = makeASTFunction(
@@ -764,9 +768,14 @@ ASTPtr makeToLong(ASTPtr argument)
             "and",
             makeASTFunction("greaterOrEquals", truncated, makeLiteral(Field(std::numeric_limits<Int64>::min()))),
             makeASTFunction("lessOrEquals", truncated->clone(), makeLiteral(Field(std::numeric_limits<Int64>::max()))));
+        /// A `NULL` passes the check and converts to `NULL`, as in `makeToInt`.
+        auto out_of_range = makeASTFunction(
+            "and",
+            makeASTFunction("isNotNull", value->clone()),
+            makeASTFunction("not", makeASTFunction("if", std::move(bounded), std::move(in_range), makeLiteral(Field(UInt64(0))))));
         auto guard = makeASTFunction(
             "throwIf",
-            makeASTFunction("not", makeASTFunction("if", std::move(bounded), std::move(in_range), makeLiteral(Field(UInt64(0))))),
+            std::move(out_of_range),
             makeLiteral(Field(String("The value of '$toLong' is out of the range of a 64-bit integer"))));
         /// The condition is never true: it throws instead.
         auto checked = makeASTFunction(
