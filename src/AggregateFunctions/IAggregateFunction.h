@@ -1186,8 +1186,7 @@ public:
         std::unique_ptr<Data[]> places{new Data[256 * UNROLL_COUNT]};
         bool has_data[256 * UNROLL_COUNT]{}; /// Separate flags array to avoid heavy initialization.
 
-        /// Lookup table `j` aggregates the `j`-th of `UNROLL_COUNT` consecutive ranges of rows,
-        /// so merging the tables in their order below keeps the order of rows.
+        /// Table `j` gets the `j`-th of `UNROLL_COUNT` consecutive row ranges, so merging tables in order keeps row order.
         size_t range_size = (row_end - row_begin) / UNROLL_COUNT;
         for (size_t offset = 0; offset < range_size; ++offset)
         {
