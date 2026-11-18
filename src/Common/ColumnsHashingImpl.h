@@ -7,7 +7,9 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Interpreters/KeysNullMap.h>
 #include <Common/HashTable/Prefetching.h>
+#include <base/getL2CacheSize.h>
 
+#include <algorithm>
 #include <cstring>
 #include <limits>
 
@@ -89,6 +91,13 @@ using SubRangeState = typename SubRangeStateOf<State>::Type;
 /// at least this many rows. It packs the rows of a shorter one one by one: the array would cost more to allocate and
 /// fill than the rows it saves packing.
 constexpr size_t min_rows_to_batch_pack_sub_range = 256;
+
+/// The bytes of keys that a state packs or serializes ahead of its lookups at a time, so that they are still in the
+/// cache when they are read.
+inline size_t maxBytesInKeyChunk()
+{
+    return std::clamp<size_t>(getL2CacheSize() / 8, 64 * 1024, 1024 * 1024);
+}
 
 /// The state type for a caller that asks about few of the rows of its block.
 template <typename State>

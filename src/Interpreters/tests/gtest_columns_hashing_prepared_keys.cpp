@@ -693,7 +693,7 @@ void checkChunkedState(const FixedWidthKeyColumns & keys)
     SCOPED_TRACE(keys.name);
     ASSERT_TRUE(State::useOrderedPreparedKeys(keys.sizes));
     ASSERT_FALSE(State::packedKeysOrder(keys.sizes));
-    const size_t chunk_rows = State::preparedKeysChunkRows();
+    const size_t chunk_rows = ColumnsHashing::maxBytesInKeyChunk() / sizeof(Key);
     ASSERT_GT(keys.rows, 2 * chunk_rows);
     Arena arena;
 
@@ -724,13 +724,13 @@ void checkChunkedState(const FixedWidthKeyColumns & keys)
 }
 
 /// A chunk starts at the first asked row, or up to 32 rows before it, holds 256 rows and grows twice per chunk up to
-/// `preparedKeysChunkRows`, in a buffer allocated once. A row asked behind the chunk packs the whole block once, and every
-/// row is then read from it.
+/// `maxBytesInKeyChunk() / sizeof(Key)`, in a buffer allocated once. A row asked behind the chunk packs the whole block
+/// once, and every row is then read from it.
 template <typename State, typename Key>
 void checkChunkPolicy(const FixedWidthKeyColumns & keys)
 {
     SCOPED_TRACE(keys.name);
-    const size_t chunk_rows = State::preparedKeysChunkRows();
+    const size_t chunk_rows = ColumnsHashing::maxBytesInKeyChunk() / sizeof(Key);
     const size_t min_rows = ColumnsHashing::min_rows_to_batch_pack_sub_range;
     Arena arena;
 
@@ -790,7 +790,7 @@ void checkChunkPolicy(const FixedWidthKeyColumns & keys)
 template <typename State, typename Key>
 void checkChunks(std::vector<size_t> widths, bool nullable, const std::string & name)
 {
-    const FixedWidthKeyColumns keys(name, widths, nullable, 3 * State::preparedKeysChunkRows() + 100);
+    const FixedWidthKeyColumns keys(name, widths, nullable, 3 * ColumnsHashing::maxBytesInKeyChunk() / sizeof(Key) + 100);
     checkChunkedState<State, Key>(keys);
     checkChunkPolicy<State, Key>(keys);
 }

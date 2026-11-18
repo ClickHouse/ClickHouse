@@ -14,7 +14,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
 #include <Interpreters/AggregationCommon.h>
-#include <base/getL2CacheSize.h>
 #include <base/types.h>
 
 namespace DB
@@ -810,11 +809,6 @@ struct HashMethodKeysFixed
     /// A caller that asks about fewer than one row in this many builds a `SparseState`.
     static constexpr size_t max_rows_per_asked_row = 6;
 
-    static size_t preparedKeysChunkRows()
-    {
-        return std::clamp<size_t>(getL2CacheSize() / 8, 64 * 1024, 1024 * 1024) / sizeof(Key);
-    }
-
     static bool usePreparedKeys(const Sizes & key_sizes)
     {
         if (has_low_cardinality || has_nullable_keys || sizeof(Key) > 16)
@@ -850,8 +844,9 @@ struct HashMethodKeysFixed
             return 0;
 
         using Array = PaddedPODArray<Key>;
-        return roundUpToPowerOfTwoOrZero(PODArrayDetails::minimum_memory_for_elements(
-            packs_in_chunks ? std::min(num_rows, preparedKeysChunkRows()) : num_rows, sizeof(Key), Array::pad_left, Array::pad_right));
+        const size_t rows = packs_in_chunks ? std::min(num_rows, maxBytesInKeyChunk() / sizeof(Key)) : num_rows;
+        return roundUpToPowerOfTwoOrZero(
+            PODArrayDetails::minimum_memory_for_elements(rows, sizeof(Key), Array::pad_left, Array::pad_right));
     }
 
     HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &, RowRange rows = {})
@@ -888,7 +883,7 @@ struct HashMethodKeysFixed
                     prepared_keys_begin = packed.begin;
                     if (packed.end > packed.begin)
                     {
-                        chunks.chunk_rows = preparedKeysChunkRows();
+                        chunks.chunk_rows = maxBytesInKeyChunk() / sizeof(Key);
                         chunks.next_chunk_rows = std::min(chunks.chunk_rows, min_rows_to_batch_pack_sub_range);
                     }
                 }

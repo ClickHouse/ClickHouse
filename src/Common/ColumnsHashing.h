@@ -612,7 +612,7 @@ struct HashMethodSerialized
             {
                 serialized_buffer.resize(total_size);
                 serialized_keys.resize(row_sizes.size());
-                max_bytes_in_chunk = std::clamp<size_t>(getL2CacheSize() / 8, 64 * 1024, 1024 * 1024);
+                max_bytes_in_chunk = maxBytesInKeyChunk();
             }
         }
 
