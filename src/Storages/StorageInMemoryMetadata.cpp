@@ -186,6 +186,8 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames(), context->getInsertionTableColumnsDescription());
     new_context->setProgressCallback(context->getProgressCallback());
     new_context->setProcessListElement(context->getProcessListElement());
+    /// A part of the outer query: plan it from the same snapshot.
+    new_context->shareQueryMaxThreadsSnapshot(*context);
     /// Carry the outer query's normalized hash so that `NORMALIZED_QUERY_HASH` quotas keep bucketing
     /// per query pattern when the pipeline runs under a fresh SQL-security-overridden context (the
     /// `DEFINER`/`NONE` branch starts from the global context, where the hash would otherwise be 0).
@@ -1114,7 +1116,12 @@ void StorageInMemoryMetadata::addImplicitIndicesForVirtualColumns(ContextPtr con
             if (!index.column_names.empty() && index.column_names.front() == column_name && index.type == "minmax")
                 return;
 
-        const auto columns_to_analyze = virtuals.toColumnsDescription(VirtualsKind::All, VirtualsMaterializationPlace::All);
+        /// A projection has these only when its query selects them.
+        if (!columns.has(column_name) && !virtuals.has(column_name))
+            return;
+
+        const auto columns_to_analyze = columns.has(column_name) ? columns : virtuals.toColumnsDescription(VirtualsKind::All, VirtualsMaterializationPlace::All);
+
         auto index = createImplicitMinMaxIndexDescription(column_name, columns_to_analyze, escape_index_filenames, context);
         static const MergeTreeSettings default_settings;
         MergeTreeIndexFactory::instance().validate(index, false, default_settings);
