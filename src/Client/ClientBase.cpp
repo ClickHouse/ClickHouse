@@ -304,10 +304,11 @@ bool isTableNameArgument(std::string_view argument)
     return std::ranges::none_of(show_tables_clauses, [&](std::string_view clause) { return boost::iequals(first_word, clause); });
 }
 
-/// The failed query printed next to its error hides secrets, as `system.query_log` does.
+/// The failed query printed next to its error hides secrets, as `system.query_log` does. The inline data of an
+/// INSERT is outside the AST, so its secrets can't be hidden: it is left out.
 String queryTextForErrorMessage(std::string_view query, const DB::ASTPtr & parsed_query)
 {
-    if (parsed_query && parsed_query->hasSecretParts())
+    if (parsed_query && (parsed_query->hasSecretParts() || DB::getInsertData(parsed_query)))
         return parsed_query->formatForErrorMessage();
     return String(query);
 }

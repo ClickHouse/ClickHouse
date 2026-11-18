@@ -41,10 +41,16 @@ check 1 $CLICKHOUSE_CLIENT --query "CREATE DATABASE ${CLICKHOUSE_DATABASE} ENGIN
 # A server error (no such database), a secret of a dictionary source.
 check 1 $CLICKHOUSE_CLIENT --query "CREATE DICTIONARY no_such_db_${CLICKHOUSE_DATABASE}.d (id UInt64) PRIMARY KEY id SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' PASSWORD 'SuperSecretKey123' TABLE 't')) LAYOUT(FLAT()) LIFETIME(0)"
 
+# A server error (no such database), a secret in the inline data of an INSERT.
+check 1 $CLICKHOUSE_CLIENT --query "INSERT INTO no_such_db_${CLICKHOUSE_DATABASE}.t VALUES (encrypt('aes-256-ecb', 'payload', 'SuperSecretKey123SuperSecretKey1'))"
+
 # A client-side error (the output file exists), a secret argument of a backup destination.
 check 0 $CLICKHOUSE_CLIENT --query "BACKUP TABLE system.one TO S3('http://localhost:11111/test/${CLICKHOUSE_DATABASE}', 'AKID', 'SuperSecretKey123') INTO OUTFILE '$out_file'"
 
 # clickhouse-local reports the error and continues with --ignore-error.
 check 0 $CLICKHOUSE_LOCAL --ignore-error --query "BACKUP TABLE system.one TO S3('http://localhost:11111/test/${CLICKHOUSE_DATABASE}', 'AKID', 'SuperSecretKey123') INTO OUTFILE '$out_file'; SELECT 'continued'"
+
+# clickhouse-local, the inline data of an INSERT inside EXPLAIN.
+check 1 $CLICKHOUSE_LOCAL --ignore-error --query "EXPLAIN INSERT INTO t VALUES (encrypt('aes-256-ecb', 'payload', 'SuperSecretKey123SuperSecretKey1')); SELECT 'continued'"
 
 rm -f "$out_file"
