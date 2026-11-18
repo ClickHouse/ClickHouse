@@ -226,7 +226,7 @@ timeSeriesSelector('time_series_table', 'instant_query', min_time, max_time, ret
 - `instant_query` - An instant selector written in [PromQL syntax](https://prometheus.io/docs/prometheus/latest/querying/basics/#instant-vector-selectors), without `@` or `offset` modifiers.
 - `min_time` - Start timestamp, inclusive.
 - `max_time` - End timestamp, inclusive.
-- `return_columns` - The columns returning the samples: `'samples'` or `'timestamp_and_value'`, see below.
+- `return_columns` - The returned columns: `'samples'`, `'timestamp_and_value'`, `'samples_without_tags'` or `'series'`, see below.
 
 `min_time` and `max_time` can have fractions of a second even if the timestamps in the table are whole seconds:
 the function selects the samples with `min_time <= timestamp <= max_time` exactly, without rounding the bounds to the type of the timestamps.
@@ -234,12 +234,17 @@ the function selects the samples with `min_time <= timestamp <= max_time` exactl
 ## Returned value {#returned-value}
 
 The function returns the column `id` with the identifiers of the time series matching the specified selector, and the samples
-in the columns chosen by the argument `return_columns`:
+or the tags in the columns chosen by the argument `return_columns`:
 
 - `'samples'` - the column `samples` with the samples of a time series as an array of tuples `(timestamp, value)` sorted by timestamp.
   The samples of a time series can be returned in multiple rows, for example one row per time bucket of the samples table.
   Use the aggregate function `timeSeriesGroupArray` to merge the rows of a time series.
 - `'timestamp_and_value'` - the columns `timestamp` and `value` with one sample per row.
+- `'samples_without_tags'` - the same as `'samples'`, but the tags of the time series are not registered for the function `timeSeriesIdToTags`.
+  Use it when only `id` and the samples are needed.
+- `'series'` - the column `tags` with the tags of a time series (including `__name__`) as an array of tuples `(name, value)` sorted by name,
+  instead of the samples. The function returns one row per time series and reads only the tags table, so it can return a time series without samples
+  in the specified interval. The tags don't depend on the server, so the result can be joined with the result of the function with `'samples_without_tags'` by `id`.
 
 A `TimeSeries` table of version 11 or later stores buckets of samples as arrays, the tables of earlier versions store one sample per row.
 The samples are converted when the requested columns differ from the layout of the table, which costs some time; the PromQL functions
@@ -258,6 +263,11 @@ GROUP BY id
 ```sql
 SELECT id, timestamp, value
 FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now(), 'timestamp_and_value')
+```
+
+```sql
+SELECT id, tags
+FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now(), 'series')
 ```
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
 

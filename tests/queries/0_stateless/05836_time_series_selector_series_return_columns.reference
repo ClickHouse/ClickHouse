@@ -1,0 +1,53 @@
+-- the returned columns
+id	Tuple(UInt64, LowCardinality(UUID))					
+tags	Array(Tuple(String, String))					
+id	Tuple(UInt64, LowCardinality(UUID))					
+samples	Array(Tuple(DateTime64(3), Float64))					
+-- the series with their tags: metric name and tag columns
+[('__name__','http_errors'),('code','500'),('instance','host1:8080'),('job','api')]
+[('__name__','http_requests'),('instance','host1:8080'),('job','crawler'),('region','eu')]
+[('__name__','http_requests'),('instance','host2:8080'),('job','crawler')]
+[('__name__','http_requests'),('region','us')]
+-- the tags are sorted, a tag with an empty value is dropped, no tag columns
+[('__name__','m'),('a','1')]
+[('__name__','m'),('a','1'),('b','2'),('c','3')]
+[('__name__','n')]
+-- the id has the type of the id of the tags table, the same as with the samples
+1
+-- series vs timeSeriesIdToTags: metric name matchers and tag columns
+ts_cols http_requests [0, 5000]	3	3	0	0
+ts_cols {job="crawler"} [0, 5000]	2	2	0	0
+ts_cols http_requests{region=~"e.|us"} [0, 5000]	2	2	0	0
+ts_cols {__name__=~".+", __name__!="up", job!="api"} [0, 5000]	3	3	0	0
+ts_cols {instance="host1:8080"} [0, 5000]	2	2	0	0
+ts_cols {__name__=~".+", job!="crawler"} [0, 5000]	3	3	0	0
+ts_cols {__name__=~"http_.*", job=~"cr.*|api"} [0, 5000]	3	3	0	0
+ts_cols nothing [0, 5000]	0	0	0	0
+-- series vs timeSeriesIdToTags: no tag columns
+ts_plain m [0, 5000]	2	2	0	0
+ts_plain {__name__=~".+"} [0, 5000]	3	3	0	0
+ts_plain m{a="1", c="3"} [0, 5000]	1	1	0	0
+-- series vs timeSeriesIdToTags: time range
+ts_cols http_requests [0, 120]	2	2	0	0
+ts_cols http_requests [3000, 5000]	1	1	0	0
+ts_cols {__name__=~".+"} [3900, 4100]	2	2	0	0
+ts_cols http_requests [1000, 3000]	1	0	0	0
+ts_cols http_requests [9000, 9001]	0	0	0	0
+ts_old m [0, 5000]	2	2	0	0
+ts_old m [3000, 5000]	1	1	0	0
+ts_old m [1000, 3000]	1	0	0	0
+-- time range: the tags returned
+[('__name__','http_requests'),('instance','host2:8080'),('job','crawler')]
+[('__name__','m'),('a','1'),('b','2')]
+-- time ranges table
+[('__name__','m'),('host','h2')]
+[('__name__','m'),('host','h1')]
+-- samples_without_tags returns the same as samples
+1
+1
+-- samples_without_tags does not register the tags
+-- join series with samples_without_tags by id
+[('__name__','http_requests'),('instance','host1:8080'),('job','crawler'),('region','eu')]	3
+[('__name__','http_requests'),('instance','host2:8080'),('job','crawler')]	7
+[('__name__','http_requests'),('region','us')]	5
+-- wrong return_columns
