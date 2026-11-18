@@ -42,6 +42,8 @@ You can also regenerate the agent's last response only, without re-sending your 
 
 The chat header shows context usage so you can see when a conversation is approaching the model's context-window limit. Compact a conversation when older detail is no longer needed; this preserves a shorter summary for continued work.
 
+When enabled for your service, the header can also show token usage and model-provider cost estimates. Estimates help you understand the conversation's usage; they are not an invoice.
+
 Background tasks appear in the chat header while they run. From there, you can monitor their status or stop a task that is no longer needed.
 
 Use the sidebar filters and sort controls to find older conversations. Pinned conversations share one draggable section above the date-grouped history.
@@ -51,6 +53,14 @@ Use the sidebar filters and sort controls to find older conversations. Pinned co
 Artifacts open in a full-screen view. Mermaid diagrams can be exported as SVG or PNG, and code blocks can be downloaded as files.
 
 You can attach a file without adding a prompt. The agent routes the file to the appropriate enabled tool when it needs it.
+
+## ClickHouse tool results {#clickhouse-tool-results}
+
+ClickHouse tool results can render directly in the chat as interactive charts, collapsible organization and service rows, a virtualized result grid, a SQL query tab, and cost breakdowns. These renderings apply to ClickHouse tools; other MCP servers can present results differently.
+
+## Tool approvals {#tool-approvals}
+
+Some tools can pause for your approval before they run. Review each approval card and choose whether to approve, reject, edit, or respond to the request. When several approvals are pending, you can submit them together. Nested subagent requests can also require approval before they continue.
 
 ## Debug with Langfuse {#debug-with-langfuse}
 
@@ -78,7 +88,7 @@ To unpin, open the same menu and select **Unpin**.
 
 ## Projects {#projects}
 
-Projects organize related conversations in one place. You can also choose a Project when creating a scheduled chat.
+Projects are private containers for related conversations. You can move and filter chats within a Project, and choose a Project when creating a scheduled chat.
 
 ## Forking {#forking}
 
