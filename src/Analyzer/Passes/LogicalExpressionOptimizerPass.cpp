@@ -2231,7 +2231,7 @@ public:
     /// aggregation result, so these nodes are kept as written. The first set is for an expression outside of any query.
     std::vector<std::unordered_set<QueryTreeNodePtr>> group_by_key_nodes_stack{1};
 
-    bool isInGroupByKey(const QueryTreeNodePtr & node) const { return group_by_key_nodes_stack.back().contains(node); }
+    [[nodiscard]] bool isInGroupByKey(const QueryTreeNodePtr & node) const { return group_by_key_nodes_stack.back().contains(node); }
 
     bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
