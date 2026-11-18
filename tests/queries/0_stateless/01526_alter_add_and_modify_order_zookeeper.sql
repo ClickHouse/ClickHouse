@@ -41,7 +41,7 @@ SHOW CREATE TABLE table_for_alter;
 
 ALTER TABLE table_for_alter ADD COLUMN datum UInt32, MODIFY ORDER BY (d, order, datum);
 
-INSERT INTO table_for_alter VALUES(toDate('2019-10-02'), 'b', 2, 'bb', 2, 2, 2, 1, 2);
+INSERT INTO table_for_alter VALUES(toDate('2019-10-02'), 'b', 2, 'bb', 2, 2, 1, 1, 2);
 
 SELECT * FROM table_for_alter ORDER BY d;
 

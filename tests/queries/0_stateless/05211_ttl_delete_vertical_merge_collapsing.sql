@@ -41,7 +41,8 @@ SETTINGS
     vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_optimize_ttl_delete = 1,
     merge_with_ttl_timeout = 0,
-    ratio_of_defaults_for_sparse_serialization = 1.0;
+    ratio_of_defaults_for_sparse_serialization = 1.0,
+    add_implicit_sign_column_constraint_for_collapsing_engine = 0;
 
 CREATE TABLE t_ttl_vert_coll_off AS t_ttl_vert_coll;
 ALTER TABLE t_ttl_vert_coll_off MODIFY SETTING vertical_merge_optimize_ttl_delete = 0;

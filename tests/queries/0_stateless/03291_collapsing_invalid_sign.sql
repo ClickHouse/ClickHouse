@@ -50,7 +50,8 @@ DROP TABLE t0;
 DROP TABLE IF EXISTS t_03291_collapsing_invalid_sign_vertical_merge;
 
 CREATE TABLE t_03291_collapsing_invalid_sign_vertical_merge (c0 Int64, c1 Int8) ENGINE = CollapsingMergeTree(c1) ORDER BY tuple()
-SETTINGS enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 0, vertical_merge_algorithm_min_bytes_to_activate = 0, vertical_merge_algorithm_min_columns_to_activate = 0, min_bytes_for_wide_part = 0;
+SETTINGS enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 0, vertical_merge_algorithm_min_bytes_to_activate = 0, vertical_merge_algorithm_min_columns_to_activate = 0, min_bytes_for_wide_part = 0,
+    add_implicit_sign_column_constraint_for_collapsing_engine = 0;
 
 INSERT INTO TABLE t_03291_collapsing_invalid_sign_vertical_merge VALUES (1, 0);
 
@@ -84,7 +85,8 @@ CREATE TABLE t_03291_invalid_sign_read_order_vertical (id UInt64, sign Int8, c1 
 ENGINE = CollapsingMergeTree(sign) ORDER BY id
 SETTINGS enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 1,
          vertical_merge_algorithm_min_bytes_to_activate = 0, vertical_merge_algorithm_min_columns_to_activate = 1,
-         min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+         min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+         add_implicit_sign_column_constraint_for_collapsing_engine = 0;
 
 -- Key 1 meets the invalid row after the only selected row, key 2 before any and as the key's first
 -- row, key 4 between both selected rows, and key 5 after a lone negative one.
@@ -111,7 +113,8 @@ DROP TABLE IF EXISTS t_03291_invalid_sign_read_order_horizontal;
 
 CREATE TABLE t_03291_invalid_sign_read_order_horizontal (id UInt64, sign Int8, c1 UInt64, c2 UInt64)
 ENGINE = CollapsingMergeTree(sign) ORDER BY id
-SETTINGS enable_vertical_merge_algorithm = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+SETTINGS enable_vertical_merge_algorithm = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+         add_implicit_sign_column_constraint_for_collapsing_engine = 0;
 
 INSERT INTO t_03291_invalid_sign_read_order_horizontal VALUES
     (1,  1, 101, 201), (1,  0, 111, 211),
