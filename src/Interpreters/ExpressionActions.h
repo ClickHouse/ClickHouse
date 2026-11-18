@@ -22,6 +22,7 @@ namespace ErrorCodes
 class TableJoin;
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
+struct ColumnSize;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -158,6 +159,11 @@ public:
     /// are skipped — correct for storage column lists but not for subquery
     /// projections where all entries are valid query-level outputs.
     static NameAndTypePair getSmallestColumn(const NamesAndTypesList & columns, bool skip_subcolumns = true);
+
+    /// The column cheapest to read to count rows: the smallest <compressed size, size of value in memory,
+    /// uncompressed size> among the columns in `column_sizes`, otherwise `getSmallestColumn`.
+    static NameAndTypePair getCheapestColumnToRead(
+        const NamesAndTypesList & columns, const std::unordered_map<std::string, ColumnSize> & column_sizes, bool skip_subcolumns = true);
 
     ExpressionActionsPtr clone() const;
 
