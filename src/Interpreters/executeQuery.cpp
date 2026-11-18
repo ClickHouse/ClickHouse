@@ -950,14 +950,6 @@ static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
     if (!captured)
         return;
 
-    /// Checked when the pipeline was built too, but a subquery can still run after that, like one
-    /// in a child plan built while the pipeline is.
-    if (QueryPlanLogCapture::hasSubqueryResults(context))
-    {
-        QueryPlanLogCapture::declineCapture(context, "a subquery was replaced by its result, which the plan would show");
-        return;
-    }
-
     /// Runs on the logging path of a query that has already returned its result, so failing to
     /// write the plan must not fail the query. Producing the document is also the one part of
     /// profiling that allocates in proportion to the plan, hence the blocker.

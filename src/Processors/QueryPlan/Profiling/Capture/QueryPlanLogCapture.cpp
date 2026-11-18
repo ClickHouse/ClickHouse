@@ -142,11 +142,6 @@ bool QueryPlanLogCapture::canCapturePlan(const ContextPtr & context, const ASTPt
     return true;
 }
 
-bool QueryPlanLogCapture::hasSubqueryResults(const ContextPtr & context)
-{
-    return context->hasQueryContext() && !context->getQueryContext()->getScalars().empty();
-}
-
 void QueryPlanLogCapture::declineCapture(const ContextPtr & context, const char * reason)
 {
     if (!context->getSettingsRef()[Setting::log_query_plans])

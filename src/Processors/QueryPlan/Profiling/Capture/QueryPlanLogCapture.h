@@ -19,13 +19,6 @@ public:
     /// client sent it, before `query_masking_rules` were applied.
     static bool canCapturePlan(const ContextPtr & context, const ASTPtr & ast, std::string_view query, bool internal);
 
-    /// Whether the query replaced a subquery by its result -- a scalar subquery, which `EXISTS` is
-    /// too with `execute_exists_as_scalar_subquery` -- which
-    /// the plan would show, as a constant or by what it optimized away. Each one the query runs is
-    /// recorded in the query context, also when it runs inside a view, so this is known only once
-    /// they have run.
-    static bool hasSubqueryResults(const ContextPtr & context);
-
     /// Reports why a query that asked for its plan is not going to get one.
     static void declineCapture(const ContextPtr & context, const char * reason);
 

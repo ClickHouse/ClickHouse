@@ -139,6 +139,10 @@ PlanIndexStats stepIndexes(const IQueryPlanStep & step, const ExplainPlanOptions
         maskSensitiveData(index.condition, masker);
         for (auto & key : index.used_keys)
             maskSensitiveData(key, masker);
+
+        /// The logged plan does not say which replica analysed what, see `indexStatsToJSON`.
+        for (auto & replica : index.distributed)
+            replica.address.clear();
     }
 
     return indexes;

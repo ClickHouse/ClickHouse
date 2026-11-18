@@ -8,21 +8,16 @@
 -- A query in which a rule matches stores no plan: constant folding could carry the masked literal
 -- into the plan in a form no rule matches anymore, like `lower` of it.
 --
--- A query in which a subquery is replaced by its result stores no plan: the plan would show the
--- result, which is data the query read. That holds inside a view too.
---
 -- A query in which no rule matches stores its plan, and every text of the plan is masked: a value
--- the plan holds can still match, once folding has assembled it.
+-- the plan holds can still match, once folding has assembled it or a scalar subquery has read it.
 -- Such values are put where the plan renders them: a filter constant, an `IN` list, an output
 -- constant, a primary key condition, and the input columns a join reports in its statistics.
 --
 -- A query with secret arguments stores no plan either: see the `no-fasttest` test next to this one.
 
-DROP VIEW IF EXISTS v_plan_masked;
 DROP TABLE IF EXISTS t_plan_masked;
 CREATE TABLE t_plan_masked (s String) ENGINE = MergeTree ORDER BY s;
 INSERT INTO t_plan_masked VALUES ('a'), ('b'), (concat('find_me_TOPSECRET', '=TOPSECRET'));
-CREATE VIEW v_plan_masked AS SELECT s FROM t_plan_masked WHERE s = (SELECT max(s) FROM t_plan_masked);
 
 SET log_query_plans = 1;
 
@@ -32,20 +27,6 @@ SETTINGS log_comment = 'mask_declined_literal' FORMAT Null;
 
 SELECT lower('find_me_TOPSECRET=TOPSECRET') FROM numbers(1)
 SETTINGS log_comment = 'mask_declined_folded' FORMAT Null;
-
--- No plan: a subquery is replaced by its result.
-SELECT count() FROM t_plan_masked WHERE s = (SELECT max(s) FROM t_plan_masked)
-SETTINGS log_comment = 'mask_declined_scalar_subquery' FORMAT Null;
-
-SELECT count() FROM numbers(10) WHERE EXISTS (SELECT 1 FROM t_plan_masked)
-SETTINGS log_comment = 'mask_declined_exists', execute_exists_as_scalar_subquery = 1 FORMAT Null;
-
-SELECT count() FROM v_plan_masked
-SETTINGS log_comment = 'mask_declined_view' FORMAT Null;
-
--- A plan for a subquery that is not replaced by its result: a table expression and an `IN` set.
-SELECT count() FROM (SELECT s FROM t_plan_masked) WHERE s IN (SELECT s FROM t_plan_masked)
-SETTINGS log_comment = 'mask_kept_subquery' FORMAT Null;
 
 -- A plan, masked.
 SELECT count() FROM numbers(10) WHERE toString(number) != concat('find_me_TOPSECRET', '=TOPSECRET')
@@ -59,6 +40,9 @@ SETTINGS log_comment = 'mask_masked_output' FORMAT Null;
 
 SELECT count() FROM t_plan_masked WHERE s = concat('find_me_TOPSECRET', '=TOPSECRET')
 SETTINGS log_comment = 'mask_masked_index' FORMAT Null;
+
+SELECT count() FROM t_plan_masked WHERE s = (SELECT max(s) FROM t_plan_masked)
+SETTINGS log_comment = 'mask_masked_scalar_subquery' FORMAT Null;
 
 SELECT * FROM (SELECT number AS k, concat('find_me_TOPSECRET', '=TOPSECRET') FROM numbers(3)) AS l
 INNER JOIN (SELECT number AS k FROM numbers(3)) AS r USING (k)
@@ -91,5 +75,4 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND startsWi
 GROUP BY log_comment
 ORDER BY log_comment;
 
-DROP VIEW v_plan_masked;
 DROP TABLE t_plan_masked;
