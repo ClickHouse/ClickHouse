@@ -47,7 +47,7 @@ void FileStreamBuf::open(const std::string& path, std::ios::openmode mode)
 	setMode(mode);
 	resetBuffers();
 
-	int flags(0);
+	int flags(O_CLOEXEC);
 	if (mode & std::ios::trunc)
 		flags |= O_TRUNC;
 	if (mode & std::ios::app)
