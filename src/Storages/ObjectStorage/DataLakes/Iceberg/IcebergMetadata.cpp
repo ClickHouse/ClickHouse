@@ -166,6 +166,8 @@ extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
 extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
 extern const SettingsUInt64 iceberg_max_number_datafiles_to_compact;
 extern const SettingsUInt64 iceberg_data_file_size_lower_threshold_compaction;
+extern const SettingsUInt64 iceberg_compaction_max_bytes_to_merge;
+extern const SettingsUInt64 iceberg_compaction_max_rows_to_merge;
 extern const SettingsBool use_iceberg_table_statistics_ndv;
 }
 
