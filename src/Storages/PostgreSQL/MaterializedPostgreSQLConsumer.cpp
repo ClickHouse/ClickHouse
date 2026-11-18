@@ -1292,6 +1292,13 @@ bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const Stri
             waiting_list.erase(new_table_with_lsn);
             return true;
         }
+
+        /// The table was loaded from a snapshot taken at `table_start_lsn`, which already contains every
+        /// change committed before that position. Replaying such a change on top of the snapshot is wrong:
+        /// for example, an update with an unchanged `TOAST` value of a row deleted before the snapshot
+        /// cannot find the previous row and would make the table skipped. So do not fall through to the
+        /// skip list (`addNested` clears its entries for this table) and wait for `table_start_lsn`.
+        return false;
     }
 
     auto skipped_table_with_lsn = skip_list.find(relation_id);

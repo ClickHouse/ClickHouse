@@ -67,6 +67,7 @@ static struct InitFiu
     PAUSEABLE(materialized_postgresql_pause_before_register_replica) \
     PAUSEABLE(materialized_postgresql_pause_before_leaked_publication_drop) \
     PAUSEABLE(materialized_postgresql_pause_in_load_from_snapshot) \
+    PAUSEABLE(materialized_postgresql_pause_before_snapshot_export) \
     PAUSEABLE(materialized_postgresql_pause_before_marking_snapshot_completed) \
     PAUSEABLE(materialized_postgresql_pause_before_redo_snapshot_truncate) \
     PAUSEABLE(materialized_postgresql_pause_in_non_last_teardown) \

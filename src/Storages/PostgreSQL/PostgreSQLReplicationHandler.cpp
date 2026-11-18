@@ -287,6 +287,7 @@ namespace FailPoints
     extern const char materialized_postgresql_pause_before_register_replica[];
     extern const char materialized_postgresql_pause_before_leaked_publication_drop[];
     extern const char materialized_postgresql_pause_in_load_from_snapshot[];
+    extern const char materialized_postgresql_pause_before_snapshot_export[];
     extern const char materialized_postgresql_fail_temporary_leader_release[];
     extern const char materialized_postgresql_pause_in_non_last_teardown[];
     extern const char materialized_postgresql_pause_before_marking_snapshot_completed[];
@@ -5303,6 +5304,13 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
             pqxx::nontransaction tx(replication_connection.getRef());
             addTableToPublication(tx, postgres_table_name);
         }
+
+        fiu_do_on(FailPoints::materialized_postgresql_pause_before_snapshot_export,
+        {
+            LOG_INFO(log, "Pausing before exporting the snapshot of table `{}` until failpoint "
+                     "materialized_postgresql_pause_before_snapshot_export is disabled", postgres_table_name);
+            FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_before_snapshot_export);
+        });
 
         {
             auto tx = std::make_shared<pqxx::nontransaction>(replication_connection.getRef());
