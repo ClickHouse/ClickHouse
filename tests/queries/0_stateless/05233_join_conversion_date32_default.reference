@@ -12,8 +12,8 @@ Tuple(Date32)	2
 Tuple(Date32), conversion preserved, plan	1
 Tuple(Date32, Enum8), whole tuple in the filter	2
 Tuple(Date32, Enum8), subcolumn extraction off	2
-Enum8 over ie_join, conversion disabled	2
-Enum8 over ie_join	2
+Enum8 over ie_join, conversion disabled	0
+Enum8 over ie_join	0
 Date is unaffected, rows	2
 Date is unaffected, plan	1
 dictionary LEFT JOIN, answer unchanged	1
