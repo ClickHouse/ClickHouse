@@ -188,6 +188,19 @@ TEST(TLSSendReceiveNow, AnswerIsReadableAfterTheResetThatFailsTheSend)
 }
 
 
+/// A server that ends the TCP connection without `close_notify` ends the stream, as a blocking
+/// receive sees it: `receiveNow` returns -1, and the connection is not broken.
+TEST(TLSSendReceiveNow, EndOfStreamWithoutCloseNotify)
+{
+    TLSLoopbackPair pair;
+    static_cast<Poco::Net::SecureStreamSocketImpl *>(pair.server.impl())->abort();
+
+    char buffer[16];
+    EXPECT_EQ(pair.receiveSome(buffer, static_cast<int>(sizeof(buffer))), -1);
+    EXPECT_EQ(pair.socket().sendNow("x", 1), 1);
+}
+
+
 /// A peer that reads nothing fills the socket: then `sendNow` returns 0 at once, and the filter
 /// holds at most one record.
 TEST(TLSSendReceiveNow, QueueHoldsAtMostOneRecord)
