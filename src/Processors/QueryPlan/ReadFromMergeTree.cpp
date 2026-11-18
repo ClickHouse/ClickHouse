@@ -3985,7 +3985,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         /// its own analysis keeps whole parts, and only the refiner applies the filtered ranges: the coordinator takes
         /// only the part names from its announcement, and a part dropped from it would move its segments to other
         /// replicas, whose caches know nothing of it.
-        if (is_parallel_reading_from_replicas_)
+        /// A follower records them also for an analysis that is not of a parallel read itself: a projection candidate
+        /// is analyzed by `MergeTreeDataSelectExecutor::estimateNumMarksToRead`, and the executed parallel read reuses it.
+        if (is_parallel_reading_from_replicas_ || context_->canUseParallelReplicasOnFollower())
         {
             RangesInDataParts filtered_parts = res_parts;
             filter_by_query_condition_cache(filtered_parts);

@@ -158,12 +158,19 @@ def test_number_of_marks_read(
     ) == _get_expected_amount_of_marks_to_read(query)
 
 
-def test_query_condition_cache_of_each_replica(start_cluster):
+@pytest.mark.parametrize("use_projection", [False, True])
+def test_query_condition_cache_of_each_replica(start_cluster, use_projection):
     # Each replica has its own query condition cache, but the coordinator assigns ranges from its own analysis,
     # where only its own cache is consulted. A follower has to apply its cache to the ranges it is assigned,
     # or it reads its share of the table again on every run.
+    # A projection read takes its ranges from the analysis of the projection candidate.
     table_name = f"tbl_query_condition_cache_{randint(0, 10**9)}"
     _create_tables(table_name, 0, 8192)
+    if use_projection:
+        nodes[0].query(
+            f"ALTER TABLE {table_name} ADD PROJECTION by_value (SELECT * ORDER BY value)",
+            settings={"alter_sync": 2},
+        )
     nodes[0].query(
         f"""
         INSERT INTO {table_name}
@@ -186,6 +193,9 @@ def test_query_condition_cache_of_each_replica(start_cluster):
         "use_query_condition_cache": 1,
         "max_threads": 4,
     }
+    if use_projection:
+        settings["preferred_optimize_projection_name"] = "by_value"
+        settings["force_optimize_projection"] = 1
 
     query_ids = [f"{table_name}_{run}" for run in range(2)]
     for query_id in query_ids:
