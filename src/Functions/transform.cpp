@@ -784,11 +784,15 @@ namespace
 
         WhichDataType which(from_type);
 
-        /// A `String`/`FixedString` entry that is not an `Enum` member is already rejected by the cast
-        /// above, and comparing it below would put the member's numeric value against its name.
-        /// A numeric entry is cast without a membership check, so it still needs the comparison.
-        const bool cast_checked_enum_membership = isEnum(removeNullable(from_type))
-            && isStringOrFixedString(removeNullable(from_array_nested_type));
+        /// The accurateEquals check exists only to reject an Enum array entry whose value is not a
+        /// member of the target Enum: the cast yields a numeric value that must not be indexed.
+        /// For a String/FixedString entry the cast already rejects non-members, and for every other
+        /// (non-Enum) source type the cast is a legitimate conversion that may change the Field, for
+        /// example String -> FixedString pads the value with NUL bytes. Comparing pre- and post-cast
+        /// Fields there would wrongly drop valid entries, so only run the check for Enum sources
+        /// whose entries are not already validated by the cast.
+        const bool skip_accurate_equals_check = !isEnum(removeNullable(from_type))
+            || isStringOrFixedString(removeNullable(from_array_nested_type));
 
         /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
         if (isNativeNumber(which) || which.isDecimal32() || which.isDecimal64() || which.isEnum())
@@ -797,7 +801,7 @@ namespace
             auto & table = *cache->table_num_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (skip_accurate_equals_check || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
                 {
                     UInt64 key = 0;
                     auto * dst = reinterpret_cast<char *>(&key);
@@ -820,7 +824,7 @@ namespace
             auto & table = *cache->table_string_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (skip_accurate_equals_check || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
                 {
                     std::string_view ref = cache->from_column->getDataAt(i);
                     table.insertIfNotPresent(ref, i);
@@ -833,7 +837,7 @@ namespace
             auto & table = *cache->table_anything_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (skip_accurate_equals_check || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
                 {
                     SipHash hash;
                     cache->from_column->updateHashWithValue(i, hash);
