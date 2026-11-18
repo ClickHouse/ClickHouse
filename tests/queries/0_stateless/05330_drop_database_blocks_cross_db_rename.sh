@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-replicated-database, no-ordinary-database, no-fasttest
 # no-parallel: the PAUSEABLE_ONCE failpoint fires once globally.
-# Regression test for #132379: a cross-database RENAME/EXCHANGE must not move a table out of a
-# database while DROP DATABASE is preparing and dropping its tables. Otherwise the drop shuts down
-# a table that survives in another database, and that table stays read-only / never merges.
+# Regression test for #132379: a RENAME/EXCHANGE must not change the tables of a database while
+# DROP DATABASE has prepared them for shutdown and is dropping them. Otherwise the drop shuts down
+# a table that survives in another database (read-only, never merges), or drops the wrong table.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -38,12 +38,15 @@ DROP_PID=$!
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT drop_database_holding_drop_lock PAUSE"
 
-# While the drop is running, moving a table out of (or into) the dropped database is refused.
+# The failpoint pauses the drop after its tables are prepared for shutdown, under the drop lock.
+# While the drop is running, any rename or exchange of tables of the dropped database is refused.
 ${CLICKHOUSE_CLIENT} -q "RENAME TABLE ${DB_A}.t TO ${DB_B}.t" 2>&1 | grep -o -m1 'UNFINISHED'
 ${CLICKHOUSE_CLIENT} -q "RENAME TABLE ${DB_B}.u TO ${DB_A}.u" 2>&1 | grep -o -m1 'UNFINISHED'
 ${CLICKHOUSE_CLIENT} -q "EXCHANGE TABLES ${DB_A}.t AND ${DB_B}.u" 2>&1 | grep -o -m1 'UNFINISHED'
 
-# A rename inside one database is still allowed.
+${CLICKHOUSE_CLIENT} -q "RENAME TABLE ${DB_A}.t TO ${DB_A}.t2" 2>&1 | grep -o -m1 'UNFINISHED'
+
+# A rename inside the other database is still allowed.
 ${CLICKHOUSE_CLIENT} -q "RENAME TABLE ${DB_B}.u TO ${DB_B}.u2"
 ${CLICKHOUSE_CLIENT} -q "RENAME TABLE ${DB_B}.u2 TO ${DB_B}.u"
 
