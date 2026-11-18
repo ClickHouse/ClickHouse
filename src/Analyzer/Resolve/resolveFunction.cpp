@@ -1370,16 +1370,18 @@ QueryTreeNodePtr QueryAnalyzer::castNodeToType(
 ProjectionName QueryAnalyzer::calculateInlinedCallProjectionName(
     const QueryTreeNodePtr & call_node, ProjectionNames arguments_projection_names, const IdentifierResolveScope & scope)
 {
-    /// A lambda argument is resolved only inside the body. Its text names it, masked if it holds a secret.
+    /// A lambda argument is resolved only inside the body. Its text names it unless hiding secrets changes that text:
+    /// `hasSecretParts` misses parts the formatter hides, such as the body of an `APPLY` lambda.
     const auto & arguments = call_node->as<FunctionNode &>().getArguments().getNodes();
     for (size_t i = 0; i < arguments.size(); ++i)
     {
         if (arguments_projection_names[i] != PROJECTION_NAME_PLACEHOLDER)
             continue;
         auto lambda_ast = arguments[i]->toAST();
-        if (canDisplaySecrets(scope.context) || !lambda_ast->hasSecretParts())
+        auto text = lambda_ast->formatWithSecretsOneLine();
+        if (canDisplaySecrets(scope.context) || text == lambda_ast->formatForErrorMessage())
         {
-            arguments_projection_names[i] = lambda_ast->formatWithSecretsOneLine();
+            arguments_projection_names[i] = std::move(text);
             continue;
         }
         auto & mask_map = *scope.projection_mask_map;
