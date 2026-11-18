@@ -1,6 +1,9 @@
+import re
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 from test_modify_engine_on_restart.common import set_convert_flags
 
 cluster = ClickHouseCluster(__file__)
@@ -18,12 +21,17 @@ ch1 = cluster.add_instance(
 database_name = "modify_engine_broken_disk"
 
 LOOPED_DISK_XML = """<clickhouse>
+    <local_disk_check_period_ms>1000</local_disk_check_period_ms>
     <storage_configuration>
         <disks>
             <looped>
                 <type>local</type>
                 <path>/var/lib/clickhouse/loop_a/disk/</path>
             </looped>
+            <flaky>
+                <type>local</type>
+                <path>/var/lib/clickhouse/flaky_disk/</path>
+            </flaky>
         </disks>
         <policies>
             <with_looped>
@@ -32,6 +40,11 @@ LOOPED_DISK_XML = """<clickhouse>
                     <broken><disk>looped</disk></broken>
                 </volumes>
             </with_looped>
+            <with_flaky>
+                <volumes>
+                    <main><disk>flaky</disk></main>
+                </volumes>
+            </with_flaky>
         </policies>
     </storage_configuration>
 </clickhouse>"""
@@ -137,5 +150,52 @@ def test_broken_disk_in_storage_policy(started_cluster):
     )
     q("ATTACH TABLE on_looped_last")
     assert engine_of("on_looped_last") == "MergeTree"
+
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+
+
+def test_broken_disk_with_readable_table_in_storage_policy(started_cluster):
+    # The disk check marks a disk broken while its table directory stays readable.
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+    ch1.query(f"CREATE DATABASE {database_name}")
+
+    q(
+        "CREATE TABLE on_flaky ( A Int64 ) ENGINE = MergeTree ORDER BY A "
+        "SETTINGS storage_policy = 'with_flaky'"
+    )
+    q("INSERT INTO on_flaky SELECT number FROM numbers(10)")
+    q("DETACH TABLE on_flaky")
+
+    # A directory in place of the disk check file fails its write probe with EISDIR.
+    check_file = re.findall(
+        r"clickhouse_disk_checker_[0-9a-f-]+",
+        ch1.grep_in_log("Disk check for disk flaky started"),
+    )[-1]
+    check_path = f"/var/lib/clickhouse/flaky_disk/{check_file}"
+    ch1.exec_in_container(
+        ["bash", "-c", f"until mkdir {check_path} 2>/dev/null; do sleep 0.1; done"]
+    )
+    assert_eq_with_retry(
+        ch1,
+        "SELECT is_broken FROM system.disks WHERE name = 'flaky'",
+        "1",
+        retry_count=30,
+        sleep_time=1,
+    )
+    assert "CANNOT_RESTORE_TABLE" in ch1.query_and_get_error(
+        "ATTACH TABLE on_flaky AS REPLICATED", database=database_name
+    )
+
+    ch1.exec_in_container(["rmdir", check_path])
+    assert_eq_with_retry(
+        ch1,
+        "SELECT is_broken FROM system.disks WHERE name = 'flaky'",
+        "0",
+        retry_count=30,
+        sleep_time=1,
+    )
+    q("ATTACH TABLE on_flaky")
+    assert engine_of("on_flaky") == "MergeTree"
+    assert q("SELECT count() FROM on_flaky").strip() == "10"
 
     ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")

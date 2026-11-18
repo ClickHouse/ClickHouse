@@ -4636,8 +4636,15 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
 
     for (const auto & [disk_name, disk] : disks)
     {
-        if (disk->isBroken() && !storage_policy->tryGetVolumeIndexByDiskName(disk_name).has_value())
+        if (disk->isBroken())
+        {
+            /// A broken disk lists no files, so the scan below would silently miss its parts.
+            if (storage_policy->tryGetVolumeIndexByDiskName(disk_name).has_value())
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                                "Cannot ATTACH AS REPLICATED: failed to clear transaction metadata on disk {}, because the disk is broken",
+                                disk_name);
             continue;
+        }
 
         try
         {
