@@ -75,12 +75,13 @@ public:
         auto place_data = &this->data(place);
         auto rhs_data = &this->data(rhs);
 
-        if ((place_data->last < rhs_data->first) && place_data->seen && rhs_data->seen)
+        if ((place_data->last <= rhs_data->first) && place_data->seen && rhs_data->seen)
         {
             // If the lhs last number seen is less than the first number the rhs saw, the lhs is before
             // the rhs, for example [0, 2] [4, 7]. So we want to add the deltasums, but also add the
             // difference between lhs last number and rhs first number (the 2 and 4). Then we want to
-            // take last value from the rhs, so first and last become 0 and 7.
+            // take last value from the rhs, so first and last become 0 and 7. An equal number continues
+            // the lhs with a step of 0, for example [0, 2] [2, 5].
 
             place_data->sum += rhs_data->sum + (rhs_data->first - place_data->last);
             place_data->last = rhs_data->last;
