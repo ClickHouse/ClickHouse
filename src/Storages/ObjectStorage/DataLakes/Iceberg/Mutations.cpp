@@ -630,7 +630,6 @@ static bool writeMetadataFiles(
     }
     catch (...)
     {
-        /// With an unknown outcome the new version may be published and reference these files.
         if (!isCommitOutcomeUnknown())
             cleanup();
         throw;

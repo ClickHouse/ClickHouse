@@ -520,8 +520,8 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
 
         int status = static_cast<int>(poco_response.getStatus());
 
-        /// Test-only: lose the answer to a conditional write that the server applied, as a connection broken after the
-        /// answer does. The condition is checked first, so that another request does not use up the failpoint.
+        /// Test-only: lose the answer to an applied conditional write. The condition comes first, so that another request
+        /// does not use up the failpoint.
         if (status < 300 && method == Poco::Net::HTTPRequest::HTTP_PUT
             && (poco_request.has("If-None-Match") || poco_request.has("If-Match")))
         {

@@ -527,8 +527,7 @@ public:
 
     std::string getFileName() const override { return target_path; }
 
-    /// The file is published by the last step of `publishConditionally`, and nothing before it can be seen. The write is
-    /// synchronous, so its outcome is always known.
+    /// Only the last step of `publishConditionally` makes the file visible, so the outcome is exact.
     std::optional<WriteOutcome> getWriteOutcome() const override
     {
         return published ? WriteOutcome::Applied : WriteOutcome::NotApplied;

@@ -360,8 +360,7 @@ void writeMessageToFile(
         *write_outcome = WriteOutcome::NotApplied;
     auto buffer_metadata = object_storage->writeObject(
         StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
-    /// The compressing buffer does not own the buffer of the storage, so that the buffer of the storage outlives the
-    /// report, also when the compressing buffer cannot be created.
+    /// Not owned by the compressing buffer, so that it outlives the report even if that buffer cannot be created.
     std::unique_ptr<WriteBuffer> compressed_buffer_metadata;
     WriteBuffer * out = buffer_metadata.get();
     SCOPE_EXIT({
@@ -473,7 +472,6 @@ static bool decideByWriteOutcome(WriteOutcome outcome, bool is_conflict, const S
                     getCurrentExceptionMessage(false));
                 return false;
             }
-            /// The commit fails, and the caller rolls it back.
             throw;
         case WriteOutcome::Unknown:
             throwCommitOutcomeUnknown(storage_metadata_path);
@@ -686,7 +684,6 @@ bool writeMetadataFileAndVersionHint(
     }
     catch (...)
     {
-        /// As with a failed write of the hint, the readers that follow it see the previous version until the next commit.
         tryLogCurrentException(
             getLogger("IcebergWrites"),
             fmt::format("The version hint is not advanced to the published metadata file {}", metadata_file_info.path.serialize()));

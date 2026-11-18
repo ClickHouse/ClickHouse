@@ -62,7 +62,9 @@ private:
 
     void finalizeImpl() override;
     void execWithRetry(std::function<void(size_t)> func, size_t num_tries, size_t cost = 0);
-    /// `execWithRetry` of a call that publishes the blob, which records the outcome of the write.
+    /// `execWithRetry` of a call that publishes the blob, which records the outcome. It sees the attempts of
+    /// `execWithRetry`, but not the retries of the SDK inside them. So a 409 or 412 after a retry of the SDK can answer an
+    /// applied attempt of this write, and still counts as not applied: the blob has no idempotency id that could tell.
     void publishWithRetry(std::function<void(size_t)> func, size_t num_tries, size_t cost = 0);
     void uploadBlock(const char * data, size_t size);
 
@@ -104,8 +106,7 @@ private:
     std::unique_ptr<TaskTracker> task_tracker;
     bool check_objects_after_upload = false;
 
-    /// The outcome of the call that publishes the blob. Without such a call nothing is published. The call runs on the
-    /// thread of `finalize`.
+    /// Set by the call that publishes the blob, on the thread of `finalize`.
     WriteOutcome write_outcome = WriteOutcome::NotApplied;
 
     std::deque<PartData> detached_part_data;

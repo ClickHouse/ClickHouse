@@ -42,10 +42,8 @@ struct WriteBufferFromAzureBlobStorage::PartData
     size_t data_size = 0;
 };
 
-/// Only a known answer that refuses a request before it is applied proves that an attempt was not applied: of the request,
-/// of the credentials, of a missing container, of an existing blob, of the precondition, of the size, or of the request
-/// rate. No answer (`HttpStatusCode::None`, e.g. of a broken connection), a server error, or any other answer may follow
-/// an applied attempt.
+/// Only a known refusal proves that an attempt was not applied. No answer (`HttpStatusCode::None`), a server error, or
+/// any other answer may follow an applied attempt.
 static bool attemptMayHaveBeenApplied(Azure::Core::Http::HttpStatusCode code)
 {
     using Azure::Core::Http::HttpStatusCode;
@@ -184,9 +182,6 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void(size_t)> 
 
 void WriteBufferFromAzureBlobStorage::publishWithRetry(std::function<void(size_t)> func, size_t num_tries, size_t cost)
 {
-    /// Only the attempts of `execWithRetry` are seen here, not the retries of the SDK inside one of them. So a 409 or 412
-    /// after a retry of the SDK can be the answer to an applied attempt of this write, and still counts as not applied.
-    /// Unlike S3, the blob carries no idempotency id that could tell.
     bool may_have_been_applied = false;
     try
     {

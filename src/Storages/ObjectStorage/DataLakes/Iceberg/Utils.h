@@ -43,8 +43,8 @@ class ICatalog;
 namespace DB::Iceberg
 {
 
-/// Sets `write_outcome`, if given, to the outcome that the storage reports for the write, also on an exception. It
-/// stays empty for a storage that does not track the outcome, or when the write did not start.
+/// Sets `write_outcome`, if given, to the outcome of the write, also on an exception. It stays empty for a storage that
+/// does not track the outcome.
 void writeMessageToFile(
     const String & data,
     const String & filename,

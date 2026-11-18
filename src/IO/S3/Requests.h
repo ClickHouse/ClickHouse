@@ -253,7 +253,6 @@ static constexpr size_t IDEMPOTENCY_ID_LENGTH = 22;
 /// so the record covers all calls with it. The outcome of the write follows from the record.
 struct AttemptsRecord
 {
-    /// What a call proved about the write.
     enum class Proof : uint8_t
     {
         None,
@@ -268,7 +267,6 @@ struct AttemptsRecord
     /// What the last call proved. Each call starts without a proof.
     Proof proof = Proof::None;
 
-    /// Without a proof, the outcome is unknown after an attempt that may have been applied.
     WriteOutcome outcome() const
     {
         switch (proof)

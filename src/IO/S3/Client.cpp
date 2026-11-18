@@ -129,8 +129,7 @@ bool attemptMayHaveBeenApplied(Aws::Http::HttpResponseCode code, const Aws::Stri
         case HttpResponseCode::SEE_OTHER:
         case HttpResponseCode::TEMPORARY_REDIRECT:
         case HttpResponseCode::PERMANENT_REDIRECT:
-        /// The checks that S3 makes before the commit: of the request and its body, of the credentials, of the method,
-        /// of a conflicting operation, of the length, of the precondition, of the size, and of the request rate.
+        /// The checks that S3 makes before the commit.
         case HttpResponseCode::BAD_REQUEST:
         case HttpResponseCode::UNAUTHORIZED:
         case HttpResponseCode::FORBIDDEN:
@@ -146,8 +145,7 @@ bool attemptMayHaveBeenApplied(Aws::Http::HttpResponseCode code, const Aws::Stri
             return exception_name != "NoSuchBucket" && exception_name != "NoSuchUpload";
         case HttpResponseCode::SERVICE_UNAVAILABLE:
             return exception_name != "SlowDown";
-        /// No answer, a code that stands for none (e.g. 408, 444 or 499 of some HTTP clients and proxies), another code,
-        /// a broken answer, or a server error.
+        /// No answer, a code that stands for none (e.g. 408, 444 or 499 of some proxies), a broken answer, or a server error.
         default:
             return true;
     }
@@ -180,9 +178,8 @@ Client::RequestScope * Client::RequestScope::current()
 namespace
 {
 
-/// Records that an attempt of the call of the current thread may have been applied, if the call records its attempts.
-/// Another request of the same thread inside the scope, e.g. of a credentials provider, is recorded too. That can only
-/// make the decision more careful.
+/// Another request of the thread inside the scope, e.g. of a credentials provider, is recorded too: it can only make the
+/// outcome more careful.
 void recordAttemptThatMayHaveBeenApplied()
 {
     if (auto * scope = Client::RequestScope::current(); scope && scope->attempts_record)
@@ -717,8 +714,7 @@ bool shouldFindObjectWriter(const RequestType & request, const Aws::S3::S3Error 
     /// A replay over a landed attempt fails its own precondition, or finds its upload id consumed.
     if (error.GetExceptionName() == "PreconditionFailed" || error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD)
         return true;
-    /// After another error, only a conditional write checks, so that an unconditional write keeps its error and costs no
-    /// request.
+    /// After another error only a conditional write checks, so that an unconditional write costs no request.
     return request.getAttemptsRecord().may_have_been_applied && (request.IfNoneMatchHasBeenSet() || request.IfMatchHasBeenSet());
 }
 
@@ -736,8 +732,7 @@ AttemptsRecord::Proof Client::proveFailedWrite(const RequestType & request, cons
         case ObjectWriter::ThisWrite:
             return Proof::Applied;
         case ObjectWriter::AnotherWrite:
-            /// Only one write can create a key with `If-None-Match: *`, so this one was not applied and cannot be
-            /// applied later. Without it a later write can replace the object of this one.
+            /// Only one write can create a key with `If-None-Match: *`, so this one cannot be applied, now or later.
             if (request.IfNoneMatchHasBeenSet())
                 return Proof::NotApplied;
             break;
@@ -750,7 +745,6 @@ AttemptsRecord::Proof Client::proveFailedWrite(const RequestType & request, cons
 Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const
 {
     auto & attempts_record = request.getAttemptsRecord();
-    /// Each call proves anew, and the attempts of earlier calls with the request stay in the record.
     attempts_record.proof = AttemptsRecord::Proof::None;
     auto outcome = [&]
     {
@@ -819,7 +813,6 @@ Model::CopyObjectOutcome Client::CopyObject(CopyObjectRequest & request) const
 Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
 {
     auto & attempts_record = request.getAttemptsRecord();
-    /// Each call proves anew, and the attempts of earlier calls with the request stay in the record.
     attempts_record.proof = AttemptsRecord::Proof::None;
     auto outcome = [&]
     {

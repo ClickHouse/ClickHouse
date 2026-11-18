@@ -1865,7 +1865,6 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (...)
     {
-        /// With an unknown outcome the new version may be published and reference these files.
         if (isCommitOutcomeUnknown())
         {
             commit_outcome_unknown = true;

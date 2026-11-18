@@ -18,8 +18,7 @@ public:
     void sync() override = 0;
     virtual std::string getFileName() const = 0;
 
-    /// The outcome of the write, for a storage that tracks it (S3). Read it after `finalize`, also after an exception.
-    /// Empty for a storage that does not track it.
+    /// Read it after `finalize`, also after an exception. Empty for a storage that does not track the outcome.
     virtual std::optional<WriteOutcome> getWriteOutcome() const { return std::nullopt; }
 };
 

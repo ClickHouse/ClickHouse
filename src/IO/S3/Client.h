@@ -102,7 +102,6 @@ bool isS3ExpressEndpoint(const std::string & endpoint);
 bool attemptMayHaveBeenApplied(Aws::Http::HttpResponseCode code, const Aws::String & exception_name);
 
 /// Whether an attempt on the wire is a write with a precondition: a `PUT` or a `POST` with `If-None-Match` or `If-Match`.
-/// The HTTP client sees only this request, not the request of the client that it was built from.
 bool isConditionalWriteAttempt(const Aws::Http::HttpRequest & request);
 
 struct ClientSettings

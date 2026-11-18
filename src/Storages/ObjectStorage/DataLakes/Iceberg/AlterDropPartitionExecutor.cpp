@@ -695,7 +695,6 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
 
     std::vector<std::string> files_for_cleanup;
     bool committed = false;
-    /// With an unknown outcome the new version may be published and reference these files.
     bool commit_outcome_unknown = false;
 
     SCOPE_EXIT({
