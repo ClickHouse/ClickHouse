@@ -456,6 +456,9 @@ std::expected<ConvertedLiteral, SubstraitBlockingReason> convertFieldToLiteral(
 std::expected<ConvertedRelation, SubstraitBlockingReason>
 SubstraitExpressionConverter::convertProjection(const ActionsDAG & dag, const Block & output_header, substrait::Rel child)
 {
+    if (dag.hasArrayJoin())
+        return blocked("ARRAY JOIN has no Substrait representation");
+
     /// In a header [plus(a, b), c] the DAG computes the first, so `node` points at it.
     /// The input already has `c`, so `node` is null and `passthrough_position` says where it sits.
     struct ColumnSource
