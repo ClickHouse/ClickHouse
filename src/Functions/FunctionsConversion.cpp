@@ -3181,7 +3181,9 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
 
     if (result_is_nullable)
     {
-        bool exclude_source_nulls = source_is_nullable && cast_type == CastType::accurate && !nested_types_equal;
+        /// The element conversions of a Tuple do not all read its null map, so they would convert the placeholders of its NULL rows.
+        bool exclude_source_nulls = source_is_nullable && !nested_types_equal
+            && (cast_type == CastType::accurate || isTuple(from_nested_type));
 
         return [wrapper, source_is_nullable, exclude_source_nulls]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
