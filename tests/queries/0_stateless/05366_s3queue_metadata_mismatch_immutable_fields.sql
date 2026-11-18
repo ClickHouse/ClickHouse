@@ -156,6 +156,12 @@ ALTER TABLE tq_o MODIFY SETTING processing_threads_num = 4;
 ALTER TABLE tq_o MODIFY SETTING processing_threads_num = 5; -- { serverError SUPPORT_IS_DISABLED }
 DROP TABLE tq_o;
 
+-- `parallel_inserts` is not stored in keeper, so repeating its value next to another setting changes only the other one.
+CREATE TABLE tq_p (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_p/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_p', parallel_inserts = 1;
+ALTER TABLE tq_p MODIFY SETTING parallel_inserts = 1, polling_max_timeout_ms = 2000;
+SELECT create_table_query LIKE '%parallel_inserts = 1%polling_max_timeout_ms = 2000%' FROM system.tables WHERE database = currentDatabase() AND name = 'tq_p';
+DROP TABLE tq_p;
+
 -- `after_processing` is still checked when a table is attached, as on master. A table that fails to attach cannot be
 -- detached again in a `Replicated` database, so this uses an `Atomic` one.
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic;
