@@ -577,8 +577,23 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
     for (auto target_kind : getTargetKinds())
     {
         /// We truncate only inner tables here.
-        if (isInnerTable(target_kind))
-            inner_table_ids.push_back(getTargetTableID(target_kind, local_context));
+        if (!isInnerTable(target_kind))
+            continue;
+
+        StorageID inner_table_id = StorageID::createEmpty();
+        for (const auto & candidate_id : getInnerTableIDs(target_kind, local_context, /* with_not_attached= */ true))
+        {
+            /// The guard makes a `SYSTEM RESTART REPLICA` of the inner table finish before the table is looked up.
+            auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(candidate_id.database_name, candidate_id.table_name, nullptr);
+            if (auto inner_table = DatabaseCatalog::instance().tryGetTable(candidate_id, local_context))
+            {
+                inner_table_id = inner_table->getStorageID();
+                break;
+            }
+        }
+
+        /// `getTargetTableID` throws if the inner table is missing.
+        inner_table_ids.push_back(inner_table_id ? inner_table_id : getTargetTableID(target_kind, local_context));
     }
 
     /// The caches are cleared before the truncation: if it fails in the middle, the next insert writes its rows again instead of skipping them.
