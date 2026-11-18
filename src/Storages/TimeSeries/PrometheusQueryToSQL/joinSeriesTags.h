@@ -14,9 +14,8 @@ struct ConverterContext;
 /// FROM <series> ANY INNER JOIN <per_id> ON <per_id>.id = <series>.id
 ///
 /// `per_id` is a new subquery made of `per_id_query`, `series` is the subquery from `SQLQueryPiece::series`.
-/// `series` can contain an identifier in multiple rows (one per unmerged part of the tags table), ANY INNER JOIN outputs
-/// one row per key. `series` can also contain identifiers without samples in the range, INNER drops them: `per_id` is the right
-/// side, so the hash table holds only the time series with samples.
+/// `series` can contain an identifier in multiple rows (one per unmerged part of the tags table) and identifiers without samples:
+/// ANY INNER JOIN outputs one row per key of `per_id`, which is the right side to keep the hash table small.
 ASTPtr joinSeriesTags(ASTPtr && per_id_query, const String & series, const Strings & columns, ConverterContext & context);
 
 }

@@ -187,7 +187,7 @@ SQLQueryPiece applyLimitAggregationOperator(
     res.node = operator_node;
 
     /// The aggregate functions identify a series by a UInt64 key, so the series are numbered in the order of their tags within
-    /// partitions by a hash of the tags (the window function runs in parallel over the partitions):
+    /// partitions by a hash of the tags:
     ///
     ///   SELECT tags, values, row_number() OVER (PARTITION BY cityHash64(tags) % 64 ORDER BY tags) * 64 + cityHash64(tags) % 64 AS series_key
     ///   FROM <vector_arg>
