@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 
+#include <ctime>
 #include <string>
 
 namespace Poco
@@ -11,6 +12,8 @@ class Logger;
 
 namespace DB
 {
+
+struct User;
 
 /// Warnings about how the binary was built: debug mode, sanitizers, coverage, thread fuzzer.
 void addBuildWarnings(ContextPtr context);
@@ -28,4 +31,9 @@ void addEnvironmentWarnings(ContextPtr context, const Poco::Logger & logger, con
 /// Call after the access storages are set up, and again whenever a user or the configuration changes. Never throws.
 void updateUsersWithoutPasswordWarning(ContextPtr context);
 
+/// Whether a login of `user` with an empty password succeeds, ignoring `networks`. Applies the gates of
+/// `IAccessStorage::authenticateImpl`: a method disabled by `allow_no_password` / `allow_plaintext_password` is ignored,
+/// and an expired method that accepts the empty password rejects the login, even if another method accepts it too.
+/// Expiry is evaluated at `now`. Exposed for tests.
+bool userAcceptsEmptyPassword(const User & user, bool allow_no_password, bool allow_plaintext_password, time_t now);
 }

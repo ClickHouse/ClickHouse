@@ -25,7 +25,7 @@
 
 #include <fmt/ranges.h>
 
-#include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <mutex>
 #include <optional>
@@ -440,6 +440,21 @@ void addEnvironmentWarnings(ContextPtr context, const Poco::Logger & logger, con
     }
 }
 
+bool userAcceptsEmptyPassword(const User & user, bool allow_no_password, bool allow_plaintext_password, time_t now)
+{
+    bool accepted = false;
+    for (const auto & method : user.authentication_methods)
+    {
+        if (!authenticationTypeIsAllowed(method.getType(), allow_no_password, allow_plaintext_password) || !acceptsEmptyPassword(method))
+            continue;
+        /// The session expires at the earliest `VALID UNTIL` of all methods that accept the credential.
+        if (method.getValidUntil() && now > method.getValidUntil())
+            return false;
+        accepted = true;
+    }
+    return accepted;
+}
+
 void updateUsersWithoutPasswordWarning(ContextPtr context)
 {
     /// Called on user changes and on config reloads: do not let an outdated result overwrite a newer one.
@@ -459,13 +474,20 @@ void updateUsersWithoutPasswordWarning(ContextPtr context)
             if (!default_session_user.empty() && default_session_user != "default")
                 user_names.push_back(default_session_user);
 
+            /// Both settings are read only at startup. Expiry is not re-checked as time passes: a method that expires
+            /// later keeps the warning until the next user change or config reload.
+            const auto & access_control = context->getAccessControl();
+            const bool allow_no_password = access_control.isNoPasswordAllowed();
+            const bool allow_plaintext_password = access_control.isPlaintextPasswordAllowed();
+            const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+
             Strings users_without_password;
             for (const auto & user_name : user_names)
             {
                 /// A passwordless user restricted by `networks` (e.g. to localhost) is a common, deliberate setup.
-                auto user = context->getAccessControl().tryRead<User>(user_name);
+                auto user = access_control.tryRead<User>(user_name);
                 if (user && user->allowed_client_hosts.containsAnyHost()
-                    && std::ranges::any_of(user->authentication_methods, acceptsEmptyPassword))
+                    && userAcceptsEmptyPassword(*user, allow_no_password, allow_plaintext_password, now))
                     users_without_password.push_back(quoteString(user_name));
             }
 
