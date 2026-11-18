@@ -32,6 +32,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Utils.h>
 #include <Formats/castColumnToRequestedType.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
@@ -1605,9 +1606,12 @@ void NativeORCBlockInputFormat::prepareFileReader()
         /// Under the data lake schema the fields of a struct are selected below by field id, so the name of a column is
         /// resolved through the structs only for an absent one.
         const ORC::Type * orc_type = nullptr;
-        if (!column_mapper || absent_columns.contains(column.name))
-            orc_type = traverseDownORCTypeByName(column.name, &file_schema, adjusted_type, ignore_case);
-        if (orc_type && absent_columns.contains(column.name))
+        const bool absent = absent_columns.contains(column.name);
+        bool name_is_ambiguous = false;
+        if (!column_mapper || absent)
+            orc_type = traverseDownORCTypeByName(
+                column.name, &file_schema, adjusted_type, ignore_case, absent ? &name_is_ambiguous : nullptr);
+        if (absent && (orc_type || name_is_ambiguous))
         {
             absent_column_has_namesake = true;
             continue;
@@ -3256,7 +3260,8 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             const auto * orc_struct_column = dynamic_cast<const ORC::StructVectorBatch *>(orc_column);
 
             /// If all fields of the struct have an Iceberg field id, an element of the hint is read only from the field
-            /// with its id, and an element that no field has gets its `initial-default`.
+            /// with its id, and an element that no field has gets its `initial-default` or its type's default here, not in
+            /// the cast to the requested type, which would pair it by name with a field of another id.
             std::optional<VectorWithMemoryTracking<Int64>> file_field_ids;
             VectorWithMemoryTracking<bool> element_is_read(tuple_type_hint ? tuple_type_hint->getElements().size() : 0);
             VectorWithMemoryTracking<std::optional<Int64>> element_field_ids;
@@ -3356,14 +3361,17 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                 const String element_name = tuple_type_hint->getNameByPosition(pos + 1);
                 const String element_path = mapper_path + "." + element_name;
                 const auto & element_field_id = element_field_ids[pos];
-                if (!column_mapper->getIcebergInitialDefault(element_path) || !element_field_id
+                if (!element_field_id
                     || std::find(file_field_ids->begin(), file_field_ids->end(), *element_field_id) != file_field_ids->end())
                     continue;
                 /// The hint can have only the requested elements of a struct: the default is projected to it.
                 const auto & element_type = tuple_type_hint->getElement(pos);
-                auto value = column_mapper->getIcebergInitialDefault(element_path, element_path, element_type);
-                auto element = element_type->createColumnConst(orc_column->numElements, *value);
-                tuple_elements.emplace_back(element->convertToFullColumnIfConst());
+                ColumnPtr element;
+                if (auto value = column_mapper->getIcebergInitialDefault(element_path, element_path, element_type))
+                    element = element_type->createColumnConst(orc_column->numElements, *value)->convertToFullColumnIfConst();
+                else
+                    element = createColumnWithDefaults(*element_type, orc_column->numElements);
+                tuple_elements.emplace_back(std::move(element));
                 tuple_types.emplace_back(element_type);
                 tuple_names.emplace_back(element_name);
             }
@@ -3507,14 +3515,16 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
         const ColumnWithTypeAndName & header_column = header.getByPosition(column_i);
 
         ColumnWithTypeAndName column;
-        auto orc_column_it = find_orc_column(header_column.name);
+        /// A column absent by field id is not read from a field that has its name, only as an element of its parent.
+        auto orc_column_it = absent_columns.contains(header_column.name) ? name_to_column_ptr.end() : find_orc_column(header_column.name);
         if (orc_column_it == name_to_column_ptr.end())
         {
             bool read_from_nested = false;
 
             /// Check if it's a column from nested table.
             String nested_table_name = Nested::extractTableName(header_column.name);
-            auto orc_nested_column_it = find_orc_column(nested_table_name);
+            auto orc_nested_column_it
+                = nested_table_name == header_column.name ? name_to_column_ptr.end() : find_orc_column(nested_table_name);
             if (orc_nested_column_it != name_to_column_ptr.end())
             {
                 /// Keyed by the file's spelling, so requests that differ only by case share one.
