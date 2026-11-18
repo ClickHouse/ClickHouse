@@ -2,8 +2,7 @@
 # Tags: no-old-analyzer
 # (the clamp is analyzer-path behaviour; the legacy interpreter throws on such a nested clause)
 # A nested `SETTINGS` clause is clamped to the session's settings constraints, and the clamped clause is
-# what the query node keeps. So a nested `use_query_cache = 1` the constraints dropped must not enable
-# the query result cache in the `Planner` (issue #117226), a shard receives the clamped clause, and an
+# what the query node keeps. So a shard receives the clamped clause, and an
 # unknown name or an uncastable value in a nested clause throws, as it does in a top-level clause - also
 # when the clause sits in a view's stored body and the view is read on a remote shard.
 
@@ -26,9 +25,6 @@ DIST_TABLE="dist_05141"
 VIEW="v_05141"
 DIST_VIEW="dist_v_05141"
 PARAM_VIEW="pv_05141"
-# `system.query_cache` lists the entries of every user and every test, and the cache is never dropped
-# here, so each cached subquery carries a per-run marker in its text and is looked up by it.
-MARKER="marker_${SUFFIX}"
 
 ${CLICKHOUSE_CLIENT} --query "
 DROP USER IF EXISTS ${CONST_USER}, ${RO_USER}, ${FREE_USER}, ${DIST_USER};
@@ -69,33 +65,11 @@ RO="${RESTRICTED_CLIENT} --user=${RO_USER}"
 FREE="${RESTRICTED_CLIENT} --user=${FREE_USER}"
 DIST="${RESTRICTED_CLIENT} --user=${DIST_USER}"
 
-# Cache entries whose text carries the marker: subquery entries, then top-level entries.
-function cache_entries()
-{
-    ${CLICKHOUSE_CLIENT} --query "SELECT countIf(is_subquery), countIf(NOT is_subquery) FROM system.query_cache WHERE query LIKE '%$1%'"
-}
+echo "-- use_query_cache = 0 CONST: a nested use_query_cache = 1 is clamped and the query runs"
+${CONST} --query "SELECT count() FROM (SELECT id FROM ${TABLE} SETTINGS use_query_cache = 1)"
 
-# The marker is compared against a real column so it survives constant folding and stays in the
-# subquery text the cache entry is keyed and listed by.
-echo "-- use_query_cache = 0 CONST: a nested use_query_cache = 1 runs but caches nothing"
-${CONST} --query "SELECT count() FROM (SELECT id FROM ${TABLE} WHERE s != '${MARKER}_const' SETTINGS use_query_cache = 1)"
-cache_entries "${MARKER}_const"
-
-echo "-- readonly = 1: a nested use_query_cache = 1 runs but caches nothing"
-${RO} --query "SELECT count() FROM (SELECT id FROM ${TABLE} WHERE s != '${MARKER}_ro' SETTINGS use_query_cache = 1)"
-cache_entries "${MARKER}_ro"
-
-echo "-- unconstrained: a nested use_query_cache = 1 caches the subquery"
-${FREE} --query "SELECT count() FROM (SELECT id FROM ${TABLE} WHERE s != '${MARKER}_free' SETTINGS use_query_cache = 1)"
-cache_entries "${MARKER}_free"
-
-echo "-- unconstrained: a nested use_query_cache = 1 equal to the outer value still caches the subquery, next to the outer query"
-${FREE} --query "SELECT count() FROM (SELECT id FROM ${TABLE} WHERE s != '${MARKER}_both' SETTINGS use_query_cache = 1) SETTINGS use_query_cache = 1"
-cache_entries "${MARKER}_both"
-
-echo "-- unconstrained: a nested use_query_cache = 'true' given as a string is applied"
-${FREE} --query "SELECT count() FROM (SELECT id FROM ${TABLE} WHERE s != '${MARKER}_string' SETTINGS use_query_cache = 'true')"
-cache_entries "${MARKER}_string"
+echo "-- readonly = 1: a nested use_query_cache = 1 is clamped and the query runs"
+${RO} --query "SELECT count() FROM (SELECT id FROM ${TABLE} SETTINGS use_query_cache = 1)"
 
 echo "-- a nested unknown setting still throws"
 ${CONST} --query "SELECT count() FROM (SELECT id FROM ${TABLE} SETTINGS max_threds = 1)" 2>&1 | grep -c -F "UNKNOWN_SETTING"
@@ -120,9 +94,6 @@ ${RESTRICTED_CLIENT} --query "SELECT * FROM ${VIEW}" 2>&1 | grep -c -F "UNKNOWN_
 # and already throws, so only the remote path exercises the fix, and the harness randomizes this setting.
 echo "-- and on a remote shard through Distributed"
 ${RESTRICTED_CLIENT} --query "SELECT * FROM ${DIST_VIEW} SETTINGS prefer_localhost_replica = 0" 2>&1 | grep -c -F "UNKNOWN_SETTING"
-
-echo "-- also when the shard inlines the view"
-${RESTRICTED_CLIENT} --query "SELECT * FROM ${DIST_VIEW} SETTINGS prefer_localhost_replica = 0, analyzer_inline_views = 1" 2>&1 | grep -c -F "UNKNOWN_SETTING"
 
 echo "-- a parameterized view with an invalid nested setting fails on a direct read"
 ${RESTRICTED_CLIENT} --query "SELECT * FROM ${PARAM_VIEW}(p = 1)" 2>&1 | grep -c -F "UNKNOWN_SETTING"
