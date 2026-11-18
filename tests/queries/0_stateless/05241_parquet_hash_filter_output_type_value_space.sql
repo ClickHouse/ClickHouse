@@ -1,4 +1,4 @@
--- Random settings limits: input_format_parquet_memory_high_watermark=(67108864, None); output_format_parquet_bloom_filter_bits_per_value=(10.5, None); output_format_parquet_max_dictionary_size=(1048576, None)
+-- Random settings limits: input_format_parquet_bloom_filter_push_down=(1, 1); input_format_parquet_memory_high_watermark=(67108864, None); output_format_parquet_bloom_filter_bits_per_value=(10.5, None); output_format_parquet_max_dictionary_size=(1048576, None); output_format_parquet_write_bloom_filter=(1, 1)
 -- The Parquet bloom-filter and dictionary-filter row-group legs hash the stored side in physical space
 -- (the dictionary is materialized as the decoded type and cast to the physical type, and the file's own
 -- bloom filter holds digests of the physical values) but hash query constants of the requested type.
