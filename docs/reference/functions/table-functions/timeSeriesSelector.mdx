@@ -39,6 +39,7 @@ in the columns chosen by the argument `return_columns`:
   The samples of a time series can be returned in multiple rows, for example one row per time bucket of the samples table.
   Use the aggregate function `timeSeriesGroupArray` to merge the rows of a time series.
 - `'timestamp_and_value'` - the columns `timestamp` and `value` with one sample per row.
+  The value `'timestamp_and_value_checked'` returns the same columns, and is used by PromQL queries over a Distributed table: a server that predates the check of row policies on the source table refuses it.
 
 A `TimeSeries` table of version 11 or later stores buckets of samples as arrays, the tables of earlier versions store one sample per row.
 The samples are converted when the requested columns differ from the layout of the table, which costs some time; the PromQL functions

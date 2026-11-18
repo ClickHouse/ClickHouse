@@ -52,8 +52,8 @@ namespace
         selector_function->arguments->children.push_back(make_intrusive<ASTLiteral>(String{instant_selector_text}));
         selector_function->arguments->children.push_back(timeSeriesTimestampToAST(min_time, context.result_timestamp_type));
         selector_function->arguments->children.push_back(timeSeriesTimestampToAST(max_time, context.result_timestamp_type));
-        /// One sample per row, whatever a shard's table stores.
-        selector_function->arguments->children.push_back(make_intrusive<ASTLiteral>(String{"timestamp_and_value"}));
+        /// One sample per row, whatever a shard's table stores. An older shard refuses this value, instead of skipping the source policy.
+        selector_function->arguments->children.push_back(make_intrusive<ASTLiteral>(String{"timestamp_and_value_checked"}));
         shard_builder.from_table_function = std::move(selector_function);
 
         /// Filtered on each shard, as on the local path, see fromRangeSelector().

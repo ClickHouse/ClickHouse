@@ -19,5 +19,11 @@ rows as rows	1970-01-01 01:06:40.000	2
 -- the time range is applied before the conversion
 2	1970-01-01 00:02:30.000	1970-01-01 01:06:40.000
 2
+-- the value sent by the distributed PromQL read returns the same columns
+1970-01-01 00:01:40.000	1
+1970-01-01 01:06:40.000	2
+id	Tuple(UInt64, LowCardinality(UUID))					
+timestamp	DateTime64(3)					
+value	Float64					
 -- the argument is required and must be one of the two values
 3

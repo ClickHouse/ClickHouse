@@ -128,11 +128,12 @@ DateTime64 convertToScale(DateTime64 timestamp, UInt32 timestamp_scale, UInt32 t
 }
 
 /// Parses the value of the argument `return_columns` of the table function: 'samples' or 'timestamp_and_value'.
+/// The distributed read sends 'timestamp_and_value_checked', the same columns: a shard without the source policy check refuses it.
 StorageTimeSeriesSelector::Configuration::ReturnColumns parseReturnColumns(std::string_view str, std::string_view function_name)
 {
     if (str == "samples")
         return StorageTimeSeriesSelector::Configuration::ReturnColumns::Samples;
-    if (str == "timestamp_and_value")
+    if (str == "timestamp_and_value" || str == "timestamp_and_value_checked")
         return StorageTimeSeriesSelector::Configuration::ReturnColumns::TimestampAndValue;
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
         "Table function '{}' requires the argument 'return_columns' to be 'samples' or 'timestamp_and_value', got {}",
