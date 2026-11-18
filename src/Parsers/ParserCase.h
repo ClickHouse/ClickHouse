@@ -14,7 +14,7 @@ namespace DB
 class ParserCase final : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "case"; }
+    const char * getName() const override { return "case"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

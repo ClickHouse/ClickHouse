@@ -1,5 +1,4 @@
 #include <Interpreters/ApplyWithAliasVisitor.h>
-#include <Interpreters/ExpandedASTBudget.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -8,14 +7,6 @@
 
 namespace DB
 {
-
-void ApplyWithAliasVisitor::visit(ASTPtr & ast, size_t max_expanded_ast_elements)
-{
-    ExpandedASTBudget budget(max_expanded_ast_elements, *ast);
-    Data data;
-    data.budget = &budget;
-    visit(ast, data);
-}
 
 void ApplyWithAliasVisitor::visit(ASTPtr & ast, const Data & data)
 {
@@ -41,15 +32,14 @@ void ApplyWithAliasVisitor::visit(ASTPtr & ast, const Data & data)
             for (const auto & with_alias : data.exprs)
             {
                 if (!current_names.contains(with_alias.first))
-                    with->children.push_back(data.budget->clone(with_alias.second));
+                    with->children.push_back(with_alias.second->clone());
             }
         }
         else if (!data.exprs.empty())
         {
-            data.budget->addNode();
             auto with_expression_list = make_intrusive<ASTExpressionList>();
             for (const auto & with_alias : data.exprs)
-                with_expression_list->children.push_back(data.budget->clone(with_alias.second));
+                with_expression_list->children.push_back(with_alias.second->clone());
             node_select->setExpression(ASTSelectQuery::Expression::WITH, std::move(with_expression_list));
         }
         for (auto & child : node_select->children)

@@ -31,17 +31,12 @@ public:
     static constexpr auto name = "arrayTranspose";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayTranspose>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(A : Array(Array)) -> A";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const DataTypeArray * outer_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
         if (!outer_type)
@@ -59,7 +54,7 @@ public:
         return arguments[0];
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnArray * outer_col = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         if (!outer_col)
@@ -494,9 +489,9 @@ All inner arrays must have the same length.
         {"Array(Array(T))"}
     };
     FunctionDocumentation::Examples examples = {
-        {"Square matrix", "SELECT arrayTranspose([[1, 2], [3, 4]])", "[[1,3],[2,4]]"},
-        {"Non-square matrix", "SELECT arrayTranspose([[1, 2, 3], [4, 5, 6]])", "[[1,4],[2,5],[3,6]]"},
-        {"String elements", "SELECT arrayTranspose([['a', 'b'], ['c', 'd']])", "[['a','c'],['b','d']]"},
+        {"Square matrix", "SELECT arrayTranspose([[1, 2], [3, 4]])", "[[1, 3], [2, 4]]"},
+        {"Non-square matrix", "SELECT arrayTranspose([[1, 2, 3], [4, 5, 6]])", "[[1, 4], [2, 5], [3, 6]]"},
+        {"String elements", "SELECT arrayTranspose([['a', 'b'], ['c', 'd']])", "[['a', 'c'], ['b', 'd']]"},
     };
     FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

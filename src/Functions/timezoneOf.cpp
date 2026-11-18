@@ -21,29 +21,34 @@ class FunctionTimezoneOf final : public IFunction
 {
 public:
     static constexpr auto name = "timezoneOf";
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
     static FunctionPtr create(ContextPtr) { return std::make_unique<FunctionTimezoneOf>(); }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & types) const override
     {
-        /// Legacy validator removed Nullable before checking DateTime/DateTime64.
-        return "(MaybeNullable(DateTime | DateTime64)) -> String";
+        FunctionArgumentDescriptors mandatory_args{
+            {"datetime", &isDateTimeOrDateTime64, nullptr, "DateTime or DateTime64"},
+        };
+
+        validateFunctionArguments(*this, types, mandatory_args);
+
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         DataTypePtr type_no_nullable = removeNullable(arguments[0].type);
 
@@ -51,7 +56,7 @@ public:
             dynamic_cast<const TimezoneMixin &>(*type_no_nullable).getTimeZone().getTimeZone());
     }
 
-    [[nodiscard]] ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
         DataTypePtr type_no_nullable = removeNullable(arguments[0].type);
 
@@ -59,6 +64,13 @@ public:
             dynamic_cast<const TimezoneMixin &>(*type_no_nullable).getTimeZone().getTimeZone());
     }
 
+private:
+    static bool isDateTimeOrDateTime64(const IDataType & type)
+    {
+        DataTypePtr type_no_nullable = removeNullable(type.getPtr());
+
+        return WhichDataType(*type_no_nullable).isDateTimeOrDateTime64();
+    }
 };
 
 }
@@ -80,7 +92,7 @@ SELECT timezoneOf(now());
         )",
         R"(
 ┌─timezoneOf(now())─┐
-│ Etc/UTC           │
+│ Europe/Amsterdam  │
 └───────────────────┘
         )"}
     };
