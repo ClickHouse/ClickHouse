@@ -1,4 +1,5 @@
 -- Tags: no-fasttest
+-- Random settings limits: input_format_parquet_filter_push_down=(1, 1)
 
 -- Parquet sorts `uuid` statistics by unsigned big-endian byte comparison, while ClickHouse sorts the
 -- `UUID` data type by its second half, so a min/max pair read out of a Parquet file is not an interval

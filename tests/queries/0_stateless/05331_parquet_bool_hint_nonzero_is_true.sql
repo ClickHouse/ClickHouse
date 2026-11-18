@@ -1,3 +1,4 @@
+-- Random settings limits: input_format_parquet_filter_push_down=(1, 1); input_format_parquet_page_filter_push_down=(1, 1); output_format_parquet_write_page_index=(1, 1)
 -- A Parquet UINT_8 column read with a `Bool` hint: every nonzero value is read as `true`, so `x = true`,
 -- `x IN (true)` and `WHERE x` agree, and min/max statistics above 1 bound the column as 1.
 
