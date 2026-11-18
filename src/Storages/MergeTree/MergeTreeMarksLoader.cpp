@@ -1,3 +1,4 @@
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
@@ -187,8 +188,17 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
             file_size,
             expected_uncompressed_size);
 
+    /// The mark cache charges a lazily decoded marks file by its compressed size, while the
+    /// bit-packed representation takes about 3 bytes per mark for integer columns and 5 bytes
+    /// per mark for string columns. Retain the compressed file only when it is not larger than
+    /// that, so weak codecs (such as `NONE` or `LZ4`) and tiny compressed blocks don't reduce
+    /// the number of parts the mark cache can hold. Otherwise decode and bit-pack all marks.
+    static constexpr size_t max_retained_compressed_bytes_per_mark = 4;
+    bool retain_compressed_file = index_granularity_info.mark_type.compressed
+        && file_size <= total_marks * max_retained_compressed_bytes_per_mark;
+
     auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size);
-    if (index_granularity_info.mark_type.compressed)
+    if (retain_compressed_file)
     {
         PODArray<char, 4096, JemallocCacheAllocator> content(file_size);
         buffer->readStrict(content.data(), file_size);
@@ -203,7 +213,11 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
         return res;
     }
 
-    std::unique_ptr<ReadBuffer> reader = std::move(buffer);
+    std::unique_ptr<ReadBuffer> reader;
+    if (index_granularity_info.mark_type.compressed)
+        reader = std::make_unique<CompressedReadBufferFromFile>(std::move(buffer));
+    else
+        reader = std::move(buffer);
 
     /// When streaming, compress marks block-by-block via Builder to avoid
     /// materializing the full plain marks array (can be hundreds of MiB

@@ -154,6 +154,8 @@ std::shared_ptr<MarksInCompressedFile> MarksInCompressedFile::createFromCompress
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected decompressed size {}, expected {}", decompressed_offset, expected_size);
         /// Sentinel for locating the last block and recognizing a reader positioned at its end.
         file->blocks.push_back(CompressedFile::Block{file->content.size(), decompressed_offset});
+        /// The mark cache charges the allocated bytes, and the initial allocation is much larger than a typical index.
+        file->blocks.shrink_to_fit();
     }
     catch (Exception & e)
     {
