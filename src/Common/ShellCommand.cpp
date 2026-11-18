@@ -258,12 +258,14 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         throw ErrnoException(ErrorCodes::CANNOT_DLSYM, "Cannot find symbol vfork in myself");
     pid_t pid = reinterpret_cast<pid_t (*)()>(real_vfork)();
 #else
-    pid_t pid = vfork(); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c)
+    pid_t pid = vfork(); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c,clang-analyzer-security.insecureAPI.vfork)
 #endif
 
     if (pid == -1)
         throw ErrnoException(ErrorCodes::CANNOT_FORK, "Cannot vfork");
 
+    /// The child only calls async-signal-safe functions before `exec`.
+    // NOLINTBEGIN(clang-analyzer-unix.Vfork)
     if (0 == pid)
     {
         /// We are in the freshly created process.
@@ -314,6 +316,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 
         _exit(static_cast<int>(ReturnCodes::CANNOT_EXEC));
     }
+    // NOLINTEND(clang-analyzer-unix.Vfork)
 
     res->pid = pid;
 

@@ -102,12 +102,14 @@ int executeCommand(char * const argv[])
         throw std::runtime_error("Cannot find vfork symbol");
     pid_t pid = reinterpret_cast<pid_t (*)()>(real_vfork)();
 #else
-    pid_t pid = vfork(); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c)
+    pid_t pid = vfork(); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c,clang-analyzer-security.insecureAPI.vfork)
 #endif
 
     if (-1 == pid)
         throw std::runtime_error(fmt::format("Cannot vfork {}: {}", argv[0], errnoToString()));
 
+    /// The child only calls async-signal-safe functions before `exec`.
+    // NOLINTBEGIN(clang-analyzer-unix.Vfork)
     /// Child
     if (0 == pid)
     {
@@ -119,6 +121,7 @@ int executeCommand(char * const argv[])
         execvp(argv[0], argv);
         _exit(-1);
     }
+    // NOLINTEND(clang-analyzer-unix.Vfork)
 
     int status = 0;
     do
