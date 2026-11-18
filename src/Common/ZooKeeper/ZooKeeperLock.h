@@ -39,8 +39,8 @@ public:
 
     void unlock();
     bool tryLock();
-    [[nodiscard]] bool isLocked(bool check_node = false) const;
-    [[nodiscard]] const std::string & getLockPath() const;
+    bool isLocked(bool check_node = false) const;
+    const std::string & getLockPath() const;
 
 private:
     zkutil::ZooKeeperPtr zookeeper;

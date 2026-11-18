@@ -197,7 +197,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
     /// If "select_from_system_db_requires_grant" is enabled we provide implicit grants only for a few tables in the system database.
     if (access_control.doesSelectFromSystemDatabaseRequireGrant())
     {
-        static constexpr std::string_view always_accessible_tables[] = {
+        const char * always_accessible_tables[] = {
             /// Constant tables
             "one",
 
@@ -234,7 +234,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
             "quota_usage"
         };
 
-        for (const std::string_view table_name : always_accessible_tables)
+        for (const auto * table_name : always_accessible_tables)
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, table_name);
 
         /// `system.user_query_log` shows each user only their own query log records, so SELECT on it is
@@ -261,20 +261,6 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
         if (max_flags.contains(AccessType::SHOW_MASKING_POLICIES))
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "masking_policies");
-
-        if (max_flags.contains(AccessType::SYSTEM_JEMALLOC))
-        {
-            static constexpr std::string_view jemalloc_tables[] = {
-                "jemalloc_bins",
-                "jemalloc_arena_bins",
-                "jemalloc_stats",
-                "jemalloc_profile_text",
-                "jemalloc_sampled_allocations",
-            };
-
-            for (const std::string_view table_name : jemalloc_tables)
-                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, table_name);
-        }
     }
     else
     {
@@ -908,7 +894,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
     {
         const AccessFlags table_ddl = AccessType::CREATE_DATABASE | AccessType::CREATE_TABLE | AccessType::CREATE_VIEW
             | AccessType::ALTER_TABLE | AccessType::ALTER_VIEW | AccessType::DROP_DATABASE | AccessType::DROP_TABLE | AccessType::DROP_VIEW
-            | AccessType::TRUNCATE | AccessType::UNDROP_TABLE;
+            | AccessType::TRUNCATE;
 
         const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
         const AccessFlags function_ddl = AccessType::CREATE_FUNCTION | AccessType::DROP_FUNCTION;
@@ -922,7 +908,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
         const AccessFlags write_dcl_access = AccessType::ACCESS_MANAGEMENT - AccessType::SHOW_ACCESS;
 
         const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_and_function_ddl | workload_ddl | resource_ddl | named_collection_ddl | handler_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
-        const AccessFlags not_readonly_1_flags = AccessType::CREATE_TEMPORARY_TABLE | AccessType::CREATE_TEMPORARY_VIEW;
+        const AccessFlags not_readonly_1_flags = AccessType::CREATE_TEMPORARY_TABLE;
 
         const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl | workload_ddl | resource_ddl | named_collection_ddl | handler_ddl;
         const AccessFlags introspection_flags = AccessType::INTROSPECTION;

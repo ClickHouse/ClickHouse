@@ -29,27 +29,36 @@ public:
     static constexpr auto name = "geohashEncode";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGeohashEncode>(); }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(Float, Float, [Integer]) -> String";
+        FunctionArgumentDescriptors mandatory_args{
+            {"longitude", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
+            {"latitude", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"}
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "(U)Int*"}
+        };
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IColumn * longitude = arguments[0].column.get();
         const IColumn * latitude = arguments[1].column.get();
@@ -105,11 +114,11 @@ REGISTER_FUNCTION(GeohashEncode)
     FunctionDocumentation::Description description = R"(
 Encodes longitude and latitude as a [geohash](https://en.wikipedia.org/wiki/Geohash)-string.
 
-<Note>
+:::
 All coordinate parameters must be of the same type: either `Float32` or `Float64`.
 
 For the `precision` parameter, any value less than `1` or greater than `12` is silently converted to `12`.
-</Note>
+:::
     )";
     FunctionDocumentation::Syntax syntax = "geohashEncode(longitude, latitude, [precision])";
     FunctionDocumentation::Arguments arguments = {

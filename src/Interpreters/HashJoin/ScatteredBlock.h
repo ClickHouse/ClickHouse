@@ -6,7 +6,6 @@
 #include <base/defines.h>
 #include <Common/PODArray.h>
 #include <Interpreters/RowDataStore.h>
-#include <Interpreters/RowRefs.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -28,7 +27,7 @@ extern const int LOGICAL_ERROR;
 namespace detail
 {
 
-/// Splitting an input block into sub-blocks by hash with IColumn::scatter would copy every column.
+/// Previously ConcurrentHashJoin used IColumn::scatter method to split input blocks to sub-blocks by hash.
 /// To avoid copying of columns, we introduce a new class ScatteredBlock that holds a block and a selector.
 /// So now each threads get a copy of the source input block and a selector that tells which rows are meant for the given thread.
 /// Selector can be seen as just a list of indexes or rows that belong to the given thread.
@@ -81,9 +80,9 @@ public:
         size_t idx;
     };
 
-    [[nodiscard]] Iterator begin() const { return Iterator(*this, 0); }
+    Iterator begin() const { return Iterator(*this, 0); }
 
-    [[nodiscard]] Iterator end() const { return Iterator(*this, size()); }
+    Iterator end() const { return Iterator(*this, size()); }
 
     size_t ALWAYS_INLINE operator[](size_t idx) const
     {
@@ -103,7 +102,7 @@ public:
     static size_t size(const Range & range) { return range.second - range.first; }
     static size_t size(const Indexes & indexes) { return indexes.size(); }
 
-    [[nodiscard]] size_t size() const
+    size_t size() const
     {
         if (std::holds_alternative<Range>(data))
             return size(std::get<Range>(data));
@@ -137,21 +136,21 @@ public:
         }
     }
 
-    [[nodiscard]] bool isContinuousRange() const { return std::holds_alternative<Range>(data); }
+    bool isContinuousRange() const { return std::holds_alternative<Range>(data); }
 
-    [[nodiscard]] Range getRange() const
+    Range getRange() const
     {
         chassert(isContinuousRange());
         return std::get<Range>(data);
     }
 
-    [[nodiscard]] const Indexes & getIndexes() const
+    const Indexes & getIndexes() const
     {
         chassert(!isContinuousRange());
         return *std::get<IndexesPtr>(data);
     }
 
-    [[nodiscard]] std::string toString() const
+    std::string toString() const
     {
         if (std::holds_alternative<Range>(data))
         {
@@ -221,23 +220,23 @@ struct ScatteredBlock : private boost::noncopyable
     }
 
     Block & getSourceBlock() & { return block; }
-    [[nodiscard]] const Block & getSourceBlock() const & { return block; }
+    const Block & getSourceBlock() const & { return block; }
 
     Block && getSourceBlock() && { return std::move(block); }
 
-    [[nodiscard]] const auto & getSelector() const { return selector; }
+    const auto & getSelector() const { return selector; }
     std::pair<Block, Selector> detachData() && { return {std::move(block), std::move(selector)}; }
 
-    [[nodiscard]] bool empty() const { return block.empty(); }
+    bool empty() const { return block.empty(); }
 
     /// Accounts only selected rows
-    [[nodiscard]] size_t rows() const { return selector.size(); }
+    size_t rows() const { return selector.size(); }
 
     /// In case of scattered block we account proportional share of the source block bytes.
     /// For not scattered columns it will be trivial (bytes * N / N) calculation.
-    [[nodiscard]] size_t allocatedBytes() const { return block.rows() ? block.allocatedBytes() * rows() / block.rows() : 0; }
+    size_t allocatedBytes() const { return block.rows() ? block.allocatedBytes() * rows() / block.rows() : 0; }
 
-    [[nodiscard]] ScatteredBlock shrinkToFit() const
+    ScatteredBlock shrinkToFit() const
     {
         if (wasScattered())
         {
@@ -247,22 +246,22 @@ struct ScatteredBlock : private boost::noncopyable
         return ScatteredBlock{block.shrinkToFit()};
     }
 
-    [[nodiscard]] ScatteredBlock compress() const
+    ScatteredBlock compress() const
     {
         if (wasScattered())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot compress ScatteredBlock");
         return ScatteredBlock{block.compress()};
     }
 
-    [[nodiscard]] const auto & getByPosition(size_t i) const { return block.getByPosition(i); }
+    const auto & getByPosition(size_t i) const { return block.getByPosition(i); }
 
     /// Whether `block` was scattered, i.e. `selector` != [0, block.rows())
-    [[nodiscard]] bool wasScattered() const
+    bool wasScattered() const
     {
         return selector.size() != block.rows();
     }
 
-    [[nodiscard]] const ColumnWithTypeAndName & getByName(const std::string & name) const
+    const ColumnWithTypeAndName & getByName(const std::string & name) const
     {
         return block.getByName(name);
     }
@@ -370,6 +369,30 @@ private:
 
 using ScatteredBlocks = std::vector<ScatteredBlock>;
 
+/// Describes how a join output column is read from a `StoredBlock`: directly from `columns[index]`
+/// (`Columns`), or as a `(field_offset, field_size)` slice of the block's row store (`RowStore`).
+struct ColumnAccessIndex
+{
+    enum Type : uint8_t { Columns, RowStore };
+
+    ColumnAccessIndex(Type type_, size_t index_, size_t field_offset_ = 0, size_t field_size_ = 0, bool is_nullable_ = false)
+        : type(type_), index(index_), field_offset(field_offset_), field_size(field_size_), is_nullable(is_nullable_)
+    {
+    }
+
+    Type type;
+    size_t index;
+
+    /// Valid only when type is RowStore.
+    size_t field_offset;
+    size_t field_size;
+    bool is_nullable;
+
+    bool operator==(const ColumnAccessIndex &) const = default;
+};
+
+using ColumnAccessIndexes = std::vector<ColumnAccessIndex>;
+
 /// A right-side block as stored by HashJoin for the build/probe lifetime. Owns the (already projected)
 /// columns together with the partition `selector` and the `block_no` that row refs (`RowRef`)
 /// index through `StoredColumnsIndex`. Replaces the former `ColumnsInfo` + `ScatteredColumns` split:
@@ -395,17 +418,17 @@ struct StoredBlock
     /// `replicated_columns` point into the old column objects and dangle once those objects are released.
     void rebuildReplicatedColumns();
 
-    [[nodiscard]] bool hasRowStore() const;
+    bool hasRowStore() const;
 
-    [[nodiscard]] size_t allocatedBytes() const;
-    [[nodiscard]] size_t blockRows() const;
+    size_t allocatedBytes() const;
+    size_t blockRows() const;
 };
 
 struct ExtraScatteredBlocks
 {
     ScatteredBlocks remaining_blocks;
 
-    [[nodiscard]] bool rows() const
+    bool rows() const
     {
         return std::ranges::any_of(remaining_blocks, [](const auto & bl) { return bl.rows(); });
     }

@@ -89,17 +89,17 @@ namespace
 class AggregateFunctionCombinatorMerge final : public IAggregateFunctionCombinator
 {
 public:
-    [[nodiscard]] String getName() const override { return "Merge"; }
+    String getName() const override { return "Merge"; }
 
-    [[nodiscard]] bool transformsArgumentTypes() const override { return true; }
+    bool transformsArgumentTypes() const override { return true; }
 
-    [[nodiscard]] bool acceptsNestedFunction(const IAggregateFunction & nested_function, const DataTypes & arguments) const override
+    bool acceptsNestedFunction(const IAggregateFunction & nested_function, const DataTypes & arguments) const override
     {
         const auto * argument = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         return argument && AggregateFunctionMerge::canMergeStatesOf(nested_function, *argument->getFunction());
     }
 
-    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
+    DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.size() != 1)
             throw Exception(
@@ -120,7 +120,7 @@ public:
         return function->getArgumentsDataTypes();
     }
 
-    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
+    AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,

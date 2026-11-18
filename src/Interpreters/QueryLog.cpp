@@ -1,4 +1,3 @@
-#include <Common/Exception.h>
 #include <Interpreters/QueryLog.h>
 
 #include <Columns/ColumnArray.h>
@@ -18,12 +17,9 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Formats/FormatSettings.h>
 #include <IO/AsyncReadCounters.h>
-#include <IO/ReadBufferFromString.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <base/getFQDNOrHostName.h>
@@ -81,9 +77,9 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
 
         {"read_rows", std::make_shared<DataTypeUInt64>(), "Total number of rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for IN and JOIN. For distributed queries read_rows includes the total number of rows read at all replicas. Each replica sends it's read_rows value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value."},
         {"read_bytes", std::make_shared<DataTypeUInt64>(), "Total number of bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for IN and JOIN. For distributed queries read_bytes includes the total number of rows read at all replicas. Each replica sends it's read_bytes value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value."},
-        {"written_rows", std::make_shared<DataTypeUInt64>(), "The number of rows written by the query, including any rows written by downstream inserts triggered by the pipeline, such as attached materialized views. For a synchronous insert these downstream rows are recorded on the `query_kind` = `Insert` entry; for an asynchronous insert they are recorded on the `query_kind` = `AsyncInsertFlush` entry, while the client-facing `Insert` entry records only the rows accepted from the client, and only when `wait_for_async_insert = 1` makes it wait for that flush result; with `wait_for_async_insert = 0` the client-facing `Insert` entry returns before the flush and this field stays 0. For queries that do not write rows, it is 0."},
-        {"written_bytes", std::make_shared<DataTypeUInt64>(), "The number of bytes written by the query (uncompressed), including any bytes written by downstream inserts triggered by the pipeline, such as attached materialized views. For a synchronous insert these downstream bytes are recorded on the `query_kind` = `Insert` entry; for an asynchronous insert they are recorded on the `query_kind` = `AsyncInsertFlush` entry, while the client-facing `Insert` entry records only the bytes accepted from the client, and only when `wait_for_async_insert = 1` makes it wait for that flush result; with `wait_for_async_insert = 0` the client-facing `Insert` entry returns before the flush and this field stays 0. For queries that do not write data, it is 0."},
-        {"result_rows", std::make_shared<DataTypeUInt64>(), "Number of rows in the result of a SELECT query, or the number of rows written by an insert. For a synchronous insert this includes rows written by downstream inserts triggered by the pipeline (such as attached materialized views) on the `query_kind` = `Insert` entry; for an asynchronous insert those downstream rows are recorded on the `query_kind` = `AsyncInsertFlush` entry, while the client-facing `Insert` entry records only the rows accepted from the client, and only when `wait_for_async_insert = 1` makes it wait for that flush result; with `wait_for_async_insert = 0` this field stays 0."},
+        {"written_rows", std::make_shared<DataTypeUInt64>(), "The number of rows written by the query, including any rows written by downstream inserts triggered by the pipeline, such as attached materialized views. For a synchronous insert these downstream rows are recorded on the `query_kind` = `Insert` entry; for an asynchronous insert they are recorded on the `query_kind` = `AsyncInsertFlush` entry, while the client-facing `Insert` entry records only the rows accepted from the client. For queries that do not write rows, it is 0."},
+        {"written_bytes", std::make_shared<DataTypeUInt64>(), "The number of bytes written by the query (uncompressed), including any bytes written by downstream inserts triggered by the pipeline, such as attached materialized views. For a synchronous insert these downstream bytes are recorded on the `query_kind` = `Insert` entry; for an asynchronous insert they are recorded on the `query_kind` = `AsyncInsertFlush` entry, while the client-facing `Insert` entry records only the bytes accepted from the client. For queries that do not write data, it is 0."},
+        {"result_rows", std::make_shared<DataTypeUInt64>(), "Number of rows in the result of a SELECT query, or the number of rows written by an insert. For a synchronous insert this includes rows written by downstream inserts triggered by the pipeline (such as attached materialized views) on the `query_kind` = `Insert` entry; for an asynchronous insert those downstream rows are recorded on the `query_kind` = `AsyncInsertFlush` entry, while the client-facing `Insert` entry records only the rows accepted from the client."},
         {"result_bytes", std::make_shared<DataTypeUInt64>(), "RAM volume in bytes used to store a query result."},
         {"memory_usage", std::make_shared<DataTypeUInt64>(), "Memory consumption by the query."},
 
@@ -164,12 +160,6 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"used_privileges", array_low_cardinality_string, "Privileges which were successfully checked during query execution."},
         {"missing_privileges", array_low_cardinality_string, "Privileges that are missing during query execution."},
 
-        {"used_number_of_joins", std::make_shared<DataTypeUInt64>(), "The number of physical joins executed for this query. It is collected from the pipelines as they are built, so it reflects the joins that are left after all optimizations, not the number of JOIN clauses in the query text. A join is counted no matter how deeply it is nested: subqueries, common table expressions, views, views of views and the SELECT of a materialized view triggered by an INSERT all report into the row of the query that was sent, so this can be non-zero for a query whose own text holds no JOIN at all. A query that builds a pipeline without running it, such as EXPLAIN PIPELINE, reports the joins of the query it explains. Some pipelines are assembled more than once while a single query runs: the SELECT of a materialized view is assembled for every block of the INSERT that triggers it and by every insert stream, the recursive member of a recursive CTE is assembled for every iteration, and the relation of a loop is assembled again every time it is restarted. The joins of such a pipeline are counted once all the same, so this number describes the query and not how many times its pipelines were assembled."},
-        {"used_join_algorithms", array_low_cardinality_string, "Algorithms of the joins counted in used_number_of_joins: 'HASH', 'GRACE_HASH', 'PARTIAL_MERGE', 'FULL_SORTING_MERGE', 'PARALLEL_FULL_SORTING_MERGE', 'IE_JOIN', 'DIRECT', 'PASTE' and 'CONSTANT', sorted and deduplicated, so an algorithm shared by several joins appears once. This is the algorithm that was chosen to execute each join, not the algorithms that the join_algorithm setting allows. A hash join is 'HASH' whether its hash table was built on one thread or on several. An algorithm can be replaced by another one in the middle of execution, in which case both are reported."},
-        {"used_join_kinds", array_low_cardinality_string, "Kinds of the joins counted in used_number_of_joins, one element per join, so a kind shared by several joins appears several times. The elements are sorted rather than in execution order. Each kind is the one that was executed, which can differ from the query text, because the optimizer may run a join with its sides swapped and thereby turn LEFT into RIGHT."},
-        {"used_join_strictness", array_low_cardinality_string, "Strictness of the joins counted in used_number_of_joins, one element per join, in the same order as used_join_kinds: the element at a given index describes the same join in both arrays."},
-        {"spilled_to_disk", array_low_cardinality_string, "Operators that wrote data to temporary files on disk (processing in external memory) during query execution, sorted and deduplicated. An empty array means the query ran fully in memory."},
-
         {"transaction_id", getTransactionIDDataType(), "The identifier of the transaction in scope of which this query was executed."},
 
         {"query_cache_usage", std::move(query_result_cache_usage_datatype), "Usage of the query cache during query execution. Values: 'Unknown' = Status unknown, 'None' = The query result was neither written into nor read from the query result cache, 'Write' = The query result was written into the query result cache, 'Read' = The query result was read from the query result cache."},
@@ -177,8 +167,6 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"asynchronous_read_counters", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "Metrics for asynchronous reading."},
 
         {"is_internal", std::make_shared<DataTypeUInt8>(), "Indicates whether it is an auxiliary query executed internally."},
-
-        {"query_plan", std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON), "The query plan of the query this row describes, serialized as JSON, with per-step runtime statistics. Only filled when the `log_query_plans` setting is enabled, and empty for `QueryStart` rows, because no plan exists yet at that point. On a row for a query that threw, the plan is the one the query had built when it threw, and it carries no statistics: a query that failed while running had its plan executed in part, and one that failed before running never executed it at all."},
     };
 }
 
@@ -363,12 +351,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(used_row_policies, column_row_policies_names);
         fill_column(used_privileges, column_used_privileges);
         fill_column(missing_privileges, column_missing_privileges);
-
-        typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(used_number_of_joins);
-        fill_column(used_join_algorithms, typeid_cast<ColumnArray &>(*columns[i++]));
-        fill_column(used_join_kinds, typeid_cast<ColumnArray &>(*columns[i++]));
-        fill_column(used_join_strictness, typeid_cast<ColumnArray &>(*columns[i++]));
-        fill_column(spilled_to_disk, typeid_cast<ColumnArray &>(*columns[i++]));
     }
 
     {
@@ -376,7 +358,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         typeid_cast<ColumnUInt64 &>(tid_tuple.getColumn(0)).getData().push_back(tid.start_csn);
         typeid_cast<ColumnUInt64 &>(tid_tuple.getColumn(1)).getData().push_back(tid.local_tid);
         typeid_cast<ColumnUUID &>(tid_tuple.getColumn(2)).getData().push_back(tid.host_id);
-        typeid_cast<ColumnInt64 &>(tid_tuple.getColumn(3)).getData().push_back(tid.session_node_version);
     }
 
     typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(uint8_t(query_result_cache_usage));
@@ -399,39 +380,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     }
 
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(is_internal);
-
-    {
-        auto & query_plan_column = *columns[i++];
-        const size_t row_before_plan = query_plan_column.size();
-        if (query_plan.empty())
-        {
-            query_plan_column.insertDefault();
-        }
-        else
-        {
-            /// A `SerializationJSON` carries mutable per-use caches, so one cannot be shared
-            /// across queries.
-            const auto plan_type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
-            const auto plan_serialization = plan_type->getDefaultSerialization();
-
-            try
-            {
-                ReadBufferFromString plan_buffer(query_plan);
-                plan_serialization->deserializeWholeText(query_plan_column, plan_buffer, FormatSettings{});
-            }
-            catch (...)
-            {
-                tryLogCurrentException(
-                    "QueryLog",
-                    "Could not parse the query plan of query " + client_info.current_query_id + ", storing it empty");
-
-                if (query_plan_column.size() > row_before_plan)
-                    query_plan_column.popBack(query_plan_column.size() - row_before_plan);
-
-                query_plan_column.insertDefault();
-            }
-        }
-    }
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)

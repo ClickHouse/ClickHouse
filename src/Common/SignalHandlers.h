@@ -1,6 +1,5 @@
 #pragma once
 #include <csignal>
-#include <exception>
 
 #include <base/defines.h>
 #include <Common/Logger_fwd.h>
@@ -121,23 +120,17 @@ public:
     explicit SignalListener(BaseDaemon * daemon_, LoggerPtr log_, TerminateRequestCallback terminate_request_callback_ = nullptr);
     void run() override;
 
-    /// Also returns, by rethrowing it, when building the symbol index in this thread has failed (see `run`).
     bool waitForTerminationRequest(std::chrono::milliseconds timeout = std::chrono::milliseconds::max());
 
 private:
     BaseDaemon * daemon;
     LoggerPtr log;
     std::function<String()> build_id;
-    /// The build id only if it is already known, without building the symbol index to learn it.
-    /// Used for the lines that are printed before the bare stack trace: see `SignalListener::run`.
-    std::function<String()> build_id_if_already_known;
     TerminateRequestCallback terminate_request_callback;
 
     std::mutex terminate_request_mutex;
     std::condition_variable terminate_request_cv;
     size_t terminate_requested = 0;
-    /// The failure to build the symbol index at the start of `run`, for the main thread to rethrow.
-    std::exception_ptr symbol_index_exception;
 
     void onTerminate(std::string_view message, UInt32 thread_num) const;
 

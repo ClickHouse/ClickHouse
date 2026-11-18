@@ -84,16 +84,7 @@ do
     i=$(($i+1))
 done
 
-# The `master` build by default. `CLICKHOUSE_BRANCH=latest` selects the newest release branch,
-# any other value names a folder on builds.clickhouse.com, such as `26.10`.
-CLICKHOUSE_BRANCH="${CLICKHOUSE_BRANCH:-master}"
-if [ "${CLICKHOUSE_BRANCH}" = "latest" ]
-then
-    CLICKHOUSE_BRANCH=$(curl -fsSL https://clickhouse.com/data/version_date.tsv | sed -n 's/^v\([0-9]*\.[0-9]*\)\..*/\1/p' | sort -uV | tail -n 1)
-    [ -n "${CLICKHOUSE_BRANCH}" ] || { echo "Cannot find the latest release branch in version_date.tsv."; exit 1; }
-fi
-
-URL="https://builds.clickhouse.com/${CLICKHOUSE_BRANCH}/${DIR}/clickhouse"
+URL="https://builds.clickhouse.com/master/${DIR}/clickhouse"
 echo
 echo "Will download ${URL} into ${clickhouse}"
 echo

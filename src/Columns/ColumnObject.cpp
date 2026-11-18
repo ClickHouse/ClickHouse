@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypesCache.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Columns/ColumnObject.h>
@@ -7,7 +6,6 @@
 #include <Columns/ColumnVariant.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
@@ -1295,13 +1293,6 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
     const auto & shared_data_offsets = getSharedDataOffsets();
     size_t start = shared_data_offsets[static_cast<ssize_t>(n) - 1];
     size_t end = shared_data_offsets[static_cast<ssize_t>(n)];
-
-    /// The number of paths and the size of each path delimit the object, as in `serializeDynamicPathsAndSharedDataIntoArena`.
-    size_t num_paths = end - start;
-    for (const auto & [_, column] : dynamic_paths_ptrs)
-        num_paths += !column->isNullAt(n);
-    hash.update(num_paths);
-
     auto dynamic_paths_it = sorted_dynamic_paths.begin();
     for (size_t i = start; i != end; ++i)
     {
@@ -1312,7 +1303,6 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
             const auto * dynamic_column = dynamic_paths_ptrs.find(*dynamic_paths_it)->second;
             if (!dynamic_column->isNullAt(n))
             {
-                hash.update(dynamic_paths_it->size());
                 hash.update(*dynamic_paths_it);
                 dynamic_column->updateHashWithValue(n, hash);
             }
@@ -1323,7 +1313,6 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
         auto value = shared_data_values->getDataAt(i);
         ReadBufferFromMemory buf(value);
         auto value_type = decodeDataType(buf);
-        hash.update(path.size());
         hash.update(path);
 
         /// A shared_data entry can be encoded as Nothing (a serialized NULL). Nothing has no usable
@@ -1338,9 +1327,9 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
         }
 
         auto type_name = value_type->getName();
-        ColumnDynamic::updateHashWithTypeName(hash, type_name);
+        hash.update(type_name);
         auto tmp_column = value_type->createColumn();
-        getDataTypesCache().getSerialization(type_name, value_type)->deserializeBinary(*tmp_column, buf, getFormatSettings());
+        getDataTypesCache().getSerialization(type_name)->deserializeBinary(*tmp_column, buf, getFormatSettings());
         tmp_column->updateHashWithValue(0, hash);
     }
 
@@ -1350,7 +1339,6 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
         const auto * dynamic_column = dynamic_paths_ptrs.find(*dynamic_paths_it)->second;
         if (!dynamic_column->isNullAt(n))
         {
-            hash.update(dynamic_paths_it->size());
             hash.update(*dynamic_paths_it);
             dynamic_column->updateHashWithValue(n, hash);
         }
@@ -1581,7 +1569,7 @@ struct ColumnObject::ComparatorBase
     {
     }
 
-    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = parent.compareAt(lhs, rhs, parent, nan_direction_hint);
 
@@ -1970,9 +1958,7 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
     for (const auto & [path, column] : dynamic_paths)
         dynamic_paths_source_columns[path].reserve(source_columns.size());
 
-    /// Include the rows that this column already has: the discriminators and offsets of the dynamic paths are reserved
-    /// exactly, so a smaller reservation makes every dynamic path grow (reallocate and copy) during the squashing.
-    size_t total_size = size();
+    size_t total_size = 0;
     for (const auto & source_column : source_columns)
     {
         const auto & source_object_column = assert_cast<const ColumnObject &>(*source_column);
@@ -2219,33 +2205,6 @@ void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
     /// The loops over `source_columns` below rely on this check.
     for (const auto & source_column : source_columns)
         getSourceObjectColumn(*source_column, *this, "statistics");
-
-    /// The writer of a part takes the statistics from its sample column for every block. When the statistics of the
-    /// only source already match our dynamic paths, the code below would build an exact copy of them, so share them.
-    if (source_columns.size() == 1)
-    {
-        const auto & source_object = assert_cast<const ColumnObject &>(*source_columns.front());
-        auto source_statistics = source_object.getOrCalculateStatistics();
-        bool can_share = source_statistics->shared_data_paths_statistics.size() <= Statistics::MAX_SHARED_DATA_STATISTICS_SIZE;
-        for (const auto & [path, _] : source_statistics->dynamic_paths_statistics)
-            can_share = can_share && dynamic_paths.contains(path);
-        for (const auto & [path, _] : dynamic_paths)
-            can_share = can_share && !source_statistics->shared_data_paths_statistics.contains(path);
-
-        if (can_share)
-        {
-            statistics = std::move(source_statistics);
-            for (auto & [path, column] : dynamic_paths)
-            {
-                auto it = source_object.dynamic_paths.find(path);
-                if (it != source_object.dynamic_paths.end())
-                    column->takeOrCalculateStatisticsFrom({it->second});
-            }
-            for (auto & [path, column] : typed_paths)
-                column->takeOrCalculateStatisticsFrom({source_object.typed_paths.at(path)});
-            return;
-        }
-    }
 
     Statistics new_statistics;
     /// Collect total sizes for paths that are not in our dynamic_paths (candidates for shared data statistics).
@@ -2524,13 +2483,12 @@ std::string_view ColumnObject::SortedPathsIterator::getCurrentSharedDataValue() 
     return shared_data_values->getDataAt(shared_data_it);
 }
 
-ColumnObject::SortedPathsIterator::PathInfo ColumnObject::SortedPathsIterator::getCurrentPathInfo(bool materialize_shared_data_value) const
+ColumnObject::SortedPathsIterator::PathInfo ColumnObject::SortedPathsIterator::getCurrentPathInfo() const
 {
     PathInfo path_info;
     path_info.type = current_path_type;
     path_info.path = getCurrentPath();
-    if (current_path_type != PathType::SHARED_DATA || materialize_shared_data_value)
-        std::tie(path_info.column, path_info.row) = getCurrentPathColumnAndRow();
+    std::tie(path_info.column, path_info.row) = getCurrentPathColumnAndRow();
     return path_info;
 }
 

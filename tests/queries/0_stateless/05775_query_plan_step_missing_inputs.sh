@@ -257,7 +257,7 @@ def sendPlan(step_name, payload, num_children=0, children=None):
 
 def main():
     # 117 == INCORRECT_DATA
-    for step_name, payload in [("Extremes", b""), ("Limit", b"\x00\x01\x00"), ("Union", b"\x00"), ("BlocksMarshalling", b"")]:
+    for step_name, payload in [("Extremes", b""), ("Limit", b"\x00\x01\x00"), ("Union", b"\x00")]:
         print(step_name, sendPlan(step_name, payload))
     # A step with more children than it has inputs.
     print("Extremes with two children", sendPlan("Extremes", b"", num_children=2))
