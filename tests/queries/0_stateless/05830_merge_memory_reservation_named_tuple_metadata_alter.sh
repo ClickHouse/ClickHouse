@@ -22,7 +22,7 @@ function reserved_for_merge()
 {
     local alter="$1"
     local data_dir
-    data_dir=$(mktemp -d "${CLICKHOUSE_TMP}/05829_merge_memory_reservation_tuple_XXXXXX")
+    data_dir=$(mktemp -d "${CLICKHOUSE_TMP}/05830_merge_memory_reservation_tuple_XXXXXX")
 
     ${CLICKHOUSE_LOCAL} --path "$data_dir" -q "
         SET allow_metadata_only_named_tuple_alter = 1, allow_suspicious_fixed_string_types = 1;

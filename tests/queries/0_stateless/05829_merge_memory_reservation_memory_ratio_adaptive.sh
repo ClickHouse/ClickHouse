@@ -24,7 +24,7 @@ function reserved_for_merge()
 {
     local ratio="$1"
     local data_dir
-    data_dir=$(mktemp -d "${CLICKHOUSE_TMP}/05828_merge_memory_reservation_ratio_XXXXXX")
+    data_dir=$(mktemp -d "${CLICKHOUSE_TMP}/05829_merge_memory_reservation_ratio_XXXXXX")
 
     local columns="k UInt64"
     local values="number"
