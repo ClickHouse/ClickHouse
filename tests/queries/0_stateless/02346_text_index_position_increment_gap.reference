@@ -1,0 +1,64 @@
+positions with the default gap, empty and NULL elements add no gap
+0	clickhouse	[1]
+0	happy	[65]
+0	hello	[0]
+0	world	[66]
+1	hello	[0]
+1	world	[1]
+2	clickhouse	[0]
+2	happy	[66]
+2	hello	[1]
+2	world	[65]
+3	hello	[0]
+3	world	[64]
+hasPhrase hello world
+[2]
+[2]
+hasPhrase clickhouse happy
+[]
+[]
+hasPhrase world happy
+[3]
+[3]
+hasPhrase is read from the index, without the function
+0
+positions after a merge
+0	clickhouse	[1]
+0	happy	[65]
+2	clickhouse	[0]
+2	happy	[66]
+4	clickhouse	[0]
+4	happy	[64]
+[]
+an explicit gap
+0	clickhouse	[1]
+0	happy	[3]
+0	hello	[0]
+0	world	[4]
+0
+1
+LowCardinality elements, with and without the cache of tokenized values
+brown	[[1]]
+fox	[[65]]
+quick	[[0]]
+0
+17
+a postprocessor
+0	brown	[1]
+0	fox	[65]
+0	quick	[0]
+1	brown	[0]
+1	fox	[1]
+[2]
+[2]
+a String column has no elements to separate
+0	clickhouse	[1]
+0	hello	[0]
+0	world	[2]
+the array tokenizer: every element is one token and a phrase spans elements
+0	clickhouse	[1]
+0	hello	[0]
+0	world	[2]
+1
+0
+invalid arguments
