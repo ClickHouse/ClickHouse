@@ -70,6 +70,7 @@ HTTPSessionPtr makeHTTPSession(
     const ConnectionTimeouts & timeouts,
     const ProxyConfiguration & proxy_config = {},
     UInt64 * connect_time = nullptr,
+    HTTPConnectionTransport transport = HTTPConnectionTransport::FiberUnaware,
     std::optional<std::chrono::steady_clock::time_point> deadline = {}
 );
 

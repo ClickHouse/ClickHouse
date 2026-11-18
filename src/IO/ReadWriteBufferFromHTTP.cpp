@@ -3,6 +3,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/WriteHelpers.h>
 #include <IO/parseHTTPDate.h>
+#include <Common/Base64.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/HTTPHeaderFilter.h>
@@ -76,7 +77,7 @@ Strings headerCredentialSecrets(const HTTPHeaderEntries & entries)
 {
     Poco::Net::HTTPRequest request;
     for (const auto & [header, value] : entries)
-        request.set(header, value);
+        request.set(header, String(value));
     return requestCredentialSecrets(request);
 }
 
@@ -138,7 +139,7 @@ void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, s
         request.setContentLength(0);    /// No callback - no body
 
     for (const auto & [header, value] : http_header_entries)
-        request.set(header, value);
+        request.set(header, String(value));
 
     if (range)
     {
@@ -316,14 +317,23 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
     Poco::Net::HTTPRequest request(method_, current_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
     prepareRequest(request, range, with_request_body);
 
-    auto session = makeHTTPSession(connection_group, current_uri, getTimeoutsForTry(), proxy_config, /*connect_time=*/ nullptr, deadline);
+    auto session = makeHTTPSession(
+        connection_group, current_uri, getTimeoutsForTry(), proxy_config, /*connect_time=*/ nullptr, HTTPConnectionTransport::FiberUnaware, deadline);
     /// Connecting and sending use up some of the time.
     if (deadline)
         setTimeouts(*session, getTimeoutsForTry());
 
     ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPRequestsSent);
 
-    auto body_out = sendHTTPRequest(*session, request, buffer_size);
+    /// Without these limits, the response header gets the small defaults of `Poco`, for example 8 KiB for a field value.
+    const auto & http_settings = read_settings.http_settings;
+    auto to_limit = [](size_t value) { return static_cast<int>(std::min<size_t>(value, std::numeric_limits<int>::max())); };
+    const Poco::Net::HTTPHeaderLimits response_header_limits{
+        .fields = to_limit(http_settings.max_fields),
+        .name_length = to_limit(http_settings.max_field_name_size),
+        .value_length = to_limit(http_settings.max_field_value_size)};
+
+    auto body_out = sendHTTPRequest(*session, request, buffer_size, nullptr, nullptr, response_header_limits);
     if (out_stream_callback && with_request_body)
         out_stream_callback(*body_out);
     body_out->finalize();
@@ -1110,7 +1120,17 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTP
     return createWithBearerToken(/*bearer_token_=*/ "", credentials_);
 }
 
-ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(const std::string & bearer_token_)
+ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBasicCredentials(std::string_view user_, std::string_view password_)
+{
+    if (user_.empty())
+        return createWithBearerToken(/*bearer_token_=*/ "");
+
+    BuilderRWBufferFromHTTP builder = *this;
+    builder.http_header_entries.emplace_back("Authorization", "Basic " + base64Encode(fmt::format("{}:{}", user_, password_)));
+    return builder.createWithBearerToken(/*bearer_token_=*/ "");
+}
+
+ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(std::string_view bearer_token_)
 {
     /// The buffer keeps a reference to the credentials, hence the immutable static empty object.
     static const Poco::Net::HTTPBasicCredentials no_credentials;
@@ -1118,7 +1138,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(const 
 }
 
 ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
-    const std::string & bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_)
+    std::string_view bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_)
 {
     /// Proxy discovery can make a request of its own.
     if (deadline && std::chrono::steady_clock::now() >= *deadline)
@@ -1141,7 +1161,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
     /// the same builder can be reused without carrying over a stale `Authorization` header.
     HTTPHeaderEntries header_entries = http_header_entries;
     if (!bearer_token_.empty())
-        header_entries.emplace_back("Authorization", "Bearer " + bearer_token_);
+        header_entries.emplace_back("Authorization", fmt::format("Bearer {}", bearer_token_));
 
     // todo it could be a problem if ReadWriteBufferFromHTTP throws
     std::unique_ptr<ReadWriteBufferFromHTTP> ptr(new ReadWriteBufferFromHTTP(

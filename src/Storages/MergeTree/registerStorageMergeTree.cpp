@@ -992,7 +992,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         /// Updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
-            metadata.settings_changes = args.storage_def->settings->ptr();
+            metadata.setSettingsChanges(args.storage_def->settings->ptr());
 
         /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
         /// going through the codec gate that column codecs and `TTL ... RECOMPRESS` use, so a gated codec
@@ -1237,6 +1237,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 merging_params.getModeName());
     }
 
+    if (metadata.secondary_indices.hasType("vector_similarity") && args.mode == LoadingStrictnessLevel::CREATE && !is_ddl_replay
+        && !is_stored_definition)
+        MergeTreeData::checkVectorSimilarityIndexIsAllowed(merging_params, *storage_settings);
+
     if (arg_num != arg_cnt)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong number of engine arguments.");
 
@@ -1323,9 +1327,6 @@ void registerStorageMergeTree(StorageFactory & factory)
 
     factory.registerStorage("MergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = String(R"DOCS_MD(
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # MergeTree table engine
 
 The `MergeTree` engine and other engines of the `MergeTree` family (e.g. `ReplacingMergeTree`, `AggregatingMergeTree`) are the most commonly used and most robust table engines in ClickHouse.
@@ -2037,7 +2038,7 @@ TTL time_column
 TTL time_column + interval
 ```
 
-To define `interval`, use [time interval](/reference/operators#operators-for-working-with-dates-and-times) operators, for example:
+To define `interval`, use [time interval](/reference/operators/index#operators-for-working-with-dates-and-times) operators, for example:
 
 ```sql
 TTL date_time + INTERVAL 1 MONTH
@@ -2389,7 +2390,7 @@ The number of threads performing background moves of data parts can be changed b
 In the case of `MergeTree` tables, data is getting to disk in different ways:
 
 - As a result of an insert (`INSERT` query).
-- During background merges and [mutations](/reference/statements/alter#mutations).
+- During background merges and [mutations](/reference/statements/alter/index#mutations).
 - When downloading from another replica.
 - As a result of partition freezing [ALTER TABLE ... FREEZE PARTITION](/reference/statements/alter/partition#freeze-partition).
 
@@ -3493,7 +3494,9 @@ You can use `AggregatingMergeTree` tables for incremental data aggregation, incl
 
 You can see an example of how to use the AggregatingMergeTree and Aggregate functions in the below video:
 <div class='vimeo-container'>
-<iframe width="1030" height="579" src="https://www.youtube.com/embed/pryhI4F_zqQ" title="Aggregation States in ClickHouse" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+<Frame>
+<iframe src="https://www.youtube.com/embed/pryhI4F_zqQ" title="Aggregation States in ClickHouse" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
 </div>
 
 The engine processes all columns with the following types:

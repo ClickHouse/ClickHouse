@@ -59,9 +59,10 @@ HTTPSessionPtr makeHTTPSession(
     const ConnectionTimeouts & timeouts,
     const ProxyConfiguration & proxy_configuration,
     UInt64 * connect_time,
+    HTTPConnectionTransport transport,
     std::optional<std::chrono::steady_clock::time_point> deadline)
 {
-    auto connection_pool = HTTPConnectionPools::instance().getPool(group, uri, proxy_configuration);
+    auto connection_pool = HTTPConnectionPools::instance().getPool(group, uri, proxy_configuration, transport);
     return connection_pool->getConnection(timeouts, connect_time, deadline);
 }
 
