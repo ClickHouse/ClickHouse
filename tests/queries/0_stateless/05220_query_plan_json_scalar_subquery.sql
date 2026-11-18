@@ -41,8 +41,12 @@ WHERE v = (SELECT max(v) FROM t_scalar_05220 AS i WHERE i.k = o.k)
 -- Two subqueries folded into one constant. Constant folding collapses the whole expression, so
 -- the ids have to travel onto the constant it produces -- and there are two of them, which is why
 -- a constant carries a list rather than one id.
+--
+-- Both aggregates can be answered without reading the table, `sum` from the column statistics
+-- (`_statistics_projection`) and `count` from the part metadata, and then no step names it.
 SELECT (SELECT sum(v) FROM t_scalar_05220) + (SELECT count() FROM t_scalar_05220) AS s
-    SETTINGS log_comment = '05220_folded' FORMAT Null;
+    SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0,
+             log_comment = '05220_folded' FORMAT Null;
 
 -- A subquery supplying LIMIT or OFFSET. The value is consumed by a step that holds no
 -- `ActionsDAG` -- `LimitStep` keeps its bound as a plain field -- so it cannot be linked the way

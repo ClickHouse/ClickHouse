@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/Profiling/Analysis/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/Profiling/Capture/PlanWalk.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Profiling/Render/FlatJSONPlanRenderer.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Columns/ColumnConst.h>
@@ -169,21 +170,28 @@ void QueryPlanLogCapture::recordConsumedSubqueries(QueryPlan & plan)
 
 void QueryPlanLogCapture::capturePlanStructure(const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names, size_t max_description_length)
 {
-    /// One plan per query, and nothing is asked of this before it.
-    chassert(!captured);
-
     /// Without statistics: the query has not run yet. They are filled in by `captureStatistics`.
     auto plan = CapturedPlan::capture(walk, planExplainOptions(), max_description_length, /*steps_to_stats=*/ nullptr, &pretty_names);
 
-    std::lock_guard lock(sub_plans_mutex);
+    std::lock_guard lock(mutex);
+
+    /// One plan per query, and nothing is asked of this before it.
+    chassert(!captured);
+
     plan.sub_plans = std::move(pending_sub_plans);
     pending_sub_plans.clear();
     captured = std::move(plan);
 }
 
+void QueryPlanLogCapture::dropCapturedPlan()
+{
+    std::lock_guard lock(mutex);
+    captured.reset();
+}
+
 void QueryPlanLogCapture::addSubPlan(CapturedSubPlan sub_plan)
 {
-    std::lock_guard lock(sub_plans_mutex);
+    std::lock_guard lock(mutex);
     if (captured)
         captured->sub_plans.push_back(std::move(sub_plan));
     else
@@ -191,10 +199,19 @@ void QueryPlanLogCapture::addSubPlan(CapturedSubPlan sub_plan)
 }
 
 SubPlanCapture QueryPlanLogCapture::captureSubPlan(
-    const ContextPtr & context, QueryPlan & sub_plan, size_t subquery_id, SubPlanKind kind)
+    const ContextPtr & context,
+    QueryPlan & sub_plan,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    size_t subquery_id,
+    SubPlanKind kind)
 {
     auto owner = context->getPlanLogCapture();
     if (!owner)
+        return {};
+
+    /// Still set only if `applyDistributedPlanFallbackToLocal` accepted the plan. Possible for a
+    /// scalar subquery, whose own `SETTINGS` can ask for a distributed plan that the query did not.
+    if (optimization_settings.make_distributed_plan)
         return {};
 
     if (!sub_plan.isInitialized() || !sub_plan.getRootNode())
@@ -375,6 +392,7 @@ void QueryPlanLogCapture::captureStatistics(QueryPipeline & pipeline)
 {
     const StepProfilerPtr profiler = pipeline.getStepProfiler();
 
+    std::lock_guard lock(mutex);
     if (!captured || !profiler)
         return;
 

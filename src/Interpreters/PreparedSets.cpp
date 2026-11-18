@@ -497,7 +497,7 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     plan->applyDistributedPlanFallbackToLocal(optimization_settings);
     plan->optimize(optimization_settings);
 
-    auto sub_plan_capture = QueryPlanLogCapture::captureSubPlan(context, *plan, subquery_id, SubPlanKind::Set);
+    auto sub_plan_capture = QueryPlanLogCapture::captureSubPlan(context, *plan, optimization_settings, subquery_id, SubPlanKind::Set);
 
     auto builder = plan->buildQueryPipeline(
         optimization_settings, BuildQueryPipelineSettings(context), /*do_optimize=*/false);
@@ -720,7 +720,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         plan_to_run.applyDistributedPlanFallbackToLocal(optimization_settings);
         plan_to_run.optimize(optimization_settings);
 
-        auto sub_plan_capture = QueryPlanLogCapture::captureSubPlan(context, plan_to_run, subquery_id, SubPlanKind::Set);
+        auto sub_plan_capture = QueryPlanLogCapture::captureSubPlan(context, plan_to_run, optimization_settings, subquery_id, SubPlanKind::Set);
 
         auto builder = plan_to_run.buildQueryPipeline(
             optimization_settings, BuildQueryPipelineSettings(context), /*do_optimize=*/false);

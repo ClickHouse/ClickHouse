@@ -83,9 +83,18 @@ public:
     static void recordConsumedSubqueries(QueryPlan & plan);
 
     /// Starts recording a sub-plan, if the query in `context` is being captured at all. Call after
-    /// the sub-plan is optimized and before its pipeline is built.
+    /// the sub-plan is optimized and before its pipeline is built, with the settings it is going
+    /// to be built with.
+    ///
+    /// A sub-plan that runs as a distributed plan is not recorded, as a distributed query's own
+    /// plan is not: building the pipeline replaces its steps with one that reads from the
+    /// distributed executor, which is all that would be left to describe.
     static SubPlanCapture captureSubPlan(
-        const ContextPtr & context, QueryPlan & sub_plan, size_t subquery_id, SubPlanKind kind);
+        const ContextPtr & context,
+        QueryPlan & sub_plan,
+        const QueryPlanOptimizationSettings & optimization_settings,
+        size_t subquery_id,
+        SubPlanKind kind);
 
     /// Records the shape of the plan as values. Called once the pipeline has been built, which is
     /// both the first moment the index analysis and the lazily built child plans exist, and the
@@ -97,15 +106,24 @@ public:
 
     /// Forgets the captured plan, so that a query whose profiling could not be set up logs no
     /// plan at all rather than one that can never be given its statistics.
-    void dropCapturedPlan() { captured.reset(); }
+    void dropCapturedPlan();
 
     /// Records what the pipeline measured. Does not keep the pipeline object, but extracts
     /// the statistics out of it.
     void captureStatistics(QueryPipeline & pipeline);
 
-    /// The captured plan, if there is one. Rendering it is the caller's business: this captures,
-    /// and only the places that write a plan out decide in what form.
-    [[nodiscard]] const std::optional<CapturedPlan> & getCapturedPlan() const { return captured; }
+    /// Calls `f` with the captured plan, if there is one. Rendering it is the caller's business:
+    /// this captures, and only the places that write a plan out decide in what form.
+    ///
+    /// `f` runs under the lock that sub-plans finishing on other threads take, so the plan cannot
+    /// change while it is being read.
+    template <typename F>
+    void withCapturedPlan(F && f) const
+    {
+        std::lock_guard lock(mutex);
+        if (captured)
+            std::forward<F>(f)(*captured);
+    }
 
 private:
     friend class SubPlanCapture;
@@ -114,15 +132,18 @@ private:
     /// from several threads.
     void addSubPlan(CapturedSubPlan sub_plan);
 
+    /// Guards everything below. Sub-plans are published from whichever thread built them, and
+    /// nothing guarantees that a set still being built on another thread has finished by the
+    /// time a failed query renders its plan.
+    mutable std::mutex mutex;
+
     /// Sub-plans finished before the query's own plan was captured, such as every scalar subquery,
     /// which runs during analysis. Moved into `captured` when it is taken; later ones are appended
-    /// to it directly. All of them have finished by the time the plan is rendered, since the
-    /// pipelines they run in are done before the query is.
-    std::mutex sub_plans_mutex;
-    std::vector<CapturedSubPlan> pending_sub_plans TSA_GUARDED_BY(sub_plans_mutex);
+    /// to it directly.
+    std::vector<CapturedSubPlan> pending_sub_plans TSA_GUARDED_BY(mutex);
 
     /// The plan, as values. Taken when the structure is captured and valid from then on, so the
     /// plan itself is not kept: it belongs to the interpreter and dies whenever that does.
-    std::optional<CapturedPlan> captured;
+    std::optional<CapturedPlan> captured TSA_GUARDED_BY(mutex);
 };
 }

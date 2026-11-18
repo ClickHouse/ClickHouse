@@ -344,7 +344,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 query_plan.optimize(optimization_settings);
 
                 sub_plan_capture = QueryPlanLogCapture::captureSubPlan(
-                    subquery_context, query_plan, *scalar_subquery_id, SubPlanKind::Scalar);
+                    subquery_context, query_plan, optimization_settings, *scalar_subquery_id, SubPlanKind::Scalar);
 
                 auto pipeline_builder = std::move(*query_plan.buildQueryPipeline(
                     optimization_settings, build_pipeline_settings, /*do_optimize=*/false));

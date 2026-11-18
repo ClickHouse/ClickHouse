@@ -941,45 +941,44 @@ static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
     if (!plan_log_capture)
         return;
 
-    const auto & captured = plan_log_capture->getCapturedPlan();
-    if (!captured)
-        return;
-
-    /// Runs on the logging path of a query that has already returned its result, so failing to
-    /// write the plan must not fail the query. Producing the document is also the one part of
-    /// profiling that allocates in proportion to the plan, hence the blocker.
-    MemoryTrackerBlockerInThread block_memory_tracker;
-
-    const size_t max_size = context->getSettingsRef()[Setting::log_query_plans_max_size];
-
-    try
+    plan_log_capture->withCapturedPlan([&](const CapturedPlan & captured)
     {
-        /// A query decides how much text its own plan contains, so the document is written into a
-        /// buffer that cannot grow past the limit rather than measured once it already has.
-        /// `MemoryWriteBuffer` throws rather than allocate the chunk that would cross it.
-        MemoryWriteBuffer plan_buffer(max_size, PLAN_RENDER_INITIAL_CHUNK_SIZE);
-        FlatJSONPlanRenderer renderer;
-        renderer.render(*captured, plan_buffer);
-        plan_buffer.finalize();
+        /// Runs on the logging path of a query that has already returned its result, so failing to
+        /// write the plan must not fail the query. Producing the document is also the one part of
+        /// profiling that allocates in proportion to the plan, hence the blocker.
+        MemoryTrackerBlockerInThread block_memory_tracker;
 
-        WriteBufferFromString out(elem.query_plan);
-        copyData(*plan_buffer.tryGetReadBuffer(), out);
-        out.finalize();
-    }
-    catch (const WriteBuffer::CurrentBufferExhausted &)
-    {
-        /// Not logged: a plan over the limit is a query's own doing, not a fault of the server,
-        /// and the row carries the reason. The exception says only that a buffer ran out, naming
-        /// neither the plan nor the setting, so the message is written here instead.
-        writeQueryPlanError(
-            elem.query_plan,
-            fmt::format("The query plan does not fit in {} bytes, the limit set by log_query_plans_max_size", max_size));
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        writeQueryPlanError(elem.query_plan, getCurrentExceptionMessage(/*with_stacktrace=*/ false));
-    }
+        const size_t max_size = context->getSettingsRef()[Setting::log_query_plans_max_size];
+
+        try
+        {
+            /// A query decides how much text its own plan contains, so the document is written into a
+            /// buffer that cannot grow past the limit rather than measured once it already has.
+            /// `MemoryWriteBuffer` throws rather than allocate the chunk that would cross it.
+            MemoryWriteBuffer plan_buffer(max_size, PLAN_RENDER_INITIAL_CHUNK_SIZE);
+            FlatJSONPlanRenderer renderer;
+            renderer.render(captured, plan_buffer);
+            plan_buffer.finalize();
+
+            WriteBufferFromString out(elem.query_plan);
+            copyData(*plan_buffer.tryGetReadBuffer(), out);
+            out.finalize();
+        }
+        catch (const WriteBuffer::CurrentBufferExhausted &)
+        {
+            /// Not logged: a plan over the limit is a query's own doing, not a fault of the server,
+            /// and the row carries the reason. The exception says only that a buffer ran out, naming
+            /// neither the plan nor the setting, so the message is written here instead.
+            writeQueryPlanError(
+                elem.query_plan,
+                fmt::format("The query plan does not fit in {} bytes, the limit set by log_query_plans_max_size", max_size));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            writeQueryPlanError(elem.query_plan, getCurrentExceptionMessage(/*with_stacktrace=*/ false));
+        }
+    });
 }
 static void logQueryFinishImpl(
     QueryLogElement & elem,
