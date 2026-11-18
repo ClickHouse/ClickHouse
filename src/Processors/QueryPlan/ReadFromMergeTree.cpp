@@ -2855,9 +2855,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     if (do_not_merge_across_partitions_select_final
         && storage_snapshot->metadata->hasPartitionKey())
     {
-        const auto & partition_key = storage_snapshot->metadata->getPartitionKey();
         minmax_column_names = MergeTreeData::getMinMaxColumns(
-            partition_key, data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).getNames();
+            *storage_snapshot->metadata, data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).getNames();
         num_minmax_columns = minmax_column_names.size();
     }
 
