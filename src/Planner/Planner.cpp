@@ -1011,8 +1011,7 @@ void Planner::buildPlanForQueryNode()
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
 
-    /// Runs here, before the FetchColumns early return, because this context owns the table
-    /// expression data the legacy spelling is generated from and a UNION branch destroys its own.
+    /// Before the FetchColumns early return: needs this context's table expression data.
     if (select_query_options.to_stage != QueryProcessingStage::Complete
         && select_query_options.to_stage != QueryProcessingStage::QueryPlan)
         collectLegacyActionNodeNames(query_tree, planner_context);

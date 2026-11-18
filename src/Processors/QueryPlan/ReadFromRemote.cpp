@@ -525,9 +525,6 @@ ASTPtr tryBuildAdditionalFilterAST(
     return node_to_ast[dag.getOutputs().front()];
 }
 
-/// Tell `executor` how a peer older than `legacy_quoted_identifiers_version` spells the plan column
-/// identifiers of the header it expects. Shared by every executor that can receive an intermediate
-/// stage, so all of them resolve such a header the same way.
 static void setLegacyHeaderNames(
     RemoteQueryExecutor & executor,
     const Block & header,

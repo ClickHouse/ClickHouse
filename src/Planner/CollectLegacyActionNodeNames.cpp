@@ -37,8 +37,7 @@ public:
         if (node_type != QueryTreeNodeType::COLUMN && node_type != QueryTreeNodeType::FUNCTION)
             return;
 
-        /// Each renderer needs its own cache: the cache is keyed by node, so a shared one would
-        /// hand a name rendered under one convention to the other.
+        /// The name cache is keyed by node alone, so each convention needs its own.
         auto current_name = calculateActionNodeName(
             node, *planner_context, current_names_cache, true, ColumnIdentifierConvention::Current);
 
@@ -46,8 +45,6 @@ public:
             node, *planner_context, legacy_names_cache, true, ColumnIdentifierConvention::Legacy,
             &unrenderable_legacy_nodes);
 
-        /// A legacy name that fell back to a bare column name for a column that does have an
-        /// identifier does not say which column it is, so it is refused rather than recorded.
         if (unrenderable_legacy_nodes.contains(node))
             legacy_names.addAmbiguous(current_name);
         else
@@ -56,10 +53,8 @@ public:
 
     static bool needChildVisit(const QueryTreeNodePtr & /*parent*/, const QueryTreeNodePtr & child)
     {
-        /// Nested QUERY/UNION scopes name a different namespace, and table/table-function argument
-        /// lists may contain unresolved identifiers (the `key = value` named-collection overrides of
-        /// `s3`/`url`) that `calculateActionNodeName` cannot name. UNION branches are collected
-        /// separately, from inside buildPlanForUnionNode, while each branch planner is alive.
+        /// Nested queries are collected by their own planner. Table function arguments may hold unresolved
+        /// identifiers (named-collection `key = value` overrides) that calculateActionNodeName cannot name.
         auto child_type = child->getNodeType();
         return child_type != QueryTreeNodeType::QUERY && child_type != QueryTreeNodeType::UNION
             && child_type != QueryTreeNodeType::TABLE_FUNCTION && child_type != QueryTreeNodeType::TABLE;
@@ -70,9 +65,6 @@ private:
     LegacyActionNodeNames & legacy_names;
     QueryTreeNodeToName current_names_cache;
     QueryTreeNodeToName legacy_names_cache;
-    /// Lives as long as `legacy_names_cache`, so a name taken from that cache is still known to be
-    /// untrustworthy. A parent is visited before its children, so a column reached first as a
-    /// function argument is already cached by the time it is visited on its own.
     QueryTreeNodeSet unrenderable_legacy_nodes;
 };
 
@@ -117,8 +109,7 @@ void renameOutgoingHeaderForLegacyUpstream(
         || select_query_options.is_local_plan_for_distributed_query)
         return;
 
-    /// The connection_ fields hold the immediate upstream's version, and are TCP only. A peer that
-    /// reports no version is left alone.
+    /// The immediate upstream's version; TCP only, 0 when the peer reports none.
     VersionNumber upstream_version(
         client_info.connection_client_version_major,
         client_info.connection_client_version_minor,
@@ -138,8 +129,6 @@ void renameOutgoingHeaderForLegacyUpstream(
         auto it = legacy_names.current_to_legacy.find(column.name);
         String outgoing_name = it != legacy_names.current_to_legacy.end() ? it->second : column.name;
 
-        /// The upstream resolves its header by name alone, so it must never receive a name whose
-        /// owner it cannot determine.
         auto [claimed, inserted] = outgoing_to_current_name.emplace(outgoing_name, column.name);
         if (legacy_names.ambiguous.contains(column.name) || (!inserted && claimed->second != column.name))
             throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME,

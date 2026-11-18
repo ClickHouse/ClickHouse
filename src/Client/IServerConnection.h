@@ -45,10 +45,8 @@ struct Packet
 
     std::string server_timezone;
 
-    /// Version of the peer that produced this packet, set where the packet is constructed. Not part
-    /// of the wire format. Carried per packet rather than per connection because one executor can
-    /// receive from peers of different versions: hedged requests may add a replacement replica
-    /// mid-query. Left at 0 by peers that do not report a version.
+    /// Version of the peer that sent this packet, 0 if unknown. Not part of the wire format; kept per
+    /// packet because hedged requests can mix replicas of different versions in one query.
     VersionNumber origin_version;
 };
 

@@ -145,8 +145,6 @@ private:
     QueryProcessingStage::Enum processed_stage;
     ClusterPtr cluster;
     LoggerPtr log;
-    /// Context that produced the output header, kept so a worker older than this server can be told
-    /// which of its plan column identifiers it spells differently.
     PlannerContextPtr planner_context;
 
     std::optional<RemoteQueryExecutor::Extension> extension;

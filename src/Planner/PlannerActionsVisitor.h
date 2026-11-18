@@ -56,12 +56,8 @@ private:
     bool use_column_identifier_as_action_node_name = true;
 };
 
-/** Spelling of a plan column identifier inside an action node name.
-  *
-  * Servers before 26.5 concatenated the source alias and the column name without quoting them.
-  * `Legacy` reproduces that spelling; it is only ever used to render names a pre-26.5 peer
-  * exchanges over the wire. Everything inside the planner uses `Current`.
-  */
+/// Spelling of a plan column identifier in an action node name. `Legacy` (pre-26.5: alias and column
+/// joined unquoted) is only for names exchanged with a pre-26.5 peer.
 enum class ColumnIdentifierConvention : uint8_t
 {
     Current,
@@ -72,25 +68,18 @@ struct RenderedColumnIdentifier
 {
     enum class State : uint8_t
     {
-        /// The node has no registered plan column identifier, so its bare column name names it.
+        /// No registered plan column identifier: the bare column name names the node.
         NoIdentifier,
-        /// `name` holds the identifier under the requested convention.
         Rendered,
-        /// The node has a registered identifier that cannot be regenerated from the node's current
-        /// parts, so its spelling under the requested convention is unknown.
+        /// The node's current parts do not regenerate its identifier, so the spelling is unknown.
         Unrenderable,
     };
 
     State state = State::NoIdentifier;
-    /// Set for State::Rendered only.
     String name;
 };
 
-/** Render the plan column identifier of a column node under `convention`.
-  *
-  * The identifier is generated from the column and its source, never by rewriting an already
-  * rendered name: a rendered name cannot be parsed back unambiguously.
-  */
+/// Built from the column and its source: a rendered identifier cannot be parsed back unambiguously.
 RenderedColumnIdentifier renderColumnNodeIdentifier(const QueryTreeNodePtr & column_node,
     const PlannerContext & planner_context,
     ColumnIdentifierConvention convention);
@@ -99,12 +88,8 @@ RenderedColumnIdentifier renderColumnNodeIdentifier(const QueryTreeNodePtr & col
   * If node exists in map, name from map is used.
   *
   * For column node column node identifier from planner context is used, if use_column_identifier_as_action_node_name = true.
-  *
-  * When `unrenderable_identifier_nodes` is given, every node whose name was built over a column
-  * that has a registered plan column identifier which cannot be rendered under
-  * `column_identifier_convention` is added to it: such a name does not identify the column. It must
-  * be passed together with the same `node_to_name` on every call, since a name answered from that
-  * cache is rendered only once.
+  * Nodes whose name relies on an identifier unrenderable under `column_identifier_convention` are added to
+  * `unrenderable_identifier_nodes`, which must always be passed with the same `node_to_name`.
   */
 using QueryTreeNodeToName = std::unordered_map<QueryTreeNodePtr, String>;
 using QueryTreeNodeSet = std::unordered_set<QueryTreeNodePtr>;

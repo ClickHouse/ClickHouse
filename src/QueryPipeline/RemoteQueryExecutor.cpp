@@ -412,13 +412,8 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
     }
 }
 
-/** Names to look up in a block produced by a pre-26.5 peer, one per entry of `header`.
-  *
-  * An entry with no collected legacy spelling keeps its own name: a planner-generated column such
-  * as `__grouping_set` has no query tree expression to render and is spelled identically by both
-  * versions. An ambiguous entry is refused instead, because the received column of that name cannot
-  * be proven to be the one this entry expects.
-  */
+/// Name to read for each `header` entry in a block from a pre-26.5 peer. An entry with no legacy spelling
+/// keeps its name: a planner-generated column such as `__grouping_set` is spelled alike by both versions.
 static Names buildLegacySourceNames(const Block & header, const LegacyHeaderNames & legacy_names)
 {
     Names source_names;
@@ -436,7 +431,6 @@ static Names buildLegacySourceNames(const Block & header, const LegacyHeaderName
         auto it = legacy_names.current_to_legacy.find(elem.name);
         const auto & source_name = source_names.emplace_back(it == legacy_names.current_to_legacy.end() ? elem.name : it->second);
 
-        /// Two differently named entries reading one received column would each get a value the other owns.
         auto [claimed, inserted] = source_to_entry_name.emplace(source_name, elem.name);
         if (!inserted && claimed->second != elem.name)
             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
@@ -449,9 +443,7 @@ static Names buildLegacySourceNames(const Block & header, const LegacyHeaderName
 
 /** If we receive a block with slightly different column types, or with excessive columns,
   *  we will adapt it to expected structure.
-  *
-  * `source_names`, when given, holds the name to read for each header entry instead of the entry's
-  * own name. It is set only for a block from a peer that spells plan column identifiers differently.
+  * `source_names`, if given, holds the name to read for each header entry instead of its own name.
   */
 static Block adaptBlockStructure(const Block & block, const Block & header, const Names * source_names = nullptr)
 {
@@ -985,8 +977,6 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 
 const Names * RemoteQueryExecutor::getLegacySourceNames(const Packet & packet)
 {
-    /// A peer that spells identifiers as this server does, or that reported no version at all,
-    /// takes the plain path: only a peer known to be older is resolved through the old spellings.
     if (legacy_header_names.empty()
         || packet.origin_version == VersionNumber{}
         || packet.origin_version >= legacy_quoted_identifiers_version)

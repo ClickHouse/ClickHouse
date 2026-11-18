@@ -126,9 +126,6 @@ public:
     {
     }
 
-    /// A name is untrustworthy if it, or any part it was built from, spells a column that has a
-    /// registered plan column identifier by its bare column name. The verdict is remembered per
-    /// node because the name cache is consulted before anything is rendered.
     String calculateActionNodeName(const QueryTreeNodePtr & node)
     {
         bool subtree_unrenderable = false;
@@ -154,8 +151,6 @@ public:
         return result;
     }
 
-    /// `unrenderable` is set if `node` itself is a column named by its bare name despite having a
-    /// registered identifier. Parts of a composite name report through the enclosing slot instead.
     String calculateActionNodeNameImpl(const QueryTreeNodePtr & node, bool & unrenderable)
     {
         String result;
@@ -570,8 +565,6 @@ private:
     const PlannerContext & planner_context;
     bool use_column_identifier_as_action_node_name = true;
     ColumnIdentifierConvention column_identifier_convention = ColumnIdentifierConvention::Current;
-    /// Nodes whose name does not identify the column it names. Owned by the caller and outlives one
-    /// name request, so it stays valid for as long as `node_to_name`.
     QueryTreeNodeSet * unrenderable_identifier_nodes = nullptr;
     /// Verdict slot of the name currently being rendered; each nested request substitutes its own.
     bool * unrenderable_in_current_subtree = nullptr;
@@ -1588,9 +1581,7 @@ RenderedColumnIdentifier renderColumnNodeIdentifier(const QueryTreeNodePtr & col
         return {.state = State::Rendered, .name = *column_identifier};
 
     const auto & column_name = column_node_typed.getColumnName();
-    /// Regenerate the current spelling from the same parts and require it to match the registered
-    /// identifier. Anything else means the parts are not the ones this identifier was built from,
-    /// so this node's spelling under the other convention cannot be derived from them.
+    /// Parts that do not regenerate the registered identifier give no derivable legacy spelling.
     if (backQuoteIfNeed(source_alias) + "." + backQuoteIfNeed(column_name) != *column_identifier)
         return {.state = State::Unrenderable, .name = {}};
 

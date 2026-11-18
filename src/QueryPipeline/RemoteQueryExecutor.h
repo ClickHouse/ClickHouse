@@ -243,10 +243,7 @@ public:
 
     void setDistributedFanout(size_t total_connections) { distributed_fanout = total_connections; }
 
-    /** How a peer older than `legacy_quoted_identifiers_version` spells the plan column identifiers
-      * of the expected header. Must be set before the query is sent. Packets from a newer peer take
-      * the plain path regardless.
-      */
+    /// Pre-26.5 spellings of the expected header's identifiers. Must be set before the query is sent.
     void setLegacyHeaderNames(LegacyHeaderNames legacy_header_names_)
     {
         chassert(!sent_query);
@@ -290,9 +287,7 @@ private:
         std::optional<Extension> extension_,
         GetPriorityForLoadBalancing::Func priority_func = {});
 
-    /** Names to read for each header entry in a block from a pre-26.5 peer, or nullptr when the
-      * packet's peer spells identifiers as this server does. Built on first such packet.
-      */
+    /// Name to read per header entry for a packet from a pre-26.5 peer, else nullptr.
     const Names * getLegacySourceNames(const Packet & packet);
 
     SharedHeader header;
