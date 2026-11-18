@@ -13,8 +13,7 @@ file_name="${CLICKHOUSE_TEST_UNIQUE_NAME}.csv"
 
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS $user"
-    ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_s3"
+    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS $user; DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_s3"
     rm -f "${USER_FILES_PATH:?}/$file_name"
 }
 trap cleanup EXIT
@@ -23,30 +22,30 @@ trap cleanup EXIT
 # so an access type added later must not appear below.
 privileges=$(${CLICKHOUSE_CLIENT} -q "SELECT privilege FROM system.privileges ORDER BY toString(privilege)")
 
-function check_grant()
+function granted()
 {
-    paste <(echo "$privileges") \
-        <(sed 's/.*/CHECK GRANT & ON *.*;/' <<< "$privileges" | ${CLICKHOUSE_CLIENT} --readonly "$1" --allow_introspection_functions 1) \
-        | awk -F'\t' -v result="$2" '$2 == result { print $1 }'
+    local list
+    list=$(cat)
+    paste <(echo "$list") \
+        <(sed 's/.*/CHECK GRANT & ON *.*;/' <<< "$list" | ${CLICKHOUSE_CLIENT} --readonly "$1" --allow_introspection_functions 1) \
+        | awk -F'\t' '$2 == 1 { print $1 }'
 }
 
-echo "-- readonly 0, not granted:"
-check_grant 0 0
+echo "-- readonly 0, all granted:"
+${CLICKHOUSE_CLIENT} --allow_introspection_functions 1 -q "CHECK GRANT ALL ON *.*"
 echo "-- readonly 1, granted:"
-check_grant 1 1
+granted_1=$(granted 1 <<< "$privileges")
+echo "$granted_1"
 echo "-- readonly 2, granted in addition:"
-LC_ALL=C comm -13 <(check_grant 1 1) <(check_grant 2 1)
+grep -vxF -f <(echo "$granted_1") <<< "$privileges" | granted 2
 
 echo "-- INSERT INTO FUNCTION with a filtered WRITE grant, readonly 2:"
-${CLICKHOUSE_CLIENT} -q "CREATE USER $user"
-${CLICKHOUSE_CLIENT} -q "GRANT CREATE TEMPORARY TABLE ON *.* TO $user"
-${CLICKHOUSE_CLIENT} -q "GRANT READ, WRITE ON URL('http://127.0.0.1:1/.*') TO $user"
+${CLICKHOUSE_CLIENT} -q "CREATE USER $user; GRANT CREATE TEMPORARY TABLE ON *.* TO $user; GRANT READ, WRITE ON URL('http://127.0.0.1:1/.*') TO $user"
 ${CLICKHOUSE_CLIENT} --user "$user" --readonly 2 -q "INSERT INTO FUNCTION url('http://127.0.0.1:1/x', 'CSV', 'x Int32') SELECT 1" 2>&1 \
     | grep -q -F '(READONLY)' && echo "refused" || echo "not refused"
 
 echo "-- BACKUP, readonly 1:"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE t (x Int32) ENGINE = MergeTree ORDER BY x"
-${CLICKHOUSE_CLIENT} -q "INSERT INTO t VALUES (1)"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t (x Int32) ENGINE = MergeTree ORDER BY x; INSERT INTO t VALUES (1)"
 ${CLICKHOUSE_CLIENT} --readonly 1 -q "BACKUP TABLE t TO Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}')" | cut -f2
 
 echo "-- file(), readonly 2:"
@@ -54,8 +53,7 @@ ${CLICKHOUSE_CLIENT} -q "INSERT INTO FUNCTION file('$file_name', 'CSV', 'x Int32
 ${CLICKHOUSE_CLIENT} --readonly 2 -q "SELECT * FROM file('$file_name', 'CSV', 'x Int32')"
 
 echo "-- S3 database, readonly 2:"
-${CLICKHOUSE_CLIENT} -q "INSERT INTO FUNCTION s3('$s3_path/f.csv', 'clickhouse', 'clickhouse', 'CSV', 'x Int32') SELECT 3 SETTINGS s3_truncate_on_insert = 1"
-${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${CLICKHOUSE_DATABASE}_s3 ENGINE = S3('$s3_path/', 'clickhouse', 'clickhouse')"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO FUNCTION s3('$s3_path/f.csv', 'clickhouse', 'clickhouse', 'CSV', 'x Int32') SELECT 3 SETTINGS s3_truncate_on_insert = 1; CREATE DATABASE ${CLICKHOUSE_DATABASE}_s3 ENGINE = S3('$s3_path/', 'clickhouse', 'clickhouse')"
 ${CLICKHOUSE_CLIENT} --readonly 2 -q "SELECT * FROM ${CLICKHOUSE_DATABASE}_s3.\`f.csv\`"
 
 echo "-- S3 database, readonly 2, parallel replicas:"
