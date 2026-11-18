@@ -7,6 +7,7 @@
 #include <exception>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <mutex>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -353,9 +354,20 @@ using SharedSet = std::shared_future<SetPtr>;
 class PreparedSetsCache
 {
 public:
+    PreparedSetsCache() = default;
+
+    /// A cache for the sets of one task that shares them through `shared_cache_` with the other tasks,
+    /// e.g. a mutation of one part: see `findOrPromiseToBuild`.
+    explicit PreparedSetsCache(std::shared_ptr<PreparedSetsCache> shared_cache_);
+
     /// Lookup for set in the cache.
     /// If it is found, get the future to be able to wait for the set to be built.
     /// Otherwise create a promise, build the set and set the promise value.
+    ///
+    /// A task must not wait for a set that it builds itself: a mutation runs its pipeline with one thread,
+    /// so the build would never finish. But one task can build two sets with the same key, e.g. the same
+    /// `IN` subquery inside two different set subqueries. So if the set is promised by this task and is not
+    /// built yet, the caller gets a promise that is not in the cache, and builds the set once more.
     std::variant<std::promise<SetPtr>, SharedSet> findOrPromiseToBuild(const String & key);
 
 private:
@@ -366,6 +378,10 @@ private:
 
     std::mutex cache_mutex;
     std::unordered_map<String, Entry> cache;
+
+    /// If set, the sets are looked up there, and `promised_keys` are the keys this task promised to build.
+    const std::shared_ptr<PreparedSetsCache> shared_cache;
+    std::unordered_set<String> promised_keys;
 };
 
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;

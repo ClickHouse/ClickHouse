@@ -4,6 +4,7 @@
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/TransactionManager.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/PreparedSets.h>
 #include <Common/ErrorCodes.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
@@ -78,9 +79,10 @@ void MutatePlainMergeTreeTask::prepare()
     if (task_context->getSettingsRef()[Setting::enable_sharing_sets_for_mutations])
     {
         /// If we have a prepared sets cache for this mutations, we will use it.
+        /// The task gets a cache of its own on top of it, so that it never waits for a set that it builds itself.
         auto mutation_id = future_part->part_info.mutation;
         auto prepared_sets_cache_for_mutation = storage.getPreparedSetsCache(mutation_id);
-        task_context->setPreparedSetsCache(prepared_sets_cache_for_mutation);
+        task_context->setPreparedSetsCache(std::make_shared<PreparedSetsCache>(prepared_sets_cache_for_mutation));
     }
 
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(

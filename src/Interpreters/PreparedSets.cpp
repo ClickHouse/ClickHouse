@@ -892,8 +892,28 @@ PreparedSets::Subqueries PreparedSets::getSubqueries() const
     return res;
 }
 
+PreparedSetsCache::PreparedSetsCache(std::shared_ptr<PreparedSetsCache> shared_cache_)
+    : shared_cache(std::move(shared_cache_))
+{
+    chassert(shared_cache);
+}
+
 std::variant<std::promise<SetPtr>, SharedSet> PreparedSetsCache::findOrPromiseToBuild(const String & key)
 {
+    if (shared_cache)
+    {
+        auto from_cache = shared_cache->findOrPromiseToBuild(key);
+
+        std::lock_guard lock(cache_mutex);
+        if (from_cache.index() == 0)
+            promised_keys.insert(key);
+        else if (promised_keys.contains(key)
+            && std::get<1>(from_cache).wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+            return std::promise<SetPtr>{};
+
+        return from_cache;
+    }
+
     std::lock_guard lock(cache_mutex);
 
     auto it = cache.find(key);
