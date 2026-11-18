@@ -101,7 +101,6 @@ std::string_view jsonKey(MetricKey key)
         case MetricKey::Max: return "Max";
         case MetricKey::Sum: return "Sum";
 
-        /// What a join runtime filter was built as, and what its probe did.
         case MetricKey::FilterType: return "Type";
         case MetricKey::ReplacedFilterType: return "Replaced";
         case MetricKey::Reason: return "Reason";

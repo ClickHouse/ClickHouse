@@ -663,8 +663,13 @@ void ApproximateSetRuntimeFilter::mergeFrom(const ApproximateSetRuntimeFilter & 
     mergeBloomFilters(bloom_filter, source.bloom_filter);
 }
 
-/// The set bits and all bits of the filter.
-static std::pair<size_t, size_t> countBloomFilterBits(const BloomFilter & bloom_filter)
+struct BloomFilterBitCounts
+{
+    size_t set_bit_count{0};
+    size_t total_bit_count{0};
+};
+
+static BloomFilterBitCounts countBloomFilterBits(const BloomFilter & bloom_filter)
 {
     const auto & raw_filter_words = bloom_filter.getFilter();
     const size_t total_bits = raw_filter_words.size() * sizeof(raw_filter_words[0]) * 8;

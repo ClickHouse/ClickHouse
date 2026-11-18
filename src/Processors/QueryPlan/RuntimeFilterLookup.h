@@ -49,7 +49,6 @@ struct RuntimeFilterStats
     std::atomic<Int64> rows_before_ready = 0;
 };
 
-/// See `RuntimeFilter::describe`.
 enum class RuntimeFilterKind : UInt8
 {
     /// Not every build stream has published its keys, e.g. the query was cancelled.
