@@ -112,6 +112,12 @@ SELECT replaceRegexpAll(trimLeft(explain), '\\[[^]]*\\]', '') FROM (EXPLAIN keep
         ON c_nationkey = u.n_nationkey)
 WHERE explain ILIKE '%Join: %';
 
+SELECT 'filter below DISTINCT on a column with statistics';
+SELECT replaceRegexpAll(trimLeft(explain), '\\[[^]]*\\]', '') FROM (EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT count() FROM orders JOIN customer ON c_custkey = o_custkey
+    JOIN (SELECT DISTINCT n_nationkey FROM nation_stats WHERE n_name = 'GERMANY') AS d ON c_nationkey = d.n_nationkey)
+WHERE explain ILIKE '%Join: %';
+
 SELECT 'row policy on a column with statistics';
 WITH
     (SELECT extract(explain, 'nation_rp\\[([^]]*)\\]') FROM (EXPLAIN keep_logical_steps = 1, actions = 1

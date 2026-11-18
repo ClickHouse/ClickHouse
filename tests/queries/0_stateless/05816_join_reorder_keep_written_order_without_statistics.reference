@@ -38,6 +38,9 @@ Join: orders ⋈ customer
 filter below UNION ALL
 Join: orders ⋈ customer ⋈ u
 Join: orders ⋈ customer
+filter below DISTINCT on a column with statistics
+Join: customer ⋈ d ⋈ orders
+Join: customer ⋈ d
 row policy on a column with statistics
 1	1
 build_rows_empty	0

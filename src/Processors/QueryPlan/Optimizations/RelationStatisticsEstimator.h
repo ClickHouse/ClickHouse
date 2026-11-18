@@ -13,8 +13,8 @@ namespace DB::QueryPlanOptimizations
 /// them, or `__applyFilter(...) OR isNull(key)`.
 /// With `for_runtime_filter_transport` the estimate is a hard row cap for a transported filter's
 /// exact phase, so an unindexed plan-time filter yields no estimate instead of a statistics guess.
-/// With `only_source` the caller reads only `source`, so reads that cannot have
-/// `RowEstimateSource::UnestimatedFilter` are not estimated.
+/// With `only_source` the caller reads only `source`, so a `MergeTree` read is judged from table metadata
+/// and part checksums instead of being estimated.
 RelationStats estimateReadRowsCount(
     QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr, bool for_runtime_filter_transport = false, bool only_source = false);
 
