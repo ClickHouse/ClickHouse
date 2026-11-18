@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <fmt/format.h>
@@ -157,20 +156,6 @@ convertTypeToSubstrait(const DataTypePtr & type, SubstraitPlanExtensions & exten
             auto * list = result.mutable_list();
             *list->mutable_type() = std::move(*element);
             list->set_nullability(substraitNullabilityOf(nullable));
-            return std::move(result);
-        }
-        case TypeIndex::Map: {
-            const auto & map = assert_cast<const DataTypeMap &>(*nested);
-            auto key = convertTypeToSubstrait(map.getKeyType(), extensions);
-            if (!key)
-                return std::unexpected(std::move(key.error()));
-            auto value = convertTypeToSubstrait(map.getValueType(), extensions);
-            if (!value)
-                return std::unexpected(std::move(value.error()));
-            auto * map_type = result.mutable_map();
-            *map_type->mutable_key() = std::move(*key);
-            *map_type->mutable_value() = std::move(*value);
-            map_type->set_nullability(substraitNullabilityOf(nullable));
             return std::move(result);
         }
         case TypeIndex::Tuple: return blocked(fmt::format("type {} is not supported yet", type->getName()));
