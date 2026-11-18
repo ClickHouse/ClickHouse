@@ -31,6 +31,13 @@ CREATE TABLE nation_stats (n_nationkey Int32, n_name String)
 ENGINE = MergeTree ORDER BY n_nationkey SETTINGS auto_statistics_types = 'basic', index_granularity = 8192;
 INSERT INTO nation_stats SETTINGS materialize_statistics_on_insert = 1 VALUES (5, 'ETHIOPIA'), (6, 'FRANCE'), (7, 'GERMANY'), (100, 'UNKNOWN');
 
+-- A row policy on a column with statistics is estimated like the same filter in WHERE.
+CREATE TABLE nation_rp (n_nationkey Int32, n_name String)
+ENGINE = MergeTree ORDER BY n_nationkey SETTINGS auto_statistics_types = 'basic', index_granularity = 8192;
+INSERT INTO nation_rp SETTINGS materialize_statistics_on_insert = 1 VALUES (5, 'ETHIOPIA'), (6, 'FRANCE'), (7, 'GERMANY'), (100, 'UNKNOWN');
+DROP ROW POLICY IF EXISTS rp_05816 ON nation_rp;
+CREATE ROW POLICY rp_05816 ON nation_rp USING n_name = 'GERMANY' TO ALL;
+
 SELECT 'filter on a column without statistics';
 SELECT replaceRegexpAll(trimLeft(explain), '\\[[^]]*\\]', '') FROM (EXPLAIN keep_logical_steps = 1, actions = 1
     SELECT count() FROM orders JOIN (SELECT * FROM customer JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'WAKANDA') AS cn ON c_custkey = o_custkey)
@@ -105,6 +112,14 @@ SELECT replaceRegexpAll(trimLeft(explain), '\\[[^]]*\\]', '') FROM (EXPLAIN keep
         ON c_nationkey = u.n_nationkey)
 WHERE explain ILIKE '%Join: %';
 
+SELECT 'row policy on a column with statistics';
+WITH
+    (SELECT extract(explain, 'nation_rp\\[([^]]*)\\]') FROM (EXPLAIN keep_logical_steps = 1, actions = 1
+        SELECT count() FROM customer JOIN nation_rp ON c_nationkey = n_nationkey) WHERE explain LIKE '%Join:%' LIMIT 1) AS by_policy,
+    (SELECT extract(explain, 'nation_stats\\[([^]]*)\\]') FROM (EXPLAIN keep_logical_steps = 1, actions = 1
+        SELECT count() FROM customer JOIN nation_stats ON c_nationkey = n_nationkey WHERE n_name = 'GERMANY') WHERE explain LIKE '%Join:%' LIMIT 1) AS by_where
+SELECT by_policy = by_where, by_policy != '';
+
 -- Only the outer join estimates the ASOF join below it, which must not load the statistics of the inner join's reads again.
 SELECT count() FROM nation_stats AS a JOIN nation_partial AS b ON a.n_nationkey = b.n_nationkey
     ASOF JOIN customer ON c_nationkey = b.n_nationkey AND a.n_nationkey >= c_custkey
@@ -148,3 +163,5 @@ SELECT 'statistics below DISTINCT, filter on a column with statistics';
 SELECT sumIf(loaded, log_comment = 'distinct_in_join') = sumIf(loaded, log_comment = 'distinct_alone')
 FROM (SELECT log_comment, ProfileEvents['LoadedStatistics'] AS loaded FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment IN ('distinct_in_join', 'distinct_alone') AND type = 'QueryFinish');
+
+DROP ROW POLICY rp_05816 ON nation_rp;

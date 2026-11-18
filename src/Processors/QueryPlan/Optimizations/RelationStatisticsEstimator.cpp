@@ -293,8 +293,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
             : nullptr;
         const bool has_prewhere_filter = prewhere_info && !prunesNothingAtPlanTime(prewhere_node);
-        if (!has_prewhere_filter)
-            prewhere_node = nullptr;
 
         bool is_filtered_by_index = false;
         if (analyzed_result)
@@ -337,16 +335,15 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         const bool use_statistics = reading->getContext()->getSettingsRef()[Setting::use_statistics];
         if (use_statistics)
         {
-            /// A filter on a subcolumn is covered by its column's statistics, which a read of the subcolumn alone does not load.
+            /// Every column the composed filter reads: a subcolumn is covered by its column, and a row policy reads columns the read may not output.
             Names statistics_columns = reading->getAllColumnNames();
             if (const auto & composed_filter = reading->getFilterActionsDAG())
                 for (const auto * input : composed_filter->getInputs())
-                    if (auto column = metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, input->result_name);
-                        column && column->isSubcolumn())
+                    if (auto column = metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, input->result_name))
                         statistics_columns.push_back(column->getNameInStorage());
             if (auto estimator = reading->getConditionSelectivityEstimator(statistics_columns, analyzed_result))
             {
-                auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
+                auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), getConditionsToEstimate(*reading, filter));
                 RelationStats stats{
                     .estimated_rows = relation_profile.rows,
                     .column_stats = relation_profile.column_stats,

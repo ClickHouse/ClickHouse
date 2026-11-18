@@ -38,6 +38,8 @@ Join: orders ⋈ customer
 filter below UNION ALL
 Join: orders ⋈ customer ⋈ u
 Join: orders ⋈ customer
+row policy on a column with statistics
+1	1
 build_rows_empty	0
 build_rows_one_nation	10001
 statistics below an ASOF join
