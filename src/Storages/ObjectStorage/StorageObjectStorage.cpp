@@ -530,7 +530,6 @@ bool StorageObjectStorage::supportsTruncate() const
     if (!configuration->isDataLakeConfiguration())
         return true;
 
-    configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
     return configuration->supportsTruncate();
 }
 
@@ -1175,11 +1174,10 @@ void StorageObjectStorage::truncate(
 
     if (configuration->isDataLakeConfiguration())
     {
-        auto data_lake_metadata = getExternalMetadata(local_context);
-        if (!data_lake_metadata || !data_lake_metadata->supportsTruncate())
+        if (!configuration->supportsTruncate())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate is not supported for this data lake engine");
 
-        data_lake_metadata->truncate(local_context, catalog, getStorageID());
+        getExternalMetadata(local_context)->truncate(local_context, catalog, getStorageID());
         return;
     }
 

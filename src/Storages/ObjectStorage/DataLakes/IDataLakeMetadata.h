@@ -207,7 +207,7 @@ public:
 
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) { throwNotImplemented("mutations"); }
 
-    [[nodiscard]] virtual bool supportsTruncate() const { return false; }
+    static bool supportsTruncate() { return false; }
     virtual void truncate(ContextPtr /*context*/, std::shared_ptr<DataLake::ICatalog> /*catalog*/, const StorageID & /*storage_id*/)
     {
         throwNotImplemented("truncate");

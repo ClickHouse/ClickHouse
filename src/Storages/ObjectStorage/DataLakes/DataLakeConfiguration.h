@@ -222,7 +222,7 @@ public:
 
     bool supportsTruncate() const override
     {
-        return getMetadata()->supportsTruncate();
+        return DataLakeMetadata::supportsTruncate();
     }
 
     bool supportsParallelInsert() const override

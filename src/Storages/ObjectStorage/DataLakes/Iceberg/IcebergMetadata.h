@@ -185,7 +185,7 @@ public:
 
     void checkMutationIsPossible(const MutationCommands & commands) override;
 
-    bool supportsTruncate() const override { return true; }
+    static bool supportsTruncate() { return true; }
     void truncate(ContextPtr context, std::shared_ptr<DataLake::ICatalog> catalog, const StorageID & storage_id) override;
 
     void modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const override;
