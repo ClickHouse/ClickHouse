@@ -92,6 +92,17 @@ SELECT k, a FROM t_aj_m ARRAY JOIN A AS a
     WHERE (z > 1 AND a = 2) OR (k = 2 AND a = 0)
 ORDER BY k, a;
 DROP TABLE t_aj_m;
+
+SELECT '-- the same column from a view below a remote table stays above the JOIN of the view';
+DROP TABLE IF EXISTS t_aj_d;
+CREATE TABLE t_aj_d (k UInt64, z Int64, A Array(Int64)) ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_aj_v);
+SELECT k, a FROM (SELECT k, z, A FROM remote('127.0.0.2', currentDatabase(), t_aj_v)) ARRAY JOIN A AS a
+    WHERE (z > 1 AND a = 2) OR (k = 2 AND a = 0)
+ORDER BY k, a SETTINGS prefer_localhost_replica = 0;
+SELECT k, a FROM (SELECT k, z, A FROM t_aj_d) ARRAY JOIN A AS a
+    WHERE (z > 1 AND a = 2) OR (k = 2 AND a = 0)
+ORDER BY k, a SETTINGS prefer_localhost_replica = 0;
+DROP TABLE t_aj_d;
 DROP VIEW t_aj_v;
 DROP TABLE t_aj_l;
 DROP TABLE t_aj_r;
