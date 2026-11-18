@@ -2193,11 +2193,13 @@ DataTypePtr getPromotedTypeForDynamicImpl(const DataTypePtr & type, const Format
         case TypeIndex::UInt64:
             return std::make_shared<DataTypeInt64>();
         /// Not Float32: the parser reads its shortest text, which differs from the Float64 a CAST widens it to.
+        /// Not Decimal either: the parser reads its text as the nearest Float64 (or an Int64 for a whole number),
+        /// while a CAST divides the coefficient by the scale in floating point and can land on another Float64.
         case TypeIndex::Decimal32: [[fallthrough]];
         case TypeIndex::Decimal64: [[fallthrough]];
         case TypeIndex::Decimal128: [[fallthrough]];
         case TypeIndex::Decimal256:
-            return std::make_shared<DataTypeFloat64>();
+            return nullptr;
         case TypeIndex::Date:
         {
             if (format_settings.try_infer_dates)

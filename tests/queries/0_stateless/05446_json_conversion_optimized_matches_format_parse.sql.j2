@@ -87,9 +87,17 @@ SETTINGS json_use_optimized_type_conversion = {{ optimized }}{{ ', ' ~ settings 
 {{ check('removed Nullable(UInt64)', 'JSON(a Nullable(UInt64))', 'JSON', ['{"a": 5}', '{"a": null}']) }}
 {{ check('removed Array(UInt64)', 'JSON(a Array(UInt64))', 'JSON', ['{"a": [1, 2]}', '{"a": [18446744073709551615]}']) }}
 
+-- A removed Decimal is read from its text, as a CAST to Float64 can land on another value.
+{{ check('removed Decimal32 whole number', 'JSON(a Decimal32(2))', 'JSON', ['{"a": 5}']) }}
+{{ check('removed Decimal256(30)', 'JSON(a Decimal256(30))', 'JSON', ['{"a": 0.1}', '{"a": 1.5}']) }}
+{{ check('removed Decimal256(30) restored as Decimal64(1)', 'JSON(a Decimal256(30))', 'JSON(a Decimal64(1))', ['{"a": 0.1}']) }}
+{{ check('removed Nullable(Decimal256(30))', 'JSON(a Nullable(Decimal256(30)))', 'JSON', ['{"a": 0.1}', '{"a": null}']) }}
+{{ check('removed Array(Decimal256(30))', 'JSON(a Array(Decimal256(30)))', 'JSON', ['{"a": [0.1, 0.2]}']) }}
+{{ check('removed Decimal256(30) to shared data', 'JSON(max_dynamic_paths = 0, a Decimal256(30))', 'JSON(max_dynamic_paths = 0)', ['{"a": 0.1}']) }}
+{{ check('removed Decimal128(10) large value', 'JSON(a Decimal128(10))', 'JSON', ['{"a": 1234567890123456789.1234567891}']) }}
+
 -- Accepted differences: the parser infers a type per value from its text, the optimized path keeps one type for the path.
 {{ check('accepted: removed Float64 whole number', 'JSON(a Float64)', 'JSON', ['{"a": 5}']) }}
-{{ check('accepted: removed Decimal32 whole number', 'JSON(a Decimal32(2))', 'JSON', ['{"a": 5}']) }}
 {{ check('accepted: removed DateTime64(0)', 'JSON(a DateTime64(0))', 'JSON', ['{"a": "2024-01-15 12:30:00"}']) }}
 {{ check('accepted: removed String holding a date', 'JSON(a String)', 'JSON', ['{"a": "2024-01-15"}']) }}
 {{ check('accepted: removed empty Array', 'JSON(a Array(Int8))', 'JSON', ['{"a": []}']) }}
