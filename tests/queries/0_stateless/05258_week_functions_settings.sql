@@ -180,8 +180,9 @@ SETTINGS week_functions_starting_day = 'saturday', week_functions_range = '1-53'
 
 SELECT '-- translations';
 -- `EXTRACT(ISODOW)`, `EXTRACT(DOW)`, Trino `day_of_week`/`dow` and Kusto `dayofweek` are translated to `toDayOfWeek`
--- with an explicit `mode`, so `week_functions_starting_day` doesn't change them. The days are Saturday 2026-01-03,
--- Sunday 2026-01-04 and Monday 2026-01-05.
+-- with an explicit `mode`, so `week_functions_starting_day` doesn't change them. Trino `date_trunc('week')` and the
+-- LogsQL `week_range` filter start weeks on Monday too. The days are Saturday 2026-01-03, Sunday 2026-01-04 and
+-- Monday 2026-01-05.
 
 -- The column names show the explicit mode.
 SELECT EXTRACT(ISODOW FROM d), EXTRACT(DOW FROM d) FROM (SELECT toDate('2026-01-03') AS d) FORMAT TSVWithNames;
@@ -194,6 +195,9 @@ SET week_functions_starting_day = 'saturday';
 SET enable_trino_dialect = 1;
 SET dialect = 'trino';
 SELECT day_of_week(DATE '2026-01-03'), day_of_week(DATE '2026-01-04'), day_of_week(DATE '2026-01-05'), dow(DATE '2026-01-03'), dow(DATE '2026-01-04'), dow(DATE '2026-01-05');
+-- `date_trunc('week')` starts weeks on Monday, but `date_format` is `formatDateTime`, whose `%w` follows the setting:
+-- Saturday is 0.
+SELECT date_trunc('week', DATE '2026-01-03'), date_trunc('week', DATE '2026-01-04'), date_trunc('week', DATE '2026-01-05'), date_format(DATE '2026-01-03', '%w');
 SET dialect = 'clickhouse';
 
 SET allow_experimental_kusto_dialect = 1;
@@ -203,8 +207,21 @@ print dayofweek(datetime(2026-01-03)), dayofweek(datetime(2026-01-04)), dayofwee
 print datetime_diff('week', datetime(2026-01-03), datetime(2026-01-02));
 SET dialect = 'clickhouse';
 
--- Without a `mode`, `toDayOfWeek` follows the setting.
+-- LogsQL `week_range` numbers the days from Sunday = 0 as in VictoriaLogs: `[Mon, Mon]` is the Monday, not the
+-- Saturday, which is the first day of the week here.
+CREATE TABLE t_logs (_time DateTime('UTC'), _msg String) ENGINE = MergeTree ORDER BY _time;
+INSERT INTO t_logs VALUES ('2026-01-03 12:00:00', 'saturday'), ('2026-01-05 12:00:00', 'monday');
+SET enable_logsql_dialect = 1;
+SET logsql_table = 't_logs';
+SET dialect = 'logsql';
+_time:week_range[Mon, Mon] | fields _msg;
+SET dialect = 'clickhouse';
+DROP TABLE t_logs;
+
+-- Without a `mode`, `toDayOfWeek` follows the setting, and so do its aliases and `%w` of the `DATE_FORMAT` alias of
+-- `formatDateTime`.
 SELECT toDayOfWeek(toDate('2026-01-03'));
+SELECT DAYOFWEEK(d), DAY_OF_WEEK(d), day_of_week(d), DATE_FORMAT(d, '%w') FROM (SELECT toDate('2026-01-03') AS d);
 SET week_functions_starting_day = 'auto';
 
 SELECT '-- every start day';
@@ -427,8 +444,8 @@ SETTINGS week_functions_starting_day = 'saturday', week_functions_range = '0-53'
 
 SELECT '-- primary key analysis';
 -- `toDayOfWeek` is monotonic only inside a week that starts on its first day, and the index analysis only knows weeks
--- that start on Monday. With another start day, a filter on `toDayOfWeek` must return the same rows as without the
--- primary key.
+-- that start on Monday or on Sunday. With any start day, a filter on `toDayOfWeek` must return the same rows as without
+-- the primary key.
 CREATE TABLE t_week_key (d Date) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 3, index_granularity_bytes = 0;
 -- Six weeks, from Monday 2025-12-01.
 INSERT INTO t_week_key SELECT toDate('2025-12-01') + number FROM numbers(42);
@@ -453,10 +470,10 @@ SELECT count() FROM t_week_key WHERE toDayOfWeek(d) >= 7;
 SELECT count() FROM t_week_key WHERE toDayOfWeek(d) >= 7 SETTINGS use_primary_key = 0;
 SET week_functions_starting_day = 'auto';
 
--- How many of the 14 granules (3 days each) the primary key keeps, from `EXPLAIN indexes = 1`. By default it prunes.
--- With weeks from Saturday it keeps all of them, also for an explicit Monday-first mode: the monotonicity of the
--- function is decided by the setting, because it cannot see whether `mode` is given. Only the `PrimaryKey` section
--- is read: other indexes can be added by random settings.
+-- How many of the 14 granules (3 days each) the primary key keeps, from `EXPLAIN indexes = 1`. By default it prunes, and
+-- with weeks from Sunday too. With weeks from Saturday it keeps all of them, also for an explicit Monday-first mode: the
+-- monotonicity of the function is decided by the setting, because it cannot see whether `mode` is given. Only the
+-- `PrimaryKey` section is read: other indexes can be added by random settings.
 SELECT 'granules auto', arrayFirst(x -> x LIKE 'Granules: %/%', arraySlice(lines, indexOf(lines, 'PrimaryKey')))
 FROM (SELECT groupArray(trim(explain)) AS lines FROM (
     EXPLAIN indexes = 1 SELECT count() FROM t_week_key WHERE toDayOfWeek(d) = 1
@@ -465,6 +482,10 @@ SELECT 'granules saturday', arrayFirst(x -> x LIKE 'Granules: %/%', arraySlice(l
 FROM (SELECT groupArray(trim(explain)) AS lines FROM (
     EXPLAIN indexes = 1 SELECT count() FROM t_week_key WHERE toDayOfWeek(d) = 1
     SETTINGS use_query_condition_cache = 0, enable_parallel_replicas = 0, week_functions_starting_day = 'saturday'));
+SELECT 'granules sunday', arrayFirst(x -> x LIKE 'Granules: %/%', arraySlice(lines, indexOf(lines, 'PrimaryKey')))
+FROM (SELECT groupArray(trim(explain)) AS lines FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM t_week_key WHERE toDayOfWeek(d) = 1
+    SETTINGS use_query_condition_cache = 0, enable_parallel_replicas = 0, week_functions_starting_day = 'sunday'));
 SELECT 'granules auto, explicit Monday-first mode', arrayFirst(x -> x LIKE 'Granules: %/%', arraySlice(lines, indexOf(lines, 'PrimaryKey')))
 FROM (SELECT groupArray(trim(explain)) AS lines FROM (
     EXPLAIN indexes = 1 SELECT count() FROM t_week_key WHERE toDayOfWeek(d, 1) = 5

@@ -71,9 +71,12 @@ toDayOfWeek(d, 0)	toDayOfWeek(d, 2)
 2026-01-04	7	0
 2026-01-05	1	1
 6	7	1	6	7	1
+2025-12-29	2025-12-29	2026-01-05	0
 6	0	1
 1
+monday
 1
+1	1	1	0
 -- every start day
 starting_day	first_day	toDayOfWeek	toLastDayOfWeek	toStartOfInterval	date_trunc	toRelativeWeekNum	dateDiff	%w
 monday	[1]	0	0	0	0	0	0	0
@@ -118,9 +121,9 @@ sunday	[0,0,0,0,0,0,0,1]	1	1
 toDayOfWeek	toStartOfWeek	toLastDayOfWeek	toWeek	toYearWeek	toStartOfInterval	date_trunc	toRelativeWeekNum	dateDiff	%w	fromUnixTimestamp	dateName	nullable
 0	0	0	0	0	0	0	0	0	0	0	0	0
 toStartOfWeek	toDayOfWeek	toStartOfInterval	toRelativeWeekNum	%w
-2026-01-03	1	2026-01-03	2923	0
+2026-01-03	1	2026-01-03 00:00:00	2923	0
 toStartOfInterval	date_trunc	toRelativeWeekNum	dateDiff	%w
-2026-01-03	2026-01-03	2923	1	0
+2026-01-03 00:00:00	2026-01-03	2923	1	0
 2	202602	1	2	202602
 1	0
 0	0
@@ -159,8 +162,9 @@ sunday
 6	['2025-12-07','2025-12-14','2025-12-21','2025-12-28','2026-01-04','2026-01-11']
 6
 6
-granules auto	Granules: 8/14
+granules auto	Granules: 10/14
 granules saturday	Granules: 14/14
+granules sunday	Granules: 8/14
 granules auto, explicit Monday-first mode	Granules: 10/14
 granules saturday, explicit Monday-first mode	Granules: 14/14
 -- query condition cache
