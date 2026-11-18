@@ -31,6 +31,13 @@ StreamInQueryResultCacheStep::StreamInQueryResultCacheStep(
 {
 }
 
+QueryPlanStepPtr StreamInQueryResultCacheStep::clone() const
+{
+    auto cloned = std::make_unique<StreamInQueryResultCacheStep>(*this);
+    cloned->query_result_cache_writer = std::make_shared<QueryResultCacheWriter>(*query_result_cache_writer);
+    return cloned;
+}
+
 void StreamInQueryResultCacheStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     std::shared_ptr<StreamInQueryResultCacheSubqueryCompletion> subquery_completion;

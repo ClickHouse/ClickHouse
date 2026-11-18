@@ -12,21 +12,15 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이 설정은 ClickHouse 서버 구성에 사용되며 ClickHouse 소스에서 자동으로 생성됩니다.
 
-<div id="index_mark_cache_policy">
-  ## index_mark_cache_policy
-</div>
+## index_mark_cache_policy {#index_mark_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />보조 인덱스 마크 캐시 정책의 이름입니다.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />보조 인덱스 마크 캐시 eviction 정책의 이름입니다. 가능한 값: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="index_mark_cache_prewarm_ratio">
-  ## index_mark_cache_prewarm_ratio
-</div>
+## index_mark_cache_prewarm_ratio {#index_mark_cache_prewarm_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.95" changeable_without_restart="No" />예열 중 인덱스 마크 캐시를 채울 때 사용할 전체 크기 대비 비율입니다.
 
-<div id="index_mark_cache_size">
-  ## index_mark_cache_size
-</div>
+## index_mark_cache_size {#index_mark_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />
 
@@ -38,9 +32,7 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
   이 설정은 런타임에 변경할 수 있으며 즉시 적용됩니다.
 </Note>
 
-<div id="index_mark_cache_size_ratio">
-  ## index_mark_cache_size_ratio
-</div>
+## index_mark_cache_size_ratio {#index_mark_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.3" changeable_without_restart="No" />보조 인덱스 마크 캐시에서 보호 큐(SLRU 정책 사용 시)가 캐시 전체 크기에서 차지하는 비율입니다.
 
