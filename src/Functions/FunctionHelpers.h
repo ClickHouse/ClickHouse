@@ -228,7 +228,7 @@ bool convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args);
 void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t input_rows_count);
 
 /// Throws VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE if a UInt64 argument holds 2^63 or more, which `IColumn::getInt`
-/// would read as negative. Accepts a constant or an ordinary column.
+/// would read as negative. Accepts a constant, an ordinary or a `Nullable` column (whose NULL rows it ignores).
 void checkIntegerArgumentFitsInt64(const IColumn & column, std::string_view function_name, std::string_view argument_name);
 
 /// Whether a UInt64 argument may hold values that are not the input of any row with a computed result, which

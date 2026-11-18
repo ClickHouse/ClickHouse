@@ -98,37 +98,6 @@ public:
         return arguments[0].type;
     }
 
-    /// An offset or length that does not fit Int64 is reported instead of being read as a negative
-    /// number: IColumn::getInt() returns Int64, so a UInt64 argument of 2^63 or more would turn into
-    /// "count from the end" semantics (issue #132511). A negative Int64 argument keeps its meaning.
-    /// The values are read as Fields, not via getUInt(): for a signed column getUInt() is a
-    /// modulo-2^64 conversion, so a plain -1 would look out of range.
-    static void checkSliceArgumentsFitInt64(const IColumn & offset_column, const IColumn * length_column)
-    {
-        auto check = [&](const IColumn & column, const char * name)
-        {
-            for (size_t i = 0, rows = column.size(); i < rows; ++i)
-            {
-                if (column.isNullAt(i))
-                    continue;
-
-                const Field value = column[i];
-                if (value.getType() != Field::Types::UInt64)
-                    continue;
-
-                const UInt64 unsigned_value = value.safeGet<UInt64>();
-                if (unsigned_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "The {} argument of function arraySlice is out of range for Int64: {}",
-                        name, unsigned_value);
-            }
-        };
-        check(offset_column, "offset");
-        if (length_column)
-            check(*length_column, "length");
-    }
-
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
     {
         if (return_type->onlyNull())
@@ -143,7 +112,10 @@ public:
         const auto offset_column = arguments[1].column->convertToFullColumnIfReplicated();
         const auto length_column = arguments.size() > 2 ? arguments[2].column->convertToFullColumnIfReplicated() : nullptr;
 
-        checkSliceArgumentsFitInt64(*offset_column, length_column.get());
+        /// `getInt` reads a UInt64 of 2^63 or more as a negative number, which would count from the end (issue #132511).
+        checkIntegerArgumentFitsInt64(*offset_column, getName(), "offset");
+        if (length_column)
+            checkIntegerArgumentFitsInt64(*length_column, getName(), "length");
 
         if (isColumnConst(*offset_column)
             && !offset_column->onlyNull()
