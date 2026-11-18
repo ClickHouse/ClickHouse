@@ -1734,21 +1734,32 @@ private:
         DataTypePtr nested_type1 = recursiveRemoveLowCardinality(assert_cast<const DataTypeArray &>(*column_type_name1.type).getNestedType());
 
         /// A large element of a constant is not copied for every input row (see `deferred_side`). Whatever carries
-        /// the payload (a long `FixedString`, a nested array, a `Dynamic` or `Variant` holding an array), the size of
-        /// the elements of the constant decides, because the copy is proportional to it. A constant of small
-        /// elements is gathered as usual, to compare all pairs at once rather than one position at a time.
-        /// Both constants have one row, so there is nothing to defer.
-        auto has_large_elements = [](const ColumnArray & column_array)
+        /// the payload (a long `FixedString`, a nested array, a `Dynamic` or `Variant` holding an array), the bytes
+        /// that gathering would copy decide: the common prefix of the constant row is copied once per input row, so
+        /// the sizes of exactly those positions are summed, and a few large elements among many small ones count too.
+        /// A constant whose gathered elements are small on average is gathered as usual, to compare all pairs at once
+        /// rather than one position at a time. Both constants have one row, so there is nothing to defer.
+        auto gathers_large_elements = [&](const ColumnArray & column_array)
         {
             static constexpr size_t max_gathered_constant_element_bytes = 64;
+            if (gathered.num_elements == 0)
+                return false;
             const auto & elements = column_array.getData();
-            return !elements.empty() && elements.byteSize() > max_gathered_constant_element_bytes * elements.size();
+            const size_t max_common_length = *std::max_element(gathered.common_lengths.begin(), gathered.common_lengths.end());
+            /// The bytes of the first `k` elements of the constant row, which starts at position 0.
+            std::vector<size_t> prefix_bytes(max_common_length + 1);
+            for (size_t k = 0; k < max_common_length; ++k)
+                prefix_bytes[k + 1] = prefix_bytes[k] + elements.byteSizeAt(k);
+            size_t gathered_bytes = 0;
+            for (size_t row = 0; row < input_rows_count; ++row)
+                gathered_bytes += prefix_bytes[gathered.common_lengths[row]];
+            return gathered_bytes > max_gathered_constant_element_bytes * gathered.num_elements;
         };
         if (is_const0 != is_const1)
         {
-            if (is_const0 && has_large_elements(column_array0))
+            if (is_const0 && gathers_large_elements(column_array0))
                 gathered.deferred_side = 0;
-            else if (is_const1 && has_large_elements(column_array1))
+            else if (is_const1 && gathers_large_elements(column_array1))
                 gathered.deferred_side = 1;
         }
 
