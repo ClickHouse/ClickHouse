@@ -10,6 +10,7 @@ SET optimize_use_projections = 1;
 SET optimize_use_projection_filtering = 1;
 SET min_table_rows_to_use_projection_index = 0;
 SET max_projection_rows_to_use_projection_index = 1000000;
+SET optimize_use_projection_filtering_with_patch_parts = 1;
 
 DROP TABLE IF EXISTS t_lw_proj_patch;
 
@@ -42,6 +43,9 @@ UPDATE t_lw_proj_patch SET v = 'b' WHERE id IN (5, 1005);
 SELECT trimLeft(explain) FROM (EXPLAIN projections = 1 SELECT * FROM t_lw_proj_patch WHERE k = 5) WHERE explain LIKE '%Name: p_k%' OR explain LIKE '%Description:%';
 SELECT id, k, v FROM t_lw_proj_patch WHERE k = 5 ORDER BY id LIMIT 3;
 SELECT id, k, v FROM t_lw_proj_patch WHERE k = 5 AND v = 'b' ORDER BY id;
+SELECT '-- the same with optimize_use_projection_filtering_with_patch_parts disabled: no projection is used';
+SELECT count() FROM (EXPLAIN projections = 1 SELECT * FROM t_lw_proj_patch WHERE k = 5 SETTINGS optimize_use_projection_filtering_with_patch_parts = 0) WHERE explain LIKE '%Name: p_k%';
+SELECT id, k, v FROM t_lw_proj_patch WHERE k = 5 AND v = 'b' ORDER BY id SETTINGS optimize_use_projection_filtering_with_patch_parts = 0;
 SELECT count(), sum(id) FROM t_lw_proj_patch WHERE k = 5 AND v = 'a';
 SELECT count(), sum(id) FROM t_lw_proj_patch WHERE k = 5 AND v = 'a' SETTINGS optimize_use_projections = 0;
 

@@ -12,6 +12,10 @@ Description: Projection has been analyzed and will be applied during reading
 205	5	a
 5	5	b
 1005	5	b
+-- the same with optimize_use_projection_filtering_with_patch_parts disabled: no projection is used
+0
+5	5	b
+1005	5	b
 18	18090
 18	18090
 -- the projection covers the query, but reading it would miss the patches

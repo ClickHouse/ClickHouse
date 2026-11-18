@@ -39,6 +39,7 @@
         <lightweight_delete_mode>lightweight_update</lightweight_delete_mode>
         <optimize_use_projections>1</optimize_use_projections>
         <optimize_use_projection_filtering>1</optimize_use_projection_filtering>
+        <optimize_use_projection_filtering_with_patch_parts>1</optimize_use_projection_filtering_with_patch_parts>
         <min_table_rows_to_use_projection_index>0</min_table_rows_to_use_projection_index>
         <max_projection_rows_to_use_projection_index>1000000000</max_projection_rows_to_use_projection_index>
     </settings>

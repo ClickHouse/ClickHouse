@@ -44,6 +44,7 @@ namespace Setting
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool prefer_optimize_projection;
     extern const SettingsBool optimize_use_projection_filtering;
+    extern const SettingsBool optimize_use_projection_filtering_with_patch_parts;
     extern const SettingsFloat optimize_projection_skip_index_ratio;
 }
 
@@ -397,6 +398,8 @@ UseProjectionsResult optimizeUseNormalProjections(
     /// cannot supply the data instead of the parent read. It can still filter the parent read, because
     /// they never move rows within a part, see `ColumnsChangedOnFlyByPart`.
     const bool has_data_changes_on_fly = hasDataChangesOnFly(*reading);
+    if (has_data_changes_on_fly && !reading->getContext()->getSettingsRef()[Setting::optimize_use_projection_filtering_with_patch_parts])
+        return reject_all("the table has unmaterialized mutations or patch parts");
 
     /// Test hook: make a parallel-replicas follower skip the projection short-circuit (see the same
     /// failpoint in optimizeUseAggregateProjections). Gated on the follower predicate so it never

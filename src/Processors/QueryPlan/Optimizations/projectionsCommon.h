@@ -45,15 +45,10 @@ public:
     explicit ColumnsChangedOnFlyByPart(const ReadFromMergeTree & reading_);
     ~ColumnsChangedOnFlyByPart();
 
-    /// Whether a patch part or a data mutation applied on the fly to `part` changes a column that
-    /// filtering by `projection` depends on: a column the projection is built from, a column it stores,
-    /// or one of `filter_column_names`. A projection part keeps the values the parent part was written with,
-    /// so filtering by such a column selects the rows by stale values and can drop rows that match now.
-    /// A MATERIALIZED column counts as changed when the read recalculates it because a column it reads
-    /// (directly or through another MATERIALIZED column) is updated: `UPDATE a` changes `m MATERIALIZED a * 2`.
-    /// A delete only hides rows, so it is not reported: the projection selects a superset of the rows,
-    /// which the parent read narrows down. But if the part already has deleted rows, a change of `_row_exists`
-    /// is reported, because it may restore a row that a rebuilt projection part omits.
+    /// Whether the patch parts or mutations of `part` make its projection part unsafe for filtering.
+    /// The projection part keeps the old values, so it is unsafe when a change touches a column the
+    /// projection uses (or a MATERIALIZED column computed from one), or may restore a deleted row.
+    /// A plain delete is safe: the projection only returns extra rows, which the read drops.
     bool changesProjectionColumns(
         const MergeTreeData::DataPartPtr & part, const ProjectionDescription & projection, const Names & filter_column_names);
 

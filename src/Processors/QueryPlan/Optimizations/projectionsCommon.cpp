@@ -459,7 +459,7 @@ bool ColumnsChangedOnFlyByPart::changesProjectionColumns(
     auto it = changed_columns_by_part.find(part.get());
     if (it == changed_columns_by_part.end())
     {
-        /// The same alter conversions as the parent read builds for the part, so the same columns are changed.
+        /// The same changes the parent read applies to the part.
         auto alter_conversions = MergeTreeData::getAlterConversionsForPart(
             part, reading.getMutationsSnapshot(), reading.getContext()
 #if CLICKHOUSE_CLOUD
@@ -473,9 +473,8 @@ bool ColumnsChangedOnFlyByPart::changesProjectionColumns(
     if (updated_columns.empty())
         return false;
 
-    /// A projection part rebuilt by a lightweight delete (`lightweight_mutation_projection_mode = 'rebuild'`)
-    /// omits the deleted rows. A change of `_row_exists` may make such a row visible again
-    /// (`UPDATE t SET _row_exists = 1`), and then the projection no longer selects a superset of the rows.
+    /// The projection part may have been rebuilt without the deleted rows,
+    /// and a change of `_row_exists` may restore one of them (`UPDATE t SET _row_exists = 1`).
     if (part->hasLightweightDelete() && updated_columns.contains(RowExistsColumn::name))
         return true;
 
@@ -483,7 +482,7 @@ bool ColumnsChangedOnFlyByPart::changesProjectionColumns(
         materialized_column_dependencies
             = std::make_unique<MaterializedColumnDependencies>(reading.getStorageMetadata()->getColumns(), reading.getContext());
 
-    /// Otherwise a delete adds no updated column but `_row_exists`, which no projection depends on.
+    /// A column counts as changed if it is updated, or if it is MATERIALIZED and computed from an updated column.
     auto is_changed = [&](const String & name)
     {
         return updated_columns.contains(name)
