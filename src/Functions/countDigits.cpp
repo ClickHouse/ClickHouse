@@ -35,28 +35,22 @@ public:
         return std::make_shared<FunctionCountDigits>();
     }
 
-    String getName() const override { return name; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_arguments{
-            {"x", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isIntegerOrDecimal), nullptr, "(U)Int* or Decimal"}, // Adds float
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_arguments);
-
-        return std::make_shared<DataTypeUInt8>(); /// Up to 255 decimal digits.
+        return "(Integer | Decimal) -> UInt8";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & src_column = arguments[0];
         if (!src_column.column)
@@ -131,19 +125,19 @@ REGISTER_FUNCTION(CountDigits)
     FunctionDocumentation::Description description = R"(
 Returns the number of decimal digits needed to represent a value.
 
-:::note
+<Note>
 This function takes into account the scales of decimal values i.e., it calculates the result over the underlying integer type which is `(value * scale)`.
 
 For example:
 - `countDigits(42) = 2`
 - `countDigits(42.000) = 5`
 - `countDigits(0.04200) = 4`
-:::
+</Note>
 
-:::tip
+<Tip>
 You can check decimal overflow for `Decimal64` with `countDigits(x) > 18`,
 although it is slower than [`isDecimalOverflow`](#isDecimalOverflow).
-:::
+</Tip>
 )";
     FunctionDocumentation::Syntax syntax = "countDigits(x)";
     FunctionDocumentation::Arguments arguments = {

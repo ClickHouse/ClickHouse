@@ -1,3 +1,8 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: the test asserts the APPEND/non-APPEND distinction, and a
+-- Replicated database refuses to create the non-APPEND refreshable view over a plain
+-- MergeTree target (StorageMaterializedView.cpp, BAD_ARGUMENTS), so that arm cannot exist.
+
 -- Plan-based parallel replicas expands a MaterializedView into a plain read of its target table, so
 -- eligibility is governed by the target storage: a MaterializedView over a ReplicatedMergeTree is
 -- distributed, over a plain MergeTree it needs parallel_replicas_for_non_replicated_merge_tree.
@@ -6,7 +11,6 @@
 -- the target from under the remote read. An APPEND refreshable MV reads a fixed target, like a regular
 -- MV, and is distributed. See PR #111063 review.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';

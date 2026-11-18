@@ -13,8 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_DISK;
 }
 namespace
@@ -38,35 +36,29 @@ public:
         return std::make_shared<FilesystemImpl>(context_, name, get_func);
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return false;
     }
 
-    String getName() const override { return function_name; }
+    [[nodiscard]] String getName() const override { return function_name; }
 
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isDeterministic() const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// Read per executing node, so two nodes can disagree.
+    [[nodiscard]] bool isServerConstant() const override { return true; }
+
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (arguments.size() > 1)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
-        }
-        if (arguments.size() == 1 && !isStringOrFixedString(arguments[0]))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
-                getName());
-        }
-        return std::make_shared<DataTypeUInt64>();
+        return "([StringOrFixedString]) -> UInt64";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (arguments.empty())
         {

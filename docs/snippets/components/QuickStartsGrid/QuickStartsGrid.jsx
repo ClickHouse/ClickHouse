@@ -1,7 +1,7 @@
 export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
   const featuredIds = featured.map(f => f.id);
   const data = quickStartsData || [];
-  const assetBase = (typeof window !== 'undefined' && window.location.pathname.startsWith('/docs')) ? '/docs' : '';
+  const assetBase = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
   const withBase = (p) => p && p.startsWith('/') ? assetBase + p : p;
 
   // Filter options. `value` is a stable slug matched against the tag slugs in

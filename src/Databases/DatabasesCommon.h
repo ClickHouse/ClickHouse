@@ -6,6 +6,13 @@
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
 
+#include <atomic>
+#include <condition_variable>
+#include <functional>
+#include <mutex>
+#include <thread>
+#include <unordered_set>
+
 
 /// General functionality for several different database engines.
 
@@ -65,8 +72,16 @@ public:
 
     ~DatabaseWithOwnTablesBase() override;
 
+    void setDeferredPopulation(std::function<void(IDatabase &)> populate);
+
+    void ensurePopulated() const TSA_NO_THREAD_SAFETY_ANALYSIS;
+
 protected:
-    Tables tables TSA_GUARDED_BY(mutex);
+    bool mayShadowDeferredTable(const String & table_name) const;
+
+    /// Mutable because a lazily loaded table replaces itself with the storage it stands for as soon
+    /// as the load is noticed, which happens on the (const) lookup paths.
+    mutable Tables tables TSA_GUARDED_BY(mutex);
     SnapshotDetachedTables snapshot_detached_tables TSA_GUARDED_BY(mutex);
     LoggerPtr log;
 
@@ -76,6 +91,28 @@ protected:
     virtual StoragePtr detachTableUnlocked(const String & table_name) TSA_REQUIRES(mutex);
     StoragePtr getTableUnlocked(const String & table_name) const TSA_REQUIRES(mutex);
     StoragePtr tryGetTableNoWait(const String & table_name) const;
+
+    /// If `it` holds a lazily loaded table (see the `lazy_load_tables` database setting) that has
+    /// already been loaded and is not held by anybody else, put the storage it stands for in its
+    /// place and return that storage; otherwise return what is already there.
+    ///
+    /// Doing this makes everything that resolves the table from now on - including everything that
+    /// only recognizes a table by its concrete type, such as `system.parts` or mutations - see the
+    /// real storage instead of the proxy. It has to happen here rather than in the proxy itself,
+    /// because the proxy loads the table from under this mutex (`DatabaseAtomic::renameTable` does,
+    /// through `tryCreateSymlink`), so it cannot take it.
+    StoragePtr replaceLoadedLazyTableUnlocked(Tables::iterator it) const TSA_REQUIRES(mutex);
+
+private:
+    mutable std::atomic<bool> has_deferred_population{false};
+    mutable std::mutex populate_mutex;
+    mutable std::condition_variable populated;
+    mutable std::function<void(IDatabase &)> deferred_populate TSA_GUARDED_BY(populate_mutex);
+    mutable bool populating TSA_GUARDED_BY(populate_mutex) = false;
+    mutable std::thread::id populating_thread TSA_GUARDED_BY(populate_mutex);
+    mutable std::exception_ptr deferred_populate_error TSA_GUARDED_BY(populate_mutex);
+    mutable std::atomic<bool> deferred_populate_failed{false};
+    std::unordered_set<String> deferred_shadowing_candidates;
 };
 
 }

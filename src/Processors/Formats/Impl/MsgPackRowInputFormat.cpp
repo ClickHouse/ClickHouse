@@ -61,7 +61,7 @@ MsgPackRowInputFormat::MsgPackRowInputFormat(SharedHeader header_, std::unique_p
 void MsgPackRowInputFormat::resetParser()
 {
     IRowInputFormat::resetParser();
-    visitor.reset();
+    parser.init();
 }
 
 void MsgPackRowInputFormat::setReadBuffer(ReadBuffer & in_)
@@ -85,7 +85,7 @@ void MsgPackVisitor::set_info(IColumn & column, DataTypePtr type, UInt8 & read) 
     info_stack.push(Info{column, type, false, std::nullopt, &read});
 }
 
-void MsgPackVisitor::reset()
+void MsgPackVisitor::init()
 {
     info_stack = {};
 }
@@ -319,7 +319,10 @@ static void insertNull(IColumn & column, DataTypePtr type, UInt8 * read, bool nu
         if (!null_as_default)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack null into non-nullable column with type {}.", type->getName());
-        column.insertDefault();
+        if (type->isDefaultInsertTrivial())
+            column.insertDefault();
+        else
+            type->insertDefaultInto(column);
         /// In case of default on null column can have defined DEFAULT expression that should be used.
         if (read)
             *read = false;
@@ -524,8 +527,15 @@ bool MsgPackRowInputFormat::readObject(Parser & msgpack_parser)
 
     PeekableReadBufferCheckpoint checkpoint{*buf};
     size_t offset = 0;
-    while (!msgpack_parser.execute(buf->position(), buf->available(), offset))
+    /// execute() returns parse_return, not bool: both error statuses are negative and so are
+    /// indistinguishable from success under a boolean test.
+    while (true)
     {
+        const msgpack::parse_return status = msgpack_parser.execute(buf->position(), buf->available(), offset);
+        if (status == msgpack::PARSE_SUCCESS || status == msgpack::PARSE_EXTRA_BYTES)
+            break;
+        if (status != msgpack::PARSE_CONTINUE)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Error occurred while parsing msgpack data.");
         buf->position() = buf->buffer().end();
         if (buf->eof())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of file while parsing msgpack object.");
@@ -548,7 +558,15 @@ size_t MsgPackRowInputFormat::countRows(size_t max_block_size)
     while (!buf->eof() && num_rows < max_block_size)
     {
         for (size_t i = 0; i < columns; ++i)
-            readObject(null_parser);
+        {
+            /// A row that ends between columns is incomplete.
+            if (!readObject(null_parser))
+            {
+                if (i != 0)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Not enough values to complete the row.");
+                return num_rows;
+            }
+        }
         ++num_rows;
     }
 
@@ -745,10 +763,10 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object, siz
             msgpack::object_map object_map = object.via.map;
             if (object_map.size)
             {
-                auto key_type = removeNullable(getDataType(object_map.ptr[0].key, depth + 1));
+                auto key_type = getDataType(object_map.ptr[0].key, depth + 1);
                 auto value_type = getDataType(object_map.ptr[0].val, depth + 1);
                 if (key_type && value_type)
-                    return std::make_shared<DataTypeMap>(key_type, value_type);
+                    return std::make_shared<DataTypeMap>(removeNullable(key_type), value_type);
             }
             return nullptr;
         }
@@ -790,7 +808,7 @@ void registerInputFormatMsgPack(FormatFactory & factory)
             const FormatSettings & settings)
     {
         return std::make_shared<MsgPackRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
-    });
+    }, /*supports_reset_parser=*/ true);
     factory.registerFileExtension("messagepack", "MsgPack");
 
     factory.setDocumentation("MsgPack", Documentation{

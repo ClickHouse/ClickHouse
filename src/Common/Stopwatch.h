@@ -16,19 +16,15 @@
 ///    Similar to CLOCK_MONOTONIC, but provides access to a raw hardware-based
 ///    time that is not subject to NTP adjustments or the incremental
 ///    adjustments performed by adjtime(3).
-#ifdef CLOCK_MONOTONIC_RAW
+/// Emscripten defines `CLOCK_MONOTONIC_RAW` but `clock_gettime` returns EINVAL for it, so it
+/// cannot be the default there - see the note on `CLOCK_MONOTONIC_COARSE` in `base/time.h`.
+#if defined(CLOCK_MONOTONIC_RAW) && !defined(OS_WASM)
 static constexpr clockid_t STOPWATCH_DEFAULT_CLOCK = CLOCK_MONOTONIC_RAW;
 #else
 static constexpr clockid_t STOPWATCH_DEFAULT_CLOCK = CLOCK_MONOTONIC;
 #endif
 
-inline UInt64 clock_gettime_ns(clockid_t clock_type = STOPWATCH_DEFAULT_CLOCK)
-{
-    struct timespec ts{};
-    if (0 != clock_gettime(clock_type, &ts))
-        throw std::system_error(std::error_code(errno, std::system_category()));
-    return UInt64(ts.tv_sec * 1000000000LL + ts.tv_nsec);
-}
+UInt64 clock_gettime_ns(clockid_t clock_type = STOPWATCH_DEFAULT_CLOCK);
 
 /// Takes previously returned value and returns it again if time stepped back for some reason.
 ///
@@ -68,14 +64,14 @@ public:
     void stop()                        { stop_ns = nanoseconds(); is_running = false; }
     void reset()                       { start_ns = 0; stop_ns = 0; is_running = false; }
     void restart()                     { start(); }
-    UInt64 elapsed() const             { return elapsedNanoseconds(); }
-    UInt64 elapsedNanoseconds() const  { return is_running ? nanoseconds() - start_ns : stop_ns - start_ns; }
-    UInt64 elapsedMicroseconds() const { return elapsedNanoseconds() / 1000U; }
-    UInt64 elapsedMilliseconds() const { return elapsedNanoseconds() / 1000000UL; }
-    double elapsedSeconds() const      { return static_cast<double>(elapsedNanoseconds()) / 1000000000ULL; }
+    [[nodiscard]] UInt64 elapsed() const             { return elapsedNanoseconds(); }
+    [[nodiscard]] UInt64 elapsedNanoseconds() const  { return is_running ? nanoseconds() - start_ns : stop_ns - start_ns; }
+    [[nodiscard]] UInt64 elapsedMicroseconds() const { return elapsedNanoseconds() / 1000U; }
+    [[nodiscard]] UInt64 elapsedMilliseconds() const { return elapsedNanoseconds() / 1000000UL; }
+    [[nodiscard]] double elapsedSeconds() const      { return static_cast<double>(elapsedNanoseconds()) / 1000000000ULL; }
 
-    UInt64 getStart() const { return start_ns; }
-    UInt64 getEnd() const { return stop_ns; }
+    [[nodiscard]] UInt64 getStart() const { return start_ns; }
+    [[nodiscard]] UInt64 getEnd() const { return stop_ns; }
 
 private:
     UInt64 start_ns = 0;
@@ -83,7 +79,7 @@ private:
     clockid_t clock_type;
     bool is_running = false;
 
-    UInt64 nanoseconds() const { return clock_gettime_ns_adjusted(start_ns, clock_type); }
+    [[nodiscard]] UInt64 nanoseconds() const { return clock_gettime_ns_adjusted(start_ns, clock_type); }
 };
 
 using StopwatchUniquePtr = std::unique_ptr<Stopwatch>;

@@ -92,7 +92,7 @@ checkFor200OkResponse
 
 echo "=== Test: Deferred 100 Continue with TOO_MANY_SIMULTANEOUS_QUERIES ==="
 $CLICKHOUSE_CLIENT --query_id "sleep_${CLICKHOUSE_TEST_UNIQUE_NAME}" --query 'SELECT sleep(300) SETTINGS function_sleep_max_microseconds_per_block=300000000' >/dev/null 2>&1 &
-while true
+while clickhouse_test_time_left
 do
     ${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM system.processes WHERE query_id = 'sleep_${CLICKHOUSE_TEST_UNIQUE_NAME}'" | grep -F '1' >/dev/null && break || sleep 1
 done
@@ -115,7 +115,7 @@ $CLICKHOUSE_CLIENT -n --query "
 CREATE USER user_${CLICKHOUSE_TEST_UNIQUE_NAME};
 GRANT INSERT ON expect_100_continue TO user_${CLICKHOUSE_TEST_UNIQUE_NAME};
 DROP QUOTA IF EXISTS quota_${CLICKHOUSE_TEST_UNIQUE_NAME};
-CREATE QUOTA quota_${CLICKHOUSE_TEST_UNIQUE_NAME} KEYED BY user_name FOR INTERVAL 1 month MAX query_inserts = 1 TO user_${CLICKHOUSE_TEST_UNIQUE_NAME};
+CREATE QUOTA quota_${CLICKHOUSE_TEST_UNIQUE_NAME} KEYED BY user_name FOR INTERVAL 100 YEAR MAX query_inserts = 1 TO user_${CLICKHOUSE_TEST_UNIQUE_NAME};
 "
 # use up quota
 $CLICKHOUSE_CLIENT --user "user_${CLICKHOUSE_TEST_UNIQUE_NAME}" --query "INSERT INTO expect_100_continue VALUES (1)" >/dev/null

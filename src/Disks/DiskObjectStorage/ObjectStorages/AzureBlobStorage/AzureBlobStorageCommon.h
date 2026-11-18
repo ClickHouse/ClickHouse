@@ -4,6 +4,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <azure/storage/blobs.hpp>
+#include <azure/core/etag.hpp>
 #include <azure/core/response.hpp>
 #include <azure/storage/blobs/blob_client.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
@@ -14,6 +15,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
+#include <mutex>
 
 namespace DB
 {
@@ -49,6 +51,13 @@ struct RequestSettings
     bool read_only = false;
     size_t http_keep_alive_timeout = DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT;
     size_t http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST;
+
+    /// Reject upload size settings that would otherwise produce an internal error
+    /// (e.g. a failed assertion in `BufferAllocationPolicy`) deep inside the write path.
+    /// Invoked only when the multipart blob writer (`WriteBufferFromAzureBlobStorage`) is
+    /// constructed, so it is never applied to endpoints that route to
+    /// `WriteBufferFromAzureDataLakeStorage` (ADLS Gen2 / OneLake), which ignore these settings.
+    void validateUploadSettings() const;
 };
 
 struct Endpoint
@@ -63,7 +72,7 @@ struct Endpoint
     std::optional<bool> container_already_exists;
     std::optional<bool> add_account_name_to_url;
 
-    String getContainerEndpoint() const
+    [[nodiscard]] String getContainerEndpoint() const
     {
         String url = storage_account_url;
         if (url.ends_with('/'))
@@ -84,7 +93,7 @@ struct Endpoint
         return url;
     }
 
-    String getServiceEndpoint() const
+    [[nodiscard]] String getServiceEndpoint() const
     {
         String url = storage_account_url;
 
@@ -99,6 +108,8 @@ struct Endpoint
 
         return url;
     }
+
+    bool operator==(const Endpoint &) const = default;
 };
 
 #if USE_AZURE_BLOB_STORAGE
@@ -121,15 +132,15 @@ class ContainerClientWrapper
 public:
     ContainerClientWrapper(RawContainerClient client_, String blob_prefix_);
 
-    bool IsClientForDisk() const;
-    BlobClient GetBlobClient(const String & blob_name) const;
-    BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
-    BlobContainerPropertiesRespones GetProperties() const;
-    ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
+    [[nodiscard]] bool IsClientForDisk() const;
+    [[nodiscard]] BlobClient GetBlobClient(const String & blob_name) const;
+    [[nodiscard]] BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
+    [[nodiscard]] BlobContainerPropertiesRespones GetProperties() const;
+    [[nodiscard]] ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
 
-    BlobContainerBatch CreateBatch() const;
-    BlobBatchResultResponse SubmitBatch(const BlobContainerBatch & batch) const;
-    String GetBlobPath(const String & blob_name) const;
+    [[nodiscard]] BlobContainerBatch CreateBatch() const;
+    BlobBatchResultResponse SubmitBatch(const BlobContainerBatch & batch) const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
+    [[nodiscard]] String GetBlobPath(const String & blob_name) const;
 
 private:
     RawContainerClient client;
@@ -146,11 +157,42 @@ struct ConnectionParams
     AuthMethod auth_method;
     BlobClientOptions client_options;
 
-    String getContainer() const { return endpoint.container_name; }
-    String getConnectionURL() const;
+    /// When true, the client must not authenticate with the AKS workload identity or the machine's managed identity.
+    bool forbid_implicit_credentials = true;
 
-    std::unique_ptr<ServiceClient> createForService() const;
-    std::unique_ptr<ContainerClient> createForContainer() const;
+    /// With `forbid_implicit_credentials`, build a client with no credentials instead of throwing.
+    bool anonymous_fallback_for_server_credentials = false;
+
+    /// A storage defined in user SQL, whose client follows the restriction of each accessing session. Not a disk, or a
+    /// table on a disk, whose configuration comes from the server.
+    bool follows_session_restriction = false;
+
+    /// `client_id` and `tenant_id` of a `WorkloadIdentityCredential` in `auth_method` given in `extra_credentials`,
+    /// which the credential does not expose. Empty when the credential takes them from the environment
+    /// (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`). Used to pass the same identity to `delta-kernel-rs`.
+    String workload_identity_client_id;
+    String workload_identity_tenant_id;
+
+    [[nodiscard]] String getContainer() const { return endpoint.container_name; }
+    [[nodiscard]] String getConnectionURL() const;
+    /// Without the query, which can be a SAS, for where the url only names the endpoint (logs, errors, cache keys).
+    [[nodiscard]] String getConnectionURLWithoutQuery() const;
+
+    [[nodiscard]] std::unique_ptr<ServiceClient> createForService() const;
+    [[nodiscard]] std::unique_ptr<ContainerClient> createForContainer() const;
+
+    /// Throws `ACCESS_DENIED` when the credential is off limits and the anonymous fallback is not allowed.
+    bool checkOrDropServerManagedCredentials() const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
+
+    /// Whether requests would authenticate with the server's own identity: no SAS token and a server-managed `auth_method`.
+    [[nodiscard]] bool usesServerManagedCredentials() const;
+
+    /// `auth_method` for a caller that obtains tokens from it directly; throws `ACCESS_DENIED` if it is off limits.
+    [[nodiscard]] AuthMethod getPermittedAuthMethod() const;
+
+    /// Throws `ACCESS_DENIED` if a storage defined in user SQL uses the server's own identity and the accessing session
+    /// is restricted. Does not change the parameters, so a client kept for others is not affected.
+    void checkSessionMayUseServerIdentity(bool restrict_server_credentials) const;
 };
 
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method);
@@ -163,7 +205,32 @@ BlobClientOptions getClientOptions(
     const RequestSettings & request_settings,
     bool for_disk);
 
+/// The config keys the credential is built from. Kept apart from `AuthMethod` because the credential objects of
+/// the Azure SDK cannot be compared (e.g. the shared key cannot be read back), while
+/// `AzureObjectStorage::applyNewSettings` has to know whether the credential changed.
+struct AuthConfig
+{
+    std::optional<String> account_name;
+    std::optional<String> account_key;
+    std::optional<String> connection_string;
+    bool use_workload_identity = false;
+
+    bool operator==(const AuthConfig &) const = default;
+};
+
+AuthConfig readAuthConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+AuthMethod getAuthMethod(const AuthConfig & auth_config);
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
+/// `ETag` is an optional response header, and `Azure::ETag::ToString` aborts the process when the
+/// tag is absent - in release builds too, because `AZURE_ASSERT_MSG` expands to a bare `std::abort`
+/// under `NDEBUG`. Never call it directly on a value that comes from a remote endpoint; use this
+/// function instead.
+///
+/// Azure Blob Storage and every known compatible implementation send a non-empty header in every
+/// `GetProperties`, `ListBlobs` and `Download` answer, so an absent or empty header means the endpoint
+/// is not behaving correctly.
+String getETag(const Azure::ETag & etag, const String & blob_path);
 
 #endif
 

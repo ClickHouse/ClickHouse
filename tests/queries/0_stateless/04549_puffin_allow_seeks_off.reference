@@ -1,0 +1,6 @@
+--- Puffin allow_seeks=0 ---
+5
+--- PuffinMetadata allow_seeks=0 ---
+deletion-vector-v1	58
+--- non-Puffin magic allow_seeks=0 ---
+Invalid Puffin magic (header)

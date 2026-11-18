@@ -1,6 +1,6 @@
 ---
 description: 'データレイクのドキュメント'
-sidebarTitle: 'データレイク'
+sidebarTitle: '概要'
 slug: /sql-reference/datalakes
 title: 'データレイク'
 doc_type: 'reference'
@@ -46,6 +46,13 @@ AWS Glue Data Catalog は、Iceberg テーブルで使用できます。`iceberg
 </div>
 
 Iceberg REST Catalog は、Iceberg テーブルで使用できます。`iceberg` テーブルエンジンまたは [DataLakeCatalog](/ja/reference/engines/database-engines/datalake) データベースエンジンと組み合わせて使用できます。
+
+<div id="snowflake-horizon-catalog">
+  ## Snowflake Horizon Catalog
+</div>
+
+Snowflake Horizon Catalog は、Snowflake 管理の Iceberg テーブル向けに Iceberg REST API を提供します。
+`catalog_type = 'horizon'` を指定して `DataLakeCatalog` を使用します。[Horizon カタログガイド](/ja/guides/use-cases/data-warehousing/horizon-catalog)を参照してください。
 
 <div id="unity-catalog">
   ## Unity Catalog

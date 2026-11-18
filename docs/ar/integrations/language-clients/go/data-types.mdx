@@ -7,9 +7,7 @@ title: 'أنواع البيانات'
 doc_type: 'reference'
 ---
 
-<div id="type-conversions">
-  ## تحويلات الأنواع
-</div>
+## تحويلات الأنواع {#type-conversions}
 
 يهدف العميل إلى أن يكون مرنًا قدر الإمكان في قبول أنواع متغيرات مختلفة، سواء عند الإدراج أو عند تحويل الاستجابات. في معظم الحالات، يوجد نوع Golang مكافئ لنوع عمود في ClickHouse، مثل [UInt64](/ar/reference/data-types/int-uint) إلى [uint64](https://pkg.go.dev/builtin#uint64). ويجب دائمًا دعم حالات المطابقة المنطقية هذه. وقد ترغب في استخدام أنواع متغيرات يمكن إدراجها في الأعمدة أو استخدامها لتلقّي استجابة، إذا جرى أولًا تحويل المتغير أو البيانات المستلَمة. ويهدف العميل إلى دعم هذه التحويلات بشفافية، حتى لا يضطر المستخدمون إلى تحويل بياناتهم مسبقًا لتتطابق بدقة قبل الإدراج، ولتوفير تحويل مرن عند وقت الاستعلام. ولا تسمح هذه التحويلات الشفافة بفقدان الدقة. فعلى سبيل المثال، لا يمكن استخدام `uint32` لتلقّي البيانات من عمود `UInt64`. وعلى العكس، يمكن إدراج سلسلة نصية في حقل `DateTime64` بشرط أن تستوفي متطلبات التنسيق.
 
@@ -19,13 +17,9 @@ doc_type: 'reference'
 
 ينبغي أن تدعم واجهة `database/sql` القياسية الأنواع نفسها التي تدعمها واجهة برمجة تطبيقات ClickHouse. توجد بعض الاستثناءات، خاصةً للأنواع المعقدة، وهي موثقة في الأقسام أدناه. وعلى غرار واجهة برمجة تطبيقات ClickHouse، يهدف العميل إلى أن يكون مرنًا قدر الإمكان في قبول أنواع متغيرات مختلفة، سواء عند الإدراج أو عند تحويل الاستجابات.
 
-<div id="complex-types">
-  ## الأنواع المركّبة
-</div>
+## الأنواع المركّبة {#complex-types}
 
-<div id="datedatetime">
-  ### Date/DateTime
-</div>
+### Date/DateTime {#datedatetime}
 
 يدعم عميل Go لـ ClickHouse أنواع التاريخ/التاريخ والوقت `Date` و`Date32` و`DateTime` و`DateTime64`. يمكن إدراج قيم `Date` كسلسلة نصية بالتنسيق `2006-01-02` أو باستخدام نوع Go الأصلي `time.Time{}` أو `sql.NullTime`. كما تدعم `DateTime` أيضًا النوعين الأخيرين، لكنها تتطلب تمرير السلاسل النصية بالتنسيق `2006-01-02 15:04:05` مع إزاحة منطقة زمنية اختيارية، مثل `2006-01-02 15:04:05 +08:00`. كما أن `time.Time{}` و`sql.NullTime` مدعومان أيضًا عند القراءة، بالإضافة إلى أي تنفيذ للواجهة `sql.Scanner`.
 
@@ -38,9 +32,7 @@ doc_type: 'reference'
   * عند **الإدراج**، تُؤخذ المنطقة الزمنية لأي تاريخ في الحسبان عند تحويله إلى `Unix timestamp`، أي ستُطبَّق عليه إزاحة المنطقة الزمنية قبل تخزينه كتاريخ، لأن أنواع `Date` لا تحتوي على إعداد محلي في ClickHouse. وإذا لم يكن ذلك محددًا في قيمة نصية، فستُستخدم المنطقة الزمنية المحلية.
   * عند **الاستعلام**، تُفحَص التواريخ في مثيلات `time.Time{}` أو `sql.NullTime{}`، وتُعاد بدون معلومات عن المنطقة الزمنية.
 
-<div id="timetime64-types">
-  ### أنواع Time/Time64
-</div>
+### أنواع Time/Time64 {#timetime64-types}
 
 تُخزّن أنواع الأعمدة `Time` و`Time64` قيم الوقت ضمن اليوم من دون مكوّن تاريخ. ويُقابلهما في Go النوع `time.Duration`.
 
@@ -80,9 +72,7 @@ if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2); err != 
 fmt.Printf("col1=%v, col2=%v\n", col1, col2)
 ```
 
-<div id="array">
-  ### Array
-</div>
+### Array {#array}
 
 يجب إدراج Arrays بصيغة شرائح. تتوافق قواعد تحديد النوع للعناصر مع القواعد الخاصة بـ [النوع البدائي](#type-conversions)، أي إن العناصر ستُحوَّل حيثما أمكن.
 
@@ -133,9 +123,7 @@ rows.Close()
 
 [مثال كامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/array.go)
 
-<div id="map">
-  ### Map
-</div>
+### Map {#map}
 
 يجب إدراج قيم Map بصيغة خرائط Golang، على أن تتوافق المفاتيح والقيم مع قواعد الأنواع المعرّفة [سابقًا](#type-conversions).
 
@@ -191,9 +179,7 @@ rows.Close()
   [مثال كامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/map.go)
 </Note>
 
-<div id="tuples">
-  ### Tuples
-</div>
+### Tuples {#tuples}
 
 يمثل النوع Tuples مجموعة من الأعمدة بعدد غير محدد. ويمكن أن تكون الأعمدة مسمّاة صراحةً، أو يقتصر الأمر على تحديد النوع فقط، على سبيل المثال.
 
@@ -254,9 +240,7 @@ fmt.Printf("row: col1=%v, col2=%v, col3=%v\n", col1, col2, col3)
 
 ملاحظة: الشرائح والخرائط محددة النوع مدعومة، بشرط أن تكون جميع الأعمدة الفرعية في التركيبة المسمّاة من النوع نفسه.
 
-<div id="nested">
-  ### Nested
-</div>
+### Nested {#nested}
 
 يعادل الحقل Nested قيمة Array من Tuples مسماة. ويعتمد الاستخدام على ما إذا كان المستخدم قد عيّن [flatten&#95;nested](/ar/reference/settings/session-settings#flatten_nested) إلى 1 أو 0.
 
@@ -438,9 +422,7 @@ if err := batch.Send(); err != nil {
 
 نظرًا إلى بساطة الواجهة ودعم التعشيش رسميًا، نوصي باستخدام `flatten_nested=0`.
 
-<div id="geo-types">
-  ### أنواع Geo
-</div>
+### أنواع Geo {#geo-types}
 
 يدعم العميل أنواع Geo التالية: Point وRing وLineString وPolygon وMultiPolygon وMultiLineString. وتُمثَّل هذه الأنواع في Go باستخدام حزمة [github.com/paulmach/orb](https://github.com/paulmach/orb).
 
@@ -543,9 +525,7 @@ fmt.Printf("point=%v, ring=%v, lineString=%v, polygon=%v, mPolygon=%v, mLineStri
 
 [المثال الكامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/geo.go)
 
-<div id="uuid">
-  ### UUID
-</div>
+### UUID {#uuid}
 
 النوع UUID مدعوم من حزمة [github.com/google/uuid](https://github.com/google/uuid). ويمكنك أيضًا إرسال UUID أو تحويله بصيغة marshal كسلسلة نصية أو بأي نوع يطبّق `sql.Scanner` أو `Stringify`.
 
@@ -590,9 +570,7 @@ if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2); err != 
 
 [المثال الكامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/uuid.go)
 
-<div id="decimal">
-  ### Decimal
-</div>
+### Decimal {#decimal}
 
 نظرًا إلى أن Go تفتقر إلى نوع Decimal مدمج، نوصي باستخدام الحزمة التابعة لجهة خارجية [github.com/shopspring/decimal](https://github.com/shopspring/decimal) للتعامل مع أنواع Decimal بشكل أصلي، من دون تعديل استعلاماتك الأصلية.
 
@@ -651,9 +629,7 @@ fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v\n", col1, col2, col3, co
 
 [المثال الكامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/decimal.go)
 
-<div id="nullable">
-  ### Nullable
-</div>
+### Nullable {#nullable}
 
 تمثّل القيمة `Nil` في Go قيمة NULL في ClickHouse. ويمكن استخدام ذلك إذا كان أحد الحقول معرّفًا على أنه Nullable. وعند insert time، يمكن تمرير `Nil` لكلٍّ من الإصدار العادي والإصدار Nullable من العمود. في الحالة الأولى، ستُحفَظ default value الخاصة بالنوع، مثل سلسلة فارغة لـ string. أما في الإصدار Nullable، فستُخزَّن قيمة NULL في ClickHouse.
 
@@ -707,9 +683,7 @@ if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2, &col3, &
 
 يدعم العميل أيضًا أنواع `sql.Null*`، مثل `sql.NullInt64`. وهذه الأنواع متوافقة مع أنواع ClickHouse المناظرة لها.
 
-<div id="big-ints">
-  ### الأعداد الصحيحة الكبيرة
-</div>
+### الأعداد الصحيحة الكبيرة {#big-ints}
 
 تُمثَّل الأنواع العددية التي تتجاوز 64 بت باستخدام حزمة [big](https://pkg.go.dev/math/big) الأصلية في Go.
 
@@ -779,9 +753,7 @@ fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v, col6=%v, col7=%v\n", co
 
 [مثال كامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/big_int.go)
 
-<div id="bfloat16">
-  ### BFloat16
-</div>
+### BFloat16 {#bfloat16}
 
 `BFloat16` هو نوع فاصلة عائمة من فئة brain float بعرض 16 بت يُستخدم في أعباء عمل التعلّم الآلي. في Go، تُدرَج قيم `BFloat16` وتُقرأ على أنها `float32`. أما المتغيرات القابلة لأن تكون `NULL` فتستخدم `sql.NullFloat64`.
 
@@ -814,9 +786,7 @@ fmt.Printf("Col1: %v, Col2: %v\n", col1, col2)
 
 [المثال الكامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/bfloat16.go)
 
-<div id="qbit">
-  ### QBit
-</div>
+### QBit {#qbit}
 
 `QBit` هو نوع تجريبي للأعمدة لتخزين التضمينات المتجهية بتنسيق الشرائح البتّية، وهو مُحسَّن لعمليات البحث عن التشابه المتجهي. ويتطلب ذلك تفعيل الإعداد `allow_experimental_qbit_type`.
 

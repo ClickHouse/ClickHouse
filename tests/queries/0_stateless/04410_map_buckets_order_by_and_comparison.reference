@@ -1,0 +1,30 @@
+S1: ORDER BY map column
+4	{'a':1,'b':1}
+1	{'a':1,'b':2}
+2	{'a':1,'c':3}
+3	{'b':1,'a':2}
+S2: equal maps compare equal
+2
+S3: DISTINCT on map column
+{'a':2,'z':1}
+{'z':1,'a':2}
+{'z':1,'a':3}
+S4: GROUP BY map column
+{'z':1,'a':2}	2
+{'x':10,'y':20}	3
+S5: min/max on map column
+{'a':1,'b':2}	{'c':1}
+S6: ORDER BY after merge
+4	{'a':1,'b':1}
+1	{'a':1,'b':2}
+2	{'a':1,'c':3}
+3	{'b':1,'a':2}
+S7: ORDER BY with UInt64 keys
+2	{1:'x',100:'y'}
+3	{50:'z'}
+1	{100:'a',1:'b'}
+S8: ORDER BY compact parts
+4	{'a':1,'b':1}
+1	{'a':1,'b':2}
+2	{'a':1,'c':3}
+3	{'b':1,'a':2}

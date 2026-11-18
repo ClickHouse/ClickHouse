@@ -90,6 +90,11 @@ a.betaBadge {
     margin-right: 8px;
 }
 
+a.cloudNotSupportedBadge {
+    color: #660099 !important;
+    text-decoration: none !important;
+}
+
 .cloudNotSupportedIcon svg path {
     stroke: #660099;
 }
@@ -97,6 +102,11 @@ a.betaBadge {
 .dark .cloudNotSupportedBadge {
     background-color: #33004D;
     color: #EECCFF;
+}
+
+.dark a.cloudNotSupportedBadge {
+    color: #EECCFF !important;
+    text-decoration: none !important;
 }
 
 .dark .cloudNotSupportedIcon svg path {
@@ -367,6 +377,24 @@ a.experimentalBadge {
 
 .dark .privatePreviewIcon svg path {
     stroke: #FCD34D;
+}
+
+/* Public Preview Badge */
+.publicPreviewBadge {
+    background-color: #DBEAFE;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    color: #1D4ED8;
+    display: inline-flex;
+    margin-right: 5px;
+    font-size: 0.875rem;
+}
+
+.dark .publicPreviewBadge {
+    background-color: #1E3A6B;
+    color: #93C5FD;
 }
 
 /* Scale Plan Feature Badge */

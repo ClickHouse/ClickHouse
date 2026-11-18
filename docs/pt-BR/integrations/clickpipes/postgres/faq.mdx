@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <div id="are-transaction-rollbacks-replicated">
   ### Rollbacks de transações são replicados para o ClickHouse?
 </div>
@@ -86,20 +84,7 @@ Sim, tabelas particionadas têm suporte nativo, desde que tenham uma PRIMARY KEY
   ### Posso conectar bancos de dados Postgres que não têm IP público ou estão em redes privadas?
 </div>
 
-Sim! ClickPipes for Postgres oferece duas formas de se conectar a bancos de dados em redes privadas:
-
-1. **Tunelamento SSH**
-   * Funciona bem para a maioria dos casos de uso
-   * Consulte as instruções de configuração [aqui](/pt-BR/integrations/clickpipes/postgres/index#adding-your-source-postgres-database-connection)
-   * Funciona em todas as regiões
-
-2. **AWS PrivateLink**
-   * Disponível em três regiões da AWS:
-     * us-east-1
-     * us-east-2
-     * eu-central-1
-   * Para instruções detalhadas de configuração, consulte nossa [documentação do PrivateLink](/pt-BR/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)
-   * Para as regiões em que o PrivateLink não está disponível, use o tunelamento SSH
+Sim. Consulte [rede do ClickPipes](/pt-BR/integrations/clickpipes/networking) para conhecer as formas pelas quais o ClickPipes pode acessar uma fonte de dados que não está exposta à internet pública.
 
 <div id="how-do-you-handle-updates-and-deletes">
   ### Como lidar com UPDATEs e DELETEs?
@@ -446,7 +431,15 @@ Também vale verificar:
 
 Sim, em um ClickPipe do Postgres com modo de replicação CDC ou Snapshot + CDC, você pode fazer com que o ClickPipes crie um slot de replicação com failover habilitado ativando a opção abaixo na seção `Advanced Settings` ao criar o ClickPipe. Observe que sua versão do Postgres deve ser 17 ou superior para usar esse recurso.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp)
+
+</Frame>
+
+</div>
 
 Se a origem estiver configurada adequadamente, o slot será preservado após failovers para uma réplica de leitura do Postgres, garantindo a replicação contínua dos dados. Saiba mais [aqui](https://www.postgresql.org/docs/current/logical-replication-failover.html).
 

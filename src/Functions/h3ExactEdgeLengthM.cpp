@@ -15,7 +15,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
 }
 
@@ -33,30 +32,27 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ExactEdgeLengthM>(context); }
 
-    std::string getName() const override { return name; }
+    [[nodiscard]] std::string getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isUInt64())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 1, getName());
-
-        return std::make_shared<DataTypeFloat64>();
+        return "(UInt64) -> Float64";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)
@@ -108,11 +104,11 @@ Returns the exact edge length of the unidirectional edge represented by the inpu
     FunctionDocumentation::Examples examples = {
         {
             "Get exact edge length in meters",
-            "SELECT h3ExactEdgeLengthM(1310277011704381439) AS exactEdgeLengthM",
+            "SELECT round(h3ExactEdgeLengthM(1310277011704381439), 6) AS exactEdgeLengthM",
             R"(
-┌───exactEdgeLengthM─┐
-│ 195449.63163407316 │
-└────────────────────┘
+┌─exactEdgeLengthM─┐
+│    195449.631634 │
+└──────────────────┘
             )"
         }
     };

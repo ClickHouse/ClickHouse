@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 Postgres から ClickHouse にレプリケートされた更新や削除は、ClickHouse のデータ保存構造とレプリケーションの仕組みにより、ClickHouse 内で重複した行を生じさせます。このページでは、その理由と、ClickHouse で重複を扱うための戦略について説明します。
 
 <div id="how-does-data-get-replicated">
@@ -64,7 +62,15 @@ ORDER BY id;
 
 以下の図は、ClickPipes を使用して PostgreSQL と ClickHouse 間でテーブル `users` を同期する基本的な例を示しています。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp" alt="ClickPipes 初期ロード" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickPipes 初期ロード](/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp)
+
+</Frame>
+
+</div>
 
 **Step 1** では、PostgreSQL 内の 2 行の初期スナップショットと、ClickPipes がその 2 行を ClickHouse に初期ロードする様子を示しています。ご覧のとおり、2 行ともそのまま ClickHouse にコピーされます。
 
@@ -136,15 +142,15 @@ LIMIT 10
   #### FINAL 設定
 </div>
 
-クエリ内の各テーブル名に FINAL 修飾子を追加する代わりに、[FINAL 設定](/ja/reference/settings/session-settings#final) を使うと、クエリ内のすべてのテーブルに自動的に FINAL を適用できます。
+クエリ内の各テーブル名に FINAL 修飾子を追加する代わりに、[FINAL 設定](/ja/reference/settings/session-settings/other#final) を使うと、クエリ内のすべてのテーブルに自動的に FINAL を適用できます。
 
 この設定は、クエリごとにもセッション全体にも適用できます。
 
 ```sql
--- クエリごとのFINAL設定
+-- Per query FINAL setting
 SELECT count(*) FROM posts SETTINGS FINAL = 1;
 
--- セッションにFINALを設定する
+-- Set FINAL for the session
 SET final = 1;
 SELECT count(*) FROM posts; 
 ```

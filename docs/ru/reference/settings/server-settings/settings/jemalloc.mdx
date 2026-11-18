@@ -24,6 +24,12 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />Максимальное количество создаваемых фоновых потоков jemalloc; значение 0 означает использование значения по умолчанию jemalloc
 
+<div id="jemalloc_merge_tree_arenas">
+  ## jemalloc_merge_tree_arenas
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" changeable_without_restart="No" />Количество выделенных арен jemalloc для долгоживущих метаданных MergeTree на уровне частей и таблиц. `0` отключает выделенную арену (метаданные используют арены по умолчанию для каждого CPU). `1` использует одну общую арену. `N > 1` создаёт пул из `N` арен и направляет выделения в зависимости от CPU; на машинах с большим числом ядер это позволяет избежать сериализации выделения памяти для метаданных из-за блокировок одной арены. Значение ограничено числом CPU, на которых может выполняться процесс (его маской привязки), поэтому большое значение (или количество ядер) обеспечивает по одной арене на каждый доступный CPU. Применяется при запуске.
+
 <div id="jemalloc_profiler_sampling_rate">
   ## jemalloc_profiler_sampling_rate
 </div>

@@ -1,6 +1,5 @@
 SET use_legacy_to_time=0;
 SET enable_time_time64_type=1;
-SET enable_analyzer=1;
 SET use_variant_as_common_type=0;
 
 -- Time + Time -> Time

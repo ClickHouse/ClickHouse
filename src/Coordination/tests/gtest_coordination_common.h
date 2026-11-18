@@ -32,6 +32,7 @@ namespace DB::CoordinationSetting
     extern const CoordinationSettingsNonZeroUInt64 rotate_log_storage_interval;
     extern const CoordinationSettingsUInt64 reserved_log_items;
     extern const CoordinationSettingsUInt64 snapshot_distance;
+    extern const CoordinationSettingsMilliseconds nuraft_snapshot_sync_ctx_timeout_ms;
 }
 
 namespace fs = std::filesystem;
@@ -64,7 +65,7 @@ public:
     bool use_lsmt_storage = false;
 
     /// A fully-operational fixture context (logs already preprocessed).
-    DB::KeeperContextPtr makeKeeperContext(std::shared_ptr<DB::CoordinationSettings> settings = nullptr) const
+    [[nodiscard]] DB::KeeperContextPtr makeKeeperContext(std::shared_ptr<DB::CoordinationSettings> settings = nullptr) const
     {
         auto context = ::makeKeeperContext(use_lsmt_storage, std::move(settings));
         context->setLocalLogsPreprocessed();

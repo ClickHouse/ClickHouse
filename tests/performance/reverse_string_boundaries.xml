@@ -1,0 +1,16 @@
+<test run_all_queries="1">
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT reverse(materialize(repeat('x', 2))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 3))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 5))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 8))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 31))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 32))) FROM numbers(10000000) FORMAT Null</query>
+
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 2), 2))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 8), 8))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 31), 31))) FROM numbers(10000000) FORMAT Null</query>
+</test>

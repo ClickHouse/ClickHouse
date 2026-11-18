@@ -21,7 +21,7 @@ CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std
 template<typename VirtualPartsT, typename MutationsStateT>
 class DistributedMergePredicate : public IMergePredicate
 {
-    std::expected<void, PreformattedMessage> checkCanMergePartsPreconditions(const std::string & name, const MergeTreePartInfo & info) const
+    [[nodiscard]] std::expected<void, PreformattedMessage> checkCanMergePartsPreconditions(const std::string & name, const MergeTreePartInfo & info) const
     {
         if (prev_virtual_parts_ptr && prev_virtual_parts_ptr->getContainingPart(info).empty())
             return std::unexpected(PreformattedMessage::create("Part {} does not contain in snapshot of previous virtual parts", name));
@@ -38,7 +38,7 @@ public:
     {
     }
 
-    std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override
+    [[nodiscard]] std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override
     {
         /// A sketch of a proof of why this method actually works:
         ///
@@ -132,6 +132,23 @@ public:
                             left.name, right.name, left_mutation_version, right_mutation_version));
         }
 
+        if (left.info.isPatch())
+        {
+            /// The check above only sees the mutations that are still known. A mutation that is already
+            /// finished (or was killed) leaves no entry in 'mutations_by_partition', while the data version
+            /// it gave to the parts stays. Merging patch parts across such a version produces a patch that
+            /// neither wholly applies nor wholly does not apply to those parts, which is a logical error.
+            auto original_partition_id = left.info.getOriginalPartitionId();
+
+            auto spanned_version = findDataVersionInRange(
+                data_versions_by_partition, original_partition_id, left.info.getDataVersion(), right.info.getDataVersion());
+
+            if (spanned_version.has_value())
+                return std::unexpected(PreformattedMessage::create(
+                            "Merge of patch parts {} and {} would span data version {} of a part in partition {}",
+                            left.name, right.name, *spanned_version, original_partition_id));
+        }
+
         if (left.projection_names != right.projection_names)
             return std::unexpected(PreformattedMessage::create(
                     "Parts have different projection sets: {} in '{}' and {} in '{}'",
@@ -140,7 +157,7 @@ public:
         return {};
     }
 
-    std::expected<void, PreformattedMessage> canUsePartInMerges(const std::string & name, const MergeTreePartInfo & info) const
+    [[nodiscard]] std::expected<void, PreformattedMessage> canUsePartInMerges(const std::string & name, const MergeTreePartInfo & info) const
     {
         if (auto result = checkCanMergePartsPreconditions(name, info); !result)
             return result;
@@ -166,7 +183,7 @@ public:
         return {};
     }
 
-    PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override
+    [[nodiscard]] PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override
     {
         if (range.empty())
             return {};
@@ -202,6 +219,10 @@ protected:
 
     /// Patch parts that should be applied at merges if apply_patches_on_merge is enabled.
     PatchInfosByPartition patches_by_partition;
+
+    /// Data versions of the regular parts. Filled only if there are patch parts in the table.
+    /// Used to check that a merge of patch parts does not span the data version of an existing part.
+    DataVersionsByPartition data_versions_by_partition;
 };
 
 }

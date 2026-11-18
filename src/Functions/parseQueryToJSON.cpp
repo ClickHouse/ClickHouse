@@ -54,12 +54,12 @@ public:
         implicit_select = settings[Setting::implicit_select];
     }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -68,7 +68,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto result = ColumnString::create();
 
@@ -116,7 +116,7 @@ REGISTER_FUNCTION(ParseQueryToJSON)
     FunctionDocumentation::Description description = R"(
 Parses a SQL query string into its AST (Abstract Syntax Tree) and returns a JSON representation of that tree.
 The resulting JSON can be passed to `formatQueryFromJSON` to reconstruct the SQL query, or sent directly
-to the server using the `clickhouse_json` value of the `dialect` setting (gated by `allow_experimental_json_ast_dialect`).
+to the server using the `clickhouse_json` value of the `dialect` setting (gated by `enable_json_ast_dialect`).
 
 This is useful for tools that want to inspect or transform queries programmatically without going through
 the SQL grammar.

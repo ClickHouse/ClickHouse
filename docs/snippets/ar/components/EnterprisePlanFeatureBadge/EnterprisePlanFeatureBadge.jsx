@@ -10,5 +10,4 @@ export const EnterprisePlanFeatureBadge = ({feature='هذه الميزة', suppo
         </div>
     )
 }
-
 export default EnterprisePlanFeatureBadge;

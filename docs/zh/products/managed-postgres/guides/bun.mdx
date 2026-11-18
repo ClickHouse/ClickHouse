@@ -1,0 +1,290 @@
+---
+slug: /cloud/managed-postgres/guides/bun
+sidebarTitle: 'Bun'
+title: '将 Bun 与 ClickHouse Managed Postgres 搭配使用'
+description: '使用 Bun 内置的 Bun.sql 客户端，通过已验证的 TLS 将 Bun 应用程序连接到 ClickHouse Managed Postgres'
+keywords: ['managed postgres', 'bun', 'bun.sql', 'typescript', 'javascript', 'tls', 'verify-full', 'pgbouncer']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-bun-beta" />
+
+[Bun](https://bun.sh) 是一个 JavaScript 和 TypeScript 运行时，内置 Postgres 客户端 `Bun.sql`，因此无需另行安装驱动程序。
+在本指南中，您将通过经过验证的 TLS 连接将 Bun 连接到 ClickHouse Managed Postgres，创建一张表，执行查询和事务，并使用 `Bun.serve` 通过 HTTP 对外提供这些行数据。
+
+## 前置条件 {#prerequisites}
+
+* [Bun](https://bun.sh/docs/installation) 1.4 或更高版本。本指南已使用 Bun 1.4.2 和 Postgres 18 测试通过。
+* 一个 ClickHouse Cloud 账户。
+* [`psql`](https://www.postgresql.org/download/)，用于创建数据库。也可以在 [SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console)中运行 `CREATE DATABASE` 语句。
+
+## 创建 ClickHouse Managed Postgres 服务 {#create-service}
+
+在 ClickHouse Cloud 控制台中，点击 **New service**，然后选择 **Postgres**。实例会在几分钟内就绪。完整的操作演示请参阅[快速入门](/zh/products/managed-postgres/quickstart)。
+
+## 获取连接详细信息 {#connection-details}
+
+打开你的服务，在左侧边栏中点击 **Connect**。保持选中 **Directly**，并开启 **Use SSL**。此时 URL 将以 `sslmode=verify-full&sslrootcert=...` 结尾。点击 **Download CA certificate**，下载该实例的 CA 证书。
+
+本指南通过端口 `5432` **直接**连接。`Bun.serve` 应用是长时间运行的进程，而 `Bun.sql` 自带连接池，因此无需使用服务器端连接池器。如果你需要运行大量短时存活的 Bun 进程，请参阅[通过 PgBouncer 连接](#pgbouncer)。
+
+## 设置项目 {#setup}
+
+创建项目：
+
+```bash
+mkdir bun-postgres && cd bun-postgres
+bun init -y
+```
+
+<Tip>
+  **要集成到现有应用中？**
+
+  可以跳过 `mkdir` 和 `bun init -y`，因为 `Bun.sql` 已内置于 Bun，无需额外安装任何内容。请在项目根目录下继续完成[配置连接](#configure)，同时在应用自身的启动脚本前加上 `NODE_EXTRA_CA_CERTS=./ca-certificate.pem`，以便应用能够验证服务器。
+</Tip>
+
+## 配置连接 {#configure}
+
+将下载的 CA 证书移动到项目目录中，并重命名为 `ca-certificate.pem`：
+
+```bash
+mv ~/Downloads/<service-name>-ca-certificate.pem ca-certificate.pem
+```
+
+为该应用创建一个数据库。将 `<PASSWORD>` 和主机地址替换为 **Connect** 对话框中显示的值：
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_bun;"
+```
+
+```text
+CREATE DATABASE
+```
+
+将 `guide_bun` 数据库的连接 URL 添加到 `.env` 文件中 (如果该文件不存在，请先创建) 。Bun 会自动加载 `.env`，而从 `bun` 导出的 `sql` 会读取 `DATABASE_URL`：
+
+```bash title=".env"
+DATABASE_URL=postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_bun?sslmode=verify-full
+```
+
+如果密码包含特殊字符，请先对其进行 URL 编码。切勿将 `.env` 提交到版本控制中。
+
+将以下脚本添加到 `package.json` 中；如果已存在 `scripts` 块，请将其合并到该块中。这些脚本会通过 `NODE_EXTRA_CA_CERTS` 将 CA 证书传递给 Bun：
+
+```json title="package.json"
+"scripts": {
+  "setup": "NODE_EXTRA_CA_CERTS=./ca-certificate.pem bun run setup.ts",
+  "queries": "NODE_EXTRA_CA_CERTS=./ca-certificate.pem bun run queries.ts",
+  "serve": "NODE_EXTRA_CA_CERTS=./ca-certificate.pem bun run server.ts"
+}
+```
+
+<Note>
+  **Bun 如何验证服务器证书**
+
+  * `sslmode=verify-full` 会让 `Bun.sql` 同时校验证书链和主机名。
+  * 不要从控制台 URL 中复制 `sslrootcert` 参数。`Bun.sql` 不会读取该参数，而是将其作为运行时设置转发给服务器，导致连接失败并报错 `unrecognized configuration parameter "sslrootcert"`。
+  * `NODE_EXTRA_CA_CERTS` 必须在 Bun 启动时就已存在于环境变量中。Bun 不会从 `.env` 中读取该变量，因此才将其写在脚本中。
+  * 在 Bun 1.4.2 中，通过 `SQL` 的 `tls: { ca }` 选项传入下载的证书会失败，并报错 `certificate signature failure`。请改用 `NODE_EXTRA_CA_CERTS`。
+</Note>
+
+## 创建表 {#create-table}
+
+创建 `setup.ts` 文件。该脚本会输出当前会话的 TLS 状态，并创建 `todos` 表：
+
+```ts title="setup.ts"
+import { sql } from "bun";
+
+const [tls] = await sql`SELECT ssl, version FROM pg_stat_ssl WHERE pid = pg_backend_pid()`;
+console.log("TLS:", tls);
+
+await sql`
+  CREATE TABLE IF NOT EXISTS todos (
+    id         integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    title      text NOT NULL,
+    done       boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )
+`;
+console.log("Table todos is ready");
+
+await sql.close();
+```
+
+运行该语句：
+
+```bash
+bun run setup
+```
+
+```text
+$ NODE_EXTRA_CA_CERTS=./ca-certificate.pem bun run setup.ts
+TLS: {
+  ssl: true,
+  version: "TLSv1.3",
+}
+Table todos is ready
+```
+
+要确认证书确实经过了校验，可以在不提供 CA 证书的情况下运行该文件，此时连接会被拒绝：
+
+```bash
+bun run setup.ts
+```
+
+```text
+error: unable to verify the first certificate
+ errno: 0,
+  code: "UNABLE_TO_VERIFY_LEAF_SIGNATURE"
+```
+
+## 查询数据库 {#query}
+
+`Bun.sql` 使用标签模板 (tagged templates) 。所有插值都会作为绑定参数发送，因此可以放心传入用户输入。创建 `queries.ts`：
+
+```ts title="queries.ts"
+import { sql } from "bun";
+
+// Interpolated values are sent as bind parameters, never spliced into the SQL text
+const title = "Download the CA certificate";
+const [first] = await sql`INSERT INTO todos (title, done) VALUES (${title}, true) RETURNING *`;
+console.log("Inserted:", first);
+
+// Insert several rows at once with the sql(array) helper
+const rows = [{ title: "Connect with Bun.sql" }, { title: "Serve rows with Bun.serve" }];
+await sql`INSERT INTO todos ${sql(rows)}`;
+
+// Both statements commit together, or neither does
+await sql.begin(async (tx) => {
+  const [todo] = await tx`INSERT INTO todos (title) VALUES ('Write a transaction') RETURNING id`;
+  await tx`UPDATE todos SET done = true WHERE id = ${todo.id}`;
+});
+
+const open = await sql`SELECT id, title FROM todos WHERE done = ${false} ORDER BY id`;
+console.log("Open todos:", open);
+
+await sql.close();
+```
+
+`sql.begin` 会在事务中执行回调函数：回调函数正常返回时提交事务，抛出异常时则回滚。
+
+运行：
+
+```bash
+bun run queries
+```
+
+```text
+$ NODE_EXTRA_CA_CERTS=./ca-certificate.pem bun run queries.ts
+Inserted: {
+  id: 1,
+  title: "Download the CA certificate",
+  done: true,
+  created_at: 2026-09-30T16:51:23.040Z,
+}
+Open todos: [
+  {
+    id: 2,
+    title: "Connect with Bun.sql",
+  }, {
+    id: 3,
+    title: "Serve rows with Bun.serve",
+  }, count: 2, command: "SELECT", lastInsertRowid: null,
+  affectedRows: null
+]
+```
+
+## 通过 HTTP 提供行数据 {#serve}
+
+创建 `server.ts`，并在其中添加一个 `/todos` 端点，用于列出和创建行：
+
+```ts title="server.ts"
+import { sql } from "bun";
+
+const server = Bun.serve({
+  port: 3106,
+  routes: {
+    "/todos": {
+      GET: async () => {
+        const todos = await sql`SELECT id, title, done, created_at FROM todos ORDER BY id`;
+        return Response.json(todos);
+      },
+      POST: async (req) => {
+        const { title } = await req.json();
+        const [todo] = await sql`INSERT INTO todos (title) VALUES (${title}) RETURNING *`;
+        return Response.json(todo, { status: 201 });
+      },
+    },
+  },
+});
+
+console.log(`Listening on ${server.url}`);
+```
+
+启动服务器：
+
+```bash
+bun run serve
+```
+
+```text
+$ NODE_EXTRA_CA_CERTS=./ca-certificate.pem bun run server.ts
+Listening on http://localhost:3106/
+```
+
+在另一个终端中添加一行：
+
+```bash
+curl -X POST http://localhost:3106/todos -H 'Content-Type: application/json' -d '{"title": "Take a screenshot"}'
+```
+
+```json
+{"id":5,"title":"Take a screenshot","done":false,"created_at":"2026-09-30T16:51:30.372Z"}
+```
+
+## 验证 {#verify}
+
+在浏览器中打开 [http://localhost:3106/todos](http://localhost:3106/todos)，即可查看所有行。返回结果如下 (已格式化以便阅读) ：
+
+```json
+[
+  {"id":1,"title":"Download the CA certificate","done":true,"created_at":"2026-09-30T16:51:23.040Z"},
+  {"id":2,"title":"Connect with Bun.sql","done":false,"created_at":"2026-09-30T16:51:23.136Z"},
+  {"id":3,"title":"Serve rows with Bun.serve","done":false,"created_at":"2026-09-30T16:51:23.136Z"},
+  {"id":4,"title":"Write a transaction","done":true,"created_at":"2026-09-30T16:51:23.184Z"},
+  {"id":5,"title":"Take a screenshot","done":false,"created_at":"2026-09-30T16:51:30.372Z"}
+]
+```
+
+在控制台中，打开 **SQL 控制台**，依次展开 **guide&#95;bun**、**public** 和 **todos**，即可看到相同的行：
+
+| id | title                       | done  | created&#95;at                |
+| -- | --------------------------- | ----- | ----------------------------- |
+| 1  | Download the CA certificate | true  | 2026-09-30 16:51:23.04083+00  |
+| 2  | Connect with Bun.sql        | false | 2026-09-30 16:51:23.136975+00 |
+| 3  | Serve rows with Bun.serve   | false | 2026-09-30 16:51:23.136975+00 |
+| 4  | Write a transaction         | true  | 2026-09-30 16:51:23.184716+00 |
+| 5  | Take a screenshot           | false | 2026-09-30 16:51:30.372292+00 |
+
+## 通过 PgBouncer 连接 {#pgbouncer}
+
+如果您需要运行大量短生命周期的 Bun 进程，请改为通过内置的 [PgBouncer](/zh/products/managed-postgres/connection#pgbouncer) 进行连接。在 **Connect** 对话框中选择 **via PgBouncer**，并将 `DATABASE_URL` 中的端口改为 `6432`。CA 证书和 `sslmode=verify-full` 无需更改。
+
+PgBouncer 以事务级连接池模式运行。`Bun.sql` 默认使用命名预处理语句，在我们的测试中，通过 PgBouncer 使用时未出现任何错误。如果遇到 `prepared statement does not exist` 错误，请在创建客户端时指定 `prepare: false`：
+
+```ts
+import { SQL } from "bun";
+
+const sql = new SQL(process.env.DATABASE_URL!, { prepare: false });
+```
+
+请将 `prepare` 作为选项传入，不要写在 URL 中。与 `sslrootcert` 一样，URL 参数 `prepare=false` 会被转发到服务器，并被服务器拒绝。
+
+## 后续步骤 {#next-steps}
+
+* [连接](/zh/products/managed-postgres/connection)：连接字符串、PgBouncer 和 TLS
+* [设置](/zh/products/managed-postgres/settings)：修改 Postgres 和 PgBouncer 参数
+* [只读副本](/zh/products/managed-postgres/read-replicas)：扩展读取能力
+* [Bun SQL 文档](https://bun.sh/docs/runtime/sql)：完整的 `Bun.sql` API 参考

@@ -1,0 +1,131 @@
+"""
+`send_logs_level` for `make_distributed_plan=1` queries: log lines produced by
+stateless-worker tasks must be forwarded to the initiator and reach the client.
+
+https://github.com/ClickHouse/ClickHouse/issues/109452
+"""
+
+import re
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+
+cluster = ClickHouseCluster(__file__)
+
+node1 = cluster.add_instance(
+    "node1",
+    main_configs=["configs/config.d/stateless_worker.xml"],
+    stay_alive=True,
+)
+node2 = cluster.add_instance(
+    "node2",
+    main_configs=["configs/config.d/stateless_worker.xml"],
+    stay_alive=True,
+)
+
+
+@pytest.fixture(scope="module")
+def started_cluster():
+    try:
+        cluster.start()
+        # Identical data on both nodes: worker tasks resolve the table in their own
+        # catalog, so the reader buckets must partition the same content on any node.
+        for node in [node1, node2]:
+            node.query(
+                "CREATE TABLE IF NOT EXISTS t_worker_logs (id UInt64) "
+                "ENGINE = MergeTree ORDER BY id"
+            )
+            node.query(
+                "INSERT INTO t_worker_logs SELECT number FROM numbers(1000000)"
+            )
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
+DISTRIBUTED_SETTINGS = (
+    "make_distributed_plan = 1, "
+    "enable_parallel_replicas = 0, "
+    "distributed_plan_default_shuffle_join_bucket_count = 2, "
+    "distributed_plan_default_reader_bucket_count = 2, "
+    "distributed_plan_max_rows_to_broadcast = 0"
+)
+
+# A dispatched worker task runs under current_query_id = '<initiator_uuid>::<stage_name>'.
+TASK_LOG_LINE = re.compile(r"\{[0-9a-f-]+::stage_[0-9_]+\}")
+# node2 is the only worker and the client talks to node1, so a task line prefixed with node2's host
+# name was forwarded from the remote worker through the coordinator.
+WORKER_TASK_LOG_LINE = re.compile(r"\[node2\] [^\n]*\{[0-9a-f-]+::stage_[0-9_]+\}")
+WORKER_TASK_ERROR_LINE = re.compile(r"\[node2\] [^\n]*\{[0-9a-f-]+::stage_[0-9_]+\} <Error>")
+# Reported to the client when a worker's forwarding buffer overflows and drops log lines.
+DROPPED_LOGS_LINE = re.compile(r"(\d+) worker log line\(s\) were dropped on .* forwarding buffer was full")
+
+
+def run_query_capturing_logs(query, send_logs_level="trace"):
+    """Logs requested with send_logs_level go to the client's stderr; capture both
+    streams. `|| true` keeps a failing query (expected in the exception test) from
+    failing the container exec itself. Pass send_logs_level=None to omit the flag
+    entirely and exercise the default (no log forwarding)."""
+    level_arg = f"--send_logs_level={send_logs_level} " if send_logs_level else ""
+    return node1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f'clickhouse client {level_arg}--query "{query}" 2>&1 || true',
+        ]
+    )
+
+
+def test_worker_logs_reach_client(started_cluster):
+    out = run_query_capturing_logs(
+        f"SELECT sum(id) FROM t_worker_logs SETTINGS {DISTRIBUTED_SETTINGS}"
+    )
+    assert "499999500000" in out, (
+        "query did not return the expected result; test setup problem, "
+        "not a log-forwarding failure: " + out[-2000:]
+    )
+    assert WORKER_TASK_LOG_LINE.search(out), (
+        "no log line from a task on the worker node2 reached the client: " + out[-2000:]
+    )
+
+
+def test_worker_exception_context_reaches_client(started_cluster):
+    out = run_query_capturing_logs(
+        "SELECT sum(id + throwIf(id = 999999, 'boom on worker')) FROM t_worker_logs "
+        f"SETTINGS {DISTRIBUTED_SETTINGS}"
+    )
+    assert "boom on worker" in out
+    assert WORKER_TASK_ERROR_LINE.search(out), (
+        "worker exception context was not forwarded to the client: " + out[-2000:]
+    )
+
+
+def test_worker_log_drops_reported_to_client(started_cluster):
+    """With a tiny forwarding buffer, a chatty worker task overflows it between status polls.
+    The dropped lines must be counted and reported to the client, not silently lost."""
+    out = run_query_capturing_logs(
+        "SELECT sum(id) FROM t_worker_logs "
+        f"SETTINGS {DISTRIBUTED_SETTINGS}, distributed_plan_max_buffered_log_rows = 1"
+    )
+    assert "499999500000" in out, (
+        "query did not return the expected result; test setup problem: " + out[-2000:]
+    )
+    dropped = sum(int(count) for count in DROPPED_LOGS_LINE.findall(out))
+    assert dropped > 0, (
+        "worker log drops were not reported to the client: " + out[-2000:]
+    )
+
+
+def test_no_logs_forwarded_without_send_logs_level(started_cluster):
+    """With send_logs_level=none the worker attaches no logs queue, so no task logs reach the client."""
+    out = run_query_capturing_logs(
+        f"SELECT sum(id) FROM t_worker_logs SETTINGS {DISTRIBUTED_SETTINGS}",
+        send_logs_level="none",
+    )
+    assert "499999500000" in out, (
+        "query did not return the expected result; test setup problem: " + out[-2000:]
+    )
+    assert not TASK_LOG_LINE.search(out), (
+        "worker task logs were forwarded although send_logs_level was not set: " + out[-2000:]
+    )

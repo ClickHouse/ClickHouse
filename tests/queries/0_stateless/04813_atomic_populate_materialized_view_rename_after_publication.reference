@@ -1,0 +1,4 @@
+create succeeded: 0
+view exists:	1
+rows backfilled from the source:	10	10
+renamed source subscribed to the view:	1

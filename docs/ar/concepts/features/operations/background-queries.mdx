@@ -1,0 +1,211 @@
+---
+description: 'تنفيذ الاستعلامات بشكل مستقل عن اتصال العميل ومراقبة سير تنفيذها.'
+sidebarTitle: 'استعلامات الخلفية'
+slug: /operations/background-queries
+title: 'استعلامات الخلفية'
+doc_type: 'guide'
+---
+
+## نظرة عامة {#overview}
+
+تتيح الاستعلامات الخلفية للعملاء إرسال استعلامات تُنفَّذ بشكل مستقل عن جلسة العميل عبر ضبط `run_query_in_background=1`. وبمجرد الإرسال، يستجيب ClickHouse server فورًا للعميل بينما يواصل الاستعلام تنفيذه حتى الاكتمال (بالنجاح أو بالفشل) على جهة الخادم.
+
+وبفصل تنفيذ الاستعلام عن اتصال الشبكة الخاص بالعميل، تصبح المهام الخلفية محصَّنة تمامًا ضد انقطاع اتصال العميل أو أعطال الشبكة العابرة.
+
+تستهدف الاستعلامات الخلفية بالدرجة الأولى العمليات طويلة الأمد مثل `INSERT ... SELECT`،
+و`CREATE TABLE ... AS SELECT`، و`CREATE MATERIALIZED VIEW ... POPULATE`، أو `OPTIMIZE TABLE ... FINAL`،
+وهي عمليات يجب ألا تتوقف عند انقطاع اتصال العميل.
+
+لا يمكن فصل كل استعلام عن اتصاله. راجع [صيغ الاستعلامات غير المدعومة](#unsupported-query-forms)
+للاطلاع على الطلبات التي تُرفض بدلًا من ذلك.
+
+<Warning>
+  تُهمَل نتيجة الاستعلام الخلفي، إذ لا يمكن استرجاعها أو الارتباط بها لاحقًا.
+  استخدم `query_id` الخاص بالاستعلام لمراقبته في `system.processes` أثناء تشغيله، وفي `system.query_log` بعد انتهائه.
+</Warning>
+
+لا يبقى الاستعلام الخلفي قائمًا بعد إعادة تشغيل الخادم. ويُتحكَّم في سلوك إيقاف الخادم عبر
+`shutdown_wait_unfinished_queries` و`shutdown_wait_unfinished`.
+
+## أشكال الاستعلام غير المدعومة {#unsupported-query-forms}
+
+يظل الاستعلام الخلفي قائمًا بعد انتهاء الـ connection الذي أرسله، لذا يجب أن يكون لدى الخادم بالفعل كل ما يلزم
+لتنفيذ الاستعلام لحظة قبوله. أما الطلبات التي لا تستوفي ذلك فتُرفض بشكل متزامن على
+الـ connection المُرسِل، ولا يبدأ الاستعلام أصلًا.
+
+### البيانات التي تتدفق عبر الاتصال {#data-that-streams-over-the-connection}
+
+يُرفض `INSERT` عندما يظل الخادم بحاجة إلى قراءة البيانات من الاتصال المُرسِل بعد توجيه الاستعلام للتنفيذ.
+
+وقد يشمل ذلك كلًا من `INSERT ... FORMAT ...` والاستعلامات التي تقرأ عبر `input`. ويُرفض مثل هذا الطلب
+مع الرسالة `A query whose data streams over the connection cannot be run in the background`:
+
+```sql
+-- Rejected over the native protocol: the client sends the data separately
+INSERT INTO target_table FORMAT TSV
+INSERT INTO target_table SELECT * FROM input('n UInt64') FORMAT TSV
+
+-- Accepted: the server produces the data itself
+INSERT INTO target_table SELECT number FROM numbers(1000000)
+```
+
+يرسل `clickhouse-client` بيانات `INSERT ... FORMAT ...` في حزم منفصلة، لذا لا يمكن لهذه الصيغة أن تعمل في الخلفية عبر البروتوكول الأصلي إطلاقًا.
+
+أما عبر HTTP، فيمكن قبول أيٍّ من الصيغتين عندما يتّسع الاستعلام الكامل وبياناته في مخزن التحليل الأولي المؤقت، المحدود بقيمة `max_query_size`.
+
+ويشمل ذلك استعلام HTTP الذي يقرأ حمولة مضمّنة عبر `input`. أما الجسم الأكبر حجمًا فيستمر تدفقه إلى ما بعد نص الاستعلام المخزَّن مؤقتًا، ومن ثمّ يُرفض.
+
+لا تعتمد على هذا الحد من الحجم؛ استخدم `INSERT ... SELECT` أو دالة جدول مثل `url` أو `s3` للبيانات التي يجب تحميلها في الخلفية.
+
+### طلبات مرفوضة أخرى {#other-rejected-requests}
+
+| الطلب                                                                                                              | الخطأ                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `SET run_query_in_background = 1`                                                                                  | `run_query_in_background cannot be changed with SET, because it must be requested per query` |
+| استعلام داخل معاملة صريحة                                                                                          | `Background queries inside transactions are not supported`                                   |
+| استعلام مع `implicit_transaction = 1`                                                                              | `Background queries with 'implicit_transaction' are not supported`                           |
+| استعلام ثانوي، يُطلب مثلًا عبر `clickhouse-client --query_kind secondary_query`                                    | `run_query_in_background cannot be used for a secondary query`                               |
+| مرحلة معالجة استعلام غير `Complete`، تُطلب مثلًا عبر `clickhouse-client --stage with_mergeable_state`              | `run_query_in_background cannot be used with the WithMergeableState query processing stage`  |
+| عبارة `SETTINGS` في `CREATE` أو `ATTACH` التي تحمل تعريف تخزين، لأن العميل يرسل تلك العبارة إلى الخادم دون تحليلها | `run_query_in_background cannot be changed in the SETTINGS clause of this particular query`  |
+
+لا يُنقل هذا الإعداد أبدًا إلى الاستعلامات الثانوية لاستعلام موزّع: فعملية `INSERT` الموزّعة في الخلفية
+تنفّذ استعلاماتها الخاصة بكل جزء في المقدمة، ضمن الاستعلام الأولي العامل في الخلفية.
+
+## إرسال استعلام في الخلفية {#submit-a-background-query}
+
+### بروتوكول TCP الأصلي {#native-tcp-protocol}
+
+عند استخدام `clickhouse-client`، مرِّر `run_query_in_background` كإعداد في سطر الأوامر:
+
+```bash
+clickhouse-client --echo-query-id --run_query_in_background=1 \
+  -q "INSERT INTO target_table SELECT number FROM numbers(1000000)"
+```
+
+يمكنك أيضًا استخدام عبارة `SETTINGS` مضمّنة:
+
+```bash
+clickhouse-client --echo-query-id \
+  -q "INSERT INTO target_table SELECT number FROM numbers(1000000) SETTINGS run_query_in_background=1"
+```
+
+ينقل البروتوكول الأصلي إعدادات الاستعلام بمعزل عن نص SQL.
+يحلّل `clickhouse-client` معظم إعدادات الاستعلام المضمّنة (inline) ويرسلها ضمن قسم الإعدادات هذا.
+
+وبدلاً من ذلك، يمكن لمشغّلات البروتوكول الأصلي تمرير `run_query_in_background` ضمن خريطة الإعدادات الخاصة بكل استعلام، مع إبقاء نص SQL دون تغيير.
+
+لا يُرجع البروتوكول الأصلي معرّف `query_id` مولَّدًا من الخادم، لذا ينبغي على native clients توليد معرّف فريد وإرساله مع الاستعلام.
+
+يقوم `clickhouse-client --echo-query-id` بذلك ويطبع المعرّف قبل إرسال الاستعلام:
+
+```response
+Query id: 6b57dffd-8aac-4be5-b331-fa8b2e70227e
+```
+
+### بروتوكول HTTP {#http-protocol}
+
+بالنسبة لطلبات HTTP، مرّر `run_query_in_background` كمعامل في الـ URL:
+
+```bash
+curl -sS -D - -o /dev/null \
+  'http://localhost:8123/?run_query_in_background=1' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000)'
+```
+
+تتضمن الاستجابة معرّف الاستعلام المُولَّد في الترويسة `X-ClickHouse-Query-Id`:
+
+```response
+X-ClickHouse-Query-Id: 689d4147-7531-46ee-b74e-8dced676b397
+```
+
+لا يصل ذلك الـ header إلا إلى العميل الذي يقرأ الاستجابة. أما إذا كنت بحاجة إلى handle للاستعلام لا يتوقف على وصول الاستجابة، فأرسل `query_id` خاصاً بك بوصفه URL parameter.
+
+بهذه الطريقة يعرف العميل الـ ID قبل إرسال الطلب، ويمكنه مراقبة الاستعلام أو تنفيذ `KILL` عليه على العقدة المستقبِلة حتى وإن لم يرَ الاستجابة أبداً:
+
+```bash
+curl -sS 'http://localhost:8123/?run_query_in_background=1&query_id=nightly_load_2026_09_03' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000)'
+```
+
+بخلاف البروتوكول الأصلي (البروتوكول الأصلي)، لا يمكن لـ HTTP تفعيل التنفيذ في الخلفية عبر عبارة `SETTINGS` مضمّنة في SQL:
+
+```bash
+curl 'http://localhost:8123/' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000) SETTINGS run_query_in_background=1'
+```
+
+يُرجع هذا الطلب استثناء `BAD_ARGUMENTS`. فمُعالِج HTTP يجب أن يقرر ما إذا كان سينشئ سياق استعلام منفصلًا (detached) قبل تحليل جسم الطلب.
+
+مرّر الإعداد في الـ URL، أو هيّئه على مستوى المستخدم أو ملف الإعدادات (profile).
+
+## مراقبة التنفيذ {#monitor-execution}
+
+استخدم `query_id` للتحقق مما إذا كان الاستعلام قيد التنفيذ حالياً:
+
+```sql
+SELECT
+    query_id,
+    elapsed,
+    query
+FROM system.processes
+WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+```
+
+بعد انتهاء الاستعلام، افحص `system.query_log` لمعرفة حالته النهائية:
+
+```sql
+SELECT
+    type,
+    query_duration_ms,
+    exception_code,
+    exception
+FROM system.query_log
+WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e'
+  AND type IN ('QueryFinish', 'ExceptionBeforeStart', 'ExceptionWhileProcessing')
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+```
+
+قد ينجح طلب الإرسال حتى لو فشل التنفيذ في الخلفية لاحقًا. في هذه الحالة، يُسجَّل الاستثناء
+في `system.query_log` بدلًا من إعادته عبر الاتصال الأصلي.
+
+<Note title="عمليات النشر العنقودية والموزَّعة عبر موازن الأحمال">
+  جداول `system.processes` و`system.query_log` وأمر `KILL QUERY` محلية على مستوى العقدة: فكل منها لا يرى سوى استعلامات الخادم الذي يستجيب لها.
+
+  ينتمي الاستعلام الخلفي إلى الخادم الذي قَبِله، وهو ليس بالضرورة الخادم الذي يصل إليه طلبك التالي عبر موازن الأحمال. لذا اقرأ من العنقود بأكمله بدلًا من ذلك:
+
+  ```sql
+  SELECT hostName(), query_id, elapsed, query
+  FROM clusterAllReplicas(my_cluster, system.processes)
+  WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+
+  ينطبق الأمر نفسه على `system.query_log`، ويتطلب الإلغاء استخدام الصيغة الشاملة للعنقود:
+
+  ```sql
+  KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+</Note>
+
+## تأخير flush لـ query log {#query-log-flush-delay}
+
+يتم الاحتفاظ بالـ entries في buffer قبل أن تظهر في `system.query_log`.
+في حالة ClickHouse ذاتي الإدارة، يضبط مثال server configuration الخيار `query_log.flush_interval_milliseconds` على `7500`.
+
+أما في ClickHouse Cloud، فقد يستغرق ظهور الـ entries ما يصل إلى 30 ثانية. ضع هذا التأخير في الحسبان عند مراقبة queries الخلفية قصيرة التنفيذ.
+
+على server ذاتي الإدارة، يمكن للمستخدمين الذين يمتلكون privileges كافية إجبار query log على تنفيذ flush. حدّد اسم الـ log صراحةً حتى لا تتأثر بقية system logs:
+
+```sql
+SYSTEM FLUSH LOGS query_log;
+```
+
+تحدث عملية الـ flush على الخادم الذي يتلقّى الـ statement.
+
+يتتبّع الاستعلامَ الخلفي الخادمُ الذي قبِله، وليس بالضرورة الخادم المتصلة به جلستك الحالية، لذلك في حالة العنقود نفّذ flush على جميع الخوادم قبل البحث عن الاستعلام:
+
+```sql
+SYSTEM FLUSH LOGS ON CLUSTER my_cluster query_log;
+```
+
+التفريغ (Flushing) على مستوى العنقود يجعل كل server يكتب الـ entries المخزّنة مؤقتًا لديه فقط، ولا يجعل جدول `system.query_log` الخاص بـ server آخر مرئيًا محليًا، لذا استمر في قراءة الـ log عبر `clusterAllReplicas` كما هو موضّح في [مراقبة التنفيذ](#monitor-execution).

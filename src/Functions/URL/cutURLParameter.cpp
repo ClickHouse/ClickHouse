@@ -10,7 +10,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -20,36 +19,23 @@ public:
     static constexpr auto name = "cutURLParameter";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCutURLParameter>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
+    [[nodiscard]] String getSignatureString() const override { return "(String, const String | Array) -> String"; }
 
-        if (!isString(arguments[1]) && !isArray(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}",
-                 arguments[1]->getName(), getName());
-
-        return std::make_shared<DataTypeString>();
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;
         const ColumnPtr column_needle = arguments[1].column;
@@ -222,9 +208,9 @@ SELECT
     cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', ['c', 'e']) AS url_without_c_and_e;
         )",
         R"(
-┌─url_without_a────────────────┬─url_without_c_and_e──────┐
-│ http://bigmir.net/?c=d&e=f#g │ http://bigmir.net/?a=b#g │
-└──────────────────────────────┴──────────────────────────┘
+┌─url_without_a────────────────┬─url_without_c_and_e───────┐
+│ http://bigmir.net/?c=d&e=f#g │ http://bigmir.net/?a=b&#g │
+└──────────────────────────────┴───────────────────────────┘
         )"
     }
     };

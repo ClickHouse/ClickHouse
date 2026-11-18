@@ -22,7 +22,7 @@ or
 
 List and virtual columns with description, if they exist.
 
-## Data Types Support {#data_types-support} (for Database engines only)
+## Data Types Support {#data-types-support} (for Database engines only)
 
 |  EngineName           | ClickHouse                         |
 |-----------------------|------------------------------------|
