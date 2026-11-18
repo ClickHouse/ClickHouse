@@ -438,6 +438,14 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
 
 void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
+static void optimizeJoinsBelow(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get()); join_step && !join_step->isOptimized())
+        optimizeJoinLogicalImpl(join_step, node, nodes, optimization_settings);
+    for (auto * child : node.children)
+        optimizeJoinsBelow(*child, nodes, optimization_settings);
+}
+
 constexpr bool isInnerOrCross(JoinKind kind)
 {
     return kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma;
@@ -626,21 +634,9 @@ static size_t addChildQueryGraph(
         }
     }
 
-    /// When the leaf is a subquery with Join-s wrapped in Expression/Aggregating steps, we cannot Joins to the graph, but we want to optimize
-    /// those child Join to get proper statistics to use in the parent Join reordering.
-    {
-        auto * child_node = node;
-        while (child_node->children.size() == 1)
-        {
-            child_node = child_node->children[0];
-        }
-
-        auto * child_join_step = typeid_cast<JoinStepLogical *>(child_node->step.get());
-        if (child_join_step && !child_join_step->isOptimized())
-        {
-            optimizeJoinLogicalImpl(child_join_step, *child_node, nodes, graph.context->optimization_settings);
-        }
-    }
+    /// Joins below the leaf (in a subquery, below a set operation or below a join that is not reordered) are not added to the graph.
+    /// Optimize them first, so the estimate of the leaf uses their result instead of estimating their reads again.
+    optimizeJoinsBelow(*node, nodes, graph.context->optimization_settings);
 
     graph.inputs.push_back(node);
     RelationStats stats = estimateReadRowsCount(*node);
