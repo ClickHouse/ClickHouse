@@ -35,7 +35,7 @@ size_t ParquetMetadataCacheKeyHash::operator()(const ParquetMetadataCacheKey & k
 
 ParquetMetadataCacheCell::ParquetMetadataCacheCell(
     std::shared_ptr<const Parquet::FileFooter> footer_,
-    std::vector<Parquet::FileColumnChunksPtr> column_chunks_,
+    VectorWithMemoryTracking<Parquet::FileColumnChunksPtr> column_chunks_,
     std::shared_ptr<ParquetKeptStatistics> kept_statistics_,
     Parquet::KeptOffsetIndexesPtr kept_offset_indexes_)
     : footer(std::move(footer_))
@@ -60,7 +60,7 @@ size_t ParquetMetadataCacheCell::calculateMemorySize() const
     const parquet::format::FileMetaData & metadata = footer->metadata;
     size_t total_size = sizeof(*footer);
     total_size += footer->serialized.capacity();
-    total_size += footer->column_chunk_offsets.capacity() * sizeof(std::vector<UInt32>);
+    total_size += footer->column_chunk_offsets.capacity() * sizeof(VectorWithMemoryTracking<UInt32>);
     for (const auto & offsets : footer->column_chunk_offsets)
         total_size += offsets.capacity() * sizeof(offsets[0]);
 
@@ -123,7 +123,7 @@ void deleteKeptOffsetIndex(const parquet::format::OffsetIndex * offset_index)
 ParquetKeptStatistics::~ParquetKeptStatistics()
 {
     MemoryTrackerBlockerInThread not_charged_to_query_or_user;
-    std::unordered_map<String, RangesPtr>().swap(ranges_by_column);
+    UnorderedMapWithMemoryTracking<String, RangesPtr>().swap(ranges_by_column);
 }
 
 std::optional<ParquetKeptStatistics::Column>
@@ -191,9 +191,9 @@ ParquetMetadataCacheKey ParquetMetadataCache::createKey(const String & file_path
     return ParquetMetadataCacheKey{file_path, file_attr};
 }
 void ParquetMetadataCache::addColumnChunks(
-    const ParquetMetadataCacheKey & key, const MappedPtr & cell, const std::vector<Parquet::FileColumnChunksPtr> & column_chunks)
+    const ParquetMetadataCacheKey & key, const MappedPtr & cell, const VectorWithMemoryTracking<Parquet::FileColumnChunksPtr> & column_chunks)
 {
-    std::vector<Parquet::FileColumnChunksPtr> merged = cell->column_chunks;
+    VectorWithMemoryTracking<Parquet::FileColumnChunksPtr> merged = cell->column_chunks;
     merged.resize(std::max(merged.size(), column_chunks.size()));
     bool added = false;
     for (size_t i = 0; i < column_chunks.size(); ++i)
@@ -231,11 +231,11 @@ void ParquetMetadataCache::keepStatistics(
 }
 
 void ParquetMetadataCache::keepOffsetIndexes(
-    const ParquetMetadataCacheKey & key, const MappedPtr & cell, const std::vector<Parquet::KeptOffsetIndexes::Entry> & entries)
+    const ParquetMetadataCacheKey & key, const MappedPtr & cell, const VectorWithMemoryTracking<Parquet::KeptOffsetIndexes::Entry> & entries)
 {
     /// The kept offset indexes belong to the shared cache, not to the query that reads the file.
     MemoryTrackerBlockerInThread not_charged_to_query_or_user;
-    std::vector<Parquet::KeptOffsetIndexes::Entry> copies;
+    VectorWithMemoryTracking<Parquet::KeptOffsetIndexes::Entry> copies;
     for (const auto & entry : entries)
     {
         if (cell->kept_offset_indexes->get(entry.row_group_idx, entry.column_idx))

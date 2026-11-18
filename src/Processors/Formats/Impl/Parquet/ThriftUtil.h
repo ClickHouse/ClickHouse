@@ -2,12 +2,14 @@
 
 #include <base/defines.h>
 #include <base/types.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <generated/parquet_types.h> // in contrib/arrow/cpp/src/ , generated from parquet.thrift
 
+#include <cstring>
 #include <memory>
 #include <mutex>
-#include <unordered_map>
-#include <vector>
+#include <type_traits>
 
 namespace DB
 {
@@ -20,6 +22,27 @@ namespace DB::Parquet
 /// Namespace with structs generated from parquet.thrift
 namespace parq = parquet::format;
 
+/// Thrift deserialization of a malformed file can store an out-of-range value into an enum field.
+/// Loading it is undefined behavior (-fsanitize=enum); reading the underlying integer via memcpy is not.
+template <typename E>
+int thriftEnumToInt(const E & e)
+{
+    std::underlying_type_t<E> v;
+    memcpy(&v, &e, sizeof(v));
+    return static_cast<int>(v);
+}
+
+/// Indices of column chunks in a row group.
+using ColumnIndices = VectorWithMemoryTracking<size_t>;
+
+/// For each row group: where each serialized `ColumnChunk` starts, then where the last one ends.
+using ColumnChunkOffsets = VectorWithMemoryTracking<VectorWithMemoryTracking<UInt32>>;
+
+/// Old versions of parquet-cpp wrote their own `NA` converted type, 24, for a column of the Arrow null type. The value
+/// is not in parquet.thrift (but is in the range of the enum). Such a column has only nulls, like one with the `UNKNOWN`
+/// (null) logical type.
+constexpr int LEGACY_NULL_CONVERTED_TYPE = 24;
+
 /// Parquet file footer whose column chunks are parsed on demand, see deserializeColumnChunks.
 struct FileFooter
 {
@@ -28,16 +51,16 @@ struct FileFooter
     /// Serialized FileMetaData.
     std::string serialized;
     /// For each row group: where each serialized ColumnChunk starts in `serialized`, then where the last one ends.
-    std::vector<std::vector<UInt32>> column_chunk_offsets;
+    ColumnChunkOffsets column_chunk_offsets;
 
-    size_t numColumnChunks(size_t row_group_idx) const;
+    [[nodiscard]] size_t numColumnChunks(size_t row_group_idx) const;
 };
 
 /// One Parquet column's chunks in every row group of a file.
 struct FileColumnChunks
 {
     /// [row group]; default-constructed where the row group has no such chunk.
-    std::vector<parq::ColumnChunk> chunks;
+    VectorWithMemoryTracking<parq::ColumnChunk> chunks;
     /// What `chunks` allocates, for ParquetMetadataCache's weight.
     size_t memory_bytes = 0;
 };
@@ -67,7 +90,7 @@ public:
     OffsetIndexPtr get(size_t row_group_idx, size_t column_idx) const;
     /// Keeps the entries not kept yet, while all kept entries take at most `max_bytes`. Returns whether any was added.
     /// Keeps none if it throws.
-    bool add(const std::vector<Entry> & entries);
+    bool add(const VectorWithMemoryTracking<Entry> & entries);
     size_t bytes() const;
     size_t remainingBytes() const;
     static size_t entryBytes(const parq::OffsetIndex & offset_index);
@@ -77,7 +100,7 @@ private:
 
     const size_t max_bytes;
     mutable std::mutex mutex;
-    std::unordered_map<UInt64, OffsetIndexPtr> offset_indexes TSA_GUARDED_BY(mutex);
+    UnorderedMapWithMemoryTracking<UInt64, OffsetIndexPtr> offset_indexes TSA_GUARDED_BY(mutex);
     size_t total_bytes TSA_GUARDED_BY(mutex) = 0;
 };
 using KeptOffsetIndexesPtr = std::shared_ptr<KeptOffsetIndexes>;
@@ -85,13 +108,13 @@ using KeptOffsetIndexesPtr = std::shared_ptr<KeptOffsetIndexes>;
 /// Like deserializeThriftStruct<parq::FileMetaData>, but skips the elements of `RowGroup::columns`
 /// and records their offsets in `column_chunk_offsets` (see FileFooter).
 void deserializeFileMetaDataWithoutColumnChunks(
-    parq::FileMetaData & out, const char * buf, size_t limit, std::vector<std::vector<UInt32>> & column_chunk_offsets);
+    parq::FileMetaData & out, const char * buf, size_t limit, ColumnChunkOffsets & column_chunk_offsets);
 
 /// Parses the column chunks `column_indices` (sorted, unique) of every row group:
 /// `out[k].chunks[i]` is column chunk `column_indices[k]` of row group `i`.
 void deserializeColumnChunks(
-    const char * buf, size_t limit, const std::vector<std::vector<UInt32>> & column_chunk_offsets,
-    const std::vector<size_t> & column_indices, std::vector<FileColumnChunks> & out);
+    const char * buf, size_t limit, const ColumnChunkOffsets & column_chunk_offsets,
+    const ColumnIndices & column_indices, VectorWithMemoryTracking<FileColumnChunks> & out);
 
 /// All templates are explicitly instantiated, feel free to add more types.
 

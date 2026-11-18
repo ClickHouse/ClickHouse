@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <Formats/FormatSettings.h>
 
 #include <Poco/ConsoleChannel.h>
 #include <absl/log/globals.h>
@@ -528,10 +529,10 @@ struct ArgConstraints
     /// it must be no greater than this value.
     std::optional<Int64> integer_at_most;
 
-    auto toTuple() const { return std::make_tuple(integer_at_most); }
+    [[nodiscard]] auto toTuple() const { return std::make_tuple(integer_at_most); }
     bool operator<(const ArgConstraints & rhs) const { return toTuple() < rhs.toTuple(); }
 
-    bool isUnconstrained() const
+    [[nodiscard]] bool isUnconstrained() const
     {
         return toTuple() == ArgConstraints().toTuple();
     }
@@ -665,7 +666,7 @@ class FunctionStats
 public:
     size_t function_idx = size_t(-1);
 
-    Int64 get(Stat idx) const
+    [[nodiscard]] Int64 get(Stat idx) const
     {
         return counters[idx];
     }
@@ -700,12 +701,12 @@ public:
         }
     }
 
-    bool hasProblem(Problem p) const
+    [[nodiscard]] bool hasProblem(Problem p) const
     {
         return !problems.at(p).empty();
     }
 
-    const String & getProblemError(Problem p) const
+    [[nodiscard]] const String & getProblemError(Problem p) const
     {
         return problems.at(p);
     }
@@ -839,7 +840,7 @@ struct Operation
     /// Returns a string that fits in the sentence "... while {}", e.g. "executing function: SELECT f(42)".
     /// If `multirow_query_only`, returns just the query (without "executing function: ") and includes
     /// an ARRAY JOIN with all rows even if `step` is ExecutingFunctionOnOneRow.
-    String describe(bool multirow_query_only = false) const
+    [[nodiscard]] String describe(bool multirow_query_only = false) const
     {
         WriteBufferFromOwnString buf;
 
@@ -2387,7 +2388,7 @@ String formatStackTrace(const StackTrace & stack_trace)
     {
         const void * frame = stack_trace.getFramePointers()[i];
         const auto resolved = StackTrace::tryResolveAddress(frame);
-        const SymbolIndex::Symbol * symbol = symbol_index ? symbol_index->findSymbol(frame) : nullptr;
+        const SymbolIndex::Symbol * symbol = symbol_index ? symbol_index->findSymbolByAddress(frame) : nullptr;
         String address = resolved.address ? fmt::format("{}", resolved.address) : "<unknown>";
         if (resolved.kind == StackTrace::AddressKind::OtherObject)
             address += fmt::format(" in {}", resolved.object);

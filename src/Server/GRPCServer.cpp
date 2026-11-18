@@ -53,9 +53,7 @@
 #include <absl/base/log_severity.h>
 #include <absl/log/globals.h>
 #include <absl/log/initialize.h>
-#include <absl/log/log_sink_registry.h>
 
-#include <grpc/support/log.h>
 #include <grpc++/security/server_credentials.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -112,70 +110,18 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Make grpc to pass logging messages to ClickHouse logging system.
-    class GrpcLogSink : public absl::LogSink
-    {
-    public:
-        void Send(const absl::LogEntry & entry) override
-        {
-            static LoggerRawPtr logger = getRawLogger("grpc");
-
-            const auto msg = std::string(entry.text_message());
-            const auto file = entry.source_filename();
-            int line = entry.source_line();
-
-            switch (entry.log_severity())
-            {
-                case absl::LogSeverity::kInfo:
-                    LOG_INFO(logger, "{} ({}:{})", msg, file, line);
-                    break;
-                case absl::LogSeverity::kWarning:
-                    LOG_WARNING(logger, "{} ({}:{})", msg, file, line);
-                    break;
-                case absl::LogSeverity::kError:
-                    LOG_ERROR(logger, "{} ({}:{})", msg, file, line);
-                    break;
-                case absl::LogSeverity::kFatal:
-                    LOG_ERROR(logger, "FATAL: {} ({}:{})", msg, file, line);
-                    break;
-            }
-        }
-    };
-    GrpcLogSink grpc_log_sink;
-
-    /// See also contrib/grpc/src/core/util/log.cc
-    void initGRPCLogging(const Poco::Util::AbstractConfiguration & config)
+    /// gRPC logging is disabled because its messages sometimes contain memory addresses
+    /// (e.g. `grpc_call_start_batch(call=0x...)`): there is no log sink, and nothing goes to stderr.
+    void initGRPCLogging()
     {
         static std::once_flag once_flag;
-        std::call_once(once_flag, [&config]
+        std::call_once(once_flag, []
         {
-            absl::AddLogSink(&grpc_log_sink);
             absl::SetStderrThreshold(absl::LogSeverityAtLeast::kInfinity);
             absl::InitializeLog();
-
             absl::SetStderrThreshold(absl::LogSeverityAtLeast::kInfinity);
-
-            const bool verbose = config.getBool("grpc.verbose_logs", false);
-            static LoggerRawPtr logger = getRawLogger("grpc");
-
-            if (verbose)
-                grpc_tracer_set_enabled("all", true);
-
-            if (logger->is(Poco::Message::PRIO_DEBUG))
-            {
-                absl::SetMinLogLevel(absl::LogSeverityAtLeast::kInfo);
-                absl::SetVLogLevel("*grpc*/*", 2);
-            }
-            else if (logger->is(Poco::Message::PRIO_INFORMATION))
-            {
-                absl::SetMinLogLevel(absl::LogSeverityAtLeast::kInfo);
-                absl::SetVLogLevel("*grpc*/*", -1);
-            }
-            else
-            {
-                absl::SetMinLogLevel(absl::LogSeverityAtLeast::kWarning);
-                absl::SetVLogLevel("*grpc*/*", -1);
-            }
+            absl::SetMinLogLevel(absl::LogSeverityAtLeast::kInfinity);
+            absl::SetVLogLevel("*grpc*/*", -1);
         });
     }
 
@@ -712,6 +658,12 @@ namespace
             changed.wait(lock, [this, wanted_value]() { return value == wanted_value; });
         }
 
+        bool waitFor(bool wanted_value, std::chrono::milliseconds timeout) const
+        {
+            std::unique_lock lock{mutex};
+            return changed.wait_for(lock, timeout, [this, wanted_value]() { return value == wanted_value; });
+        }
+
     private:
         bool value;
         mutable std::mutex mutex;
@@ -833,10 +785,11 @@ namespace
                     addLogsToResult(*logs_queue, unsent_logs);
                 GRPCResult result;
                 result.mutable_exception()->set_name("FatalError");
-                sending.wait(false);
+                if (!waitWrittenOrCancelLocked())
+                    return;
                 startWriteLocked(result, /* final= */ true);
                 /// A fatal signal terminates the process when this returns.
-                sending.wait(false);
+                waitWrittenOrCancelLocked();
             }
             catch (const std::exception &) // NOLINT(bugprone-empty-catch)
             {
@@ -877,11 +830,25 @@ namespace
             sending.set(false);
         }
 
+        /// `mutex` must be locked. Returns false if the client did not read the pending write in time and the call was canceled.
+        bool waitWrittenOrCancelLocked()
+        {
+            if (sending.waitFor(false, fatal_error_write_timeout))
+                return true;
+            /// The pending write completes with `ok = false`.
+            responder->cancel();
+            sending.wait(false);
+            return false;
+        }
+
         /// The faulting thread can be the call thread, stopped in the signal handler while it holds `mutex`.
         static constexpr auto fatal_error_lock_timeout = std::chrono::seconds(1);
 
+        /// For each write, well below the 300 s that the faulting thread waits for the fatal error to be handled.
+        static constexpr auto fatal_error_write_timeout = std::chrono::seconds(10);
+
         /// Guards `responder`, `finished`, `logs_queue` and `unsent_logs`. Held only for short operations, never while waiting
-        /// for the client, except by `sendFatalError`.
+        /// for the client, except by `sendFatalError`, for at most `fatal_error_write_timeout` per write.
         mutable std::timed_mutex mutex;
         std::unique_ptr<BaseResponder> responder;
         bool finished = false;
@@ -931,6 +898,7 @@ namespace
         void addTotalsToResult(const Block & totals);
         void addExtremesToResult(const Block & extremes);
         void addProfileInfoToResult(const ProfileInfo & info);
+        void addOutputToResult(bool final);
         void sendResult();
         void throwIfFailedToSendResult();
         void sendException(const Exception & exception);
@@ -1546,8 +1514,6 @@ namespace
             compressing_write_buffer = write_buffer.get();
         }
 
-        auto has_output = [&] { return (nested_write_buffer->position() != output.data()) || (compressing_write_buffer && compressing_write_buffer->offset()); };
-
         output_format_processor = query_context->getOutputFormat(output_format, *write_buffer, header);
         Stopwatch after_send_progress;
 
@@ -1592,9 +1558,7 @@ namespace
                 }
 
                 call_responder->takeLogsFromQueue();
-
-                if (has_output() || result.has_progress() || call_responder->hasUnsentLogs())
-                    sendResult();
+                sendResult();
 
                 throwIfFailedToSendResult();
                 if (!check_for_cancel())
@@ -1617,7 +1581,7 @@ namespace
                 addProgressToResult();
                 call_responder->takeLogsFromQueue();
 
-                if (has_output() || result.has_progress() || call_responder->hasUnsentLogs())
+                if (result.has_progress() || call_responder->hasUnsentLogs())
                     sendResult();
 
                 throwIfFailedToSendResult();
@@ -1653,6 +1617,8 @@ namespace
 
     void Call::onException(const Exception & exception)
     {
+        /// Stops the format's writing thread before the output buffer is finalized.
+        output_format_processor.reset();
         io.onException();
 
         LOG_ERROR(log, getExceptionMessageAndPattern(exception, send_exception_with_stacktrace));
@@ -1909,6 +1875,43 @@ namespace
         stats.set_rows_before_aggregation(info.getRowsBeforeAggregation());
     }
 
+    void Call::addOutputToResult(bool final)
+    {
+        /// The output format can write to the buffer from another thread, and a failed write cancels the buffer,
+        /// so the buffer is checked and copied under the format's writing lock.
+        std::unique_lock<std::mutex> writing_lock;
+        if (output_format_processor)
+            writing_lock = output_format_processor->lockWriting();
+
+        /// A canceled buffer holds incomplete output which can be neither finalized nor sent.
+        if (!write_buffer || write_buffer->isCanceled())
+            return;
+
+        size_t output_size = 0;
+        if (final)
+        {
+            if (compressing_write_buffer)
+                LOG_DEBUG(log, "Compressing final {} bytes", compressing_write_buffer->offset());
+            write_buffer->finalize();
+            output_size = output.size();
+        }
+        else
+        {
+            if (compressing_write_buffer && compressing_write_buffer->offset())
+            {
+                LOG_DEBUG(log, "Compressing {} bytes", compressing_write_buffer->offset());
+                compressing_write_buffer->sync();
+            }
+            output_size = nested_write_buffer->position() - output.data();
+        }
+
+        if (output_size)
+        {
+            result.mutable_output()->assign(output.data(), output_size);
+            nested_write_buffer->restart(); /// We're going to reuse the same buffer again for next block of data.
+        }
+    }
+
     void CallResponder::addLogsToResult(InternalTextLogsQueue & logs_queue, GRPCResult & result)
     {
         static_assert(::clickhouse::grpc::LOG_NONE        == 0);
@@ -1965,34 +1968,7 @@ namespace
         if (!send_final_message && !isOutputStreaming(call_type))
             return;
 
-        /// Copy output to `result.output`, with optional compressing.
-        /// A canceled buffer holds incomplete output which can be neither finalized nor sent.
-        if (write_buffer && !write_buffer->isCanceled())
-        {
-            size_t output_size = 0;
-            if (send_final_message)
-            {
-                if (compressing_write_buffer)
-                    LOG_DEBUG(log, "Compressing final {} bytes", compressing_write_buffer->offset());
-                write_buffer->finalize();
-                output_size = output.size();
-            }
-            else
-            {
-                if (compressing_write_buffer && compressing_write_buffer->offset())
-                {
-                    LOG_DEBUG(log, "Compressing {} bytes", compressing_write_buffer->offset());
-                    compressing_write_buffer->sync();
-                }
-                output_size = nested_write_buffer->position() - output.data();
-            }
-
-            if (output_size)
-            {
-                result.mutable_output()->assign(output.data(), output_size);
-                nested_write_buffer->restart(); /// We're going to reuse the same buffer again for next block of data.
-            }
-        }
+        addOutputToResult(send_final_message);
 
         if (!send_final_message && result.output().empty() && result.totals().empty() && result.extremes().empty() && !call_responder->hasUnsentLogs()
             && !result.has_progress() && !result.has_stats() && !result.has_exception() && !result.cancelled())
@@ -2218,7 +2194,7 @@ GRPCServer::~GRPCServer()
 
 void GRPCServer::start()
 {
-    initGRPCLogging(iserver.config());
+    initGRPCLogging();
     grpc::ServerBuilder builder;
     builder.AddListeningPort(address_to_listen.toString(), makeCredentials(iserver.config()));
     builder.RegisterService(&grpc_service);
