@@ -26,6 +26,10 @@ struct FieldPosition
 {
     String path;
     size_t list_depth = 0;
+    /// Below a union, `path` and `list_depth` count from the union child, and no requested type applies (see
+    /// `RecordBatchDecoder::decodeUnion`). This keeps such a field apart from a field outside the union whose
+    /// position reads the same.
+    bool below_union = false;
 
     bool operator==(const FieldPosition &) const = default;
 };
@@ -321,9 +325,10 @@ private:
     /// `target_hint`, `path`, `list_depth` and `lookup_types` exactly as `decodeField` does while decoding,
     /// records a use for a dictionary-encoded field, and derives each child's position as `decodeInner` /
     /// `decodeUnion` do, without consuming nodes or buffers. The children of a dictionary-encoded field are
-    /// walked like any other's: `decodeDictionaryValues` decodes them at these same positions.
+    /// walked like any other's: `decodeDictionaryValues` decodes them at these same positions. Below a union
+    /// (`below_union`) nothing is looked up in `lookup_types`, as in `decodeUnion`.
     void collectDictionaryUses(
-        const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
+        const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth, bool below_union,
         const UnorderedMapWithMemoryTracking<String, DataTypePtr> * lookup_types,
         UnorderedMapWithMemoryTracking<Int64, DictionaryUses> & uses) const;
     ColumnPtr decodeUnion(const ArrowField & field, size_t rows, const InvisibleRowsMask * invisible_rows);
@@ -397,6 +402,9 @@ private:
     /// Requested column types by normalized (dotted) name, for the recursive `date32` numeric type hint;
     /// null when the caller did not provide them. Points at the caller's map for the call's duration.
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr;
+    /// Set while decoding the children of a union (see `decodeUnion`), and the values of a dictionary used
+    /// below one: `target_types` is not consulted there.
+    bool decoding_below_union = false;
     /// The buffers to decode from: either views into the message body, or into `decompressed_body`.
     VectorWithMemoryTracking<Slice> buffer_slices;
     /// Total bytes across `buffer_slices`; bounds allocations sized by untrusted FieldNode lengths

@@ -249,7 +249,7 @@ DataTypePtr rawByteTargetType(const DataTypePtr & hint)
 
 String DictionaryRegistry::positionKey(const FieldPosition & position)
 {
-    return fmt::format("{}/{}", position.list_depth, position.path);
+    return fmt::format("{}/{}/{}", position.list_depth, position.below_union, position.path);
 }
 
 void DictionaryRegistry::set(Int64 id, const FieldPosition & position, Values values, bool is_delta)
@@ -1686,7 +1686,7 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
 {
     const Slice indices_slice = nextBuffer();
     const DictionaryRegistry::Dictionary & dictionary
-        = registry.get(field.dictionary->id, FieldPosition{path, list_depth});
+        = registry.get(field.dictionary->id, FieldPosition{path, list_depth, decoding_below_union});
     const size_t dictionary_size = dictionary.size();
 
     const int bits = field.dictionary->index_bit_width;
@@ -1812,6 +1812,12 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
     /// Maps an Arrow union type id to a local Variant element index, or -1 for the NULL placeholder.
     UnorderedMapWithMemoryTracking<int, int> type_id_to_local;
     size_t total_child_rows = 0;
+    /// No requested type reaches a child, as `fieldToCHType` declares the children below. The requested type
+    /// of the union does not say which child it describes, and the children restart the dotted path, so a
+    /// name looked up from it would belong to an unrelated column of the header.
+    const bool outer_below_union = decoding_below_union;
+    decoding_below_union = true;
+    SCOPE_EXIT({ decoding_below_union = outer_below_union; });
     for (size_t child_idx = 0; child_idx < type.children.size(); ++child_idx)
     {
         const ArrowField & child = type.children[child_idx];
@@ -2386,6 +2392,9 @@ DictionaryRegistry::Values RecordBatchDecoder::decodeDictionaryValues(
     if (!schema.little_endian)
         convertBuffersFromBigEndian(&value_field, 1);
     expectNextNodeLength(static_cast<size_t>(batch.length()), fmt::format("column '{}'", value_field.name));
+    /// The values decode as the field at `use.position` would decode them inline.
+    decoding_below_union = use.position.below_union;
+    SCOPE_EXIT({ decoding_below_union = false; });
     ColumnUInt8::Ptr null_map;
     /// Values of delta batches are merged into one column, so their types must not depend on each batch's nulls.
     DecodedColumn values = decodeBatchColumn(
@@ -2467,7 +2476,7 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
     /// determines whether that type keeps its outer `Nullable` wrapper.
     if (effective_field.dictionary)
     {
-        const auto & dictionary = registry.get(effective_field.dictionary->id, FieldPosition{path, list_depth});
+        const auto & dictionary = registry.get(effective_field.dictionary->id, FieldPosition{path, list_depth, decoding_below_union});
         const DataTypePtr & value_type = dictionary.segments.front().type;
         decoded.type = effective_field.nullable ? value_type : removeNullable(value_type);
         if (decoded.type->canBeInsideLowCardinality())
@@ -2848,7 +2857,7 @@ void RecordBatchDecoder::validateBatchLayout(const flatbuf::RecordBatch & batch,
 
 DataTypePtr RecordBatchDecoder::resolveTargetHint(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const
 {
-    return resolveHint(parent_hint, path, list_depth, target_types);
+    return resolveHint(parent_hint, path, list_depth, decoding_below_union ? nullptr : target_types);
 }
 
 UnorderedMapWithMemoryTracking<Int64, DictionaryUses> RecordBatchDecoder::collectDictionaryUses(
@@ -2862,22 +2871,23 @@ UnorderedMapWithMemoryTracking<Int64, DictionaryUses> RecordBatchDecoder::collec
         const String normalized_name = normalizedName(field.name);
         if (keep_top_level_fields && !keep_top_level_fields->contains(normalized_name))
             continue;
-        collectDictionaryUses(field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, target_types_, uses);
+        collectDictionaryUses(
+            field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, /*below_union=*/false, target_types_, uses);
     }
     return uses;
 }
 
 void RecordBatchDecoder::collectDictionaryUses(
-    const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
+    const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth, bool below_union,
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * lookup_types,
     UnorderedMapWithMemoryTracking<Int64, DictionaryUses> & uses) const
 {
-    const DataTypePtr effective_hint = resolveHint(target_hint, path, list_depth, lookup_types);
+    const DataTypePtr effective_hint = resolveHint(target_hint, path, list_depth, below_union ? nullptr : lookup_types);
     if (field.dictionary)
     {
-        /// Two fields share a position only below unions, which drop the path; they then resolve the same
-        /// hint too, so one decoding serves both.
-        const FieldPosition position{path, list_depth};
+        /// Two fields share a position only below unions, which drop the path; they resolve no hint there, so
+        /// one decoding serves both.
+        const FieldPosition position{path, list_depth, below_union};
         DictionaryUses & id_uses = uses[field.dictionary->id];
         if (std::ranges::none_of(id_uses, [&](const DictionaryUse & use) { return use.position == position; }))
             id_uses.push_back(DictionaryUse{position, effective_hint});
@@ -2892,11 +2902,11 @@ void RecordBatchDecoder::collectDictionaryUses(
         case TypeKind::ListView:
         case TypeKind::LargeListView:
             collectDictionaryUses(
-                type.children.at(0), arrayElementHint(effective_hint), path, list_depth + 1, lookup_types, uses);
+                type.children.at(0), arrayElementHint(effective_hint), path, list_depth + 1, below_union, lookup_types, uses);
             break;
         case TypeKind::Map:
             collectDictionaryUses(
-                type.children.at(0), mapEntriesHint(effective_hint), path, list_depth + 1, lookup_types, uses);
+                type.children.at(0), mapEntriesHint(effective_hint), path, list_depth + 1, below_union, lookup_types, uses);
             break;
         case TypeKind::Struct:
             for (size_t i = 0; i < type.children.size(); ++i)
@@ -2904,18 +2914,19 @@ void RecordBatchDecoder::collectDictionaryUses(
                 const ArrowField & child = type.children[i];
                 collectDictionaryUses(
                     child, structFieldHint(effective_hint, type, i), structFieldPath(path, type, i), list_depth,
-                    lookup_types, uses);
+                    below_union, lookup_types, uses);
             }
             break;
         case TypeKind::RunEndEncoded:
             /// The values are decoded with the field's own hint, path and list depth (see `decodeRunEndEncoded`);
             /// the run ends are a plain integer child.
-            collectDictionaryUses(type.children.at(1), effective_hint, path, list_depth, lookup_types, uses);
+            collectDictionaryUses(type.children.at(1), effective_hint, path, list_depth, below_union, lookup_types, uses);
             break;
         case TypeKind::Union:
-            /// `decodeUnion` decodes its children with no hint, path or list depth.
+            /// `decodeUnion` decodes its children with no hint, path or list depth, and looks up no requested type.
             for (const ArrowField & child : type.children)
-                collectDictionaryUses(child, /*target_hint=*/nullptr, /*path=*/{}, /*list_depth=*/0, lookup_types, uses);
+                collectDictionaryUses(
+                    child, /*target_hint=*/nullptr, /*path=*/{}, /*list_depth=*/0, /*below_union=*/true, lookup_types, uses);
             break;
         default:
             break;
