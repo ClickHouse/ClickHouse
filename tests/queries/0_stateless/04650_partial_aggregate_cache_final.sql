@@ -26,6 +26,8 @@ SET use_partial_aggregate_cache = 1;
 SET optimize_aggregation_in_order = 0;
 SET max_rows_to_group_by = 0;
 SET group_by_overflow_mode = 'throw';
+-- Otherwise `sum` without keys is answered from the part statistics, without reading the parts and the cache.
+SET use_statistics_for_sum_avg_aggregation = 0;
 
 INSERT INTO test_partial_agg_cache_final VALUES (1, 1, 100), (2, 1, 200);
 

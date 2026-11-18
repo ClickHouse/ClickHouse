@@ -1,0 +1,17 @@
+--- UNION ALL with a raw arm
+1	10
+1	10
+2	20
+2	20
+1	10
+1	10
+2	20
+2	20
+--- IN table
+10
+30
+0
+30
+--- pending DROP COLUMN followed by ADD COLUMN
+1	10
+1	0
