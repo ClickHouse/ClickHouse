@@ -63,6 +63,43 @@ bool isWideningCast(std::string_view from_short, std::string_view to_short)
     return int_widening || fp_widening;
 }
 
+/// ClickHouse can type a result narrower than the arguments (`Int64 % UInt8` is Int16), but Substrait arithmetic is same-type.
+/// Raises a signed integer result type to the widest argument. The result is cast down later.
+String raiseToWidestArgument(
+    String result_short,
+    const std::vector<SubstraitExpressionConverter::ConvertedExpression> & args,
+    const SubstraitPlanExtensions & extensions)
+{
+    if (substraitSignedIntRank(result_short) == 0)
+        return result_short;
+    for (const auto & arg : args)
+    {
+        auto arg_short = substraitTypeShortName(arg.type, extensions);
+        if (substraitSignedIntRank(arg_short) > substraitSignedIntRank(result_short))
+            result_short = std::move(arg_short);
+    }
+    return result_short;
+}
+
+/// ClickHouse compares mixed types natively, Substrait can't, so we cast to one common type and admit only value-preserving ones.
+/// We pick the widest type among the non-constant arguments. A constant is rewritten as a literal of that type if it fits.
+String
+pickCommonType(const std::vector<SubstraitExpressionConverter::ConvertedExpression> & args, const SubstraitPlanExtensions & extensions)
+{
+    String common_short;
+    for (const auto & arg : args)
+    {
+        if (isConstantNode(*arg.node))
+            continue;
+        auto arg_short = substraitTypeShortName(arg.type, extensions);
+        if (common_short.empty() || isWideningCast(common_short, arg_short))
+            common_short = std::move(arg_short);
+    }
+    if (common_short.empty())
+        common_short = substraitTypeShortName(args.front().type, extensions);
+    return common_short;
+}
+
 /// How arguments of function are brought to the types of a concrete Substrait overload.
 enum class Coercion : uint8_t
 {
@@ -257,7 +294,6 @@ bool integerFits(Int128 value, std::string_view short_name)
     return false;
 }
 
-/// A constant converted into a Substrait literal with its type.
 struct ConvertedLiteral
 {
     substrait::Expression_Literal literal;
@@ -292,7 +328,6 @@ ConvertedLiteral encodeIntegerLiteral(Int128 value, std::string_view short_name,
     return out;
 }
 
-/// A float literal of the given short name ("fp32"/"fp64").
 ConvertedLiteral encodeFloatLiteral(Float64 value, std::string_view short_name, bool nullable)
 {
     ConvertedLiteral out;
@@ -317,7 +352,6 @@ substrait::Expression makeCast(substrait::Type type, substrait::Expression input
     return result;
 }
 
-/// A call of the function `signature` from `urn` that returns `output_type`.
 substrait::Expression makeScalarCall(
     std::string_view urn,
     std::string_view signature,
@@ -343,21 +377,17 @@ std::expected<ConvertedLiteral, SubstraitBlockingReason> convertFieldToLiteral(
 {
     ConvertedLiteral out;
 
-    if (field.isNull())
-    {
-        auto type = convertTypeToSubstrait(ch_type, extensions);
-        if (!type)
-            return std::unexpected(std::move(type.error()));
-        out.type = std::move(*type);
-        setSubstraitTypeNullability(out.type, true);
-        out.literal.mutable_null()->CopyFrom(out.type);
-        return out;
-    }
-
     auto natural_type = convertTypeToSubstrait(ch_type, extensions);
     if (!natural_type)
         return std::unexpected(std::move(natural_type.error()));
     out.type = std::move(*natural_type);
+
+    if (field.isNull())
+    {
+        setSubstraitTypeNullability(out.type, true);
+        out.literal.mutable_null()->CopyFrom(out.type);
+        return out;
+    }
 
     const bool nullable = isSubstraitTypeNullable(out.type);
     /// For `1` in `a + 1` over Int32 the source is "u!u8" (ClickHouse types `1` as UInt8) and the target is "i64".
@@ -676,7 +706,6 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
     if (args.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Function {} has no arguments, but every mapped function takes at least one", name);
 
-    /// Convert the ClickHouse result type to Substrait, remember result.
     std::optional<substrait::Type> ch_result_type;
     String ch_result_short;
     const auto result_short = [&]() -> std::expected<std::string_view, SubstraitBlockingReason>
@@ -692,42 +721,16 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
         return ch_result_short;
     };
 
-    /// Coerce the arguments to one type per the mapping's rule.
     String coercion_target;
     if (mapping.coercion == Coercion::ToResultType)
     {
         auto target = result_short();
         if (!target)
             return std::unexpected(std::move(target.error()));
-        coercion_target = *target;
-
-        /// ClickHouse can type a result narrower than the arguments (`Int64 % UInt8` is Int16), but Substrait arithmetic is same-type.
-        /// Raise the target to the widest argument and cast the result down later.
-        if (substraitSignedIntRank(coercion_target) != 0)
-        {
-            for (const auto & arg : args)
-            {
-                const auto arg_short = substraitTypeShortName(arg.type, extensions);
-                if (substraitSignedIntRank(arg_short) > substraitSignedIntRank(coercion_target))
-                    coercion_target = arg_short;
-            }
-        }
+        coercion_target = raiseToWidestArgument(String(*target), args, extensions);
     }
     else if (mapping.coercion == Coercion::ToCommonType)
-    {
-        /// ClickHouse compares mixed types natively, Substrait can't, so we cast to one common type and admit only value-preserving ones.
-        /// We pick the widest type among the non-constant arguments. A constant is rewritten as a literal of that type if it fits.
-        for (const auto & arg : args)
-        {
-            if (isConstantNode(*arg.node))
-                continue;
-            auto arg_short = substraitTypeShortName(arg.type, extensions);
-            if (coercion_target.empty() || isWideningCast(coercion_target, arg_short))
-                coercion_target = std::move(arg_short);
-        }
-        if (coercion_target.empty())
-            coercion_target = substraitTypeShortName(args.front().type, extensions);
-    }
+        coercion_target = pickCommonType(args, extensions);
     if (!coercion_target.empty())
         for (auto & arg : args)
             if (auto coerced = coerceArgument(arg, coercion_target); !coerced)
@@ -741,7 +744,6 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
         return blocked(fmt::format("arguments of {} have different types ({})", name, fmt::join(type_names, ", ")));
     }
 
-    /// Select the overload and compose the function signature.
     std::vector<String> arg_shorts;
     for (const auto & arg : args)
         arg_shorts.push_back(substraitTypeShortName(arg.type, extensions));
@@ -803,7 +805,6 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
     else
         out.expression = makeScalarCall(overload.urn, signature, std::move(args), out.type, extensions, overload.options);
 
-    /// `notLike` becomes `not` over `like`.
     if (mapping.negate_result)
     {
         chassert(out.type.kind_case() == substrait::Type::kBool);

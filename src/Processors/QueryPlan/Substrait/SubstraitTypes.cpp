@@ -2,7 +2,6 @@
 
 #if USE_SUBSTRAIT
 
-#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -33,9 +32,7 @@
     FOR_EACH_SUBSTRAIT_SIMPLE_TYPE_KIND(M) \
     M(kFixedBinary, fixed_binary, "fbin") \
     M(kDecimal, decimal, "dec") \
-    M(kList, list, "list") \
-    M(kMap, map, "map") \
-    M(kStruct, struct_, "struct")
+    M(kList, list, "list")
 
 #define FOR_EACH_SUBSTRAIT_TYPE_KIND(M) \
     FOR_EACH_SUBSTRAIT_BUILTIN_TYPE_KIND(M) \
@@ -122,7 +119,7 @@ convertTypeToSubstrait(const DataTypePtr & type, SubstraitPlanExtensions & exten
         case TypeIndex::Float32: return simple("fp32");
         case TypeIndex::Float64: return simple("fp64");
         case TypeIndex::String:
-            /// String holds arbitrary bytes but Substrait `string` is always unicode. We map it anyway (as every other SQL engine I checked).
+            /// `String` holds any bytes and Substrait `string` is UTF-8. The plan holds no data, so the data handoff has to validate it.
             return simple("str");
         case TypeIndex::Date:
         case TypeIndex::Date32: return simple("date");
@@ -139,9 +136,6 @@ convertTypeToSubstrait(const DataTypePtr & type, SubstraitPlanExtensions & exten
         case TypeIndex::Decimal128: {
             const auto precision = getDecimalPrecision(*nested);
             const auto scale = getDecimalScale(*nested);
-            /// Substrait decimals cap at 38 digits, the Decimal128 maximum. The check matters only if Decimal256 joins this switch.
-            if (precision > DecimalUtils::max_precision<Decimal128>)
-                return blocked(fmt::format("type {} exceeds the maximum Substrait decimal precision of 38", type->getName()));
             auto * decimal = result.mutable_decimal();
             decimal->set_precision(static_cast<Int32>(precision));
             decimal->set_scale(static_cast<Int32>(scale));

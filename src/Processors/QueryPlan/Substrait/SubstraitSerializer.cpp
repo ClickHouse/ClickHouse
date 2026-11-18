@@ -78,7 +78,6 @@ substrait::Rel makeFetchRel(substrait::Rel && input, std::optional<Int64> count,
     return rel;
 }
 
-/// Aggregate resolved against the table.
 struct ResolvedAggregate
 {
     std::string_view urn;
@@ -104,9 +103,7 @@ struct AggregateOverload
     std::string_view urn;
 
     /// Over empty input ClickHouse returns a default (sum of nothing is 0) where most Substrait functions return NULL.
-    /// A Nullable argument gives NULL in both, so it always emits keyed. Only a query without GROUP BY can aggregate empty input into a row.
-    /// keyed: Emitted with GROUP BY. Every group has rows, so the disagreement cannot surface.
-    /// keyless: Emitted without GROUP BY, must return ClickHouse's empty-input value, sum emits sum0. nullopt means no such function.
+    /// `keyed` is emitted where that cannot show with GROUP BY or a Nullable argument. `keyless` returns the default, as `sum0` does.
     AggregateEmission keyed;
     std::optional<AggregateEmission> keyless;
 
@@ -206,7 +203,6 @@ const std::unordered_map<std::string_view, MappedAggregate> & aggregateTable()
     return table;
 }
 
-/// The output type from its short name.
 substrait::Type makeAggregateOutputType(std::string_view output_short, bool nullable, SubstraitPlanExtensions & extensions)
 {
     if (const auto type_name = tryParseUserDefinedShortName(output_short); !type_name.empty())
@@ -214,7 +210,6 @@ substrait::Type makeAggregateOutputType(std::string_view output_short, bool null
     return makeSimpleSubstraitType(output_short, nullable);
 }
 
-/// Resolves one aggregate call against the table.
 std::expected<ResolvedAggregate, SubstraitBlockingReason> mapAggregateFunction(
     const AggregateDescription & description,
     const std::vector<substrait::Type> & argument_types,
@@ -341,7 +336,6 @@ const SubstraitPlanSerializer::Verdict & SubstraitPlanSerializer::visit(const Qu
             children.push_back(&child_state);
         }
 
-        /// No need to attempt step if any child is ineligible.
         if (!children_eligible)
             continue;
 
@@ -412,8 +406,7 @@ substrait::Plan SubstraitPlanSerializer::takePlan(const QueryPlan::Node & root)
     return plan;
 }
 
-/// A converter builds its relation by moving parts out of its children's states. So move only after the last check that can fail.
-/// A converter that fails after moving leaves a child eligible but empty, and serializing it later gives an empty plan.
+/// A converter builds its relation by moving parts out of its children's states.
 std::expected<SubstraitPlanSerializer::NodeState, SubstraitBlockingReason>
 SubstraitPlanSerializer::convertStep(const QueryPlan::Node & node, std::vector<NodeState *> children)
 {
@@ -602,7 +595,6 @@ SubstraitPlanSerializer::convertAggregation(const AggregatingStep & aggregating,
         out.schema.append(description.column_name, std::move(mapping->output_type));
     }
 
-    /// Without only_merge the step's output header is keys, then aggregates. The relation produces the same order.
     aggregate->mutable_common()->mutable_direct();
     aggregate->mutable_input()->Swap(&child.rel);
     out.rel = std::move(aggregate_rel);
@@ -727,7 +719,7 @@ SubstraitPlanSerializer::convertDistinct(const DistinctStep & distinct, NodeStat
         return blocked("DISTINCT over sorted input preserves the order in ClickHouse, which AggregateRel cannot express");
 
     /// DISTINCT over a subset of columns keeps arbitrary values of the others, which has no Substrait equivalent.
-    /// TODO: come up with semantically honest translation/
+    /// TODO: come up with semantically honest translation.
     NameSet distinct_columns(distinct.getColumnNames().begin(), distinct.getColumnNames().end());
     for (const auto & column : child.schema.columns)
         if (!distinct_columns.contains(column.name))
@@ -762,7 +754,6 @@ SubstraitPlanSerializer::convertJoin(const JoinStepLogical & join, NodeState & l
         return blocked("joins with runtime filters are not supported");
 
     /// JoinRel direct output is all left fields then all right fields.
-    /// A copy s.t. on every failure below the children stay eligible subtrees whose schemas takePlan still reads.
     SubstraitSchema combined = left.schema;
     combined.appendAll(right.schema);
 
@@ -879,12 +870,12 @@ namespace
 
 /// The optimizations whose plans the serializer can express.
 
-/// List of steps left out that we can add later. TODO:
+/// Optimizations left out that we can add later. TODO:
 /// * `optimize_prewhere` moves a filter into the read step. The serializer has to write PREWHERE as `ReadRel.filter`.
 /// * `enable_group_by_top_k_optimization` drops the groups that the limit above would drop. It needs a check for that limit and PREWHERE.
 /// * `convert_join_to_in` replaces a join by `in` over a `CreatingSet` step. The serializer has to map `in` together with its set.
 
-/// List of steps left out that we can't add as there is not Substrait form.
+/// Optimizations left out that we can't add as there is no Substrait form.
 /// * `enable_join_runtime_filters`.
 /// * `min_columns_for_join_lazy_indexing`.
 
@@ -934,7 +925,7 @@ constexpr bool QueryPlanOptimizationSettings::* substrait_compatible_optimizatio
 void disableSubstraitIncompatiblePlanning(const ContextMutablePtr & context)
 {
     context->setSetting("optimize_trivial_count_query", false); /// I don't see how to serialize this right now.
-    context->setSetting("correlated_subqueries_use_in_memory_buffer", false); /// No Substtrait form for this.
+    context->setSetting("correlated_subqueries_use_in_memory_buffer", false); /// No Substrait form for this.
 }
 
 QueryPlanOptimizationSettings makeSubstraitCompatibleOptimizationSettings(const ContextPtr & context)

@@ -24,7 +24,6 @@ namespace DB
 /// Options of one function call, as (option name, value) pairs. An option names a behavior choice, for example overflow handling.
 using FunctionOptions = std::vector<std::pair<std::string_view, std::string_view>>;
 
-/// Writes the options onto a function call message.
 template <typename FunctionMessage>
 void addFunctionOptions(const FunctionOptions & options, FunctionMessage & function)
 {
@@ -43,7 +42,6 @@ struct SubstraitBlockingReason
     String expression;
 };
 
-/// The blocking reason as an error.
 inline std::unexpected<SubstraitBlockingReason> blocked(String text)
 {
     return std::unexpected(SubstraitBlockingReason{.text = std::move(text), .expression = {}});
