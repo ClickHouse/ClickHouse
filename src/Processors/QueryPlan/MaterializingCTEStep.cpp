@@ -6,9 +6,15 @@
 #include <Analyzer/traverseQueryTree.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
+#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/StorageMemory.h>
 #include <Common/Logger.h>
+#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 
 #include <functional>
 #include <stack>
@@ -124,6 +130,32 @@ QueryPipelineBuilderPtr DelayedMaterializingCTEsStep::updatePipeline(QueryPipeli
         "Cannot build pipeline in DelayedMaterializingCTEs. This step should be optimized out.");
 }
 
+namespace
+{
+
+/// A view with `SQL SECURITY DEFINER` keeps its plan as a child plan of the step that reads it.
+bool hasSorting(QueryPlan::Node & node)
+{
+    if (typeid_cast<const SortingStep *>(node.step.get()))
+        return true;
+
+    if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(node.step.get()))
+        if (auto cte = assert_cast<const StorageMemory &>(*reading->getStorage()).getMaterializedCTE(); cte && cte->has_order_by)
+            return true;
+
+    for (auto * child : node.children)
+        if (hasSorting(*child))
+            return true;
+
+    for (auto * child_plan : node.step->getChildPlans(/*for_explain=*/ false))
+        if (hasSorting(*child_plan->getRootNode()))
+            return true;
+
+    return false;
+}
+
+}
+
 void DelayedMaterializingCTEsStep::optimizePlans(const QueryPlanOptimizationSettings & optimization_settings)
 {
     for (const auto & cte : ctes)
@@ -145,6 +177,9 @@ void DelayedMaterializingCTEsStep::optimizePlans(const QueryPlanOptimizationSett
             continue;
 
         cte->plan->optimize(optimization_settings);
+        cte->has_order_by = hasSorting(*cte->plan->getRootNode());
+        /// The root `MaterializingCTEStep` does not keep the number of rows, so its input is estimated.
+        cte->estimated_rows = QueryPlanOptimizations::estimateReadRowsCount(*cte->plan->getRootNode()->children.front()).estimated_rows;
     }
 }
 
