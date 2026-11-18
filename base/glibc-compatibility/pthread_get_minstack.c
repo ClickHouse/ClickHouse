@@ -3,30 +3,31 @@
 /// which `dlsym` finds first (see `ENABLE_CFI` in CMakeLists.txt). https://github.com/rust-lang/rust/issues/166068
 
 #define _GNU_SOURCE
+#include <dlfcn.h>
 #include <limits.h>
-#include <link.h>
 #include <pthread.h>
+#include <stdlib.h>
 #include <unistd.h>
 
-static int addTLSSize(struct dl_phdr_info * info, size_t size, void * data)
+/// The loader's static TLS size, including the surplus and the TCB, which glibc takes from the thread stack.
+/// `GLIBC_PRIVATE`, so looked up as compiler-rt does: a direct reference fails the compatibility check.
+/// The call goes into the loader, which has no CFI type, so it is not checked.
+__attribute__((no_sanitize("cfi-icall"))) static size_t staticTLSSize(void)
 {
-    (void)size;
-    size_t * tls_size = data;
-    for (size_t i = 0; i < info->dlpi_phnum; ++i)
-    {
-        if (info->dlpi_phdr[i].p_type == PT_TLS)
-            *tls_size += info->dlpi_phdr[i].p_memsz + info->dlpi_phdr[i].p_align;
-    }
-    return 0;
+    void (*get_tls_static_info)(size_t *, size_t *) = (void (*)(size_t *, size_t *))dlsym(RTLD_DEFAULT, "_dl_get_tls_static_info");
+    if (!get_tls_static_info)
+        abort();
+    size_t size = 0;
+    size_t align = 0;
+    get_tls_static_info(&size, &align);
+    return (size + align - 1) / align * align;
 }
 
-/// As in glibc: a page, the static TLS, which glibc takes from the thread stack (unlike musl), and `PTHREAD_STACK_MIN`.
+/// As in glibc: a page, the static TLS and `PTHREAD_STACK_MIN`.
 size_t __pthread_get_minstack(const pthread_attr_t * attr)
 {
     (void)attr;
-    size_t tls_size = 0;
-    dl_iterate_phdr(addTLSSize, &tls_size);
-    return (size_t)sysconf(_SC_PAGESIZE) + tls_size + PTHREAD_STACK_MIN;
+    return (size_t)sysconf(_SC_PAGESIZE) + staticTLSSize() + PTHREAD_STACK_MIN;
 }
 
 /// CFI gives a function a jump table entry, which `dlsym` must return, only if its address is taken in the program.
