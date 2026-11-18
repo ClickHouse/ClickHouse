@@ -576,7 +576,7 @@ public:
                 if (const auto & carrying = carried[index]; carrying.step_node)
                     appendOutputToStep(*node->step, *carrying.step_node, carrying.name);
 
-        auto assembled = assemble(query_plan, nodes);
+        auto assembled = assemble(nodes);
         auto & main_plan = assembled.plan;
 
         /// Hand over exactly the sort keys, the crossing values and the row indexes; the sort then carries no
@@ -975,7 +975,7 @@ private:
     /// Builds the main branch: prunes from each step what the step above does not need of it, top-down, and
     /// assembles it bottom-up - splits the lazily read columns off the reads, adds the row indexes, which
     /// the joins pass through, and prunes a step once its children are built, with their real headers.
-    Assembled assemble(const QueryPlan & query_plan, QueryPlan::Nodes & nodes)
+    Assembled assemble(QueryPlan::Nodes & nodes)
     {
         const auto top_down_nodes = collectNodes();
         const auto unneeded_of = findUnneededColumns(top_down_nodes);
@@ -986,7 +986,7 @@ private:
             const auto & node_unneeded = unneeded_of.at(node);
             if (const auto it = source_numbers.find(node); it != source_numbers.end())
             {
-                assembled.emplace(node, assembleSource(query_plan, node, it->second, node_unneeded, nodes));
+                assembled.emplace(node, assembleSource(node, it->second, node_unneeded, nodes));
                 continue;
             }
 
@@ -1086,17 +1086,14 @@ private:
         return result;
     }
 
-    Assembled assembleSource(
-        const QueryPlan & query_plan,
-        QueryPlan::Node * node,
-        size_t source,
-        const VectorWithMemoryTracking<size_t> & unneeded,
-        QueryPlan::Nodes & nodes)
+    Assembled assembleSource(QueryPlan::Node * node, size_t source, const VectorWithMemoryTracking<size_t> & unneeded, QueryPlan::Nodes & nodes)
     {
         /// Whatever is below the source stays as it is.
+        /// The fragment does not inherit the resources of the plan: `apply` puts it back into that plan,
+        /// which already holds them, and appending them again would multiply them with every rewrite.
         Assembled result;
         auto & plan = result.plan;
-        plan = QueryPlan::extractSubplan(node, nodes, query_plan);
+        plan = QueryPlan::extractSubplan(node, nodes);
 
         auto * merge_tree = typeid_cast<ReadFromMergeTree *>(plan.getRootNode()->step.get());
         auto * object_storage = typeid_cast<ReadFromObjectStorageStep *>(plan.getRootNode()->step.get());
