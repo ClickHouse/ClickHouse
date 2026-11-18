@@ -461,6 +461,8 @@ bool Authentication::mysqlNative41CannotVerify(const AuthenticationData & authen
         case AuthenticationType::SHA256_PASSWORD:
         case AuthenticationType::SCRAM_SHA256_PASSWORD:
         case AuthenticationType::BCRYPT_PASSWORD:
+        case AuthenticationType::LDAP:
+        case AuthenticationType::HTTP:
             return true;
         default:
             return false;

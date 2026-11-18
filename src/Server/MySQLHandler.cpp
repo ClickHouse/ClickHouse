@@ -816,17 +816,15 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
 {
     try
     {
-        /// Logs a login failure and throws if there is no such user.
-        session->getAuthenticationTypesOrLogInFailure(user_name);
-
         /// For compatibility with the JavaScript MySQL client, the `mysql_native_password` plugin (Native41) is used
         /// when it can fully authenticate the user. Otherwise the `sha256_password` plugin is used: it transmits the
         /// actual password string, which is then checked via the `BasicCredentials` path, the same as for the native
         /// and HTTP protocols. See `Authentication::mysqlNative41CannotVerify`.
         /// The user can be altered while the client is answering, so this choice is only a hint: `IAccessStorage::authenticateImpl`
         /// re-checks it against the snapshot of the user it authenticates with and rejects Native41 credentials if needed.
-        const auto user = session->globalContext()->getAccessControl().read<User>(user_name);
-        if (std::ranges::any_of(user->authentication_methods, DB::Authentication::mysqlNative41CannotVerify))
+        /// A name that no storage has yet is switched too: an external user directory (`ldap`) can create the user on authentication.
+        const auto user = session->globalContext()->getAccessControl().tryRead<User>(user_name);
+        if (!user || std::ranges::any_of(user->authentication_methods, DB::Authentication::mysqlNative41CannotVerify))
         {
             authPluginSSL();
         }

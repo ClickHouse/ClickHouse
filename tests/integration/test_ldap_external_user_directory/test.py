@@ -1,5 +1,7 @@
 import logging
+import uuid
 
+import pymysql
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -12,7 +14,7 @@ cluster = ClickHouseCluster(__file__)
 
 instance1 = cluster.add_instance(
     "instance1",
-    main_configs=["configs/ldap_with_role_mapping.xml", "configs/remote_servers.xml"],
+    main_configs=["configs/ldap_with_role_mapping.xml", "configs/remote_servers.xml", "configs/mysql.xml"],
     user_configs=["configs/users.xml"],
     macros={"shard": 1, "replica": "instance1"},
     stay_alive=True,
@@ -79,6 +81,57 @@ def delete_ldap_group(ldap_cluster, group_cn):
                 admin_bind_dn=LDAP_ADMIN_BIND_DN,
                 admin_password=LDAP_ADMIN_PASSWORD,
                 group_cn=group_cn,
+            ),
+        ],
+        demux=True,
+    )
+    logging.debug(
+        f"test_ldap_external_user_directory code:{code} stdout:{stdout}, stderr:{stderr}"
+    )
+    assert code == 0
+
+
+def add_ldap_user(ldap_cluster, user_cn, password):
+    code, (stdout, stderr) = ldap_cluster.ldap_container.exec_run(
+        [
+            "sh",
+            "-c",
+            """echo "dn: cn={user_cn},ou=users,dc=example,dc=org
+objectClass: inetOrgPerson
+cn: {user_cn}
+sn: {user_cn}
+userPassword: {password}" | \
+ldapadd -H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}
+    """.format(
+                host=ldap_cluster.ldap_host,
+                port=ldap_cluster.ldap_port,
+                admin_bind_dn=LDAP_ADMIN_BIND_DN,
+                admin_password=LDAP_ADMIN_PASSWORD,
+                user_cn=user_cn,
+                password=password,
+            ),
+        ],
+        demux=True,
+    )
+    logging.debug(
+        f"test_ldap_external_user_directory code:{code} stdout:{stdout}, stderr:{stderr}"
+    )
+    assert code == 0
+
+
+def delete_ldap_user(ldap_cluster, user_cn):
+    code, (stdout, stderr) = ldap_cluster.ldap_container.exec_run(
+        [
+            "sh",
+            "-c",
+            """ldapdelete 'cn={user_cn},ou=users,dc=example,dc=org' \
+-H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}
+            """.format(
+                host=ldap_cluster.ldap_host,
+                port=ldap_cluster.ldap_port,
+                admin_bind_dn=LDAP_ADMIN_BIND_DN,
+                admin_password=LDAP_ADMIN_PASSWORD,
+                user_cn=user_cn,
             ),
         ],
         demux=True,
@@ -251,3 +304,33 @@ def test_remote_query_user_does_not_exist_locally(ldap_cluster):
 
     instance2.query("DROP USER IF EXISTS non_local", user="common_user", password="qwerty")
     instance2.query("DROP TABLE IF EXISTS test_table SYNC", user="common_user", password="qwerty")
+
+
+def mysql_connect(user, password):
+    return pymysql.connections.Connection(host=instance1.ip_address, user=user, password=password, port=9004)
+
+
+def test_mysql_protocol(ldap_cluster):
+    # A user of the LDAP user directory exists only after its first login: use a name no other test logs in with.
+    ldap_user = f"mysql_user_{uuid.uuid4().hex[:8]}"
+    add_ldap_user(ldap_cluster, ldap_user, "qwerty")
+    users_query = f"SELECT storage FROM system.users WHERE name = '{ldap_user}'"
+    assert instance1.query(users_query, user="common_user", password="qwerty") == ""
+
+    # The first login creates the user, the second one finds it.
+    for _ in range(2):
+        conn = mysql_connect(ldap_user, "qwerty")
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT currentUser()")
+            assert cursor.fetchall() == ((ldap_user,),)
+        finally:
+            conn.close()
+        assert instance1.query(users_query, user="common_user", password="qwerty") == "ldap\n"
+
+    for user, password in ((ldap_user, "wrong"), ("doesnotexist", "qwerty")):
+        with pytest.raises(pymysql.err.MySQLError) as exc_info:
+            mysql_connect(user, password)
+        assert exc_info.value.args[0] == 516  # AUTHENTICATION_FAILED
+
+    delete_ldap_user(ldap_cluster, ldap_user)
