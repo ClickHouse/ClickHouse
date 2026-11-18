@@ -1243,8 +1243,7 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(
 
     const auto source_positions = getTupleCastElementPositions(*from_type, *to_type);
 
-    /// `Nullable(LowCardinality(T))` is not a type, so an element of type `LowCardinality(T)` reports the failures of its
-    /// conversion as the NULLs of `LowCardinality(Nullable(T))` (see `extractTupleElementConversionFailures`).
+    /// `Nullable(LowCardinality(T))` is not a type, so a `LowCardinality(T)` element converts as `LowCardinality(Nullable(T))`.
     DataTypes conversion_types = to_element_types;
     ElementWrappers element_wrappers;
     element_wrappers.reserve(to_element_types.size());
