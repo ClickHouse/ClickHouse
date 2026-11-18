@@ -715,6 +715,9 @@ void PrometheusHTTPProtocolAPI::getMetadata(
 {
     const auto time_series_storage_id = time_series_storage->getStorageID();
 
+    /// Reads the inner metric families table directly, so refuses a row policy or a table filter on the source.
+    checkTimeSeriesSelectorSource(time_series_storage_id, getContext());
+
     const char * metric_family_column_name = TimeSeriesColumnNames::getInnerMetricFamily(time_series_version);
 
     /// The metric families target table may declare its columns as String, LowCardinality(String) or Nullable(String),

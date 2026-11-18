@@ -26,6 +26,14 @@
                     <table>default.ts_unreachable</table>
                 </handler>
             </unreachable_api>
+            <!-- A Distributed table with a reachable and an unreachable shard. -->
+            <half_unreachable_api>
+                <url_prefix>/half_unreachable</url_prefix>
+                <handler>
+                    <type>api_v1</type>
+                    <table>default.ts_half_unreachable</table>
+                </handler>
+            </half_unreachable_api>
         </handlers>
     </prometheus>
 </clickhouse>

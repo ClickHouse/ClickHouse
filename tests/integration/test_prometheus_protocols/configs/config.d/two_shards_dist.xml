@@ -24,5 +24,19 @@
                 </replica>
             </shard>
         </unreachable_only>
+        <one_unreachable>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>1</port>
+                </replica>
+            </shard>
+        </one_unreachable>
     </remote_servers>
 </clickhouse>

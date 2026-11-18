@@ -30,6 +30,7 @@ node = cluster.add_instance(
 DIST = "/dist/api/v1"
 LOCAL = "/local/api/v1"
 UNREACHABLE = "/unreachable/api/v1"
+HALF_UNREACHABLE = "/half_unreachable/api/v1"
 
 # Sharded on the `host` tag: h1, h2 hash to one shard and h3, h4, h5 to the other, so both jobs
 # of `m` straddle the shards and no single shard can answer an aggregation.
@@ -67,6 +68,7 @@ def start_cluster():
         )
         node.query("CREATE TABLE ts_all ENGINE=TimeSeries")
         node.query("CREATE TABLE ts_unreachable AS ts_all ENGINE = Distributed(unreachable_only, default, ts_all)")
+        node.query("CREATE TABLE ts_half_unreachable AS ts_all ENGINE = Distributed(one_unreachable, default, ts_all)")
         node.query(INSERT_TEST_DATA, settings={"distributed_foreground_insert": 1})
         node.query(
             "INSERT INTO ts_all (metric_name, tags, samples) "
@@ -155,5 +157,15 @@ def test_row_policy_refuses_the_query():
 @pytest.mark.parametrize("endpoint", ["query?query=m&time=140", "query_range?query=m&start=100&end=140&step=10"])
 def test_unreachable_shards_are_a_server_error(endpoint):
     response = get_response_to_http_api(f"http://{node.ip_address}:9093{UNREACHABLE}/{endpoint}")
+    assert response.status_code >= 500, response.text
+    assert response.json()["errorType"] == "internal"
+
+
+@pytest.mark.parametrize("endpoint", ["query?query=m&time=140", "query_range?query=m&start=100&end=140&step=10"])
+def test_exceeded_shard_skip_limit_is_a_server_error(endpoint):
+    response = get_response_to_http_api(
+        f"http://{node.ip_address}:9093{HALF_UNREACHABLE}/{endpoint}"
+        "&skip_unavailable_shards=1&max_skip_unavailable_shards_ratio=0.4"
+    )
     assert response.status_code >= 500, response.text
     assert response.json()["errorType"] == "internal"
