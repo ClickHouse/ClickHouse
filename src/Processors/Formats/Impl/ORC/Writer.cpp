@@ -1349,7 +1349,7 @@ Writer::Writer(const Type & schema_, const DataTypes & column_types, OutputStrea
     context->enable_index = options.row_index_stride > 0;
     context->dictionary_key_size_threshold = options.dictionary_key_size_threshold;
     context->timezone_offset.emplace(DateLUT::instance(options.timezone_name));
-    context->timezone_is_utc = options.timezone_name == "GMT" || options.timezone_name == "UTC";
+    context->timezone_is_utc = isUTC(DateLUT::instance(options.timezone_name));
     static constexpr Int64 UTC_2015_01_01 = 1420070400;
     context->epoch_offset = UTC_2015_01_01 - (*context->timezone_offset)(UTC_2015_01_01);
 

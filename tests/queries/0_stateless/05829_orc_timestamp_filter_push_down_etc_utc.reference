@@ -1,0 +1,12 @@
+UTC	GMT	1000
+UTC	Etc/UTC	1000
+UTC	Zulu	1000
+UTC	Europe/Berlin	10000
+Etc/UTC	GMT	1000
+Etc/UTC	Etc/UTC	1000
+Etc/UTC	Zulu	1000
+Etc/UTC	Europe/Berlin	10000
+Universal	GMT	1000
+Universal	Etc/UTC	1000
+Universal	Zulu	1000
+Universal	Europe/Berlin	10000

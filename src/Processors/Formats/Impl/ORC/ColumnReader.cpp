@@ -366,7 +366,9 @@ public:
         : ColumnReader(type, stripe)
         , writer_timezone(is_instant ? DateLUT::instance("UTC") : stripe.getWriterTimezone())
         , reader_timezone(is_instant ? DateLUT::instance("UTC") : stripe.getReaderTimezone())
-        , same_timezone(&writer_timezone == &reader_timezone || writer_timezone.getTimeZone() == reader_timezone.getTimeZone())
+        , same_timezone(&writer_timezone == &reader_timezone || writer_timezone.getTimeZone() == reader_timezone.getTimeZone()
+              || (writer_timezone.hasFixedOffset() && reader_timezone.hasFixedOffset()
+                  && writer_timezone.timezoneOffset(0) == reader_timezone.timezoneOffset(0)))
         , writer_offset_of(writer_timezone)
         , reader_offset_of(reader_timezone)
     {

@@ -7,6 +7,9 @@
 namespace DB::ORC
 {
 
+/// UTC under any name: `UTC`, `Etc/UTC`, `Zulu`, `Etc/GMT+0`, `Fixed/UTC+00:00:00`.
+inline bool isUTC(const DateLUTImpl & lut) { return lut.hasFixedOffset() && lut.timezoneOffset(0) == 0; }
+
 /// The UTC offset as in the reference implementation: before the first transition record it is the oldest
 /// standard time, not the local mean time (Asia/Shanghai +08:00, not +08:05:43). Shared by reader and writer.
 class TimezoneOffset
