@@ -1,11 +1,15 @@
 #include <memory>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/BloomFilter.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
@@ -27,6 +31,40 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+/// `mask` is a `UInt8` mask, or a constant. The result type is `LowCardinality(UInt8)` for a `LowCardinality` key, see
+/// `FunctionApplyFilter::getReturnTypeImpl`.
+ColumnPtr toResultType(const ColumnPtr & mask, const DataTypePtr & result_type)
+{
+    const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(result_type.get());
+    if (!low_cardinality_type)
+        return mask;
+
+    if (const auto * mask_const = typeid_cast<const ColumnConst *>(mask.get()))
+        return result_type->createColumnConst(mask->size(), mask_const->getField());
+
+    const auto * mask_column = typeid_cast<const ColumnUInt8 *>(mask.get());
+    if (!mask_column)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Runtime filter returned a mask of unexpected column {}", mask->getName());
+
+    /// The dictionary holds only false and true, so each row is indexed without a lookup.
+    auto dictionary = DataTypeLowCardinality::createColumnUnique(*low_cardinality_type->getDictionaryType());
+    const auto index_of_false = static_cast<UInt8>(dictionary->uniqueInsert(Field(UInt64(0))));
+    const auto index_of_true = static_cast<UInt8>(dictionary->uniqueInsert(Field(UInt64(1))));
+
+    const auto & mask_data = mask_column->getData();
+    auto indexes = ColumnUInt8::create(mask_data.size());
+    auto & indexes_data = indexes->getData();
+    for (size_t row = 0; row < mask_data.size(); ++row)
+        indexes_data[row] = mask_data[row] ? index_of_true : index_of_false;
+
+    return ColumnLowCardinality::create(MutableColumnPtr(std::move(dictionary)), MutableColumnPtr(std::move(indexes)), /*is_shared=*/false);
+}
+
+}
+
 /// Special function for JOIN runtime filtering
 /// Syntax: __applyFilter(filter_id, key)
 /// - filter_id: a String const whose VALUE is the per-plan-build rendezvous id under which the
@@ -43,7 +81,12 @@ class FunctionApplyFilter final : public IFunction
 {
 public:
     static constexpr auto name = "__applyFilter";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionApplyFilter>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionApplyFilter>(/*passes_key_as_is_=*/true); }
+
+    explicit FunctionApplyFilter(bool passes_key_as_is_)
+        : passes_key_as_is(passes_key_as_is_)
+    {
+    }
 
     [[nodiscard]] String getName() const override { return name; }
 
@@ -73,10 +116,40 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    /// The default implementations would reduce a constant, `LowCardinality`, sparse or replicated key to the values
+    /// that it stores, and the statistics of the filter would count those values instead of the rows. They decide
+    /// whether the filter is worth evaluating, so `RuntimeFilter::find` gets the key as it is.
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return !passes_key_as_is; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return !passes_key_as_is; }
+    [[nodiscard]] bool useDefaultImplementationForSparseColumns() const override { return !passes_key_as_is; }
+    [[nodiscard]] bool useDefaultImplementationForReplicatedColumns() const override { return !passes_key_as_is; }
+
+    /// Without the default implementation for `LowCardinality`, the result type for a `LowCardinality` key would be
+    /// `UInt8` instead of `LowCardinality(UInt8)`. The type is in serialized plans, which a server of another version
+    /// may read, so it is deduced with that implementation.
+    using IFunction::getReturnTypeImpl;
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (passes_key_as_is && hasLowCardinalityTypes(arguments))
+            return FunctionToOverloadResolverAdaptor(std::make_shared<FunctionApplyFilter>(/*passes_key_as_is_=*/false))
+                .getReturnType(arguments);
+
+        return IFunction::getReturnTypeImpl(arguments);
+    }
+
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return toResultType(applyFilter(arguments, input_rows_count), result_type);
+    }
+
+private:
+    /// Off only in the function that deduces the result type, see `getReturnTypeImpl`.
+    const bool passes_key_as_is;
+
+    /// Returns a `UInt8` mask, or a constant.
+    [[nodiscard]] ColumnPtr applyFilter(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         /// The rendezvous id is the VALUE of the const first argument (set at plan build, the same id
         /// the build side registers under). An empty id means an inert/placeholder filter: all rows pass.

@@ -428,7 +428,10 @@ public:
     /// No more inserts after this call, only finds.
     void finishInsert();
 
-    /// Looks up each value and returns column of Bool values.
+    /// Looks up each row of `values` and returns a `UInt8` mask over the rows, which may be a constant.
+    /// `values` may be in any form that a block holds a column in. A constant, `LowCardinality`, sparse or replicated
+    /// column is looked up by the values that it stores, each once, but the statistics count its rows: they decide
+    /// whether the filter is worth evaluating, and that depends on the rows that it filters out.
     ColumnPtr find(const ColumnWithTypeAndName & values) const;
 
     /// Whether building and all expected merges have finished.

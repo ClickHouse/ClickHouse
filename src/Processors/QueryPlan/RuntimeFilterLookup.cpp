@@ -9,8 +9,11 @@
 #include <utility>
 #include <vector>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
 #include <Core/ProtocolDefines.h>
@@ -1113,6 +1116,82 @@ void RuntimeFilter::finishInsert()
     data.build_state.finishInserts();
 }
 
+namespace
+{
+
+/// A mask over the rows of a column, and the number of rows that it passes.
+struct RowsMask
+{
+    ColumnPtr mask;
+    size_t rows_passed = 0;
+};
+
+RowsMask constantRowsMask(bool passed, size_t rows)
+{
+    return {DataTypeUInt8().createColumnConst(rows, passed), passed ? rows : 0};
+}
+
+/// Maps `values_mask`, a mask over the values that a compact form of a column stores, onto the rows of the column.
+template <typename Expand>
+RowsMask expandRowsMask(const RowsMask & values_mask, size_t rows, Expand && expand)
+{
+    /// It passes every value or none of them, so every row or none of them.
+    if (const auto * mask_const = typeid_cast<const ColumnConst *>(values_mask.mask.get()))
+        return constantRowsMask(mask_const->getBool(0), rows);
+
+    auto mask = expand(values_mask.mask);
+    const size_t rows_passed = countPassedStats(mask);
+    return {std::move(mask), rows_passed};
+}
+
+/// Looks up the rows of `values`, see `RuntimeFilter::find`. This is what the default implementations of `IFunction`
+/// do with the arguments of a function, except that `rows_passed` counts rows, not the values that were looked up.
+/// `probe` looks up a column that is in none of the compact forms.
+template <typename Probe>
+RowsMask findRows(const ColumnWithTypeAndName & values, Probe && probe)
+{
+    const auto & column = values.column;
+    const size_t rows = column->size();
+
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
+    {
+        const auto value_mask = findRows({column_const->getDataColumnPtr(), values.type, values.name}, probe);
+        return constantRowsMask(value_mask.rows_passed != 0, rows);
+    }
+
+    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
+    {
+        const auto dictionary_mask = findRows(
+            {column_low_cardinality->getDictionary().getNestedColumn(), removeLowCardinality(values.type), values.name}, probe);
+        return expandRowsMask(
+            dictionary_mask, rows, [&](const ColumnPtr & mask) { return mask->index(column_low_cardinality->getIndexes(), 0); });
+    }
+
+    if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(column.get()))
+    {
+        /// The first value is the default, which is in every row that the offsets do not list.
+        const auto values_mask = findRows({column_sparse->getValuesPtr(), values.type, values.name}, probe);
+        return expandRowsMask(
+            values_mask,
+            rows,
+            [&](const ColumnPtr & mask)
+            { return mask->createWithOffsets(column_sparse->getOffsetsData(), *createColumnConst(mask, 0), rows, /*shift=*/1); });
+    }
+
+    if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.get()))
+    {
+        const auto nested_mask = findRows({column_replicated->getNestedColumn(), values.type, values.name}, probe);
+        return expandRowsMask(
+            nested_mask, rows, [&](const ColumnPtr & mask) { return mask->index(*column_replicated->getIndexesColumn(), 0); });
+    }
+
+    /// A compact form inside the column, e.g. in a `Tuple` key, is not worth looking up by its values.
+    return probe(ColumnWithTypeAndName(
+        recursiveRemoveLowCardinality(recursiveRemoveSparse(column)), recursiveRemoveLowCardinality(values.type), values.name));
+}
+
+}
+
 ColumnPtr RuntimeFilter::find(const ColumnWithTypeAndName & values) const
 {
     SharedLockGuard lock(mutex);
@@ -1122,10 +1201,22 @@ ColumnPtr RuntimeFilter::find(const ColumnWithTypeAndName & values) const
     if (evaluation_state.shouldSkip(rows_in_block))
         return DataTypeUInt8().createColumnConst(rows_in_block, true);
 
-    std::optional<size_t> rows_passed;
-    auto result = std::visit([&](const auto & filter) -> ColumnPtr { return filter.find(values, rows_passed); }, data.filter);
-    evaluation_state.updateStats(rows_in_block, rows_passed ? *rows_passed : countPassedStats(result));
-    return result;
+    auto [mask, rows_passed] = std::visit(
+        [&](const auto & filter)
+        {
+            return findRows(
+                values,
+                [&](const ColumnWithTypeAndName & plain_values)
+                {
+                    std::optional<size_t> probed_rows_passed;
+                    ColumnPtr probed_mask = filter.find(plain_values, probed_rows_passed);
+                    const size_t passed = probed_rows_passed ? *probed_rows_passed : countPassedStats(probed_mask);
+                    return RowsMask{std::move(probed_mask), passed};
+                });
+        },
+        data.filter);
+    evaluation_state.updateStats(rows_in_block, rows_passed);
+    return mask;
 }
 
 void RuntimeFilter::merge(const RuntimeFilter & source)
