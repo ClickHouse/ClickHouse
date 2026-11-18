@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# Tag no-replicated-database: the fix under test is for `Atomic` databases only
 # Test for https://github.com/ClickHouse/ClickHouse/issues/26746
 # A `CREATE TABLE ... AS SELECT` that is denied because the user lacks SELECT on a table referenced
 # by a subquery must not leave an empty orphan table behind. Before the fix the table was created
@@ -42,7 +44,7 @@ inferred_query="CREATE TABLE dst ENGINE = Memory AS SELECT * FROM t0 WHERE y IN 
 explicit_query="CREATE TABLE dst_explicit (y Int) ENGINE = Memory AS SELECT y FROM t0 WHERE y IN (SELECT y FROM t1 WHERE y IN (SELECT y FROM t2 WHERE y < 2))"
 
 # The temporary-table fix is analyzer-independent, but force the analyzer on for a deterministic profile.
-client=(${CLICKHOUSE_CLIENT} --enable_analyzer 1 --user "${user}" --password "${user}")
+client=(${CLICKHOUSE_CLIENT} --user "${user}" --password "${user}")
 
 check_denied()
 {

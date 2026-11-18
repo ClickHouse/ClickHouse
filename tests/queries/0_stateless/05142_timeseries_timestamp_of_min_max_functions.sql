@@ -1,4 +1,5 @@
 SET enable_time_series_aggregate_functions = 1;
+SET session_timezone = 'UTC';
 
 -- The dataset from the documentation examples: the gap between 140 and 190 leaves the windows
 -- of grid points 150, 165, 180 without fresh samples.
@@ -97,8 +98,7 @@ SELECT
     timeSeriesTimestampOfMaxToGrid(100, 110, 1, 64)(toUInt32(number + 1), toFloat64(number + 1))
 FROM numbers(110);
 
--- min/max return the value type, while ts_of_* always returns Float64 because the result
--- is a timestamp in seconds.
+-- min/max return the value type, while ts_of_* returns the type of the timestamps.
 SELECT 'result_types';
 WITH
     [100, 110]::Array(DateTime) AS timestamps,

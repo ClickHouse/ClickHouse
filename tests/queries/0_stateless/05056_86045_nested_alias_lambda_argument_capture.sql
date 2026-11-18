@@ -1,7 +1,6 @@
 -- A lambda argument that an enclosing alias resolution already hid is not visible to a nested
 -- aliased expression either, so it must not keep the argument of an inner lambda visible.
 
-SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 
 -- While `a` is resolved, the argument `x` of the outer lambda is hidden, so `x` in `b` is the

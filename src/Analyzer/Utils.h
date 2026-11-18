@@ -7,20 +7,27 @@
 
 #include <Core/Field.h>
 #include <Core/Names.h>
+#include <Core/NamesAndTypes.h>
 
 #include <Columns/IColumn_fwd.h>
 
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <unordered_map>
+
 namespace DB
 {
 
+struct StorageID;
 class FunctionNode;
 class ColumnNode;
 using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 
 class TableNode;
 using TableNodePtr = std::shared_ptr<TableNode>;
+
+class JoinNode;
+struct Settings;
 
 struct IdentifierResolveScope;
 
@@ -112,6 +119,24 @@ const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_
 /// Extract all TableNodes from the query tree.
 QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);
 
+/** The tables of a query tree, identified by where each was written: a hash of the `SELECT` it is in, together with
+  * the path to it under that `SELECT`'s `FROM`, both taken from the AST the tree was built from. Two builds of one
+  * query agree on it although the analyzer's `__tableN` names and the join order may differ between them, so it can
+  * pair their reads of one table. The `SELECT`'s own `SETTINGS` are left out: a build may drop some of them.
+  *
+  * A table is found by the AST it was built from, which every clone of the tree keeps. One that is not in the tree's
+  * join trees, such as a table read inside a view that is not inlined or inside a table function, is not found, and
+  * neither is one that has no AST. Occurrences can share an identity - a CTE or a view expanded twice - and then
+  * none of them is kept: only an identity that exactly one table of the tree has can tell that table apart.
+  */
+struct TableOccurrences
+{
+    /// Keyed by the AST pointer itself, which also keeps it from being freed and its address reused.
+    std::unordered_map<ASTPtr, UInt128> identity_by_ast;
+};
+
+TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree);
+
 /// Extract table, table function, query, union from join tree.
 TableExpressionNodes extractTableExpressions(const TableExpressionNodePtr & join_tree_node, bool add_array_join = false, bool recursive = false);
 
@@ -129,6 +154,9 @@ TableExpressionNodePtr extractLeftTableExpression(const TableExpressionNodePtr &
   * 5. t1
   */
 TableExpressionNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node);
+
+/// Returns true if the join is GLOBAL, explicitly or through `distributed_product_mode` / `prefer_global_in_and_join`
+bool isGlobalJoin(const JoinNode & join_node, const Settings & settings);
 
 /** Assert that there are no function nodes with specified function name in node children.
   * Do not visit subqueries.
@@ -161,6 +189,12 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context);
 /// Just collect all identifiers from query tree
 NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node);
 
+/// Create and resolve an ordinary function node from already-resolved argument expressions.
+QueryTreeNodePtr createResolvedFunction(const ContextPtr & context, const String & name, QueryTreeNodes arguments);
+
+/// Create a resolved `tupleElement` expression using a one-based element index.
+QueryTreeNodePtr createTupleElementFunction(const ContextPtr & context, QueryTreeNodePtr argument, UInt64 index);
+
 /// Wrap node into `_CAST` function
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context);
 
@@ -173,6 +207,10 @@ QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_ty
 /// resolved `_CAST`, non-constant arguments, or a value >= 1 MiB, matching `resolveFunction`) the original
 /// node is returned unchanged.
 QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node);
+
+/// If `node` is `__getScalar('<hash>')` and the query context holds that scalar, returns it as a constant column
+/// of one row, the value `resolveFunction` folds with. Otherwise returns nullptr.
+ColumnPtr tryGetScalarConstantColumn(const QueryTreeNodePtr & node, const ContextPtr & context);
 
 /// Maps an `in`-family function name to its null-aware counterpart the way `transform_null_in` does
 /// (`in` -> `nullIn` and so on). Any other name is returned unchanged.
@@ -197,12 +235,22 @@ void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const Strin
 
 /// Resolves function node as aggregate function with given name.
 /// Arguments and parameters are taken from the node.
+/// A node that carries a window definition stays a window function.
 void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name);
+
+/// Returns the types the arguments of a window function must be cast to before it is resolved.
+DataTypes bindWindowFunctionArgumentTypes(const String & function_name, DataTypes argument_types);
 
 /// Returns single source of expression node.
 /// First element of pair is source node, can be nullptr if there are no sources or multiple sources.
 /// Second element of pair is true if there is at most one source, false if there are multiple sources.
 std::pair<TableExpressionNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node);
+
+/** Return the table or table function that a `PREWHERE` expression's columns come from, or nullptr
+  * when the expression has no such column (a constant `PREWHERE`). Nested `QUERY` / `UNION` / `LAMBDA`
+  * nodes are not visited, so a set subquery does not hide the outer column source.
+  */
+TableExpressionNodePtr getPrewhereTableExpression(const QueryTreeNodePtr & prewhere);
 
 /// Update mutable context for subquery execution
 void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);
@@ -265,18 +313,19 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool date_time_as_numbers);
 
 /// True if a value of this type needs the exact serialization provided by `columnConstantToExactLiteralAST`:
-/// it may contain a decimal-backed leaf (`Decimal`/`Time64`, or a `Dynamic` that can hold one), or a
-/// `Variant`, whose literal does not keep the active member type.
+/// it may contain a decimal-backed leaf (`Decimal`/`Time64`, or a `Dynamic` that can hold one), a
+/// `Variant`, whose literal does not keep the active member type, or a `QBit`, whose `Field` is its
+/// internal tuple of bit planes.
 bool typeNeedsExactLiteralSerialization(const IDataType & type);
 
 /// Build a literal AST for a constant column value, serializing decimal-backed leaves (Decimal,
 /// DateTime64, Time64, including those nested in Array/Tuple/Map/Variant/Dynamic) exactly so they
 /// round-trip across distributed / serialized-plan boundaries without going through Float64 or the
-/// `DateTime` text-parsing heuristics. Values with none of those types and no `Variant` use the same
-/// representation as `getFieldFromColumnForASTLiteral`. `date_time_as_numbers` is forwarded to it.
-/// The active member of a `Variant` reached through `Nullable`/`Array`/`Tuple`/`Map`/`Variant`/`Dynamic` is
-/// named by its own type; under any other wrapper, and below an `Object` whose JSON text carries no
-/// discriminator, it is not.
+/// `DateTime` text-parsing heuristics. Values with none of those types and no `Variant`, `Dynamic` or `QBit` use the
+/// same representation as `getFieldFromColumnForASTLiteral`. `date_time_as_numbers` is forwarded to it.
+/// The active member of a `Variant`, and of a `Dynamic` when `date_time_as_numbers` is set, reached through
+/// `Nullable`/`Array`/`Tuple`/`Map`/`Variant`/`Dynamic` is named by its own type; under any other wrapper, and
+/// below an `Object` whose JSON text carries no discriminator, it is not.
 ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers);
 
 /// Wrap `value` in `_CAST(value, type_name)`, but skip the wrapping when `value` is already a
@@ -294,5 +343,10 @@ bool verifyMaterializedCTESubqueryMatchesStorage(
     const std::string & cte_name,
     const QueryTreeNodePtr & scope_node,
     bool throw_on_mismatch);
+
+/// Returns true if the table is the data inserted into a table function by `INSERT INTO FUNCTION ... RETURNING`,
+/// which the RETURNING query reads instead of the table function. The access to the table function is checked when it is executed,
+/// and its name is not in the database catalog, so the `SELECT` grants are not checked for it.
+bool isInsertedDataOfTableFunction(const StoragePtr & storage, const StorageID & storage_id, const ContextPtr & context);
 
 }

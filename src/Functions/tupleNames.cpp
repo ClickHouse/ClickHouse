@@ -27,11 +27,11 @@ public:
 
     explicit ExecutableFunctionTupleNames(Array name_fields_) : name_fields(std::move(name_fields_)) { }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return result_type->createColumnConst(input_rows_count, name_fields);
     }
@@ -84,14 +84,9 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(removeNullable(arguments[0].type).get());
-
-        if (!tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a Tuple or Nullable(Tuple)", getName());
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+        return "(MaybeNullable(Tuple)) -> Array(String)";
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override

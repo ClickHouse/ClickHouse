@@ -150,7 +150,7 @@ void registerAggregateFunctionsQuantileDeterministic(AggregateFunctionFactory & 
 void registerAggregateFunctionsQuantileDeterministic(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
 
     FunctionDocumentation::Description description = R"(
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
@@ -193,7 +193,7 @@ SELECT quantileDeterministic(val, 1) FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileDeterministic::name, {createAggregateFunctionQuantile<FuncQuantileDeterministic>, documentation});
+    factory.registerFunction(NameQuantileDeterministic::name, {createAggregateFunctionQuantile<FuncQuantileDeterministic>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously, using deterministic reservoir sampling.

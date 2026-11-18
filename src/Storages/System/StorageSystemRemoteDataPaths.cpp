@@ -39,7 +39,6 @@ namespace ErrorCodes
     extern const int DIRECTORY_DOESNT_EXIST;
 }
 
-
 class SystemRemoteDataPathsSource final : public ISource
 {
 public:
@@ -53,10 +52,8 @@ public:
         , context(std::move(context_))
     {
         for (const auto & disk : disks_)
-        {
-            if (disk.second->isRemote())
+            if (isDiskObjectStorage(disk.second))
                 disks.push_back(disk);
-        }
 
         auto component_guard = Coordination::setCurrentComponent("SystemRemoteDataPathsSource::SystemRemoteDataPathsSource");
         /// Position at the first disk
@@ -157,7 +154,7 @@ public:
     {
     }
 
-    String getName() const override { return "ReadFromSystemRemoteDataPaths"; }
+    [[nodiscard]] String getName() const override { return "ReadFromSystemRemoteDataPaths"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 

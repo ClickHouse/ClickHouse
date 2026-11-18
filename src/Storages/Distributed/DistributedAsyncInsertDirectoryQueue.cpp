@@ -26,8 +26,10 @@
 #include <Common/formatReadable.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 #include <Compression/CheckingCompressedReadBuffer.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <filesystem>
 
 
@@ -525,8 +527,11 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
 
     bool operator==(const BatchHeader & other) const
     {
+        /// The whole batch is sent with the `ClientInfo` of its first file, so files that the shard would
+        /// authenticate differently must never be merged into one batch.
         return std::tie(settings, query, client_info.query_kind, client_info.client_agent, client_info.is_internal) ==
                std::tie(other.settings, other.query, other.client_info.query_kind, other.client_info.client_agent, other.client_info.is_internal) &&
+               getRemoteAuthenticationIdentity(client_info) == getRemoteAuthenticationIdentity(other.client_info) &&
                blocksHaveEqualStructure(header, other.header);
     }
 
@@ -536,6 +541,9 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
         {
             SipHash hash_state;
             hash_state.update(batch_header.query.data(), batch_header.query.size());
+            const auto [initial_user, initial_host] = getRemoteAuthenticationIdentity(batch_header.client_info);
+            hash_state.update(initial_user.data(), initial_user.size());
+            hash_state.update(initial_host.data(), initial_host.size());
             hash_state.update(batch_header.client_info.client_agent.data(), batch_header.client_info.client_agent.size());
             hash_state.update(batch_header.client_info.is_internal);
             batch_header.header.updateHash(hash_state);
@@ -546,12 +554,10 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
 
 bool DistributedAsyncInsertDirectoryQueue::addFileAndSchedule(const std::string & file_path, size_t file_size, size_t ms)
 {
-    if (!pending_files.push(fs::absolute(file_path).string()))
-    {
-        LOG_DEBUG(log, "File {} had not been scheduled, since the table had been detached", file_path);
-        return false;
-    }
+    std::string absolute_file_path = fs::absolute(file_path).string();
 
+    /// Count the file before it is pushed: the background task can send it and uncount it in `markAsSend`
+    /// as soon as it is in the queue, which would take the counters below zero for a while.
     {
         std::lock_guard lock(status_mutex);
         metric_pending_files.add();
@@ -559,6 +565,23 @@ bool DistributedAsyncInsertDirectoryQueue::addFileAndSchedule(const std::string 
         status.bytes_count += file_size;
         ++status.files_count;
     }
+
+    /// Uncount the file if it does not get into the queue: either the queue is finished, or `push` throws.
+    scope_guard uncount_file([&]
+    {
+        std::lock_guard lock(status_mutex);
+        metric_pending_files.sub();
+        metric_pending_bytes.sub(file_size);
+        status.bytes_count -= file_size;
+        --status.files_count;
+    });
+
+    if (!pending_files.push(std::move(absolute_file_path)))
+    {
+        LOG_DEBUG(log, "File {} had not been scheduled, since the table had been detached", file_path);
+        return false;
+    }
+    uncount_file.release();
 
     return task_handle->scheduleAfter(ms, false);
 }

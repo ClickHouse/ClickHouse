@@ -2,9 +2,24 @@
 
 import argparse
 import base64
+import time
 
 import pyarrow as pa
 import pyarrow.flight as fl
+
+# How long a stalling handler blocks: a STALL_* dataset, or the stall_handshake user. Finite
+# rather than infinite, because a blocked handler occupies a gRPC worker thread throughout.
+STALL_SECONDS = 120
+# How long do_get withholds the stream for SLOW_DOGET_THEN_STALL, so the client is still inside
+# DoGet when a query-level timeout fires.
+SLOW_DOGET_SECONDS = 15
+# How long the stream that follows withholds its first message. Longer than the deadline the test
+# configures, and shorter than STALL_SECONDS so this handler is held no longer than the others.
+SLOW_DOGET_STALL_SECONDS = 60
+# How long SLOW_SCHEMA_THEN_ANSWER withholds its GetSchema answer before answering normally. Longer
+# than the deadline the test configures, and short enough that a deadline stretched past it ends the
+# query in a success rather than in another timeout.
+SLOW_SCHEMA_ANSWER_SECONDS = 5
 
 
 class FlightServer(fl.FlightServerBase):
@@ -55,8 +70,29 @@ class FlightServer(fl.FlightServerBase):
             schema=struct_schema,
         )
 
+    def _stalling_batches(self):
+        yield self._tables["ABC"].to_batches()[0]
+        time.sleep(STALL_SECONDS)
+
+    def _stalling_before_first_batch(self):
+        # Nothing is yielded first, so the client's first read blocks. The schema is supplied to
+        # GeneratorStream separately and the server writes it before pulling this generator, so
+        # DoGet itself still returns.
+        time.sleep(SLOW_DOGET_STALL_SECONDS)
+        yield self._tables["ABC"].to_batches()[0]
+
     def do_get(self, context, ticket):
         dataset = ticket.ticket.decode()
+        if dataset == "STALL_DOGET":
+            # Nothing is sent at all, so the client blocks inside DoGet itself.
+            time.sleep(STALL_SECONDS)
+        if dataset == "SLOW_DOGET_THEN_STALL":
+            # The reader is handed back only after the delay, and its first message never arrives.
+            time.sleep(SLOW_DOGET_SECONDS)
+            return fl.GeneratorStream(self._schema, self._stalling_before_first_batch())
+        if dataset == "STALL_STREAM":
+            # The schema and one batch arrive, so the client blocks in its read loop instead.
+            return fl.GeneratorStream(self._schema, self._stalling_batches())
         table = (
             self._tables[dataset] if (dataset in self._tables) else self._empty_table
         )
@@ -64,6 +100,9 @@ class FlightServer(fl.FlightServerBase):
 
     def do_put(self, context, descriptor, reader, writer):
         dataset = descriptor.path[0].decode()
+        if dataset == "STALL_DOPUT":
+            # Blocks the DoPut call while ClickHouse's sink waits inside ISink::work.
+            time.sleep(STALL_SECONDS)
         new_data = reader.read_all()
         tables_to_concat = []
         if dataset in self._tables:
@@ -73,6 +112,12 @@ class FlightServer(fl.FlightServerBase):
 
     def get_schema(self, context, descriptor):
         dataset = descriptor.path[0].decode()
+        if dataset == "STALL_SCHEMA":
+            # Blocks the unary GetSchema, which ClickHouse issues during query analysis.
+            time.sleep(STALL_SECONDS)
+        if dataset == "SLOW_SCHEMA_THEN_ANSWER":
+            # Answers after the delay, so a deadline longer than it lets the query through.
+            time.sleep(SLOW_SCHEMA_ANSWER_SECONDS)
         if dataset in self._tables:
             return fl.SchemaResult(self._tables[dataset].schema)
         else:
@@ -89,6 +134,9 @@ class FlightServer(fl.FlightServerBase):
             raise fl.FlightServerError(
                 f"Descriptor {descriptor} is not supported. Only single-component path descriptors are supported"
             )
+        if descriptor.path[0].decode() == "STALL_FLIGHT_INFO":
+            # Blocks GetFlightInfo, which ClickHouse issues while building the read pipeline.
+            time.sleep(STALL_SECONDS)
         ticket = descriptor.path[0]
         endpoints = [pa.flight.FlightEndpoint(ticket, [self._location])]
         return fl.FlightInfo(self._schema, descriptor, endpoints)
@@ -124,6 +172,9 @@ class BasicAuthServerMiddlewareFactory(fl.ServerMiddlewareFactory):
         token = auth_header[0].split(" ", 1)[1]
         decoded = base64.b64decode(token)
         pair = decoded.decode("utf-8").split(":")
+        if pair[0] == "stall_handshake":
+            # Blocks the Handshake that AuthenticateBasicToken issues, before any dataset is named.
+            time.sleep(STALL_SECONDS)
         if pair[0] not in self.creds:
             raise fl.FlightUnauthenticatedError("Unknown user")
         if pair[1] != self.creds[pair[0]]:

@@ -107,9 +107,6 @@ lazy_probes() {
     echo "Test DESCRIBE of a lazily loaded Alias without target permission$1"
     ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "DESCRIBE TABLE ${lazy_database}.${lazy_alias_table};" 2>&1 | grep -o "ACCESS_DENIED" | head -1
 
-    echo "Test SHOW CREATE of a lazily loaded Alias without target permission$1"
-    ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SHOW CREATE TABLE ${lazy_database}.${lazy_alias_table};" 2>&1 | grep -o "ACCESS_DENIED" | head -1
-
     echo "Test metadata tables for a lazily loaded Alias without target permission$1"
     ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
         SELECT

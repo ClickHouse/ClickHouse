@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 모든 관측성 솔루션에는 로그와 트레이스를 수집하고 내보낼 수단이 필요합니다. 이를 위해 ClickHouse는 [OpenTelemetry (OTel) 프로젝트](https://opentelemetry.io/)를 권장합니다.
 
 &quot;OpenTelemetry는 트레이스, 메트릭, 로그와 같은 텔레메트리 데이터를 생성하고 관리하도록 설계된 관측성 프레임워크이자 툴킷입니다.&quot;
@@ -62,7 +60,15 @@ collector를 사용하는 가장 큰 장점은 서비스가 데이터를 빠르�
 
 Collector는 세 가지 주요 처리 단계에 대해 [수신기](https://opentelemetry.io/docs/collector/configuration/#receivers), [processor](https://opentelemetry.io/docs/collector/configuration/#processors), [exporter](https://opentelemetry.io/docs/collector/configuration/#exporters)라는 용어를 사용합니다. 수신기는 데이터를 수집하며, pull 기반 또는 push 기반으로 동작할 수 있습니다. processor는 메시지 변환과 보강 기능을 제공합니다. exporter는 데이터를 다운스트림 서비스로 전송하는 역할을 합니다. 이 서비스가 이론적으로는 또 다른 collector일 수도 있지만, 아래의 초기 설명에서는 모든 데이터가 직접 ClickHouse로 전송된다고 가정합니다.
 
-<Image img="/images/use-cases/observability/observability-3.webp" alt="로그 수집" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![로그 수집](/images/use-cases/observability/observability-3.webp)
+
+</Frame>
+
+</div>
 
 수신기, processor, exporter의 전체 구성을 미리 숙지할 것을 권장합니다.
 
@@ -70,13 +76,29 @@ collector는 로그 수집을 위한 두 가지 주요 수신기를 제공합니
 
 **OTLP 사용** - 이 경우 로그는 OTLP 프로토콜을 통해 OpenTelemetry SDKs에서 collector로 직접 전송(push)됩니다. [OpenTelemetry 데모](https://opentelemetry.io/docs/demo/)는 이 방식을 사용하며, 각 언어의 OTLP exporter는 로컬 collector endpoint를 가정합니다. 이 경우 collector는 OTLP 수신기가 구성되어 있어야 합니다. 구성 예시는 위의 [demo 설정](https://github.com/ClickHouse/opentelemetry-demo/blob/main/src/otelcollector/otelcol-config.yml#L5-L12)을 참조하십시오. 이 방식의 장점은 로그 데이터에 트레이스 ID가 자동으로 포함되므로, 나중에 특정 로그에 해당하는 트레이스를 식별하거나 그 반대로도 가능하다는 점입니다.
 
-<Image img="/images/use-cases/observability/observability-4.webp" alt="otlp를 통한 로그 수집" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![otlp를 통한 로그 수집](/images/use-cases/observability/observability-4.webp)
+
+</Frame>
+
+</div>
 
 이 방식은 애플리케이션 코드에 [해당 언어 SDK](https://opentelemetry.io/docs/languages/)를 사용해 계측을 추가해야 합니다.
 
 * **Filelog 수신기를 통한 스크레이핑** - 이 수신기는 디스크의 파일을 tail하여 로그 메시지를 구성한 뒤 ClickHouse로 전송합니다. 이 수신기는 여러 줄 메시지 감지, 로그 롤오버 처리, 재시작 내구성을 위한 체크포인팅, 구조 추출과 같은 복잡한 작업을 처리합니다. 또한 Docker 및 Kubernetes 컨테이너 로그도 tail할 수 있으며, Helm 차트로 배포할 수 있고, [여기서 구조를 추출](https://opentelemetry.io/blog/2024/otel-collector-container-log-parser/)한 뒤 파드 세부 정보로 보강할 수도 있습니다.
 
-<Image img="/images/use-cases/observability/observability-5.webp" alt="파일 로그 수신기" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![파일 로그 수신기](/images/use-cases/observability/observability-5.webp)
+
+</Frame>
+
+</div>
 
 **대부분의 배포에서는 위 수신기들을 조합해 사용합니다. [collector 문서](https://opentelemetry.io/docs/collector/)를 읽고 기본 개념과 함께 [구성 구조](https://opentelemetry.io/docs/collector/configuration/) 및 [설치 방법](https://opentelemetry.io/docs/collector/installation/)도 숙지할 것을 권장합니다.**
 
@@ -650,7 +672,15 @@ collector 관점에서는 (1)과 (2)를 구분하기 어려울 수 있습니다.
 
 큰 배치를 보장할 수 없다면 [Asynchronous Inserts](/ko/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts)를 사용해 ClickHouse에 배칭을 맡길 수 있습니다. 비동기 삽입을 사용하면 데이터는 먼저 버퍼에 삽입된 뒤, 나중에 또는 비동기적으로 데이터베이스 저장소에 기록됩니다.
 
-<Image img="/images/use-cases/observability/observability-6.webp" alt="Async inserts" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Async inserts](/images/use-cases/observability/observability-6.webp)
+
+</Frame>
+
+</div>
 
 [비동기 삽입이 활성화된 상태](/ko/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)에서는 ClickHouse가 ① 삽입 쿼리를 수신하면 해당 쿼리의 데이터가 먼저 ② 즉시 인메모리 버퍼에 기록됩니다. 이후 ③ 다음 버퍼 플러시가 발생하면 버퍼의 데이터가 [정렬된 뒤](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) 파트(part)로 데이터베이스 저장소에 기록됩니다. 데이터는 데이터베이스 저장소로 플러시되기 전까지는 쿼리로 검색할 수 없으며, 버퍼 플러시는 [구성할 수 있습니다](/ko/concepts/features/operations/insert/asyncinserts).
 
@@ -680,7 +710,15 @@ OTel collector를 ClickHouse와 함께 사용할 때는 여러 가지 배포 아
 
 에이전트 전용 아키텍처에서는 OTel collector를 에이전트로 엣지에 배포합니다. 이들은 로컬 애플리케이션(예: 사이드카 컨테이너)에서 트레이스를 수신하고, 서버와 Kubernetes 노드에서 로그를 수집합니다. 이 모드에서는 에이전트가 데이터를 ClickHouse로 직접 전송합니다.
 
-<Image img="/images/use-cases/observability/observability-7.webp" alt="에이전트 전용" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![에이전트 전용](/images/use-cases/observability/observability-7.webp)
+
+</Frame>
+
+</div>
 
 이 아키텍처는 소규모에서 중간 규모의 배포에 적합합니다. 가장 큰 장점은 추가 하드웨어가 필요 없고, 애플리케이션과 collector 간 매핑이 단순하며, ClickHouse 관측성 솔루션의 전체 리소스 사용량을 최소화할 수 있다는 점입니다.
 
@@ -696,7 +734,15 @@ OTel collector를 ClickHouse와 함께 사용할 때는 여러 가지 배포 아
 
 위의 한계를 해결하기 위해 OTel collector를 게이트웨이 인스턴스로 배포할 수 있습니다. 이렇게 하면 일반적으로 데이터 센터별 또는 리전별로 독립적으로 실행되는 서비스를 제공할 수 있습니다. 이 인스턴스는 단일 OTLP 엔드포인트를 통해 애플리케이션(또는 에이전트 역할의 다른 collector)에서 이벤트를 수신합니다. 일반적으로는 여러 개의 게이트웨이 인스턴스를 배포하고, 기본 제공 로드 밸런서를 사용해 이들 간에 부하를 분산합니다.
 
-<Image img="/images/use-cases/observability/observability-8.webp" alt="게이트웨이를 사용한 스케일링" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![게이트웨이를 사용한 스케일링](/images/use-cases/observability/observability-8.webp)
+
+</Frame>
+
+</div>
 
 이 아키텍처의 목적은 계산 집약적인 처리를 에이전트에서 오프로드하여 에이전트의 리소스 사용량을 최소화하는 것입니다. 이러한 게이트웨이는 그렇지 않으면 에이전트가 수행해야 하는 변환 작업을 처리할 수 있습니다. 또한 여러 에이전트의 이벤트를 집계함으로써 게이트웨이는 큰 배치를 ClickHouse로 전송할 수 있으므로 효율적인 삽입이 가능합니다. 이러한 게이트웨이 collector는 에이전트가 추가되고 이벤트 처리량이 증가함에 따라 쉽게 스케일링할 수 있습니다. 아래에는 예시 구조화 로그 파일을 사용하는 관련 에이전트 구성과 함께 게이트웨이 구성 예시가 나와 있습니다. 에이전트와 게이트웨이 간 통신에 OTLP를 사용한다는 점에 유의하십시오.
 
@@ -792,7 +838,15 @@ service:
 
 반면 높은 전달 보장이나 데이터 재생 기능(여러 소스로 재전송하는 경우 포함)이 필요하다면 Kafka는 아키텍처에 유용하게 추가할 수 있는 요소입니다.
 
-<Image img="/images/use-cases/observability/observability-9.webp" alt="Kafka 추가" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Kafka 추가](/images/use-cases/observability/observability-9.webp)
+
+</Frame>
+
+</div>
 
 이 경우 OTel 에이전트는 [Kafka exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md)를 통해 Kafka로 데이터를 보내도록 구성할 수 있습니다. 이어서 게이트웨이 인스턴스는 [Kafka 수신기](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md)를 사용해 메시지를 소비합니다. 자세한 내용은 Confluent 및 OTel 문서를 참조하십시오.
 

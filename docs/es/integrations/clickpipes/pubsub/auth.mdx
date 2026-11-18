@@ -14,40 +14,36 @@ integration:
   Puedes inscribirte en la lista de espera de la vista previa privada [aquí](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview).
 </Note>
 
-Este artículo describe los permisos de IAM de GCP que ClickPipes necesita para autenticarse con Google Cloud Pub/Sub y consumir datos de tus temas, y cómo configurar una cuenta de servicio que conceda exactamente esos permisos.
+Este artículo describe los permisos de IAM de GCP que ClickPipes necesita para autenticarse con Google Cloud Pub/Sub, consumir datos de tus temas y conceder acceso a la cuenta de servicio que utiliza ClickPipes.
 
-<div id="prerequisite">
-  ## Requisitos previos
-</div>
+## Requisitos previos {#prerequisite}
 
 Para seguir esta guía, necesitará:
 
 * Un servicio activo de ClickHouse Cloud
 * Un proyecto de GCP que contenga el tema de Pub/Sub desde el que desea ingestar
-* Permisos de IAM en ese proyecto para crear cuentas de servicio y asignar roles
+* Permisos de IAM en ese proyecto para asignar roles
+* Para la autenticación con clave de cuenta de servicio, permisos de IAM para crear cuentas de servicio y claves
 
-<div id="authentication-model">
-  ## Modelo de autenticación
-</div>
+## Modelo de autenticación {#authentication-model}
 
-ClickPipes para Pub/Sub se autentica con GCP mediante una [clave JSON de cuenta de servicio](https://cloud.google.com/iam/docs/keys-create-delete). Cuando creas un pipe, subes el archivo de clave; ClickPipes lo cifra en reposo y lo usa en tiempo de ejecución para:
+ClickPipes para Pub/Sub admite dos métodos de autenticación:
+
+* **Clave de cuenta de servicio:** creas una cuenta de servicio de Google y subes su [clave JSON](https://cloud.google.com/iam/docs/keys-create-delete) en la interfaz de usuario de ClickPipes o la proporcionas mediante la API. ClickPipes cifra la clave en reposo.
+* **Workload Identity de GCP (Beta):** ClickPipes usa credenciales de corta duración para una cuenta de servicio de Google gestionada por ClickPipes. No se almacena ninguna clave de cuenta de servicio del cliente. Consulta la [guía de Workload Identity de GCP](/es/integrations/clickpipes/security/gcp-workload-identity) para conocer los requisitos.
+
+Con cualquiera de los dos métodos, la cuenta de servicio se usa para:
 
 * listar y leer temas de tu proyecto,
 * crear y eliminar la [suscripción administrada](/es/integrations/clickpipes/pubsub/overview#managed-subscriptions) que ClickPipes usa para consumir mensajes,
 * consumir mensajes de esa suscripción, y
 * (opcionalmente) leer esquemas nativos de Pub/Sub desde el registro de esquemas.
 
-No hay opción de Workload Identity ni de pegar credenciales directamente: la clave JSON de cuenta de servicio es el único método de autenticación compatible actualmente.
-
-<div id="required-permissions">
-  ## Permisos necesarios
-</div>
+## Permisos necesarios {#required-permissions}
 
 ClickPipes requiere los siguientes permisos de IAM en el proyecto de GCP propietario del tema. Cubren todo el ciclo de vida del pipe: descubrimiento (listado de temas, validación y muestreo), gestión de suscripciones, ingestión continua y limpieza.
 
-<div id="topic-access">
-  ### Acceso al tema (descubrimiento y validación)
-</div>
+### Acceso al tema (descubrimiento y validación) {#topic-access}
 
 | Permiso                            | Propósito                                                                |
 | ---------------------------------- | ------------------------------------------------------------------------ |
@@ -55,9 +51,7 @@ ClickPipes requiere los siguientes permisos de IAM en el proyecto de GCP propiet
 | `pubsub.topics.get`                | Validar la existencia del tema y recuperar la configuración del esquema |
 | `pubsub.topics.attachSubscription` | Obligatorio en el **tema** al crear una suscripción sobre él            |
 
-<div id="subscription-lifecycle">
-  ### Ciclo de vida de la suscripción (descubrimiento e ingestión)
-</div>
+### Ciclo de vida de la suscripción (descubrimiento e ingestión) {#subscription-lifecycle}
 
 | Permiso                        | Propósito                                                                                                       |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
@@ -66,17 +60,13 @@ ClickPipes requiere los siguientes permisos de IAM en el proyecto de GCP propiet
 | `pubsub.subscriptions.delete`  | Limpiar las suscripciones efímeras de descubrimiento y eliminar la suscripción administrada al eliminar el pipe |
 | `pubsub.subscriptions.consume` | Operaciones de `Receive()`, `Ack()`, `Nack()` y búsqueda por timestamp                                          |
 
-<div id="schema-access">
-  ### Acceso a esquemas (opcional — solo para temas nativos de Avro/Protobuf)
-</div>
+### Acceso a esquemas (opcional — solo para temas nativos de Avro/Protobuf) {#schema-access}
 
 | Permiso              | Propósito                                                                      |
 | -------------------- | ------------------------------------------------------------------------------ |
 | `pubsub.schemas.get` | Recuperar definiciones de esquemas nativos del registro de esquemas de Pub/Sub |
 
-<div id="predefined-roles">
-  ## Roles predefinidos
-</div>
+## Roles predefinidos {#predefined-roles}
 
 | Rol                                                                                                  | ¿Suficiente? | Notas                                                                                                               |
 | ---------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------- |
@@ -85,13 +75,9 @@ ClickPipes requiere los siguientes permisos de IAM en el proyecto de GCP propiet
 | [`roles/pubsub.viewer`](https://cloud.google.com/iam/docs/understanding-roles#pubsub.viewer)         | **No**       | Solo lectura: no permite gestionar suscripciones ni consumir datos.                                                 |
 | Rol personalizado *(recomendado)*                                                                    | Sí           | Use los siete permisos principales anteriores (más `schemas.get`, opcional) para un acceso con privilegios mínimos. |
 
-<div id="setup">
-  ## Configuración
-</div>
+## Configuración {#setup}
 
-<div id="create-custom-role">
-  ### Crear un rol personalizado (recomendado)
-</div>
+### Crear un rol personalizado (recomendado) {#create-custom-role}
 
 Para aplicar el principio de privilegio mínimo, cree un rol personalizado con exactamente los permisos que necesita ClickPipes.
 
@@ -116,11 +102,23 @@ O bien, en la Consola de GCP, ve a **IAM &amp; Admin → Roles → Crear rol** y
 
 Si prefieres omitir el rol personalizado, puedes otorgar `roles/pubsub.editor` en su lugar.
 
-<div id="create-service-account">
-  ### Crear una cuenta de servicio
-</div>
+### Usar Workload Identity de GCP (Beta) {#use-workload-identity}
 
-Cree una cuenta de servicio específica para el ClickPipe:
+Obtenga la cuenta de servicio gestionada por ClickPipes en el contexto del servicio siguiendo la [guía de Workload Identity de GCP](/es/integrations/clickpipes/security/gcp-workload-identity).
+
+Asigne a esa cuenta de servicio el rol personalizado que creó o `roles/pubsub.editor`:
+
+```bash
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:CLICKPIPES_SERVICE_ACCOUNT" \
+  --role="projects/YOUR_PROJECT_ID/roles/clickpipes.pubsub.ingestion"
+```
+
+Cree el ClickPipe mediante [OpenAPI](/es/integrations/clickpipes/programmatic-access/openapi#create-pubsub) o [Terraform](/es/integrations/clickpipes/programmatic-access/terraform#pubsub), con `authentication` configurado como `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. No proporcione ninguna clave de cuenta de servicio con este método de autenticación.
+
+### Crear una cuenta de servicio {#create-service-account}
+
+Para la autenticación mediante clave de cuenta de servicio, cree una cuenta de servicio específica para el ClickPipe:
 
 ```bash
 gcloud iam service-accounts create clickpipes-pubsub \
@@ -128,9 +126,7 @@ gcloud iam service-accounts create clickpipes-pubsub \
   --display-name="ClickPipes Pub/Sub Ingestion"
 ```
 
-<div id="grant-role">
-  ### Otorga el rol a la cuenta de servicio
-</div>
+### Otorga el rol a la cuenta de servicio {#grant-role}
 
 Asigna el rol que creaste (o `roles/pubsub.editor`) a la cuenta de servicio a nivel de proyecto:
 
@@ -140,9 +136,7 @@ gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
   --role="projects/YOUR_PROJECT_ID/roles/clickpipes.pubsub.ingestion"
 ```
 
-<div id="create-key">
-  ### Crear y descargar una clave de cuenta de servicio
-</div>
+### Crear y descargar una clave de cuenta de servicio {#create-key}
 
 Cree una clave JSON para la cuenta de servicio y descárguela localmente:
 
@@ -159,9 +153,7 @@ Sube este archivo `clickpipes-pubsub-key.json` en la interfaz de usuario de Clic
   Las claves de las cuentas de servicio otorgan acceso a tu proyecto de GCP. Guarda el archivo de forma segura, no lo añadas al control de versiones y rótalo periódicamente. ClickPipes cifra la clave en reposo tras subirla.
 </Info>
 
-<div id="notes">
-  ## Notas
-</div>
+## Notas {#notes}
 
 * `pubsub.topics.attachSubscription` es obligatorio en el **recurso de tema**, no en la suscripción. Esto suele pasarse por alto cuando solo se otorgan permisos a nivel de suscripción.
 * Si tu tema no usa un esquema nativo de Pub/Sub (Avro o Protobuf), no se necesita el permiso `pubsub.schemas.get`.

@@ -1,6 +1,4 @@
 -- { echo }
--- Tags: no-old-analyzer
--- no-old-analyzer: optimize_functions_to_subcolumns and the sparsity trivial count are analyzer-only
 -- A null map byte is a predicate, not a value: any non-zero byte means NULL. `if` forwards its raw
 -- condition column as the null map, so `number % 3` fills it with the bytes 0, 1 and 2. Byte 0 marks
 -- the 10 rows holding 'x'; the 1s and the 2s are the 20 rows that are equally NULL. `isNull` returns
