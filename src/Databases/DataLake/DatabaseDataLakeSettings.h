@@ -18,18 +18,15 @@ class SettingsChanges;
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, DatabaseDataLakeCatalogType) \
-    M(CLASS_NAME, DatabaseDataLakeSnapshotLoadingMode) \
     M(CLASS_NAME, S3UriStyle) \
 
 /// Merged and deduplicated type list for DatabaseDataLake + StorageObjectStorage settings.
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, ArrowCompression) \
-    M(CLASS_NAME, ArrowUnsupportedTypes) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \
     M(CLASS_NAME, DatabaseDataLakeCatalogType) \
-    M(CLASS_NAME, DatabaseDataLakeSnapshotLoadingMode) \
     M(CLASS_NAME, DateTimeInputFormat) \
     M(CLASS_NAME, DateTimeOutputFormat) \
     M(CLASS_NAME, DateTimeOverflowBehavior) \
@@ -78,9 +75,6 @@ struct DatabaseDataLakeSettings
     /// Name of the setting referenced by its `DatabaseDataLakeSetting::*` index,
     /// so catalog code can match `SettingsChanges` entries without magic strings.
     static const String & getSettingName(DatabaseDataLakeSettingsString setting);
-    static const String & getSettingName(DatabaseDataLakeSettingsBool setting);
-
-    static bool hasBuiltin(std::string_view name);
 
 private:
     std::unique_ptr<DatabaseDataLakeSettingsImpl> impl;

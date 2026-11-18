@@ -42,8 +42,7 @@ public:
     /// Get column old name before rename (lookup by key in rename_map)
     std::string getColumnOldName(const std::string & new_name) const;
 
-    /// Column was dropped by a pending mutation (data in part is stale).
-    /// `name` is the name the column has in the part, not in the current metadata.
+    /// Column was dropped by a pending mutation (data in part is stale)
     bool isColumnDropped(const std::string & name, bool share_nested_offsets = true) const;
 
     static bool isSupportedDataMutation(MutationCommand::Type type);
@@ -54,21 +53,7 @@ public:
     static void addUpdatedColumns(const MutationCommand & command, NameSet & updated_columns);
 
     const NameSet & getAllUpdatedColumns() const { return all_updated_columns; }
-
-    /// The columns a skip index must not depend on to be usable for this part: the columns updated on
-    /// the fly (`getAllUpdatedColumns`) plus every name touched by a pending `DROP COLUMN` or
-    /// `RENAME COLUMN`. A name dropped or renamed away can be reused by a new column right away (and
-    /// an index with the old name can be added on it), while the part still holds the index file
-    /// built over the old column; which column that file was built over is not recorded, so any
-    /// pending drop or rename of an indexed name makes the index unusable until it is materialized.
-    NameSet getColumnsInvalidatingIndexes() const;
     const NameSet & getColumnsUpdatedInPatches() const { return columns_updated_in_patches; }
-    /// Columns an index over cannot read correctly regardless of how its granules were typed, as opposed
-    /// to a value-preserving type change (ALTER MODIFY COLUMN): ALTER UPDATE, patches, a pending drop
-    /// (the reader returns defaults) or a pending rename (the name now reads another column). The
-    /// per-part type record certifies the type, never the values or the column identity, so these are
-    /// not exempt from index invalidation even when the recorded type matches.
-    const NameSet & getValueUpdatedColumns() const { return value_updated_columns; }
 
     bool hasPatches() const { return !patch_parts.empty(); }
     bool hasMutations() const { return !mutation_commands.empty(); }
@@ -94,33 +79,24 @@ private:
     void addMutationCommand(const MutationCommand & command, const ContextPtr & context);
     void addPatchPart(PatchPartInfoForReader patch_part);
 
-    /// The commands of the on-fly chain a read task needs, and the storage columns that chain reads.
-    struct MutationChainForRead
-    {
-        MutationCommands commands;
-        Names read_columns;
-    };
-
-    MutationChainForRead buildMutationChainForRead(
-        const NamesAndTypesList & read_columns,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ContextPtr & context) const;
-
     /// Returns a chain of actions that can be
     /// applied to block to execute mutation commands
     /// that affect columns from @read_columns.
     std::vector<MutationActions> getMutationActions(
         const IMergeTreeDataPartInfoForReader & part_info,
-        MutationChainForRead chain,
+        const NamesAndTypesList & read_columns,
         const StorageMetadataPtr & metadata_snapshot,
         const ContextPtr & context) const;
 
-    /// Returns only mutations commands that affect columns from set, extending the set with the
-    /// columns those commands read.
-    MutationCommands filterMutationCommands(
+    /// Adds source columns of expressions of MATERIALIZED columns from @read_columns if any.
+    void addColumnsRequiredForMaterialized(
         Names & read_columns,
         NameSet & read_columns_set,
-        const StorageMetadataPtr & metadata_snapshot) const;
+        const StorageMetadataPtr & metadata_snapshot,
+        const ContextPtr & context) const;
+
+    /// Returns only mutations commands that affect columns from set.
+    MutationCommands filterMutationCommands(Names & read_columns, NameSet read_columns_set) const;
 
     /// Rename map new_name -> old_name.
     std::vector<RenamePair> rename_map;
@@ -128,10 +104,6 @@ private:
     /// Columns that were dropped by pending mutations.
     /// If a column with the same name is re-added, old data in parts should be ignored.
     NameSet dropped_columns;
-
-    /// Every name used by a pending `RENAME COLUMN` (both sides) or `DROP COLUMN` command, as written
-    /// in the command, before the normalization done for `rename_map` and `dropped_columns`.
-    NameSet columns_touched_by_metadata_mutations;
 
     /// All mutations commands that should be applied.
     MutationCommands mutation_commands;
@@ -147,9 +119,6 @@ private:
     /// Names of columns which are updated by mutation commands.
     /// Used to check dependencies for ALTERs, lightweight deletes and MATERIALIZED columns
     NameSet all_updated_columns;
-
-    /// Not a subset of all_updated_columns: also holds columns dropped or renamed by a pending mutation.
-    NameSet value_updated_columns;
 
     /// Patches required to be applied for a part.
     PatchPartsForReader patch_parts;

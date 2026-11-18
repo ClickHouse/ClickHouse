@@ -78,6 +78,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsBool transform_null_in;
@@ -775,7 +776,7 @@ void ScopeStack::addFunction(
 
     {
         auto & mutable_node = const_cast<ActionsDAG::Node &>(node);
-        bool node_has_secret = findSecretArguments(node).hasSecrets();
+        bool node_has_secret = FunctionSecretArgumentsFinderActionsDAG(node).getResult().hasSecrets();
         bool child_has_secret = std::any_of(
             node.children.begin(), node.children.end(), [](const ActionsDAG::Node * child) { return child->is_masked_secret; });
         mutable_node.is_masked_secret = node_has_secret || (node.column && child_has_secret);
@@ -1477,7 +1478,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(node.name);
         if (user_defined_function && user_defined_function->as<ASTCreateWasmFunctionQuery>())
         {
-            UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(current_context);
             function_builder = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(node.name, current_context);
             is_user_defined_wasm_function = function_builder != nullptr;
         }
@@ -1804,7 +1804,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             return {};
 
         PreparedSets::Hash set_key;
-        if (!identifier)
+        if (data.getContext()->getSettingsRef()[Setting::allow_experimental_analyzer] && !identifier)
         {
             /// Here we can be only from mutation interpreter. Normal selects with analyzed use other interpreter.
             /// This is a hacky way to allow reusing cache for prepared sets.
@@ -1842,18 +1842,13 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             {
                 if (auto set = data.prepared_sets->findStorage(set_key))
                     return set;
-
-                if (auto * storage_set = castStorage<StorageSet>(table, DeferredTable::Load).get())
-                {
-                    storage_set->checkNoRowPolicy(data.getContext());
 #if CLICKHOUSE_CLOUD
-                    /// NOLINT(storage-cast): `storage_set` is resolved above.
-                    if (auto * storage_shared_set = dynamic_cast<StorageSharedSet *>(storage_set))
-                        return data.prepared_sets->addFromStorage(
-                            set_key, right_in_operand, storage_shared_set->getSet(data.getContext()), table_id);
+                if (StorageSharedSet * storage_shared_set = castStorage<StorageSharedSet>(table, DeferredTable::Load).get())
+                    return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_shared_set->getSet(data.getContext()), table_id);
 #endif
+
+                if (StorageSet * storage_set = castStorage<StorageSet>(table, DeferredTable::Load).get())
                     return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_set->getSet(), table_id);
-                }
             }
 
             if (!data.getContext()->isGlobalContext())
@@ -1878,11 +1873,8 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
           * Also it doesn't make sense if it is GLOBAL IN or ordinary IN.
           */
         {
-            /// The analyzer, not the interpreter that preceded it: the subquery reads real tables, and a
-            /// storage that resolves its read through a query tree - `Distributed` and `Merge` - has no
-            /// other way to be read.
-            auto interpreter = interpretSubqueryWithAnalyzer(right_in_operand, data.getContext(), data.subquery_depth, {});
-            *source = std::move(*interpreter).extractQueryPlan();
+            auto interpreter = interpretSubquery(right_in_operand, data.getContext(), data.subquery_depth, {});
+            interpreter->buildQueryPlan(*source);
         }
 
         return data.prepared_sets->addFromSubquery(

@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Processors/Formats/IInputFormat.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/DequeWithMemoryTracking.h>
 #include <Formats/FormatFactory.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
@@ -258,9 +256,9 @@ private:
 
     struct ChunkExt
     {
-        Chunks chunk;
-        VectorWithMemoryTracking<BlockMissingValues> block_missing_values;
-        VectorWithMemoryTracking<size_t> approx_chunk_sizes;
+        std::vector<Chunk> chunk;
+        std::vector<BlockMissingValues> block_missing_values;
+        std::vector<size_t> approx_chunk_sizes;
     };
 
     struct ProcessingUnit
@@ -283,7 +281,7 @@ private:
 
     /// We use deque instead of vector, because it does not require a move
     /// constructor, which is absent for atomics that are inside ProcessingUnit.
-    DequeWithMemoryTracking<ProcessingUnit> processing_units;
+    std::deque<ProcessingUnit> processing_units;
 
     /// Compute it to have a more understandable error message.
     size_t successfully_read_rows_count{0};
