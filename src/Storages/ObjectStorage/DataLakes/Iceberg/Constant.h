@@ -120,6 +120,7 @@ DEFINE_ICEBERG_FIELD_ALIAS(parent_snapshot_id, parent-snapshot-id);
 DEFINE_ICEBERG_FIELD_ALIAS(snapshot_log, snapshot-log);
 DEFINE_ICEBERG_FIELD_ALIAS(schema_id, schema-id);
 DEFINE_ICEBERG_FIELD_ALIAS(current_schema_id, current-schema-id);
+DEFINE_ICEBERG_FIELD_ALIAS(initial_default, initial-default);
 DEFINE_ICEBERG_FIELD_ALIAS(table_uuid, table-uuid);
 DEFINE_ICEBERG_FIELD_ALIAS(total_records, total-records);
 DEFINE_ICEBERG_FIELD_ALIAS(total_files_size, total-files-size);

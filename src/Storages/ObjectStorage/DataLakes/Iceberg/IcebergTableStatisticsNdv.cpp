@@ -2,39 +2,25 @@
 
 #if USE_AVRO
 
+#include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <IO/SharedThreadPools.h>
 #include <Interpreters/Context.h>
-
-#if USE_DATASKETCHES
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <Core/Block.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <Processors/Formats/Impl/Puffin/PuffinThetaSketch.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromString.h>
-#include <Interpreters/castColumn.h>
 #include <Processors/Formats/Impl/Puffin/PuffinReader.h>
 #include <Processors/Formats/Impl/Puffin/PuffinWriter.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <Common/Exception.h>
-#include <Common/assert_cast.h>
-#include <Common/logger_useful.h>
-#include <Common/transformEndianness.h>
-#include <base/sort.h>
 
-#include <theta_sketch.hpp>
-#include <theta_union.hpp>
-#include <theta_update_sketch_base.hpp>
-#endif
+#include <unordered_set>
 
 namespace DB
 {
@@ -44,53 +30,86 @@ namespace Setting
     extern const SettingsBool iceberg_write_table_statistics_ndv;
 }
 
-#if USE_DATASKETCHES
-
-namespace ErrorCodes
+struct IcebergColumnSketches::ColumnSketch
 {
-    extern const int INCORRECT_DATA;
+    size_t position;
+    Int32 field_id;
+    PuffinColumnThetaSketch sketch;
+};
+
+IcebergColumnSketches::IcebergColumnSketches(const Block & header, const Poco::JSON::Array::Ptr & schema_fields)
+    : runner((getParquetEncoderThreadPool().initializeWithDefaultSettingsIfNotInitialized(), getParquetEncoderThreadPool().get()), ThreadName::PARQUET_ENCODER)
+{
+    for (size_t position = 0; position < header.columns(); ++position)
+    {
+        const auto & column = header.getByPosition(position);
+        if (!PuffinColumnThetaSketch::isSupportedType(column.type))
+            continue;
+        for (unsigned i = 0; i < schema_fields->size(); ++i)
+        {
+            const auto field = schema_fields->getObject(i);
+            if (field->getValue<String>(Iceberg::f_name) == column.name)
+            {
+                sketches.push_back({position, field->getValue<Int32>(Iceberg::f_id), PuffinColumnThetaSketch(column.type)});
+                break;
+            }
+        }
+    }
+}
+
+IcebergColumnSketches::~IcebergColumnSketches() = default;
+
+void IcebergColumnSketches::update(const Columns & columns)
+{
+    /// One task per column, running while the writer goes on with the next chunk, which waits for them here.
+    /// A failure must not fail the write, so it only stops the sketches from being published.
+    try
+    {
+        runner.waitForAllToFinishAndRethrowFirstError();
+        if (failed)
+            return;
+        /// Makes the append in `enqueueAndKeepTrack` non-allocating, so a scheduled task is always tracked.
+        runner.reserve(sketches.size());
+        for (auto & column_sketch : sketches)
+        {
+            runner.enqueueAndKeepTrack([&column_sketch, column = columns[column_sketch.position]]
+            {
+                column_sketch.sketch.update(*column);
+            });
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            getLogger("IcebergTableStatisticsNdv"), "Cannot update the column sketches, no statistics will be written");
+        failed = true;
+    }
+}
+
+std::optional<std::map<Int32, String>> IcebergColumnSketches::finish()
+{
+    runner.waitForAllToFinishAndRethrowFirstError();
+    if (failed)
+        return {};
+    std::map<Int32, String> result;
+    for (const auto & column : sketches)
+        result.emplace(column.field_id, column.sketch.serialize().bytes);
+    return result;
 }
 
 namespace
 {
 
-constexpr UInt32 timestamp_scale = 6;
-
-using SketchByFieldId = std::map<Int32, datasketches::compact_theta_sketch>;
+using SketchByFieldId = std::map<Int32, PuffinColumnThetaSketch::Serialized>;
 
 struct ParentSketches
 {
     bool has_rows = false;
-    SketchByFieldId sketches;
+    /// Serialized, by field id.
+    std::map<Int32, String> sketches;
+    /// Fields added after the parent without an `initial-default`: a sketch of the new rows is complete for them.
+    std::unordered_set<Int32> fields_null_in_parent;
 };
-
-datasketches::compact_theta_sketch deserializeParentSketch(const String & bytes)
-{
-    try
-    {
-        auto sketch = datasketches::compact_theta_sketch::deserialize(bytes.data(), bytes.size());
-        /// A zero theta, or hashes not below theta, give an estimate that the `ndv` property cannot hold as UInt64.
-        /// A union of checked sketches keeps its distinct hashes below theta, so its estimate is below 2^63.
-        const double estimate = sketch.get_estimate();
-        if (!(estimate < 0x1p64))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid theta sketch: theta {}, {} hashes, estimate {}",
-                sketch.get_theta64(), sketch.get_num_retained(), estimate);
-        return sketch;
-    }
-    catch (const Exception &)
-    {
-        throw;
-    }
-    catch (const std::bad_alloc &)
-    {
-        throw;
-    }
-    catch (const std::exception & e)
-    {
-        /// `datasketches` throws `std::logic_error`s on malformed input, which logging the exception takes for a bug.
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize theta sketch: {}", e.what());
-    }
-}
 
 /// The NDV statistics file of a snapshot that a commit adds to the table metadata.
 class SnapshotStatisticsNdv
@@ -115,7 +134,11 @@ public:
     {
         const Int64 parent_snapshot_id
             = snapshot->has(Iceberg::f_parent_snapshot_id) ? snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id) : -1;
-        if (parent_snapshot_id == -1 || !snapshotHasRows(parent_snapshot_id))
+        if (parent_snapshot_id == -1)
+            return ParentSketches{};
+        const auto parent_snapshot = findSnapshot(parent_snapshot_id);
+        const auto summary = parent_snapshot ? parent_snapshot->getObject(Iceberg::f_summary) : nullptr;
+        if (summary && summary->has(Iceberg::f_total_records) && summary->getValue<String>(Iceberg::f_total_records) == "0")
             return ParentSketches{};
 
         const auto parent_entry = findStatisticsEntry(parent_snapshot_id);
@@ -126,15 +149,14 @@ public:
         RelativePathWithMetadata object_info(parent_path);
         auto buf = createReadBuffer(object_info, object_storage, context, getLogger("IcebergTableStatisticsNdv"));
         PuffinReader reader(*buf);
-        ParentSketches parent{.has_rows = true, .sketches = {}};
+        ParentSketches parent{.has_rows = true, .sketches = {}, .fields_null_in_parent = fieldsNullIn(parent_snapshot)};
         for (const auto & blob : reader.getBlobs())
         {
             /// A file can keep the blobs of an earlier snapshot (Trino's `ANALYZE` of some columns): they miss later rows.
             if (blob.type != PUFFIN_DATASKETCHES_THETA_BLOB_TYPE || blob.fields.size() != 1 || blob.snapshot_id != parent_snapshot_id)
                 continue;
-            const auto bytes = reader.readBlob(blob);
-            if (bytes)
-                parent.sketches.emplace(blob.fields[0], deserializeParentSketch(*bytes));
+            if (auto bytes = reader.readBlob(blob))
+                parent.sketches.emplace(blob.fields[0], std::move(*bytes));
         }
         return parent;
     }
@@ -152,14 +174,8 @@ public:
         Poco::JSON::Array::Ptr blob_metadata = new Poco::JSON::Array;
         for (const auto & [field_id, sketch] : sketches)
         {
-            PuffinBlob blob;
-            blob.type = PUFFIN_DATASKETCHES_THETA_BLOB_TYPE;
-            blob.snapshot_id = snapshot_id;
-            blob.sequence_number = sequence_number;
-            blob.fields.push_back(field_id);
-            blob.properties.emplace(Iceberg::f_ndv, std::to_string(static_cast<UInt64>(sketch.get_estimate())));
-            const auto bytes = sketch.serialize();
-            writer.addBlob(blob, std::string_view(reinterpret_cast<const char *>(bytes.data()), bytes.size()));
+            const auto blob = makeThetaSketchBlobMetadata(field_id, snapshot_id, sequence_number, sketch.ndv);
+            writer.addBlob(blob, sketch.bytes);
             blob_metadata->add(blob.toJSON(/*in_footer=*/ false));
         }
         const size_t footer_size = writer.finalize();
@@ -197,18 +213,40 @@ private:
         return nullptr;
     }
 
-    [[nodiscard]] bool snapshotHasRows(Int64 snapshot_id) const
+    [[nodiscard]] Poco::JSON::Object::Ptr findSnapshot(Int64 snapshot_id) const
     {
         const auto snapshots = metadata->getArray(Iceberg::f_snapshots);
         for (unsigned i = 0; snapshots && i < snapshots->size(); ++i)
-        {
-            const auto other = snapshots->getObject(i);
-            if (other->getValue<Int64>(Iceberg::f_metadata_snapshot_id) != snapshot_id)
-                continue;
-            const auto summary = other->getObject(Iceberg::f_summary);
-            return !summary || !summary->has(Iceberg::f_total_records) || summary->getValue<String>(Iceberg::f_total_records) != "0";
-        }
-        return true;
+            if (const auto other = snapshots->getObject(i); other->getValue<Int64>(Iceberg::f_metadata_snapshot_id) == snapshot_id)
+                return other;
+        return nullptr;
+    }
+
+    [[nodiscard]] Poco::JSON::Array::Ptr findSchemaFields(Int64 schema_id) const
+    {
+        const auto schemas = metadata->getArray(Iceberg::f_schemas);
+        for (unsigned i = 0; schemas && i < schemas->size(); ++i)
+            if (const auto schema = schemas->getObject(i); schema->getValue<Int64>(Iceberg::f_schema_id) == schema_id)
+                return schema->getArray(Iceberg::f_fields);
+        return nullptr;
+    }
+
+    /// The current top-level fields without an `initial-default` that the schema `other` was written with lacks.
+    [[nodiscard]] std::unordered_set<Int32> fieldsNullIn(const Poco::JSON::Object::Ptr & other) const
+    {
+        if (!other || !other->has(Iceberg::f_schema_id) || !metadata->has(Iceberg::f_current_schema_id))
+            return {};
+        const auto snapshot_fields = findSchemaFields(other->getValue<Int64>(Iceberg::f_schema_id));
+        const auto current_fields = findSchemaFields(metadata->getValue<Int64>(Iceberg::f_current_schema_id));
+        if (!snapshot_fields || !current_fields)
+            return {};
+        std::unordered_set<Int32> result;
+        for (unsigned i = 0; i < current_fields->size(); ++i)
+            if (const auto field = current_fields->getObject(i); !field->has(Iceberg::f_initial_default))
+                result.insert(field->getValue<Int32>(Iceberg::f_id));
+        for (unsigned i = 0; i < snapshot_fields->size(); ++i)
+            result.erase(snapshot_fields->getObject(i)->getValue<Int32>(Iceberg::f_id));
+        return result;
     }
 
     Poco::JSON::Object::Ptr metadata;
@@ -218,250 +256,6 @@ private:
     ContextPtr context;
 };
 
-}
-
-/// The theta sketch of one column. Each value is hashed as its Iceberg single-value serialization, the bytes Iceberg's
-/// own writers hash (`Conversions.toByteBuffer`), with the hash and seed of an `update_theta_sketch`, so the sketches
-/// union with theirs. The sketch owns the hash table of an `update_theta_sketch` and inserts a chunk's hashes into it.
-class IcebergColumnSketches::ColumnSketch
-{
-public:
-    /// The type whose `getDataAt` bytes are the Iceberg single-value serialization of the values of `type`: null if
-    /// `type` already has them or is a decimal, nothing if `type` has no such serialization.
-    static std::optional<DataTypePtr> getCastType(const DataTypePtr & type)
-    {
-        switch (type->getTypeId())
-        {
-            case TypeIndex::Int32:
-            case TypeIndex::Int64:
-            case TypeIndex::Float32:
-            case TypeIndex::Float64:
-            case TypeIndex::Date32:
-            case TypeIndex::String:
-            case TypeIndex::FixedString:
-                return DataTypePtr{};
-            case TypeIndex::UInt8:
-                if (isBool(type))
-                    return DataTypePtr{};
-                return std::make_shared<DataTypeInt32>();
-            case TypeIndex::Int8:
-            case TypeIndex::Int16:
-            case TypeIndex::UInt16:
-            case TypeIndex::Date:
-                return std::make_shared<DataTypeInt32>();
-            case TypeIndex::UInt32:
-            case TypeIndex::UInt64:
-                return std::make_shared<DataTypeInt64>();
-            /// Iceberg `timestamp`: microseconds.
-            case TypeIndex::DateTime:
-                return std::make_shared<DataTypeDateTime64>(timestamp_scale);
-            case TypeIndex::DateTime64:
-            {
-                const auto scale = assert_cast<const DataTypeDateTime64 &>(*type).getScale();
-                if (scale > timestamp_scale)
-                    return {};
-                if (scale == timestamp_scale)
-                    return DataTypePtr{};
-                return std::make_shared<DataTypeDateTime64>(timestamp_scale);
-            }
-            case TypeIndex::Decimal32:
-            case TypeIndex::Decimal64:
-            case TypeIndex::Decimal128:
-            case TypeIndex::Decimal256:
-                return DataTypePtr{};
-            default:
-                return {};
-        }
-    }
-
-    ColumnSketch(size_t position_, Int32 field_id_, DataTypePtr type_, DataTypePtr cast_to_)
-        : position(position_)
-        , field_id(field_id_)
-        , type(std::move(type_))
-        , cast_to(std::move(cast_to_))
-        , table(TableBuilder().build())
-    {
-    }
-
-    void update(const ColumnPtr & column, const NullMap * null_map)
-    {
-        const auto encoded = encode(column);
-        PaddedPODArray<UInt64> hashes(encoded->size());
-        encoded->computeMurmurHash3Into(0, encoded->size(), static_cast<UInt32>(datasketches::DEFAULT_SEED), hashes.data());
-        /// Empty strings are skipped, as the Java `UpdateSketch` skips an empty buffer.
-        const auto * strings = typeid_cast<const ColumnString *>(encoded.get());
-        for (size_t i = 0; i < hashes.size(); ++i)
-        {
-            if ((null_map && (*null_map)[i]) || (strings && strings->getDataAt(i).empty()))
-                continue;
-            table.is_empty_ = false;
-            /// The theta hash is the first half shifted right by one bit; zero marks an empty slot of the table.
-            const UInt64 hash = hashes[i] >> 1;
-            if (hash >= table.theta_ || hash == 0)
-                continue;
-            const auto [slot, found] = table.find(hash);
-            if (!found)
-                table.insert(slot, hash);
-        }
-    }
-
-    /// The serialized compact sketch, as `update_theta_sketch::compact().serialize()` gives it.
-    [[nodiscard]] String serialize() const
-    {
-        Retained retained{.empty = table.is_empty_, .theta = table.theta_, .entries = {}};
-        if (!retained.empty)
-        {
-            retained.entries.reserve(table.num_entries_);
-            for (size_t i = 0; i < (1ULL << table.lg_cur_size_); ++i)
-                if (table.entries_[i] != 0)
-                    retained.entries.push_back(table.entries_[i]);
-            ::sort(retained.entries.begin(), retained.entries.end());
-        }
-        const auto bytes = datasketches::compact_theta_sketch(retained, /*ordered=*/ true).serialize();
-        return String(reinterpret_cast<const char *>(bytes.data()), bytes.size());
-    }
-
-    size_t position;
-    Int32 field_id;
-
-private:
-    using Table = datasketches::theta_update_sketch_base<UInt64, datasketches::trivial_extract_key, std::allocator<UInt64>>;
-
-    /// The table of an `update_theta_sketch` with the builder's defaults.
-    struct TableBuilder : datasketches::update_theta_sketch::builder
-    {
-        [[nodiscard]] Table build() const { return Table(starting_lg_size(), lg_k_, rf_, p_, starting_theta(), seed_, allocator_); }
-    };
-
-    /// The retained hashes of the table, with the accessors the converting constructor of `compact_theta_sketch` reads.
-    // NOLINTBEGIN(modernize-use-nodiscard)
-    struct Retained
-    {
-        bool empty;
-        UInt64 theta;
-        std::vector<UInt64> entries;
-
-        bool is_empty() const { return empty; }
-        bool is_ordered() const { return true; }
-        UInt16 get_seed_hash() const { return compute_seed_hash(datasketches::DEFAULT_SEED); }
-        UInt64 get_theta64() const { return empty ? datasketches::theta_constants::MAX_THETA : theta; }
-        std::allocator<UInt64> get_allocator() const { return {}; }
-        size_t get_num_retained() const { return entries.size(); }
-        auto begin() const { return entries.begin(); }
-        auto end() const { return entries.end(); }
-    };
-    // NOLINTEND(modernize-use-nodiscard)
-
-    [[nodiscard]] ColumnPtr encode(const ColumnPtr & column) const
-    {
-        if (cast_to)
-            return castColumn({column, type, ""}, cast_to);
-        switch (type->getTypeId())
-        {
-            case TypeIndex::Decimal32: return encodeDecimals<Decimal32>(*column);
-            case TypeIndex::Decimal64: return encodeDecimals<Decimal64>(*column);
-            case TypeIndex::Decimal128: return encodeDecimals<Decimal128>(*column);
-            case TypeIndex::Decimal256: return encodeDecimals<Decimal256>(*column);
-            default: return column;
-        }
-    }
-
-    /// The bytes Spark hashes for a decimal (Iceberg's single-value serialization, Java's
-    /// `BigDecimal.unscaledValue().toByteArray()`): the unscaled value as two's-complement big-endian in the minimum
-    /// number of bytes. `getDataAt` gives it little-endian at full width, so no `IColumn` hash covers it.
-    template <typename Decimal>
-    static ColumnPtr encodeDecimals(const IColumn & column)
-    {
-        using Native = typename Decimal::NativeType;
-        const auto & data = assert_cast<const ColumnDecimal<Decimal> &>(column).getData();
-        auto result = ColumnString::create();
-        result->reserve(data.size());
-        UInt8 bytes[sizeof(Native)];
-        for (const auto & value : data)
-        {
-            Native big_endian = value.value;
-            transformEndianness<std::endian::big>(big_endian);
-            memcpy(bytes, &big_endian, sizeof(Native));
-            const size_t first = minimalTwosComplementOffset(bytes, sizeof(Native));
-            result->insertData(reinterpret_cast<const char *>(bytes + first), sizeof(Native) - first);
-        }
-        return result;
-    }
-
-    DataTypePtr type;
-    DataTypePtr cast_to;
-    Table table;
-};
-
-IcebergColumnSketches::IcebergColumnSketches(const Block & header, const Poco::JSON::Array::Ptr & schema_fields)
-    : runner((getParquetEncoderThreadPool().initializeWithDefaultSettingsIfNotInitialized(), getParquetEncoderThreadPool().get()), ThreadName::PARQUET_ENCODER)
-{
-    for (size_t position = 0; position < header.columns(); ++position)
-    {
-        const auto & column = header.getByPosition(position);
-        auto type = removeNullable(column.type);
-        auto cast_to = ColumnSketch::getCastType(type);
-        if (!cast_to)
-            continue;
-        for (unsigned i = 0; i < schema_fields->size(); ++i)
-        {
-            const auto field = schema_fields->getObject(i);
-            if (field->getValue<String>(Iceberg::f_name) == column.name)
-            {
-                sketches.emplace_back(position, field->getValue<Int32>(Iceberg::f_id), std::move(type), std::move(*cast_to));
-                break;
-            }
-        }
-    }
-}
-
-IcebergColumnSketches::~IcebergColumnSketches() = default;
-
-void IcebergColumnSketches::update(const Columns & columns)
-{
-    /// One task per column, running while the writer goes on with the next chunk, which waits for them here.
-    /// A failure must not fail the write, so it only stops the sketches from being published.
-    try
-    {
-        runner.waitForAllToFinishAndRethrowFirstError();
-        if (failed)
-            return;
-        /// Makes the append in `enqueueAndKeepTrack` non-allocating, so a scheduled task is always tracked.
-        runner.reserve(sketches.size());
-        for (auto & column_sketch : sketches)
-        {
-            runner.enqueueAndKeepTrack([&column_sketch, column = columns[column_sketch.position]]
-            {
-                /// Owns the unwrapped column, which `null_map` points into.
-                const ColumnPtr full_column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
-                ColumnPtr nested = full_column;
-                const NullMap * null_map = nullptr;
-                if (const auto * nullable = typeid_cast<const ColumnNullable *>(full_column.get()))
-                {
-                    null_map = &nullable->getNullMapData();
-                    nested = nullable->getNestedColumnPtr();
-                }
-                column_sketch.update(nested, null_map);
-            });
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(
-            getLogger("IcebergTableStatisticsNdv"), "Cannot update the column sketches, no statistics will be written");
-        failed = true;
-    }
-}
-
-std::optional<std::map<Int32, String>> IcebergColumnSketches::finish()
-{
-    runner.waitForAllToFinishAndRethrowFirstError();
-    if (failed)
-        return {};
-    std::map<Int32, String> result;
-    for (const auto & column : sketches)
-        result.emplace(column.field_id, column.serialize());
-    return result;
 }
 
 std::optional<String> writeIcebergTableStatisticsNdv(
@@ -496,25 +290,22 @@ std::optional<String> writeIcebergTableStatisticsNdv(
         SketchByFieldId sketches;
         /// Sketches cannot subtract, so once a commit removes rows the number of distinct values is an upper bound.
         if (!column_sketches)
-            sketches = std::move(parent.sketches);
+        {
+            for (const auto & [field_id, bytes] : parent.sketches)
+                sketches.emplace(field_id, unionThetaSketches({bytes}));
+        }
         else
         {
-            const auto serialized_sketches = column_sketches->finish();
-            if (!serialized_sketches)
+            const auto new_sketches = column_sketches->finish();
+            if (!new_sketches)
                 return {};
-            for (const auto & [field_id, bytes] : *serialized_sketches)
+            for (const auto & [field_id, bytes] : *new_sketches)
             {
-                auto sketch = datasketches::compact_theta_sketch::deserialize(bytes.data(), bytes.size());
                 auto parent_sketch = parent.sketches.find(field_id);
                 if (parent_sketch != parent.sketches.end())
-                {
-                    datasketches::theta_union sketch_union = datasketches::theta_union::builder().build();
-                    sketch_union.update(parent_sketch->second);
-                    sketch_union.update(sketch);
-                    sketches.emplace(field_id, sketch_union.get_result());
-                }
-                else if (!parent.has_rows)
-                    sketches.emplace(field_id, std::move(sketch));
+                    sketches.emplace(field_id, unionThetaSketches({parent_sketch->second, bytes}));
+                else if (!parent.has_rows || parent.fields_null_in_parent.contains(field_id))
+                    sketches.emplace(field_id, unionThetaSketches({bytes}));
             }
         }
         if (sketches.empty())
@@ -546,37 +337,6 @@ std::optional<String> writeIcebergTableStatisticsNdv(
         return {};
     }
 }
-
-#else
-
-class IcebergColumnSketches::ColumnSketch
-{
-};
-
-IcebergColumnSketches::IcebergColumnSketches(const Block &, const Poco::JSON::Array::Ptr &)
-    : runner(getParquetEncoderThreadPool().get(), ThreadName::PARQUET_ENCODER)
-{
-}
-
-IcebergColumnSketches::~IcebergColumnSketches() = default;
-
-void IcebergColumnSketches::update(const Columns &)
-{
-}
-
-std::optional<std::map<Int32, String>> IcebergColumnSketches::finish()
-{
-    return {};
-}
-
-std::optional<String> writeIcebergTableStatisticsNdv(
-    IcebergColumnSketches *, bool, Poco::JSON::Object::Ptr, const Poco::JSON::Object::Ptr &, FileNamesGenerator &,
-    const Iceberg::IcebergPathResolver &, const ObjectStoragePtr &, const ContextPtr &)
-{
-    return {};
-}
-
-#endif
 
 bool shouldWriteIcebergTableStatisticsNdv(const ContextPtr & context, const std::shared_ptr<DataLake::ICatalog> & catalog)
 {

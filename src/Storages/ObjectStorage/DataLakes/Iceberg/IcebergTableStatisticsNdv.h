@@ -42,17 +42,15 @@ public:
     std::optional<std::map<Int32, String>> finish();
 
 private:
-    /// Defined in the source file: the DataSketches headers clash with CRoaring's macros.
-    class ColumnSketch;
+    struct ColumnSketch;
 
     std::vector<ColumnSketch> sketches;
-    [[maybe_unused]] bool failed = false;
+    bool failed = false;
     /// Declared after `sketches`, so its destructor waits for the tasks updating them first.
     ThreadPoolCallbackRunnerLocal<void> runner;
 };
 
-/// Whether a commit writes statistics: `iceberg_write_table_statistics_ndv` is on and the commit publishes the metadata
-/// file it writes. A transactional catalog commits a list of changes instead, and that list carries no statistics.
+/// Whether a commit writes statistics: `iceberg_write_table_statistics_ndv` is on and no transactional catalog commits it.
 bool shouldWriteIcebergTableStatisticsNdv(const ContextPtr & context, const std::shared_ptr<DataLake::ICatalog> & catalog);
 
 /// Writes the Puffin statistics file of `snapshot` and registers it in `metadata`: `column_sketches`, unioned with the

@@ -230,7 +230,12 @@ std::vector<uint8_t> dumpDecimalValue(const Field & field)
             bytes[sizeof(NativeType) - 1 - i] = static_cast<uint8_t>(static_cast<UInt64>((unscaled_value >> (8 * i)) & Int256(0xFF)));
     }
 
-    return std::vector<uint8_t>(bytes.begin() + minimalTwosComplementOffset(bytes.data(), bytes.size()), bytes.end());
+    size_t first = 0;
+    while (first + 1 < bytes.size()
+           && ((bytes[first] == 0x00 && (bytes[first + 1] & 0x80) == 0) || (bytes[first] == 0xFF && (bytes[first + 1] & 0x80) != 0)))
+        ++first;
+
+    return std::vector<uint8_t>(bytes.begin() + first, bytes.end());
 }
 
 template <typename DecimalType>

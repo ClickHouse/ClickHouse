@@ -91,7 +91,7 @@ local_query "CREATE TABLE t_stale ENGINE = IcebergLocal('${WORK_DIR}/t_stale/');
     INSERT INTO t_stale SELECT number + 1000, toString(number % 10 + 10) FROM numbers(1000);"
 stats t_stale "id s"
 
-# $1: table, $2: `zero_theta` or `truncated`. Corrupts the sketch of `id` (field 1) in the statistics file of $1.
+# $1: table, $2: `zero_theta`, `truncated` or `large`. Rewrites the sketch of `id` (field 1) in the statistics file of $1.
 corrupt_id_sketch()
 {
     python3 - "$(find "${WORK_DIR}/$1/metadata/" -name '*.stats')" "$2" <<'EOF'
@@ -107,8 +107,12 @@ for blob in footer['blobs']:
         if mode == 'zero_theta':
             # Three preamble longs instead of two: the third one, after the count, is theta.
             sketch = bytes([sketch[0] & 0xC0 | 3]) + sketch[1:16] + bytes(8) + sketch[16:]
-        else:
+        elif mode == 'truncated':
             sketch = sketch[:-1]
+        else:
+            # An exact sketch of 5000 hashes, more than the 4096 a union keeps.
+            hashes = sorted(range(1 << 50, (1 << 50) + 5000 * 997, 997))
+            sketch = sketch[:8] + struct.pack('<I', len(hashes)) + sketch[12:16] + b''.join(struct.pack('<Q', h) for h in hashes)
     blob['offset'], blob['length'] = len(out), len(sketch)
     out += sketch
 payload = json.dumps(footer).encode()
@@ -125,6 +129,13 @@ for corruption in zero_theta truncated; do
         ALTER TABLE t_${corruption} DELETE WHERE id < 10; SELECT count() FROM t_${corruption};"
     stats "t_${corruption}" "id s"
 done
+
+echo "a delete keeps a parent sketch larger than a union"
+local_query "CREATE TABLE t_large (id Int64, s String) ENGINE = IcebergLocal('${WORK_DIR}/t_large/');
+    INSERT INTO t_large SELECT number, toString(number % 10) FROM numbers(1000);"
+corrupt_id_sketch t_large large
+local_query "CREATE TABLE t_large ENGINE = IcebergLocal('${WORK_DIR}/t_large/'); ALTER TABLE t_large DELETE WHERE id < 10;"
+stats t_large "id s"
 
 echo "a delete keeps the parent's sketches"
 run t_delete "INSERT INTO t_delete $(values 0 20000); ALTER TABLE t_delete DELETE WHERE id < 10000;"
@@ -160,6 +171,13 @@ stats t_manifest "id s p"
 echo "drop partition keeps the parent's sketches"
 run_partitioned t_drop "ALTER TABLE t_drop DROP PARTITION 1;"
 stats t_drop "id s p"
+
+echo "a column added to a table with rows gets the sketch of the new rows"
+local_query "CREATE TABLE t_add (id Int64) ENGINE = IcebergLocal('${WORK_DIR}/t_add/');
+    INSERT INTO t_add SELECT number FROM numbers(1000);
+    ALTER TABLE t_add ADD COLUMN c Nullable(Int32);
+    INSERT INTO t_add SELECT number + 1000, number % 7 FROM numbers(1000);"
+stats t_add "id c"
 
 echo "expire_snapshots removes the statistics of the expired snapshots"
 run t_insert "INSERT INTO t_insert $(values 30000 100); ALTER TABLE t_insert EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1);" \
