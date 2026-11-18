@@ -65,6 +65,23 @@ SELECT a, b FROM t_aj_throw ARRAY JOIN A AS a ARRAY JOIN B AS b
 ORDER BY a, b SETTINGS query_plan_lift_up_array_join = 0;
 DROP TABLE t_aj_throw;
 
+SELECT '-- a column that a function that can throw makes above a JOIN stays above the JOIN';
+DROP TABLE IF EXISTS t_aj_l;
+DROP TABLE IF EXISTS t_aj_r;
+CREATE TABLE t_aj_l (k UInt64, x Int64, A Array(Int64)) ENGINE = Memory;
+CREATE TABLE t_aj_r (k UInt64) ENGINE = Memory;
+INSERT INTO t_aj_l VALUES (1, 0, [0, 2]), (2, 3, [0, 2]);
+INSERT INTO t_aj_r VALUES (2);
+SELECT k, a FROM (SELECT t_aj_l.k AS k, intDiv(6, x) AS z, A FROM t_aj_l INNER JOIN t_aj_r ON t_aj_l.k = t_aj_r.k)
+    ARRAY JOIN A AS a
+    WHERE (z > 1 AND a = 2) OR (k = 2 AND a = 0)
+ORDER BY k, a;
+SELECT t_aj_l.k, a FROM t_aj_l INNER JOIN t_aj_r ON t_aj_l.k = t_aj_r.k ARRAY JOIN A AS a
+    WHERE (intDiv(6, x) > 1 AND a = 2) OR (t_aj_l.k = 2 AND a = 0)
+ORDER BY 1, 2;
+DROP TABLE t_aj_l;
+DROP TABLE t_aj_r;
+
 SELECT '-- same rows as without the filter push down';
 SELECT
     (SELECT groupArray((a, b, c, n)) FROM (SELECT arrayJoin(A) AS a, arrayJoin(B) AS b, arrayJoin(C) AS c, count() AS n FROM t_aj_or

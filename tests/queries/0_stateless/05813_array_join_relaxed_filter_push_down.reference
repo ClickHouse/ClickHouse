@@ -17,6 +17,11 @@ a3	c1	4
 1	0
 -- a condition that can throw does not run on a row that an empty later array removes
 1	0
+-- a column that a function that can throw makes above a JOIN stays above the JOIN
+2	0
+2	2
+2	0
+2	2
 -- same rows as without the filter push down
 1
 1
