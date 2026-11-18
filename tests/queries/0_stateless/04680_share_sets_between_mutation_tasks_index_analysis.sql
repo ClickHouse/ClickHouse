@@ -64,8 +64,8 @@ SELECT
                 extract(message, 'key: (__set_[0-9_]+)') AS set_key,
                 count() AS materializations_by_one_part_task
             FROM system.text_log
-            WHERE
-                query_id LIKE concat(CAST(table_uuid, 'String'), '::all\\_%')
+            WHERE event_date >= yesterday() AND event_time >= now() - 600
+                AND query_id LIKE concat(CAST(table_uuid, 'String'), '::all\\_%')
                 AND message LIKE 'Creating set, key: %'
                 AND (event_date >= yesterday() AND event_time >= now() - 600)
             GROUP BY set_key, query_id
@@ -96,8 +96,8 @@ FROM
         maxIf(1, message LIKE 'Selected %0 marks to read from 0 ranges') = 1    AS pruned_everything,
         query_id LIKE concat(CAST(table_uuid, 'String'), '::all\\_1\\_1\\_%')   AS holds_the_matching_rows
     FROM system.text_log
-    WHERE
-        query_id LIKE concat(CAST(table_uuid, 'String'), '::all\\_%')
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
+        AND query_id LIKE concat(CAST(table_uuid, 'String'), '::all\\_%')
         AND (event_date >= yesterday() AND event_time >= now() - 600)
     GROUP BY query_id
 )

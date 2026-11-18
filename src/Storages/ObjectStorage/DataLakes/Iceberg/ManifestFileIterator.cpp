@@ -179,7 +179,7 @@ namespace
 
         if (const auto type_id = column_type->getTypeId();
             type_id == DB::TypeIndex::Tuple || type_id == DB::TypeIndex::Map || type_id == DB::TypeIndex::Array
-            || type_id == DB::TypeIndex::Variant)
+            || type_id == DB::TypeIndex::Variant || type_id == DB::TypeIndex::Dynamic)
             return std::nullopt;
 
         if (DB::removeNullable(column_type)->getTypeId() == DB::TypeIndex::UUID)
@@ -220,6 +220,19 @@ namespace
                 left_str, column_type, true, /*compensate_rounding=*/false);
             declared_right = deserializeFieldFromBinaryRepr(
                 right_str, column_type, false, /*compensate_rounding=*/false);
+        }
+
+        /// A NaN bound does not bound the other values of the column.
+        if (left->isNaN() || right->isNaN())
+        {
+            LOG_DEBUG(
+                getLogger("ManifestFileIterator"),
+                "Manifest file '{}' declares a NaN bound for column id {} of data file '{}'; "
+                "ignoring the bounds of this column",
+                path_to_manifest_file,
+                column_id,
+                parsed_entry.file_path_key.serialize());
+            return std::nullopt;
         }
 
         /// A pair inverted as declared means the manifest's statistics are untrustworthy, so no
@@ -718,7 +731,13 @@ const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema
         return it->second.get();
 
     auto pruner = std::make_unique<ManifestFilesPruner>(
-        *schema_processor_ptr, table_snapshot_schema_id, schema_id, filter_dag.get(), partition_key_description.get(), context);
+        *schema_processor_ptr,
+        table_snapshot_schema_id,
+        schema_id,
+        filter_dag.get(),
+        partition_key_description.get(),
+        *common_partition_specification,
+        context);
     return pruners_by_schema_id.emplace(schema_id, std::move(pruner)).first->second.get();
 }
 
