@@ -365,7 +365,7 @@ namespace
         /// tracks a limited resource, a negative value means that this object took a unit that did not
         /// exist, so its owner has to give it back (which the destructor does) and report an error.
         /// Exactly one owner observes each value, so concurrent takers cannot all see the same one.
-        int64_t valueAfterDecrement() const { return value_after_decrement; }
+        [[nodiscard]] int64_t valueAfterDecrement() const { return value_after_decrement; }
 
         ~ScopedDecrement()
         {
