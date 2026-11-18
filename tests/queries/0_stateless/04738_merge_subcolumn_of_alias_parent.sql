@@ -67,6 +67,14 @@ CREATE TABLE m_map (mp Map(String, UInt8), n UInt64) ENGINE = Merge(currentDatab
 SELECT 'map size0', (SELECT mp.size0 FROM m_map) AS through_merge, (SELECT mp.size0 FROM t_map) AS direct SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT 'map keys subcolumns on', (SELECT mapKeys(mp) FROM m_map) AS through_merge, (SELECT mapKeys(mp) FROM t_map) AS direct SETTINGS optimize_functions_to_subcolumns = 1;
 
+-- A subcolumn of a physical column whose name starts with the name of an ALIAS column is still read from the physical one.
+DROP TABLE IF EXISTS t_dot;
+DROP TABLE IF EXISTS m_dot;
+CREATE TABLE t_dot (n UInt64, `a.b` Tuple(c UInt8), a Tuple(b Tuple(c UInt8)) ALIAS tuple(tuple(toUInt8(7)))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_dot (n, `a.b`) VALUES (1, tuple(3));
+CREATE TABLE m_dot (n UInt64, `a.b` Tuple(c UInt8), a Tuple(b Tuple(c UInt8))) ENGINE = Merge(currentDatabase(), '^t_dot$');
+SELECT 'physical dotted column', (SELECT a.b.c FROM m_dot) AS through_merge, (SELECT a.b.c FROM t_dot) AS direct;
+
 -- A row policy on the child must still bound which rows the subcolumn is computed over.
 DROP TABLE IF EXISTS t_pol;
 DROP TABLE IF EXISTS m_pol;
@@ -119,6 +127,8 @@ DROP TABLE IF EXISTS t_nest;
 DROP TABLE IF EXISTS m_nest;
 DROP TABLE IF EXISTS t_map;
 DROP TABLE IF EXISTS m_map;
+DROP TABLE IF EXISTS t_dot;
+DROP TABLE IF EXISTS m_dot;
 DROP TABLE IF EXISTS t_pol;
 DROP TABLE IF EXISTS m_pol;
 DROP TABLE IF EXISTS t_mat;

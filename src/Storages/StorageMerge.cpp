@@ -505,16 +505,17 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
         if (types.size() < 2 || !keepEnumNames(types, keep_enum_names == MergeTableKeepEnumNames::ALWAYS))
             continue;
 
-        if (auto type = tryGetLeastSupertype(types))
+        auto type = tryGetLeastSupertype(types);
+        if (!type || type->equals(*res.get(name).type))
+            continue;
+
+        res.modify(name, [&type](ColumnDescription & what)
         {
-            res.modify(name, [&type](ColumnDescription & what)
-            {
-                what.type = type;
-                /// A codec of an enum, such as `T64`, may not support `String`.
-                what.codec = {};
-            });
-            retyped_columns.insert(name);
-        }
+            what.type = type;
+            /// A codec of an enum, such as `T64`, may not support `String`.
+            what.codec = {};
+        });
+        retyped_columns.insert(name);
     }
 
     auto is_retyped = [&](const String & name)
@@ -2105,8 +2106,10 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
 
                 /// Such a name resolves through neither lookup above, and the analyzer turns it into
                 /// `getSubcolumn` over the alias expression, so the alias branch handles it.
-                /// The exception is a `Map` alias, whose subcolumn resolves as a dynamic one that the table cannot read either.
-                bool is_subcolumn_of_alias = (!resolved_pair || resolved_pair->isSubcolumn()) && !is_alias && isSubcolumnOfAliasColumn(storage_columns, column);
+                /// The exception is a dynamic subcolumn, as of a `Map`, which resolves in an ALIAS column that the table cannot read either.
+                const auto resolved_in = resolved_pair && resolved_pair->isSubcolumn() ? storage_columns.getDefault(resolved_pair->getNameInStorage()) : std::nullopt;
+                const bool is_resolved_in_alias = resolved_in && resolved_in->kind == ColumnDefaultKind::Alias;
+                bool is_subcolumn_of_alias = (!resolved_pair || is_resolved_in_alias) && !is_alias && isSubcolumnOfAliasColumn(storage_columns, column);
 
                 /// Skip columns that don't exist in this table. It may happen when we use merge over tables with different schemas.
                 if (!resolved_pair && !is_subcolumn_of_alias)

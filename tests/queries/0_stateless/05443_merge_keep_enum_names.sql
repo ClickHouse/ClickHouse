@@ -49,14 +49,15 @@ SELECT _table, x, toTypeName(x) FROM merge(currentDatabase(), '^three_') ORDER B
 
 SELECT '-- conflicting enums with a String or an integer';
 -- `LowCardinality(String)` and `Int32` have no common type, so `i` keeps the type inferred without names.
-CREATE TABLE other_1 (s Enum8('a' = 1), i Enum8('a' = 1)) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE other_2 (s Enum8('b' = 1), i Enum8('b' = 1)) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE other_3 (s String, i Int32) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO other_1 VALUES ('a', 'a');
-INSERT INTO other_2 VALUES ('b', 'b');
-INSERT INTO other_3 VALUES ('c', 1000);
+-- `t` is a `String` with and without names, so it keeps its codec.
+CREATE TABLE other_1 (s Enum8('a' = 1), i Enum8('a' = 1), t Enum8('a' = 1) CODEC(ZSTD(3))) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE other_2 (s Enum8('b' = 1), i Enum8('b' = 1), t String CODEC(ZSTD(3))) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE other_3 (s String, i Int32, t Enum8('b' = 1) CODEC(ZSTD(3))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO other_1 VALUES ('a', 'a', 'a');
+INSERT INTO other_2 VALUES ('b', 'b', 'x');
+INSERT INTO other_3 VALUES ('c', 1000, 'b');
 DESCRIBE merge(currentDatabase(), '^other_');
-SELECT _table, s FROM merge(currentDatabase(), '^other_') WHERE NOT ignore(i) ORDER BY _table;
+SELECT _table, s, t FROM merge(currentDatabase(), '^other_') WHERE NOT ignore(i) ORDER BY _table;
 
 SELECT '-- a Merge table without columns';
 CREATE TABLE merge_conflict ENGINE = Merge(currentDatabase(), '^conflict_');

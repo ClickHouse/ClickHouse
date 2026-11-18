@@ -39,9 +39,10 @@ three_3	a	LowCardinality(String)
 -- conflicting enums with a String or an integer
 s	String					
 i	Int32					
-other_1	a
-other_2	b
-other_3	c
+t	String				ZSTD(3)	
+other_1	a	a
+other_2	b	x
+other_3	c	b
 -- a Merge table without columns
 renumbered	LowCardinality(String)					
 renamed	LowCardinality(String)					
