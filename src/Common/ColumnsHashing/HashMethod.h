@@ -792,12 +792,10 @@ struct HashMethodKeysFixed
     bool packs_longest_first = false;
     size_t prepared_keys_begin = 0;
 
-    /// The rows [rows_begin, rows_end) are packed into `prepared_keys` one chunk at a time, when a row past the chunk is asked for.
+    /// The rows [0, rows_end) are packed into `prepared_keys` one chunk at a time, when a row past the chunk is asked for.
     struct Chunks
     {
-        size_t rows_begin = 0;
         size_t rows_end = 0;
-        /// Zero when no more chunks are packed.
         size_t chunk_rows = 0;
         size_t next_chunk_rows = 0;
         /// The key of a row that `prepared_keys` does not hold.
@@ -875,14 +873,9 @@ struct HashMethodKeysFixed
                 if constexpr (packs_in_chunks)
                 {
                     /// Nothing is packed until a row is asked for: a caller may start late in the block or stop early.
-                    chunks.rows_begin = packed.begin;
                     chunks.rows_end = packed.end;
-                    prepared_keys_begin = packed.begin;
-                    if (packed.end > packed.begin)
-                    {
-                        chunks.chunk_rows = maxBytesInKeyChunk() / sizeof(Key);
-                        chunks.next_chunk_rows = std::min(chunks.chunk_rows, min_rows_to_batch_pack_sub_range);
-                    }
+                    chunks.chunk_rows = maxBytesInKeyChunk() / sizeof(Key);
+                    chunks.next_chunk_rows = std::min(chunks.chunk_rows, min_rows_to_batch_pack_sub_range);
                 }
                 else if (packed.end > packed.begin && batchPacksOrderedKeys(key_sizes, rows, key_columns.empty() ? 0 : key_columns[0]->size()))
                 {
@@ -1085,13 +1078,12 @@ private:
     /// means that the rows are not read in ascending order, so the whole range is packed once.
     NO_INLINE const Key * packUnpreparedRow(size_t row)
     {
-        if (chunks.chunk_rows && row - chunks.rows_begin < chunks.rows_end - chunks.rows_begin)
+        if (row < chunks.rows_end)
         {
             if (row >= prepared_keys_begin)
                 return &packChunk(row);
-            chunks.chunk_rows = 0;
-            packRows(chunks.rows_begin, chunks.rows_end);
-            return &prepared_keys[row - prepared_keys_begin];
+            packRows(0, chunks.rows_end);
+            return &prepared_keys[row];
         }
         if constexpr (has_nullable_keys)
             chunks.unprepared_key = packFixed<Key>(row, keys_size, Base::getActualColumns(), key_sizes, Base::createBitmap(row));
@@ -1103,10 +1095,10 @@ private:
     /// The chunk starts up to `getMaxLookAheadValue` rows before `row`: a lookup trails the prefetch that asked for `row` by that much.
     const Key & packChunk(size_t row)
     {
-        const size_t begin = row - std::min(PrefetchingHelper::getMaxLookAheadValue(), row - chunks.rows_begin);
+        const size_t begin = row - std::min(PrefetchingHelper::getMaxLookAheadValue(), row);
         const size_t end = std::min(chunks.rows_end, begin + chunks.next_chunk_rows);
         chunks.next_chunk_rows = std::min(chunks.chunk_rows, 2 * chunks.next_chunk_rows);
-        prepared_keys.reserve(std::min(chunks.chunk_rows, chunks.rows_end - chunks.rows_begin));
+        prepared_keys.reserve(std::min(chunks.chunk_rows, chunks.rows_end));
         packRows(begin, end);
         return prepared_keys[row - begin];
     }
