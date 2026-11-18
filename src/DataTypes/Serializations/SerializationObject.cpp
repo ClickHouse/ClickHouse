@@ -1419,12 +1419,8 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
 
     size_t number_of_paths = 0;
     readVarUInt(number_of_paths, istr);
-    /// Values of paths that go to shared data are read with the column decoder and kept encoded like the values in the
-    /// shared variant of `Dynamic`; an empty value is a null. Skipped values are read the same way and dropped.
+    /// Shared-data values of this row, encoded like the values in the shared variant of `Dynamic`; an empty value is a null.
     ColumnString::MutablePtr values_of_row;
-    /// Per value type: its serialization and a column reused by the type's later values in this row (at most one row,
-    /// popped after encoding). A column with dynamic structure is not reused: the paths and variants of earlier values
-    /// would change how a later value is read.
     std::unordered_map<String, std::pair<SerializationPtr, MutableColumnPtr>> value_columns;
     auto read_value = [&](bool keep)
     {
@@ -1447,10 +1443,10 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
         auto it = value_columns.find(type_name);
         if (it == value_columns.end())
         {
-            /// Bound the columns kept for a row with many distinct value types.
             if (value_columns.size() >= 256)
                 value_columns.clear();
             MutableColumnPtr column_to_reuse;
+            /// Not for dynamic structure: the paths and variants of earlier values would change how a later value is read.
             if (!type->hasDynamicStructure())
                 column_to_reuse = type->createColumn();
             it = value_columns.emplace(type_name, std::pair{getDataTypesCache().getSerialization(type_name, type), std::move(column_to_reuse)}).first;
