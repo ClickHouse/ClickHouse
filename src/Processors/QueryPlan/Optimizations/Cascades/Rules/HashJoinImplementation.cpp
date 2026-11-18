@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Core/Joins.h>
 #include <Core/Names.h>
@@ -27,10 +28,10 @@ namespace DB
 class HashJoinImplementation : public IOptimizationRule
 {
 public:
-    String getName() const override { return "HashJoin"; }
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
-    Promise getPromise() const override { return 2000; }
-    bool isTransformation() const override { return false; }
+    [[nodiscard]] String getName() const override { return "HashJoin"; }
+    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
+    [[nodiscard]] Promise getPromise() const override { return 2000; }
+    [[nodiscard]] bool isTransformation() const override { return false; }
 
     class StrategyEnumerator;
 
@@ -54,9 +55,9 @@ public:
     void addShuffleJoin(size_t node_count);
     void addSingleKeyShuffleJoins(size_t node_count);
 
-    bool hasEquiKeys() const { return !equi_keys.empty(); }
-    bool hasMultipleEquiKeys() const { return equi_keys.size() >= 2; }
-    bool isBroadcastSafe() const { return left_preserved; }
+    [[nodiscard]] bool hasEquiKeys() const { return !equi_keys.empty(); }
+    [[nodiscard]] bool hasMultipleEquiKeys() const { return equi_keys.size() >= 2; }
+    [[nodiscard]] bool isBroadcastSafe() const { return left_preserved; }
 
 private:
     /// `hash_type_name` is the least supertype both sides are cast to before hashing when
@@ -163,6 +164,12 @@ void HashJoinImplementation::StrategyEnumerator::extractEquiJoinKeys()
         String hash_type_name;
         DataTypePtr left_type = left_node.getType();
         DataTypePtr right_type = right_node.getType();
+
+        /// The shuffle hashes the keys after a cast. For a pair the JOIN does not compare exactly, such as `FixedString`
+        /// vs `String`, matching rows would hash differently (`'a'` vs `'a\0\0'`) and land on different nodes.
+        if (!JoinCommon::isExactJoinKeyEquality(left_type, right_type))
+            continue;
+
         if (!left_type->equals(*right_type))
         {
             DataTypePtr common_type = tryGetLeastSupertype(DataTypes{left_type, right_type});
@@ -245,6 +252,7 @@ void HashJoinImplementation::StrategyEnumerator::addBroadcastJoins(size_t node_c
 
     DistributionDescription keyed_left_dist;
     keyed_left_dist.node_count = node_count;
+    keyed_left_dist.without_enforcer = required_properties.distribution.without_enforcer;
     DistributionDescription keyed_output_dist;
     keyed_output_dist.node_count = node_count;
 
