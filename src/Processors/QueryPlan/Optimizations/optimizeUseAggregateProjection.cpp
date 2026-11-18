@@ -1099,8 +1099,8 @@ static Block makeBlockWithMinMaxFromStatistics(
 
         auto column = ColumnAggregateFunction::create(function);
         Arena & arena = column->createOrGetArena();
-        auto * place = arena.alignedAlloc(function->sizeOfData(), function->alignOfData());
-        function->create(place);
+        column->insertDefault();
+        auto * place = column->getData().back();
 
         if (stats_aggregate.kind == StatisticsMinMaxAggregate::Kind::Count)
         {
@@ -1115,7 +1115,6 @@ static Block makeBlockWithMinMaxFromStatistics(
             function->add(place, &value_column_ptr, 0, &arena);
         }
 
-        column->insertFrom(place);
         block.insert(ColumnWithTypeAndName(
             std::move(column),
             std::make_shared<DataTypeAggregateFunction>(function, function->getArgumentTypes(), stats_aggregate.aggregate->parameters),
