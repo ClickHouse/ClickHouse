@@ -6,10 +6,11 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
+#include <Analyzer/Utils.h>
 #include <Core/Settings.h>
+#include <Core/SortDescription.h>
 
 namespace DB
 {
@@ -72,14 +73,17 @@ public:
                         break;
                     if (!keep_functions)
                         continue;
-                    order_by_expr = cloneWithoutAliases(order_by_expr);
+                    /// A positional argument is a deep copy of the projection expression. It keeps the aliases
+                    /// that the projection loses, so a remote server can find different definitions of them.
+                    removeAliasesRecursive(order_by_expr);
                     break;
                 }
                 case QueryTreeNodeType::COLUMN:
                 {
-                    /// Different values can be equal with a collation, and functions of them can differ.
-                    keep_functions |= sort_node.getCollator() != nullptr;
-                    existing_keys.insert(order_by_expr);
+                    /// Different values can compare equal: with a collation, or `-0.0` and `0.0` and the `NaN`
+                    /// payloads. Functions of them can tell them apart, so such a key does not make them redundant.
+                    if (!sort_node.getCollator() && !comparisonCanMergeDistinctValues(*order_by_expr->getResultType()))
+                        existing_keys.insert(order_by_expr);
                     break;
                 }
                 default:
