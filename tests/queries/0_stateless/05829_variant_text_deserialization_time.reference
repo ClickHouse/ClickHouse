@@ -38,3 +38,9 @@ Interval
 42	IntervalDay
 string	String
 IntervalDay	IntervalDay
+Boundaries
+Decimal(76, 2)
+Float64
+Time
+Time64(3)
+DateTime64(3)

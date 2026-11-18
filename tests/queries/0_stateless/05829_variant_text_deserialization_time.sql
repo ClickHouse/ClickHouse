@@ -32,3 +32,9 @@ SELECT toString(v), variantType(v) FROM format(JSONEachRow, 'v Variant(String, T
 SELECT 'Interval';
 SELECT toString(v), variantType(v) FROM format(TSV, 'v Variant(String, Date, IntervalDay)', '42\n20200101\nstring') ORDER BY 1;
 SELECT variantType('42'::Variant(String, IntervalDay)), variantType('42'::Variant(FixedString(2), IntervalDay));
+SELECT 'Boundaries';
+SELECT variantType(v) FROM format(TSV, 'v Variant(Decimal256(2), BFloat16)', '1.5');
+SELECT variantType(v) FROM format(TSV, 'v Variant(Float64, Time64(3))', '1.5');
+SELECT variantType(v) FROM format(JSONEachRow, 'v Variant(Date, Time)', '{"v":42}');
+SELECT variantType(v) FROM format(JSONEachRow, 'v Variant(Date, Time64(3))', '{"v":42}');
+SELECT variantType(v) FROM format(JSONEachRow, 'v Variant(DateTime64(3), IntervalDay)', '{"v":42}');
