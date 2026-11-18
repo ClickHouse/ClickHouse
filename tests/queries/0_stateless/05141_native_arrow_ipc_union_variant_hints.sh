@@ -167,11 +167,10 @@ columns = {
     # A dense branch whose retained slot the decoder gathers away, so the repair never sees the value 9.
     "retained": dense([pa.array([1, 9, 2], type=pa.int8()), pa.nulls(1)], ["i", "n"],
                       offsets=pa.array([0, 0, 2, 0], type=pa.int32())),
-    # A dense branch whose retained slot the decoder keeps, which needs all three of: non-nullable
-    # children, so no child contributes a null map; a total child row count no larger than the union's;
-    # and a slot no row selects. Two rows aliasing slot 0 supply the third row the count needs while
-    # leaving slot 1 unreferenced. That 2-byte slot must not decide how the referenced 16-byte values
-    # are read: it is outside every row's reach, and the Arrow spec leaves its bytes undefined.
+    # A dense branch with non-nullable children, so no child contributes a null map, whose two rows
+    # aliasing slot 0 leave slot 1 unreferenced without making the union's child rows outnumber its own.
+    # That 2-byte slot must not decide how the referenced 16-byte values are read: it is outside every
+    # row's reach, and the Arrow spec leaves its bytes undefined.
     "aliased_retained": dense_not_null(
         [pa.array([b"\x00" * 15 + b"\x01", b"zz", b"\x00" * 15 + b"\x02"], type=pa.binary()),
          pa.array([42], type=pa.int32())],
@@ -205,6 +204,26 @@ schema = pa.schema([pa.field(name, column.type) for name, column in columns.item
 batch = pa.record_batch(list(columns.values()), schema=schema)
 for fmt, factory in (("Arrow", ipc.new_file), ("ArrowStream", ipc.new_stream)):
     with factory(f"{out}/unions.{fmt}", schema) as writer:
+        writer.write_batch(batch)
+
+# Rows 1 and 2 alias integer slot 0 and leave slot 1 unreferenced: `ColumnVariant` keeps one value per row
+# that selects it, in row order, so the decoder has to gather this layout before anything copies ranges of it.
+aliased = dense_not_null([pa.array([11, 99, 22], type=pa.int32()), pa.array(["s"])], ["i", "s"],
+                         [0, 0, 0, 1], [0, 0, 2, 0], 4)
+layouts = {
+    "row": pa.array([1, 2, 3, 4], type=pa.int32()),
+    "aliased": aliased,
+    "dict_aliased": pa.DictionaryArray.from_arrays(pa.array([0, 1, 2, 3], type=pa.int32()), aliased),
+    # Two `date32` children named as the writer names `Date` and `Date32`, the first holding days outside
+    # the `Date` range.
+    "dates": pa.UnionArray.from_dense(
+        pa.array([0, 0, 1, 0], type=pa.int8()), pa.array([0, 1, 0, 2], type=pa.int32()),
+        [pa.array([-1, 65536, 100], type=pa.date32()), pa.array([-1], type=pa.date32())], ["Date", "Date32"]),
+}
+schema = pa.schema([pa.field(name, column.type) for name, column in layouts.items()])
+batch = pa.record_batch(list(layouts.values()), schema=schema)
+for fmt, factory in (("Arrow", ipc.new_file), ("ArrowStream", ipc.new_stream)):
+    with factory(f"{out}/layouts.{fmt}", schema) as writer:
         writer.write_batch(batch)
 PY
 
@@ -280,6 +299,32 @@ for FORMAT in Arrow ArrowStream; do
     echo "--- ${FORMAT}: a dictionary of union<int32, utf8> under a list and under a struct, widened to Int64 ---"
     read_column dict_listed 'Array(Variant(Int64, String))' "$FORMAT"
     read_column dict_nested 'Tuple(v Variant(Int64, String))' "$FORMAT"
+done
+
+# usage: layout <format> <columns> <structure> [settings]; prints the rows, or the name of the reported error
+layout()
+{
+    local out
+    if out=$(${CLICKHOUSE_CLIENT} --query \
+        "SELECT $2 FROM file('${DATA}/layouts.$1', '$1', \$\$$3\$\$)${4:+ SETTINGS $4}" 2>&1); then
+        echo "$out"
+    else
+        grep -oE '\([A-Z][A-Z0-9_]+\)' <<< "$out" | tail -1
+    fi
+}
+
+for FORMAT in Arrow ArrowStream; do
+    echo "--- ${FORMAT}: a dictionary of a union whose rows alias a slot, widened to Int64 ---"
+    layout "$FORMAT" 'dict_aliased, variantType(dict_aliased)' 'dict_aliased Variant(Int64, String)'
+    echo "--- and as decoded ---"
+    layout "$FORMAT" 'dict_aliased' 'dict_aliased Variant(Int32, String)'
+    echo "--- the same union outside a dictionary, filtered ---"
+    ${CLICKHOUSE_CLIENT} --query "
+        SELECT row, aliased FROM file('${DATA}/layouts.${FORMAT}', '${FORMAT}', 'row Int32, aliased Variant(Int32, String)')
+        WHERE row > 1"
+    echo "--- ${FORMAT}: a date32 child is never narrowed to Date, so date32 children named Date and Date32 stay rejected ---"
+    layout "$FORMAT" 'dates' 'dates Variant(Date, Date32)' \
+        "allow_suspicious_variant_types = 1, date_time_overflow_behavior = 'throw'"
 done
 
 echo "--- a date32 branch is excluded by design, so this stays rejected ---"

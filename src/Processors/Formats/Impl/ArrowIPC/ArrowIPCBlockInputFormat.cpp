@@ -1039,31 +1039,6 @@ std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
     const auto & variant_col = assert_cast<const ColumnVariant &>(*col);
     const size_t num_elements = variant_col.getNumVariants();
 
-    /// Gather each element down to the rows that reference it, in row order: a dense union child keeps every
-    /// slot it declares, and the Arrow spec leaves the bytes of an unreferenced slot undefined, so a width
-    /// sniff or a cast must never see them.
-    const ColumnVariant::Discriminators & local_discriminators = variant_col.getLocalDiscriminators();
-    const ColumnVariant::Offsets & offsets = variant_col.getOffsets();
-    const size_t rows = local_discriminators.size();
-    MutableColumns gathered(num_elements);
-    for (size_t local = 0; local < num_elements; ++local)
-        gathered[local] = variant_col.getVariantPtrByLocalDiscriminator(local)->cloneEmpty();
-    auto new_offsets_col = ColumnVariant::ColumnOffsets::create(rows);
-    ColumnVariant::Offsets & new_offsets = new_offsets_col->getData();
-    for (size_t row = 0; row < rows; ++row)
-    {
-        const ColumnVariant::Discriminator local = local_discriminators[row];
-        if (local == ColumnVariant::NULL_DISCRIMINATOR)
-        {
-            new_offsets[row] = 0;
-            continue;
-        }
-        /// Two rows may reference one slot, which legitimately duplicates the value: `ColumnVariant` needs
-        /// exactly one element value per row that selects the element.
-        new_offsets[row] = gathered[local]->size();
-        gathered[local]->insertFrom(*variant_col.getVariantPtrByLocalDiscriminator(local), offsets[row]);
-    }
-
     Columns new_elements(num_elements);
     DataTypes new_types(num_elements);
     for (size_t local = 0; local < num_elements; ++local)
@@ -1071,13 +1046,13 @@ std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
         /// Element columns are in Arrow child order while the decoded alternatives are sorted by name.
         const size_t global = variant_col.globalDiscriminatorByLocal(static_cast<ColumnVariant::Discriminator>(local));
         const DataTypePtr & from_element = elements[global];
-        ColumnPtr element = std::move(gathered[local]);
+        ColumnPtr element = variant_col.getVariantPtrByLocalDiscriminator(local);
         DataTypePtr element_type = from_element;
         if (const DataTypePtr & target = targets[global])
         {
             /// The ordinary recursion, so a raw-byte element converts as the same bytes would in a plain
-            /// column; a gathered element lives in its own row space, so no undefined values and no ancestor
-            /// nulls. No field: a union is decoded without consulting its children's `clickhouse.opaque` tags.
+            /// column; an element holds only its rows' values, so no undefined values and no ancestor nulls.
+            /// No field: a union is decoded without consulting its children's `clickhouse.opaque` tags.
             std::tie(element, element_type) = reinterpretRawBytes(
                 element, from_element, target, /*ancestor_nulls=*/nullptr, case_insensitive, /*field=*/nullptr,
                 format_settings, /*repair_variants=*/true);
@@ -1103,7 +1078,7 @@ std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
                 new_local_to_global[local] = static_cast<ColumnVariant::Discriminator>(global);
 
     auto new_column = ColumnVariant::create(
-        variant_col.getLocalDiscriminatorsPtr(), std::move(new_offsets_col), new_elements, new_local_to_global);
+        variant_col.getLocalDiscriminatorsPtr(), variant_col.getOffsetsPtr(), new_elements, new_local_to_global);
     return {std::move(new_column), std::move(new_variant_type)};
 }
 

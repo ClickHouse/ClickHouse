@@ -1163,7 +1163,8 @@ namespace
 {
 
 /// The parameterless type named `name` that the ClickHouse writer stores as the Arrow type inferred as
-/// `inferred`, or null. The writer names a union child after its type's family.
+/// `inferred`, or null. The writer names a union child after its type's family. A `date32` child is not
+/// re-declared as `Date`: narrowing it after decoding would bypass `date_time_overflow_behavior`.
 DataTypePtr writerTypeOfUnionChild(const DataTypePtr & inferred, const String & name)
 {
     const WhichDataType which(inferred);
@@ -1171,7 +1172,7 @@ DataTypePtr writerTypeOfUnionChild(const DataTypePtr & inferred, const String & 
     const bool stored_as = (width == 16 && (name == "UUID" || name == "IPv6" || name == "Int128" || name == "UInt128"))
         || (width == 32 && (name == "Int256" || name == "UInt256"))
         || (which.isUInt32() && (name == "IPv4" || name == "DateTime"))
-        || ((which.isUInt16() || which.isDate32()) && name == "Date");
+        || (which.isUInt16() && name == "Date");
     return stored_as ? DataTypeFactory::instance().get(name) : nullptr;
 }
 

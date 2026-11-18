@@ -161,6 +161,38 @@ true	Variant(Bool, UInt8)
 ('x')	Tuple(\n    v Variant(Int64, String))
 (7)	Tuple(\n    v Variant(Int64, String))
 ('y')	Tuple(\n    v Variant(Int64, String))
+--- Arrow: a dictionary of a union whose rows alias a slot, widened to Int64 ---
+11	Int64
+11	Int64
+22	Int64
+s	String
+--- and as decoded ---
+11
+11
+22
+s
+--- the same union outside a dictionary, filtered ---
+2	11
+3	22
+4	s
+--- Arrow: a date32 child is never narrowed to Date, so date32 children named Date and Date32 stay rejected ---
+(INCORRECT_DATA)
+--- ArrowStream: a dictionary of a union whose rows alias a slot, widened to Int64 ---
+11	Int64
+11	Int64
+22	Int64
+s	String
+--- and as decoded ---
+11
+11
+22
+s
+--- the same union outside a dictionary, filtered ---
+2	11
+3	22
+4	s
+--- ArrowStream: a date32 child is never narrowed to Date, so date32 children named Date and Date32 stay rejected ---
+(INCORRECT_DATA)
 --- a date32 branch is excluded by design, so this stays rejected ---
 Cannot convert type Variant(Date32, String) to Variant(Int32, String).
 --- and the narrowing DateTime64 -> DateTime is refused, so this stays rejected ---

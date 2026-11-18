@@ -1834,7 +1834,8 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
     VectorWithMemoryTracking<ChildState> child_states;
     /// Maps an Arrow union type id to a local Variant element index, or -1 for the NULL placeholder.
     UnorderedMapWithMemoryTracking<int, int> type_id_to_local;
-    size_t total_child_rows = 0;
+    /// Whether every dense child holds exactly the values its rows select, each once and in row order.
+    bool dense_slots_in_row_order = true;
     for (size_t child_idx = 0; child_idx < type.children.size(); ++child_idx)
     {
         const ArrowField & child = type.children[child_idx];
@@ -1869,10 +1870,14 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
             const Int64 target = dense ? Int64(value_offsets[row]) : Int64(row);
             if (dense && (target < 0 || static_cast<size_t>(target) >= child_rows))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow dense union offset {} out of range", target);
+            if (dense && !size_determined)
+                dense_slots_in_row_order &= static_cast<size_t>(target) == selected_rows;
             ++selected_rows;
             if (!size_determined)
                 child_invisible[static_cast<size_t>(target)] = 0;
         }
+        if (dense && !size_determined)
+            dense_slots_in_row_order &= selected_rows == child_rows;
 
         ColumnUInt8::Ptr child_null_map;
         ColumnPtr child_column = size_determined
@@ -1890,7 +1895,6 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
             child_column = nullable.getNestedColumnPtr();
         }
         type_id_to_local[tid] = static_cast<int>(variant_columns.size());
-        total_child_rows += child_column->size();
         variant_columns.push_back(std::move(child_column));
         variant_types.push_back(removeNullable(child_type));
         child_states.push_back({std::move(child_null_map), size_determined});
@@ -1923,15 +1927,16 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
     auto & discr_data = local_discriminators->getData();
     auto & off_data = offsets->getData();
 
-    /// `ColumnVariant` requires each element column to hold exactly the values of the rows selecting it.
-    /// Sparse children hold a value for every union row, dense children may retain unselected values after
-    /// slicing, and a selected null value becomes a `Variant` NULL that leaves the value unreferenced. In
-    /// all these cases the selected values are gathered into compact element columns. So are the children
-    /// converted to their alternative, which must not see the undefined bytes of an unselected value.
+    /// `ColumnVariant` requires each element column to hold exactly the values of the rows selecting it, in
+    /// row order. Sparse children hold a value for every union row, dense children may retain unselected
+    /// values after slicing or select values out of order or more than once, and a selected null value
+    /// becomes a `Variant` NULL that leaves the value unreferenced. In all these cases the selected values
+    /// are gathered into compact element columns. So are the children converted to their alternative, which
+    /// must not see the undefined bytes of an unselected value.
     bool any_converted = false;
     for (size_t l = 0; l < element_types.size(); ++l)
         any_converted |= converted(l);
-    const bool compact_children = !dense || invisible_rows || total_child_rows > rows || any_converted
+    const bool compact_children = !dense || invisible_rows || !dense_slots_in_row_order || any_converted
         || std::ranges::any_of(child_states, [](const ChildState & state) { return state.null_map != nullptr; });
     MutableColumns compact;
     if (compact_children)
