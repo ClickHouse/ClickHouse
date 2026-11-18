@@ -10891,7 +10891,7 @@ Makes `hash`, `parallel_hash` and `grace_hash` joins on a single `String` or `Nu
 
 Because the hash table is smaller, a join reaches `max_bytes_in_join` and `max_bytes_before_external_join` later.
 
-The setting does not apply to `FixedString` or `LowCardinality(Nullable(String))` keys, to tables with the `Join` engine, or to `joinGet`. A join on a `LowCardinality(String)` key may use the key's dictionary instead. A join whose right side is estimated at fewer rows than `min_rows_for_packed_string_keys_in_hash_join` is not affected either.
+The setting does not apply to `FixedString` or `LowCardinality(Nullable(String))` keys, to tables with the `Join` engine, or to `joinGet`. A join on a `LowCardinality(String)` key may use the key's dictionary instead. A join whose right side is small is not affected either, see `min_rows_for_packed_string_keys_in_hash_join`.
 )", 0, \
         {"26.11", false, true, "New setting to make hash joins on a single `String` key faster and use less memory."}) \
     DECLARE(UInt64, min_rows_for_packed_string_keys_in_hash_join, 100'000, R"(
@@ -10899,9 +10899,11 @@ The minimum estimated number of rows in the right side of a join for `enable_pac
 
 The estimate is the number of right-side rows in an earlier run of the same join, if `collect_hash_table_stats_during_joins` is enabled. Otherwise it is the query optimizer's estimate. `parallel_hash_join_threshold` uses the same estimate. A join without an estimate always uses `enable_packed_string_keys_in_hash_join`.
 
+This setting alone decides when the right key has no `basic` column statistics. `MergeTree` tables collect them by default (see `auto_statistics_types`). A join with `OR`, or on a key that is an expression, has none. With the statistics, the join uses `enable_packed_string_keys_in_hash_join` only when the hash table of the right side would be larger than about the L2 cache of the CPU. If the keys are longer than 15 bytes on average, the right side also needs at least this many rows, unless the join filters its left side with a runtime filter (see `enable_join_runtime_filters`). A `LEFT` or `FULL` join keeps all rows of its left side, so it gets no runtime filter. Each server of a distributed query decides from its own statistics and cache size.
+
 0 means no minimum.
 )", 0, \
-        {"26.11", 0, 100'000, "New setting: `enable_packed_string_keys_in_hash_join` applies only when the right side of the join is estimated at 100000 rows or more, or has no estimate."}) \
+        {"26.11", 0, 100'000, "New setting: the minimum estimated number of rows in the right side of a join for `enable_packed_string_keys_in_hash_join` to apply. It decides alone when the right key has no column statistics."}) \
     DECLARE(UInt64, query_plan_max_limit_for_join_lazy_indexing, 1000, R"(Control maximum limit value that allows to use query plan for lazy indexing optimization in JOIN. If zero, there is no limit.
 )", 0, \
         {"26.6", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"}) \

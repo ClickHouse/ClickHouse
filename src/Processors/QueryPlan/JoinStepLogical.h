@@ -153,6 +153,7 @@ public:
     /// `tryAddJoinRuntimeFilter`.
     [[nodiscard]] bool isRuntimeFilterDeclinedForSmallProbe() const { return runtime_filter_declined_small_probe; }
     void setRuntimeFilterDeclinedForSmallProbe() { runtime_filter_declined_small_probe = true; }
+    void setRuntimeFilterAdded() { runtime_filter_added = true; }
     [[nodiscard]] std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
     [[nodiscard]] std::optional<double> getEstimatedCost() const { return estimated_cost; }
     [[nodiscard]] std::optional<double> getEstimatedSelectivity() const { return estimated_selectivity; }
@@ -297,6 +298,13 @@ protected:
     /// (`join_runtime_filter_min_probe_rows`). Travels with the step for the same reason `optimized`
     /// does: the comparison behind it reads a row estimate, which no copy taken over the wire has.
     bool runtime_filter_declined_small_probe = false;
+
+    /// The runtime filter pass of this host added a filter for this join. Not serialized: a host adds its own.
+    bool runtime_filter_added = false;
+
+    /// The sender estimated the right side below `min_rows_for_packed_string_keys_in_hash_join`. Set only on a step taken
+    /// over the wire, which has no row estimate.
+    bool sender_estimated_small_right_side = false;
 
     /// Runtime info, do not serialize
 

@@ -272,6 +272,14 @@ struct JoinAlgorithmParams
     std::optional<UInt64> rhs_size_estimation;
     std::optional<UInt64> result_rows_estimation;
 
+    /// The rows of the right side from this host's own estimate of its read, for the choice of packed `String` keys when
+    /// `rhs_size_estimation` is unknown.
+    std::optional<UInt64> local_rhs_rows_estimation;
+    /// The sender of the plan estimated the right side below `min_rows_for_packed_string_keys_in_hash_join`.
+    bool sender_estimated_small_right_side = false;
+    /// This host added a runtime filter on the left side of the join.
+    bool has_runtime_filter = false;
+
     explicit JoinAlgorithmParams(const Context & context);
 
     JoinAlgorithmParams(

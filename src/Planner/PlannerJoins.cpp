@@ -1,10 +1,14 @@
 #include <Planner/PlannerJoins.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+
+#include <base/PackedStringRef.h>
+#include <base/getL2CacheSize.h>
 
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -1180,6 +1184,37 @@ QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node)
     return join_expression;
 }
 
+/// Whether a hash join on a single `String` key packs the keys, see `enable_packed_string_keys_in_hash_join`.
+/// `right_key_avg_bytes` is `ColumnStats::avg_bytes` of the right key, 0 if unknown. It reads the L2 cache size of this host,
+/// so each host decides for itself. Without the average size or the rows, `sender_estimated_small_right_side` decides first,
+/// then `rhs_size_estimation` against `min_rows_for_packed_string_keys_in_hash_join`. With no estimate the keys are packed.
+static bool shouldPackStringJoinKeys(const JoinAlgorithmParams & params, Float64 right_key_avg_bytes)
+{
+    const auto rows = params.rhs_size_estimation ? params.rhs_size_estimation : params.local_rhs_rows_estimation;
+    if (right_key_avg_bytes > 0 && rows)
+    {
+        /// Exact keys are cheaper while their hash table fits in the L2 cache. A cell has 32 bytes: the pointer, the length,
+        /// the saved hash and the row reference. The real table is larger.
+        constexpr size_t exact_key_cell_bytes = 32;
+        const Float64 avg_key_length = std::max<Float64>(right_key_avg_bytes - sizeof(ColumnString::Offset), 0);
+        const Float64 exact_table_bytes = static_cast<Float64>(*rows) * (exact_key_cell_bytes + avg_key_length);
+        const bool exact_table_exceeds_cache = exact_table_bytes > static_cast<Float64>(getL2CacheSize());
+
+        /// A packed long key is hashed for every probe row, which the table size does not account for. A runtime filter
+        /// leaves only the probe rows that hit, so without one the join also needs the minimum number of rows.
+        if (avg_key_length > UnhashedPackedStringRef::MAX_SMALL_LEN)
+        {
+            const bool enough_rows = *rows >= params.min_rows_for_packed_string_keys_in_hash_join;
+            return exact_table_exceeds_cache && (params.has_runtime_filter || enough_rows);
+        }
+        return exact_table_exceeds_cache;
+    }
+
+    if (params.sender_estimated_small_right_side)
+        return false;
+    return !params.rhs_size_estimation || *params.rhs_size_estimation >= params.min_rows_for_packed_string_keys_in_hash_join;
+}
+
 static std::shared_ptr<IJoin> tryCreateJoin(
     JoinAlgorithm algorithm,
     std::shared_ptr<TableJoin> & table_join,
@@ -1216,8 +1251,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 *table_join, *right_table_expression_header, params.rhs_size_estimation.value_or(0),
                 params.min_string_column_bytes_for_hash_join_row_store));
 
-    /// The hash table of a small right side stays in the cache. There, hashing the long keys costs more than packed keys save.
-    if (params.rhs_size_estimation && *params.rhs_size_estimation < params.min_rows_for_packed_string_keys_in_hash_join)
+    if (!shouldPackStringJoinKeys(params, table_join->getRightHashKeyAvgBytes()))
         table_join->setPackedStringKeysInHashJoinEnabled(false);
 
     const auto build_layout

@@ -2617,11 +2617,23 @@ static QueryPlanNode buildPhysicalJoinImpl(
     {
         return isString(removeNullable(removeLowCardinality(column.type)));
     });
-    if (join_settings.enable_hash_join_row_store && !planning_context.is_storage_join && children.size() == 2 && right_has_strings)
+    /// The row store and the packed `String` keys need the average sizes of the right columns.
+    const bool needs_right_column_avg_bytes
+        = join_settings.enable_hash_join_row_store || join_settings.enable_packed_string_keys_in_hash_join;
+    if (needs_right_column_avg_bytes && !planning_context.is_storage_join && children.size() == 2 && right_has_strings)
     {
-        auto right_column_stats = right_relation_column_stats.empty()
-            ? QueryPlanOptimizations::estimateReadRowsCount(*children[1]).column_stats
-            : right_relation_column_stats;
+        /// A step taken over the wire has neither the statistics nor the row estimate of the right side. This host
+        /// estimates the read of the right side itself. The rows are used only for the choice of packed `String` keys.
+        const bool needs_local_rows = join_settings.enable_packed_string_keys_in_hash_join && !join_algorithm_params.rhs_size_estimation;
+        auto right_column_stats = right_relation_column_stats;
+        if (right_column_stats.empty() || needs_local_rows)
+        {
+            auto local_estimate = QueryPlanOptimizations::estimateReadRowsCount(*children[1]);
+            if (needs_local_rows)
+                join_algorithm_params.local_rhs_rows_estimation = local_estimate.estimated_rows;
+            if (right_column_stats.empty())
+                right_column_stats = std::move(local_estimate.column_stats);
+        }
         QueryPlanOptimizations::remapColumnStats(right_column_stats, right_dag);
         for (const auto & [name, stats] : right_column_stats)
             table_join->setRightColumnAvgBytes(name, stats.avg_bytes);
@@ -2711,6 +2723,9 @@ void JoinStepLogical::buildPhysicalJoin(
 
         if (join_step->right_relation.estimated_rows)
             join_step->join_algorithm_params->rhs_size_estimation = join_step->right_relation.estimated_rows;
+
+        join_step->join_algorithm_params->sender_estimated_small_right_side = join_step->sender_estimated_small_right_side;
+        join_step->join_algorithm_params->has_runtime_filter = join_step->runtime_filter_added;
 
         if (join_step->result_rows_estimation)
             join_step->join_algorithm_params->result_rows_estimation = join_step->result_rows_estimation;
@@ -3175,8 +3190,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         step->runtime_filter_declined_small_probe = bool(optimizer_flags & 2);
         if (optimizer_flags & 4)
             step->planned_algorithm = JoinAlgorithm::FULL_SORTING_MERGE;
-        if (optimizer_flags & 8)
-            step->join_settings.enable_packed_string_keys_in_hash_join = false;
+        step->sender_estimated_small_right_side = bool(optimizer_flags & 8);
     }
     return step;
 }
@@ -3221,6 +3235,8 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     /// "Trying to extract chunk from ChunkBuffer before all inputs are finished".
     result_step->optimized = optimized;
     result_step->runtime_filter_declined_small_probe = runtime_filter_declined_small_probe;
+    result_step->sender_estimated_small_right_side = sender_estimated_small_right_side;
+    result_step->runtime_filter_added = runtime_filter_added;
     result_step->result_rows_estimation = result_rows_estimation;
     result_step->estimated_cost = estimated_cost;
     result_step->estimated_selectivity = estimated_selectivity;

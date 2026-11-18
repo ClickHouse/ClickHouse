@@ -175,7 +175,7 @@ private:
     const bool enable_join_key_only_hash_tables = false;
     const bool enable_robin_hood_hash_for_joins = false;
     const bool join_runtime_filter_from_fixed_hash_table = false;
-    /// The planner turns it off for a small right side, see `min_rows_for_packed_string_keys_in_hash_join`.
+    /// The planner turns it off for a join that is faster with exact keys, see `shouldPackStringJoinKeys` in `PlannerJoins.cpp`.
     bool enable_packed_string_keys_in_hash_join = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
@@ -372,6 +372,9 @@ public:
             return it->second;
         return 0;
     }
+    /// The average size in bytes of the only key of the hash table, with the 8-byte offset of a `ColumnString`.
+    /// 0 is unknown, also for a join with `OR` or with several keys.
+    Float64 getRightHashKeyAvgBytes() const;
 
     const VectorWithMemoryTracking<SharedRuntimeFilterDescriptor> & getSharedRuntimeFilterDescriptors() const
     {
