@@ -1,0 +1,57 @@
+-- readonly 0, not granted:
+-- readonly 1, granted:
+AI FUNCTIONS
+BACKUP
+CHECK
+CLUSTER
+INTROSPECTION
+NAMED COLLECTION
+NONE
+READ
+SELECT
+SET DEFINER
+SHOW
+SHOW ACCESS
+SHOW COLUMNS
+SHOW CONNECTIONS
+SHOW DATABASES
+SHOW DICTIONARIES
+SHOW FILESYSTEM CACHES
+SHOW HANDLERS
+SHOW MASKING POLICIES
+SHOW NAMED COLLECTIONS
+SHOW NAMED COLLECTIONS SECRETS
+SHOW QUOTAS
+SHOW ROLES
+SHOW ROW POLICIES
+SHOW SETTINGS PROFILES
+SHOW TABLES
+SHOW USERS
+TABLE ENGINE
+addressToLine
+addressToLineWithInlines
+addressToSymbol
+aiClassify
+aiEmbed
+aiExtract
+aiFilter
+aiGenerate
+aiRedact
+aiSimilarity
+aiTranslate
+demangle
+dictGet
+displaySecretsInShowAndSelect
+-- readonly 2, granted in addition:
+CREATE TEMPORARY TABLE
+CREATE TEMPORARY VIEW
+-- INSERT INTO FUNCTION with a filtered WRITE grant, readonly 2:
+refused
+-- BACKUP, readonly 1:
+BACKUP_CREATED
+-- file(), readonly 2:
+2
+-- S3 database, readonly 2:
+3
+-- S3 database, readonly 2, parallel replicas:
+3
