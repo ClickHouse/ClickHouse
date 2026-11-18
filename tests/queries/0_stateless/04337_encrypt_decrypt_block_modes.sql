@@ -136,3 +136,93 @@ SELECT hex(encrypt('aes-128-cbc', arrayJoin(['', 'a', '', repeat('b', 100), 'c',
 -- Decryption errors keep the OPENSSL_ERROR code.
 SELECT decrypt('aes-128-cbc', 'hello there', 'key-key-key-key+'); -- {serverError OPENSSL_ERROR} not a multiple of block size
 SELECT decrypt('aes-128-cbc', 'sixteen bytes ab', 'key-key-key-key+'); -- {serverError OPENSSL_ERROR} invalid padding
+
+-- GCM shares the same per-row key-schedule cache as CTR and OFB: the cipher is set
+-- up once, a key match resets only the IV, and a key change replaces the key. GCM
+-- also sets the IV length per row and takes AAD, so the output of a row must not
+-- depend on the previous row's key, IV, IV length or AAD.
+
+-- GCM key sizes and input lengths with a constant key and IV.
+WITH
+    arrayJoin([0, 1, 15, 16, 17, 33, 64, 100, 1000]) AS len,
+    repeat('x', len) AS plain,
+    'key-key-key-key+' AS key16,
+    'key-key-key-key+key-key+' AS key24,
+    'key-key-key-key+key-key-key-key+' AS key32,
+    'iviviviviviv' AS iv12
+SELECT
+    len,
+    hex(encrypt('aes-128-gcm', plain, key16, iv12)) AS e128,
+    hex(encrypt('aes-192-gcm', plain, key24, iv12)) AS e192,
+    hex(encrypt('aes-256-gcm', plain, key32, iv12, 'some aad')) AS e256_aad
+ORDER BY len;
+
+-- Keys, IVs, IV lengths and AAD varying per row. The IV length cycles through
+-- 12, 16, 1, 32, 100 and 12 again, so consecutive rows change the IV length.
+WITH
+    arrayJoin(range(24)) AS n,
+    leftPad(toString(n), 3, '0') AS n3,
+    concat('key-key-key-k', n3) AS vkey,
+    concat('key-key-key-k', leftPad(toString(n % 2), 3, '0')) AS akey,
+    concat('iviviviviv', n3) AS viv13,
+    substring(concat(n3, repeat('iv', 50)), 1, [12, 16, 1, 32, 100, 12][n % 6 + 1]) AS vlen_iv,
+    if(n % 3 = 0, '', concat('aad-', n3)) AS vaad,
+    repeat('p', (n * 7) % 40) AS plain
+SELECT
+    n,
+    hex(encrypt('aes-128-gcm', plain, 'key-key-key-key+', viv13)) AS ckey_viv,
+    hex(encrypt('aes-128-gcm', plain, vkey, 'iviviviviviv')) AS vkey_civ,
+    hex(encrypt('aes-128-gcm', plain, akey, viv13)) AS akey_viv,
+    hex(encrypt('aes-128-gcm', plain, vkey, viv13)) AS vkey_viv,
+    hex(encrypt('aes-128-gcm', plain, 'key-key-key-key+', vlen_iv)) AS ckey_vlen_iv,
+    hex(encrypt('aes-128-gcm', plain, akey, vlen_iv, vaad)) AS akey_vlen_iv_vaad,
+    hex(encrypt('aes-128-gcm', plain, 'key-key-key-key+', 'iviviviviviv', vaad)) AS ckey_civ_vaad
+ORDER BY n;
+
+-- Round trips through the same transitions must recover the plaintext.
+WITH
+    arrayJoin(range(24)) AS n,
+    leftPad(toString(n), 3, '0') AS n3,
+    concat('key-key-key-k', leftPad(toString(n % 2), 3, '0')) AS akey,
+    concat('key-key-key-key+key-key-key-', leftPad(toString(n % 3), 4, '0')) AS akey32,
+    substring(concat(n3, repeat('iv', 50)), 1, [12, 16, 1, 32, 100, 12][n % 6 + 1]) AS vlen_iv,
+    if(n % 3 = 0, '', concat('aad-', n3)) AS vaad,
+    repeat('w', (n * 11) % 50) AS plain
+SELECT
+    n,
+    decrypt('aes-128-gcm', encrypt('aes-128-gcm', plain, akey, vlen_iv), akey, vlen_iv) = plain AS rt,
+    decrypt('aes-128-gcm', encrypt('aes-128-gcm', plain, akey, vlen_iv, vaad), akey, vlen_iv, vaad) = plain AS rt_aad,
+    decrypt('aes-256-gcm', encrypt('aes-256-gcm', plain, akey32, vlen_iv, vaad), akey32, vlen_iv, vaad) = plain AS rt_256_aad
+ORDER BY n;
+
+-- Tag check failures must give NULL in `tryDecrypt`, and a failed row must not
+-- affect the next one. Even rows are valid; odd rows fail in turn because of a
+-- corrupted tag, a corrupted first byte, a wrong key, a wrong IV of another
+-- length, and wrong AAD.
+WITH
+    arrayJoin(range(20)) AS n,
+    'key-key-key-key+' AS key16,
+    concat('iviviviviv', leftPad(toString(n), 2, '0')) AS iv,
+    concat('aad', toString(n)) AS aad,
+    repeat('z', n * 3) AS plain,
+    encrypt('aes-128-gcm', plain, key16, iv, aad) AS good,
+    n % 2 = 1 ? intDiv(n, 2) % 5 : -1 AS failure,
+    multiIf(
+        failure = 0, concat(substring(good, 1, length(good) - 1), if(right(good, 1) = 'a', 'b', 'a')),
+        failure = 1, concat(if(left(good, 1) = 'a', 'b', 'a'), substring(good, 2)),
+        good) AS cipher
+SELECT
+    n,
+    failure,
+    tryDecrypt('aes-128-gcm', cipher,
+        failure = 2 ? 'wrong-key-wrong-' : key16,
+        failure = 3 ? 'iviviviviviviviv' : iv,
+        failure = 4 ? 'wrong aad' : aad) AS result
+ORDER BY n;
+
+-- Empty plaintext encrypts to the tag only, and empty input decrypts to empty.
+SELECT
+    hex(encrypt('aes-128-gcm', '', 'key-key-key-key+', 'iviviviviviv')),
+    hex(encrypt('aes-128-gcm', '', 'key-key-key-key+', 'iviviviviviv', 'aad')),
+    decrypt('aes-128-gcm', '', 'key-key-key-key+', 'iviviviviviv') = '',
+    decrypt('aes-128-gcm', encrypt('aes-128-gcm', '', 'key-key-key-key+', 'iviviviviviv'), 'key-key-key-key+', 'iviviviviviv') = '';

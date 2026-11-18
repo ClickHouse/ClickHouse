@@ -73,6 +73,7 @@ private:
     ColumnNumbers other_columns_pos;
     Sizes other_columns_sizes;
     ColumnRawPtrs other_columns; // used during processing
+    ColumnNumbers materialized_columns_pos;
 
     /// All the distinct key columns, for the standalone deduplication of query result previews.
     ColumnNumbers all_distinct_columns_pos;

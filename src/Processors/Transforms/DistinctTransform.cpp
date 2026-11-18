@@ -257,13 +257,14 @@ void DistinctTransform::deduplicate(Chunk & chunk)
     if (unlikely(!distinct_set->hasKeyColumns()))
     {
         removeSpecialColumnRepresentations(chunk);
-        convertToFullIfConst(chunk);
 
         auto columns = chunk.detachColumns();
         for (auto & column : columns)
             column = column->cut(0, 1);
 
         chunk.setColumns(std::move(columns), 1);
+        /// After the cut, so that a constant is not copied to every row of the chunk.
+        convertToFullIfConst(chunk);
         set_memory.report(chunk, getOutputPort().getHeader(), 0);
         stopReading();
         return;
