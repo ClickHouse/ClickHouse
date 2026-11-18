@@ -64,6 +64,27 @@ public:
     /// into these, in the order of the stream of each; `other` has none left.
     __host__ void absorb(CudfGroupBy & other);
 
+    /// Before the first batch, of a `GROUP BY` with keys whose aggregates combine, see `combinesPartials`: each batch is
+    /// reduced into partial results by a groupby of cuDF and split by a hash of the keys into `num_parts` parts as it
+    /// comes, as Sirius does, so that no hash table grows over the batches. See `partition`.
+    __host__ void splitIntoParts(size_t num_parts);
+    /// Instead of `finalize`, of a `GROUP BY` with keys whose aggregates combine, see `combinesPartials`: closes the groups
+    /// as partial results split by a hash of their keys into `num_parts` parts, which others merge each on its own, see
+    /// `absorbPart`: those split as the batches came, or else the groups so far, split now. Returns about the number
+    /// of groups.
+    __host__ size_t partition(size_t num_parts);
+    /// Whether the partial results of every aggregate combine by an aggregate: not those of an `avg`.
+    __host__ bool combinesPartials() const;
+    /// Of one that has grouped no batch: takes part `part` of the groups of `other`, which `partition` split, to combine
+    /// at `finalize` with the parts of the same number of others. The parts of one `other` may be taken by several at once.
+    __host__ void absorbPart(const CudfGroupBy & other, size_t part);
+
+    /// Before `finalize`: how many groups `streaming_groupby` holds so far, which waits for the device.
+    __host__ size_t numGroups() const;
+    /// Before `finalize`: grows `streaming_groupby` at once to hold `groups`, so that `absorb` of others of that many
+    /// groups in all does not grow it again for each of them. Only of one that has grouped a batch itself.
+    __host__ void reserveGroups(size_t groups);
+
     /// Of rows collected rather than grouped: how many are collected and not taken yet, and makes them what `value`
     /// views, until the next call, returning how many. Before `finalize` as well.
     __host__ size_t collectedRows() const;

@@ -219,24 +219,52 @@ size_t MergeTreeCompressedColumnsReader::streamBytesOf(
 
 size_t MergeTreeCompressedColumnsReader::read(Consumer & consumer)
 {
+    while (readNext(consumer))
+    {
+    }
+    return rows_read;
+}
+
+bool MergeTreeCompressedColumnsReader::readNext(Consumer & consumer)
+{
+    while (true)
+    {
+        if (!range_rows && !startNextRange())
+            return false;
+
+        if (readPiece(consumer))
+            return true;
+
+        checkRowsRead(*range_rows);
+        rows_read += *range_rows;
+        range_rows.reset();
+    }
+}
+
+bool MergeTreeCompressedColumnsReader::startNextRange()
+{
+    /// Without ranges, the whole part is one range, which the readers start at on their own.
     if (ranges.empty())
     {
-        readRows(consumer, part.rows_count);
-        return part.rows_count;
+        if (next_range != 0)
+            return false;
+        next_range = 1;
+        range_rows = part.rows_count;
+        return true;
     }
 
-    size_t num_rows_read = 0;
-    for (const MarkRange & range : ranges)
+    while (next_range < ranges.size())
     {
+        const MarkRange & range = ranges[next_range++];
         const size_t num_rows = part.index_granularity->getRowsCountInRange(range);
         if (num_rows == 0)
             continue;
         for (auto & reader : readers)
             reader->startRange(range, num_rows);
-        readRows(consumer, num_rows);
-        num_rows_read += num_rows;
+        range_rows = num_rows;
+        return true;
     }
-    return num_rows_read;
+    return false;
 }
 
 void MergeTreeCompressedColumnsReader::readSizes(Consumer & consumer, size_t column_index)
@@ -285,9 +313,8 @@ void MergeTreeCompressedColumnsReader::readSizes(Consumer & consumer, size_t col
     column.sizes_bytes_read += block->decompressed_bytes;
 }
 
-void MergeTreeCompressedColumnsReader::readRows(Consumer & consumer, size_t num_rows)
+bool MergeTreeCompressedColumnsReader::readPiece(Consumer & consumer)
 {
-    while (true)
     {
         size_t behind = readers.size();
         for (size_t i = 0; i < readers.size(); ++i)
@@ -296,7 +323,7 @@ void MergeTreeCompressedColumnsReader::readRows(Consumer & consumer, size_t num_
                 behind = i;
         }
         if (behind == readers.size())
-            break;
+            return false;
 
         ColumnReader & column = *readers[behind];
         if (column.readsSizesNext())
@@ -316,7 +343,7 @@ void MergeTreeCompressedColumnsReader::readRows(Consumer & consumer, size_t num_
                     column.bytes_read += column.stream->getDataBuffer()->readBig(&past_end, 1);
                 }
                 column.finishBytes();
-                continue;
+                return true;
             }
 
             const std::span<char> room = consumer.reserveBytes(behind, Stream::Values, piece_bytes, column.remainingBytes());
@@ -326,7 +353,7 @@ void MergeTreeCompressedColumnsReader::readRows(Consumer & consumer, size_t num_
             if (read == 0)
             {
                 column.finishBytes();
-                continue;
+                return true;
             }
 
             column.bytes_read += read;
@@ -338,7 +365,7 @@ void MergeTreeCompressedColumnsReader::readRows(Consumer & consumer, size_t num_
             if (!block)
             {
                 column.finishBytes();
-                continue;
+                return true;
             }
 
             /// Of a range, the rows before it in its first block and after it in its last are left out.
@@ -363,7 +390,11 @@ void MergeTreeCompressedColumnsReader::readRows(Consumer & consumer, size_t num_
 
         consumer.checkCancelled();
     }
+    return true;
+}
 
+void MergeTreeCompressedColumnsReader::checkRowsRead(size_t num_rows) const
+{
     for (const auto & reader : readers)
     {
         if (reader->is_variable)

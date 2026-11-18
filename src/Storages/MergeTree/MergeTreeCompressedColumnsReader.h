@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -74,6 +75,11 @@ public:
     /// Reads every column to `consumer`, range after range, and returns the number of rows read.
     size_t read(Consumer & consumer);
 
+    /// Reads the next piece to `consumer`: a compressed block or some bytes of the column furthest behind. Returns false
+    /// once every range is read; `rowsRead` is then the number of rows read.
+    bool readNext(Consumer & consumer);
+    size_t rowsRead() const { return rows_read; }
+
     /// The stream of `column` of a wide part at `substream_path`, read by its `ranges`, every mark where there are none.
     static std::unique_ptr<MergeTreeReaderStream> openStream(
         const IMergeTreeDataPart & part,
@@ -90,12 +96,22 @@ public:
 private:
     struct ColumnReader;
 
-    void readRows(Consumer & consumer, size_t num_rows);
+    /// Starts the next range of rows, returns false if there is none.
+    bool startNextRange();
+    /// Reads one piece of the current range, returns false once the range is read.
+    bool readPiece(Consumer & consumer);
+    /// Checks that every column has exactly `num_rows` rows of the range read.
+    void checkRowsRead(size_t num_rows) const;
     void readSizes(Consumer & consumer, size_t column_index);
 
     const IMergeTreeDataPart & part;
     const MarkRanges ranges;
     std::vector<std::unique_ptr<ColumnReader>> readers;
+
+    size_t next_range = 0;
+    /// The rows of the range being read.
+    std::optional<size_t> range_rows;
+    size_t rows_read = 0;
 };
 
 }

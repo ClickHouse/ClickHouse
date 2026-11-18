@@ -14,6 +14,8 @@
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <Processors/IAccumulatingTransform.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -23,19 +25,14 @@
 #include <Storages/ColumnSize.h>
 #include <Storages/MergeTree/MergeTreeCompressedColumnsReader.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
-#include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
-#include <Common/ThreadGroupSwitcher.h>
-#include <Common/ThreadPool.h>
 
 #include <algorithm>
 #include <atomic>
-#include <deque>
-#include <exception>
 #include <memory>
-#include <mutex>
+#include <numeric>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -79,6 +76,13 @@ struct SharedState
     /// Of each column of the filter: the key or the value column of the same name and type, among the keys and then
     /// the values, which is read once for both.
     std::vector<std::optional<uint32_t>> filter_aliases;
+
+    std::shared_ptr<const GPU::GPUCompressedLayout> layout;
+    std::shared_ptr<GPU::GPUGroupingDecision> decision;
+    /// Whether the groups of the lanes are merged by parts of their keys, each part on its own, see `GPUSplitLanes`;
+    /// otherwise all into one lane, see `GPUMergeGroups`.
+    bool merge_by_parts = false;
+    size_t num_parts = 1;
 
     std::atomic<size_t> next_part{0};
 };
@@ -205,6 +209,10 @@ void splitPartsAmongReaders(std::vector<PartToRead> & parts, size_t min_pieces)
 /// of each column on the device: Q1, of seven columns, took 16 GiB of the device with 16 readers.
 constexpr size_t remote_disk_readers = 16;
 
+/// The lanes that group the batches, at most: as Sirius runs 4 to 8 tasks on a device at once, enough that one waiting
+/// for the device leaves it to the others, and few, as each keeps groups of its own.
+constexpr size_t max_lanes = 8;
+
 /// Two readers fill the link when they only copy compressed blocks into pinned memory; a reader
 /// that also expands the columns is bound by the CPU, and a quarter of the cores keep up with the
 /// link, where more of them hold more buffers on both sides of it than they gain.
@@ -217,281 +225,170 @@ size_t automaticReaders(const SharedState & state)
     return std::max<size_t>(2, getNumberOfCPUCoresToUse() / 4);
 }
 
-/// One `GROUP BY` on the device over every part, fed the parts' compressed blocks by several
-/// reading threads, each a part at a time.
-class GPUCompressedGroupBySource : public ISource
+DataTypes argumentTypesOf(const std::vector<ColumnToReduce> & columns)
+{
+    DataTypes types;
+    types.reserve(columns.size());
+    for (const auto & column : columns)
+        types.push_back(column.column.type);
+    return types;
+}
+
+std::vector<GPU::GPUGroupByAggregate> groupByAggregatesOf(
+    const std::vector<ColumnToReduce> & columns, const std::vector<DerivedColumn> & derived, const std::vector<AggregateToCompute> & aggregates)
+{
+    std::vector<GPU::GPUGroupByAggregate> result;
+    result.reserve(aggregates.size());
+    for (const auto & aggregate : aggregates)
+    {
+        const IDataType * argument_type = nullptr;
+        uint32_t column = GPU::GPUGroupByAggregate::no_column;
+        if (aggregate.column)
+        {
+            argument_type = columns.at(*aggregate.column).column.type.get();
+            column = static_cast<uint32_t>(*aggregate.column);
+        }
+        else if (aggregate.derived)
+        {
+            argument_type = derived.at(*aggregate.derived).type.get();
+            column = static_cast<uint32_t>(columns.size() + *aggregate.derived);
+        }
+        result.push_back({
+            .aggregation = aggregate.aggregation,
+            .column = column,
+            .result_type = GPU::groupByResultTypeOrThrow(argument_type, *aggregate.result_type, aggregate.aggregation),
+        });
+    }
+    return result;
+}
+
+std::vector<GPU::GPUDerivedValue> derivedValuesOf(const std::vector<DerivedColumn> & derived)
+{
+    std::vector<GPU::GPUDerivedValue> result;
+    result.reserve(derived.size());
+    for (const auto & column : derived)
+        result.push_back({.expression = column.expression, .columns = GPU::GPUSpan<uint32_t>(column.columns)});
+    return result;
+}
+
+/// The read is a pipeline of processors, each a stage of the device side, see `GPUAccumulator.h`:
+///
+///     GPUCompressedBlocks ×N  ->  GPUUpload ×N  ->  resize N -> L  ->  GPUGrouping ×L  ->  resize L -> 1  ->  GPUMergeGroups
+///
+/// The chunks between them have no columns: they carry a chunk info, staged blocks or a batch on the device or the
+/// groups of a lane. A source and its uploader are a stream each, the lanes take the batches of any stream, as the
+/// resize hands them over, and the groups of the lanes are merged at the end. A read that collects the rows its `WHERE`
+/// keeps has no merge: each lane emits the rows it collected.
+
+/// The rows a lane collects on the device before it sends them to the host.
+constexpr size_t collect_flush_rows = 1UL << 20;
+
+SharedHeader emptyHeader()
+{
+    return std::make_shared<const Block>();
+}
+
+/// Staged blocks of a reader, which go back to its pool once the last chunk that holds them is gone.
+struct StagedBatchHolder
+{
+    StagedBatchHolder(std::unique_ptr<GPU::GPUStagedBatch> batch_, std::shared_ptr<GPU::GPUStagedBatchPool> pool_)
+        : batch(std::move(batch_)), pool(std::move(pool_))
+    {
+    }
+
+    StagedBatchHolder(const StagedBatchHolder &) = delete;
+    StagedBatchHolder & operator=(const StagedBatchHolder &) = delete;
+
+    std::unique_ptr<GPU::GPUStagedBatch> batch;
+    std::shared_ptr<GPU::GPUStagedBatchPool> pool;
+
+    ~StagedBatchHolder()
+    {
+        if (batch)
+            pool->give(std::move(batch));
+    }
+};
+
+struct StagedBatchInfo : public ChunkInfoCloneable<StagedBatchInfo>
+{
+    explicit StagedBatchInfo(std::shared_ptr<StagedBatchHolder> holder_) : holder(std::move(holder_)) { }
+    std::shared_ptr<StagedBatchHolder> holder;
+};
+
+struct DeviceBatchInfo : public ChunkInfoCloneable<DeviceBatchInfo>
+{
+    explicit DeviceBatchInfo(std::shared_ptr<GPU::GPUDeviceBatch> batch_) : batch(std::move(batch_)) { }
+    std::shared_ptr<GPU::GPUDeviceBatch> batch;
+};
+
+struct LaneGroupsInfo : public ChunkInfoCloneable<LaneGroupsInfo>
+{
+    explicit LaneGroupsInfo(std::shared_ptr<GPU::GPUGroupingLane> lane_) : lane(std::move(lane_)) { }
+    std::shared_ptr<GPU::GPUGroupingLane> lane;
+};
+
+template <typename Info>
+std::shared_ptr<Info> infoOrThrow(Chunk & chunk, std::string_view processor)
+{
+    auto info = chunk.getChunkInfos().extract<Info>();
+    if (!info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A chunk without the chunk info that {} takes", processor);
+    return info;
+}
+
+/// Reads the parts no other source took yet, one at a time, and emits their compressed blocks, staged in pinned memory,
+/// a batch per chunk. It does not use the device.
+class GPUCompressedBlocksSource : public ISource
 {
 public:
-    GPUCompressedGroupBySource(SharedHeader header_, SharedStatePtr state_, QueryStatusPtr query_status_)
-        : ISource(std::move(header_))
+    GPUCompressedBlocksSource(SharedStatePtr state_, QueryStatusPtr query_status_)
+        : ISource(emptyHeader(), /*enable_auto_progress=*/false)
         , state(std::move(state_))
         , query_status(std::move(query_status_))
-        , num_readers(std::max<size_t>(1, std::min(state->num_readers, state->parts.size())))
-        , output_queue(state->collect ? std::make_unique<ConcurrentBoundedQueue<Chunk>>(collect_queue_chunks) : nullptr)
-        , accumulator(
-              typesOf(state->keys),
-              argumentTypesOf(state->columns),
-              groupByAggregatesOf(state->columns, state->derived, state->aggregates),
-              state->batch_bytes,
-              num_readers,
-              typesOf(filterColumnsOf(*state)),
-              state->filter ? std::optional(state->filter->expression) : std::nullopt,
-              derivedValuesOf(state->derived),
-              state->collect ? std::function<void(MutableColumns)>([this](MutableColumns columns) { pushCollected(std::move(columns)); })
-                             : std::function<void(MutableColumns)>{},
-              state->filter_aliases)
+        , pool(std::make_shared<GPU::GPUStagedBatchPool>())
+        , stager(state->layout, pool)
     {
     }
 
-    ~GPUCompressedGroupBySource() override
-    {
-        if (output_queue)
-            output_queue->clearAndFinish();
-        if (reading_thread.joinable())
-            reading_thread.join();
-    }
-
-    String getName() const override { return "GPUCompressedGroupBy"; }
+    String getName() const override { return "GPUCompressedBlocks"; }
 
 protected:
-    void onCancel() noexcept override
-    {
-        if (output_queue)
-            output_queue->clearAndFinish();
-    }
-
     Chunk generate() override
     {
-        if (state->collect)
-            return generateCollected();
+        while (true)
+        {
+            if (auto batch = stager.takeSealed())
+                return chunkOf(std::move(batch));
 
-        if (generated)
-            return {};
+            if (!reader && !openNextPart())
+                return {};
 
-        generated = true;
-
-        readParts();
-
-        size_t num_groups = accumulator.finalize();
-
-        /// No row came to the device, and an aggregation without keys emits its results over none, which the `HAVING`
-        /// above evaluates.
-        if (num_groups == 0 && state->result_over_no_rows)
-            return Chunk(*state->result_over_no_rows, 1);
-
-        if (num_groups != 0 && state->group_filter)
-            num_groups = accumulator.filterGroups(state->group_filter->expression, state->group_filter->columns);
-        if (num_groups == 0)
-            return {};
-
-        /// The header is the aggregation's: the keys, then the result of each aggregate.
-        const Block & header = getPort().getHeader();
-        if (header.columns() != state->keys.size() + state->aggregates.size())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "A GPU aggregation of {} keys and {} aggregates emits {} columns",
-                state->keys.size(),
-                state->aggregates.size(),
-                header.columns());
-
-        MutableColumns key_columns;
-        key_columns.reserve(state->keys.size());
-        for (size_t i = 0; i < state->keys.size(); ++i)
-            key_columns.push_back(header.getByPosition(i).type->createColumn());
-
-        MutableColumns aggregate_columns;
-        aggregate_columns.reserve(state->aggregates.size());
-        for (size_t i = 0; i < state->aggregates.size(); ++i)
-            aggregate_columns.push_back(header.getByPosition(state->keys.size() + i).type->createColumn());
-
-        accumulator.copyGroupsTo(key_columns, aggregate_columns);
-
-        Columns result_columns;
-        result_columns.reserve(header.columns());
-        for (auto & column : key_columns)
-            result_columns.push_back(std::move(column));
-        for (auto & column : aggregate_columns)
-            result_columns.push_back(std::move(column));
-
-        return Chunk(std::move(result_columns), num_groups);
+            if (!reader->readNext(*feed))
+            {
+                const size_t rows = reader->rowsRead();
+                progress(rows, feed->bytes);
+                stager.finishPart(rows);
+                reader.reset();
+                feed.reset();
+            }
+        }
     }
 
 private:
-    /// How many chunks of collected rows wait for the steps above before the grouping thread waits for them.
-    static constexpr size_t collect_queue_chunks = 4;
-
-    /// The rows the device collected, as the chunks the grouping thread hands over while the parts are read on a thread
-    /// of this source's own, and the rest once the read ends.
-    Chunk generateCollected()
-    {
-        if (!reading_started)
-        {
-            reading_started = true;
-            reading_thread = ThreadFromGlobalPool([this, thread_group = CurrentThread::getGroup()]
-            {
-                ThreadGroupSwitcher switcher(thread_group, ThreadName::GPU_READER);
-                try
-                {
-                    readParts();
-                    if (accumulator.finalize() != 0)
-                    {
-                        MutableColumns no_keys;
-                        MutableColumns columns;
-                        columns.reserve(state->columns.size());
-                        for (const auto & column : state->columns)
-                            columns.push_back(column.column.type->createColumn());
-                        accumulator.copyGroupsTo(no_keys, columns);
-                        pushCollected(std::move(columns));
-                    }
-                }
-                catch (...)
-                {
-                    reading_error = std::current_exception();
-                }
-                output_queue->finish();
-            });
-        }
-
-        Chunk chunk;
-        if (output_queue->pop(chunk))
-            return chunk;
-
-        if (reading_thread.joinable())
-            reading_thread.join();
-        if (reading_error)
-            std::rethrow_exception(reading_error);
-        return {};
-    }
-
-    /// A column of each of `state->columns`, into the read's header, to the steps above. Waits for room.
-    void pushCollected(MutableColumns columns)
-    {
-        const Block & header = getPort().getHeader();
-        if (header.columns() != state->columns.size() || columns.size() != state->columns.size())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "A GPU read of {} columns emits {} columns, {} of them collected",
-                state->columns.size(),
-                header.columns(),
-                columns.size());
-
-        const size_t num_rows = columns.front()->size();
-        Columns result_columns(header.columns());
-        for (size_t i = 0; i < state->columns.size(); ++i)
-            result_columns[header.getPositionByName(state->columns[i].column.name)] = std::move(columns[i]);
-
-        if (!output_queue->push(Chunk(std::move(result_columns), num_rows)))
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "The GPU read's rows are no longer taken");
-    }
-
-    static DataTypes argumentTypesOf(const std::vector<ColumnToReduce> & columns)
-    {
-        DataTypes types;
-        types.reserve(columns.size());
-        for (const auto & column : columns)
-            types.push_back(column.column.type);
-        return types;
-    }
-
-    static std::vector<GPU::GPUGroupByAggregate>
-    groupByAggregatesOf(
-        const std::vector<ColumnToReduce> & columns, const std::vector<DerivedColumn> & derived, const std::vector<AggregateToCompute> & aggregates)
-    {
-        std::vector<GPU::GPUGroupByAggregate> result;
-        result.reserve(aggregates.size());
-        for (const auto & aggregate : aggregates)
-        {
-            const IDataType * argument_type = nullptr;
-            uint32_t column = GPU::GPUGroupByAggregate::no_column;
-            if (aggregate.column)
-            {
-                argument_type = columns.at(*aggregate.column).column.type.get();
-                column = static_cast<uint32_t>(*aggregate.column);
-            }
-            else if (aggregate.derived)
-            {
-                argument_type = derived.at(*aggregate.derived).type.get();
-                column = static_cast<uint32_t>(columns.size() + *aggregate.derived);
-            }
-            result.push_back({
-                .aggregation = aggregate.aggregation,
-                .column = column,
-                .result_type = GPU::groupByResultTypeOrThrow(argument_type, *aggregate.result_type, aggregate.aggregation),
-            });
-        }
-        return result;
-    }
-
-    static std::vector<GPU::GPUDerivedValue> derivedValuesOf(const std::vector<DerivedColumn> & derived)
-    {
-        std::vector<GPU::GPUDerivedValue> result;
-        result.reserve(derived.size());
-        for (const auto & column : derived)
-        {
-            result.push_back({.expression = column.expression, .columns = GPU::GPUSpan<uint32_t>(column.columns)});
-        }
-        return result;
-    }
-
-    /// Reads the parts on `num_readers` threads, each taking the next part not yet taken. The
-    /// first failure stops the others, and is what is thrown here.
-    void readParts()
-    {
-        if (state->parts.empty())
-            return;
-
-        std::vector<ThreadFromGlobalPool> threads;
-        threads.reserve(num_readers);
-
-        for (size_t reader_index = 0; reader_index < num_readers; ++reader_index)
-        {
-            threads.emplace_back([this, reader_index, thread_group = CurrentThread::getGroup()]
-            {
-                ThreadGroupSwitcher switcher(thread_group, ThreadName::GPU_READER);
-                try
-                {
-                    while (!reader_failed.load(std::memory_order_acquire))
-                    {
-                        const size_t part_idx = state->next_part.fetch_add(1);
-                        if (part_idx >= state->parts.size())
-                            break;
-                        readPart(reader_index, state->parts[part_idx]);
-                    }
-                }
-                catch (...)
-                {
-                    std::lock_guard lock(reader_error_mutex);
-                    if (!reader_error)
-                        reader_error = std::current_exception();
-                    reader_failed.store(true, std::memory_order_release);
-                }
-            });
-        }
-
-        for (auto & thread : threads)
-            thread.join();
-
-        if (reader_error)
-            std::rethrow_exception(reader_error);
-    }
-
-    /// Hands what a reader reads of the columns of a part to the accumulator, as its columns.
-    class AccumulatorFeed final : public MergeTreeCompressedColumnsReader::Consumer
+    /// Hands what the reader reads of a part to the stager, as the layout numbers the columns.
+    class Feed final : public MergeTreeCompressedColumnsReader::Consumer
     {
     public:
         using Stream = MergeTreeCompressedColumnsReader::Stream;
 
-        AccumulatorFeed(GPUCompressedGroupBySource & source_, size_t reader_index_, const IMergeTreeDataPart & part_)
-            : source(source_)
-            , reader_index(reader_index_)
-            , part(part_)
-        {
-        }
+        Feed(GPUCompressedBlocksSource & source_, const IMergeTreeDataPart & part_) : source(source_), part(part_) { }
 
-        /// Of each column read: its name, and the accumulator's column of its values and of its sizes.
+        /// Of each column read: its name, and the layout's column of its values and of its sizes.
         std::vector<String> names;
-        std::vector<size_t> column_indices;
-        std::vector<size_t> offsets_column_indices;
+        std::vector<size_t> columns;
+        std::vector<size_t> sizes_columns;
+        /// Of the columns read, the bytes they expand to.
+        size_t bytes = 0;
 
         void addCompressedBlock(
             size_t column,
@@ -502,99 +399,382 @@ private:
             size_t remaining_bytes) override
         {
             codecOrThrow(block.method, block.payload, names[column] + (stream == Stream::Sizes ? ".size" : ""), part);
-            source.accumulator.addCompressedBlock(
-                reader_index, indexOf(column, stream), block.method, block.payload, block.decompressed_bytes, remaining_bytes, skipped, kept);
+            source.stager.addCompressedBlock(
+                layoutColumnOf(column, stream), block.method, block.payload, block.decompressed_bytes, remaining_bytes, skipped, kept);
+            bytes += kept;
         }
 
         std::span<char> reserveBytes(size_t column, Stream stream, size_t max_bytes, size_t remaining_bytes) override
         {
-            return source.accumulator.reserveRawBytes(reader_index, indexOf(column, stream), max_bytes, remaining_bytes);
+            return source.stager.reserveRawBytes(layoutColumnOf(column, stream), max_bytes, remaining_bytes);
         }
 
-        void commitBytes(size_t column, Stream stream, size_t bytes) override
+        void commitBytes(size_t column, Stream stream, size_t committed) override
         {
-            source.accumulator.commitRawBytes(reader_index, indexOf(column, stream), bytes);
+            source.stager.commitRawBytes(layoutColumnOf(column, stream), committed);
+            bytes += committed;
         }
 
-        void checkCancelled() override { source.checkNotCancelled(); }
+        void checkCancelled() override
+        {
+            if (source.isCancelled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+            if (source.query_status)
+                source.query_status->checkTimeLimit();
+        }
 
     private:
-        size_t indexOf(size_t column, Stream stream) const
-        {
-            return stream == Stream::Sizes ? offsets_column_indices[column] : column_indices[column];
-        }
+        size_t layoutColumnOf(size_t column, Stream stream) const { return stream == Stream::Sizes ? sizes_columns[column] : columns[column]; }
 
-        GPUCompressedGroupBySource & source;
-        const size_t reader_index;
+        GPUCompressedBlocksSource & source;
         const IMergeTreeDataPart & part;
     };
 
-    /// Reads the part's columns, in the accumulator's order: the keys, the values, then the columns of the filter. The
-    /// rows of all the ranges of a part go to the device as the rows of one part, so that it groups them as they come,
-    /// however many ranges there are, rather than drain its work at the end of each.
-    void readPart(size_t reader_index, const ReadFromGPUCompressedColumns::PartToRead & part_to_read)
+    /// Opens the next part no source took yet, in the layout's order of columns: the keys, the values, then the columns
+    /// of the `WHERE` that are not aliases. The rows of all the ranges of a part are read as the rows of one part.
+    bool openNextPart()
     {
+        const size_t part_index = state->next_part.fetch_add(1);
+        if (part_index >= state->parts.size())
+            return false;
+
+        const PartToRead & part_to_read = state->parts[part_index];
         const IMergeTreeDataPart & part = *part_to_read.part;
-        const std::vector<NameAndTypePair> & filter_columns = filterColumnsOf(*state);
+        const GPU::GPUCompressedLayout & layout = *state->layout;
 
-        AccumulatorFeed feed(*this, reader_index, part);
+        feed = std::make_unique<Feed>(*this, part);
         std::vector<NameAndTypePair> columns;
-        columns.reserve(state->keys.size() + state->columns.size() + filter_columns.size());
-
         size_t column_index = 0;
         const auto add_column = [&](const NameAndTypePair & column)
         {
             columns.push_back(column);
-            feed.names.push_back(column.name);
-            feed.column_indices.push_back(column_index);
-            feed.offsets_column_indices.push_back(isString(*column.type) ? accumulator.offsetsColumnOf(column_index) : 0);
+            feed->names.push_back(column.name);
+            feed->columns.push_back(column_index);
+            feed->sizes_columns.push_back(isString(*column.type) ? layout.sizesColumnOf(column_index) : 0);
             ++column_index;
         };
         for (const auto & key : state->keys)
             add_column(key);
         for (const auto & column : state->columns)
             add_column(column.column);
-        /// A column of the filter that is a key or a value as well is read as that column.
+        const std::vector<NameAndTypePair> & filter_columns = filterColumnsOf(*state);
         for (size_t i = 0; i < filter_columns.size(); ++i)
         {
-            if (state->filter_aliases[i])
+            if (layout.isAliased(column_index))
                 ++column_index;
             else
                 add_column(filter_columns[i]);
         }
 
-        MergeTreeCompressedColumnsReader reader(
+        reader = std::make_unique<MergeTreeCompressedColumnsReader>(
             part, columns, state->reader_settings, expandsOnDevice(state->decompression), part_to_read.ranges);
-        accumulator.finishPart(reader_index, reader.read(feed));
+        return true;
     }
 
-    void checkNotCancelled() const
+    /// The rows of the chunk are about the rows staged, at least one, so that the pipeline keeps the chunk that ends a
+    /// part: the uploader tells how many rows a batch really has.
+    Chunk chunkOf(std::unique_ptr<GPU::GPUStagedBatch> batch) const
     {
-        if (isCancelled())
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-        if (reader_failed.load(std::memory_order_acquire))
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Another reading thread of the GPU aggregation failed");
-        if (query_status)
-            query_status->checkTimeLimit();
+        const GPU::GPUCompressedLayout & layout = *state->layout;
+        size_t rows = 0;
+        for (size_t c = 0; c < layout.numColumns(); ++c)
+            if (!layout.isAliased(c) && !layout.isVariable(c))
+                rows = std::max(rows, batch->columns[c].kept_bytes / layout.elementBytesOf(c));
+
+        Chunk chunk(Columns{}, std::max<size_t>(rows, 1));
+        chunk.getChunkInfos().add(std::make_shared<StagedBatchInfo>(
+            std::make_shared<StagedBatchHolder>(std::move(batch), pool)));
+        return chunk;
     }
 
-    SharedStatePtr state;
-    QueryStatusPtr query_status;
-    const size_t num_readers;
-    /// Of a collecting read: the chunks handed over, which `generate` takes. Before `accumulator`, which pushes into it.
-    std::unique_ptr<ConcurrentBoundedQueue<Chunk>> output_queue;
-    GPU::GPUCompressedGroupBy accumulator;
-    /// Only under `gpu_aggregation_decompression = 'auto'`.
+    const SharedStatePtr state;
+    const QueryStatusPtr query_status;
+    const std::shared_ptr<GPU::GPUStagedBatchPool> pool;
+    GPU::GPUBlockStager stager;
+    /// Of the part being read: the feed before the reader, which reads into it.
+    std::unique_ptr<Feed> feed;
+    std::unique_ptr<MergeTreeCompressedColumnsReader> reader;
+};
+
+/// Sends the staged blocks of one stream to the device and expands them there: a batch on the device per chunk.
+class GPUUploadTransform : public ISimpleTransform
+{
+public:
+    explicit GPUUploadTransform(const SharedState & state)
+        : ISimpleTransform(emptyHeader(), emptyHeader(), /*skip_empty_chunks=*/true), uploader(state.layout)
+    {
+    }
+
+    String getName() const override { return "GPUUpload"; }
+
+protected:
+    void transform(Chunk & chunk) override
+    {
+        auto info = infoOrThrow<StagedBatchInfo>(chunk, getName());
+        std::optional<GPU::GPUDeviceBatch> batch = uploader.upload(*info->holder->batch);
+        info.reset();
+
+        chunk.clear();
+        if (!batch)
+            return;
+        const size_t rows = batch->rows();
+        chunk = Chunk(Columns{}, rows);
+        chunk.getChunkInfos().add(std::make_shared<DeviceBatchInfo>(std::make_shared<GPU::GPUDeviceBatch>(std::move(*batch))));
+    }
+
+private:
+    GPU::GPUBatchUploader uploader;
+};
+
+/// The groups of a lane after `finalize`, of `num_groups`, that the `HAVING` keeps, as a chunk of the aggregation's header:
+/// the keys, then the result of each aggregate.
+Chunk chunkOfGroups(const SharedState & state, const Block & header, GPU::GPUGroupingLane & lane, size_t num_groups)
+{
+    if (num_groups != 0 && state.group_filter)
+        num_groups = lane.filterGroups(state.group_filter->expression, state.group_filter->columns);
+    if (num_groups == 0)
+        return {};
+
+    if (header.columns() != state.keys.size() + state.aggregates.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "A GPU aggregation of {} keys and {} aggregates emits {} columns",
+            state.keys.size(),
+            state.aggregates.size(),
+            header.columns());
+
+    MutableColumns key_columns;
+    key_columns.reserve(state.keys.size());
+    for (size_t i = 0; i < state.keys.size(); ++i)
+        key_columns.push_back(header.getByPosition(i).type->createColumn());
+
+    MutableColumns aggregate_columns;
+    aggregate_columns.reserve(state.aggregates.size());
+    for (size_t i = 0; i < state.aggregates.size(); ++i)
+        aggregate_columns.push_back(header.getByPosition(state.keys.size() + i).type->createColumn());
+
+    lane.copyGroupsTo(key_columns, aggregate_columns);
+
+    Columns result_columns;
+    result_columns.reserve(header.columns());
+    for (auto & column : key_columns)
+        result_columns.push_back(std::move(column));
+    for (auto & column : aggregate_columns)
+        result_columns.push_back(std::move(column));
+
+    return Chunk(std::move(result_columns), num_groups);
+}
+
+std::shared_ptr<GPU::GPUGroupingLane> makeLane(const SharedState & state, std::shared_ptr<GPU::GPUGroupingDecision> decision)
+{
+    return std::make_shared<GPU::GPUGroupingLane>(
+        state.layout,
+        groupByAggregatesOf(state.columns, state.derived, state.aggregates),
+        derivedValuesOf(state.derived),
+        state.filter ? std::optional(state.filter->expression) : std::nullopt,
+        std::move(decision));
+}
+
+/// A lane: groups the batches it takes on a CUDA stream of its own, and then emits its groups, for the merge. Of a read
+/// that collects rows, emits the rows its `WHERE` keeps instead, as they come.
+class GPUGroupingTransform : public IAccumulatingTransform
+{
+public:
+    GPUGroupingTransform(SharedStatePtr state_, SharedHeader output_header)
+        : IAccumulatingTransform(emptyHeader(), std::move(output_header))
+        , state(std::move(state_))
+        , lane(makeLane(*state, state->decision))
+    {
+        if (state->merge_by_parts)
+            lane->splitIntoParts(state->num_parts);
+    }
+
+    String getName() const override { return "GPUGrouping"; }
+
+protected:
+    void consume(Chunk chunk) override
+    {
+        auto info = infoOrThrow<DeviceBatchInfo>(chunk, getName());
+        lane->add(std::move(*info->batch));
+
+        if (state->collect && lane->collectedRows() >= collect_flush_rows)
+            if (Chunk collected = takeCollected())
+                setReadyChunk(std::move(collected));
+    }
+
+    Chunk generate() override
+    {
+        if (generated)
+            return {};
+        generated = true;
+
+        if (state->collect)
+            return takeCollected();
+
+        if (state->merge_by_parts)
+            lane->partition(state->num_parts);
+
+        Chunk chunk(Columns{}, 1);
+        chunk.getChunkInfos().add(std::make_shared<LaneGroupsInfo>(lane));
+        return chunk;
+    }
+
+private:
+    /// The rows collected so far, in the order of the read's header.
+    Chunk takeCollected()
+    {
+        MutableColumns columns = lane->takeCollected(argumentTypesOf(state->columns));
+        if (columns.empty())
+            return {};
+
+        const Block & header = getOutputPort().getHeader();
+        if (header.columns() != state->columns.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "A GPU read of {} columns emits {} columns", state->columns.size(), header.columns());
+
+        const size_t num_rows = columns.front()->size();
+        Columns result_columns(header.columns());
+        for (size_t i = 0; i < state->columns.size(); ++i)
+            result_columns[header.getPositionByName(state->columns[i].column.name)] = std::move(columns[i]);
+        return Chunk(std::move(result_columns), num_rows);
+    }
+
+    const SharedStatePtr state;
+    const std::shared_ptr<GPU::GPUGroupingLane> lane;
     bool generated = false;
+};
 
-    std::mutex reader_error_mutex;
-    std::exception_ptr reader_error;
-    std::atomic<bool> reader_failed{false};
+/// Merges the groups of the lanes, keeps those the `HAVING` keeps, and sends them to the host.
+class GPUMergeGroupsTransform : public IAccumulatingTransform
+{
+public:
+    GPUMergeGroupsTransform(SharedStatePtr state_, SharedHeader output_header)
+        : IAccumulatingTransform(emptyHeader(), std::move(output_header)), state(std::move(state_))
+    {
+    }
 
-    /// Of a collecting read.
-    bool reading_started = false;
-    ThreadFromGlobalPool reading_thread;
-    std::exception_ptr reading_error;
+    String getName() const override { return "GPUMergeGroups"; }
+
+protected:
+    void consume(Chunk chunk) override { lanes.push_back(infoOrThrow<LaneGroupsInfo>(chunk, getName())->lane); }
+
+    Chunk generate() override
+    {
+        if (generated)
+            return {};
+        generated = true;
+
+        if (lanes.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation without lanes");
+
+        /// Into the lane with the most groups, grown once for the groups of all: one grown for each lane merged into it
+        /// would insert the groups so far again each time.
+        std::vector<size_t> groups(lanes.size(), 0);
+        bool streaming = false;
+        for (size_t i = 0; i < lanes.size(); ++i)
+        {
+            if (const auto lane_groups = lanes[i]->numGroups())
+            {
+                groups[i] = *lane_groups;
+                streaming = true;
+            }
+        }
+        const size_t largest = static_cast<size_t>(std::ranges::max_element(groups) - groups.begin());
+        std::swap(lanes.front(), lanes[largest]);
+        std::swap(groups.front(), groups[largest]);
+        if (streaming && groups.front() != 0)
+            lanes.front()->reserveGroups(std::accumulate(groups.begin(), groups.end(), size_t{0}));
+
+        GPU::GPUGroupingLane & first = *lanes.front();
+        for (size_t i = 1; i < lanes.size(); ++i)
+            first.absorb(*lanes[i]);
+        lanes.resize(1);
+
+        const size_t num_groups = first.finalize();
+
+        /// No row came to the device, and an aggregation without keys emits its results over none, which the `HAVING`
+        /// above evaluates.
+        if (num_groups == 0 && state->result_over_no_rows)
+            return Chunk(*state->result_over_no_rows, 1);
+
+        return chunkOfGroups(*state, getOutputPort().getHeader(), first, num_groups);
+    }
+
+private:
+    const SharedStatePtr state;
+    std::vector<std::shared_ptr<GPU::GPUGroupingLane>> lanes;
+    bool generated = false;
+};
+
+struct LanePartInfo : public ChunkInfoCloneable<LanePartInfo>
+{
+    LanePartInfo(std::shared_ptr<const std::vector<std::shared_ptr<GPU::GPUGroupingLane>>> lanes_, size_t part_)
+        : lanes(std::move(lanes_)), part(part_)
+    {
+    }
+
+    std::shared_ptr<const std::vector<std::shared_ptr<GPU::GPUGroupingLane>>> lanes;
+    size_t part;
+};
+
+/// Takes the lanes, each of its groups split into parts by a hash of the keys, and emits a chunk per part, for the merges
+/// of the parts, which run each on its own.
+class GPUSplitLanesTransform : public IAccumulatingTransform
+{
+public:
+    explicit GPUSplitLanesTransform(SharedStatePtr state_) : IAccumulatingTransform(emptyHeader(), emptyHeader()), state(std::move(state_)) { }
+
+    String getName() const override { return "GPUSplitLanes"; }
+
+protected:
+    void consume(Chunk chunk) override { lanes.push_back(infoOrThrow<LaneGroupsInfo>(chunk, getName())->lane); }
+
+    Chunk generate() override
+    {
+        if (!all_lanes)
+            all_lanes = std::make_shared<const std::vector<std::shared_ptr<GPU::GPUGroupingLane>>>(std::move(lanes));
+        if (next_part == state->num_parts)
+            return {};
+
+        Chunk chunk(Columns{}, 1);
+        chunk.getChunkInfos().add(std::make_shared<LanePartInfo>(all_lanes, next_part++));
+        return chunk;
+    }
+
+private:
+    const SharedStatePtr state;
+    std::vector<std::shared_ptr<GPU::GPUGroupingLane>> lanes;
+    std::shared_ptr<const std::vector<std::shared_ptr<GPU::GPUGroupingLane>>> all_lanes;
+    size_t next_part = 0;
+};
+
+/// Merges one part of the groups of every lane, on a CUDA stream of its own, keeps those the `HAVING` keeps, and sends
+/// them to the host. The keys of different parts differ, so the parts are the groups of the aggregation.
+class GPUMergePartTransform : public ISimpleTransform
+{
+public:
+    GPUMergePartTransform(SharedStatePtr state_, SharedHeader output_header)
+        : ISimpleTransform(emptyHeader(), std::move(output_header), /*skip_empty_chunks=*/true), state(std::move(state_))
+    {
+    }
+
+    String getName() const override { return "GPUMergePart"; }
+
+protected:
+    void transform(Chunk & chunk) override
+    {
+        const auto info = infoOrThrow<LanePartInfo>(chunk, getName());
+        chunk.clear();
+
+        const auto merged = makeLane(*state, std::make_shared<GPU::GPUGroupingDecision>());
+        for (const auto & lane : *info->lanes)
+            merged->absorbPart(*lane, info->part);
+        const size_t num_groups = merged->finalize();
+        chunk = chunkOfGroups(*state, getOutputPort().getHeader(), *merged, num_groups);
+    }
+
+private:
+    const SharedStatePtr state;
 };
 
 }
@@ -681,7 +861,43 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
     if (readsFixedWidthOnly(*state))
         splitPartsAmongReaders(state->parts, 2 * state->num_readers);
 
-    Pipe pipe(std::make_shared<GPUCompressedGroupBySource>(getOutputHeader(), state, settings.process_list_element));
+    const DataTypes filter_types = typesOf(filterColumnsOf(*state));
+    state->layout = std::make_shared<const GPU::GPUCompressedLayout>(
+        typesOf(keys), argumentTypesOf(columns), collect, filter_types, state->filter_aliases, batch_bytes);
+    state->decision = std::make_shared<GPU::GPUGroupingDecision>();
+
+    const size_t num_sources = std::max<size_t>(1, std::min(state->num_readers, state->parts.size()));
+    const size_t num_lanes = std::min(num_sources, max_lanes);
+
+    /// With keys, the lanes merge by parts of their keys, as many as there are lanes, unless an `avg` is among the
+    /// aggregates, whose partial results do not combine: then into one lane.
+    state->merge_by_parts = !collect && !keys.empty()
+        && std::ranges::none_of(aggregates, [](const AggregateToCompute & aggregate) { return aggregate.aggregation == GPU::GPUAggregationKind::Mean; });
+    state->num_parts = num_lanes;
+
+    Pipes sources;
+    sources.reserve(num_sources);
+    for (size_t i = 0; i < num_sources; ++i)
+        sources.emplace_back(std::make_shared<GPUCompressedBlocksSource>(state, settings.process_list_element));
+    Pipe pipe = Pipe::unitePipes(std::move(sources));
+
+    pipe.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUUploadTransform>(*state); });
+    pipe.resize(num_lanes);
+    const SharedHeader lane_header = collect ? getOutputHeader() : emptyHeader();
+    pipe.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUGroupingTransform>(state, lane_header); });
+    if (state->merge_by_parts)
+    {
+        pipe.resize(1);
+        pipe.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUSplitLanesTransform>(state); });
+        pipe.resize(state->num_parts);
+        pipe.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUMergePartTransform>(state, getOutputHeader()); });
+    }
+    else if (!collect)
+    {
+        pipe.resize(1);
+        pipe.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUMergeGroupsTransform>(state, getOutputHeader()); });
+    }
+
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
 

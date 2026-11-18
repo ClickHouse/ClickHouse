@@ -27,7 +27,6 @@ namespace ProfileEvents
     extern const Event GPUAggregationMicroseconds;
     extern const Event GPUDecompressionMicroseconds;
     extern const Event GPUDecompressionBytes;
-    extern const Event GPUReadersWaitMicroseconds;
     extern const Event GPUDeviceWaitMicroseconds;
 }
 
@@ -277,13 +276,6 @@ std::vector<size_t> variableColumnIndicesOf(const std::vector<GPUElementType> & 
     return indices;
 }
 
-/// What a worker of a `GPUCompressedGroupBy` stages of one column in pinned memory, at most, before it expands a batch:
-/// the compressed blocks staged, or the raw bytes.
-constexpr size_t compressed_stage_bytes = 32UL * 1024 * 1024;
-
-/// Of rows collected rather than grouped: how many are kept on the device before they are handed over.
-constexpr size_t collect_flush_rows = 1UL << 20;
-
 
 }
 
@@ -470,291 +462,317 @@ void GroupByGPUAccumulator::copyGroupsTo(MutableColumns & key_columns, MutableCo
 namespace
 {
 
-/// The grouping lanes of a `GPUCompressedGroupBy`, at most: as Sirius runs 4 to 8 tasks on a device at once, enough that
-/// one waiting for the device in cuDF leaves it to the others, and few, as each keeps the groups so far.
-constexpr size_t max_grouping_lanes = 8;
-
-/// The rows of a batch of `GPUCompressedGroupBy`, at most: what cuDF takes as the rows of a column.
+/// The rows of a batch on the device, at most: what cuDF takes as the rows of a column.
 constexpr size_t max_compressed_batch_rows = (1UL << 31) - 1;
 
-/// Hands a lane back to the free ones however its batch ends.
-class LaneTicket
-{
-public:
-    LaneTicket(ConcurrentBoundedQueue<size_t> & free_lanes_, size_t lane_) : free_lanes(free_lanes_), lane(lane_) { }
-    ~LaneTicket() { [[maybe_unused]] const bool pushed = free_lanes.push(lane); }
-    LaneTicket(const LaneTicket &) = delete;
-    LaneTicket & operator=(const LaneTicket &) = delete;
-
-private:
-    ConcurrentBoundedQueue<size_t> & free_lanes;
-    const size_t lane;
-};
-
 }
 
-GPUCompressedGroupBy::GPUCompressedGroupBy(
+GPUCompressedLayout::GPUCompressedLayout(
     const DataTypes & key_types,
     const DataTypes & value_types,
-    std::vector<GPUGroupByAggregate> aggregates_,
-    size_t batch_bytes,
-    size_t num_readers,
-    const DataTypes & filter_types,
-    std::optional<GPUExpression> filter_,
-    std::vector<GPUDerivedValue> derived_,
-    std::function<void(MutableColumns)> on_collected_,
-    std::vector<std::optional<uint32_t>> filter_aliases_)
-    : group_keys(groupByKeysOrThrow(key_types))
-    , key_element_types(keyElementTypesOf(group_keys))
-    , values(valueTypesOrThrow(value_types, aggregates_.empty()))
-    , value_data_types(value_types)
-    , on_collected(std::move(on_collected_))
-    , derived(std::move(derived_))
-    , aggregates(aggregatesOrThrow(values.size() + derived.size(), std::move(aggregates_), !key_types.empty()))
-    , variable_column_indices(variableColumnIndicesOf(group_keys, values))
-    , filter_element_types(filterElementTypesOrThrow(filter_types))
-    , filter(std::move(filter_))
+    bool collect,
+    const DataTypes & filter_types_,
+    std::vector<std::optional<uint32_t>> filter_aliases_,
+    size_t batch_bytes)
+    : keys(groupByKeysOrThrow(key_types))
+    , key_element_types(keyElementTypesOf(keys))
+    , values(valueTypesOrThrow(value_types, collect))
+    , filter_types(filterElementTypesOrThrow(filter_types_))
     , filter_aliases(std::move(filter_aliases_))
-    , batch_rows(std::clamp(batch_bytes / rowBytesOf(key_element_types, values, filter_element_types), size_t{1}, max_compressed_batch_rows))
-    , free_lanes(std::clamp<size_t>(num_readers, 1, max_grouping_lanes))
+    , variable_columns(variableColumnIndicesOf(keys, values))
+    , batch_rows(std::clamp(batch_bytes / rowBytesOf(key_element_types, values, filter_types), size_t{1}, max_compressed_batch_rows))
 {
-    if (num_readers == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation over compressed blocks with no reading threads");
+    if (!filter_aliases.empty() && filter_aliases.size() != filter_types.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "{} aliases of {} columns of the `WHERE` of a GPU read", filter_aliases.size(), filter_types.size());
 
-    for (const auto & value : derived)
+    for (size_t i = 0; i < filter_aliases.size(); ++i)
     {
-        for (const uint32_t column : value.columns)
+        if (!filter_aliases[i])
+            continue;
+        const size_t alias = *filter_aliases[i];
+        if (alias >= firstFilterColumn() || isVariable(alias) || elementTypeOf(alias) != filter_types[i])
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Column {} of the `WHERE` of a GPU read reads column {}, which is not of its type", i, alias);
+    }
+}
+
+bool GPUCompressedLayout::isAliased(size_t column) const
+{
+    return column >= firstFilterColumn() && column < firstSizesColumn() && column - firstFilterColumn() < filter_aliases.size()
+        && filter_aliases[column - firstFilterColumn()];
+}
+
+size_t GPUCompressedLayout::aliasOf(size_t column) const
+{
+    if (!isAliased(column))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of a GPU read is not an alias", column);
+    return *filter_aliases[column - firstFilterColumn()];
+}
+
+bool GPUCompressedLayout::isVariable(size_t column) const
+{
+    return std::find(variable_columns.begin(), variable_columns.end(), column) != variable_columns.end();
+}
+
+size_t GPUCompressedLayout::sizesColumnOf(size_t variable_column) const
+{
+    return firstSizesColumn() + variableOrdinalOf(variable_column);
+}
+
+size_t GPUCompressedLayout::variableOrdinalOf(size_t column) const
+{
+    if (isSizes(column))
+        return column - firstSizesColumn();
+    const auto it = std::find(variable_columns.begin(), variable_columns.end(), column);
+    if (it == variable_columns.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of a GPU read is not of varying width", column);
+    return static_cast<size_t>(it - variable_columns.begin());
+}
+
+GPUElementType GPUCompressedLayout::elementTypeOf(size_t column) const
+{
+    if (isSizes(column))
+        return GPUElementType::UInt64;
+    if (column < keys.size())
+        return key_element_types[column];
+    if (column < firstFilterColumn())
+        return dataElementTypeOf(values[column - keys.size()]);
+    if (column < firstSizesColumn())
+        return filter_types[column - firstFilterColumn()];
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of a GPU read of {} columns", column, numColumns());
+}
+
+void GPUStagedBatch::Column::clear()
+{
+    staged.clear();
+    blocks.clear();
+    packed.clear();
+    codec.reset();
+    raw = false;
+    decompressed_bytes = 0;
+    skipped_bytes = 0;
+    kept_bytes = 0;
+    cut = false;
+}
+
+void GPUStagedBatch::clear()
+{
+    for (auto & column : columns)
+        column.clear();
+    part_rows.reset();
+}
+
+std::unique_ptr<GPUStagedBatch> GPUStagedBatchPool::take(size_t num_columns)
+{
+    std::unique_ptr<GPUStagedBatch> batch;
+    {
+        std::lock_guard lock(mutex);
+        if (!free_batches.empty())
         {
-            if (column >= values.size() || columnKindOf(values[column]) != GPUColumnKind::Fixed)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "A value the GPU derives from value {} of {}", column, values.size());
+            batch = std::move(free_batches.back());
+            free_batches.pop_back();
         }
     }
-
-    if (filter.has_value() != !filter_element_types.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation with a `WHERE` and the columns of one do not go together");
-
-    if (on_collected && !aggregates.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation with aggregates that hands rows over as collected");
-
-    if (filter && filter->num_columns != filter_element_types.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "A GPU aggregation's `WHERE` reads {} columns and is given {}",
-            filter->num_columns,
-            filter_element_types.size());
-
-    const size_t num_lanes = std::clamp<size_t>(num_readers, 1, max_grouping_lanes);
-    lanes.resize(num_lanes);
-    for (size_t i = 0; i < num_lanes; ++i)
-    {
-        Lane & lane = lanes[i];
-        lane.group_by = std::make_unique<CudfGroupBy>(
-            group_keys, withDerived(values, derived), derived, aggregates, cuda::stream_ref{lane.stream.get()});
-        /// Rows collected are not grouped, and there is nothing to decide.
-        lane.decided = aggregates.empty();
-        if (!free_lanes.push(i))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No room for a lane of a GPU aggregation");
-    }
-
-    const size_t num_columns = numColumns();
-    workers.reserve(num_readers);
-    for (size_t i = 0; i < num_readers; ++i)
-    {
-        auto worker = std::make_unique<Worker>();
-        worker->staging.resize(num_columns);
-        worker->carried.reserve(num_columns);
-        for (size_t c = 0; c < num_columns; ++c)
-            worker->carried.emplace_back(cuda::stream_ref{worker->stream.get()});
-        workers.push_back(std::move(worker));
-    }
+    if (!batch)
+        batch = std::make_unique<GPUStagedBatch>();
+    batch->clear();
+    batch->columns.resize(num_columns);
+    return batch;
 }
 
-GPUCompressedGroupBy::~GPUCompressedGroupBy() = default;
-
-bool GPUCompressedGroupBy::isAliasedColumn(size_t column_index) const
+void GPUStagedBatchPool::give(std::unique_ptr<GPUStagedBatch> batch)
 {
-    const size_t first_filter = group_keys.size() + values.size();
-    return column_index >= first_filter && column_index - first_filter < filter_aliases.size() && filter_aliases[column_index - first_filter];
+    std::lock_guard lock(mutex);
+    free_batches.push_back(std::move(batch));
 }
 
-bool GPUCompressedGroupBy::isVariableColumn(size_t column_index) const
+GPUBlockStager::GPUBlockStager(std::shared_ptr<const GPUCompressedLayout> layout_, std::shared_ptr<GPUStagedBatchPool> pool_)
+    : layout(std::move(layout_)), pool(std::move(pool_)), current(pool->take(layout->numColumns()))
 {
-    return std::find(variable_column_indices.begin(), variable_column_indices.end(), column_index) != variable_column_indices.end();
 }
 
-std::optional<size_t> GPUCompressedGroupBy::variableOrdinalOfOffsetsColumn(size_t column_index) const
+GPUStagedBatch::Column & GPUBlockStager::columnOrThrow(size_t column)
 {
-    const size_t first = group_keys.size() + values.size() + filter_element_types.size();
-    if (column_index < first || column_index >= numColumns())
-        return std::nullopt;
-    return column_index - first;
+    if (column >= current->columns.size() || layout->isAliased(column))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of a GPU read of {} columns is not read", column, current->columns.size());
+    return current->columns[column];
 }
 
-size_t GPUCompressedGroupBy::offsetsColumnOf(size_t column_index) const
-{
-    const auto it = std::find(variable_column_indices.begin(), variable_column_indices.end(), column_index);
-    if (it == variable_column_indices.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of a GPU aggregation is not of varying width", column_index);
-    return group_keys.size() + values.size() + filter_element_types.size() + static_cast<size_t>(it - variable_column_indices.begin());
-}
-
-GPUElementType GPUCompressedGroupBy::elementTypeOf(size_t column_index) const
-{
-    if (variableOrdinalOfOffsetsColumn(column_index))
-        return GPUElementType::UInt64;
-    if (column_index < group_keys.size())
-        return key_element_types[column_index];
-    if (column_index < group_keys.size() + values.size())
-        return dataElementTypeOf(values[column_index - group_keys.size()]);
-    return filter_element_types.at(column_index - group_keys.size() - values.size());
-}
-
-size_t GPUCompressedGroupBy::elementBytesOf(size_t column_index) const
-{
-    if (isVariableColumn(column_index))
-        return 1;
-    return sizeOf(elementTypeOf(column_index));
-}
-
-GPUCompressedGroupBy::Worker & GPUCompressedGroupBy::workerOrThrow(size_t reader)
-{
-    if (reader >= workers.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Reader {} of a GPU aggregation with {} readers", reader, workers.size());
-    return *workers[reader];
-}
-
-bool GPUCompressedGroupBy::batchIsStaged(const Worker & worker) const
+bool GPUBlockStager::isFull() const
 {
     size_t rows = std::numeric_limits<size_t>::max();
-    for (size_t c = 0; c < numColumns(); ++c)
+    for (size_t c = 0; c < layout->numColumns(); ++c)
     {
-        if (isAliasedColumn(c))
+        if (layout->isAliased(c))
             continue;
-        const StagedColumn & column = worker.staging[c];
-        /// Staged as far as the pinned memory of a column goes, whatever the other columns have.
-        if (column.staged.size() >= compressed_stage_bytes)
+        const GPUStagedBatch::Column & column = current->columns[c];
+        if (column.staged.size() >= max_column_bytes)
             return true;
-        /// The bytes of a column of varying width make no rows of their own: its sizes do.
-        if (isVariableColumn(c))
+        /// The bytes of a `String` make no rows of their own: its sizes do.
+        if (layout->isVariable(c))
             continue;
-        const size_t carried_bytes = worker.carried[c].size();
-        const size_t carried_rows = variableOrdinalOfOffsetsColumn(c)
-            ? (carried_bytes == 0 ? 0 : carried_bytes / sizeof(UInt64) - 1)
-            : carried_bytes / elementBytesOf(c);
-        rows = std::min(rows, carried_rows + column.kept_bytes / elementBytesOf(c));
+        rows = std::min(rows, column.kept_bytes / layout->elementBytesOf(c));
     }
-    return rows != std::numeric_limits<size_t>::max() && rows >= batch_rows;
+    return rows != std::numeric_limits<size_t>::max() && rows >= layout->batch_rows;
 }
 
-void GPUCompressedGroupBy::addCompressedBlock(
-    size_t reader,
+void GPUBlockStager::seal(std::optional<size_t> part_rows)
+{
+    current->part_rows = part_rows;
+    sealed.push_back(std::move(current));
+    current = pool->take(layout->numColumns());
+}
+
+std::unique_ptr<GPUStagedBatch> GPUBlockStager::takeSealed()
+{
+    if (sealed.empty())
+        return nullptr;
+    auto batch = std::move(sealed.front());
+    sealed.pop_front();
+    return batch;
+}
+
+void GPUBlockStager::addCompressedBlock(
     size_t column_index,
     UInt8 method,
     std::string_view payload,
     size_t decompressed_bytes,
     size_t expected_bytes,
     size_t skipped_bytes,
-    std::optional<size_t> kept_bytes)
+    size_t kept_bytes)
 {
-    Worker & worker = workerOrThrow(reader);
-
     const auto codec = deviceCodecOf(method, payload);
     if (!codec)
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "A block of compression method {:#x} for a GPU aggregation, which the device does not expand", static_cast<UInt16>(method));
+            ErrorCodes::LOGICAL_ERROR, "A block of compression method {:#x} for the GPU, which the device does not expand", static_cast<UInt16>(method));
 
-    if (column_index >= worker.staging.size() || isAliasedColumn(column_index))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A block of column {} of a GPU aggregation over {} columns", column_index, worker.staging.size());
-
-    const size_t kept = kept_bytes.value_or(decompressed_bytes - std::min(skipped_bytes, decompressed_bytes));
-    if (skipped_bytes + kept > decompressed_bytes)
+    if (skipped_bytes + kept_bytes > decompressed_bytes)
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "{} bytes kept after {} skipped of a block of {} for the GPU", kept, skipped_bytes, decompressed_bytes);
+            ErrorCodes::LOGICAL_ERROR, "{} bytes kept after {} skipped of a block of {} for the GPU", kept_bytes, skipped_bytes, decompressed_bytes);
 
     /// A batch has one run of bytes of each column: it starts at a block that skips bytes, and ends at one cut short.
     {
-        const StagedColumn & column = worker.staging[column_index];
+        const GPUStagedBatch::Column & column = columnOrThrow(column_index);
         if (column.raw || column.cut || (!column.blocks.empty() && (skipped_bytes != 0 || column.codec != codec)))
-            flush(worker);
+            seal();
     }
 
-    StagedColumn & column = worker.staging[column_index];
+    GPUStagedBatch::Column & column = current->columns[column_index];
     if (column.blocks.empty())
     {
         column.skipped_bytes = skipped_bytes;
-        column.staged.reserve(std::min(compressed_stage_bytes, std::max(expected_bytes, payload.size())));
+        column.staged.reserve(std::min(max_column_bytes, std::max(expected_bytes, payload.size())));
     }
-    column.kept_bytes += kept;
-    column.cut = skipped_bytes + kept != decompressed_bytes;
+    column.kept_bytes += kept_bytes;
+    column.cut = skipped_bytes + kept_bytes != decompressed_bytes;
     column.codec = codec;
     stageCompressedBlock(column.staged, column.blocks, column.packed, method, payload, decompressed_bytes);
     column.decompressed_bytes += decompressed_bytes;
 
-    if (batchIsStaged(worker))
-        flush(worker);
+    if (isFull())
+        seal();
 }
 
-std::span<char> GPUCompressedGroupBy::reserveRawBytes(size_t reader, size_t column_index, size_t max_bytes, size_t expected_bytes)
+std::span<char> GPUBlockStager::reserveRawBytes(size_t column_index, size_t max_bytes, size_t expected_bytes)
 {
-    Worker & worker = workerOrThrow(reader);
-    if (column_index >= worker.staging.size() || isAliasedColumn(column_index))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Raw bytes of column {} of a GPU aggregation over {} columns", column_index, worker.staging.size());
+    {
+        const GPUStagedBatch::Column & column = columnOrThrow(column_index);
+        if (!column.blocks.empty() || column.staged.size() >= max_column_bytes)
+            seal();
+    }
 
-    if (!worker.staging[column_index].blocks.empty() || worker.staging[column_index].staged.size() >= compressed_stage_bytes)
-        flush(worker);
-
-    StagedColumn & column = worker.staging[column_index];
+    GPUStagedBatch::Column & column = current->columns[column_index];
     column.raw = true;
-    column.staged.reserve(std::min(compressed_stage_bytes, column.staged.size() + std::max<size_t>(expected_bytes, 1)));
+    column.staged.reserve(std::min(max_column_bytes, column.staged.size() + std::max<size_t>(expected_bytes, 1)));
     return {
         column.staged.data() + column.staged.size(),
-        std::min({max_bytes, compressed_stage_bytes - column.staged.size(), column.staged.capacity() - column.staged.size()})};
+        std::min({max_bytes, max_column_bytes - column.staged.size(), column.staged.capacity() - column.staged.size()})};
 }
 
-void GPUCompressedGroupBy::commitRawBytes(size_t reader, size_t column_index, size_t bytes)
+void GPUBlockStager::commitRawBytes(size_t column_index, size_t bytes)
 {
-    Worker & worker = workerOrThrow(reader);
-    StagedColumn & column = worker.staging.at(column_index);
+    GPUStagedBatch::Column & column = columnOrThrow(column_index);
     growBy(column.staged, bytes);
     column.decompressed_bytes += bytes;
     column.kept_bytes += bytes;
 
-    if (batchIsStaged(worker))
-        flush(worker);
+    if (isFull())
+        seal();
 }
 
-void GPUCompressedGroupBy::finishPart(size_t reader, size_t num_rows)
+void GPUBlockStager::finishPart(size_t num_rows)
 {
-    flush(workerOrThrow(reader), num_rows);
+    seal(num_rows);
 }
 
-void GPUCompressedGroupBy::flush(Worker & worker, std::optional<size_t> part_rows)
+DeviceColumnView GPUDeviceBatch::column(size_t column) const
 {
-    const cuda::stream_ref stream{worker.stream.get()};
-    const size_t num_columns = numColumns();
-    const size_t first_offsets_column = group_keys.size() + values.size() + filter_element_types.size();
+    if (column >= layout->firstSizesColumn() || layout->isAliased(column))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of a GPU batch is not one of its values", column);
+
+    if (layout->isVariable(column))
+    {
+        const size_t ordinal = layout->variableOrdinalOf(column);
+        return DeviceVariableColumn{
+            .offsets = reinterpret_cast<const uint64_t *>(starts[layout->sizesColumnOf(column)]),
+            .chars = starts[column],
+            .rows = num_rows,
+            .chars_bytes = variable_bytes[ordinal],
+        };
+    }
+    return DeviceFixedColumn{.element_type = layout->elementTypeOf(column), .data = starts[column], .rows = num_rows};
+}
+
+void GPUDeviceBatch::moveTo(cuda::stream_ref stream)
+{
+    const EventPtr ready = createEvent();
+    checkCuda(cudaEventRecord(ready.get(), ready_stream.get()), "Cannot mark a point in an uploader's stream");
+    checkCuda(cudaStreamWaitEvent(stream.get(), ready.get(), 0), "Cannot make a stream wait for a batch");
+    for (auto & buffer : buffers)
+        buffer.setStream(stream);
+    ready_stream = stream;
+}
+
+GPUBatchUploader::GPUBatchUploader(std::shared_ptr<const GPUCompressedLayout> layout_)
+    : layout(std::move(layout_)), decompression(cuda::stream_ref{stream.get()})
+{
+    carried.reserve(layout->numColumns());
+    for (size_t c = 0; c < layout->numColumns(); ++c)
+        carried.emplace_back(cuda::stream_ref{stream.get()});
+}
+
+std::optional<GPUDeviceBatch> GPUBatchUploader::upload(const GPUStagedBatch & staged)
+{
+    const cuda::stream_ref own{stream.get()};
+    const size_t num_columns = layout->numColumns();
+    const size_t first_sizes = layout->firstSizesColumn();
+    const auto & variable_columns = layout->variableColumns();
+
+    if (staged.columns.size() != num_columns)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A staged batch of {} columns for a GPU read of {}", staged.columns.size(), num_columns);
 
     Stopwatch expansion_watch;
 
-    /// Of each column, the buffer of the batch: what was carried, then what the staged blocks expand to. A column of a
-    /// fixed width, or the bytes of one of varying width, take `columns_bytes` from `starts`; a column of sizes holds the
-    /// offsets of `columns_bytes` rows, from 0, one more than them.
-    std::vector<DeviceBuffer> buffers;
-    buffers.reserve(num_columns);
-    std::vector<char *> starts(num_columns, nullptr);
-    std::vector<size_t> columns_bytes(num_columns, 0);
+    GPUDeviceBatch batch(layout, own);
+    batch.buffers.reserve(num_columns);
+    batch.starts.assign(num_columns, nullptr);
+
+    /// Of each column, the bytes in its buffer: what was carried, then what the staged blocks expand to. Of a column of
+    /// sizes, the rows whose offsets it holds.
+    std::vector<size_t> sizes(num_columns, 0);
     std::vector<size_t> carried_rows(num_columns, 0);
 
     size_t compressed_total = 0;
-    for (const StagedColumn & column : worker.staging)
+    for (const auto & column : staged.columns)
         if (!column.raw)
             compressed_total += column.staged.size();
-    DeviceBuffer uploaded(stream);
+    DeviceBuffer uploaded(own);
     char * const uploaded_base = compressed_total ? uploaded.grow(compressed_total) : nullptr;
     size_t uploaded_at = 0;
 
     std::vector<std::pair<GPUCodec, std::vector<CompressedPiece>>> pieces;
-    const auto piecesOf = [&](GPUCodec codec) -> std::vector<CompressedPiece> &
+    const auto pieces_of = [&](GPUCodec codec) -> std::vector<CompressedPiece> &
     {
         for (auto & [of, list] : pieces)
             if (of == codec)
@@ -764,42 +782,44 @@ void GPUCompressedGroupBy::flush(Worker & worker, std::optional<size_t> part_row
 
     for (size_t c = 0; c < num_columns; ++c)
     {
-        buffers.emplace_back(stream);
-        if (isAliasedColumn(c))
+        DeviceBuffer & buffer = batch.buffers.emplace_back(own);
+        if (layout->isAliased(c))
             continue;
 
-        StagedColumn & column = worker.staging[c];
-        const DeviceBuffer & carried = worker.carried[c];
+        const GPUStagedBatch::Column & column = staged.columns[c];
+        const DeviceBuffer & carried_of_column = carried[c];
         const size_t expanded = column.raw ? column.decompressed_bytes : valueBytesOf(column.blocks, column.packed);
         if (column.raw && column.staged.size() != expanded)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "{} raw bytes of column {} staged for the GPU, {} counted", column.staged.size(), c, expanded);
 
         char * destination = nullptr;
-        if (variableOrdinalOfOffsetsColumn(c))
+        if (layout->isSizes(c))
         {
             if (column.skipped_bytes != 0 || column.cut)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "The sizes of a column of varying width for the GPU read in ranges of marks");
-            const size_t carried_entries = carried.empty() ? 1 : carried.size() / sizeof(UInt64);
-            char * const base = buffers[c].grow(carried_entries * sizeof(UInt64) + expanded);
-            if (carried.empty())
-                checkCuda(cudaMemsetAsync(base, 0, sizeof(UInt64), stream.get()), "Cannot start the offsets of a column of varying width");
+            const size_t carried_entries = carried_of_column.empty() ? 1 : carried_of_column.size() / sizeof(UInt64);
+            char * const base = buffer.grow(carried_entries * sizeof(UInt64) + expanded);
+            if (carried_of_column.empty())
+                checkCuda(cudaMemsetAsync(base, 0, sizeof(UInt64), own.get()), "Cannot start the offsets of a column of varying width");
             else
-                checkCuda(cudaMemcpyAsync(base, carried.data(), carried.size(), cudaMemcpyDeviceToDevice, stream.get()), "Cannot carry offsets on the device");
+                checkCuda(
+                    cudaMemcpyAsync(base, carried_of_column.data(), carried_of_column.size(), cudaMemcpyDeviceToDevice, own.get()),
+                    "Cannot carry offsets on the device");
             destination = base + carried_entries * sizeof(UInt64);
-            starts[c] = base;
+            batch.starts[c] = base;
             carried_rows[c] = carried_entries - 1;
-            columns_bytes[c] = carried_rows[c] + column.kept_bytes / sizeof(UInt64);
+            sizes[c] = carried_rows[c] + column.kept_bytes / sizeof(UInt64);
         }
         else
         {
             /// The blocks expand right after where the carried bytes end, the bytes they skip over the end of those, which
             /// are copied in once they are expanded.
-            const size_t carried_bytes = carried.size();
+            const size_t carried_bytes = carried_of_column.size();
             const size_t lead = std::max(carried_bytes, column.skipped_bytes);
-            char * const base = buffers[c].grow(lead - column.skipped_bytes + expanded);
+            char * const base = buffer.grow(lead - column.skipped_bytes + expanded);
             destination = base + lead - column.skipped_bytes;
-            starts[c] = base + lead - carried_bytes;
-            columns_bytes[c] = carried_bytes + column.kept_bytes;
+            batch.starts[c] = base + lead - carried_bytes;
+            sizes[c] = carried_bytes + column.kept_bytes;
         }
 
         if (expanded == 0)
@@ -807,15 +827,15 @@ void GPUCompressedGroupBy::flush(Worker & worker, std::optional<size_t> part_row
         if (column.raw)
         {
             checkCuda(
-                cudaMemcpyAsync(destination, column.staged.data(), column.staged.size(), cudaMemcpyHostToDevice, stream.get()),
+                cudaMemcpyAsync(destination, column.staged.data(), column.staged.size(), cudaMemcpyHostToDevice, own.get()),
                 "Cannot send raw bytes to the device");
             continue;
         }
         char * const at = uploaded_base + uploaded_at;
         checkCuda(
-            cudaMemcpyAsync(at, column.staged.data(), column.staged.size(), cudaMemcpyHostToDevice, stream.get()),
+            cudaMemcpyAsync(at, column.staged.data(), column.staged.size(), cudaMemcpyHostToDevice, own.get()),
             "Cannot send compressed blocks to the device");
-        piecesOf(*column.codec).push_back({
+        pieces_of(*column.codec).push_back({
             .device_compressed = at,
             .compressed_bytes = column.staged.size(),
             .blocks = column.blocks,
@@ -825,338 +845,342 @@ void GPUCompressedGroupBy::flush(Worker & worker, std::optional<size_t> part_row
         uploaded_at += column.staged.size();
     }
 
-    /// Waits for the device, and for the uploads before it, so that the staging buffers are free once it returns.
-    checkCuda(cudaEventRecord(worker.ready.get(), stream.get()), "Cannot mark a point in a worker's stream");
+    /// The staged memory is free once the uploads are done; nvcomp waits for them as well.
+    checkCuda(cudaEventRecord(staged_sent.get(), own.get()), "Cannot mark a point in an uploader's stream");
     for (auto & [codec, list] : pieces)
     {
-        worker.decompression.launch(codec, list, nullptr, worker.ready.get());
-        worker.decompression.waitAndCheck();
+        decompression.launch(codec, list, nullptr, staged_sent.get());
+        decompression.waitAndCheck();
     }
+    checkCuda(cudaEventSynchronize(staged_sent.get()), "Cannot wait for the uploads of a batch");
 
     for (size_t c = 0; c < num_columns; ++c)
     {
-        if (isAliasedColumn(c) || variableOrdinalOfOffsetsColumn(c) || worker.carried[c].empty())
+        if (layout->isAliased(c) || layout->isSizes(c) || carried[c].empty())
             continue;
         checkCuda(
-            cudaMemcpyAsync(starts[c], worker.carried[c].data(), worker.carried[c].size(), cudaMemcpyDeviceToDevice, stream.get()),
+            cudaMemcpyAsync(batch.starts[c], carried[c].data(), carried[c].size(), cudaMemcpyDeviceToDevice, own.get()),
             "Cannot carry bytes on the device");
     }
 
-    for (size_t j = 0; j < variable_column_indices.size(); ++j)
+    for (const size_t variable : variable_columns)
     {
-        const size_t o = first_offsets_column + j;
-        auto * const offsets = reinterpret_cast<uint64_t *>(starts[o]);
-        const size_t fresh = columns_bytes[o] - carried_rows[o];
+        const size_t o = layout->sizesColumnOf(variable);
+        auto * const offsets = reinterpret_cast<uint64_t *>(batch.starts[o]);
+        const size_t fresh = sizes[o] - carried_rows[o];
         if (fresh != 0)
-            offsetsFromSizes(offsets + carried_rows[o] + 1, fresh, offsets + carried_rows[o], stream);
+            offsetsFromSizes(offsets + carried_rows[o] + 1, fresh, offsets + carried_rows[o], own);
     }
 
     ProfileEvents::increment(ProfileEvents::GPUDecompressionBytes, compressed_total);
     ProfileEvents::increment(ProfileEvents::GPUDecompressionMicroseconds, expansion_watch.elapsedMicroseconds());
 
-    /// The rows every column has: of one of varying width, those whose bytes are all there.
+    /// The rows every column has: of a `String`, those whose bytes are all there.
     Stopwatch wait_watch;
     size_t rows = std::numeric_limits<size_t>::max();
-    for (size_t c = 0; c < first_offsets_column; ++c)
+    for (size_t c = 0; c < first_sizes; ++c)
     {
-        if (isAliasedColumn(c) || isVariableColumn(c))
+        if (layout->isAliased(c) || layout->isVariable(c))
             continue;
-        rows = std::min(rows, columns_bytes[c] / elementBytesOf(c));
+        rows = std::min(rows, sizes[c] / layout->elementBytesOf(c));
     }
-    std::vector<CoveredRows> covered(variable_column_indices.size());
-    for (size_t j = 0; j < variable_column_indices.size(); ++j)
+    std::vector<CoveredRows> covered(variable_columns.size());
+    for (size_t j = 0; j < variable_columns.size(); ++j)
     {
-        const size_t o = first_offsets_column + j;
-        covered[j] = rowsCoveredBy(
-            reinterpret_cast<const uint64_t *>(starts[o]), columns_bytes[o], columns_bytes[variable_column_indices[j]], stream);
+        const size_t o = layout->sizesColumnOf(variable_columns[j]);
+        covered[j] = rowsCoveredBy(reinterpret_cast<const uint64_t *>(batch.starts[o]), sizes[o], sizes[variable_columns[j]], own);
         rows = std::min(rows, covered[j].rows);
     }
     if (rows == std::numeric_limits<size_t>::max())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A batch of a GPU aggregation without columns");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU batch without columns");
 
-    std::vector<uint64_t> bytes_of_rows(variable_column_indices.size());
-    for (size_t j = 0; j < variable_column_indices.size(); ++j)
+    batch.variable_bytes.resize(variable_columns.size());
+    for (size_t j = 0; j < variable_columns.size(); ++j)
     {
-        const size_t o = first_offsets_column + j;
-        bytes_of_rows[j] = covered[j].rows == rows
+        const size_t o = layout->sizesColumnOf(variable_columns[j]);
+        batch.variable_bytes[j] = covered[j].rows == rows
             ? covered[j].bytes
-            : rowsCoveredBy(reinterpret_cast<const uint64_t *>(starts[o]), rows, columns_bytes[variable_column_indices[j]], stream).bytes;
+            : rowsCoveredBy(reinterpret_cast<const uint64_t *>(batch.starts[o]), rows, sizes[variable_columns[j]], own).bytes;
     }
-    device_wait_microseconds.fetch_add(wait_watch.elapsedMicroseconds(), std::memory_order_relaxed);
+    ProfileEvents::increment(ProfileEvents::GPUDeviceWaitMicroseconds, wait_watch.elapsedMicroseconds());
 
-    if (part_rows)
+    if (staged.part_rows)
     {
-        if (*part_rows < worker.rows_grouped || rows != *part_rows - worker.rows_grouped)
+        const size_t part_rows = *staged.part_rows;
+        if (part_rows < part_rows_sent || rows != part_rows - part_rows_sent)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "A part of {} rows came to {} rows grouped and {} on the device in every column of a GPU aggregation",
-                *part_rows,
-                worker.rows_grouped,
+                "A part of {} rows came to {} rows sent and {} on the device in every column of a GPU read",
+                part_rows,
+                part_rows_sent,
                 rows);
-        for (size_t c = 0; c < first_offsets_column; ++c)
+        for (size_t c = 0; c < first_sizes; ++c)
         {
-            if (isAliasedColumn(c) || isVariableColumn(c))
+            if (layout->isAliased(c) || layout->isVariable(c))
                 continue;
-            if (columns_bytes[c] != rows * elementBytesOf(c))
+            if (sizes[c] != rows * layout->elementBytesOf(c))
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Column {} of a part came to {} bytes on the device, where the part has {} rows", c, columns_bytes[c], *part_rows);
+                    ErrorCodes::LOGICAL_ERROR, "Column {} of a part came to {} bytes on the device, where the part has {} rows", c, sizes[c], part_rows);
         }
-        for (size_t j = 0; j < variable_column_indices.size(); ++j)
+        for (size_t j = 0; j < variable_columns.size(); ++j)
         {
-            if (columns_bytes[first_offsets_column + j] != rows || bytes_of_rows[j] != columns_bytes[variable_column_indices[j]])
+            const size_t o = layout->sizesColumnOf(variable_columns[j]);
+            if (sizes[o] != rows || batch.variable_bytes[j] != sizes[variable_columns[j]])
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Column {} of varying width of a part came to {} sizes and {} bytes on the device, of which its {} rows take {}",
-                    variable_column_indices[j],
-                    columns_bytes[first_offsets_column + j],
-                    columns_bytes[variable_column_indices[j]],
+                    variable_columns[j],
+                    sizes[o],
+                    sizes[variable_columns[j]],
                     rows,
-                    bytes_of_rows[j]);
+                    batch.variable_bytes[j]);
         }
     }
 
-    if (rows != 0)
-    {
-        const auto view_of = [&](size_t c) -> DeviceColumnView
-        {
-            if (isVariableColumn(c))
-            {
-                const size_t j = static_cast<size_t>(
-                    std::find(variable_column_indices.begin(), variable_column_indices.end(), c) - variable_column_indices.begin());
-                return DeviceVariableColumn{
-                    .offsets = reinterpret_cast<const uint64_t *>(starts[first_offsets_column + j]),
-                    .chars = starts[c],
-                    .rows = rows,
-                    .chars_bytes = bytes_of_rows[j],
-                };
-            }
-            return DeviceFixedColumn{.element_type = elementTypeOf(c), .data = starts[c], .rows = rows};
-        };
-
-        std::vector<DeviceColumnView> keys;
-        keys.reserve(group_keys.size());
-        for (size_t i = 0; i < group_keys.size(); ++i)
-            keys.push_back(view_of(i));
-
-        std::vector<DeviceColumnView> value_columns;
-        value_columns.reserve(values.size());
-        for (size_t i = 0; i < values.size(); ++i)
-            value_columns.push_back(view_of(group_keys.size() + i));
-
-        /// A column of the filter that is a key or a value as well reads the bytes of that column.
-        const size_t first_filter = group_keys.size() + values.size();
-        std::vector<DeviceFixedColumn> filter_columns;
-        filter_columns.reserve(filter_element_types.size());
-        for (size_t i = 0; i < filter_element_types.size(); ++i)
-        {
-            const size_t c = first_filter + i;
-            const size_t source = isAliasedColumn(c) ? *filter_aliases[i] : c;
-            if (source != c && (source >= first_filter || isVariableColumn(source) || elementTypeOf(source) != filter_element_types[i]))
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Column {} of the filter of a GPU aggregation reads column {}, which is not of its type", i, source);
-            filter_columns.push_back({.element_type = filter_element_types[i], .data = starts[source], .rows = rows});
-        }
-
-        group(keys, value_columns, filter_columns, stream);
-        worker.rows_grouped += rows;
-    }
-
-    /// What the batch did not take is carried to the next one, in the order of the worker's stream, which waited for the
-    /// lane to be done with the batch; the buffers of the batch are freed in that order as well.
+    /// What the batch does not take is carried to the next one, copied in the order of this stream before the batch
+    /// goes to another.
     for (size_t c = 0; c < num_columns; ++c)
     {
-        if (isAliasedColumn(c))
+        if (layout->isAliased(c))
             continue;
 
-        DeviceBuffer next(stream);
-        if (const auto j = variableOrdinalOfOffsetsColumn(c))
+        DeviceBuffer next(own);
+        if (layout->isSizes(c))
         {
-            const size_t left = columns_bytes[c] - rows;
+            const size_t left = sizes[c] - rows;
             if (left != 0)
             {
                 auto * const to = reinterpret_cast<uint64_t *>(next.grow((left + 1) * sizeof(UInt64)));
-                subtractFromOffsets(reinterpret_cast<const uint64_t *>(starts[c]) + rows, left + 1, bytes_of_rows[*j], to, stream);
+                subtractFromOffsets(
+                    reinterpret_cast<const uint64_t *>(batch.starts[c]) + rows, left + 1, batch.variable_bytes[layout->variableOrdinalOf(c)], to, own);
             }
         }
         else
         {
-            size_t taken = rows * elementBytesOf(c);
-            if (isVariableColumn(c))
-                taken = bytes_of_rows[static_cast<size_t>(
-                    std::find(variable_column_indices.begin(), variable_column_indices.end(), c) - variable_column_indices.begin())];
-            const size_t left = columns_bytes[c] - taken;
+            const size_t taken = layout->isVariable(c) ? batch.variable_bytes[layout->variableOrdinalOf(c)] : rows * layout->elementBytesOf(c);
+            const size_t left = sizes[c] - taken;
             if (left != 0)
                 checkCuda(
-                    cudaMemcpyAsync(next.grow(left), starts[c] + taken, left, cudaMemcpyDeviceToDevice, stream.get()),
+                    cudaMemcpyAsync(next.grow(left), batch.starts[c] + taken, left, cudaMemcpyDeviceToDevice, own.get()),
                     "Cannot carry bytes on the device");
         }
-        worker.carried[c] = std::move(next);
-
-        StagedColumn & column = worker.staging[c];
-        column.staged.clear();
-        column.blocks.clear();
-        column.packed.clear();
-        column.codec.reset();
-        column.raw = false;
-        column.decompressed_bytes = 0;
-        column.skipped_bytes = 0;
-        column.kept_bytes = 0;
-        column.cut = false;
+        carried[c] = std::move(next);
     }
 
-    if (part_rows)
-        worker.rows_grouped = 0;
+    part_rows_sent = staged.part_rows ? 0 : part_rows_sent + rows;
+
+    if (rows == 0)
+        return std::nullopt;
+    batch.num_rows = rows;
+    return batch;
 }
 
-void GPUCompressedGroupBy::group(
-    const std::vector<DeviceColumnView> & keys,
-    const std::vector<DeviceColumnView> & value_columns,
-    const std::vector<DeviceFixedColumn> & filter_columns,
-    cuda::stream_ref worker_stream)
+GPUGroupingLane::GPUGroupingLane(
+    std::shared_ptr<const GPUCompressedLayout> layout_,
+    std::vector<GPUGroupByAggregate> aggregates_,
+    std::vector<GPUDerivedValue> derived_,
+    std::optional<GPUExpression> filter_,
+    std::shared_ptr<GPUGroupingDecision> decision_)
+    : layout(std::move(layout_))
+    , derived(std::move(derived_))
+    , aggregates(aggregatesOrThrow(layout->values.size() + derived.size(), std::move(aggregates_), !layout->keys.empty()))
+    , filter(std::move(filter_))
+    , decision(std::move(decision_))
 {
-    /// The first lane free: a worker waits only where every lane is grouping.
-    Stopwatch wait_watch;
-    size_t lane_index = 0;
-    if (!free_lanes.pop(lane_index))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No grouping lane of a GPU aggregation is left");
-    const LaneTicket ticket(free_lanes, lane_index);
-    lanes_wait_microseconds.fetch_add(wait_watch.elapsedMicroseconds(), std::memory_order_relaxed);
+    for (const auto & value : derived)
+    {
+        for (const uint32_t column : value.columns)
+        {
+            if (column >= layout->values.size() || columnKindOf(layout->values[column]) != GPUColumnKind::Fixed)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "A value the GPU derives from value {} of {}", column, layout->values.size());
+        }
+    }
 
-    Lane & lane = lanes[lane_index];
-    const cuda::stream_ref lane_stream{lane.stream.get()};
+    if (filter.has_value() != !layout->filter_types.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation with a `WHERE` and the columns of one do not go together");
 
-    /// The batch is on the device in the order of the worker's stream.
-    const EventPtr batch_ready = createEvent();
-    checkCuda(cudaEventRecord(batch_ready.get(), worker_stream.get()), "Cannot mark a point in a worker's stream");
-    checkCuda(cudaStreamWaitEvent(lane_stream.get(), batch_ready.get(), 0), "Cannot make a lane wait for a worker");
+    if (filter && filter->num_columns != layout->filter_types.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "A GPU aggregation's `WHERE` reads {} columns and is given {}",
+            filter->num_columns,
+            layout->filter_types.size());
+
+    group_by = std::make_unique<CudfGroupBy>(
+        layout->keys, withDerived(layout->values, derived), derived, aggregates, cuda::stream_ref{stream.get()});
+    /// Rows collected are not grouped, and there is nothing to decide.
+    decided = aggregates.empty();
+}
+
+void GPUGroupingLane::add(GPUDeviceBatch batch)
+{
+    batch.moveTo(cuda::stream_ref{stream.get()});
+
+    std::vector<DeviceColumnView> keys;
+    keys.reserve(layout->keys.size());
+    for (size_t i = 0; i < layout->keys.size(); ++i)
+        keys.push_back(batch.column(i));
+
+    std::vector<DeviceColumnView> value_columns;
+    value_columns.reserve(layout->values.size());
+    for (size_t i = 0; i < layout->values.size(); ++i)
+        value_columns.push_back(batch.column(layout->keys.size() + i));
+
+    /// A column of the `WHERE` that is a key or a value as well reads the bytes of that column.
+    std::vector<DeviceFixedColumn> filter_columns;
+    filter_columns.reserve(layout->filter_types.size());
+    for (size_t i = 0; i < layout->filter_types.size(); ++i)
+    {
+        const size_t c = layout->firstFilterColumn() + i;
+        filter_columns.push_back(batch.column(layout->isAliased(c) ? layout->aliasOf(c) : c).fixed);
+    }
 
     Stopwatch watch;
     const GPUExpression * const where = filter ? &*filter : nullptr;
-    if (lane.decided)
+    if (decided)
     {
-        lane.group_by->addBatch(keys, value_columns, filter_columns, where);
+        group_by->addBatch(keys, value_columns, filter_columns, where);
     }
     else
     {
         /// The lanes reduce their batches alike, so that they merge: as the first batch with rows decided.
-        std::unique_lock lock(decision_mutex);
-        if (reduce_runs)
+        std::unique_lock lock(decision->mutex);
+        if (decision->reduce_runs)
         {
-            lane.group_by->reduceRuns(*reduce_runs);
-            lane.decided = true;
+            group_by->reduceRuns(*decision->reduce_runs);
+            decided = true;
             lock.unlock();
-            lane.group_by->addBatch(keys, value_columns, filter_columns, where);
+            group_by->addBatch(keys, value_columns, filter_columns, where);
         }
         else
         {
-            lane.group_by->addBatch(keys, value_columns, filter_columns, where);
-            if (lane.group_by->decided())
+            group_by->addBatch(keys, value_columns, filter_columns, where);
+            if (group_by->decided())
             {
-                reduce_runs = lane.group_by->reducesRuns();
-                lane.decided = true;
+                decision->reduce_runs = group_by->reducesRuns();
+                decided = true;
             }
         }
     }
 
-    const size_t rows = keys.empty() ? (value_columns.empty() ? 0 : value_columns.front().rows()) : keys.front().rows();
-    ProfileEvents::increment(ProfileEvents::GPUAggregationRows, rows);
+    ProfileEvents::increment(ProfileEvents::GPUAggregationRows, batch.rows());
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
-
-    /// The worker frees or reuses the batch's buffers only after the lane is done with them.
-    checkCuda(cudaEventRecord(lane.consumed.get(), lane_stream.get()), "Cannot mark a point in a lane's stream");
-    checkCuda(cudaStreamWaitEvent(worker_stream.get(), lane.consumed.get(), 0), "Cannot make a worker wait for a lane");
-
-    if (on_collected && lane.group_by->collectedRows() >= collect_flush_rows)
-        flushCollected(lane);
 }
 
-void GPUCompressedGroupBy::flushCollected(Lane & lane)
+MutableColumns GPUGroupingLane::takeCollected(const DataTypes & types)
 {
-    const size_t rows = lane.group_by->takeCollected();
-    if (rows == 0)
-        return;
-
-    Stopwatch watch;
+    if (types.size() != layout->values.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} types of {} columns collected on the GPU", types.size(), layout->values.size());
 
     MutableColumns columns;
+    const size_t rows = group_by->takeCollected();
+    if (rows == 0)
+        return columns;
+
+    Stopwatch watch;
     std::vector<DeviceColumnView> from;
     std::vector<IColumn *> to;
-    columns.reserve(values.size());
-    from.reserve(values.size());
-    to.reserve(values.size());
-    for (size_t i = 0; i < values.size(); ++i)
+    columns.reserve(types.size());
+    from.reserve(types.size());
+    to.reserve(types.size());
+    for (size_t i = 0; i < types.size(); ++i)
     {
-        const DeviceColumnView value = lane.group_by->value(i);
+        const DeviceColumnView value = group_by->value(i);
         if (value.rows() != rows)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The device holds {} rows of column {} of {} collected", value.rows(), i, rows);
-        columns.push_back(value_data_types[i]->createColumn());
+        columns.push_back(types[i]->createColumn());
         from.push_back(value);
         to.push_back(columns.back().get());
     }
 
-    copyDeviceToHost(from, to, cuda::stream_ref{lane.stream.get()});
+    copyDeviceToHost(from, to, cuda::stream_ref{stream.get()});
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
-
-    on_collected(std::move(columns));
+    return columns;
 }
 
-size_t GPUCompressedGroupBy::finalize()
+std::optional<size_t> GPUGroupingLane::numGroups() const
 {
-    ProfileEvents::increment(ProfileEvents::GPUReadersWaitMicroseconds, lanes_wait_microseconds.load(std::memory_order_relaxed));
-    ProfileEvents::increment(ProfileEvents::GPUDeviceWaitMicroseconds, device_wait_microseconds.load(std::memory_order_relaxed));
+    if (aggregates.empty() || group_by->reducesRuns())
+        return std::nullopt;
+    return group_by->numGroups();
+}
 
+void GPUGroupingLane::reserveGroups(size_t groups)
+{
     Stopwatch watch;
-    /// Into the first lane, which keeps the groups.
-    for (size_t i = 1; i < lanes.size(); ++i)
-        lanes.front().group_by->absorb(*lanes[i].group_by);
-    const size_t groups = lanes.front().group_by->finalize();
+    group_by->reserveGroups(groups);
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
+}
 
-    num_groups = groups;
+void GPUGroupingLane::absorb(GPUGroupingLane & other)
+{
+    Stopwatch watch;
+    group_by->absorb(*other.group_by);
+    ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
+}
+
+size_t GPUGroupingLane::partition(size_t num_parts)
+{
+    Stopwatch watch;
+    const size_t groups = group_by->partition(num_parts);
+    ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
     return groups;
 }
 
-size_t GPUCompressedGroupBy::filterGroups(const GPUExpression & expression, const std::vector<uint32_t> & columns)
+void GPUGroupingLane::absorbPart(const GPUGroupingLane & other, size_t part)
+{
+    Stopwatch watch;
+    group_by->absorbPart(*other.group_by, part);
+    ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
+}
+
+size_t GPUGroupingLane::finalize()
+{
+    Stopwatch watch;
+    num_groups = group_by->finalize();
+    ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
+    return *num_groups;
+}
+
+size_t GPUGroupingLane::filterGroups(const GPUExpression & expression, const std::vector<uint32_t> & columns)
 {
     if (!num_groups)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The groups of a GPU aggregation were filtered before it was finalized");
 
     Stopwatch watch;
-    num_groups = lanes.front().group_by->filterGroups(expression, columns);
+    num_groups = group_by->filterGroups(expression, columns);
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
     return *num_groups;
 }
 
-void GPUCompressedGroupBy::copyGroupsTo(MutableColumns & key_columns, MutableColumns & value_columns)
+void GPUGroupingLane::copyGroupsTo(MutableColumns & key_columns, MutableColumns & value_columns)
 {
     if (!num_groups)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The groups of a GPU aggregation were asked for before it was finalized");
 
     const size_t rows = *num_groups;
-    const size_t num_values = aggregates.empty() ? values.size() : aggregates.size();
-    if (key_columns.size() != group_keys.size() || value_columns.size() != num_values)
+    const size_t num_values = aggregates.empty() ? layout->values.size() : aggregates.size();
+    if (key_columns.size() != layout->keys.size() || value_columns.size() != num_values)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "{} key and {} aggregate columns for the groups of a GPU aggregation of {} keys and {} aggregates",
             key_columns.size(),
             value_columns.size(),
-            group_keys.size(),
+            layout->keys.size(),
             num_values);
 
     if (rows == 0)
         return;
 
     Stopwatch watch;
-    CudfGroupBy & group_by = *lanes.front().group_by;
-
     std::vector<DeviceColumnView> from;
     std::vector<IColumn *> to;
-    from.reserve(group_keys.size() + num_values);
-    to.reserve(group_keys.size() + num_values);
-    for (size_t i = 0; i < group_keys.size(); ++i)
+    from.reserve(layout->keys.size() + num_values);
+    to.reserve(layout->keys.size() + num_values);
+    for (size_t i = 0; i < layout->keys.size(); ++i)
     {
-        const DeviceColumnView key = group_by.key(i);
+        const DeviceColumnView key = group_by->key(i);
         if (key.rows() != rows)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The device holds {} rows of key {} of {} groups", key.rows(), i, rows);
         from.push_back(key);
@@ -1164,14 +1188,14 @@ void GPUCompressedGroupBy::copyGroupsTo(MutableColumns & key_columns, MutableCol
     }
     for (size_t i = 0; i < num_values; ++i)
     {
-        const DeviceColumnView value = group_by.value(i);
+        const DeviceColumnView value = group_by->value(i);
         if (value.rows() != rows)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The device holds {} rows of aggregate {} of {} groups", value.rows(), i, rows);
         from.push_back(value);
         to.push_back(value_columns[i].get());
     }
 
-    copyDeviceToHost(from, to, cuda::stream_ref{lanes.front().stream.get()});
+    copyDeviceToHost(from, to, cuda::stream_ref{stream.get()});
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
 }
 

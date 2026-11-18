@@ -7,6 +7,8 @@
 #include <GPU/GPUTypeMapping.h>
 #include <GPU/GPUExpression.cuh>
 #include <GPU/GPUTypes.cuh>
+#include <GPU/GPUMemory.h>
+#include <GPU/GPUDecompression.h>
 #include <GPU/GPUUploadPipe.h>
 #include <GPU/CudfGroupBy.cuh>
 #include <GPU/CudfReduction.cuh>
@@ -78,7 +80,7 @@ private:
 
 
 /// A `GROUP BY` on the device over plain columns: the columns of each batch are staged on the host and sent to the
-/// device, which groups them through the `CudfGroupBy`. Over compressed blocks, see `GPUCompressedGroupBy`.
+/// device, which groups them through the `CudfGroupBy`. Over compressed blocks, see `GPUGroupingLane`.
 ///
 /// Without keys, the aggregates are of every row, as one group, which there is none of where no row is grouped.
 class GroupByGPUAccumulator
@@ -130,155 +132,262 @@ private:
     std::optional<size_t> num_groups;
 };
 
-/// A `GROUP BY` on the device over the compressed blocks of the columns of parts, scheduled as Sirius schedules its
-/// pipelines: each reading thread is a worker that does all of a batch itself on a CUDA stream of its own - the upload of
-/// its compressed blocks, their expansion by nvcomp straight into the batch's columns, and whatever waits for the device
-/// that takes - and then groups the batch in one of a few lanes, each a `CudfGroupBy` on a stream of its own, the first
-/// that is free. A thread that waits for the device, in a worker or in cuDF, leaves it to the others, so that no single
-/// thread waits for all of the work, as one grouping thread did. The lanes are merged into one by `finalize`.
+/// The device side of a GPU read over the compressed blocks of the columns of parts. The read is a pipeline of
+/// processors, see `ReadFromGPUCompressedColumns`:
 ///
-/// The columns are numbered as by `GroupByGPUAccumulator`: the keys, the values, the columns of the `WHERE` that are not
-/// a key or a value as well, and then the sizes of each column of varying width, see `offsetsColumnOf`.
-class GPUCompressedGroupBy
+///     source (reads a part)      -> GPUBlockStager      stages blocks in pinned memory   -> GPUStagedBatch
+///     upload                     -> GPUBatchUploader    H2D, nvcomp, tails of columns    -> GPUDeviceBatch
+///     group (a few "lanes")      -> GPUGroupingLane     `WHERE`, `CudfGroupBy` per lane
+///     merge                      -> GPUGroupingLane::absorb, finalize, `HAVING`, D2H
+///
+/// Each uploader and each lane has a CUDA stream of its own. A batch is handed from one to the other through events,
+/// see `GPUDeviceBatch::moveTo`, so that no thread waits for the other's stream.
+
+/// The columns a GPU read brings, and how they are numbered: the keys, the values, the columns of the `WHERE`, and then
+/// the sizes of each `String` column, see `sizesColumnOf`. A column of the `WHERE` that is also a key or a value is not
+/// read again, see `isAliased`: its place stays empty.
+class GPUCompressedLayout
 {
 public:
-    GPUCompressedGroupBy(
+    GPUCompressedLayout(
         const DataTypes & key_types,
         const DataTypes & value_types,
-        std::vector<GPUGroupByAggregate> aggregates_,
-        size_t batch_bytes,
-        size_t num_readers,
+        bool collect,
         const DataTypes & filter_types,
-        std::optional<GPUExpression> filter_,
-        std::vector<GPUDerivedValue> derived_,
-        std::function<void(MutableColumns)> on_collected_,
-        std::vector<std::optional<uint32_t>> filter_aliases_);
+        std::vector<std::optional<uint32_t>> filter_aliases_,
+        size_t batch_bytes);
 
-    ~GPUCompressedGroupBy();
+    size_t numColumns() const { return keys.size() + values.size() + filter_types.size() + variable_columns.size(); }
+    size_t firstFilterColumn() const { return keys.size() + values.size(); }
+    size_t firstSizesColumn() const { return firstFilterColumn() + filter_types.size(); }
 
-    GPUCompressedGroupBy(const GPUCompressedGroupBy &) = delete;
-    GPUCompressedGroupBy & operator=(const GPUCompressedGroupBy &) = delete;
+    bool isAliased(size_t column) const;
+    /// Of an aliased column of the `WHERE`: the key or value column it reads.
+    size_t aliasOf(size_t column) const;
+    /// A `String` key or value: its bytes. Its sizes are `sizesColumnOf` it.
+    bool isVariable(size_t column) const;
+    bool isSizes(size_t column) const { return column >= firstSizesColumn() && column < numColumns(); }
+    size_t sizesColumnOf(size_t variable_column) const;
+    /// Of a `String` column or its sizes: which of `variableColumns` it is.
+    size_t variableOrdinalOf(size_t column) const;
+    const std::vector<size_t> & variableColumns() const { return variable_columns; }
 
-    /// On the thread of reader `reader` only, as each of the following of a reader.
-    void addCompressedBlock(
-        size_t reader,
-        size_t column_index,
-        UInt8 method,
-        std::string_view payload,
-        size_t decompressed_bytes,
-        size_t expected_bytes,
-        size_t skipped_bytes = 0,
-        std::optional<size_t> kept_bytes = {});
+    /// The type of the values of a column; `UInt64` of a column of sizes, `UInt8` of the bytes of a `String`.
+    GPUElementType elementTypeOf(size_t column) const;
+    size_t elementBytesOf(size_t column) const { return isVariable(column) ? 1 : sizeOf(elementTypeOf(column)); }
 
-    std::span<char> reserveRawBytes(size_t reader, size_t column_index, size_t max_bytes, size_t expected_bytes);
-    void commitRawBytes(size_t reader, size_t column_index, size_t bytes);
+    const std::vector<GPUElementType> keys;
+    const std::vector<GPUElementType> key_element_types;
+    const std::vector<GPUElementType> values;
+    const std::vector<GPUElementType> filter_types;
+    const std::vector<std::optional<uint32_t>> filter_aliases;
+    const std::vector<size_t> variable_columns;
+    /// The rows of a batch the stager aims at.
+    const size_t batch_rows;
+};
 
-    /// The part reader `reader` read ends, of `num_rows` rows.
-    void finishPart(size_t reader, size_t num_rows);
-
-    /// The column that the sizes of the column of varying width `column_index` come to.
-    size_t offsetsColumnOf(size_t column_index) const;
-
-    /// Once every reader is done. Returns the number of groups.
-    size_t finalize();
-
-    size_t filterGroups(const GPUExpression & expression, const std::vector<uint32_t> & columns);
-
-    void copyGroupsTo(MutableColumns & key_columns, MutableColumns & aggregate_columns);
-
-private:
-    /// What a worker staged of a column for its next batch: its compressed blocks, or raw bytes, one run of them.
-    struct StagedColumn
+/// One batch of a reader, staged in pinned memory: of each column, its compressed blocks or its raw bytes.
+struct GPUStagedBatch
+{
+    struct Column
     {
         PinnedBuffer staged;
         std::vector<CompressedBlock> blocks;
         std::vector<BitPackingBlock> packed;
         std::optional<GPUCodec> codec;
         bool raw = false;
-        /// Of the blocks staged, or the raw bytes: what they expand to, of which the column takes `kept_bytes` after
-        /// `skipped_bytes`.
+        /// What the blocks, or the raw bytes, expand to; the column takes `kept_bytes` of it after `skipped_bytes`.
         size_t decompressed_bytes = 0;
         size_t skipped_bytes = 0;
         size_t kept_bytes = 0;
-        /// The last block keeps less than the rest of its bytes, so that the next one starts a batch.
+        /// The last block keeps less than all of its bytes: the next block starts another batch.
         bool cut = false;
+
+        void clear();
+        bool empty() const { return staged.empty() && blocks.empty(); }
     };
 
-    struct Worker
-    {
-        /// First, so that the buffers of its order, below, go before it.
-        StreamPtr stream = createStream();
-        std::vector<StagedColumn> staging;
-        /// Of each column, what the device expanded that the batches so far did not take: the bytes of a column of a
-        /// fixed width or of the bytes of one of varying width, and of a column of sizes, the offsets of the rows left
-        /// from 0, one more than the rows.
-        std::vector<DeviceBuffer> carried;
-        DecompressionBatch decompression;
-        EventPtr ready = createEvent();
-        /// Of the part being read, the rows grouped.
-        size_t rows_grouped = 0;
+    std::vector<Column> columns;
+    /// Set on the last batch of a part: the rows of the part. The uploader then sends every row it holds.
+    std::optional<size_t> part_rows;
 
-        Worker() : decompression(cuda::stream_ref{stream.get()}) { }
-    };
+    void clear();
+};
 
-    struct Lane
-    {
-        StreamPtr stream = createStream();
-        std::unique_ptr<CudfGroupBy> group_by;
-        EventPtr consumed = createEvent();
-        bool decided = false;
-    };
+/// Staged batches that an uploader is done with, for its stager to fill again, so that their pinned memory is
+/// allocated once per stream rather than once per batch.
+class GPUStagedBatchPool
+{
+public:
+    std::unique_ptr<GPUStagedBatch> take(size_t num_columns);
+    void give(std::unique_ptr<GPUStagedBatch> batch);
 
-    bool isVariableColumn(size_t column_index) const;
-    bool isAliasedColumn(size_t column_index) const;
-    std::optional<size_t> variableOrdinalOfOffsetsColumn(size_t column_index) const;
-    size_t numColumns() const { return group_keys.size() + values.size() + filter_element_types.size() + variable_column_indices.size(); }
-    /// The bytes of a row of a column, of its bytes for one of varying width.
-    size_t elementBytesOf(size_t column_index) const;
-    GPUElementType elementTypeOf(size_t column_index) const;
+private:
+    std::mutex mutex;
+    std::vector<std::unique_ptr<GPUStagedBatch>> free_batches;
+};
 
-    Worker & workerOrThrow(size_t reader);
-    /// Whether the worker has staged enough rows of every column for a batch.
-    bool batchIsStaged(const Worker & worker) const;
+/// Stages the blocks that a reader reads into batches, on the reader's thread. A batch is sealed once every column has
+/// `batch_rows` rows, or a column fills its pinned memory, or a block cannot follow the ones staged, or a part ends;
+/// sealed batches are taken with `takeSealed`.
+class GPUBlockStager
+{
+public:
+    /// The pinned memory of a column of a batch, at most.
+    static constexpr size_t max_column_bytes = 32UL << 20;
 
-    /// Expands what the worker staged after what it carried, groups the rows every column has, and carries the rest.
-    /// At the end of a part, of `part_rows` rows, every row.
-    void flush(Worker & worker, std::optional<size_t> part_rows = {});
+    GPUBlockStager(std::shared_ptr<const GPUCompressedLayout> layout_, std::shared_ptr<GPUStagedBatchPool> pool_);
 
-    void group(
-        const std::vector<DeviceColumnView> & keys,
-        const std::vector<DeviceColumnView> & value_columns,
-        const std::vector<DeviceFixedColumn> & filter_columns,
-        cuda::stream_ref worker_stream);
-    void flushCollected(Lane & lane);
+    /// A compressed block of `column`, of a method the device expands, see `deviceCodecOf`. The column takes
+    /// `kept_bytes` of what the block expands to, all of the rest without it, after `skipped_bytes`.
+    void addCompressedBlock(
+        size_t column,
+        UInt8 method,
+        std::string_view payload,
+        size_t decompressed_bytes,
+        size_t expected_bytes,
+        size_t skipped_bytes,
+        size_t kept_bytes);
 
-    const std::vector<GPUElementType> group_keys;
-    const std::vector<GPUElementType> key_element_types;
-    const std::vector<GPUElementType> values;
-    const DataTypes value_data_types;
-    const std::function<void(MutableColumns)> on_collected;
+    /// Room for raw bytes of `column`, to be filled and then committed.
+    std::span<char> reserveRawBytes(size_t column, size_t max_bytes, size_t expected_bytes);
+    void commitRawBytes(size_t column, size_t bytes);
+
+    /// The part ends, of `num_rows` rows: seals the batch being staged, even an empty one.
+    void finishPart(size_t num_rows);
+
+    std::unique_ptr<GPUStagedBatch> takeSealed();
+
+private:
+    GPUStagedBatch::Column & columnOrThrow(size_t column);
+    bool isFull() const;
+    void seal(std::optional<size_t> part_rows = {});
+
+    const std::shared_ptr<const GPUCompressedLayout> layout;
+    const std::shared_ptr<GPUStagedBatchPool> pool;
+    std::unique_ptr<GPUStagedBatch> current;
+    std::deque<std::unique_ptr<GPUStagedBatch>> sealed;
+};
+
+/// The columns of a batch on the device, which it owns. They are complete in the order of the stream of the uploader
+/// that made them, until `moveTo` hands them to another stream.
+class GPUDeviceBatch
+{
+public:
+    size_t rows() const { return num_rows; }
+
+    /// A key, a value or a column of the `WHERE` that is not aliased, as the layout numbers them.
+    DeviceColumnView column(size_t column) const;
+
+    /// Makes `stream` wait for the batch, and frees the batch's memory in the order of `stream` from now on.
+    void moveTo(cuda::stream_ref stream);
+
+private:
+    friend class GPUBatchUploader;
+
+    GPUDeviceBatch(std::shared_ptr<const GPUCompressedLayout> layout_, cuda::stream_ref stream) : layout(std::move(layout_)), ready_stream(stream) { }
+
+    std::shared_ptr<const GPUCompressedLayout> layout;
+    cuda::stream_ref ready_stream;
+    std::vector<DeviceBuffer> buffers;
+    /// Of each column, where its rows start; of a column of sizes, the offsets of the rows, one more than them.
+    std::vector<char *> starts;
+    /// Of each `String` column, the bytes of its rows.
+    std::vector<uint64_t> variable_bytes;
+    size_t num_rows = 0;
+};
+
+/// Sends the staged batches of one reader to the device and expands them there, on a CUDA stream of its own. The blocks
+/// of the columns end at different rows: a batch on the device has the rows that every column has, and the rest of each
+/// column waits on the device for the next one.
+class GPUBatchUploader
+{
+public:
+    explicit GPUBatchUploader(std::shared_ptr<const GPUCompressedLayout> layout_);
+
+    GPUBatchUploader(const GPUBatchUploader &) = delete;
+    GPUBatchUploader & operator=(const GPUBatchUploader &) = delete;
+
+    /// The staged memory is free once it returns. Nothing where no row is complete in every column.
+    std::optional<GPUDeviceBatch> upload(const GPUStagedBatch & staged);
+
+private:
+    const std::shared_ptr<const GPUCompressedLayout> layout;
+    /// First, so that the buffers of its order go before it.
+    StreamPtr stream = createStream();
+    /// Of each column, what the batches so far did not take: bytes, or of a column of sizes, the offsets of the rows
+    /// left, from 0, one more than them.
+    std::vector<DeviceBuffer> carried;
+    DecompressionBatch decompression;
+    EventPtr staged_sent = createEvent();
+    /// Of the part being read, the rows sent.
+    size_t part_rows_sent = 0;
+};
+
+/// How all the lanes of a `GROUP BY` reduce their batches, so that they merge: decided by the first batch any of them
+/// groups, see `CudfGroupBy::decided`.
+struct GPUGroupingDecision
+{
+    std::mutex mutex;
+    std::optional<bool> reduce_runs;
+};
+
+/// A lane of a `GROUP BY` on the device: a CUDA stream and the groups of the batches it took. Without aggregates, it
+/// collects the rows the `WHERE` keeps instead.
+class GPUGroupingLane
+{
+public:
+    GPUGroupingLane(
+        std::shared_ptr<const GPUCompressedLayout> layout_,
+        std::vector<GPUGroupByAggregate> aggregates_,
+        std::vector<GPUDerivedValue> derived_,
+        std::optional<GPUExpression> filter_,
+        std::shared_ptr<GPUGroupingDecision> decision_);
+
+    GPUGroupingLane(const GPUGroupingLane &) = delete;
+    GPUGroupingLane & operator=(const GPUGroupingLane &) = delete;
+
+    void add(GPUDeviceBatch batch);
+
+    /// Without aggregates: the rows collected so far, and then copied to columns of `types` on the host.
+    size_t collectedRows() const { return group_by->collectedRows(); }
+    MutableColumns takeCollected(const DataTypes & types);
+
+    /// How many groups the lane holds so far; nothing of a lane that does not group through `streaming_groupby`, as one
+    /// that collects rows or reduces the runs of sorted keys does not. Waits for the device.
+    std::optional<size_t> numGroups() const;
+    /// Makes room for `groups` in all at once, see `CudfGroupBy::reserveGroups`.
+    void reserveGroups(size_t groups);
+    /// Merges the groups of `other` into this lane's.
+    void absorb(GPUGroupingLane & other);
+
+    /// Before the first batch: reduces each batch into partial results split by the keys into `num_parts` parts, see
+    /// `CudfGroupBy::splitIntoParts`.
+    void splitIntoParts(size_t num_parts) { group_by->splitIntoParts(num_parts); }
+    /// Instead of `finalize`: splits the lane's groups by a hash of the keys into `num_parts` parts, see
+    /// `CudfGroupBy::partition`. Returns the number of groups.
+    size_t partition(size_t num_parts);
+    /// Of a lane that took no batch: takes part `part` of `other`, to merge at `finalize`.
+    void absorbPart(const GPUGroupingLane & other, size_t part);
+    /// Returns the number of groups.
+    size_t finalize();
+    /// After `finalize`: keeps the groups for which `expression` holds, see `GroupByGPUAccumulator::filterGroups`.
+    size_t filterGroups(const GPUExpression & expression, const std::vector<uint32_t> & columns);
+    void copyGroupsTo(MutableColumns & key_columns, MutableColumns & aggregate_columns);
+
+private:
+    const std::shared_ptr<const GPUCompressedLayout> layout;
     const std::vector<GPUDerivedValue> derived;
     const std::vector<GPUGroupByAggregate> aggregates;
-    const std::vector<size_t> variable_column_indices;
-    const std::vector<GPUElementType> filter_element_types;
     const std::optional<GPUExpression> filter;
-    const std::vector<std::optional<uint32_t>> filter_aliases;
-    const size_t batch_rows;
+    const std::shared_ptr<GPUGroupingDecision> decision;
 
-    /// Before the workers, whose batches the lanes may still be grouping when the workers' buffers go.
-    std::vector<Lane> lanes;
-    ConcurrentBoundedQueue<size_t> free_lanes;
-
-    /// Whether the batches are reduced over their runs, decided by the first batch grouped, see `CudfGroupBy::decided`.
-    std::mutex decision_mutex;
-    std::optional<bool> reduce_runs;
-
-    std::vector<std::unique_ptr<Worker>> workers;
-
+    /// Before the groups, which are of its order.
+    StreamPtr stream = createStream();
+    std::unique_ptr<CudfGroupBy> group_by;
+    /// Whether this lane reduces its batches as `decision` says.
+    bool decided = false;
     std::optional<size_t> num_groups;
-
-    std::atomic<UInt64> lanes_wait_microseconds{0};
-    std::atomic<UInt64> device_wait_microseconds{0};
 };
 
 }
