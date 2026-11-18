@@ -475,11 +475,13 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     /// statistics-driven initialization, exactly as if the feature were off. A run that may not thaw does not
     /// ask: the verdict is the thaw's. A run with the top-K pruning asks for the verdict of its own runs,
     /// because it keeps its statistics apart from those of the query without its `LIMIT` (see
-    /// `setAggregationHashTableCacheKeys`).
+    /// `setAggregationHashTableCacheKeys`). A run with one stream, which has a lone producer, and a run with
+    /// several ask for the verdict of their own kind, because the two thaw by different bounds (see
+    /// `AggregationEntry`).
     if (params.stats_collecting_params.isCollectionAndUseEnabled() && params.adaptiveMayThaw())
     {
         const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);
-        if (hint && hint->adaptive_staging_repeat_dominated)
+        if (hint && hint->adaptiveStagingRepeatDominated(/*lone_producer=*/pipeline.getNumStreams() == 1))
             return "a prior run measured the staged streams as repeat-dominated";
     }
 

@@ -653,6 +653,15 @@ public:
     /// rows from `claimed_partitions` of the `partitions` ends.
     static bool singleLevelPartitionChunkEndsForFanOut(size_t rows, size_t claimed_partitions, size_t partitions, size_t output_streams);
 
+    /// The adaptive verdict of a finished run (see `adaptiveStagingVerdict`) with the kind of run that it
+    /// holds for: a run with a lone producer, which thaws by a bound of its own, or a run with several (see
+    /// `AggregationEntry`).
+    struct AdaptiveStagingVerdict
+    {
+        bool lone_producer;
+        bool repeat_dominated;
+    };
+
     /// Records the adaptive verdict of the run in the hash-table statistics when the run measured one (see
     /// `adaptiveStagingVerdict`). The in-memory merge records it inside `prepareVariantsToMerge`; the external merge
     /// never reaches that, so its finish path calls this instead.
@@ -1090,9 +1099,9 @@ private:
         std::atomic<bool> & is_cancelled) const;
 
     /// The adaptive verdict of a finished run: whether at least half of the producers whose tables froze
-    /// thawed, so that later runs of the query should not engage the adaptive aggregation, or nothing when
-    /// the run measured nothing.
-    std::optional<bool> adaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const;
+    /// thawed, so that later runs of the same kind should not engage the adaptive aggregation, or nothing
+    /// when the run measured nothing.
+    std::optional<AdaptiveStagingVerdict> adaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const;
 
     /// Whether a frozen producer thaws, checked between blocks: its own staged stream repeats its misses so
     /// much that its table would do better absorbing them in place (see the tuning constants in

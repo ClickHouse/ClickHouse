@@ -77,7 +77,7 @@ bool Aggregator::adaptiveStagingRepeats(const AdaptiveAggregationProducer & adap
     const UInt128 state_bytes = static_cast<UInt128>(retained_bytes_per_key) * distinct
         + static_cast<UInt128>(adaptive_state_bytes_per_distinct_input) * frozen.getEstimatedDistinctInputCount();
 
-    const size_t state_cost_multiplier = adaptive.session->producers == 1
+    const size_t state_cost_multiplier = adaptive.session->hasLoneProducer()
         ? adaptive_thaw_lone_producer_state_cost_multiplier
         : adaptive_thaw_state_cost_multiplier;
 
@@ -654,7 +654,7 @@ bool Aggregator::adaptiveTopKPruningFreesStaging(AggregatedDataVariants & table,
     return adaptive_thaw_pruned_share_inverse * adaptive.count_bins.rowsInBinsBelow(*top / divisor) >= frozen.staged_records;
 }
 
-std::optional<bool> Aggregator::adaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const
+std::optional<Aggregator::AdaptiveStagingVerdict> Aggregator::adaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const
 {
     /// A run measures the verdict only when some producer froze and the producers could thaw: a run that may
     /// not thaw gathers no evidence, and keeping its tables frozen whatever the repeats is what it asked for.
@@ -665,28 +665,28 @@ std::optional<bool> Aggregator::adaptiveStagingVerdict(const AdaptiveAggregation
     /// threads in every run, and its later runs take 1.23 times as long when they stay adaptive.
     if (!shared.frozen_producers || !params.adaptiveMayThaw())
         return std::nullopt;
-    return 2 * shared.thawed_producers >= shared.frozen_producers;
+    return AdaptiveStagingVerdict{
+        .lone_producer = shared.hasLoneProducer(), .repeat_dominated = 2 * shared.thawed_producers >= shared.frozen_producers};
 }
 
-/// The flushed variants' sizes are meaningless by the time the external path finishes, so a stored entry keeps its
-/// sizes: only the verdict is written, and only when the run measured one.
+/// The flushed variants' sizes are meaningless by the time the external path finishes, so a stored entry
+/// keeps its sizes and the verdict of the other kind of run: only the verdict of this run is written, and
+/// only when the run measured one.
 void Aggregator::recordAdaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const
 {
     const auto & stats_params = params.stats_collecting_params;
     if (!stats_params.isCollectionAndUseEnabled())
         return;
 
-    const auto repeat_dominated = adaptiveStagingVerdict(shared);
-    if (!repeat_dominated)
+    const auto verdict = adaptiveStagingVerdict(shared);
+    if (!verdict)
         return;
 
     auto & stats = getHashTablesStatistics<AggregationEntry>();
-    AggregationEntry entry{.adaptive_staging_repeat_dominated = *repeat_dominated};
+    AggregationEntry entry;
     if (const auto prev = stats.getSizeHint(stats_params))
-    {
-        entry.sum_of_sizes = prev->sum_of_sizes;
-        entry.median_size = prev->median_size;
-    }
+        entry = *prev;
+    entry.adaptiveStagingRepeatDominated(verdict->lone_producer) = verdict->repeat_dominated;
     stats.update(entry, stats_params);
 }
 

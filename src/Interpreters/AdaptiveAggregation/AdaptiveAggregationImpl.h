@@ -187,6 +187,12 @@ struct AdaptiveAggregationSession
     /// Whether some producer froze. Read after the finish barrier.
     bool engaged() const { return frozen_producers > 0; }
 
+    /// Whether the aggregation has one producer. Nothing merges the table of a lone producer on the ordinary
+    /// path, so its thaw weighs the state cost once (see
+    /// `adaptive_thaw_lone_producer_state_cost_multiplier`), and the verdict of its run holds only for the
+    /// runs with one producer (see `Aggregator::adaptiveStagingVerdict`).
+    bool hasLoneProducer() const { return producers == 1; }
+
     /// Whether the tables take the adaptive bucket merge (see `Aggregator::mergeAndConvertAdaptiveBucket`):
     /// when some producer froze, because only that merge drains the staged records, or when the merge prunes
     /// by the top-K, which only that merge does (see `Aggregator::prepareAdaptiveTopK`). Otherwise the
