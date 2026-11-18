@@ -46,10 +46,6 @@ public:
 
     bool digestEnabled() const;
     void setDigestEnabled(bool digest_enabled_);
-
-    /// This server's id in the Raft cluster (keeper_server.server_id). -1 if not initialized
-    /// from config (e.g. in tools and tests).
-    int getServerID() const { return server_id; }
     bool digestEnabledOnCommit() const;
 
     bool removeOrphanedNodesOnStartup() const;
@@ -102,8 +98,7 @@ public:
     void setLocalLogsPreprocessed();
     bool localLogsPreprocessed() const;
 
-    /// returns whether the local logs were preprocessed; false if the wait ended on its deadline or on shutdown
-    bool waitLocalLogsPreprocessedOrShutdown(uint64_t wait_timeout_ms);
+    void waitLocalLogsPreprocessedOrShutdown();
 
     uint64_t lastCommittedIndex() const;
     void setLastCommitIndex(uint64_t commit_index);
@@ -144,7 +139,6 @@ private:
     /// and on hot reload, so that SYSTEM RELOAD CONFIG cannot put Keeper into a
     /// configuration that would be rejected on startup.
     void validateWriteSnapshotVersion(const CoordinationSettings & settings) const;
-    void validateWriteLogEntryVersion(const CoordinationSettings & settings) const;
 
     Storage getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
@@ -166,8 +160,6 @@ private:
     bool digest_enabled{true};
     bool digest_enabled_on_commit{false};
     bool remove_orphaned_nodes_on_startup{false};
-
-    int server_id{-1};
 
     std::shared_ptr<DiskSelector> disk_selector;
 

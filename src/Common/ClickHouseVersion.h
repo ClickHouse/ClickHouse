@@ -12,7 +12,7 @@ class ClickHouseVersion
 public:
     explicit ClickHouseVersion(std::string_view version);
 
-    [[nodiscard]] std::string toString() const;
+    std::string toString() const;
 
     std::strong_ordering operator<=>(const ClickHouseVersion & other) const = default;
 

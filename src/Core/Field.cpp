@@ -493,8 +493,8 @@ static DecimalField<T> readDecimalFieldBinary(ReadBuffer & buf)
     readBinary(value, buf);
     UInt32 scale = 0;
     readBinary(scale, buf);
-    /// The scale comes from the data; an out-of-range value later overruns a
-    /// fixed-size buffer in the decimal text writer, so reject it here.
+    /// The scale is attacker-controlled wire data; an out-of-range value later overruns a
+    /// fixed-size buffer in the decimal text writer, so reject it at the boundary.
     if (scale > DecimalUtils::max_precision<T>)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})",
                         scale, DecimalUtils::max_precision<T>);

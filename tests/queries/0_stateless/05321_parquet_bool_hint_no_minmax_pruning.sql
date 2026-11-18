@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: the Parquet format is not built in the fast-test image.
+
 -- A Parquet integer column holding 2, read with a `LowCardinality(Bool)` hint: every nonzero value is
 -- read as `true`, but the row group and page min/max statistics still say [2, 2], so pruning by them
 -- dropped the rows equal to `true`. The same holds for a plain `Bool`.
@@ -9,8 +12,6 @@ set max_threads = 1;
 set max_insert_threads = 1;
 set max_block_size = 1000000;
 set allow_suspicious_low_cardinality_types = 1;
--- A column served from the columns cache reads no pages, see the `ParquetReadPages` check below.
-set use_columns_cache = 0;
 
 -- Two row groups, [0, 0] and [2, 2].
 insert into function file(currentDatabase() || '_05321_rg.parquet', Parquet, 'x UInt8')

@@ -13,16 +13,13 @@
 
 #include <Common/ProxyConfiguration.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/Stopwatch.h>
 
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
 
 #include <Poco/StreamCopier.h>
 
-#include <chrono>
 #include <functional>
 #include <mutex>
-#include <thread>
 
 namespace
 {
@@ -242,7 +239,7 @@ public:
 
     ~MockGCSServer() { server->stop(); }
 
-    [[nodiscard]] UInt16 getPort() const { return server_socket->address().port(); }
+    UInt16 getPort() const { return server_socket->address().port(); }
 
     Poco::Net::MessageHeader getLastRequestHeader()
     {
@@ -362,8 +359,7 @@ std::unique_ptr<DB::S3::Client> makeClientTalkingToMockGCS(
     DB::NormalizedHTTPHeaderEntries headers = {},
     const std::string & access_key_id = "",
     const std::string & secret_access_key = "",
-    unsigned int max_retries = 0,
-    const std::function<void(DB::S3::PocoHTTPClientConfiguration &)> & configure = {})
+    unsigned int max_retries = 0)
 {
     auto client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
         "us-east-1",
@@ -373,7 +369,7 @@ std::unique_ptr<DB::S3::Client> makeClientTalkingToMockGCS(
         /* s3_slow_all_threads_after_network_error = */ false,
         /* s3_slow_all_threads_after_retryable_error = */ false,
         /* enable_s3_requests_logging = */ false,
-        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
+        /* for_disk_s3 = */ false,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {},
         "http");
@@ -387,8 +383,6 @@ std::unique_ptr<DB::S3::Client> makeClientTalkingToMockGCS(
             .port = mock_port,
         };
     };
-    if (configure)
-        configure(client_configuration);
 
     DB::S3::ClientSettings client_settings{
         .use_virtual_addressing = false,
@@ -600,45 +594,6 @@ TEST(GCSHeaderTranslation, CreateIfAbsentWithHMACReportsALostRace)
     ASSERT_FALSE(outcome.IsSuccess());
     EXPECT_EQ(outcome.GetError().GetExceptionName(), "PreconditionFailed");
     EXPECT_EQ(server.getRequests().size(), 2u);
-}
-
-/// GCS gets a server-side copy as `x-goog-copy-source` and answers it only after copying the data.
-TEST(GCSHeaderTranslation, CopyObjectIsNotRetriedAfterTheAdaptiveTimeout)
-{
-    ScriptedGCSServer server([](size_t, const Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
-    {
-        if (request.has("x-goog-copy-source"))
-            std::this_thread::sleep_for(std::chrono::milliseconds(3500));
-        respond(
-            response,
-            Poco::Net::HTTPResponse::HTTP_OK,
-            R"(<?xml version="1.0" encoding="UTF-8"?><CopyObjectResult>)"
-            R"(<LastModified>2026-01-01T00:00:00.000Z</LastModified><ETag>"copy-etag"</ETag></CopyObjectResult>)");
-    });
-    DB::RemoteHostFilter remote_host_filter;
-    auto client = makeClientTalkingToMockGCS(
-        server.getPort(), remote_host_filter, {}, "", "", /* max_retries = */ 1,
-        [](DB::S3::PocoHTTPClientConfiguration & configuration)
-        {
-            configuration.s3_use_adaptive_timeouts = true;
-            configuration.requestTimeoutMs = 30 * 1000;
-        });
-    ASSERT_TRUE(client);
-
-    DB::S3::CopyObjectRequest request;
-    request.SetBucket("test-bucket");
-    request.SetKey("dst");
-    request.SetCopySource("test-bucket/src");
-
-    Stopwatch watch;
-    const auto outcome = client->CopyObject(request);
-    ASSERT_TRUE(outcome.IsSuccess()) << outcome.GetError().GetMessage();
-
-    const auto requests = server.getRequests();
-    ASSERT_EQ(requests.size(), 1u);
-    EXPECT_TRUE(requests[0].headers.has("x-goog-copy-source"));
-    EXPECT_FALSE(requests[0].headers.has("x-amz-copy-source"));
-    EXPECT_GE(watch.elapsedMilliseconds(), 3500u);
 }
 
 #endif
