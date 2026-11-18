@@ -390,18 +390,13 @@ GPUAccumulator::GPUAccumulator(
     : result_types(result_types_)
     , reduce_stream(createStream())
 {
-    if (argument_types.size() != result_types.size() || argument_types.size() != aggregations.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "A GPU aggregation of {} arguments into {} results by {} aggregates",
-            argument_types.size(),
-            result_types.size(),
-            aggregations.size());
+    if (!canAggregateOnDevice({}, argument_types, result_types, aggregations))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reduce these aggregates on a GPU");
 
     reductions.reserve(aggregations.size());
     for (size_t i = 0; i < aggregations.size(); ++i)
     {
-        const GPUElementType element_type = reducibleElementTypeOrThrow(*argument_types[i], *result_types[i], aggregations[i]);
+        const GPUElementType element_type = *columnTypeOf(*argument_types[i]);
         reductions.push_back(std::make_unique<CudfReduction>(
             element_type, resultTypeFor(element_type, aggregations[i]), aggregations[i], cuda::stream_ref{reduce_stream.get()}));
     }

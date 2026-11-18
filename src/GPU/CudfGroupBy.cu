@@ -467,6 +467,9 @@ public:
             const auto end = static_cast<cudf::size_type>(offset + slice_rows);
             const cudf::table_view slice = begin == 0 && end == table.num_rows() ? table : cudf::slice(table, {begin, end}).front();
 
+            /// It counts in a `cudf::size_type`: it is closed before a group might have more rows than that holds.
+            if (grouping && rows_grouped + slice_rows > max_capacity)
+                close();
             if (grouping && max_groups + slice_rows > capacity)
                 max_groups = static_cast<size_t>(grouping->distinct_keys());
             if (grouping && max_groups + slice_rows > capacity)
@@ -483,6 +486,7 @@ public:
 
             guarded("grouping " + std::to_string(slice_rows) + " rows into a `streaming_groupby`", [&] { grouping->aggregate(slice, stream); return 0; });
             max_groups += slice_rows;
+            rows_grouped += slice_rows;
             offset += slice_rows;
         }
     }
@@ -500,6 +504,7 @@ public:
         grouping.reset();
         capacity = 0;
         max_groups = 0;
+        rows_grouped = 0;
         parts.add(aggregates.tableOf(std::move(group_keys), std::move(results)));
     }
 
@@ -513,6 +518,7 @@ private:
     std::optional<cudf::groupby::streaming_groupby> grouping;
     size_t capacity = 0;
     size_t max_groups = 0;
+    size_t rows_grouped = 0;
 };
 
 }

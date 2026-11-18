@@ -303,7 +303,7 @@ TEST_F(GPUAggregation, ReduceWithoutKeys)
     const DataTypePtr f64_type = std::make_shared<DataTypeFloat64>();
 
     const std::vector<GPUAggregationKind> aggregations
-        = {GPUAggregationKind::Sum, GPUAggregationKind::Min, GPUAggregationKind::Max, GPUAggregationKind::Sum, GPUAggregationKind::Max};
+        = {GPUAggregationKind::Sum, GPUAggregationKind::Min, GPUAggregationKind::Max, GPUAggregationKind::Sum, GPUAggregationKind::Sum};
     const DataTypes argument_types = {u32_type, u32_type, i64_type, i64_type, f64_type};
     DataTypes result_types;
     for (size_t i = 0; i < aggregations.size(); ++i)
@@ -323,17 +323,20 @@ TEST_F(GPUAggregation, ReduceWithoutKeys)
 
     UInt64 sum_u32 = 0;
     Int64 sum_i64 = 0;
+    Float64 sum_f64 = 0;
     for (size_t i = 0; i < rows; ++i)
     {
         sum_u32 += u32[i];
         sum_i64 += i64[i];
+        sum_f64 += f64[i];
     }
 
     EXPECT_EQ(results[0].safeGet<UInt64>(), sum_u32);
     EXPECT_EQ(results[1].safeGet<UInt64>(), *std::min_element(u32.begin(), u32.end()));
     EXPECT_EQ(results[2].safeGet<Int64>(), *std::max_element(i64.begin(), i64.end()));
     EXPECT_EQ(results[3].safeGet<Int64>(), sum_i64);
-    EXPECT_EQ(results[4].safeGet<Float64>(), *std::max_element(f64.begin(), f64.end()));
+    /// The device sums in another order.
+    EXPECT_NEAR(results[4].safeGet<Float64>(), sum_f64, sum_f64 * 1e-12);
 }
 
 TEST_F(GPUAggregation, ReduceWithoutRows)

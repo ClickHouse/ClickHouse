@@ -192,74 +192,6 @@ String aggregationName(GPUAggregationKind aggregation)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU aggregation {}", aggregation);
 }
 
-bool canReduceOnDevice(const IDataType & argument_type, const IDataType & result_type, GPUAggregationKind aggregation)
-{
-    /// Only a `GROUP BY` counts and averages, see `canGroupByOnDevice`.
-    if (aggregation == GPUAggregationKind::Count || aggregation == GPUAggregationKind::Mean)
-        return false;
-
-    if (aggregation == GPUAggregationKind::Sum)
-    {
-        const auto element_type = elementTypeOf(argument_type);
-        return element_type && elementTypeOf(result_type) == sumResultTypeFor(*element_type);
-    }
-
-    /// A `min` or a `max` is of the argument's type, and of values of varying width too, compared by their bytes.
-    const auto column_type = columnTypeOf(argument_type);
-    return column_type && columnTypeOf(result_type) == column_type;
-}
-
-bool canGroupByOnDevice(const IDataType * argument_type, const IDataType & result_type, GPUAggregationKind aggregation)
-{
-    switch (aggregation)
-    {
-        case GPUAggregationKind::Count:
-            return elementTypeOf(result_type) == GPUElementType::UInt64;
-        case GPUAggregationKind::Mean:
-        {
-            /// cuDF averages integers through a sum in an `Int64`, which a group of 64-bit integers overflows where
-            /// ClickHouse's `avg` does not; one of narrower integers does not, below 2^31 rows.
-            const auto element_type = argument_type ? elementTypeOf(*argument_type) : std::nullopt;
-            return element_type && (!isInteger(*element_type) || sizeOf(*element_type) <= 4)
-                && elementTypeOf(result_type) == GPUElementType::Float64;
-        }
-        case GPUAggregationKind::Sum:
-            /// cuDF sums a `Float32` into a `Float32`, where ClickHouse sums it into a `Float64`.
-            if (argument_type && elementTypeOf(*argument_type) == GPUElementType::Float32)
-                return false;
-            [[fallthrough]];
-        case GPUAggregationKind::Min:
-        case GPUAggregationKind::Max:
-            return argument_type && canReduceOnDevice(*argument_type, result_type, aggregation);
-    }
-    return false;
-}
-
-GPUElementType groupByResultTypeOrThrow(const IDataType * argument_type, const IDataType & result_type, GPUAggregationKind aggregation)
-{
-    if (!canGroupByOnDevice(argument_type, result_type, aggregation))
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot group a column of {} into {} by `{}` on a GPU",
-            argument_type ? argument_type->getName() : "nothing",
-            result_type.getName(),
-            aggregationName(aggregation));
-    return *columnTypeOf(result_type);
-}
-
-GPUElementType reducibleElementTypeOrThrow(const IDataType & argument_type, const IDataType & result_type, GPUAggregationKind aggregation)
-{
-    if (canReduceOnDevice(argument_type, result_type, aggregation))
-        return *columnTypeOf(argument_type);
-
-    throw Exception(
-        ErrorCodes::LOGICAL_ERROR,
-        "Cannot reduce a column of {} into {} by `{}` on a GPU",
-        argument_type.getName(),
-        result_type.getName(),
-        aggregationName(aggregation));
-}
-
 std::optional<GPUElementType> keyElementTypeOf(const IDataType & type)
 {
     if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(&type))
@@ -295,13 +227,54 @@ std::vector<GPUElementType> groupByKeysOrThrow(const DataTypes & key_types)
     return keys;
 }
 
-bool canGroupByReduceOnDevice(
+namespace
+{
+
+/// Whether the device aggregates a column of `argument_type`, or no column for a `count`, into `result_type`: by a
+/// reduction without keys, by a `CudfGroupBy` with them.
+bool canAggregateOnDevice(const IDataType * argument_type, const IDataType & result_type, GPUAggregationKind aggregation, bool grouped)
+{
+    switch (aggregation)
+    {
+        case GPUAggregationKind::Count:
+            return grouped && elementTypeOf(result_type) == GPUElementType::UInt64;
+        case GPUAggregationKind::Mean:
+        {
+            /// cuDF averages through a sum of the argument's width: in an `Int64`, which a group of 64-bit integers
+            /// overflows where ClickHouse's `avg` does not, and in a `Float32`, where ClickHouse sums into a `Float64`.
+            const auto element_type = argument_type ? elementTypeOf(*argument_type) : std::nullopt;
+            return grouped && element_type && *element_type != GPUElementType::Float32
+                && (!isInteger(*element_type) || sizeOf(*element_type) <= 4)
+                && elementTypeOf(result_type) == GPUElementType::Float64;
+        }
+        case GPUAggregationKind::Sum:
+        {
+            const auto element_type = argument_type ? elementTypeOf(*argument_type) : std::nullopt;
+            /// cuDF groups a sum of a `Float32` into a `Float32`, where ClickHouse sums it into a `Float64`.
+            return element_type && !(grouped && *element_type == GPUElementType::Float32)
+                && elementTypeOf(result_type) == sumResultTypeFor(*element_type);
+        }
+        case GPUAggregationKind::Min:
+        case GPUAggregationKind::Max:
+        {
+            /// Of the argument's type, and of values of varying width too, compared by their bytes. Not of floats:
+            /// cuDF compares a `NaN` as is, where ClickHouse skips it once it has a number.
+            const auto column_type = argument_type ? columnTypeOf(*argument_type) : std::nullopt;
+            return column_type && *column_type != GPUElementType::Float32 && *column_type != GPUElementType::Float64
+                && columnTypeOf(result_type) == column_type;
+        }
+    }
+    return false;
+}
+
+}
+
+bool canAggregateOnDevice(
     const DataTypes & key_types,
     const DataTypes & argument_types,
     const DataTypes & result_types,
     const std::vector<GPUAggregationKind> & aggregations)
 {
-    /// Without keys, `CudfGroupBy` groups the rows by a key of its own, the same for every row.
     if (argument_types.empty() || argument_types.size() != result_types.size() || argument_types.size() != aggregations.size())
         return false;
 
@@ -315,12 +288,13 @@ bool canGroupByReduceOnDevice(
             return false;
     }
 
-    /// A `count` has no argument.
+    const bool grouped = !key_types.empty();
     bool averages = false;
     bool extremes_of_strings = false;
     for (size_t i = 0; i < argument_types.size(); ++i)
     {
-        if (!canGroupByOnDevice(argument_types[i].get(), *result_types[i], aggregations[i]))
+        /// A `count` has no argument.
+        if (!canAggregateOnDevice(argument_types[i].get(), *result_types[i], aggregations[i], grouped))
             return false;
         averages |= aggregations[i] == GPUAggregationKind::Mean;
         extremes_of_strings |= (aggregations[i] == GPUAggregationKind::Min || aggregations[i] == GPUAggregationKind::Max)

@@ -351,7 +351,17 @@ const IDeviceColumn & ColumnUploadPipe::deviceColumn() const
 
 DeviceColumnBuffer ColumnUploadPipe::takeDeviceColumn()
 {
-    DeviceColumnBuffer taken = std::exchange(device, deviceColumnFor(column_type, stream));
+    DeviceColumnBuffer taken(std::move(device));
+    /// In place, as the buffers have no assignment.
+    switch (columnKindOf(column_type))
+    {
+        case GPUColumnKind::Fixed:
+            device.emplace<DeviceFixedColumnBuffer>(column_type, stream);
+            break;
+        case GPUColumnKind::Variable:
+            device.emplace<DeviceVariableColumnBuffer>(stream);
+            break;
+    }
     staged_rows = 0;
     staged_bytes = 0;
     staged_chars = 0;

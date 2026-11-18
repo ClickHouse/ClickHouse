@@ -43,11 +43,17 @@ __host__ const char * messageOf(const StandardException & exception)
     return *reinterpret_cast<const char * const *>(reinterpret_cast<const char *>(&exception) + sizeof(void *));
 }
 
+/// Keeps the exception being handled, one of cuDF, rmm or libstdc++, from being destroyed. Its destructor calls that of
+/// `std::exception` and the like, whose symbols are the same in the two standard libraries of the binary, and which the
+/// linker binds to libc++'s, which do not know the layout of libstdc++. The exception is of libc++abi, which the
+/// linker binds `__cxa_throw` to as well, and is given a reference that is never dropped: an error of the device leaks it.
+__host__ void keepCurrentException();
+
 /// Runs `body`, and rethrows what cuDF or rmm throw as a ClickHouse exception that says what was being done. The
 /// exceptions of cuDF and rmm are caught by their types, and their messages read: by the `what` of rmm's own, by
 /// `messageOf` of cuDF's. Of any other exception, `what` is not read: the binary holds two standard libraries, and an
 /// exception of the other one is not safe to look into. What the device reports is said instead, as a fault on it is
-/// what such an exception usually comes of.
+/// what such an exception usually comes of. None of them is destroyed, see `keepCurrentException`.
 template <typename Body>
 __host__ auto guarded(const std::string & doing, Body && body)
 {
@@ -57,20 +63,25 @@ __host__ auto guarded(const std::string & doing, Body && body)
     }
     catch (const rmm::out_of_memory & exception)
     {
+        keepCurrentException();
         throwGPUError((doing + ": out of device memory: " + exception.what()).c_str());
     }
     catch (const cudf::cuda_error & exception)
     {
+        keepCurrentException();
         throwGPUError((doing + ": CUDA error: " + messageOf<std::runtime_error>(exception)).c_str());
     }
     catch (const cudf::logic_error & exception)
     {
+        keepCurrentException();
         throwGPUError((doing + ": " + messageOf<std::logic_error>(exception)).c_str());
     }
     catch (const std::exception & exception)
     {
         if (isClickHouseException(exception))
             throw;
+
+        keepCurrentException();
 
         const cudaError_t last = cudaPeekAtLastError();
         std::string message = doing + ": an exception the device library does not know";

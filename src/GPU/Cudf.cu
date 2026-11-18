@@ -10,11 +10,26 @@
 #include <cstdint>
 #include <exception>
 #include <limits>
+#include <mutex>
 #include <string>
 #include <utility>
+#include <vector>
+
+/// Of libc++abi: the exception being handled, with a reference of the caller.
+extern "C" void * __cxa_current_primary_exception() noexcept;
 
 namespace DB::GPU
 {
+
+__host__ void keepCurrentException()
+{
+    static std::mutex mutex;
+    /// Never destroyed, and reachable, so a leak checker does not report them.
+    static auto * kept = new std::vector<void *>;
+    void * exception = __cxa_current_primary_exception();
+    std::lock_guard lock(mutex);
+    kept->push_back(exception);
+}
 
 __host__ void setCudfMemoryPool(cudaMemPool_t pool)
 {
