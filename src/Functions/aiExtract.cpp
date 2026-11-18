@@ -198,7 +198,7 @@ private:
     }
 
     /// In instruction mode the reply is constrained to `{"result": "..."}`: return the value, or an empty string for `null`.
-    /// In schema mode the keys are the user's, possibly a sole `result`, so the JSON object is returned as is.
+    /// In schema mode, return the JSON object as is.
     /// Parse errors are swallowed on purpose — the user will see the output anyway.
     String postProcessResponse(const ColumnsWithTypeAndName & arguments, const String & raw) const override
     {
