@@ -5142,6 +5142,16 @@ static void serializeConstant(
     type.getDefaultSerialization()->serializeBinary(data, 0, out, FormatSettings{});
 }
 
+/// `FunctionCaptureOverloadResolver` refuses to capture an expression with `ARRAY JOIN`: `FunctionExpression`
+/// expects its body to keep the number of rows. A deserialized lambda is built directly as `FunctionCapture`
+/// or `FunctionExpression`, so check the same here. Lambdas nested in the body are checked when they are
+/// deserialized themselves.
+static void checkDeserializedLambdaBody(const ActionsDAG & capture_dag)
+{
+    if (capture_dag.hasArrayJoin())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized lambda body must not contain ARRAY JOIN");
+}
+
 /// The maximum nesting depth of lambda captures in a deserialized `ActionsDAG`.
 /// The serialized data may come from a client, and the deserialization is recursive.
 static constexpr size_t MAX_ACTIONS_DAG_DESERIALIZATION_DEPTH = 1000;
@@ -5192,6 +5202,7 @@ static ColumnConst::Ptr deserializeConstant(
         LambdaCapture capture;
         deserializeCapture(capture, in, max_type_complexity);
         auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity, nesting_depth + 1);
+        checkDeserializedLambdaBody(capture_dag);
 
         UInt64 num_captured_columns = 0;
         readVarUInt(num_captured_columns, in);
@@ -5491,6 +5502,7 @@ ActionsDAG ActionsDAG::deserialize(
                 LambdaCapture capture;
                 deserializeCapture(capture, in, max_type_complexity);
                 auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity, nesting_depth + 1);
+                checkDeserializedLambdaBody(capture_dag);
 
                 node.function_base = std::make_shared<FunctionCapture>(
                     std::make_shared<ExpressionActions>(

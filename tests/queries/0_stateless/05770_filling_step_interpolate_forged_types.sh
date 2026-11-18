@@ -5,7 +5,8 @@
 # a type matching the header and have `FillingTransform` `insertFrom` a column of another type, reading
 # memory out of bounds. `ActionsDAG::deserialize` now checks the declared types of `ALIAS` and `ARRAY_JOIN`
 # nodes, and `FillingStep::deserialize` refuses `ARRAY_JOIN` in `INTERPOLATE`, which changes the number of
-# rows of the single-row interpolation block (and the analyzer does not allow it anyway).
+# rows of the single-row interpolation block (and the analyzer does not allow it anyway). A deserialized
+# lambda body must not contain `ARRAY_JOIN` either, as the planner refuses to capture it.
 # The raw protocol client is the one of 05575_filling_step_plan_deserialization.sh; the last plan is
 # well-formed, so the refusals are specific.
 
@@ -26,7 +27,7 @@ VERSION = 21       # DBMS_QUERY_PLAN_SERIALIZATION_VERSION, pinned so the byte l
 OLD = 17           # one below DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP
 U8, U16 = b"\x01", b"\x02"            # BinaryTypeIndex
 ARR8 = b"\x1e" + U8                   # Array(UInt8)
-NUL, INPUT, ALIAS, ARRAY_JOIN = b"\x00", 0, 2, 3   # a Null Field or a zero flags byte, ActionsDAG::ActionType
+NUL, INPUT, ALIAS, ARRAY_JOIN, FUNCTION = b"\x00", 0, 2, 3, 4   # a Null Field or a zero flags byte, ActionsDAG::ActionType
 
 
 def vu(x):
@@ -64,14 +65,21 @@ def skip_hello(f):
 def header(columns):
     return vu(len(columns)) + b"".join(sb(n) + t for n, t in columns)
 
-def interpolate(nodes, outputs, pairs):
-    # The `flags & 2` payload: an ActionsDAG, then (input header key, DAG input name) pairs.
+def dag(nodes, outputs):
+    # A serialized ActionsDAG with node 0 as its only input. A node is either a tuple or raw bytes.
     out = vu(len(nodes))
-    for kind, name, type_, children in nodes:
+    for node in nodes:
+        if isinstance(node, bytes):
+            out += node
+            continue
+        kind, name, type_, children = node
         out += bytes([kind]) + sb(name) + type_ + vu(len(children))
         out += b"".join(vu(c) for c in children) + NUL   # no constant column on the node
-    out += vu(1) + vu(0) + vu(len(outputs)) + b"".join(vu(i) for i in outputs)   # inputs, outputs
-    return bytes([2]) + out + vu(len(pairs)) + b"".join(sb(k) + sb(n) for k, n in pairs)
+    return out + vu(1) + vu(0) + vu(len(outputs)) + b"".join(vu(i) for i in outputs)   # inputs, outputs
+
+def interpolate(nodes, outputs, pairs):
+    # The `flags & 2` payload: an ActionsDAG, then (input header key, DAG input name) pairs.
+    return bytes([2]) + dag(nodes, outputs) + vu(len(pairs)) + b"".join(sb(k) + sb(n) for k, n in pairs)
 
 def forge(label, payload, children=(), version=VERSION, out_columns=()):
     plan = vu(version) + vu(0) + NUL + vu(len(children))   # version, max_threads, concurrency
@@ -101,8 +109,6 @@ def forge(label, payload, children=(), version=VERSION, out_columns=()):
         print(label, {117: "INCORRECT_DATA", 48: "NOT_IMPLEMENTED"}.get(code, "other"))
 
 FILL = vu(1) + sb("x") + bytes([9]) + sb("") + NUL * 3 + b"\x01\x01" + NUL  # x ASC WITH FILL STEP 1
-
-FILL = vu(1) + sb("x") + bytes([9]) + sb("") + NUL * 3 + b"\x01\x01" + NUL  # x ASC WITH FILL STEP 1
 H = [("x", U8), ("y", U16)]
 HA = [("x", U8), ("a", ARR8), ("y", U16)]
 HA8 = [("x", U8), ("a", ARR8), ("z", U8)]
@@ -119,6 +125,14 @@ forge("array join of not an array",
 forge("array join in interpolate",
       FILL + interpolate([(INPUT, "a", ARR8, ()), (ARRAY_JOIN, "z", U8, (0,))], [1], [("a", "a")]) + vu(0), [HA8], VERSION, HA8)
 X8Z = [("x", U8), ("z", U8)]
+# `ARRAY JOIN` hidden in the body of a lambda that captures nothing: `e -> arrayJoin(e)`, `Array(UInt8) -> UInt8`.
+# The planner refuses to capture such a body, and the check of `FillingStep` does not look into lambdas.
+LAMBDA = (bytes([FUNCTION]) + sb("lambda(tuple(e), arrayJoin(e))") + b"\x24" + vu(1) + ARR8 + U8 + vu(0)
+          + b"\x04" + sb("lambda")                                        # flags: a lambda capture
+          + sb("r") + U8 + vu(0) + vu(0) + vu(1) + sb("e") + ARR8           # return, no captures, argument
+          + dag([(INPUT, "e", ARR8, ()), (ARRAY_JOIN, "r", U8, (0,))], [1]))
+forge("array join in a lambda body",
+      FILL + interpolate([(INPUT, "x", U8, ()), (ALIAS, "z", U8, (0,)), LAMBDA], [1], [("x", "x")]) + vu(0), [X8Z], VERSION, X8Z)
 forge("well-formed alias",
       FILL + interpolate([(INPUT, "x", U8, ()), (ALIAS, "z", U8, (0,))], [1], [("x", "x")]) + vu(0), [X8Z], VERSION, X8Z)
 PYEOF
