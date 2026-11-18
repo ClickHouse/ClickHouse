@@ -1111,6 +1111,8 @@ private:
             /// is a bare tag, which still has to be verified.
             const bool input_is_empty = input_value.empty();
             bool decrypt_fail = false;
+            /// Where the output of this row starts, to drop it if the row fails.
+            auto * const row_start = decrypted;
 
             if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
             {
@@ -1250,10 +1252,15 @@ private:
                 }
             }
 
-            /// A failed EVP_DecryptUpdate / EVP_DecryptFinal_ex can leave buffered input
-            /// in the context, so force a full re-initialization on the next row.
             if (decrypt_fail)
+            {
+                /// `EVP_DecryptUpdate` may have written plaintext before `EVP_DecryptFinal_ex` failed, e.g. when
+                /// the GCM tag does not match. It is not authenticated, so it must not be kept under the NULL.
+                decrypted = row_start;
+                /// A failed EVP_DecryptUpdate / EVP_DecryptFinal_ex can leave buffered input
+                /// in the context, so force a full re-initialization on the next row.
                 ctx_key_state.reset();
+            }
 
             decrypted_result_column_offsets.push_back(decrypted - decrypted_result_column_data.data());
             if constexpr (use_null_when_decrypt_fail)

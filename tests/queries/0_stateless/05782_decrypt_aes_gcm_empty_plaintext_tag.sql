@@ -35,3 +35,17 @@ WITH '0123456789abcdef' AS key, '123456789012' AS iv
 SELECT decrypt('aes-128-gcm', c, key, iv), tryDecrypt('aes-128-gcm', c, key, iv)
 FROM (SELECT if(number = 0, NULL, encrypt('aes-128-gcm', '', key, iv)) AS c FROM numbers(2))
 SETTINGS short_circuit_function_evaluation_for_nulls = 0;
+
+-- When the tag check fails, `tryDecrypt` returns NULL and keeps none of the unauthenticated plaintext under it,
+-- also when the failing row is the last one.
+WITH '0123456789abcdef' AS k, '123456789012' AS iv,
+     encrypt('aes-128-gcm', 'top secret', k, iv) AS c,
+     concat(substring(c, 1, length(c) - 1), char(bitXor(reinterpret(substring(c, length(c), 1), 'UInt8'), 1))) AS forged
+SELECT tryDecrypt('aes-128-gcm', x, k, iv) AS r, assumeNotNull(r)
+FROM (SELECT arrayJoin([encrypt('aes-128-gcm', 'first', k, iv), forged, encrypt('aes-128-gcm', 'last', k, iv)]) AS x);
+
+WITH '0123456789abcdef' AS k, '123456789012' AS iv,
+     encrypt('aes-128-gcm', 'top secret', k, iv) AS c,
+     concat(substring(c, 1, length(c) - 1), char(bitXor(reinterpret(substring(c, length(c), 1), 'UInt8'), 1))) AS forged
+SELECT tryDecrypt('aes-128-gcm', x, k, iv) AS r, assumeNotNull(r)
+FROM (SELECT arrayJoin([encrypt('aes-128-gcm', 'first', k, iv), forged]) AS x);
