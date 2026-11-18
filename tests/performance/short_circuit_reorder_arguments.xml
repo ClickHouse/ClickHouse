@@ -12,7 +12,7 @@
     <!-- A heavy condition of the AND chain in `WHERE` is written first: the cheap selective ones after it
          (a `Decimal` compared with an integer inside `or`, and `s != ''`) are evaluated first. -->
     <create_query>CREATE TABLE short_circuit_reorder_json (j String, d Decimal(76, 38), s Nullable(String)) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <fill_query>INSERT INTO short_circuit_reorder_json SELECT concat('{"k1":"', toString(cityHash64(number)), '","k2":"', repeat('p', 150), '","k7":"', if(number % 3 = 0, 'X', 'Connected'), '"}'), toDecimal256(cityHash64(number, 1) % 3600 / 14, 38), if(cityHash64(number, 2) % 10 = 0, concat('u', toString(number)), '') FROM numbers(20000000)</fill_query>
+    <fill_query>INSERT INTO short_circuit_reorder_json SELECT concat('{{"k1":"', toString(cityHash64(number)), '","k2":"', repeat('p', 150), '","k7":"', if(number % 3 = 0, 'X', 'Connected'), '"}}'), toDecimal256(cityHash64(number, 1) % 3600 / 14, 38), if(cityHash64(number, 2) % 10 = 0, concat('u', toString(number)), '') FROM numbers(20000000)</fill_query>
     <query>SELECT count() FROM short_circuit_reorder_json WHERE JSONExtractString(j, 'k7') = 'Connected' AND (d > 240 OR d IS NULL) AND s != '' SETTINGS optimize_move_to_prewhere = 0 FORMAT Null</query>
     <drop_query>DROP TABLE IF EXISTS short_circuit_reorder_json</drop_query>
 </test>
