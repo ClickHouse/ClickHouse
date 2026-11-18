@@ -10,8 +10,10 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <algorithm>
+#include <vector>
 
 namespace DB
 {
@@ -57,26 +59,51 @@ bool planHasArrayJoinStep(const QueryPlan & query_plan)
     return nodeHasStep(query_plan.getRootNode(), [](const IQueryPlanStep & step) { return typeid_cast<const ArrayJoinStep *>(&step) != nullptr; });
 }
 
-bool planHasGroupByTopK(const QueryPlan & query_plan)
+namespace
 {
-    return nodeHasStep(
-        query_plan.getRootNode(),
-        [](const IQueryPlanStep & step)
-        {
-            const auto * aggregating_step = typeid_cast<const AggregatingStep *>(&step);
-            return aggregating_step && aggregating_step->getParams().top_k.has_value();
-        });
+
+void collectAggregatingNodes(const QueryPlan::Node * node, std::vector<const QueryPlan::Node *> & out)
+{
+    if (!node)
+        return;
+    if (typeid_cast<const AggregatingStep *>(node->step.get()))
+        out.push_back(node);
+    for (const QueryPlan::Node * child : node->children)
+        collectAggregatingNodes(child, out);
 }
 
-bool planHasAggregationInOrder(const QueryPlan & query_plan)
+size_t countReadsFromMergeTree(const QueryPlan::Node * node)
 {
-    return nodeHasStep(
-        query_plan.getRootNode(),
-        [](const IQueryPlanStep & step)
-        {
-            const auto * aggregating_step = typeid_cast<const AggregatingStep *>(&step);
-            return aggregating_step && aggregating_step->inOrder();
-        });
+    if (!node)
+        return 0;
+    size_t count = typeid_cast<const ReadFromMergeTree *>(node->step.get()) ? 1 : 0;
+    for (const QueryPlan::Node * child : node->children)
+        count += countReadsFromMergeTree(child);
+    return count;
+}
+
+}
+
+bool planCanConsumePartialAggregatePlanHits(const QueryPlan & query_plan, bool optimize_uniq_exact_radix_partitioning)
+{
+    std::vector<const QueryPlan::Node *> aggregating_nodes;
+    collectAggregatingNodes(query_plan.getRootNode(), aggregating_nodes);
+    if (aggregating_nodes.size() != 1)
+        return false;
+
+    const auto & aggregating_step = typeid_cast<const AggregatingStep &>(*aggregating_nodes.front()->step);
+    if (aggregating_step.getParams().top_k.has_value() || aggregating_step.inOrder())
+        return false;
+
+    /// The radix partitioned `uniqExact` and the in-order `uniqExact` replace `AggregatingTransform` and do not
+    /// consume the hit chunks. The same condition as in `AggregatingStep::transformPipeline`.
+    if (aggregating_step.canUseRadixUniqExact() && (optimize_uniq_exact_radix_partitioning || aggregating_step.hasUniqExactInOrder()))
+        return false;
+
+    /// Every probing read must feed this aggregation: a read in another branch of the plan (e.g. the raw arm of
+    /// `SELECT k, sum(v) FROM t GROUP BY k UNION ALL SELECT k, v FROM t`) would replace its rows with hit chunks
+    /// that nothing consumes.
+    return countReadsFromMergeTree(query_plan.getRootNode()) == countReadsFromMergeTree(aggregating_nodes.front());
 }
 
 std::optional<IASTHash> computePartialAggregateCacheQueryHash(
@@ -92,7 +119,7 @@ std::optional<IASTHash> computePartialAggregateCacheQueryHash(
 
     /// The GROUP BY top-K heap (`enable_group_by_top_k_optimization`) skips the keys of a part that are beyond
     /// the boundary derived from the rows of other parts, so the state of a part depends on the whole part set
-    /// and cannot be keyed by the part identity alone. See `planHasGroupByTopK`.
+    /// and cannot be keyed by the part identity alone. See `planCanConsumePartialAggregatePlanHits`.
     if (params.top_k)
         return std::nullopt;
 
