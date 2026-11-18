@@ -68,9 +68,11 @@ function queries()
     cell 'FixedString key' \
         "SELECT k, count(), sum(v) FROM ($(lanes "toFixedString(leftPad(toString($(mixed toUInt64)), 8, '0'), 8)")) GROUP BY k"
     # The blocks of both branches spread over the producers, so a frozen producer takes blocks whose key column is a
-    # constant NULL.
+    # constant NULL: with aggregate functions in the map kernel, and without them in the set kernel.
     cell 'constant NULL keys' "SELECT k, count(), sum(v) FROM (SELECT toNullable(number % 300000) AS k, number AS v
         FROM numbers_mt(600000) UNION ALL SELECT CAST(NULL AS Nullable(UInt64)), number FROM numbers_mt(600000)) GROUP BY k"
+    cell 'constant NULL keys, key only' "SELECT k FROM (SELECT toNullable(number % 300000) AS k FROM numbers_mt(600000)
+        UNION ALL SELECT CAST(NULL AS Nullable(UInt64)) FROM numbers_mt(600000)) GROUP BY k"
     cell 'a producer of the NULL key alone' "SELECT k, count(), sum(v) FROM (SELECT CAST(NULL AS Nullable(UInt64)) AS k,
         number AS v FROM numbers(0, 150000) UNION ALL SELECT toNullable(number), number FROM numbers(150000, 150000)) GROUP BY k"
     cell 'below the freeze threshold' "SELECT k, count(), sum(v) FROM ($(lanes "if(NUMBER % 7 = 0, NULL, NUMBER % 500)")) GROUP BY k"

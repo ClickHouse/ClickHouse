@@ -12,6 +12,7 @@ String key, arguments	same result	froze	did not spill	did not bypass
 String key only	same result	froze	did not spill	did not bypass
 FixedString key	same result	froze	did not spill	did not bypass
 constant NULL keys	same result	froze	did not spill	bypassed
+constant NULL keys, key only	same result	froze	did not spill	bypassed
 a producer of the NULL key alone	same result	froze	did not spill	bypassed
 below the freeze threshold	same result	did not freeze	did not spill	did not bypass
 spilling	same result	froze	spilled	bypassed
