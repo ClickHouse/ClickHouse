@@ -40,7 +40,7 @@ public:
     {
     }
 
-    int64_t Length() const override { return reported_length; }
+    [[nodiscard]] int64_t Length() const override { return reported_length; }
 
     void Rewind() override { position = 0; }
 
@@ -299,13 +299,13 @@ public:
 
     /// How many blob downloads the reader has issued, so that a test can assert that a bound
     /// that allows no bytes at all does not go to the endpoint in the first place.
-    size_t getDownloadCount() const { return downloads; }
+    [[nodiscard]] size_t getDownloadCount() const { return downloads; }
 
     /// How many `GetProperties` (`HEAD`) requests the reader has issued.
-    size_t getPropertiesCount() const { return properties_requests; }
+    [[nodiscard]] size_t getPropertiesCount() const { return properties_requests; }
 
     /// The `If-Match` condition of the last download, or empty if it had none.
-    const std::string & getLastIfMatch() const { return last_if_match; }
+    [[nodiscard]] const std::string & getLastIfMatch() const { return last_if_match; }
 
     std::unique_ptr<Azure::Core::Http::RawResponse> Send(
         Azure::Core::Http::Request & request, const Azure::Core::Context &) override
@@ -367,7 +367,7 @@ public:
 private:
     /// `bytes=<begin>-<end>`, where `<end>` is inclusive and can be absent. Returns the
     /// half-open range.
-    std::pair<size_t, size_t> parseRange(const Azure::Core::Http::Request & request) const
+    [[nodiscard]] std::pair<size_t, size_t> parseRange(const Azure::Core::Http::Request & request) const
     {
         const auto headers = request.GetHeaders();
         auto it = headers.find("x-ms-range");

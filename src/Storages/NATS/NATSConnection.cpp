@@ -68,11 +68,11 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
     statistics.reset(new_statistics);
 
     if (!configuration.username.empty() && !configuration.password.empty())
-        natsOptions_SetUserInfo(options.get(), configuration.username.c_str(), configuration.password.c_str());
+        natsOptions_SetUserInfo(options.get(), configuration.username.c_str(), String(configuration.password).c_str());
     if (!configuration.token.empty())
-        natsOptions_SetToken(options.get(), configuration.token.c_str());
+        natsOptions_SetToken(options.get(), String(configuration.token).c_str());
     if (!configuration.credentials.empty())
-        natsOptions_SetUserCredentialsFromMemory(options.get(), configuration.credentials.c_str());
+        natsOptions_SetUserCredentialsFromMemory(options.get(), String(configuration.credentials).c_str());
     else if (!configuration.credential_file.empty())
         natsOptions_SetUserCredentialsFromFiles(options.get(), configuration.credential_file.c_str(), nullptr);
 

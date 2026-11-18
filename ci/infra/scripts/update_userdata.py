@@ -23,7 +23,7 @@ from the praktika `deploy` path. It runs in two phases:
 The plan is always printed. By default that is all that happens - pass
 `--apply` to execute it.
 
-The `EC2Instance.Config` entries in `ci/infra/cloud.py` are the source of truth:
+The `EC2Instance.Config` entries in `ci/infrastructure/projects.py` are the source of truth:
 each config supplies the `region` and `user_data_file`, and its live instances
 are discovered with praktika's own tag-based lookup. You pass the EC2 instance
 ids to touch via `--instance`; with no `--instance` every live instance of every
@@ -41,7 +41,6 @@ Examples:
 import argparse
 import base64
 import difflib
-import importlib.util
 import os
 import sys
 import time
@@ -53,7 +52,6 @@ from botocore.exceptions import ClientError
 from botocore.waiter import WaiterModel, create_waiter_with_client
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-CLOUD_CONFIG_PATH = os.path.join(REPO_ROOT, "ci", "infra", "cloud.py")
 
 # Empty `region` in a config means "the default" — match the AWS SDK default
 # region used throughout praktika.
@@ -61,18 +59,18 @@ DEFAULT_REGION = "us-east-1"
 
 
 def load_ec2_configs():
-    """Load `ci/infra/cloud.py` and return its `EC2Instance.Config`s keyed by name.
-
-    `cloud.py` imports `from praktika import ...` and `from ci.defs.defs import
-    ...`, so both the repo root and `ci/` must be importable before it loads.
-    """
+    """Return the `EC2Instance.Config`s of every dedicated runner pool in `ci/infrastructure/projects.py`, keyed by name."""
     for path in (REPO_ROOT, os.path.join(REPO_ROOT, "ci")):
         if path not in sys.path:
             sys.path.insert(0, path)
-    spec = importlib.util.spec_from_file_location("cloud", CLOUD_CONFIG_PATH)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return {config.name: config for config in module.CLOUD.ec2_instances}
+    from ci.infrastructure.projects import PROJECTS
+
+    return {
+        config.name: config
+        for project in PROJECTS
+        for pool in project.dedicated_runner_pools
+        for config in pool.ec2_instances
+    }
 
 
 def get_live_user_data(ec2, instance_id) -> str:
@@ -327,7 +325,7 @@ def load_user_data(config):
 def build_plan(configs, requested_ids) -> List[PlanItem]:
     """Read live state (read-only) and return the list of `PlanItem`s.
 
-    Each one's `region` and `user_data_file` come from the `ci/infra/cloud.py`
+    Each one's `region` and `user_data_file` come from the `ci/infrastructure/projects.py`
     config that owns it. With `requested_ids` set, only those ids are planned
     and an id that belongs to no config is an error. With `requested_ids` None,
     every live instance of every config is planned.
@@ -385,7 +383,7 @@ def build_plan(configs, requested_ids) -> List[PlanItem]:
     if pending:
         raise Exception(
             f"instance(s) {sorted(pending)} not found under any EC2Instance "
-            f"config in ci/infra/cloud.py"
+            f"config in ci/infrastructure/projects.py"
         )
 
     # Start already-stopped instances before any update: an update stops its
@@ -407,7 +405,7 @@ def main():
         metavar="INSTANCE_ID",
         help=(
             "EC2 instance ids to plan (e.g. i-0123456789abcdef0). Each id is "
-            "matched to its ci/infra/cloud.py config to source the region and "
+            "matched to its ci/infrastructure/projects.py config to source the region and "
             "user_data file. When omitted, every live instance of every config "
             "is planned."
         ),
