@@ -423,9 +423,8 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
     if (atoms.size() < 2)
         return {};
 
-    /// If the first atom is heavy, split the first atom that can be moved to the front instead, but not past an atom with
-    /// order-sensitive functions. The other atoms keep their relative order. A cheap first atom is kept: it may be the more
-    /// selective one, as in `notEmpty(s) AND s < 'x'`.
+    /// If the first atom is heavy, split the first atom that can be moved to the front instead. The other atoms keep their
+    /// relative order. A cheap first atom is kept: it may be the more selective one, as in `notEmpty(s) AND s < 'x'`.
     /// This is decided once per pipeline, not per block, so the profile event `ShortCircuitArgumentsReordered` is not incremented here.
     if (reorder && isHeavyAndChainAtom(atoms.front()))
     {
