@@ -566,7 +566,6 @@ private:
     bool use_column_identifier_as_action_node_name = true;
     ColumnIdentifierConvention column_identifier_convention = ColumnIdentifierConvention::Current;
     QueryTreeNodeSet * unrenderable_identifier_nodes = nullptr;
-    /// Verdict slot of the name currently being rendered; each nested request substitutes its own.
     bool * unrenderable_in_current_subtree = nullptr;
 };
 

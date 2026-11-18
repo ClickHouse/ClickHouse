@@ -1011,7 +1011,6 @@ void Planner::buildPlanForQueryNode()
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
 
-    /// Before the FetchColumns early return: needs this context's table expression data.
     if (select_query_options.to_stage != QueryProcessingStage::Complete
         && select_query_options.to_stage != QueryProcessingStage::QueryPlan)
         collectLegacyActionNodeNames(query_tree, planner_context);
