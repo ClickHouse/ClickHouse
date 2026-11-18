@@ -34,7 +34,7 @@ using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
 /** See the description of the data structure in MergeTreeData.
   */
-class StorageMergeTree final : public MergeTreeData
+class StorageMergeTree : public MergeTreeData
 {
 public:
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
@@ -46,6 +46,15 @@ public:
     StorageMergeTree(
         const StorageID & table_id_,
         const String & relative_data_path_,
+        const StorageInMemoryMetadata & metadata,
+        LoadingStrictnessLevel mode,
+        ContextMutablePtr context_,
+        const String & date_column_name,
+        const MergingParams & merging_params_,
+        std::unique_ptr<MergeTreeSettings> settings_);
+
+    StorageMergeTree(
+        const StorageID & table_id_,
         const StorageInMemoryMetadata & metadata,
         LoadingStrictnessLevel mode,
         ContextMutablePtr context_,
@@ -133,9 +142,17 @@ public:
     /// so the part is moved to `detached` with the prefix `fsync-failed`, and it is removed from the deduplication log,
     /// so that a retry of the insert writes the data again, even after a restart of the server.
     void detachPartAfterFailedFsync(const DataPartPtr & part);
+protected:
+    /// For block numbers.
+    SimpleIncrement increment;
+
+    void loadMutations();
+
+    /// Load and initialize deduplication logs. Even if deduplication setting
+    /// equals zero creates object with deduplication window equals zero.
+    void loadDeduplicationLog();
 
 private:
-
     /// Mutex and condvar for synchronous mutations wait
     std::mutex mutation_wait_mutex;
     std::condition_variable mutation_wait_event;
@@ -145,9 +162,6 @@ private:
     MergeTreeCleanupThread cleanup_thread;
 
     std::unique_ptr<MergeTreeDeduplicationLog> deduplication_log;
-
-    /// For block numbers.
-    SimpleIncrement increment;
 
     /// For clearOldBrokenDetachedParts
     AtomicStopwatch time_after_previous_cleanup_broken_detached_parts;
@@ -194,17 +208,11 @@ private:
 
     const bool support_transaction;
 
-    void loadMutations();
     /// Reads a `mutation_*.txt` entry, reporting an entry that the owner of a shared directory removed meanwhile.
     MergeTreeMutationEntry loadMutationEntry(const DiskPtr & disk, const String & file_name) const;
     /// Removes the mutation entries and the deduplication log, which `dropAllData` leaves alone when the table
     /// occupies the whole disk (`table_disk`).
     void removeOwnFilesInDiskRootOnDrop(const DiskPtr & disk) override;
-
-    /// Load and initialize deduplication logs. Even if deduplication setting
-    /// equals zero creates object with deduplication window equals zero.
-    void loadDeduplicationLog();
-
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
       * The merge runs on this thread for the query of `query_thread_group`, which gets the counters of the merge.
@@ -414,6 +422,8 @@ private:
     /// thread and all assignees. Idempotent. Used after `shutdown_called` is set, both by `shutdown` and by a
     /// `startup` or an `ALTER` that armed some tasks and then observed a concurrent `shutdown`.
     void stopAllBackgroundTasks();
+    /// The implementation of `shutdown`. Non-virtual, so that the destructor can call it.
+    void shutdownImpl(bool is_drop);
     void enableBackgroundWorkers() noexcept;
     void disableBackgroundWorkers() noexcept;
     /// Schedules the merge/mutate and move assignees, the cleanup thread, and the outdated and

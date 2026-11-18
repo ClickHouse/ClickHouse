@@ -139,6 +139,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 
     writer_settings.stream_base_manifest = std::move(stream_base_manifest);
 
+    data_part->storage.commitToManifest(data_part, ManifestOpType::PreCommit);
+
     data_part_storage->createDirectories();
 
     /// NOTE do not pass context for writing to system.transactions_info_log,

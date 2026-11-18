@@ -7,6 +7,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/StorageMergeTreeWithManifest.h>
 #include <Storages/TableZnodeInfo.h>
 
 #include <Compression/CompressionFactory.h>
@@ -46,6 +47,8 @@
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
+
+#include "config.h"
 
 
 namespace DB
@@ -223,12 +226,19 @@ static bool isReplicated(const String & engine_name)
     return engine_name.starts_with("Replicated") && engine_name.ends_with("MergeTree");
 }
 
+static bool isManifest(const String & engine_name)
+{
+    return engine_name == "MergeTreeWithManifest";
+}
+
 /// Returns the part of the name of a table engine between "Replicated" (if any) and "MergeTree".
 static std::string_view getNamePart(const String & engine_name)
 {
     std::string_view name_part = engine_name;
     if (name_part.starts_with("Replicated"))
         name_part.remove_prefix(strlen("Replicated"));
+    if (name_part.starts_with("MergeTreeWithManifest"))
+        name_part.remove_prefix(strlen("MergeTreeWithManifest"));
 
     if (name_part.ends_with("MergeTree"))
         name_part.remove_suffix(strlen("MergeTree"));
@@ -454,6 +464,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     const Settings & local_settings = args.getLocalContext()->getSettingsRef();
 
     bool replicated = isReplicated(args.engine_name);
+    bool manifest = isManifest(args.engine_name);
     std::string_view name_part = getNamePart(args.engine_name);
 
     MergeTreeData::MergingParams merging_params;
@@ -552,7 +563,17 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     size_t arg_num = 0;
     size_t arg_cnt = engine_args.size();
 
-    if (arg_cnt < min_num_params || arg_cnt > max_num_params)
+    size_t effective_arg_cnt = arg_cnt;
+    if (manifest && arg_cnt > 0)
+    {
+        if (const auto * ast = engine_args[0]->as<ASTLiteral>())
+        {
+            if (ast->value.getType() == Field::Types::String)
+                effective_arg_cnt = 0;
+        }
+    }
+
+    if (effective_arg_cnt < min_num_params || effective_arg_cnt > max_num_params)
     {
         String msg;
         if (max_num_params == 0)
@@ -694,6 +715,29 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
 
     String date_column_name;
+    String manifest_storage_type;
+
+    if (manifest && !engine_args.empty())
+    {
+        if (const auto * ast = engine_args[0]->as<ASTLiteral>())
+        {
+            if (ast->value.getType() == Field::Types::String)
+            {
+                manifest_storage_type = ast->value.safeGet<String>();
+                ++arg_num;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "MergeTreeWithManifest engine argument must be a string (e.g., MergeTreeWithManifest('rocksdb'))");
+            }
+        }
+        else
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "MergeTreeWithManifest engine argument must be a string literal (e.g., MergeTreeWithManifest('rocksdb'))");
+        }
+    }
 
     StorageInMemoryMetadata metadata;
 
@@ -1295,6 +1339,28 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             std::move(storage_settings),
             need_check_table_structure,
             create_query_zk_retries_info);
+    }
+
+    if (manifest)
+    {
+#if !USE_ROCKSDB
+        if (manifest_storage_type == "rocksdb" || manifest_storage_type.empty())
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Can't use MergeTreeWithManifest engine if ClickHouse was compiled without RocksDB. "
+                "Rebuild with USE_ROCKSDB=1 or use a different manifest storage type.");
+        }
+#endif
+        return std::make_shared<StorageMergeTreeWithManifest>(
+            args.table_id,
+            args.relative_data_path,
+            metadata,
+            args.mode,
+            context,
+            date_column_name,
+            merging_params,
+            std::move(storage_settings),
+            manifest_storage_type);
     }
 
     return std::make_shared<StorageMergeTree>(
@@ -4827,6 +4893,12 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
         .description = "Replicated version of the VersionedCollapsingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedVersionedCollapsingMergeTree('zoo_path', 'replica_name', sign, version) ORDER BY expr",
         .related = {"VersionedCollapsingMergeTree"}});
+
+    factory.registerStorage("MergeTreeWithManifest", create, SecretArgumentsSpec{}, features, Documentation{
+        .description = "A MergeTree that keeps the metadata of its parts in a manifest storage (a key-value store), "
+                       "so that the table does not scan the filesystem to discover its parts at startup.",
+        .syntax = "ENGINE = MergeTreeWithManifest('manifest_storage_type') ORDER BY expr",
+        .related = {"MergeTree"}});
 }
 
 }

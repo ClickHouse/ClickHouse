@@ -85,6 +85,13 @@ enum class MergeTreePartMinMaxIndexColumns : uint64_t;
 class MarkCache;
 using MarkCachePtr = std::shared_ptr<MarkCache>;
 
+enum class ManifestOpType
+{
+    PreCommit,
+    PreRemove,
+    PreDetach,
+    Commit,
+};
 /// Throws if an index or primary-key expression list contains a duplicate sub-expression (unless allow_suspicious_indices)
 void checkSuspiciousIndices(const ASTFunction * index_function);
 
@@ -1780,6 +1787,12 @@ public:
     /// Returns the number of parts for which index was unloaded.
     size_t unloadPrimaryKeysAndClearCachesOfOutdatedParts();
 
+    virtual void commitToManifest(const DataPartPtr & /* part */, ManifestOpType /* op_type */) const { }
+
+    virtual void removeFromManifest(const String & /* part_uuid */) const { }
+
+    virtual DiskPtr getManifestDisk() const { return nullptr; }
+
 protected:
     friend class IMergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;
@@ -2481,6 +2494,7 @@ private:
 
     bool allow_nullable_key = false;
 
+protected:
     void addPartContributionToDataVolume(const DataPartPtr & part);
     void removePartContributionToDataVolume(const DataPartPtr & part);
 
@@ -2490,6 +2504,19 @@ private:
     void addPartContributionToUncompressedBytesInPatches(const DataPartPtr & part);
     void removePartContributionToUncompressedBytesInPatches(const DataPartPtr & part);
 
+    /// Returns default settings for storage with possible changes from global config.
+    virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
+
+    /// @param is_last_attempt - if false, an I/O error is rethrown instead of marking the part broken, so that the load is retried.
+    virtual LoadPartResult loadDataPart(
+        const MergeTreePartInfo & part_info,
+        const String & part_name,
+        const DiskPtr & part_disk_ptr,
+        MergeTreeDataPartState to_state,
+        DB::SharedMutex & part_loading_mutex,
+        bool is_last_attempt);
+
+private:
     std::atomic<size_t> total_active_size_bytes = 0;
     std::atomic<size_t> total_active_size_rows = 0;
     std::atomic<size_t> total_active_size_parts = 0;
@@ -2503,18 +2530,6 @@ private:
 
     // Get partition matcher for FREEZE / UNFREEZE queries.
     MatcherFn getPartitionMatcher(const ASTPtr & partition, ContextPtr context) const;
-
-    /// Returns default settings for storage with possible changes from global config.
-    virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
-
-    /// @param is_last_attempt - if false, an I/O error is rethrown instead of marking the part broken, so that the load is retried.
-    LoadPartResult loadDataPart(
-        const MergeTreePartInfo & part_info,
-        const String & part_name,
-        const DiskPtr & part_disk_ptr,
-        MergeTreeDataPartState to_state,
-        DB::SharedMutex & part_loading_mutex,
-        bool is_last_attempt);
 
     LoadPartResult loadDataPartWithRetries(
         const MergeTreePartInfo & part_info,

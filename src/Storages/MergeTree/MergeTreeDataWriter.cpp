@@ -1110,6 +1110,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     SyncGuardPtr sync_guard;
 
+    data.commitToManifest(new_data_part, ManifestOpType::PreCommit);
+
     data_part_storage->createDirectories();
 
     if ((*data_settings)[MergeTreeSetting::fsync_part_directory])
