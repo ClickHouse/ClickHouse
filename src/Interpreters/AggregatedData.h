@@ -113,10 +113,10 @@ struct AggregationDataWithNullKey : public Base
 
     bool & hasNullKeyData() { return has_null_key_data; }
     AggregateDataPtr & getNullKeyData() { return null_key_data; }
-    bool hasNullKeyData() const { return has_null_key_data; }
-    const AggregateDataPtr & getNullKeyData() const { return null_key_data; }
-    size_t size() const { return Base::size() + (has_null_key_data ? 1 : 0); }
-    bool empty() const { return Base::empty() && !has_null_key_data; }
+    [[nodiscard]] bool hasNullKeyData() const { return has_null_key_data; }
+    [[nodiscard]] const AggregateDataPtr & getNullKeyData() const { return null_key_data; }
+    [[nodiscard]] size_t size() const { return Base::size() + (has_null_key_data ? 1 : 0); }
+    [[nodiscard]] bool empty() const { return Base::empty() && !has_null_key_data; }
     void clear()
     {
         Base::clear();
@@ -155,8 +155,8 @@ struct AggregationDataWithNullKeyTwoLevel : public Base
 
     bool & hasNullKeyData() { return impls[0].hasNullKeyData(); }
     AggregateDataPtr & getNullKeyData() { return impls[0].getNullKeyData(); }
-    bool hasNullKeyData() const { return impls[0].hasNullKeyData(); }
-    const AggregateDataPtr & getNullKeyData() const { return impls[0].getNullKeyData(); }
+    [[nodiscard]] bool hasNullKeyData() const { return impls[0].hasNullKeyData(); }
+    [[nodiscard]] const AggregateDataPtr & getNullKeyData() const { return impls[0].getNullKeyData(); }
 };
 
 template <typename ... Types>
