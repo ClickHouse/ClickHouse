@@ -67,7 +67,7 @@ bool NonBlockingFilterBIO::sendQueued()
 	while (hasQueued())
 	{
 		const size_t left = queue.size() - queueOffset;
-		const int sent = socket.sendNow(queue.data() + queueOffset, static_cast<int>(std::min<size_t>(left, INT_MAX)));
+		const int sent = socket.sendNowUnthrottled(queue.data() + queueOffset, static_cast<int>(std::min<size_t>(left, INT_MAX)));
 		if (sent < 0)
 		{
 			/// The socket holds the error, and the connection cannot send any more.
@@ -142,10 +142,7 @@ int NonBlockingFilterBIO::read(BIO* bio, char* data, int length)
 	if (filter.nonBlocking)
 		return filter.readNonBlocking(bio, data, length);
 
-	/// With the retry flags of a failed write, `SSL_read` reports `SSL_ERROR_WANT_WRITE`.
-	const int queued = filter.writeQueuedToNext(bio);
-	if (queued <= 0)
-		return queued;
+	/// `SecureSocketImpl` sends the queued bytes outside OpenSSL while it waits for data.
 	const int rc = BIO_read(BIO_next(bio), data, length);
 	BIO_copy_next_retry(bio);
 	return rc;
@@ -212,7 +209,7 @@ int NonBlockingFilterBIO::writeNonBlocking(const char* data, int length)
 		int rest = length;
 		if (sendQueued())
 		{
-			const int sent = socket.sendNow(data, length);
+			const int sent = socket.sendNowUnthrottled(data, length);
 			if (sent < 0)
 				return length;
 			data += sent;

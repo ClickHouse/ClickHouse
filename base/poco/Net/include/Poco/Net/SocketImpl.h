@@ -506,6 +506,9 @@ namespace Net
         void useRecvThrottlerBudget(int rc);
         /// Checks the return code `rc` and updates recv throttler budget.
 
+        int sendNowUnthrottled(const void * buffer, int length);
+        /// `sendNow` without the throttler, for a caller that throttles the data itself.
+
     protected:
         SocketImpl(const SocketImpl &);
         SocketImpl & operator=(const SocketImpl &);
@@ -527,6 +530,7 @@ namespace Net
 
         friend class Socket;
         friend class SecureSocketImpl;
+        friend class NonBlockingFilterBIO;
         friend class PollSetImpl;
     };
 

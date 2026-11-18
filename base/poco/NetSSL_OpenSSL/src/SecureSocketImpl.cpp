@@ -498,6 +498,22 @@ int SecureSocketImpl::receiveBytes(void* buffer, int length, int flags)
 
 	SSLOperationResult result;
 	Poco::Timespan remaining_time = getMaxTimeoutOrLimit();
+
+	/// While a non-blocking send has left queued bytes, the receive uses the non-blocking calls, and
+	/// the wait sends the bytes outside OpenSSL: OpenSSL must not see their failed write, and a peer
+	/// that has answered is read even if it does not read any more.
+	if (_pSocket->getBlocking() && (flags & MSG_DONTWAIT) == 0)
+	{
+		while (_nonBlockingFilter && _nonBlockingFilter->hasQueued())
+		{
+			const int received = receiveNow(buffer, length);
+			if (received != 0)
+				return received > 0 ? received : 0;
+			if (waitForSendOrReceive(remaining_time, SocketImpl::SELECT_READ) == 0)
+				throw Poco::TimeoutException("SSL_read timed out");
+		}
+	}
+
 	do
 	{
 		/// SSL record may consist of several TCP packets,
@@ -554,44 +570,49 @@ bool SecureSocketImpl::holdsSendError() const
 
 int SecureSocketImpl::waitForSendOrReceive(Poco::Timespan& timeout, int mode)
 {
-	ScopedLock lock(*_mutex);
 	if ((mode & (SocketImpl::SELECT_READ | SocketImpl::SELECT_WRITE)) == 0)
 		throw InvalidArgumentException("waitForSendOrReceive needs SELECT_READ, SELECT_WRITE or both");
-	nonBlockingFilter();
+	ScopedLock lock(*_mutex);
+	NonBlockingFilterBIO& filter = nonBlockingFilter();
 
-	const bool wantSend = (mode & SocketImpl::SELECT_WRITE) != 0;
 	const bool wantReceive = (mode & SocketImpl::SELECT_READ) != 0;
+	const bool wantSend = (mode & SocketImpl::SELECT_WRITE) != 0;
 	/// A write that wants to read can go on only when data from the peer arrives.
-	const bool sendWaitsForData = wantSend && _nowWriteLength != 0;
+	const int sendWaitsFor = _nowWriteLength != 0 ? SocketImpl::SELECT_READ : SocketImpl::SELECT_WRITE;
 
-	/// Not `SSL_has_pending`: it is true for a part of a record too, and the caller would spin.
-	if (wantReceive && SSL_pending(_pSSL) > 0)
+	while (true)
 	{
-		int ready = SocketImpl::SELECT_READ;
-		if (wantSend)
+		/// The queued bytes leave also while the caller waits only for data: the peer can wait for them.
+		bool queued = false;
 		{
-			Poco::Timespan noWait(0);
-			if (_pSocket->waitForSendOrReceive(noWait, sendWaitsForData ? SocketImpl::SELECT_READ : SocketImpl::SELECT_WRITE))
-				ready |= SocketImpl::SELECT_WRITE;
+			NonBlockingFilterBIO::NonBlockingScope scope(filter);
+			queued = !filter.sendQueued();
 		}
-		return ready;
+
+		/// Not `SSL_has_pending`: it is true for a part of a record too, and the caller would spin.
+		if (wantReceive && SSL_pending(_pSSL) > 0)
+		{
+			if (!wantSend)
+				return SocketImpl::SELECT_READ;
+			Poco::Timespan noWait(0);
+			return SocketImpl::SELECT_READ | (_pSocket->waitForSendOrReceive(noWait, sendWaitsFor) ? SocketImpl::SELECT_WRITE : 0);
+		}
+
+		const int socketMode = (wantReceive ? SocketImpl::SELECT_READ : 0) | (wantSend ? sendWaitsFor : 0)
+			| (queued ? SocketImpl::SELECT_WRITE : 0);
+		const int socketReady = _pSocket->waitForSendOrReceive(timeout, socketMode);
+		if (socketReady == 0)
+			return 0;
+
+		int ready = 0;
+		if (wantReceive && (socketReady & SocketImpl::SELECT_READ))
+			ready |= SocketImpl::SELECT_READ;
+		if (wantSend && (socketReady & sendWaitsFor))
+			ready |= SocketImpl::SELECT_WRITE;
+		if (ready != 0)
+			return ready;
+		/// Only the queue can move: send it, and wait again for the rest of the timeout.
 	}
-
-	int socketMode = 0;
-	if (wantReceive || sendWaitsForData)
-		socketMode |= SocketImpl::SELECT_READ;
-	if (wantSend && !sendWaitsForData)
-		socketMode |= SocketImpl::SELECT_WRITE;
-	const int socketReady = _pSocket->waitForSendOrReceive(timeout, socketMode);
-
-	int ready = 0;
-	if ((socketReady & SocketImpl::SELECT_READ) && wantReceive)
-		ready |= SocketImpl::SELECT_READ;
-	if ((socketReady & SocketImpl::SELECT_READ) && sendWaitsForData)
-		ready |= SocketImpl::SELECT_WRITE;
-	if (socketReady & SocketImpl::SELECT_WRITE)
-		ready |= SocketImpl::SELECT_WRITE;
-	return ready;
 }
 
 
@@ -614,6 +635,9 @@ int SecureSocketImpl::sendNow(const void* buffer, int length)
 	if (writeLength > length)
 		throw Poco::IllegalStateException("sendNow must repeat a write that wants to read with at least the same length");
 
+	/// Outside the OpenSSL call: the wait can suspend a fiber, which can resume on another thread.
+	_pSocket->throttleSend(static_cast<size_t>(writeLength), true);
+
 	SSLOperationResult result = performSSLOperation(_pSSL, [this, buffer, writeLength]
 	{
 		return SSL_write(_pSSL, buffer, writeLength);
@@ -632,7 +656,10 @@ int SecureSocketImpl::sendNow(const void* buffer, int length)
 	{
 		_nowWriteLength = 0;
 		/// The filter dropped the bytes after a transport error.
-		return holdsSendError() ? -1 : result.rc;
+		if (holdsSendError())
+			return -1;
+		_pSocket->useSendThrottlerBudget(result.rc);
+		return result.rc;
 	}
 	if (result.sslError == SSL_ERROR_WANT_READ)
 	{

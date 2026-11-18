@@ -563,6 +563,89 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
 }
 
 
+/// The throttler of `sendNow` waits outside OpenSSL, so its fiber never suspends inside an OpenSSL
+/// call. An error of the throttler leaves the connection usable, and a slow throttler suspends the
+/// fiber between the writes.
+TYPED_TEST(SilkFiberSocketTest, SendNowWithAThrottler)
+{
+    auto listener = this->policy.makeListener();
+    const uint16_t port = listener.address().port();
+    const std::string body(64 * 1024, 'x');
+
+    silk::FiberFuture client_future;
+    const int run_result = Silk::spawn(
+        [port, body, impl = this->policy.makeClient()]() -> int
+        {
+            try
+            {
+                constexpr int select_write = Poco::Net::SocketImpl::SELECT_WRITE;
+
+                Poco::Net::StreamSocket socket(impl);
+                socket.connect(Poco::Net::SocketAddress("127.0.0.1", port));
+
+                /// Also finishes the TLS handshake on both sides.
+                socket.sendBytes("x", 1);
+                char pong[1] = {};
+                EXPECT_EQ(socket.receiveBytes(pong, sizeof(pong)), 1);
+
+                socket.setSendThrottler(std::make_shared<DB::Throttler>(/*max_speed_*/ 1, /*limit_*/ 1, "Send limit exceeded"));
+                EXPECT_THROW(socket.impl()->sendNow("y", 1), DB::Exception);
+
+                socket.setSendThrottler(std::make_shared<DB::Throttler>(/*max_speed_*/ 32 * 1024));
+                size_t sent = 0;
+                while (sent < body.size())
+                {
+                    Poco::Timespan timeout(5, 0);
+                    if (socket.impl()->waitForSendOrReceive(timeout, select_write) == 0)
+                    {
+                        ADD_FAILURE() << "The socket did not become writable";
+                        return 1;
+                    }
+                    const int n = socket.impl()->sendNow(body.data() + sent, static_cast<int>(body.size() - sent));
+                    if (n < 0)
+                    {
+                        ADD_FAILURE() << "The send failed";
+                        return 1;
+                    }
+                    sent += static_cast<size_t>(n);
+                }
+
+                /// A blocking receive sends the queued bytes of a TLS connection first.
+                char done[1] = {};
+                EXPECT_EQ(socket.receiveBytes(done, sizeof(done)), 1);
+                socket.close();
+                return 0;
+            }
+            catch (...)
+            {
+                ADD_FAILURE() << DB::getCurrentExceptionMessage(/*with_stacktrace*/ false);
+                return 1;
+            }
+        },
+        client_future);
+    ASSERT_EQ(run_result, 0);
+
+    auto peer = listener.acceptConnection();
+    peer.setReceiveTimeout(Poco::Timespan(10, 0));
+    char buf[4096];
+    ASSERT_EQ(peer.receiveBytes(buf, 1), 1);
+    peer.sendBytes("p", 1);
+
+    std::string received;
+    while (received.size() < body.size())
+    {
+        const int n = peer.receiveBytes(buf, sizeof(buf));
+        ASSERT_GT(n, 0);
+        received.append(buf, static_cast<size_t>(n));
+    }
+    EXPECT_EQ(received, body);
+    peer.sendBytes("d", 1);
+
+    client_future.wait();
+    peer.close();
+}
+
+
 /// Secure-only tests for the TLS BIO and direct OpenSSL operations. Reuses the
 /// `SecurePolicy policy` member from the typed fixture rather than redeclaring it.
 using SilkFiberSecureSocketTest = SilkFiberSocketTest<SecurePolicy>;

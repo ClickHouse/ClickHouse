@@ -217,7 +217,8 @@ namespace Net
         void throwHeldSendError();
         /// The non-blocking calls of `SocketImpl` after the handshake; the first call installs a
         /// `NonBlockingFilterBIO`. `sendNow` writes one record at a time, only into an empty queue.
-        /// The wait also reports data that OpenSSL has decrypted (`SSL_pending`).
+        /// The wait also reports data that OpenSSL has decrypted (`SSL_pending`). The wait and a
+        /// blocking receive send the queued bytes while they wait for data.
 
 
         void setBioMethod(const BIO_METHOD * method);
