@@ -103,6 +103,15 @@ private:
         };
     };
 
+    /// A stage schedules its tasks in two steps:
+    ///  1. When a row group or row subgroup reaches the stage, `setTasksToSchedule` stores its tasks in
+    ///     `row_group_tasks_to_schedule`. Nothing is prefetched or charged for them yet, except by `readAheadColumnData`.
+    ///  2. `scheduleTasksIfNeeded` takes stored tasks in row group order while the stage is within its share of the
+    ///     reader's limits (see `is_privileged_task` for the exception). It starts their prefetches, charges the
+    ///     prefetched bytes (and the estimated output of `ColumnData`) to `memory_usage`, and queues the tasks in the
+    ///     thread pool. Below the low watermark it does so even when all the stage's threads are busy.
+    /// So with background reads (`Prefetcher::readsInBackground`), data is read ahead of decoding as far as the stage's
+    /// memory share allows, instead of when a thread picks the task up. The shares are per stage, see `MemoryUsageDiff`.
     struct Stage
     {
         std::atomic<size_t> memory_usage {0};

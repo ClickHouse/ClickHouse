@@ -134,8 +134,8 @@ void ReadManager::init(
 
     /// Distribute memory budget among stages.
     /// The distribution is static to make sure no stage gets starved if others eat all the memory.
-    /// E.g. if the budget was shared among all stages, maybe PrewhereData could run far ahead and
-    /// The distribution is static to make sure no stage gets starved if others eat all the memory.
+    /// E.g. if the budget was shared among all stages, the stages before ColumnData could run far ahead and eat
+    /// all memory, and ColumnData would only make progress through the privileged row group (see is_privileged_task).
     double sum = 0;
     stages[size_t(ReadStage::NotStarted)].memory_target_fraction = 0;
     stages[size_t(ReadStage::Deliver)].memory_target_fraction = 0;
