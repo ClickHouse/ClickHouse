@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# `ALTER DATABASE`, `KILL TRANSACTION` and `INSERT INTO FUNCTION` must be refused in readonly mode
-# (including HTTP GET, which implies `readonly = 2`), and `ALTER DATABASE` also with `allow_ddl = 0`.
+# `ALTER DATABASE`, `KILL TRANSACTION`, `INSERT INTO FUNCTION` and a temporary table with an engine other than
+# `Memory` must be refused in readonly mode (including HTTP GET, which implies `readonly = 2`), and
+# `ALTER DATABASE` also with `allow_ddl = 0`.
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 
@@ -24,6 +25,7 @@ get() { ${CLICKHOUSE_CURL} -sS --get "${CLICKHOUSE_URL}" --data-urlencode "query
 
 # Each statement is accepted without readonly.
 echo "alter database comment: $(outcome $CLICKHOUSE_CLIENT -q "ALTER DATABASE $db MODIFY COMMENT 'kept'")"
+echo "create temporary table file: $(outcome $CLICKHOUSE_CLIENT -q "CREATE TEMPORARY TABLE t (x Int32) ENGINE = File(CSV, '$file') AS SELECT 0")"
 echo "insert into function: $(outcome $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('$file', 'CSV', 'x Int32') SELECT 1 SETTINGS engine_file_truncate_on_insert = 1")"
 echo "kill transaction: $(outcome $CLICKHOUSE_CLIENT -q "KILL TRANSACTION WHERE tid_hash = 0")"
 
@@ -36,6 +38,9 @@ for setting in "--readonly 1" "--readonly 2" "--allow_ddl 0"; do
     echo "kill transaction: $(outcome $CLICKHOUSE_CLIENT $setting -q "KILL TRANSACTION WHERE tid_hash = 0")"
     echo "insert into function: $(outcome $CLICKHOUSE_CLIENT $setting -q "INSERT INTO FUNCTION file('$file', 'CSV', 'x Int32') SELECT 2 SETTINGS engine_file_truncate_on_insert = 1")"
     echo "insert into function cluster: $(outcome $CLICKHOUSE_CLIENT $setting -q "INSERT INTO FUNCTION cluster('05816_no_such_cluster', system.one) SELECT 1")"
+    echo "create temporary table file: $(outcome $CLICKHOUSE_CLIENT $setting -q "CREATE TEMPORARY TABLE t (x Int32) ENGINE = File(CSV, '$file') AS SELECT 2")"
+    echo "create temporary table memory: $(outcome $CLICKHOUSE_CLIENT $setting -q "CREATE TEMPORARY TABLE t (x Int32) ENGINE = Memory AS SELECT 2")"
+    echo "select from function: $(outcome $CLICKHOUSE_CLIENT $setting -q "SELECT * FROM file('$file', 'CSV', 'x Int32') FORMAT Null")"
 done
 
 echo "HTTP GET"
@@ -43,6 +48,7 @@ echo "alter database comment: $(outcome get "ALTER DATABASE $db MODIFY COMMENT '
 response=$(get "INSERT INTO FUNCTION file('$file', 'CSV', 'x Int32') SELECT 3 SETTINGS engine_file_truncate_on_insert = 1")
 echo "insert into function: $(outcome printf '%s' "$response")"
 echo "$response" | grep -o -m1 'method GET implies readonly'
+echo "create temporary table file: $(outcome get "CREATE TEMPORARY TABLE t (x Int32) ENGINE = File(CSV, '$file') AS SELECT 3")"
 
 # Nothing was changed.
 $CLICKHOUSE_CLIENT -q "SELECT comment FROM system.databases WHERE name = '$db'"

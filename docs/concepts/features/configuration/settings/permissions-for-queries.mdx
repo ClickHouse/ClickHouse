@@ -36,7 +36,9 @@ When set to 1, allows queries such as:
 
 When set to 2, allows the above plus `SET`, `CREATE TEMPORARY TABLE` and `RESTORE`. A `RESTORE` can
 create a table and load data into it, so `readonly = 2` does not by itself stop a session from
-writing; `readonly = 1` refuses it.
+writing; `readonly = 1` refuses it. A temporary table with an `ENGINE` clause other than `Memory`, such
+as `File` or `URL`, needs the `CREATE ARBITRARY TEMPORARY TABLE` privilege and is refused at any value
+above 0.
 
 `BACKUP` is not restricted by `readonly` at any value: a session that has the privileges to back a
 table up can write a backup even at `readonly = 1`. Do not rely on `readonly` to prevent backups.
