@@ -122,12 +122,14 @@ void Aggregator::accountStagedBatch(
     ///   For a growing set aggregate, a bounded sketch also counts distinct argument tuples of these
     ///   keys, including the key in their hash because equal arguments in different groups occupy
     ///   separate states.
+    /// - A row skipped as a repeat of a record (see `AdaptiveMissBatch::addRepeatOfLast`) counts as that record.
     if (params.adaptiveMayThaw())
     {
         chassert(!adaptive_state_bytes_per_distinct_input || adaptive_distinct_input_aggregate < aggregates_positions.size());
         auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
-        frozen.staged_records += total;
-        frozen.staged_bytes += staged.record_bytes + total * adaptive_thaw_record_cost;
+        const size_t records = total + misses.getRepeatedRecords().size();
+        frozen.staged_records += records;
+        frozen.staged_bytes += staged.record_bytes + staged.repeat_bytes + records * adaptive_thaw_record_cost;
         const auto sample = [&](size_t i)
         {
             const auto hash = hashes[i];

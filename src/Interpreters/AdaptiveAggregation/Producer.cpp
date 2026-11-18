@@ -7,6 +7,7 @@
 #include <functional>
 #include <limits>
 #include <optional>
+#include <tuple>
 #include <type_traits>
 #include <vector>
 
@@ -18,9 +19,11 @@
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/Aggregator.h>
 #include <base/sort.h>
+#include <base/unaligned.h>
 
 namespace ProfileEvents
 {
@@ -67,6 +70,57 @@ namespace
         else
             return std::false_type{};
     }
+
+    struct AdaptiveRepeatColumn
+    {
+        const char * data = nullptr;
+        size_t width = 0;
+        const ColumnString * string = nullptr;
+    };
+
+    bool addAdaptiveRepeatColumn(const IColumn & column, std::vector<AdaptiveRepeatColumn> & columns)
+    {
+        if (const auto * string = typeid_cast<const ColumnString *>(&column))
+            columns.push_back({.string = string});
+        else if (column.isFixedAndContiguous())
+        {
+            const char * data = column.getRawData().data();
+            columns.push_back({.data = data, .width = column.sizeOfValueIfFixed()});
+        }
+        else
+            return false;
+        return true;
+    }
+
+    bool ALWAYS_INLINE rowRepeatsPrevious(const std::vector<AdaptiveRepeatColumn> & columns, size_t row)
+    {
+        for (const auto & column : columns)
+        {
+            if (column.string)
+            {
+                if (column.string->getDataAt(row) != column.string->getDataAt(row - 1))
+                    return false;
+                continue;
+            }
+            const char * current = column.data + row * column.width;
+            const char * previous = current - column.width;
+            bool equal = false;
+            switch (column.width)
+            {
+                case 1: equal = *current == *previous; break;
+                case 2: equal = unalignedLoad<UInt16>(current) == unalignedLoad<UInt16>(previous); break;
+                case 4: equal = unalignedLoad<UInt32>(current) == unalignedLoad<UInt32>(previous); break;
+                case 8: equal = unalignedLoad<UInt64>(current) == unalignedLoad<UInt64>(previous); break;
+                default: equal = memcmp(current, previous, column.width) == 0; break;
+            }
+            if (!equal)
+                return false;
+        }
+        return true;
+    }
+
+    /// A block stops its repeat checks when under half of its first 256 find a repeat, or under 32 ran by its 256th staged row.
+    constexpr size_t adaptive_repeat_check_sample = 256;
 
     /// Whether a batch that keeps the bytes of its keys holds as many of them as it may, so that the kernel stages it
     /// before it adds more misses (see `adaptive_miss_batch_max_key_bytes`).
@@ -656,19 +710,78 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         return;
     }
 
+    /// A missed row with the keys and arguments of the previous missed row adds nothing to states that ignore repeated
+    /// values (see `IAggregateFunction::ignoresRepeatedValues`). Not with the top-K pruning: its bins count rows.
+    std::vector<AdaptiveRepeatColumn> repeat_columns;
+    if (!params.adaptiveTopKPrunes()
+        && std::ranges::all_of(aggregate_functions, [](const IAggregateFunction * function) { return function->ignoresRepeatedValues(); }))
+    {
+        bool comparable = true;
+        for (size_t i = 0; comparable && i < aggregate_functions.size(); ++i)
+            for (size_t j = 0; comparable && j < aggregate_functions[i]->getArgumentTypes().size(); ++j)
+                comparable = addAdaptiveRepeatColumn(*aggregate_instructions[i].arguments[j], repeat_columns);
+        for (const auto * column : key_columns)
+            comparable = comparable && addAdaptiveRepeatColumn(*column, repeat_columns);
+        if (!comparable)
+            repeat_columns.clear();
+    }
+    const bool skip_repeated_misses = !repeat_columns.empty();
+
     /// The probe/staging loop of argument records, shared by the shape that records the places of the hits
     /// and the bypassed probe, which has no hits and so skips the allocation of the places and the per-row
     /// stores. A NULL key goes to its slot without a lookup, so its rows need places: the shape without them
     /// takes only a block without such rows.
-    auto probe_rows = [&]<bool record_places>(AggregateDataPtr * places_data) -> AdaptiveLocalProbes
+    /// It starts at `from` and returns its probes and the row at which it stopped.
+    auto probe_rows = [&]<bool record_places, bool skip_repeats>(AggregateDataPtr * places_data, size_t from)
+        -> std::pair<AdaptiveLocalProbes, size_t>
     {
         AdaptiveLocalProbes probes;
+        [[maybe_unused]] size_t previous_miss_row = row_end;
+        [[maybe_unused]] UInt64 previous_miss_hash = 0;
+        [[maybe_unused]] bool check_repeats = true;
+        [[maybe_unused]] size_t staged_rows = 0;
+        [[maybe_unused]] size_t repeat_checks = 0;
+        [[maybe_unused]] size_t repeats = 0;
         /// The last missed key of fixed-width values and a string, and its hash, for the rows that repeat it.
         [[maybe_unused]] RecordKey last_missed_key{};
         [[maybe_unused]] UInt64 last_missed_hash = 0;
         [[maybe_unused]] bool has_missed_key = false;
-        for (size_t i = row_begin; i < row_end; ++i)
+        /// Whether the missed row `i` is counted as a repeat of the last record instead of being staged.
+        const auto skip_repeat = [&]([[maybe_unused]] size_t i, [[maybe_unused]] UInt64 hash) ALWAYS_INLINE -> bool
         {
+            if constexpr (skip_repeats)
+            {
+                /// After a mid-loop staging, the repeated record is no longer in the batch, so the row is staged.
+                if (previous_miss_row + 1 == i && hash == previous_miss_hash && !misses.empty())
+                {
+                    const bool repeat = rowRepeatsPrevious(repeat_columns, i);
+                    repeats += repeat;
+                    ++repeat_checks;
+                    if (repeat_checks == adaptive_repeat_check_sample && 2 * repeats < repeat_checks)
+                        check_repeats = false;
+                    if (repeat)
+                    {
+                        previous_miss_row = i;
+                        misses.addRepeatOfLast();
+                        return true;
+                    }
+                }
+                previous_miss_row = i;
+                previous_miss_hash = hash;
+                ++staged_rows;
+                if (staged_rows == adaptive_repeat_check_sample && 8 * repeat_checks < staged_rows)
+                    check_repeats = false;
+            }
+            return false;
+        };
+        for (size_t i = from; i < row_end; ++i)
+        {
+            if constexpr (skip_repeats)
+            {
+                if (!check_repeats)
+                    return {probes, i};
+            }
+
             /// The condition on `record_places`, a parameter of the lambda, stays apart from the one on the
             /// method, so that the branch is not compiled for the methods without the slot.
             if constexpr (keeps_null_key_slot<LocalMethod>)
@@ -695,7 +808,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
                 {
                     if constexpr (record_places)
                         places_data[i] = nullptr;
-                    misses.add<RecordKey>(static_cast<UInt32>(i), last_missed_hash, key, keep_key_bytes);
+                    if (!skip_repeat(i, last_missed_hash))
+                        misses.add<RecordKey>(static_cast<UInt32>(i), last_missed_hash, key, keep_key_bytes);
                     keyHolderDiscardKey(key_holder);
                     continue;
                 }
@@ -717,6 +831,11 @@ void NO_INLINE Aggregator::executeFrozenImpl(
 
             if constexpr (record_places)
                 places_data[i] = nullptr;
+            if (skip_repeat(i, hash))
+            {
+                keyHolderDiscardKey(key_holder);
+                continue;
+            }
             misses.add<RecordKey>(static_cast<UInt32>(i), hash, key, keep_key_bytes);
             if constexpr (is_keys_and_packed_string<RecordKey>)
             {
@@ -731,6 +850,20 @@ void NO_INLINE Aggregator::executeFrozenImpl(
                     stage_misses();
             }
         }
+        return {probes, row_end};
+    };
+    const auto probe_all_rows = [&]<bool record_places>(AggregateDataPtr * places_data) -> AdaptiveLocalProbes
+    {
+        AdaptiveLocalProbes probes;
+        size_t next = row_begin;
+        if (skip_repeated_misses)
+            std::tie(probes, next) = probe_rows.template operator()<record_places, true>(places_data, next);
+        if (next < row_end)
+        {
+            const auto rest = probe_rows.template operator()<record_places, false>(places_data, next).first;
+            probes.hits += rest.hits;
+            probes.null_rows += rest.null_rows;
+        }
         return probes;
     };
 
@@ -738,7 +871,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     /// rows of the NULL key.
     if (bypass_local_probe && !local_find_state.mayHaveNullRows())
     {
-        const AdaptiveLocalProbes probes = probe_rows.template operator()<false>(nullptr);
+        const AdaptiveLocalProbes probes = probe_all_rows.template operator()<false>(nullptr);
         record_local_probes(probes.hits, row_end - row_begin);
         stage_misses();
         return;
@@ -753,7 +886,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     };
     std::unique_ptr<AggregateDataPtr[], decltype(places_deleter)> places(allocator.allocate(places_size), places_deleter);
 
-    const AdaptiveLocalProbes probes = probe_rows.template operator()<true>(places.get());
+    const AdaptiveLocalProbes probes = probe_all_rows.template operator()<true>(places.get());
     record_local_probes(probes.hits, row_end - row_begin - probes.null_rows);
     stage_misses();
 
@@ -868,6 +1001,14 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
 
     size_t key_bytes = 0;
     size_t record_bytes = 0;
+    const auto & repeated_records = misses.getRepeatedRecords();
+    size_t next_repeat = 0;
+    size_t repeat_bytes = 0;
+    const auto account_repeats = [&](size_t record, size_t bytes) ALWAYS_INLINE
+    {
+        for (; next_repeat < repeated_records.size() && repeated_records[next_repeat] == record; ++next_repeat)
+            repeat_bytes += bytes;
+    };
 
     const auto append_key_records = [&]<typename Record>(const Record & format) ALWAYS_INLINE
     {
@@ -892,6 +1033,7 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
             check_record(format, record, i, hash);
             key_bytes += stored_key_size;
             record_bytes += bytes;
+            account_repeats(i, bytes);
 
             /// A count past the format's `max_count`, the largest that one record holds, continues in further records
             /// of the key.
@@ -1042,6 +1184,7 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
                             variable = writeStagedString(variable, string->getDataAt(rows[i]));
                         else if (const auto & serialized_size = serialized_in_scratch[j])
                         {
+                            chassert(scratch);
                             memcpy(variable, scratch, *serialized_size);
                             variable += *serialized_size;
                             scratch += *serialized_size;
@@ -1057,6 +1200,7 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
 
                 key_bytes += stored_key_size;
                 record_bytes += bytes;
+                account_repeats(i, bytes);
             }
 
             const size_t batch_rows = batch_end - batch_begin;
@@ -1087,8 +1231,9 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
     /// exactly one record, or to all the records of a constant key.
     chassert(!batch_keeps_key_bytes
         || misses.getKeys().size() == (keys_are_const ? key_size_of(0) : static_cast<size_t>(kept_key_bytes - staged_keys)));
+    chassert(next_repeat == repeated_records.size());
 
-    return {.key_bytes = key_bytes, .record_bytes = record_bytes};
+    return {.key_bytes = key_bytes, .record_bytes = record_bytes, .repeat_bytes = repeat_bytes};
 }
 
 }

@@ -213,6 +213,9 @@ public:
 
     [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
+    /// A float NaN is never `==` to the kept one, so each NaN counts.
+    [[nodiscard]] bool ignoresRepeatedValues() const override { return !is_floating_point<T>; }
+
     /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -272,6 +275,9 @@ public:
     [[nodiscard]] String getName() const override { return "uniqUpTo"; }
 
     [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+
+    /// The state keeps the hashes of the arguments.
+    [[nodiscard]] bool ignoresRepeatedValues() const override { return true; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
