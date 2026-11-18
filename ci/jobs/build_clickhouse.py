@@ -632,12 +632,9 @@ def main():
             targets = "clickhouse"
         elif reference_build:
             targets = "clickhouse-self-extracting"
-            if thinlto_cache:
+            if thinlto_cache and args.build_examples:
                 # The published ThinLTO cache serves every link of the PR build.
-                if "-DBUILD_STANDALONE_KEEPER=1" in cmake_cmd:
-                    targets += " clickhouse-keeper"
-                if args.build_examples:
-                    targets += " clickhouse-examples"
+                targets += " clickhouse-examples"
         elif args.build_examples:
             targets = "clickhouse-bundle clickhouse-examples"
         elif build_type == BuildTypes.ARM_BINARY:
