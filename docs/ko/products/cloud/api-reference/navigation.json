@@ -10,6 +10,8 @@
           "PATCH /v1/organizations/{organizationId}",
           "products/cloud/api-reference/organization/organization-quotas-get-list",
           "products/cloud/api-reference/organization/organization-quota-get",
+          "products/cloud/api-reference/organization/organization-public-previews-get-list",
+          "products/cloud/api-reference/organization/organization-public-preview-patch",
           "GET /v1/organizations/{organizationId}/activities",
           "GET /v1/organizations/{organizationId}/activities/{activityId}",
           "products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
@@ -20,14 +22,18 @@
           "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
           "products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get",
           "products/cloud/api-reference/organization/organization-byoc-infrastructure-tags-get",
-          "products/cloud/api-reference/organization/organization-byoc-infrastructure-private-endpoint-config-get"
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-private-endpoint-config-get",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-customer-authorized-access-get",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-customer-authorized-access-update"
         ]
       },
       {
         "group": "알림",
         "pages": [
           "products/cloud/api-reference/notifications/notification-get-list",
-          "products/cloud/api-reference/notifications/notification-types-get-list"
+          "products/cloud/api-reference/notifications/notification-types-get-list",
+          "products/cloud/api-reference/notifications/member-notification-settings-get-list",
+          "products/cloud/api-reference/notifications/member-notification-settings-update"
         ]
       },
       {
@@ -108,6 +114,11 @@
           "GET /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
           "PUT /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
           "DELETE /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+          "products/cloud/api-reference/service/jwt-provider-get-list",
+          "products/cloud/api-reference/service/jwt-provider-create",
+          "products/cloud/api-reference/service/jwt-provider-get",
+          "products/cloud/api-reference/service/jwt-provider-update",
+          "products/cloud/api-reference/service/jwt-provider-delete",
           "products/cloud/api-reference/service/service-clickhouse-settings-list-get",
           "products/cloud/api-reference/service/service-clickhouse-settings-update",
           "products/cloud/api-reference/service/service-clickhouse-settings-schema-get",
@@ -177,8 +188,8 @@
       "products/cloud/api-reference/prometheus/organization-prometheus-get",
       "GET /v1/organizations/{organizationId}/prometheus/discovery",
       "GET /v1/organizations/{organizationId}/services/{serviceId}/prometheus",
-      "products/cloud/api-reference/prometheus/postgres-org-prometheus-get",
-      "products/cloud/api-reference/prometheus/postgres-instance-prometheus-get"
+      "GET /v1/organizations/{organizationId}/postgres/prometheus",
+      "GET /v1/organizations/{organizationId}/postgres/{postgresId}/prometheus"
     ]
   },
   {
@@ -244,23 +255,27 @@
     "group": "Postgres",
     "pages": [
       "products/cloud/api-reference/postgres/postgres-service-create",
-      "products/cloud/api-reference/postgres/postgres-service-get-list",
-      "products/cloud/api-reference/postgres/postgres-service-get",
-      "products/cloud/api-reference/postgres/postgres-service-delete",
-      "products/cloud/api-reference/postgres/postgres-service-patch",
-      "products/cloud/api-reference/postgres/postgres-service-certs-get",
-      "products/cloud/api-reference/postgres/postgres-instance-restore",
-      "products/cloud/api-reference/postgres/postgres-service-set-password",
-      "products/cloud/api-reference/postgres/postgres-service-patch-state",
-      "products/cloud/api-reference/postgres/postgres-instance-create-read-replica",
-      "products/cloud/api-reference/postgres/postgres-instance-config-get",
-      "products/cloud/api-reference/postgres/postgres-instance-config-post",
-      "products/cloud/api-reference/postgres/postgres-instance-config-patch",
-      "products/cloud/api-reference/postgres/postgres-instance-metrics-get",
-      "products/cloud/api-reference/postgres/postgres-service-backup-get-list",
-      "products/cloud/api-reference/postgres/slow-query-patterns-get-list",
-      "products/cloud/api-reference/postgres/slow-query-pattern-get",
-      "products/cloud/api-reference/postgres/postgres-logs-get-list"
+      "GET /v1/organizations/{organizationId}/postgres",
+      "GET /v1/organizations/{organizationId}/postgres/{postgresId}",
+      "DELETE /v1/organizations/{organizationId}/postgres/{postgresId}",
+      "PATCH /v1/organizations/{organizationId}/postgres/{postgresId}",
+      "GET /v1/organizations/{organizationId}/postgres/{postgresId}/caCertificates",
+      "POST /v1/organizations/{organizationId}/postgres/{postgresId}/restoredService",
+      "PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/password",
+      "PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/state",
+      "POST /v1/organizations/{organizationId}/postgres/{postgresId}/readReplica",
+      "GET /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+      "POST /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+      "PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+      "GET /v1/organizations/{organizationId}/postgres/{postgresId}/metrics",
+      "products/cloud/api-reference/postgres/postgres-private-endpoint-get",
+      "products/cloud/api-reference/postgres/postgres-private-endpoint-post",
+      "products/cloud/api-reference/postgres/postgres-private-endpoint-patch",
+      "products/cloud/api-reference/postgres/postgres-private-endpoint-delete",
+      "GET /v1/organizations/{organizationId}/postgres/{postgresId}/backups",
+      "GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns",
+      "GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns/{queryId}",
+      "GET /v1/organizations/{organizationId}/postgres/{postgresId}/logs"
     ]
   }
 ]
