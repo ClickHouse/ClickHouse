@@ -692,7 +692,7 @@ SELECT * FROM format(
 |---------|-------------|---------|
 | [`input_format_defaults_for_omitted_fields`](/reference/settings/formats/input-format#input_format_defaults_for_omitted_fields) | Use the `DEFAULT` expression of the target column for the values that take the default and for the columns missing from a block. If disabled, they take the default value of the column type. | `1` |
 | [`input_format_native_allow_types_conversion`](/reference/settings/formats/input-format#input_format_native_allow_types_conversion) | Convert a column to the type of the target column if the types differ. The rows that take the default are not converted. | `1` |
-| [`input_format_null_as_default`](/reference/settings/formats/input-format#input_format_null_as_default) | `NULL`s of a `Nullable` column inserted into a column that is not `Nullable` take the default as well. | `1` |
+| [`input_format_null_as_default`](/reference/settings/formats/input-format#input_format_null_as_default) | `NULL`s of a `Nullable` column inserted into a column that is not `Nullable` take the default like the values marked in the defaults mask: they are not converted. | `1` |
 | [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) | Skip the columns that are not in the target table instead of throwing an exception. | `1` |
 )DOCS_MD"});
 }

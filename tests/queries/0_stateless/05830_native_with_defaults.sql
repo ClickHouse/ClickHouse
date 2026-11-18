@@ -31,6 +31,11 @@ SELECT * FROM format(NativeWithDefaults, 'x UInt32 DEFAULT 42, e Enum8(\'a\' = 1
 
 SELECT 'NULL as default';
 SELECT * FROM format(NativeWithDefaults, 'x UInt32 DEFAULT 42', x'01030178104e756c6c61626c652855496e743332290101000001000000000007000000');
+-- Like a row of the defaults mask, a NULL that the column cannot hold is not converted and gets the default of the target type.
+SELECT * FROM format(NativeWithDefaults, 'x UInt32 DEFAULT 42', x'01030178104e756c6c61626c6528537472696e6729010100000100000137');
+SELECT * FROM format(NativeWithDefaults, 'e Enum8(\'a\' = 1, \'b\' = 2)', x'01030165214e756c6c61626c6528456e756d3828276127203d20312c20276227203d203229290101000001000002');
+SELECT * FROM format(NativeWithDefaults, 'e Enum8(\'a\' = 1, \'b\' = 2)', x'01020165214e756c6c61626c6528456e756d3828276127203d20312c20276227203d203229290001000002');
+SELECT * FROM format(NativeWithDefaults, 's String DEFAULT \'d\'', x'01030173204c6f7743617264696e616c697479284e756c6c61626c6528537472696e672929010001000100000000000000000600000000000003000000000000000000017602000000000000000002');
 
 SELECT 'input_format_defaults_for_omitted_fields = 0';
 SET input_format_defaults_for_omitted_fields = 0;
@@ -48,3 +53,5 @@ SELECT 'malformed data';
 SELECT * FROM format(NativeWithDefaults, 'x UInt32', x'010101780655496e7433320201000000'); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(NativeWithDefaults, 'x UInt32', x'010301780655496e743332010001'); -- { serverError CANNOT_READ_ALL_DATA }
 SELECT * FROM format(NativeWithDefaults, 'x UInt32', x'010301780655496e7433320100010001000000'); -- { serverError CANNOT_READ_ALL_DATA }
+-- The block header declares 1000000000 rows, but the mask has no bytes: no memory is reserved for the declared mask.
+SELECT * FROM format(NativeWithDefaults, 'x UInt8', x'018094ebdc0301780555496e743801') SETTINGS max_memory_usage = 33554432; -- { serverError CANNOT_READ_ALL_DATA }
