@@ -995,6 +995,29 @@ static Field coerceConstantForBloomFilterHash(
     return convertFieldToType(value_field, *actual_type, value_type.get());
 }
 
+/// The value type of the map a lookup resolved by `tryResolveMapInfoFromNode` reads from. A missing key
+/// yields the default of this type. The result type of `arrayElement(m, key)` is not it: `arrayElement`
+/// also makes the result `Nullable` when the key argument is nullable, while for a non-NULL key that is
+/// absent it still returns the default of the map's own value type, not `NULL`. A `map.key_<serialized_key>`
+/// subcolumn has exactly the value type of the map.
+static DataTypePtr getLookedUpMapValueType(const RPNBuilderTreeNode & key_node)
+{
+    if (key_node.isFunction())
+    {
+        auto key_node_function = key_node.toFunctionNode();
+        if (key_node_function.getFunctionName() == "arrayElement")
+        {
+            const auto * map_node = key_node_function.getArgumentAt(0).getDAGNode();
+            const auto * map_type = map_node ? typeid_cast<const DataTypeMap *>(map_node->result_type.get()) : nullptr;
+            if (!map_type)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a `Map` as the first argument of `arrayElement` resolved to a map index");
+            return map_type->getValueType();
+        }
+    }
+
+    return key_node.getDAGNode()->result_type;
+}
+
 /// The value `arrayElement` yields for a missing map key: the column default (`insertDefault`), which is
 /// not always `getDefault` of the type (`Date32` has `1900-01-01` as the latter but zero, `1970-01-01`,
 /// as the former). `Enum` keeps `getDefault`, because its zero need not be a valid enum value; the
@@ -1223,7 +1246,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             return assert_cast<const ColumnUInt8 &>(*set_contains_default_value_predicate_column).getData()[0] != 0;
         };
 
-        const auto & map_value_type = key_node.getDAGNode()->result_type;
+        const auto map_value_type = getLookedUpMapValueType(key_node);
         if (hasNestedEnum(map_value_type))
             return false;
 
@@ -1253,7 +1276,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         /// Over `Enum` map values `arrayElement` returns the zero of the underlying integer for a missing key,
         /// which is not necessarily the default value of the `Enum` (its first value), so check it as well.
         /// Over `Nullable(Enum)` map values a missing key gives `NULL` rather than the zero, so this is not needed.
-        if (const auto * dag_node = key_node.getDAGNode(); dag_node && isEnum(removeLowCardinality(dag_node->result_type)))
+        if (isEnum(removeLowCardinality(map_value_type)))
         {
             if (!isEnum(removeLowCardinalityAndNullable(type)))
                 return false;
@@ -1829,7 +1852,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             if (value_field == materialized_default || value_field == value_type->getDefault())
                 return false;
 
-            const auto & map_value_type = key_node.getDAGNode()->result_type;
+            const auto map_value_type = getLookedUpMapValueType(key_node);
             if (missingMapKeyMayCompareEqual(map_value_type, value_type, value_field, getContext()))
                 return false;
 
