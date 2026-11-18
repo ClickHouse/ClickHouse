@@ -28,6 +28,7 @@ struct ConnectionTimeouts;
 class NamedCollection;
 struct StorageID;
 class PullingPipelineExecutor;
+class HTTPHeaderFilter;
 
 /**
  * This class represents table engine for external urls.
@@ -206,7 +207,8 @@ public:
 
     void onFinish() override { parser_shared_resources->finishStream(); }
 
-    static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
+    /// Throws if `header_filter` forbids the `Authorization` header, which sends the credentials, and they have a username.
+    static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri, const HTTPHeaderFilter & header_filter);
 
     static std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> getFirstAvailableURIAndReadBuffer(
         std::vector<String>::const_iterator & option,

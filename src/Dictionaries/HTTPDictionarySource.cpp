@@ -86,9 +86,17 @@ void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
     }
 }
 
+void HTTPDictionarySource::checkCredentials() const
+{
+    /// Per request: a loaded source is kept and cloned across updates, and <http_forbid_headers> can change meanwhile.
+    if (configuration.created_from_ddl)
+        context->getHTTPHeaderFilter().checkBasicCredentials(credentials);
+}
+
 BlockIO HTTPDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
+    checkCredentials();
 
     Poco::URI uri(configuration.url);
 
@@ -106,6 +114,7 @@ BlockIO HTTPDictionarySource::loadAll()
 
 BlockIO HTTPDictionarySource::loadUpdatedAll()
 {
+    checkCredentials();
     Poco::URI uri(configuration.url);
     getUpdateFieldAndDate(uri);
     LOG_TRACE(log, "loadUpdatedAll {}", uri.toString());
@@ -126,6 +135,7 @@ BlockIO HTTPDictionarySource::loadUpdatedAll()
 BlockIO HTTPDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
+    checkCredentials();
 
     auto block = blockForIds(dict_struct, ids);
 
@@ -157,6 +167,7 @@ BlockIO HTTPDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & i
 BlockIO HTTPDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
+    checkCredentials();
 
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
 
@@ -304,7 +315,8 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
             .format = format,
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-            .header_entries = std::move(header_entries)
+            .header_entries = std::move(header_entries),
+            .created_from_ddl = created_from_ddl
         };
 
         return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context);

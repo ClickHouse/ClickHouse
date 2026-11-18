@@ -8,10 +8,13 @@
 
 #include <Common/CacheBase.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/HTTPHeaderFilter.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBufferFromString.h>
+
+#include <Interpreters/Context.h>
 
 #include <Formats/FormatFactory.h>
 
@@ -1125,6 +1128,8 @@ private:
 
                 if (!url.getUserInfo().empty())
                 {
+                    Context::getGlobalContextInstance()->getHTTPHeaderFilter().checkURIUserInfo(url);
+
                     Poco::Net::HTTPCredentials http_credentials;
                     Poco::Net::HTTPBasicCredentials http_basic_credentials;
 
