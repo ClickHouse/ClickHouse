@@ -14,26 +14,43 @@ db="${CLICKHOUSE_DATABASE}_queues"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $db SYNC"
 $CLICKHOUSE_CLIENT -q "CREATE DATABASE $db ENGINE = Atomic"
 
-for table in q1 q2; do
+function create_queue()
+{
+    local table=$1
+    local extra_settings=${2:-}
     $CLICKHOUSE_CLIENT -q "CREATE TABLE $db.$table (a UInt32)
         ENGINE = S3Queue('http://whatever-we-dont-care:9001/root/data/', 'u', 'p', CSV)
-        SETTINGS mode = 'unordered'"
-done
+        SETTINGS mode = 'unordered'$extra_settings"
+}
+
+function node_exists()
+{
+    $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$(dirname "$1")' AND name = '$(basename "$1")'"
+}
+
+create_queue q1
+create_queue q2
 
 keeper_path=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.s3_queue_settings WHERE database = '$db' AND table = 'q1' AND name = 'keeper_path'")
 database_node=$(dirname "$keeper_path")
-database_node_parent=$(dirname "$database_node")
-database_node_name=$(basename "$database_node")
 
-function database_node_exists()
-{
-    $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$database_node_parent' AND name = '$database_node_name'"
-}
-
-echo "two queues: $(database_node_exists)"
+echo "two queues: $(node_exists "$database_node")"
 $CLICKHOUSE_CLIENT -q "DROP TABLE $db.q1 SYNC"
-echo "one queue: $(database_node_exists)"
+echo "one queue: $(node_exists "$database_node")"
 $CLICKHOUSE_CLIENT -q "DROP TABLE $db.q2 SYNC"
-echo "no queues: $(database_node_exists)"
+echo "no queues: $(node_exists "$database_node")"
+
+# A queue created after the node was removed creates it again.
+create_queue q3
+echo "recreated: $(node_exists "$database_node")"
+$CLICKHOUSE_CLIENT -q "DROP TABLE $db.q3 SYNC"
+echo "dropped again: $(node_exists "$database_node")"
+
+# With an explicit `keeper_path` the parent node belongs to the user and must be kept.
+custom_parent="/clickhouse/test_s3queue_custom_parent/${CLICKHOUSE_DATABASE}"
+create_queue q4 ", keeper_path = '$custom_parent/q4'"
+$CLICKHOUSE_CLIENT -q "DROP TABLE $db.q4 SYNC"
+echo "custom keeper_path, table node: $(node_exists "$custom_parent/q4")"
+echo "custom keeper_path, parent node: $(node_exists "$custom_parent")"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE $db SYNC"

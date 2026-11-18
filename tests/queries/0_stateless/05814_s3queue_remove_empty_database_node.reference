@@ -1,3 +1,7 @@
 two queues: 1
 one queue: 1
 no queues: 0
+recreated: 1
+dropped again: 0
+custom keeper_path, table node: 0
+custom keeper_path, parent node: 1
