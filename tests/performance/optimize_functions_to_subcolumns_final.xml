@@ -1,4 +1,4 @@
-<test>
+<test iceberg="0">
     <!--
         optimize_functions_to_subcolumns under FINAL for row-selecting engines
         (ReplacingMergeTree here). The rewrite lets FINAL read only the needed subcolumn
