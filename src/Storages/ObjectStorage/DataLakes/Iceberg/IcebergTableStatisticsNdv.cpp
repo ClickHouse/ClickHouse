@@ -18,7 +18,8 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/castColumn.h>
-#include <Processors/Formats/Impl/PuffinFile.h>
+#include <Processors/Formats/Impl/Puffin/PuffinReader.h>
+#include <Processors/Formats/Impl/Puffin/PuffinWriter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
@@ -129,7 +130,7 @@ public:
         for (const auto & blob : reader.getBlobs())
         {
             /// A file can keep the blobs of an earlier snapshot (Trino's `ANALYZE` of some columns): they miss later rows.
-            if (blob.type != PUFFIN_THETA_SKETCH_BLOB_TYPE || blob.fields.size() != 1 || blob.snapshot_id != parent_snapshot_id)
+            if (blob.type != PUFFIN_DATASKETCHES_THETA_BLOB_TYPE || blob.fields.size() != 1 || blob.snapshot_id != parent_snapshot_id)
                 continue;
             const auto bytes = reader.readBlob(blob);
             if (bytes)
@@ -152,7 +153,7 @@ public:
         for (const auto & [field_id, sketch] : sketches)
         {
             PuffinBlob blob;
-            blob.type = PUFFIN_THETA_SKETCH_BLOB_TYPE;
+            blob.type = PUFFIN_DATASKETCHES_THETA_BLOB_TYPE;
             blob.snapshot_id = snapshot_id;
             blob.sequence_number = sequence_number;
             blob.fields.push_back(field_id);

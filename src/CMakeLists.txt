@@ -544,6 +544,8 @@ add_object_library(clickhouse_processors_queryplan_profiling_execution Processor
 add_object_library(clickhouse_processors_queryplan_profiling_metrics Processors/QueryPlan/Profiling/Metrics)
 add_object_library(clickhouse_processors_queryplan_profiling_time Processors/QueryPlan/Profiling/Time)
 add_object_library(clickhouse_processors_queryplan_profiling_analysis Processors/QueryPlan/Profiling/Analysis)
+add_object_library(clickhouse_processors_queryplan_profiling_render Processors/QueryPlan/Profiling/Render)
+add_object_library(clickhouse_processors_queryplan_profiling_capture Processors/QueryPlan/Profiling/Capture)
 add_object_library(clickhouse_processors_queryplan_streaming Processors/QueryPlan/Streaming)
 add_object_library(clickhouse_processors_queryplan_optimizations_cascades Processors/QueryPlan/Optimizations/Cascades)
 add_object_library(clickhouse_processors_queryplan_optimizations_cascades_rules Processors/QueryPlan/Optimizations/Cascades/Rules)
@@ -605,6 +607,7 @@ endif()
 
 # Unconditional: when USE_VORTEX is off, the sources compile to the registration stubs.
 add_object_library(clickhouse_processors_formats_impl_vortex Processors/Formats/Impl/Vortex)
+add_object_library(clickhouse_processors_formats_impl_puffin Processors/Formats/Impl/Puffin)
 
 if (USE_ARROW)
     add_object_library(clickhouse_processors_formats_impl_arrow_ipc Processors/Formats/Impl/ArrowIPC)
@@ -1117,6 +1120,11 @@ if (ENABLE_TESTS)
         ch_contrib::lz4)
 
     target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::heks)
+
+    # `gtest_memchr_strlen_page_boundary` calls every x86_64 `memchr` / `strlen` tier directly.
+    if (TARGET libllvmlibc_str_test_candidates)
+        target_link_libraries(unit_tests_dbms PRIVATE libllvmlibc_str_test_candidates)
+    endif()
 
     if (TARGET ch_contrib::krb5)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::krb5)

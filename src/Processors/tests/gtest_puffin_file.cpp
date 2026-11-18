@@ -5,7 +5,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
-#include <Processors/Formats/Impl/PuffinFile.h>
+#include <Processors/Formats/Impl/Puffin/PuffinReader.h>
+#include <Processors/Formats/Impl/Puffin/PuffinWriter.h>
 
 using namespace DB;
 
@@ -30,7 +31,7 @@ String compress(const String & data, CompressionMethod method)
 PuffinBlob makeBlob(const String & codec)
 {
     PuffinBlob blob;
-    blob.type = PUFFIN_THETA_SKETCH_BLOB_TYPE;
+    blob.type = PUFFIN_DATASKETCHES_THETA_BLOB_TYPE;
     blob.snapshot_id = 7;
     blob.sequence_number = 3;
     blob.fields.push_back(1);
@@ -78,7 +79,7 @@ TEST(PuffinFile, WriteAndReadBlobs)
     EXPECT_EQ(footer_size, file.size() - static_cast<size_t>(last.offset + last.length));
 
     const auto & first = blobs.front();
-    EXPECT_EQ(first.type, PUFFIN_THETA_SKETCH_BLOB_TYPE);
+    EXPECT_EQ(first.type, PUFFIN_DATASKETCHES_THETA_BLOB_TYPE);
     EXPECT_EQ(first.snapshot_id, 7);
     EXPECT_EQ(first.sequence_number, 3);
     EXPECT_EQ(first.fields, VectorWithMemoryTracking<Int32>{1});
@@ -108,7 +109,7 @@ TEST(PuffinFile, BlobMetadataJSON)
     EXPECT_FALSE(in_table_metadata->has("offset"));
     EXPECT_FALSE(in_table_metadata->has("length"));
     EXPECT_FALSE(in_table_metadata->has("compression-codec"));
-    EXPECT_EQ(in_table_metadata->getValue<String>("type"), PUFFIN_THETA_SKETCH_BLOB_TYPE);
+    EXPECT_EQ(in_table_metadata->getValue<String>("type"), PUFFIN_DATASKETCHES_THETA_BLOB_TYPE);
     EXPECT_EQ(in_table_metadata->getValue<Int64>("snapshot-id"), 7);
     EXPECT_EQ(in_table_metadata->getArray("fields")->getElement<Int32>(0), 1);
 }
