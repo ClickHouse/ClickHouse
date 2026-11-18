@@ -43,3 +43,30 @@ OPTIMIZE TABLE t_lc_codecs FINAL;
 SELECT 'mixed codecs', count() FROM t_lc_codecs WHERE s = 100;
 SELECT 'mixed codecs', count() FROM t_lc_codecs WHERE s = 100 SETTINGS use_low_cardinality_dictionaries_for_part_pruning = 0;
 DROP TABLE t_lc_codecs;
+
+-- The `set` index evaluates every argument of `or` and `and`, so a function that does not depend on any column
+-- must not throw either, even if the row filter short-circuits it.
+DROP TABLE IF EXISTS t_lc_short_circuit;
+CREATE TABLE t_lc_short_circuit (id UInt64, s LowCardinality(String)) ENGINE = MergeTree ORDER BY id
+SETTINGS storage_policy = 'default', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, write_low_cardinality_complete_dictionaries_marker = 1;
+INSERT INTO t_lc_short_circuit SELECT number, 'a' FROM numbers(1000);
+SELECT 'throwIf in or', count() FROM t_lc_short_circuit WHERE s = 'a' OR throwIf(1) SETTINGS optimize_move_to_prewhere = 0, short_circuit_function_evaluation = 'enable';
+SELECT 'throwIf in or, prewhere', count() FROM t_lc_short_circuit PREWHERE s = 'a' OR throwIf(1) SETTINGS short_circuit_function_evaluation = 'enable';
+SELECT 'throwIf in indexHint', count() FROM t_lc_short_circuit WHERE s = 'a' AND indexHint(throwIf(materialize(1)) = 0);
+DROP TABLE t_lc_short_circuit;
+
+-- Comparisons of a `LowCardinality(Nullable(...))` column have the type `LowCardinality(Nullable(UInt8))`.
+DROP TABLE IF EXISTS t_lc_nullable;
+CREATE TABLE t_lc_nullable (id UInt64, s LowCardinality(Nullable(String))) ENGINE = MergeTree ORDER BY id
+SETTINGS storage_policy = 'default', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, write_low_cardinality_complete_dictionaries_marker = 1;
+SYSTEM STOP MERGES t_lc_nullable;
+INSERT INTO t_lc_nullable VALUES (0, NULL), (1, 'x');
+INSERT INTO t_lc_nullable VALUES (2, 'y'), (3, 'w');
+INSERT INTO t_lc_nullable VALUES (4, ''), (5, 'v');
+SELECT 'nullable equals', arraySort(groupArray(id)), (SELECT sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_nullable WHERE s = 'y')) FROM t_lc_nullable WHERE s = 'y';
+SELECT 'nullable like', arraySort(groupArray(id)), (SELECT sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_nullable WHERE s LIKE 'y%')) FROM t_lc_nullable WHERE s LIKE 'y%';
+SELECT 'nullable greater', arraySort(groupArray(id)), (SELECT sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_nullable WHERE s > 'w')) FROM t_lc_nullable WHERE s > 'w';
+SELECT 'nullable not equals', arraySort(groupArray(id)), (SELECT sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_nullable WHERE s != 'v')) FROM t_lc_nullable WHERE s != 'v';
+SELECT 'nullable not', arraySort(groupArray(id)), (SELECT sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_nullable WHERE NOT (s = 'x'))) FROM t_lc_nullable WHERE NOT (s = 'x');
+SELECT 'nullable is null', arraySort(groupArray(id)), (SELECT sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_nullable WHERE s IS NULL)) FROM t_lc_nullable WHERE s IS NULL;
+DROP TABLE t_lc_nullable;

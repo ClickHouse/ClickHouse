@@ -1229,6 +1229,9 @@ namespace
 /// Also, the filter must not contain functions whose result depends on the block or the row rather than on the values
 /// of the arguments (e.g. `blockSize`, `rowNumberInBlock`, `rand`), even if they do not depend on the column, because
 /// they are evaluated on the block of dictionary values, which differs from the blocks of the rows.
+/// A function that does not depend on any column, such as `throwIf(1)`, is evaluated too, and the `set` index evaluates
+/// every argument of `and` and `or`, even where the row filter would short-circuit, so such a function must not throw either.
+/// A subtree that depends on another column, or that is folded to a constant, is not evaluated by the `set` index.
 class SafeFunctionsChecker
 {
 public:
@@ -1239,7 +1242,10 @@ public:
 private:
     struct Result
     {
+        /// Depends on the column.
         bool depends = false;
+        /// Depends on another column, so the `set` index replaces the subtree by an unknown value.
+        bool depends_on_other_columns = false;
         bool safe = true;
     };
 
@@ -1263,6 +1269,14 @@ private:
             return it->second;
 
         Result result;
+
+        /// The `set` index uses a constant as is, without evaluating the subtree it was folded from.
+        if (node.column)
+        {
+            visited[&node] = result;
+            return result;
+        }
+
         const auto & arguments = getArguments(node);
         std::vector<Result> argument_results;
         argument_results.reserve(arguments.size());
@@ -1270,6 +1284,7 @@ private:
         {
             auto argument_result = check(*argument);
             result.depends = result.depends || argument_result.depends;
+            result.depends_on_other_columns = result.depends_on_other_columns || argument_result.depends_on_other_columns;
             result.safe = result.safe && argument_result.safe;
             argument_results.push_back(argument_result);
         }
@@ -1277,6 +1292,7 @@ private:
         if (node.type == ActionsDAG::ActionType::INPUT)
         {
             result.depends = node.result_name == column_name;
+            result.depends_on_other_columns = !result.depends;
         }
         else if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
         {
@@ -1288,7 +1304,7 @@ private:
             {
                 result.safe = false;
             }
-            else if (result.depends)
+            else if (result.depends || !result.depends_on_other_columns)
             {
                 const auto & name = node.function_base->getName();
                 /// The pattern is compiled and can be invalid, so it must not depend on the column.

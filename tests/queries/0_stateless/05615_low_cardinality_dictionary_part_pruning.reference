@@ -24,7 +24,7 @@ merged	1
 merged	10
 merged	1
 nullable equals	100
-nullable equals	2
+nullable equals	1
 nullable is null	50
 nullable coalesce	150
 nullable coalesce	2
