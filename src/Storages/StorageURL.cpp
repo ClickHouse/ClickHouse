@@ -303,7 +303,7 @@ size_t StorageURLSource::DisclosedGlobIterator::size()
     return pimpl->size();
 }
 
-void StorageURLSource::setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
+void StorageURLSource::setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri, const HTTPHeaderFilter & header_filter)
 {
     const auto & user_info = request_uri.getUserInfo();
     if (!user_info.empty())
@@ -315,6 +315,8 @@ void StorageURLSource::setCredentials(Poco::Net::HTTPBasicCredentials & credenti
             credentials.setPassword(user_info.substr(n + 1));
         }
     }
+
+    header_filter.checkBasicCredentials(credentials);
 }
 
 StorageURLSource::StorageURLSource(
@@ -556,7 +558,8 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         for (const auto & [param, value] : params)
             request_uri.addQueryParameter(param, value);
 
-        setCredentials(credentials, request_uri);
+        /// Not inside the `try` below: a forbidden option must fail the read, not fall through to the next one.
+        setCredentials(credentials, request_uri, context_->getHTTPHeaderFilter());
 
         const auto & settings = context_->getSettingsRef();
 

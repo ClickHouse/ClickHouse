@@ -4,7 +4,7 @@ import uuid
 import os
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
+from helpers.test_tools import TSV, assert_eq_with_retry
 from helpers.mock_servers import start_mock_servers
 
 cluster = ClickHouseCluster(__file__)
@@ -14,6 +14,8 @@ node1 = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_nginx=True,
 )
+# The worker of `test_cluster_node2`; `forbidden_authorization` changes only node1's configuration.
+node2 = cluster.add_instance("node2", main_configs=["configs/conf.xml"])
 
 @pytest.fixture(scope="module", autouse=True)
 def setup_node():
@@ -158,3 +160,185 @@ SETTINGS remote_read_min_bytes_for_seek = 1, max_read_buffer_size = 1, max_downl
             expected_result += f"{i}\t{i + 1}\t{i + 2}\n"
 
         assert result == expected_result
+
+
+CONF_PATH = "/etc/clickhouse-server/config.d/conf.xml"
+FORBIDDEN_HEADER = "<header>X-Forbidden-Placeholder</header>"
+
+
+class forbidden_authorization:
+    """Forbids the `Authorization` header in `http_forbid_headers` for the duration of the block."""
+
+    def __enter__(self):
+        node1.replace_in_config(
+            CONF_PATH, FORBIDDEN_HEADER, FORBIDDEN_HEADER + "<header>Authorization</header>"
+        )
+        node1.query("SYSTEM RELOAD CONFIG")
+
+    def __exit__(self, *args):
+        node1.replace_in_config(CONF_PATH, "<header>Authorization</header>", "")
+        node1.query("SYSTEM RELOAD CONFIG")
+
+
+def server_part_of_error(error):
+    # The client appends "(query: ...)" with the query text as sent, credentials included.
+    return error.split("(query: ")[0]
+
+
+def assert_authorization_forbidden(error, secret="user:pass"):
+    assert 'HTTP header "Authorization" is forbidden' in error, error
+    assert secret not in server_part_of_error(error), error
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        pytest.param(
+            "SELECT sum(column1) FROM url('http://user:pass@nginx:80/test_1', 'TSV', "
+            "'column1 UInt32, column2 UInt32, column3 UInt32')",
+            id="userinfo",
+        ),
+        # The first option is unreachable, so the read moves on to the second one.
+        pytest.param(
+            "SELECT sum(column1) FROM url("
+            "'http://127.0.0.1:1/test_1|http://user:pass@nginx:80/test_1', "
+            "'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32') SETTINGS http_max_tries = 1",
+            id="failover",
+        ),
+        # The second option is usable, so the read must not move on to it.
+        pytest.param(
+            "SELECT sum(column1) FROM url("
+            "'http://user:pass@nginx:80/test_1|http://nginx:80/test_1', "
+            "'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32') SETTINGS http_max_tries = 1",
+            id="failover_first",
+        ),
+        pytest.param(
+            "SELECT sum(column1) FROM urlCluster('test_cluster_two_shards', "
+            "'http://user:pass@nginx:80/test_1', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')",
+            id="url_cluster",
+        ),
+    ],
+)
+def test_url_userinfo_with_forbidden_authorization(query):
+    # The userinfo is sent as Basic credentials in the `Authorization` header.
+    assert node1.query(query) == "3\n"
+
+    with forbidden_authorization():
+        assert_authorization_forbidden(node1.query_and_get_error(query))
+
+
+def test_url_cluster_userinfo_refused_by_initiator():
+    # node1 refuses the URL before node2, which does not forbid the header, gets it. The userinfo is in the second
+    # failover option, so the URL as a whole has none.
+    query = (
+        "SELECT sum(column1) FROM urlCluster('test_cluster_node2', "
+        "'http://127.0.0.1:1/test_1|http://user:pass@nginx:80/test_1', "
+        "'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32') SETTINGS http_max_tries = 1"
+    )
+    assert node1.query(query) == "3\n"
+
+    with forbidden_authorization():
+        assert_authorization_forbidden(node1.query_and_get_error(query))
+
+
+def test_url_userinfo_without_username_with_forbidden_authorization():
+    # Credentials without a username are not sent, so they are not refused.
+    with forbidden_authorization():
+        assert (
+            node1.query(
+                "SELECT sum(column1) FROM url('http://:pass@nginx:80/test_1', 'TSV', "
+                "'column1 UInt32, column2 UInt32, column3 UInt32')"
+            )
+            == "3\n"
+        )
+
+
+def test_stored_url_table_with_forbidden_authorization():
+    # A stored table loads after the header is forbidden, but its reads do not send the userinfo.
+    table_name = "url_userinfo"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+    node1.query(
+        f"CREATE TABLE {table_name} (column1 UInt32, column2 UInt32, column3 UInt32) "
+        "ENGINE = URL('http://user:pass@nginx:80/test_1', 'TSV')"
+    )
+    try:
+        assert node1.query(f"SELECT sum(column1) FROM {table_name}") == "3\n"
+
+        with forbidden_authorization():
+            node1.query(f"DETACH TABLE {table_name}")
+            node1.query(f"ATTACH TABLE {table_name}")
+            assert_authorization_forbidden(node1.query_and_get_error(f"SELECT sum(column1) FROM {table_name}"))
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+
+def test_http_dictionary_credentials_with_forbidden_authorization():
+    def create_dictionary(name):
+        node1.query(
+            f"CREATE DICTIONARY {name} (column1 UInt64, column2 UInt32, column3 UInt32) PRIMARY KEY column1 "
+            "SOURCE(HTTP(url 'http://nginx:80/test_1' format 'TabSeparated' "
+            "credentials(user 'user' password 'dict_secret_pw'))) "
+            "LIFETIME(0) LAYOUT(FLAT())"
+        )
+
+    allowed, forbidden = "http_credentials_allowed", "http_credentials_forbidden"
+    try:
+        create_dictionary(allowed)
+        assert node1.query(f"SELECT dictGet('{allowed}', 'column2', toUInt64(3))") == "2\n"
+
+        with forbidden_authorization():
+            create_dictionary(forbidden)
+            assert_authorization_forbidden(
+                node1.query_and_get_error(f"SELECT dictGet('{forbidden}', 'column2', toUInt64(3))"),
+                secret="dict_secret_pw",
+            )
+    finally:
+        node1.query(f"DROP DICTIONARY IF EXISTS {allowed}")
+        node1.query(f"DROP DICTIONARY IF EXISTS {forbidden}")
+
+
+def test_loaded_http_dictionary_credentials_with_forbidden_authorization():
+    # A loaded dictionary keeps its source across its updates, so the credentials are checked per request.
+    name = "http_credentials_loaded"
+    node1.query(
+        f"CREATE DICTIONARY {name} (column1 UInt64, column2 UInt32, column3 UInt32) PRIMARY KEY column1 "
+        "SOURCE(HTTP(url 'http://nginx:80/test_1' format 'TabSeparated' "
+        "credentials(user 'user' password 'dict_secret_pw'))) "
+        "LIFETIME(MIN 1 MAX 1) LAYOUT(FLAT())"
+    )
+    try:
+        assert node1.query(f"SELECT dictGet('{name}', 'column2', toUInt64(3))") == "2\n"
+
+        with forbidden_authorization():
+            assert_eq_with_retry(
+                node1,
+                f"SELECT last_exception LIKE '%Authorization%is forbidden%' FROM system.dictionaries WHERE name = '{name}'",
+                "1",
+                retry_count=60,
+                sleep_time=0.5,
+            )
+    finally:
+        node1.query(f"DROP DICTIONARY IF EXISTS {name}")
+
+
+@pytest.mark.parametrize(
+    "registry_url",
+    [
+        pytest.param("http://user:pass@nginx:80/", id="userinfo"),
+        # Without an authority the URL has no userinfo, but the schema is requested from
+        # `http://user:pass@nginx:80/schemas/ids/1`, which its path resolves to.
+        pytest.param("http:http://user:pass@nginx:80/", id="without_authority"),
+    ],
+)
+def test_avro_schema_registry_userinfo_with_forbidden_authorization(registry_url):
+    # The data is the magic byte and the schema id 1, so the schema is requested. The server has no
+    # schema registry, so the request fails anyway: only whether it is refused matters.
+    query = (
+        "SELECT * FROM format(AvroConfluent, 'a UInt8', '\\x00\\x00\\x00\\x00\\x01') "
+        f"SETTINGS format_avro_schema_registry_url = '{registry_url}'"
+    )
+    error = node1.query_and_get_error(query)
+    assert 'HTTP header "Authorization" is forbidden' not in error, error
+
+    with forbidden_authorization():
+        assert_authorization_forbidden(node1.query_and_get_error(query))
