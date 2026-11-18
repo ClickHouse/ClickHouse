@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/array/emptyArrayToSingle.h>
@@ -11,7 +12,9 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <Common/JSONBuilder.h>
+#include <Common/VectorWithMemoryTracking.h>
 namespace DB
 {
 
@@ -92,7 +95,7 @@ bool ArrayJoinStep::canRemoveUnusedColumns() const
     });
 }
 
-IQueryPlanStep::UnneededInputPositions ArrayJoinStep::getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
+IQueryPlanStep::UnneededInputPositions ArrayJoinStep::getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const
 {
     auto unneeded = unneeded_output_positions;
     for (const auto & name : getReadColumns())
@@ -101,7 +104,7 @@ IQueryPlanStep::UnneededInputPositions ArrayJoinStep::getUnneededColumns(const s
 }
 
 IQueryPlanStep::RemoveUnusedColumnsResult
-ArrayJoinStep::removeUnusedColumns(const std::vector<size_t> & /*unneeded_output_positions*/, const std::vector<PrunedInput> & inputs)
+ArrayJoinStep::removeUnusedColumns(const VectorWithMemoryTracking<size_t> & /*unneeded_output_positions*/, const VectorWithMemoryTracking<PrunedInput> & inputs)
 {
     const auto & pruned = inputs.at(0);
 
@@ -199,9 +202,9 @@ void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings,
 
 void ArrayJoinStep::serialize(Serialization & ctx) const
 {
-    /// The filter is only ever serialized locally (e.g. calculateHashTableCacheKeys); fusion bails for
-    /// distributed, serialized and plan-based parallel replicas plans, so an older worker or replica never
-    /// receives it and no version bump is needed
+    /// The filter is serialized locally (e.g. calculateHashTableCacheKeys) and in plan fragments of plan-based
+    /// parallel replicas, which go only to replicas at `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS`
+    /// or later, which can read it. Fusion bails for distributed and serialized plans, so an older worker never receives it
     const bool serialize_filter = element_filter.has_value();
 
     UInt8 flags = 0;

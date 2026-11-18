@@ -59,7 +59,8 @@ public:
         const ColumnsDescription & columns,
         const IcebergSchemaProcessor & schema_processor_,
         Int32 schema_id,
-        ContextPtr context);
+        ContextPtr context,
+        const std::unordered_map<Int32, UInt64> & table_distinct_values);
 
     /// Adds a data file with a non-negative `record_count`.
     void addFile(const ProcessedManifestFileEntry & entry, const IcebergPathFromMetadata & path_to_manifest_file);
@@ -83,6 +84,7 @@ private:
         DataTypePtr storage_type;
         /// `storage_type` without `LowCardinality` and `Nullable`; bounds and partition values are converted to it.
         DataTypePtr nested_type;
+        std::optional<UInt64> table_distinct_values;
     };
 
     /// A target's type in one schema.
@@ -132,8 +134,9 @@ private:
     /// Adds the identity-partition value that a file gives for a target.
     static void addToDistinctValuesInputs(DistinctValuesInputs & inputs, const ColumnMetrics & metrics);
 
-    /// The number of distinct values of a target by the first rule that applies, clamped to [1, non-NULL rows]; std::nullopt
-    /// if none does. `column` holds its merged statistics over `rows` rows.
+    /// The number of distinct values of a target by the first rule that applies (1: identity-partition values, 2: the
+    /// range of the bounds, 3: the table statistics), clamped to [1, non-NULL rows]; std::nullopt if none does. `column`
+    /// holds its merged statistics over `rows` rows.
     static std::optional<UInt64> estimateDistinctValues(
         const Target & target, const DistinctValuesInputs & inputs, const ColumnStats & column, UInt64 rows);
 

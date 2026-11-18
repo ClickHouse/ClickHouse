@@ -79,7 +79,7 @@ def test_paimon_hdfs(started_cluster_paimon_hdfs):
     ch_table = "paimon_hdfs_engine_" + get_uuid_str()
     instance.query(
         f"CREATE TABLE {ch_table} ENGINE = PaimonHDFS('{hdfs_url}')",
-        settings={"allow_experimental_paimon_storage_engine": 1},
+        settings={"enable_paimon_storage_engine": 1},
     )
     try:
         assert (
