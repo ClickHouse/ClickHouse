@@ -2657,6 +2657,45 @@ TEST_P(SyncAsync, ExceptionOnUploadPart) {
 }
 
 
+/// A failed part keeps the completion from being sent, so the buffer reports that nothing was applied, both when the
+/// part fails while data is written and when it fails during `finalize`.
+TEST_P(SyncAsync, FailedPartUploadIsNotApplied) {
+    setInjectionModel(std::make_shared<MockS3::UploadPartFailIngection>());
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
+
+    {
+        /// The second write sends the first two parts, which fail at once, and the third write collects their error, so
+        /// `finalize` is never called.
+        auto buffer = getWriteBuffer("failed_part_while_writing", conditionalCreateWriteSettings());
+        getAsyncPolicy().setAutoExecute(true);
+        EXPECT_THROW({
+            buffer->write('A');
+            buffer->next();
+            buffer->write('A');
+            buffer->next();
+            buffer->write('A');
+            buffer->next();
+        }, DB::S3Exception);
+        EXPECT_EQ(buffer->getWriteOutcome(), WriteOutcome::NotApplied);
+        EXPECT_EQ(client->counters.multiUploadComplete, 0u);
+        buffer->cancel();
+    }
+
+    {
+        /// The parts run only in `finalize`, which collects the error of the failed one.
+        auto buffer = getWriteBuffer("failed_part_in_finalize", conditionalCreateWriteSettings());
+        buffer->write('A');
+        buffer->next();
+        buffer->write('A');
+        getAsyncPolicy().setAutoExecute(true);
+        EXPECT_THROW(buffer->finalize(), DB::S3Exception);
+        EXPECT_EQ(buffer->getWriteOutcome(), WriteOutcome::NotApplied);
+        EXPECT_EQ(client->counters.multiUploadComplete, 0u);
+    }
+}
+
 TEST_F(WBS3Test, PrefinalizeCalledMultipleTimes) {
 #ifdef DEBUG_OR_SANITIZER_BUILD
     GTEST_SKIP() << "this test trigger LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
