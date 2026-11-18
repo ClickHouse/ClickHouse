@@ -85,7 +85,7 @@ void ITableFunctionFileLike::parseArgumentsImpl(ASTs & args, const ContextPtr & 
         compression_method = checkAndGetLiteralArgument<String>(args[3], "compression_method");
 }
 
-StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
+StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
     ColumnsDescription columns;
     if (structure != "auto")
@@ -94,6 +94,37 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
         columns = structure_hint;
 
     StoragePtr storage = getStorage(filename, format, columns, context, table_name, compression_method, is_insert_query);
+
+    /// Without a structure argument, the storage infers the columns of the data, and the stored columns of a table, given in
+    /// `CREATE` or inferred then, are read from it by name (see `StorageTableFunctionProxy`), so `(c2 String, c1 Int64)` of a CSV
+    /// file reads its second and first columns, and a query reads a stored column only if the storage has it. If the storage has
+    /// none of the ordinary stored columns, such as `id` and `s` for `CREATE TABLE t (id UInt32, s String) AS file('data.csv',
+    /// 'CSV')`, the table could not be read at all, so its storage is created with the ordinary stored columns instead, as the
+    /// object storage table functions do, except those that it has as virtual columns, such as `_file`, which stay virtual. The
+    /// storage does not support the other kinds of columns. A table with some of the inferred columns keeps reading them by name.
+    if (columns.empty() && !cached_columns.empty())
+    {
+        const auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
+        bool has_inferred_column = false;
+        bool has_other_column = false;
+        ColumnsDescription stored_columns;
+        for (const auto & column : cached_columns)
+        {
+            if (column.default_desc.kind != ColumnDefaultKind::Default)
+                continue;
+            if (metadata->columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name))
+                has_inferred_column = true;
+            else if (metadata->virtuals.has(column.name))
+                continue;
+            else
+                has_other_column = true;
+            stored_columns.add(column);
+        }
+
+        if (has_other_column && !has_inferred_column)
+            storage = getStorage(filename, format, stored_columns, context, table_name, compression_method, is_insert_query);
+    }
+
     storage->startup();
     return storage;
 }

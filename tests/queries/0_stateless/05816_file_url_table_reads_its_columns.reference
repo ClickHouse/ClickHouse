@@ -1,0 +1,19 @@
+--- given columns
+1	hello
+2	world
+1	hello	1
+2	world	1
+1	hello
+2	world
+--- given columns and a virtual column
+1	hello	1
+2	world	1
+--- inferred columns in another order
+hello	1
+world	2
+--- inferred columns and another one
+1	hello
+2	world
+--- url
+1	a
+1	a
