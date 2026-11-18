@@ -4249,7 +4249,17 @@ try
             is_async ? "asynchronously" : "synchronously");
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<size_t>((*getSettings())[MergeTreeSetting::sleep_before_loading_outdated_parts_ms])));
+    /// Stops at table shutdown like the loading below, so a long testing sleep does not delay the shutdown.
+    const UInt64 sleep_ms = (*getSettings())[MergeTreeSetting::sleep_before_loading_outdated_parts_ms];
+    for (UInt64 slept_ms = 0; slept_ms < sleep_ms; slept_ms += 100)
+    {
+        {
+            std::lock_guard lock(outdated_data_parts_mutex);
+            if (is_async && outdated_data_parts_loading_canceled)
+                return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(std::min<UInt64>(100, sleep_ms - slept_ms)));
+    }
     ThreadFuzzer::maybeInjectSleep();
 
     /// Acquire shared lock because 'relative_data_path' is used while loading parts.
@@ -4515,12 +4525,29 @@ void MergeTreeData::waitForOutdatedPartsToBeLoaded() const TSA_NO_THREAD_SAFETY_
 
     LOG_TRACE(log, "Will wait for outdated data parts to be loaded");
 
+    QueryStatusPtr query_status;
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        query_status = query_context->getProcessListElementSafe();
+
     std::unique_lock lock(outdated_data_parts_mutex);
 
-    outdated_data_parts_cv.wait(lock, [this]() TSA_NO_THREAD_SAFETY_ANALYSIS
+    /// Nothing notifies the condition variable on `KILL QUERY` or `max_execution_time`, so wait in slices to notice them.
+    /// The query is checked after the last slice too, because the caller changes the table right after the wait.
+    bool done = false;
+    while (!done)
     {
-        return outdated_data_parts_loading_finished || outdated_data_parts_loading_canceled;
-    });
+        done = outdated_data_parts_cv.wait_for(lock, std::chrono::seconds(1), [this]() TSA_NO_THREAD_SAFETY_ANALYSIS
+        {
+            return outdated_data_parts_loading_finished || outdated_data_parts_loading_canceled;
+        });
+
+        if (query_status)
+        {
+            lock.unlock();
+            query_status->checkTimeLimit(OverflowMode::THROW);
+            lock.lock();
+        }
+    }
 
     if (outdated_data_parts_loading_canceled)
         throw Exception(ErrorCodes::NOT_INITIALIZED, "Loading of outdated data parts was canceled");

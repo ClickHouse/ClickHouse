@@ -1739,6 +1739,7 @@ public:
     /// (e.g. from a Keeper-allocated block number) pass `may_have_leftover = false` to skip the probe.
     scope_guard claimTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name, bool may_have_leftover = true) const;
 
+    /// Throws if the current query is cancelled or exceeds `max_execution_time`, whatever its `timeout_overflow_mode`.
     void waitForOutdatedPartsToBeLoaded() const;
     void waitForUnexpectedPartsToBeLoaded() const;
     bool canUsePolymorphicParts() const;
