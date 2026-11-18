@@ -7841,67 +7841,6 @@ void MergeTreeData::changeSettings(
         auto new_changes = new_settings->as<const ASTSetQuery &>().changes;
         MergeTreeSettings::resolveDiskSetting(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
 
-        /// A change of the storage policy is checked and applied under the lock that a reload of the storage configuration
-        /// holds from its checks of the recorded data paths to the publication of the reloaded policies.
-        std::unique_lock<std::mutex> storage_configuration_lock;
-        for (const auto & change : new_changes)
-        {
-            if (change.name == "disk" || change.name == "storage_policy")
-            {
-                storage_configuration_lock = getContext()->lockStorageConfigurationUpdates();
-                break;
-            }
-        }
-
-        StoragePolicyPtr new_storage_policy = nullptr;
-
-        for (const auto & change : new_changes)
-        {
-            if (change.name == "disk" || change.name == "storage_policy")
-            {
-                if (change.name == "disk")
-                    new_storage_policy = getContext()->getStoragePolicyFromDisk(change.value.safeGet<String>());
-                else
-                    new_storage_policy = getContext()->getStoragePolicy(change.value.safeGet<String>());
-                StoragePolicyPtr old_storage_policy = getStoragePolicy();
-
-                /// StoragePolicy of different version or name is guaranteed to have different pointer
-                if (new_storage_policy != old_storage_policy)
-                {
-                    checkStoragePolicy(new_storage_policy);
-
-                    std::unordered_set<String> all_diff_disk_names;
-                    for (const auto & disk : new_storage_policy->getDisks())
-                        all_diff_disk_names.insert(disk->getName());
-                    for (const auto & disk : old_storage_policy->getDisks())
-                        all_diff_disk_names.erase(disk->getName());
-
-                    for (const String & disk_name : all_diff_disk_names)
-                    {
-                        auto disk = new_storage_policy->getDiskByName(disk_name);
-
-                        if (containsTableDataOnNewDisk(disk))
-                            throw Exception(
-                                ErrorCodes::BAD_ARGUMENTS,
-                                "New storage policy contain disks which already contain data of a table with the same name");
-                    }
-
-                    for (const String & disk_name : all_diff_disk_names)
-                    {
-                        auto disk = new_storage_policy->getDiskByName(disk_name);
-                        disk->createDirectories(relative_data_path);
-                        disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
-                    }
-                    /// FIXME: current update in config reload is done asynchronously, so we can't guarantee that it will
-                    /// initialize new disks before they are actually used
-                    /// so we can't use disks reliably without some kind of authoritative initialization model
-                    /// but this issue is relatively rare
-
-                    has_storage_policy_changed = true;
-                }
-            }
-        }
-
         /// Reset to default settings before applying existing.
         auto copy = getDefaultSettings();
         copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
@@ -7910,6 +7849,62 @@ void MergeTreeData::changeSettings(
             copy->sanityCheck(
                 getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
                 getContext()->wasBackgroundPoolAutoLowered());
+        }
+
+        /// The storage policy is determined by the effective settings rather than by the changes, because a reset of
+        /// `storage_policy` or `disk` removes the override from the changes and switches the table to the default policy.
+        const auto old_settings = getSettings();
+        const bool may_change_storage_policy
+            = (*old_settings)[MergeTreeSetting::disk].changed != (*copy)[MergeTreeSetting::disk].changed
+            || (*old_settings)[MergeTreeSetting::disk].value != (*copy)[MergeTreeSetting::disk].value
+            || (*old_settings)[MergeTreeSetting::storage_policy].value != (*copy)[MergeTreeSetting::storage_policy].value;
+
+        /// A change of the storage policy is checked and applied under the lock that a reload of the storage configuration
+        /// holds from its checks of the recorded data paths to the publication of the reloaded policies.
+        std::unique_lock<std::mutex> storage_configuration_lock;
+        if (may_change_storage_policy)
+        {
+            storage_configuration_lock = getContext()->lockStorageConfigurationUpdates();
+
+            const StoragePolicyPtr new_storage_policy = (*copy)[MergeTreeSetting::disk].changed
+                ? getContext()->getStoragePolicyFromDisk((*copy)[MergeTreeSetting::disk])
+                : getContext()->getStoragePolicy((*copy)[MergeTreeSetting::storage_policy]);
+            const StoragePolicyPtr old_storage_policy = getStoragePolicy();
+
+            /// StoragePolicy of different version or name is guaranteed to have different pointer
+            if (new_storage_policy != old_storage_policy)
+            {
+                checkStoragePolicy(new_storage_policy);
+
+                std::unordered_set<String> all_diff_disk_names;
+                for (const auto & disk : new_storage_policy->getDisks())
+                    all_diff_disk_names.insert(disk->getName());
+                for (const auto & disk : old_storage_policy->getDisks())
+                    all_diff_disk_names.erase(disk->getName());
+
+                for (const String & disk_name : all_diff_disk_names)
+                {
+                    auto disk = new_storage_policy->getDiskByName(disk_name);
+
+                    if (containsTableDataOnNewDisk(disk))
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "New storage policy contain disks which already contain data of a table with the same name");
+                }
+
+                for (const String & disk_name : all_diff_disk_names)
+                {
+                    auto disk = new_storage_policy->getDiskByName(disk_name);
+                    disk->createDirectories(relative_data_path);
+                    disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
+                }
+                /// FIXME: current update in config reload is done asynchronously, so we can't guarantee that it will
+                /// initialize new disks before they are actually used
+                /// so we can't use disks reliably without some kind of authoritative initialization model
+                /// but this issue is relatively rare
+
+                has_storage_policy_changed = true;
+            }
         }
 
         bool has_escape_index_filenames_changed
