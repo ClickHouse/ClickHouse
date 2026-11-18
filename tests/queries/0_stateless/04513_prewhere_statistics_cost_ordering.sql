@@ -13,7 +13,6 @@ SET allow_reorder_prewhere_conditions = 1;
 SET use_statistics = 1;
 SET explain_query_plan_default = 'legacy';
 
--- The cost path compares compressed column sizes, so pin the codec: CI randomizes the server default.
 DROP TABLE IF EXISTS t_prewhere_stats_cost;
 CREATE TABLE t_prewhere_stats_cost (id UInt64, modality LowCardinality(String), h Map(String, String))
 ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, default_compression_codec = 'LZ4';
@@ -132,3 +131,22 @@ SELECT count() FROM t_prewhere_cost_lc WHERE lower(lc) = 'v1' AND u = 5;
 SELECT count() FROM t_prewhere_cost_lc WHERE lower(lc) = 'v1' AND u = 5 SETTINGS allow_reorder_prewhere_conditions = 0;
 
 DROP TABLE t_prewhere_cost_lc;
+
+DROP TABLE IF EXISTS t_prewhere_cost_lc_cast;
+CREATE TABLE t_prewhere_cost_lc_cast (s String CODEC(NONE), w UInt32 CODEC(NONE))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = 'basic, uniq_v2', string_serialization_version = 'single_stream';
+INSERT INTO t_prewhere_cost_lc_cast SELECT concat('k', toString(cityHash64(number, 7) % 10)), toUInt32(cityHash64(number, 8)) FROM numbers(200000);
+OPTIMIZE TABLE t_prewhere_cost_lc_cast FINAL;
+
+SELECT '-- a conversion of a full column to LowCardinality is charged for the values it hashes';
+SELECT position(explain, 'less(') > 0 AND position(explain, 'less(') < position(explain, 'toLowCardinality(')
+FROM (
+    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_lc_cast WHERE toLowCardinality(s) = 'k1' AND w < 3000000000
+    SETTINGS min_marks_per_part_to_load_statistics = 0
+) WHERE explain LIKE '%Prewhere filter column%';
+
+SELECT count() FROM t_prewhere_cost_lc_cast WHERE toLowCardinality(s) = 'k1' AND w < 3000000000;
+SELECT count() FROM t_prewhere_cost_lc_cast WHERE toLowCardinality(s) = 'k1' AND w < 3000000000 SETTINGS allow_reorder_prewhere_conditions = 0;
+
+DROP TABLE t_prewhere_cost_lc_cast;

@@ -21,3 +21,7 @@
 1
 0
 0
+-- a conversion of a full column to LowCardinality is charged for the values it hashes
+1
+13789
+13789

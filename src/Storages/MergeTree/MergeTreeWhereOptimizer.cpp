@@ -77,7 +77,7 @@ double approximateBytesPerValueForType(const IDataType & type)
 }
 
 /// Adds the bytes per row produced by the functions in `node` that depend on a column, each node once.
-/// A function returning `LowCardinality` runs on the dictionary and produces only an index per row.
+/// A function with a `LowCardinality` argument and result runs on the dictionary and produces only an index per row.
 bool addBytesPerRowOfFunctions(
     const ActionsDAG::Node & node, UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool> & visited, double & bytes)
 {
@@ -92,7 +92,11 @@ bool addBytesPerRowOfFunctions(
                 depends_on_column = true;
 
     if (depends_on_column && node.type == ActionsDAG::ActionType::FUNCTION)
-        bytes += node.result_type->lowCardinality() ? 1 : approximateBytesPerValueForType(*node.result_type);
+    {
+        const bool runs_on_dictionary = node.result_type->lowCardinality()
+            && std::ranges::any_of(node.children, [](const ActionsDAG::Node * child) { return child->result_type->lowCardinality(); });
+        bytes += runs_on_dictionary ? 1 : approximateBytesPerValueForType(*removeLowCardinality(node.result_type));
+    }
 
     visited.emplace(&node, depends_on_column);
     return depends_on_column;

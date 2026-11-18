@@ -15,8 +15,8 @@
             number,
             if(intDiv(number, 200000) % 40 = 0, concat('v', toString(cityHash64(number, 1) % 2)), concat('v', toString(2 + cityHash64(number, 1) % 28))),
             if(intDiv(number, 200000) % 40 = 0,
-                format('{{"k0":{},"k1":{}}}', toString(cityHash64(number, 2) % 5000000), toString(number % 1000)),
-                format('{{"k1":{},"k2":{}}}', toString(number % 1000), toString(cityHash64(number, 3) % 1000000)))::JSON
+                format('{{{{"k0":{{}},"k1":{{}}}}}}', toString(cityHash64(number, 2) % 5000000), toString(number % 1000)),
+                format('{{{{"k1":{{}},"k2":{{}}}}}}', toString(number % 1000), toString(cityHash64(number, 3) % 1000000)))::JSON
         FROM numbers(30000000)
     </fill_query>
     <fill_query>
