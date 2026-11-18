@@ -16,7 +16,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
-バックグララウンドメモリワーカーが、ティック ごとに、プロセスが実際に使用しているメモリの外部測定値に基づいてグローバルメモリトラッカーを補正するかどうかを指定します。外部測定値には、cgroups が利用可能な場合は cgroup のメモリ使用量 (`memory_worker_use_cgroup` を参照) 、それ以外の場合は jemalloc の `stats.resident` が使用されます。
+バックグララウンドメモリワーカーが、ティック ごとに、プロセスが実際に使用しているメモリの外部測定値に基づいてグローバルメモリトラッカーを補正するかどうかを指定します。外部測定値には、cgroups が利用可能な場合は cgroup のメモリ使用量 (`memory_worker_use_cgroup` を参照) 、それ以外の場合は jemalloc の `stats.resident` が使用されます。トラッカーには、この測定値と jemalloc の `stats.allocated` のうち最大値が設定されます。これにより、割り当て済みでもまだアクセスされていない (したがって常駐していない) メモリも引き続き計上されるため、同時実行されるクエリが、ページにアクセスする前の段階で `max_server_memory_usage` を超えて受け付けられることはありません。
 
 グローバルメモリトラッカーはカウンターであり、割り当てによって加算され、解放によって減算されます。計上に非対称性があると、ほかにトラッカーの値を下げる仕組みがないため、その差分はプロセスが終了するまで残り続けます。特に上方向へのずれは決して解消されません。そのずれに相当するメモリはすでに解放済みだからです。ずれだけで `max_server_memory_usage` を超えると、接続開始時のゼロバイトのチェックに至るまで、あらゆる割り当てが失敗します。その結果、サーバーは上限のごく一部しか使用していないにもかかわらず、すべてのクエリを拒否するようになります。測定値に基づいて補正すれば、このようなずれが続く期間をワーカーの 1 ティック分 (`memory_worker_period_ms`。デフォルトでは cgroups から読み取る場合は 50 ms、jemalloc から読み取る場合は 100 ms) に抑えられます。
 
