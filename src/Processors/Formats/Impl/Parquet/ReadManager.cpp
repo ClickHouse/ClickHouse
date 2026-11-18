@@ -128,6 +128,10 @@ void ReadManager::init(
                     && std::any_of(row_group.columns.begin(), row_group.columns.end(),
                         [](const ColumnChunk & column) { return !column.served_from_cache; });
             });
+    /// A reader of a split file that decodes in its own thread still reads its next row group ahead.
+    if (other_row_groups_are_read_by_other_readers && parser_shared_resources->parsing_runner.isManual()
+        && parser_shared_resources->max_io_threads > 1)
+        min_read_ahead_depth = 2;
     column_data_read_ahead_row_groups.resize(num_row_groups);
     column_data_read_ahead_run_slots.assign(num_row_groups, 0);
 
@@ -965,7 +969,7 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
 
 void ReadManager::readAheadColumnData()
 {
-    size_t depth = parser_shared_resources->getIOThreadsPerReader();
+    size_t depth = std::max(parser_shared_resources->getIOThreadsPerReader(), min_read_ahead_depth);
     Stage & stage = stages[size_t(ReadStage::ColumnData)];
     auto limits = SharedResourcesExt::getLimitsPerReader(*parser_shared_resources, stage.memory_target_fraction);
     if (depth <= limits.parsing_threads)
