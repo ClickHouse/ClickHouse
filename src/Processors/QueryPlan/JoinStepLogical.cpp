@@ -3122,10 +3122,10 @@ void JoinStepLogical::serialize(Serialization & ctx) const
     /// that the receiver does not take them again. Both bits stand for a decision that reads a row
     /// estimate, and estimates are deliberately not part of the plan format, so a receiver that
     /// decided for itself would decide from an empty estimate and could decide differently. The one
-    /// exception is the packed-key bit: a receiver that has statistics of the right key and a row
-    /// estimate of its own decides from them and ignores the bit. The byte is left out of a plan
-    /// cache key because it differs between the single-node and the parallel-replicas plan build,
-    /// and those two builds have to hash alike.
+    /// exception is the packed-key bit: a receiver that has a row estimate of its own, from the
+    /// optimizer or from its read of the right side, decides from it and ignores the bit. The byte
+    /// is left out of a plan cache key because it differs between the single-node and the
+    /// parallel-replicas plan build, and those two builds have to hash alike.
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_DECISIONS && !ctx.for_cache_key)
     {
         UInt8 optimizer_flags = 0;

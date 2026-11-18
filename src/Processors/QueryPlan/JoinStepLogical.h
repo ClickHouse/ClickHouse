@@ -304,7 +304,7 @@ protected:
     bool runtime_filter_keeps_matching_rows = false;
 
     /// The sender estimated the right side below `min_rows_for_packed_string_keys_in_hash_join`. Set only on a step taken
-    /// over the wire, which has no row estimate.
+    /// over the wire, which has no row estimate. A host with no row estimate of its own follows it.
     bool sender_estimated_small_right_side = false;
 
     /// Runtime info, do not serialize
