@@ -8,6 +8,7 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/ProfileEvents.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Core/ServerSettings.h>
@@ -637,7 +638,10 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 continue;
             }
 
-            insertProcessedResult(*result_col, postProcessResponse(ai_response->result));
+            String & response = ai_response->result;
+            if (response_format) /// Some models output whitespace around a structured reply
+                response = String(trimWhitespace(response));
+            insertProcessedResult(*result_col, postProcessResponse(response));
             ++rows_processed;
         }
     }
