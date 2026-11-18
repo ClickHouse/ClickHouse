@@ -346,6 +346,12 @@ public:
             /// where x, y are key columns, or pointInPolygon(coord, [...])
             /// where coord is a key column of type Point (Tuple of two coordinates).
             FUNCTION_POINT_IN_POLYGON,
+            /// Special for S2 spatial functions to utilize granule-level index pruning.
+            /// The query region is decomposed into an S2CellUnion covering at parse time;
+            /// at eval time each granule's [cell_min, cell_max] Hilbert-curve interval is
+            /// tested against the covering.
+            /// Applies to: s2RectContains, s2CapContains, s2CellsIntersect.
+            FUNCTION_S2_COVERING,
             /// The atoms of one predicate leaf that constrains several key columns (see `group_atoms`).
             /// For example, with the key `(toDate(ts), ts)`, the leaf `ts = '2026-01-10 00:00:00'`
             /// becomes the group of `toDate(ts) = '2026-01-10'` and `ts = '2026-01-10 00:00:00'`.
@@ -415,6 +421,11 @@ public:
         /// or one element if the point is a whole key column of Tuple type.
         std::shared_ptr<Polygon> polygon;
 
+        /// For FUNCTION_S2_COVERING.
+        /// Pimpl wrapper to avoid including S2 headers here.
+        /// Additionally, `key_columns` has one element for the S2 key column.
+        struct S2CoveringData;
+        std::shared_ptr<S2CoveringData> s2_covering_data;
         /// For FUNCTION_ATOM_GROUP: two or more atoms of one predicate leaf, each constraining its own key
         /// columns. The group stands for the leaf as a single element, so the RPN keeps one element per leaf,
         /// as the skip-index disjunction machinery expects (see `mergePartialResultsForDisjunctions`).
@@ -1031,6 +1042,14 @@ private:
     /// transforms. Multi-atom groups then never form, but a single tuple-set atom can still constrain
     /// several key columns.
     bool multiple_key_columns_per_condition = true;
+
+    /// Whether to use S2 spatial functions (`s2RectContains`, `s2CapContains`) as key conditions.
+    bool enable_s2_index_pruning = false;
+
+    /// Maximum number of cells for the S2 covering (see `s2_max_covering_cells` setting).
+    /// Stored as `int` to match `S2RegionCoverer::Options::set_max_cells`; clamped to
+    /// `std::numeric_limits<int>::max()` at construction to guard against UInt64 overflow.
+    int s2_max_covering_cells = 8;
 
     /// Holds whether the key columns are sorted in reverse (ORDER BY ... DESC) or not.
     KeyOrder key_order;

@@ -1,0 +1,20 @@
+geoEqualsCartesian: same polygon
+1
+geoEqualsCartesian: different polygons
+0
+geoEqualsCartesian: same point
+1
+geoEqualsCartesian: different points
+0
+geoEqualsCartesian: point vs polygon
+0
+geoEqualsCartesian: same polygon different vertex order
+1
+geoEqualsCartesian: big contains small not equal
+0
+geoEqualsSpherical: same polygon
+1
+geoEqualsSpherical: different polygons
+0
+ST_Equals is alias for geoEqualsCartesian
+1

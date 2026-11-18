@@ -1,0 +1,24 @@
+geoTouchesCartesian: point on polygon boundary vertex
+1
+geoTouchesCartesian: point on polygon edge
+1
+geoTouchesCartesian: point inside polygon
+0
+geoTouchesCartesian: point outside polygon
+0
+geoTouchesCartesian: two polygons sharing edge
+1
+geoTouchesCartesian: two overlapping polygons
+0
+geoTouchesCartesian: point-point same (never touches)
+0
+geoTouchesCartesian: disjoint polygons
+0
+geoTouchesSpherical: point on polygon boundary vertex
+1
+geoTouchesSpherical: point inside polygon
+0
+geoTouchesSpherical: two polygons sharing edge
+1
+ST_Touches is alias for geoTouchesCartesian
+1
