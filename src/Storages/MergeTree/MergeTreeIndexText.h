@@ -330,10 +330,11 @@ struct TextIndexHeader
 {
     MergeTreeTextIndexSerializationVersion version = MergeTreeTextIndexSerializationVersion::V0_Initial;
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::None;
-    /// has_positions, positions_codec and position_increment_gap are persisted for version >= V2_WithPositions.
+    /// has_positions, positions_codec, position_increment_gap and positions_block_size are persisted for version >= V2_WithPositions.
     bool has_positions = false;
     UInt8 positions_codec = 0;
     UInt8 position_increment_gap = 0;
+    UInt64 positions_block_size = TextIndexBlockedPositionsCodec::BLOCK_SIZE;
     DictionarySparseIndex sparse_index;
 };
 

@@ -1290,11 +1290,12 @@ void TextIndexSerialization::serializeHeader(const TextIndexHeader & header, Wri
     if (header.version >= MergeTreeTextIndexSerializationVersion::V2_WithPositions)
     {
         writeVarUInt(static_cast<UInt64>(header.has_positions), ostr);
-        /// Only a part that has positions carries their codec and gap.
+        /// Only a part that has positions carries their codec, gap and block size.
         if (header.has_positions)
         {
             writeVarUInt(static_cast<UInt64>(header.positions_codec), ostr);
             writeVarUInt(static_cast<UInt64>(header.position_increment_gap), ostr);
+            writeVarUInt(header.positions_block_size, ostr);
         }
     }
 
@@ -1357,6 +1358,11 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "Invalid position increment gap {} in text index header", position_increment_gap);
             header.position_increment_gap = static_cast<UInt8>(position_increment_gap);
+
+            readVarUInt(header.positions_block_size, istr);
+            if (header.positions_block_size != TextIndexBlockedPositionsCodec::BLOCK_SIZE)
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Unsupported positions block size {} in text index header", header.positions_block_size);
         }
     }
 
