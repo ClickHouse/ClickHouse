@@ -113,22 +113,46 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
     return estimateRelationProfileImpl(combined_rpn, metadata);
 }
 
-static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const ColumnStatisticsPtr & stats, const String & column_name)
+/// How the type of statistics relates to the type of the column in the metadata. A part keeps the statistics of the
+/// type it stores, which may differ from the column type after `ALTER TABLE ... MODIFY COLUMN`: until a mutation or
+/// a merge rewrites the part, or for good if the conversion is metadata-only.
+enum class StatisticsTypeMatch : uint8_t
+{
+    /// The same type. The types are compared by name, as `ColumnStatistics::structureEquals` does: `Bool` and
+    /// `UInt8`, or `DateTime` in different time zones, are equal under `IDataType::equals`, but their statistics
+    /// cannot be merged.
+    Equal,
+    /// A different type whose values a read converts to the column type without changing them (e.g. `Enum8` ->
+    /// `Int8`, an extended `Enum`), like for the statistics part pruning and the skip indexes: the statistics still
+    /// describe what the query sees. Also the statistics of any type without metadata, where the column type is
+    /// unknown.
+    Compatible,
+    /// A different type whose values a read changes (e.g. `DateTime` -> `Date`), or a column missing from the
+    /// metadata: the statistics do not describe what the query sees.
+    Incompatible,
+};
+
+static StatisticsTypeMatch
+matchStatisticsType(const StorageMetadataPtr & metadata, const ColumnStatistics & stats, const String & column_name)
 {
     if (!metadata)
-        return true;
+        return StatisticsTypeMatch::Compatible;
 
     const auto * column = metadata->getColumns().tryGet(column_name);
-    if (!column)
-        return false;
+    const auto stats_type = stats.getDataType();
+    if (!column || !stats_type)
+        return StatisticsTypeMatch::Incompatible;
 
-    /// A part keeps statistics of the type it stores, which may differ from the current type after
-    /// `ALTER TABLE ... MODIFY COLUMN`: until a mutation or a merge rewrites the part, or for good if the conversion
-    /// is metadata-only. A read converts the values to the current type, so the statistics still describe what
-    /// the query sees only if the conversion keeps the values (e.g. `Enum8` -> `Int8`, an extended `Enum`), like
-    /// for the statistics part pruning and the skip indexes. Otherwise skip them.
-    const auto stats_type = stats->getDataType();
-    return stats_type && isRepresentationPreservingConversion(stats_type.get(), column->type.get());
+    if (stats_type->getName() == column->type->getName())
+        return StatisticsTypeMatch::Equal;
+
+    return isRepresentationPreservingConversion(stats_type.get(), column->type.get()) ? StatisticsTypeMatch::Compatible
+                                                                                      : StatisticsTypeMatch::Incompatible;
+}
+
+static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const ColumnStatisticsPtr & stats, const String & column_name)
+{
+    return matchStatisticsType(metadata, *stats, column_name) != StatisticsTypeMatch::Incompatible;
 }
 
 /// NDV is clamped by the caller to the estimated row count; the value range and NULL fraction
@@ -259,7 +283,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata) const
 {
-    /// Like the filtered profiles, skip statistics that do not describe the values of the current column type.
+    /// Like the filtered profiles, skip statistics that do not describe the values of the column type.
     RelationProfile result;
     result.rows = total_rows;
     for (const auto & [column_name, estimator] : column_estimators)
@@ -684,34 +708,13 @@ void ConditionSelectivityEstimatorBuilder::incrementRowCount(UInt64 rows)
     estimator->total_rows += rows;
 }
 
-/// Compare type names as `ColumnStatistics::structureEquals` does: `Bool` and `UInt8` are equal under
-/// `equals` but have different statistics layouts.
-static bool haveSameDataType(const ColumnStatistics & lhs, const ColumnStatistics & rhs)
+/// The statistics of a part are shared through the statistics cache, so they are never merged into in place: the
+/// estimator accumulates the parts into its own copy, starting from an empty one of the same structure.
+static ColumnStatisticsPtr copyStatistics(const ColumnStatisticsPtr & column_stats)
 {
-    const auto lhs_type = lhs.getDataType();
-    const auto rhs_type = rhs.getDataType();
-    return lhs_type && rhs_type && lhs_type->getName() == rhs_type->getName();
-}
-
-/// Whether `stats` were built for the current type of the column, compared by name like in `haveSameDataType`.
-static bool hasCurrentType(const StorageMetadataPtr & metadata, const ColumnStatistics & stats, const String & column_name)
-{
-    if (!metadata)
-        return false;
-
-    const auto * column = metadata->getColumns().tryGet(column_name);
-    const auto stats_type = stats.getDataType();
-    return column && stats_type && column->type->getName() == stats_type->getName();
-}
-
-void ConditionSelectivityEstimatorBuilder::startColumn(const String & column_name, const ColumnStatisticsPtr & column_stats)
-{
-    /// The statistics of a part are shared through the statistics cache, so they are never merged into
-    /// in place: the estimator accumulates the parts into its own copy, starting from an empty one of
-    /// the same structure.
     auto stats = column_stats->cloneEmpty();
     stats->merge(column_stats);
-    estimator->column_estimators[column_name].stats = std::move(stats);
+    return stats;
 }
 
 void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats)
@@ -721,45 +724,33 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
 
     has_data = true;
 
-    /// The estimates reject statistics that do not describe the values of the current type. Skip them here
+    /// The estimates reject statistics that do not describe the values of the column type. Skip them here
     /// already, so that they do not take the place of usable ones.
-    if (!isCompatibleStatistics(metadata, column_stats, column_name))
+    const auto type_match = matchStatisticsType(metadata, *column_stats, column_name);
+    if (type_match == StatisticsTypeMatch::Incompatible)
         return;
 
-    const bool is_current_type = hasCurrentType(metadata, *column_stats, column_name);
-    auto it = estimator->column_estimators.find(column_name);
-    if (it == estimator->column_estimators.end())
+    auto & stats = estimator->column_estimators[column_name].stats;
+    if (stats == nullptr)
     {
-        if (is_current_type || !columns_with_conflicting_types.contains(column_name))
-            startColumn(column_name, column_stats);
-        return;
+        stats = copyStatistics(column_stats);
     }
-
-    auto & stats = it->second.stats;
-    if (stats->structureEquals(*column_stats))
+    else if (stats->structureEquals(*column_stats))
     {
         stats->merge(column_stats);
     }
-    else if (!haveSameDataType(*stats, *column_stats))
+    else if (type_match == StatisticsTypeMatch::Equal && matchStatisticsType(metadata, *stats, column_name) != StatisticsTypeMatch::Equal)
     {
-        /// The parts store the column with different types: after `ALTER TABLE ... MODIFY COLUMN` until a mutation
-        /// or a merge rewrites them, e.g. the parts inserted after a metadata-only conversion and the parts from
-        /// before it, or a part attached with an old type. Statistics of different types cannot be merged, so only
-        /// the parts of one type contribute. To not depend on the part order, the current type is preferred: all
-        /// parts get it eventually. Without it, two outdated types are equally good, so the column gets none.
-        if (is_current_type)
-        {
-            startColumn(column_name, column_stats);
-        }
-        else if (!hasCurrentType(metadata, *stats, column_name))
-        {
-            estimator->column_estimators.erase(it);
-            columns_with_conflicting_types.insert(column_name);
-        }
+        /// The parts store the column with different types, e.g. the parts from before a metadata-only
+        /// `ALTER TABLE ... MODIFY COLUMN` and the parts inserted after it. Statistics of different types cannot be
+        /// merged, so only the parts of one type contribute. To not depend on the part order, the statistics of the
+        /// column type are preferred: all parts get it eventually.
+        stats = copyStatistics(column_stats);
     }
-    /// else: the same type with a different set of statistics, e.g. a `MODIFY STATISTICS` that is not
-    /// materialized in all parts yet. The states cannot be merged, so this part's statistics are skipped and
-    /// the estimator keeps working with the parts that match the first one.
+    /// else: the statistics cannot be merged and are not preferred. Either the type is the same and the set of
+    /// statistics differs, e.g. after a `MODIFY STATISTICS` that is not materialized in all parts yet, or neither
+    /// type is the column type. Best effort: this part's statistics are skipped, and the estimator keeps working
+    /// with the parts that match the first one.
 }
 
 void ConditionSelectivityEstimatorBuilder::setCardinality(const String & column_name, UInt64 cardinality)

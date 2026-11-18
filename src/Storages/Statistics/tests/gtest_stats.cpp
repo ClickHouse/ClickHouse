@@ -1128,10 +1128,10 @@ ColumnStatisticsPtr buildUniqStats(
 
 /// After `ALTER TABLE ... MODIFY COLUMN` a part keeps statistics of the old type until a mutation rewrites it, and
 /// a part attached after the `ALTER` keeps them for good. Statistics of different types cannot be merged. The
-/// builder used to keep the type of the first part and skip the others: with the current type first, the column
+/// builder used to keep the type of the first part and skip the others: with the new type first, the column
 /// got the NDV of the rewritten parts, and with the old type first, it got none. It now prefers the statistics
-/// of the current type, whatever the part order.
-TEST(Statistics, EstimatorPrefersStatisticsOfCurrentType)
+/// of the column type, whatever the part order.
+TEST(Statistics, EstimatorPrefersStatisticsOfColumnType)
 {
     tryRegisterFunctions();
     tryRegisterAggregateFunctions();
@@ -1171,7 +1171,7 @@ TEST(Statistics, EstimatorPrefersStatisticsOfCurrentType)
     {
         ASSERT_NE(estimator, nullptr);
 
-        /// Only the statistics of the current type are left, so the estimates do not depend on the metadata.
+        /// Only the statistics of the column type are left, so the estimates do not depend on the metadata.
         for (const auto & estimate_metadata : {StorageMetadataPtr(metadata), StorageMetadataPtr()})
         {
             auto unfiltered = estimator->estimateRelationProfile(estimate_metadata);
@@ -1189,16 +1189,22 @@ TEST(Statistics, EstimatorPrefersStatisticsOfCurrentType)
         EXPECT_EQ(filtered.column_stats.at("a").num_distinct_values, 10u);
     }
 
-    /// Without the metadata the builder cannot tell the current type, so neither is preferred.
-    for (const auto & estimator : {build({new_part(), old_part()}, nullptr), build({old_part(), new_part()}, nullptr)})
-    {
-        ASSERT_NE(estimator, nullptr);
-        auto unfiltered = estimator->estimateRelationProfile(metadata);
-        EXPECT_FALSE(unfiltered.column_stats.contains("a"));
-        EXPECT_TRUE(unfiltered.column_stats.contains("b"));
-    }
+    /// Without the metadata the builder cannot tell the column type, so it keeps the statistics of the first part:
+    /// best effort. The estimates with the metadata still reject the statistics of the old type.
+    auto new_first = build({new_part(), old_part()}, nullptr);
+    ASSERT_NE(new_first, nullptr);
+    auto new_first_profile = new_first->estimateRelationProfile(metadata);
+    ASSERT_TRUE(new_first_profile.column_stats.contains("a"));
+    EXPECT_EQ(new_first_profile.column_stats.at("a").num_distinct_values, 10u);
+    EXPECT_TRUE(new_first_profile.column_stats.contains("b"));
 
-    /// Only old-type parts: their statistics do not describe the current type.
+    auto old_first = build({old_part(), new_part()}, nullptr);
+    ASSERT_NE(old_first, nullptr);
+    auto old_first_profile = old_first->estimateRelationProfile(metadata);
+    EXPECT_FALSE(old_first_profile.column_stats.contains("a"));
+    EXPECT_TRUE(old_first_profile.column_stats.contains("b"));
+
+    /// Only old-type parts: their statistics do not describe the column type.
     auto old_only = build({old_part(), old_part()}, metadata);
     ASSERT_NE(old_only, nullptr);
     EXPECT_FALSE(old_only->estimateRelationProfile(metadata).column_stats.contains("a"));
@@ -1207,8 +1213,8 @@ TEST(Statistics, EstimatorPrefersStatisticsOfCurrentType)
 
 /// After a metadata-only `ALTER TABLE ... MODIFY COLUMN`, here `Enum8` -> `Int8`, the old parts keep `Enum8`
 /// statistics, which still describe the values, and the parts inserted later get `Int8` statistics. Both are
-/// usable but cannot be merged: the current type is preferred. Of two outdated types neither is preferred.
-TEST(Statistics, EstimatorPrefersStatisticsOfCurrentTypeAfterMetadataOnlyConversion)
+/// usable but cannot be merged: the column type is preferred. Of two other types, the first one is kept: best effort.
+TEST(Statistics, EstimatorPrefersStatisticsOfColumnTypeAfterMetadataOnlyConversion)
 {
     tryRegisterFunctions();
     tryRegisterAggregateFunctions();
@@ -1245,15 +1251,15 @@ TEST(Statistics, EstimatorPrefersStatisticsOfCurrentTypeAfterMetadataOnlyConvers
     EXPECT_EQ(distinct_values({enum_part(), int8_part()}), 2u);
     EXPECT_EQ(distinct_values({int8_part(), enum_part()}), 2u);
 
-    EXPECT_EQ(distinct_values({enum_part(), extended_enum_part()}), std::nullopt);
-    EXPECT_EQ(distinct_values({extended_enum_part(), enum_part(), enum_part()}), std::nullopt);
+    EXPECT_EQ(distinct_values({enum_part(), extended_enum_part()}), 4u);
+    EXPECT_EQ(distinct_values({extended_enum_part(), enum_part(), enum_part()}), 5u);
     EXPECT_EQ(distinct_values({int8_part(), enum_part(), extended_enum_part()}), 2u);
     EXPECT_EQ(distinct_values({enum_part(), int8_part(), extended_enum_part()}), 2u);
     EXPECT_EQ(distinct_values({enum_part(), extended_enum_part(), int8_part()}), 2u);
 }
 
 /// Parts with the same column type but a different set of statistics (e.g. a `MODIFY STATISTICS` not
-/// materialized in all parts yet) cannot be merged either, but they describe the current type, so the column
+/// materialized in all parts yet) cannot be merged either, but they describe the column type, so the column
 /// keeps the statistics of the parts matching the first one.
 TEST(Statistics, EstimatorKeepsColumnWithMixedStatisticsTypes)
 {
@@ -1267,7 +1273,7 @@ TEST(Statistics, EstimatorKeepsColumnWithMixedStatisticsTypes)
     auto without_uniq = buildUniqStats({StatisticsType::Basic}, data_type, 1000, 10);
     ASSERT_FALSE(with_uniq->structureEquals(*without_uniq));
 
-    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    ConditionSelectivityEstimatorBuilder builder(getContext().context, metadata);
     builder.incrementRowCount(2000);
     builder.addStatistics("a", with_uniq);
     builder.addStatistics("a", without_uniq);
