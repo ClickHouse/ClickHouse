@@ -39,6 +39,7 @@ void ASTInterpolateElement::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "InterpolateElement");
     w.writeString("column", column);
+    w.writeQuote("column_quote", column_quote);
     w.writeChild("expr", expr);
 }
 
@@ -46,6 +47,7 @@ void ASTInterpolateElement::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     column = r.getString("column");
+    column_quote = r.readQuote("column_quote");
     if (column.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate element must have a non-empty column during AST JSON deserialization");
 

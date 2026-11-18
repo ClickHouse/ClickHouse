@@ -1,0 +1,24 @@
+--- joinGet keeps a double-quoted table name exact
+a
+a
+ILLEGAL_TYPE_OF_ARGUMENT
+--- a double-quoted alias of a table is pinned
+1
+1
+UNKNOWN_IDENTIFIER
+--- temporary tables
+5
+5
+UNKNOWN_TABLE
+AMBIGUOUS_IDENTIFIER
+--- Nested prefix
+[('x')]
+UNKNOWN_IDENTIFIER
+--- subcolumns of a prefix bound to an ARRAY JOIN alias, a lambda argument or an alias
+y
+['y']
+('y')	y
+UNKNOWN_IDENTIFIER
+--- qualified matchers keep the quotes of the qualifier
+1
+UNKNOWN_IDENTIFIER

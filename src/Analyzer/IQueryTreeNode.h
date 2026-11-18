@@ -3,6 +3,7 @@
 #include <memory>
 #include <vector>
 
+#include <Core/IdentifierName.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
@@ -128,6 +129,9 @@ public:
         /// Do not compare the cte name or check the is_cte flag for the query node.
         /// Calculate a hash as if is_cte is false and cte_name is empty.
         bool ignore_cte = false;
+        /// Whether a double-quoted alias differs from the same unquoted alias. The quote pins the name
+        /// only under `standard` matching; under `sensitive` matching the two aliases are the same name.
+        bool compare_alias_quotes = true;
     };
 
     /** Is tree equal to other tree with node root.
@@ -135,7 +139,7 @@ public:
       * With default compare options aliases of query tree nodes are compared during isEqual call.
       * Original ASTs of query tree nodes are not compared during isEqual call.
       */
-    [[nodiscard]] bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
+    [[nodiscard]] bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false, .compare_alias_quotes = true }) const;
 
     using Hash = CityHash_v1_0_2::uint128;
     using HashState = SipHash;
@@ -155,7 +159,7 @@ public:
       * the lookup explicitly for the empty case (see `QueryAnalyzer::resolveExpressionNode`
       * and `PlannerActionsVisitorImpl::visitColumn`).
       */
-    [[nodiscard]] Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
+    [[nodiscard]] Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false, .compare_alias_quotes = true }) const;
 
     /// Get a deep copy of the query tree
     [[nodiscard]] QueryTreeNodePtr clone() const;
@@ -189,19 +193,27 @@ public:
         return original_alias.empty() ? alias : original_alias;
     }
 
-    /// Set node alias
-    void setAlias(String alias_value)
+    /// Get quoting of the alias as written in the query
+    [[nodiscard]] IdentifierPartQuote getAliasQuote() const
+    {
+        return alias_quote;
+    }
+
+    /// Set node alias. The quote flag is always updated together with the alias string.
+    void setAlias(String alias_value, IdentifierPartQuote alias_quote_value = IdentifierPartQuote::Unquoted)
     {
         if (original_alias.empty())
             original_alias = std::move(alias);
 
         alias = std::move(alias_value);
+        alias_quote = alias_quote_value;
     }
 
     /// Remove node alias
     void removeAlias()
     {
         alias = {};
+        alias_quote = IdentifierPartQuote::Unquoted;
     }
 
     /// Returns true if the expression was parenthesized in the original query
@@ -329,6 +341,8 @@ protected:
 
 private:
     String alias;
+    /// Double quotes pin the alias to exact-case matching under `standard` name matching.
+    IdentifierPartQuote alias_quote = IdentifierPartQuote::Unquoted;
     /// An alias from query. Alias can be replaced by query passes,
     /// but we need to keep the original one to support additional_table_filters.
     String original_alias;

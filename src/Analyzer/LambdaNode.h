@@ -47,6 +47,12 @@ public:
     [[nodiscard]] const Names & getNames() const { return names; }
     [[nodiscard]] const DataTypes & getTypes() const { return types; }
 
+    /// Quote styles parallel to the names; empty means every argument is unquoted.
+    void setQuotes(std::vector<IdentifierPartQuote> argument_quotes);
+
+    /// A double-quoted argument is pinned to exact-spelling lookups under `standard` matching.
+    [[nodiscard]] bool isPinned(size_t index) const { return index < quotes.size() && quotes[index] == IdentifierPartQuote::DoubleQuoted; }
+
     void resolve(DataTypes argument_types)
     {
         types = std::move(argument_types);
@@ -59,6 +65,7 @@ protected:
     [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
     Names names;
+    std::vector<IdentifierPartQuote> quotes;
     DataTypes types;
 };
 
