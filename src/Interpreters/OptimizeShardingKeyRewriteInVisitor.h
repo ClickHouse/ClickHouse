@@ -3,7 +3,6 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/Cluster.h>
-#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {

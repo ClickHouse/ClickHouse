@@ -2,9 +2,8 @@
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-
-#include <type_traits>
 
 namespace DB
 {
@@ -72,20 +71,9 @@ enum FlushManip { flush };
 inline WriteBuffer & operator<< (WriteBuffer & buf, FlushManip) { buf.next(); return buf; }
 
 
-/// The reading operators find readText, readString, readChar and the rest by argument-dependent lookup,
-/// so a file that uses them includes IO/ReadHelpers.h.
-void assertString(const char * s, ReadBuffer & buf);
-
-template <typename T> ReadBuffer & operator>> (ReadBuffer & buf, T & x)
-{
-    if constexpr (std::is_same_v<T, String>)
-        readString(x, buf);
-    else if constexpr (std::is_same_v<T, char>)
-        readChar(x, buf);
-    else
-        readText(x, buf);
-    return buf;
-}
+template <typename T> ReadBuffer & operator>> (ReadBuffer & buf, T & x)              { readText(x, buf);     return buf; }
+template <> inline    ReadBuffer & operator>> (ReadBuffer & buf, String & x)         { readString(x, buf);   return buf; }
+template <> inline    ReadBuffer & operator>> (ReadBuffer & buf, char & x)           { readChar(x, buf);     return buf; }
 
 /// If you specify a string literal for reading, this will mean - make sure there is a sequence of bytes and skip it.
 inline ReadBuffer & operator>> (ReadBuffer & buf, const char * x)     { assertString(x, buf); return buf; }

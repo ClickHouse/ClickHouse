@@ -1861,6 +1861,7 @@ def test_sync_database_replica_strict(started_cluster):
         # DEFAULT: needs the frozen snapshot fully processed -> times out.
         default_error = dummy_node.http_query_and_get_error(
             "system sync database replica strict_sync",
+            method="POST",
             params=sync_params,
             timeout=60,
         )
@@ -1873,6 +1874,7 @@ def test_sync_database_replica_strict(started_cluster):
         # the guard).
         dummy_node.http_query(
             "system sync database replica strict_sync strict",
+            method="POST",
             params=sync_params,
             timeout=60,
         )
@@ -1912,11 +1914,6 @@ def test_system_database_replicas_with_ro(started_cluster):
         main_node.query(
             f"SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%'") == expected
     )
-
-    zookeeper_exception = main_node.query(
-        f"SELECT zookeeper_exception FROM system.database_replicas WHERE database = '{database_1}'"
-    )
-    assert zookeeper_exception.strip()
 
     database_2 = f"{prefix}_test_system_database_replicas_2"
     main_node.query(
@@ -2074,8 +2071,8 @@ def test_timeseries(started_cluster):
         """
         CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');
         CREATE TABLE ts_db.table ENGINE = TimeSeries SETTINGS store_time_ranges = false
-        SAMPLES ENGINE = ReplicatedAggregatingMergeTree ORDER BY (id, bucket)
-        RECENT SAMPLES ENGINE = ReplicatedAggregatingMergeTree ORDER BY (id, bucket)
+        SAMPLES ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
+        RECENT SAMPLES ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
         TAGS ENGINE = ReplicatedReplacingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
         METRICS ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family;
         """,

@@ -1,7 +1,6 @@
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/TypeTree.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
@@ -12,7 +11,6 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
-#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
@@ -113,11 +111,11 @@ public:
         state = std::make_shared<DeserializedStateProductQuantization>();
     }
 
-    /// The codebook is a single per-part value broadcast to the whole range. Wrap the base column as an empty
-    /// ColumnConst; deserialize sets its value and grows its size, so the (large) codebook is never materialized
-    /// per row.
-    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override
+    /// The codebook is a single per-part value broadcast to the whole range. Create it as an empty `ColumnConst`;
+    /// deserialize sets its value and grows its size, so the (large) codebook is never materialized per row.
+    MutableColumnPtr createColumnForDeserialization(const IDataType & type) const override
     {
+        auto column = type.createColumn();
         column->insertDefault(); /// placeholder single value; the real one is set during deserialization
         return ColumnConst::create(std::move(column), 0);
     }
@@ -430,20 +428,6 @@ ColumnPtr SerializationQuantizedVector::encodeCodes(const IColumn & column, size
     }
 
     return result;
-}
-
-void checkNoQuantizedCodec(const NamesAndTypesList & columns, const String & engine_name)
-{
-    for (const auto & column : columns)
-    {
-        const bool has_quantized_codec = anyInTypeTree(*column.type, [](const IDataType & type)
-        {
-            return typeid_cast<const SerializationQuantizedVector *>(type.getCustomSerialization()) != nullptr;
-        });
-        if (has_quantized_codec)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Engine {} doesn't support the Quantized codec of column {}",
-                engine_name, backQuote(column.name));
-    }
 }
 
 }

@@ -1,5 +1,3 @@
--- Tags: no-msan
-
 -- { echoOn }
 
 SET enable_nullable_tuple_type = 1;

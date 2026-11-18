@@ -21,7 +21,7 @@ public:
     bool supportsPooling() const override { return nested->supportsPooling(); }
 
     KindStack getKindStack() const override;
-    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
+    MutableColumnPtr createColumnForDeserialization(const IDataType & type) const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -90,9 +90,9 @@ private:
 
         explicit SubcolumnCreator(const ColumnPtr & indexes_) : indexes(indexes_) {}
 
-        [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
-        [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
-        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override;
+        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
+        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
+        ColumnPtr create(const ColumnPtr & prev) const override;
     };
 
     template <typename Reader>

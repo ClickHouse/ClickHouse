@@ -1279,7 +1279,7 @@ struct ColumnDynamic::ComparatorBase
     {
     }
 
-    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         return parent.compareAt(lhs, rhs, parent, nan_direction_hint);
     }
