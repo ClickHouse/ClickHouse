@@ -296,7 +296,7 @@ SETTINGS index_granularity = 3, allow_nullable_key = 1;
 
 INSERT INTO t_pk_tuple_null_inner_tuple VALUES ((2,(0,1)),1),((2,(0,NULL)),1),((3,(0,0)),1);
 
-SELECT count() FROM t_pk_tuple_null_inner_tuple WHERE t >= (2, (0, 0));
+SELECT count() FROM t_pk_tuple_null_inner_tuple WHERE t >= (2, (0, 0)) SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 SELECT sum(x) FROM t_pk_tuple_null_inner_tuple WHERE t >= (2, (0, 0));
 
 DROP TABLE t_pk_tuple_null_inner_tuple;
@@ -306,7 +306,7 @@ SETTINGS index_granularity = 3, allow_nullable_key = 1;
 
 INSERT INTO t_pk_tuple_null_low_cardinality VALUES ((2,'b'),1),((2,NULL),1),((3,'a'),1);
 
-SELECT count() FROM t_pk_tuple_null_low_cardinality WHERE t >= (2, 'a');
+SELECT count() FROM t_pk_tuple_null_low_cardinality WHERE t >= (2, 'a') SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 SELECT sum(x) FROM t_pk_tuple_null_low_cardinality WHERE t >= (2, 'a');
 
 DROP TABLE t_pk_tuple_null_low_cardinality;
@@ -316,7 +316,7 @@ SETTINGS index_granularity = 3, allow_nullable_key = 1;
 
 INSERT INTO t_pk_nullable_tuple_null_inside VALUES ((2,1),1),((2,NULL),1),((3,0),1);
 
-SELECT count() FROM t_pk_nullable_tuple_null_inside WHERE t >= (2, 0);
+SELECT count() FROM t_pk_nullable_tuple_null_inside WHERE t >= (2, 0) SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 SELECT sum(x) FROM t_pk_nullable_tuple_null_inside WHERE t >= (2, 0);
 
 DROP TABLE t_pk_nullable_tuple_null_inside;
