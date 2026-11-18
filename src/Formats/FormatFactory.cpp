@@ -121,6 +121,10 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
 
     format_settings.avro.allow_missing_fields = settings[Setting::input_format_avro_allow_missing_fields];
     format_settings.avro.output_codec = settings[Setting::output_format_avro_codec];
+    format_settings.puffin.output_blob_type = settings[Setting::output_format_puffin_blob_type];
+    format_settings.puffin.output_field_ids = settings[Setting::output_format_puffin_field_ids];
+    format_settings.puffin.output_snapshot_id = settings[Setting::output_format_puffin_snapshot_id];
+    format_settings.puffin.output_sequence_number = settings[Setting::output_format_puffin_sequence_number];
     format_settings.avro.output_sync_interval = settings[Setting::output_format_avro_sync_interval];
     format_settings.avro.schema_registry_url = settings[Setting::format_avro_schema_registry_url].toString();
     /// `doSettingsSanityCheckClamp` bounds these at apply time, but it does not run for
@@ -296,8 +300,14 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
         size_t budget = static_cast<size_t>(static_cast<double>(memory_limit) * 0.9);
         format_settings.parquet.memory_high_watermark = std::min<size_t>(
             format_settings.parquet.memory_high_watermark, budget / 8);
+        /// The reader does not hold one block of `prefer_block_bytes` but a whole pipeline of them:
+        /// prefetched, decoded and ready-to-deliver row subgroups across the row groups it reads in
+        /// parallel, and downstream (for an `INSERT`) the blocks the squashing stage has accumulated
+        /// so far. Measured on a 105-column table, the default 16 MiB preferred block size costs about
+        /// 290 MiB of live reader memory, so the cap has to be a much smaller fraction of the budget
+        /// than the block size alone suggests. With the default setting it binds only below about 4.4 GiB.
         format_settings.parquet.prefer_block_bytes = std::min<size_t>(
-            format_settings.parquet.prefer_block_bytes, budget / 64);
+            format_settings.parquet.prefer_block_bytes, budget / 256);
     }
     format_settings.pretty.charset = settings[Setting::output_format_pretty_grid_charset].toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings[Setting::output_format_pretty_color].valueOr(2);
@@ -375,6 +385,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.arrow.output_fixed_string_as_fixed_byte_array = settings[Setting::output_format_arrow_fixed_string_as_fixed_byte_array];
     format_settings.arrow.output_compression_method = settings[Setting::output_format_arrow_compression_method];
     format_settings.arrow.output_date_as_uint16 = settings[Setting::output_format_arrow_date_as_uint16];
+    format_settings.arrow.output_variant_as_json_string = settings[Setting::output_format_arrow_variant_as_json_string];
+    format_settings.arrow.output_uuid_as_fixed_byte_array = settings[Setting::output_format_arrow_uuid_as_fixed_byte_array];
     format_settings.arrow.output_unsupported_types = getArrowUnsupportedTypesMode(settings);
     format_settings.arrow.output_record_batch_rows = settings[Setting::output_format_arrow_record_batch_size];
     format_settings.arrow.output_record_batch_bytes = settings[Setting::output_format_arrow_record_batch_size_bytes];
@@ -666,6 +678,9 @@ InputFormatPtr FormatFactory::getInputImpl(
             context->getApplicationType() == Context::ApplicationType::SERVER};
 
         format = std::make_shared<ParallelParsingInputFormat>(params);
+        /// Forwarded to every per-segment parser.
+        if (format_filter_info && format_filter_info->column_mapper)
+            format->setColumnMapper(format_filter_info->column_mapper);
     }
     // 2. Prefer to use metadata-aware creator if we have object metadata
     else if (creators.random_access_input_creator_with_metadata
@@ -710,6 +725,7 @@ InputFormatPtr FormatFactory::getInputImpl(
         format = std::make_shared<AggregateFunctionStatesFromValuesInputFormat>(
             std::make_shared<const Block>(sample), &buf, std::move(format), format_settings.aggregate_function_input_format);
 
+    format->setSupportsResetParser(creators.supports_reset_parser && !parallel_parsing);
     return format;
 }
 
@@ -951,13 +967,14 @@ ExternalSchemaReaderPtr FormatFactory::getExternalSchemaReader(
     return external_schema_reader_creator(format_settings);
 }
 
-void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator)
+void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator, bool supports_reset_parser)
 {
     chassert(input_creator);
     auto & creators = getOrCreateCreators(name);
     if (creators.input_creator || creators.random_access_input_creator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Input format {} is already registered", name);
     creators.input_creator = std::move(input_creator);
+    creators.supports_reset_parser = supports_reset_parser;
     registerFileExtension(name, name);
     KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
 }
@@ -977,13 +994,20 @@ BucketSplitter FormatFactory::getSplitter(const String & format)
     return creator.bucket_splitter_creator();
 }
 
-void FormatFactory::registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator)
+bool FormatFactory::checkIfFormatHasSplitter(const String & format) const
+{
+    auto it = dict.find(boost::to_lower_copy(format));
+    return it != dict.end() && it->second.bucket_splitter_creator;
+}
+
+void FormatFactory::registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator, bool supports_reset_parser)
 {
     chassert(input_creator);
     auto & creators = getOrCreateCreators(name);
     if (creators.input_creator || creators.random_access_input_creator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Input format {} is already registered", name);
     creators.random_access_input_creator = std::move(input_creator);
+    creators.supports_reset_parser = supports_reset_parser;
     registerFileExtension(name, name);
     KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
 }
