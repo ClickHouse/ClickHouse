@@ -29,6 +29,7 @@ extract_into_parent_list(clickhouse_dictionaries_sources dbms_sources
     DictionarySourceFactory.cpp # DictionarySourceFactory::instance() Used by DictionaryFactory.cpp
     DictionaryStructure.cpp # DictionaryStructure::DictionaryStructure (ExternalDictionariesLoader.cpp)
     getDictionaryConfigurationFromAST.cpp # getDictionaryConfigurationFromAST (StorageDictionary.cpp, AST Visitors)
+    ClickHouseDictionarySourceConfiguration.cpp # ClickHouseDictionarySource::resolveConfiguration (InterpreterCreateQuery.cpp)
 )
 extract_into_parent_list(clickhouse_dictionaries_headers dbms_headers
     DictionaryFactory.h

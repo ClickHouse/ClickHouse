@@ -65,20 +65,31 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     const ASTSetQuery * settings = nullptr,
     bool is_replayed_definition = false);
 
+/// What a caller of the dictionary-source overload below is allowed to do besides resolving the
+/// collection's contents.
+enum class NamedCollectionUsage : uint8_t
+{
+    /// The collection is about to be used by a dictionary that will exist: authorize the caller and
+    /// register the dictionary as a dependency so DROP NAMED COLLECTION is blocked.
+    CheckAccessAndRegisterDependency,
+    /// A pre-check over a user-supplied definition that may be rejected: authorize the caller, but
+    /// register nothing, since no object will exist to own the dependency.
+    CheckAccessOnly,
+};
+
 /// Helper function to get named collection for dictionary source.
 /// Dictionaries have the collection name as the `name` argument of their configuration.
 /// Other arguments may add missing keys or replace stored keys that are not `NOT OVERRIDABLE`.
 /// Privileges are not checked here: they are checked when the dictionary is created
 /// (see `checkNamedCollectionOverridesInDictionarySource`).
-/// Also registers the dictionary as a dependency of the named collection, so that
-/// DROP NAMED COLLECTION is blocked while the dictionary exists.
 /// The dictionary's identity is derived from config_prefix, which has the form
 /// "<dict_root>.source.<type>" (e.g. "dictionary.source.clickhouse"); the first
 /// component is used as the dictionary root to call StorageID::fromDictionaryConfig.
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    ContextPtr context);
+    ContextPtr context,
+    NamedCollectionUsage usage = NamedCollectionUsage::CheckAccessAndRegisterDependency);
 
 /// Parses the ast as a key-value pair.
 /// Throws an exception if the key cannot be parsed as a string literal.
