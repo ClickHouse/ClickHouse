@@ -668,6 +668,7 @@
         /// `preprocessMarkdown` into renderable Markdown; the names here catch any leftover tags.
         'Tab', 'Card', 'CardGroup',
         'Note', 'Warning', 'Tip', 'Info', 'Check', 'Danger', 'Caution',
+        'Accordion',
     ];
 
     /// Human-readable text for an MDX `*Badge` component such as `<ExperimentalBadge/>`, mirroring the
@@ -788,6 +789,15 @@
                     return ':::' + name.toLowerCase() + (title ? ' ' + title[1] : '');
                 })
             .replace(/^[ \t]*<\/(?:Note|Warning|Tip|Info|Check|Danger|Caution)>[ \t]*$/gm, ':::');
+
+        /// A Mintlify `<Accordion title="...">` is rendered as the allowlisted `<details>` disclosure
+        /// widget; the blank lines keep the Markdown between the tags parsed as Markdown.
+        out = out
+            .replace(/^[ \t]*<Accordion(?:[ \t]+([^>]*))?>[ \t]*$/gm, (m, attributes) => {
+                const title = /(?:^|\s)title="([^"]*)"/.exec(attributes || '');
+                return '<details>\n<summary>' + escapeHTML(title ? title[1] : '') + '</summary>\n\n';
+            })
+            .replace(/^[ \t]*<\/Accordion>[ \t]*$/gm, '\n\n</details>');
 
         /// A `<Tab title="...">` / `<TabItem label="...">` / `<Card title="...">` introduces an
         /// alternative (e.g. a syntax variant) or a callout whose heading carries meaning: keep the
