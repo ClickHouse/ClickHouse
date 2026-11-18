@@ -115,18 +115,21 @@ AUX="zookeeper2:${ZK}/aux"
 # flavors create this one, so make the root before the first database on it. Other flavors do not
 # configure `zookeeper2` at all, and there `CREATE DATABASE` fails with `Unknown auxiliary ZooKeeper
 # name` before reaching the code under test - print the line the arm would have produced and skip it
-# rather than reporting the setup error as a result.
-if ${CLICKHOUSE_CLIENT} -q "
+# rather than reporting the setup error as a result. Any other error fails the test.
+if AUX_ERR=$(${CLICKHOUSE_CLIENT} -q "
     INSERT INTO system.zookeeper (name, path, value) VALUES ('auxiliary_zookeeper2', '/test/chroot', '');
     CREATE DATABASE ${DB}_aux ENGINE=Replicated('${AUX}', 's1', 'r1');
-" 2>/dev/null
+" 2>&1)
 then
     ${CLICKHOUSE_CLIENT} \
         -q "CREATE DATABASE ${DB}_aux_2 ENGINE=Replicated('${AUX}', 's1', 'r1')" 2>&1 | grep -cm1 "FROM ZKPATH '${AUX}'"
 
     ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${DB}_aux SYNC"
-else
+elif grep -q "Unknown auxiliary ZooKeeper name" <<< "${AUX_ERR}"
+then
     echo 1
+else
+    echo "${AUX_ERR}" >&2
 fi
 
 #### 6 - A CREATE TABLE carried by a DDL log entry keeps Keeper intact when it fails after the commit
