@@ -22,6 +22,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+/// The final merge holds about one block of every temporary file, so a file is written in at least this many blocks.
+constexpr size_t MIN_BLOCKS_IN_SPILLED_RUN = 8;
+
+}
+
 MergeSortingTransform::MergeSortingTransform(
     SharedHeader header,
     const SortDescription & description_,
@@ -197,21 +205,26 @@ std::shared_ptr<BufferingToFileSink> MergeSortingTransform::prepareSpill()
     size_t reserve_size = sum_bytes_in_blocks + min_free_disk_space;
     SharedHeader shared_header_without_constants = std::make_shared<const Block>(header_without_constants);
     TemporaryBlockStreamHolder tmp_stream(shared_header_without_constants, tmp_data, reserve_size);
+    const size_t spill_block_bytes = max_block_bytes
+        ? std::min(max_block_bytes, std::max<size_t>(1, sum_bytes_in_blocks / MIN_BLOCKS_IN_SPILLED_RUN)) : 0;
     merge_sorter = std::make_unique<MergeSorter>(
         shared_header_without_constants, std::move(chunks), description, max_merged_block_size, limit,
-        merge_mode, max_block_bytes);
+        merge_mode, spill_block_bytes);
     auto sink = std::make_shared<BufferingToFileSink>(shared_header_without_constants, std::move(tmp_stream), log);
 
     if (!external_merging_sorted)
     {
         bool have_all_inputs = false;
+        const size_t merged_block_size = sum_rows_in_blocks
+            ? MergeSorter::calculateMaxMergedBlockSize(max_merged_block_size, max_block_bytes, sum_rows_in_blocks, sum_bytes_in_blocks)
+            : max_merged_block_size;
 
         if (merge_mode == MergeSorter::Mode::MergeUniqueChunks)
         {
             /// The merges in memory make each input unique, as `DistinctSortedTransform` requires.
             external_merging_sorted = std::make_shared<DistinctSortedTransform>(
                 SharedHeaders{}, shared_header_without_constants, description,
-                /*already_emitted_flag_column=*/ std::nullopt, merge_sorter->getMaxMergedBlockSize(), have_all_inputs);
+                /*already_emitted_flag_column=*/ std::nullopt, merged_block_size, have_all_inputs);
         }
         else
         {
@@ -222,7 +235,7 @@ std::shared_ptr<BufferingToFileSink> MergeSortingTransform::prepareSpill()
                 shared_header_without_constants,
                 0,
                 description,
-                merge_sorter->getMaxMergedBlockSize(),
+                merged_block_size,
                 /*max_merged_block_size_bytes=*/0,
                 /*max_dynamic_subcolumns=*/std::nullopt,
                 SortingQueueStrategy::Batch,

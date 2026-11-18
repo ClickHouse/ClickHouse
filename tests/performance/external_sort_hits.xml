@@ -63,13 +63,13 @@
             SELECT WatchID, EventTime FROM hits_10m_single ORDER BY EventTime, WatchID
             SETTINGS max_bytes_before_external_sort = 0, max_bytes_ratio_before_external_sort = 0)))
     FROM (SELECT WatchID, EventTime FROM hits_10m_single ORDER BY EventTime, WatchID)
-    SETTINGS max_bytes_before_external_sort = 10000000, max_bytes_ratio_before_external_sort = 0.0003, log_comment = 'external_sort_hits.q4'
+    SETTINGS max_bytes_before_external_sort = 1000000, max_bytes_ratio_before_external_sort = 0.0003, log_comment = 'external_sort_hits.q5'
 </fill_query>
 <fill_query>SYSTEM FLUSH LOGS</fill_query>
 <fill_query>
     SELECT throwIf(groupArray((log_comment, ProfileEvents['ExternalSortWritePart'] > 0)) != [
             ('external_sort_hits.q0', 1), ('external_sort_hits.q1', 1), ('external_sort_hits.q2', 0),
-            ('external_sort_hits.q3', 1), ('external_sort_hits.q4', 1)],
+            ('external_sort_hits.q3', 1), ('external_sort_hits.q5', 1)],
         'the setup runs of the measured queries are not in query_log, or their spills differ')
     FROM
     (
@@ -85,7 +85,10 @@
 <query>SELECT WatchID, EventTime FROM hits_100m_single ORDER BY EventTime, WatchID LIMIT 1000000 FORMAT Null</query>
 
 <query>SELECT WatchID, EventTime, UserID, CounterID, URL, Title, Referer, SearchPhrase FROM hits_10m_single ORDER BY EventTime, WatchID FORMAT Null SETTINGS max_bytes_before_external_sort = 100000000</query>
-<query>SELECT WatchID, EventTime FROM hits_10m_single ORDER BY EventTime, WatchID FORMAT Null SETTINGS max_bytes_before_external_sort = 10000000, max_bytes_ratio_before_external_sort = 0.0003</query>
+<query disabled="1">SELECT WatchID, EventTime FROM hits_10m_single ORDER BY EventTime, WatchID FORMAT Null SETTINGS max_bytes_before_external_sort = 10000000, max_bytes_ratio_before_external_sort = 0.0003</query>
+<!-- A copy of the disabled query with a tenth of its threshold: a stream spills only once it holds the smaller of the
+     threshold and about 16 MiB, so 10 MB no longer spills this sort on 16 streams. -->
+<query>SELECT WatchID, EventTime FROM hits_10m_single ORDER BY EventTime, WatchID FORMAT Null SETTINGS max_bytes_before_external_sort = 1000000, max_bytes_ratio_before_external_sort = 0.0003</query>
 
 <drop_query>DROP TABLE IF EXISTS external_sort_hits_mark SYNC</drop_query>
 

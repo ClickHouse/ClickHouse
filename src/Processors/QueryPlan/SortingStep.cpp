@@ -151,6 +151,9 @@ static size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before
     }
 }
 
+/// A stream spills only after holding at least the smaller of this and the threshold, as in external DISTINCT.
+static constexpr size_t MIN_BYTES_IN_SPILLED_RUN = DEFAULT_BLOCK_SIZE * 256;
+
 SortingStep::Settings::Settings(const DB::Settings & settings)
 {
     max_block_size = settings[Setting::max_block_size];
@@ -516,6 +519,12 @@ void SortingStep::mergeSorting(
     if (sort_settings.max_bytes_in_block_before_external_sort && tmp_data_on_disk == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external sorting is not provided");
 
+    size_t max_bytes_in_block_before_external_sort = sort_settings.max_bytes_in_block_before_external_sort;
+    if (max_bytes_in_block_before_external_sort)
+        max_bytes_in_block_before_external_sort = std::max(
+            max_bytes_in_block_before_external_sort / num_streams,
+            std::min(max_bytes_in_block_before_external_sort, MIN_BYTES_IN_SPILLED_RUN));
+
     pipeline.addSimpleTransform(
         [&, increase_sort_description_compile_attempts](
             const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) mutable -> ProcessorPtr
@@ -539,7 +548,7 @@ void SortingStep::mergeSorting(
                 increase_sort_description_compile_attempts_current,
                 sort_settings.max_bytes_before_remerge / num_streams,
                 sort_settings.remerge_lowered_memory_bytes_ratio,
-                sort_settings.max_bytes_in_block_before_external_sort / num_streams,
+                max_bytes_in_block_before_external_sort,
                 sort_settings.max_bytes_in_query_before_external_sort,
                 tmp_data_on_disk,
                 sort_settings.min_free_disk_space, threshold_tracker);

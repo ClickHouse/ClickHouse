@@ -43,7 +43,7 @@
 <fill_query>SELECT throwIf(count() != 59986052 OR sum(l_extendedprice) != '2293813156773.36' OR sum(o_totalprice) != '11329533808416.01') FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = o_orderkey SETTINGS join_algorithm = 'grace_hash', max_bytes_before_external_join = 20000000000, log_comment = 'join_algorithms_sf10.q2'</fill_query>
 <fill_query>SELECT throwIf(count() != 59986052 OR sum(l_extendedprice) != '2293813156773.36' OR sum(o_totalprice) != '11329533808416.01') FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = o_orderkey SETTINGS join_algorithm = 'parallel_hash', max_bytes_before_external_join = 100000000, log_comment = 'join_algorithms_sf10.q3'</fill_query>
 <fill_query>SELECT throwIf(count() != 59986052 OR sum(l_extendedprice) != '2293813156773.36' OR sum(o_totalprice) != '11329533808416.01') FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = o_orderkey SETTINGS join_algorithm = 'grace_hash', max_bytes_before_external_join = 100000000, log_comment = 'join_algorithms_sf10.q4'</fill_query>
-<fill_query>SELECT throwIf(count() != 7595510 OR sum(l_extendedprice) != '290459110643.47' OR sum(o_totalprice) != '1434475293007.35') FROM (SELECT l_orderkey, l_extendedprice FROM tpch10.lineitem WHERE l_shipdate &lt; '1993-01-01') AS l INNER JOIN tpch10.orders ON l_orderkey = o_orderkey SETTINGS join_algorithm = 'full_sorting_merge', max_bytes_before_external_sort = 100000000, log_comment = 'join_algorithms_sf10.q5'</fill_query>
+<fill_query>SELECT throwIf(count() != 7595510 OR sum(l_extendedprice) != '290459110643.47' OR sum(o_totalprice) != '1434475293007.35') FROM (SELECT l_orderkey, l_extendedprice FROM tpch10.lineitem WHERE l_shipdate &lt; '1993-01-01') AS l INNER JOIN tpch10.orders ON l_orderkey = o_orderkey SETTINGS join_algorithm = 'full_sorting_merge', max_bytes_before_external_sort = 4000000, log_comment = 'join_algorithms_sf10.q15'</fill_query>
 <fill_query>SELECT throwIf(count() != 3013330 OR sum(l_extendedprice) != '115220637563.16' OR sum(o_totalprice) != '569117515277.93') FROM (SELECT l_orderkey, l_extendedprice FROM tpch10.lineitem WHERE l_shipdate &lt; '1992-07-01') AS l INNER JOIN tpch10.orders ON l_orderkey = o_orderkey SETTINGS join_algorithm = 'partial_merge', log_comment = 'join_algorithms_sf10.q6'</fill_query>
 <fill_query>SELECT throwIf(count() != 3013330 OR sum(l_extendedprice) != '115220637563.16' OR sum(o_totalprice) != '569117515277.93') FROM (SELECT l_orderkey, l_extendedprice FROM tpch10.lineitem WHERE l_shipdate &lt; '1992-07-01') AS l INNER JOIN tpch10.orders ON l_orderkey = o_orderkey SETTINGS join_algorithm = 'partial_merge', max_bytes_in_join = 100000000, log_comment = 'join_algorithms_sf10.q7'</fill_query>
 <fill_query>SELECT throwIf(count() != 59986052 OR sum(l_extendedprice) != '2293813156773.36' OR sum(o_totalprice) != '11329533808416.01') FROM tpch10.lineitem LEFT ANY JOIN orders_dict ON toUInt64(l_orderkey) = o_orderkey SETTINGS join_algorithm = 'direct', log_comment = 'join_algorithms_sf10.q8'</fill_query>
@@ -57,7 +57,7 @@
 <fill_query>
     SELECT throwIf(groupArray((log_comment, ProfileEvents['ExternalProcessingCompressedBytesTotal'] > 0)) != [
             ('join_algorithms_sf10.q0', 0), ('join_algorithms_sf10.q1', 0), ('join_algorithms_sf10.q2', 0), ('join_algorithms_sf10.q3', 1),
-            ('join_algorithms_sf10.q4', 1), ('join_algorithms_sf10.q5', 1), ('join_algorithms_sf10.q6', 0), ('join_algorithms_sf10.q7', 1),
+            ('join_algorithms_sf10.q4', 1), ('join_algorithms_sf10.q15', 1), ('join_algorithms_sf10.q6', 0), ('join_algorithms_sf10.q7', 1),
             ('join_algorithms_sf10.q8', 0), ('join_algorithms_sf10.q9', 0), ('join_algorithms_sf10.q10', 0), ('join_algorithms_sf10.q11', 0),
             ('join_algorithms_sf10.q12', 0), ('join_algorithms_sf10.q13', 0), ('join_algorithms_sf10.q14', 0)],
         'the setup runs of the measured queries are not in query_log, or their spills differ')
@@ -76,7 +76,7 @@
 <query>SELECT count(), sum(l_extendedprice), sum(o_totalprice) FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = o_orderkey FORMAT Null SETTINGS join_algorithm = 'parallel_hash', max_bytes_before_external_join = 100000000</query>
 <query>SELECT count(), sum(l_extendedprice), sum(o_totalprice) FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = o_orderkey FORMAT Null SETTINGS join_algorithm = 'grace_hash', max_bytes_before_external_join = 100000000</query>
 
-<query>SELECT count(), sum(l_extendedprice), sum(o_totalprice) FROM (SELECT l_orderkey, l_extendedprice FROM tpch10.lineitem WHERE l_shipdate &lt; '1993-01-01') AS l INNER JOIN tpch10.orders ON l_orderkey = o_orderkey FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge', max_bytes_before_external_sort = 100000000</query>
+<query disabled="1">SELECT count(), sum(l_extendedprice), sum(o_totalprice) FROM (SELECT l_orderkey, l_extendedprice FROM tpch10.lineitem WHERE l_shipdate &lt; '1993-01-01') AS l INNER JOIN tpch10.orders ON l_orderkey = o_orderkey FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge', max_bytes_before_external_sort = 100000000</query>
 <query>SELECT count(), sum(l_extendedprice), sum(o_totalprice) FROM (SELECT l_orderkey, l_extendedprice FROM tpch10.lineitem WHERE l_shipdate &lt; '1992-07-01') AS l INNER JOIN tpch10.orders ON l_orderkey = o_orderkey FORMAT Null SETTINGS join_algorithm = 'partial_merge'</query>
 <query>SELECT count(), sum(l_extendedprice), sum(o_totalprice) FROM (SELECT l_orderkey, l_extendedprice FROM tpch10.lineitem WHERE l_shipdate &lt; '1992-07-01') AS l INNER JOIN tpch10.orders ON l_orderkey = o_orderkey FORMAT Null SETTINGS join_algorithm = 'partial_merge', max_bytes_in_join = 100000000</query>
 
@@ -90,6 +90,10 @@
 
 <query>SELECT count() FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = -o_orderkey FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
 <query>SELECT count() FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = -o_orderkey FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
+
+<!-- A copy of the disabled spilled `full_sorting_merge` query with a smaller threshold: a stream spills only once it holds
+     the smaller of the threshold and about 16 MiB, so 100 MB no longer spills either side on 16 streams. -->
+<query>SELECT count(), sum(l_extendedprice), sum(o_totalprice) FROM (SELECT l_orderkey, l_extendedprice FROM tpch10.lineitem WHERE l_shipdate &lt; '1993-01-01') AS l INNER JOIN tpch10.orders ON l_orderkey = o_orderkey FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge', max_bytes_before_external_sort = 4000000</query>
 
 <drop_query>DROP DICTIONARY IF EXISTS orders_dict</drop_query>
 <drop_query>DROP TABLE IF EXISTS orders_join, join_algorithms_sf10_mark SYNC</drop_query>

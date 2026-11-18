@@ -4015,6 +4015,8 @@ Possible values:
 Preferred block size in bytes for spill files used by external `ORDER BY` and `DISTINCT`. Smaller blocks reduce memory usage when merging spill files.
 
 The block size is estimated from average row size, so blocks with unusually large rows can exceed this target. Set to `0` to size blocks by the row limit only.
+
+For external `ORDER BY` a spilled block is also at most an eighth of the sorted run written to the file.
 )", 0, \
         {"24.5", 0, DEFAULT_BLOCK_SIZE * 256, "Prefer maximum block bytes for external sort, reduce the memory usage during merging."}) \
     DECLARE(UInt64, max_bytes_before_external_sort, 0, R"(
@@ -4022,6 +4024,7 @@ Cloud default value: half the memory amount per replica.
 
 Enables or disables execution of `ORDER BY` clauses in external memory. See [ORDER BY Implementation Details](/reference/statements/select/order-by#implementation-details)
 If memory usage during ORDER BY operation exceeds this threshold in bytes, the 'external sorting' mode (spill data to disk) is activated.
+The threshold is divided between the streams that sort in parallel, but a stream spills only once it holds at least the smaller of the threshold and about 16 MiB.
 
 Possible values:
 
