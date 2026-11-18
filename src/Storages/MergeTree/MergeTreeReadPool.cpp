@@ -208,12 +208,12 @@ bool MergeTreeReadPool::cutRangesToRead(size_t task_idx, size_t & part_idx, size
 
     part_idx = thread_tasks.parts_and_ranges.back().part_idx;
     const auto marks_in_part = thread_tasks.sum_marks_in_parts.back();
-    const auto min_marks_per_task = getMinMarksPerTask(part_idx);
+    const auto min_marks_per_task = per_part_infos[part_idx]->min_marks_per_task;
 
     if (is_part_on_remote_disk[part_idx] && !pool_settings.use_const_size_tasks_for_remote_reading)
         need_marks = marks_in_part;
     else /// Get whole part to read if it is small enough.
-        need_marks = std::min(marks_in_part, min_marks_per_task);
+        need_marks = std::min(marks_in_part, adjustTaskSizeToReadEnd(min_marks_per_task));
 
     cutFromThreadTask(thread_tasks, thread_idx, need_marks, ranges_to_get_from_part);
     return true;
@@ -233,9 +233,8 @@ bool MergeTreeReadPool::cutMoreRangesToRead(size_t thread_idx, size_t part_idx, 
     return true;
 }
 
-size_t MergeTreeReadPool::getMinMarksPerTask(size_t part_idx) const
+size_t MergeTreeReadPool::adjustTaskSizeToReadEnd(size_t min_marks_per_task) const
 {
-    const size_t min_marks_per_task = per_part_infos[part_idx]->min_marks_per_task;
     const bool is_end_of_read = remaining_marks <= backoff_state.current_threads * min_marks_per_task;
     if (is_end_of_read && pool_settings.min_marks_per_task_at_read_end)
         return pool_settings.min_marks_per_task_at_read_end;
@@ -246,10 +245,10 @@ void MergeTreeReadPool::cutFromThreadTask(ThreadTask & thread_tasks, size_t thre
 {
     auto & thread_task = thread_tasks.parts_and_ranges.back();
     auto & marks_in_part = thread_tasks.sum_marks_in_parts.back();
-    const auto min_marks_per_task = getMinMarksPerTask(thread_task.part_idx);
+    const auto min_marks_per_task = per_part_infos[thread_task.part_idx]->min_marks_per_task;
 
     /// Do not leave too little rows in part for next time.
-    if (marks_in_part > need_marks && marks_in_part - need_marks < min_marks_per_task / 2)
+    if (marks_in_part > need_marks && marks_in_part - need_marks < adjustTaskSizeToReadEnd(min_marks_per_task) / 2)
         need_marks = marks_in_part;
 
     /// Get whole part to read if it is small enough.

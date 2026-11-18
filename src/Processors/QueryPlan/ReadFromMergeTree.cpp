@@ -2074,7 +2074,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         /// The number of streams is final here, which fixes the share of the marks that a stream gets. A
         /// stream that has read its share takes tasks from the shares of other streams, one task at a time,
         /// so the last streams of a read work alone for up to one task each. The pool therefore cuts the end
-        /// of the read (see `MergeTreeReadPool::getMinMarksPerTask`) into smaller tasks, of
+        /// of the read (see `MergeTreeReadPool::adjustTaskSizeToReadEnd`) into smaller tasks, of
         /// 1/`tasks_per_share_at_read_end` of a share, which keeps that time at about 3% of a share, unless
         /// that needs tasks below `merge_tree_min_read_task_size`. For example, 192 streams over 12,288
         /// marks have 64 marks each: the default task is 24 marks, and the tasks at the end of the read are
