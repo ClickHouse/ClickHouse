@@ -1,7 +1,5 @@
 <test>
-    <!-- `ORDER BY ... LIMIT` whose sorted input blocks are smaller than `max_block_size` must keep re-merging
-         the accumulated blocks, so the peak memory stays bounded (https://github.com/ClickHouse/ClickHouse/issues/131716).
-         Compare `memory_usage` of the query: with the re-merge switched off it is 1.28 GiB instead of about 230 MiB. -->
+    <!-- `ORDER BY ... LIMIT` whose sorted input blocks are smaller than `max_block_size` must keep re-merging the accumulated blocks, so the peak memory stays bounded (https://github.com/ClickHouse/ClickHouse/issues/131716). Compare `memory_usage` of the query: with the re-merge switched off it is 1.28 GiB instead of about 230 MiB. -->
     <settings>
         <max_threads>2</max_threads>
         <max_bytes_before_remerge_sort>100000000</max_bytes_before_remerge_sort>
