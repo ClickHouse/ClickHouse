@@ -331,6 +331,7 @@
     M(QueryRemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth' throttling.", ValueType::Microseconds) \
     M(ReaderExecutorSourceRequests, "Number of source-side requests opened by ReaderExecutor (excludes live-buffer reuses).", ValueType::Number) \
     M(ReaderExecutorBytesFromSource, "Physical bytes ReaderExecutor issued to the source after missing all cache tiers (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorDeliveredBytes.", ValueType::Bytes) \
+    M(ReaderExecutorBytesOutsideRequestMap, "The part of ReaderExecutorBytesFromSource outside the request map announced by the reader. Zero for reads without a map.", ValueType::Bytes) \
     M(ReaderExecutorDeliveredBytes, "Useful bytes ReaderExecutor delivered to read requests (the requested window payload, excluding over-read and cache write-back). Denominator for the modeled cost-per-byte KPI (ReaderExecutorModeledCostMicroseconds / ReaderExecutorDeliveredBytes).", ValueType::Bytes) \
     M(ReaderExecutorCacheGetRequests, "Number of ICacheHandle::get invocations in ReaderExecutor. Zero until the ReaderExecutor cache tiers are introduced.", ValueType::Number) \
     M(ReaderExecutorCachePopulateRequests, "Number of ICacheHandle::put invocations in ReaderExecutor. Zero until the ReaderExecutor cache tiers are introduced.", ValueType::Number) \
@@ -608,6 +609,9 @@
     M(FilteringMarksWithPrimaryKeyProcessedMarks, "Total marks processed during PK analysis.", ValueType::Number) \
     M(FilteringMarksWithPrimaryKeyMicroseconds, "Time spent filtering parts by PK.", ValueType::Microseconds) \
     M(FilteringMarksWithSecondaryKeysMicroseconds, "Time spent filtering parts by skip indexes.", ValueType::Microseconds) \
+    M(GranulesDroppedByPartitionKey, "Number of marks (index granules) excluded from reading a MergeTree table by the partition key and its min-max index during index analysis.", ValueType::Number) \
+    M(GranulesDroppedByPrimaryKey, "Number of marks (index granules) excluded from reading a MergeTree table by the primary key during index analysis.", ValueType::Number) \
+    M(GranulesDroppedBySkipIndexes, "Number of marks (index granules) excluded from reading a MergeTree table by data skipping indexes during index analysis. Indexes applied at read time (`use_skip_indexes_on_data_read`) are not counted.", ValueType::Number) \
     M(DistributedIndexAnalysisMicroseconds, "Total time spent during distributed index analysis", ValueType::Microseconds) \
     M(DistributedIndexAnalysisScheduledReplicas, "Number of replicas (local replica will be accounted once) to which distributed index analysis has been scheduled", ValueType::Number) \
     M(DistributedIndexAnalysisReplicaUnavailable, "Number of times distributed index analysis failed on one of replicas without fallback (failed during connect)", ValueType::Number) \
@@ -1054,6 +1058,7 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheEvictionSkippedEvictingFileSegments, "Number of file segments skipped for eviction because of being in evicting state", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedMovingFileSegments, "Number of file segments skipped for eviction because of being in moving state", ValueType::Number) \
     M(FilesystemCacheEvictionTries, "Number of filesystem cache eviction attempts", ValueType::Number) \
+    M(FilesystemCacheSkippedBusyPriorityLock, "Number of downgrade walks of an SLRU filesystem cache promotion skipped because a writer held or waited for the priority lock", ValueType::Number) \
     M(FilesystemCacheEvictionReusedIterator, "Number of filesystem cache iterator reusing", ValueType::Number) \
     M(FilesystemCacheOvercommitCandidatesIterationSteps, "Number of outer iterations the overcommit eviction loop ran beyond its first pass to satisfy a reservation's deficit", ValueType::Number) \
     M(FilesystemCacheLockKeyMicroseconds, "Lock cache key time", ValueType::Microseconds) \
@@ -1165,6 +1170,8 @@ The server successfully detected this situation and will download merged part fr
     M(AggregationHavingPrefilterGroupsSkipped, "Number of groups whose key columns were not materialized while a two-level bucket of an aggregation was converted, because a HAVING bound on that group's own count() already rejected it (the aggregationHavingPrefilter plan optimization).", ValueType::Number) \
     M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.", ValueType::Number) \
     M(AggregationConvertedToTwoLevel, "How many times a single-level aggregation hash table was converted to two-level at runtime.", ValueType::Number) \
+    M(AggregationIndexedTables, "How many single-level aggregation hash tables had their cells indexed by partitions of the hashes, so that the merges read the cells of a part of a table without converting it to two-level or walking the whole table. The adaptive aggregation indexes the single-level table of each thread when the thread finishes.", ValueType::Number) \
+    M(AggregationPartitionsMergedByCellIndex, "How many hash partitions the parallel merge of single-level aggregation hash tables read through the cell indexes of the tables (see `AggregationIndexedTables`), instead of scanning every cell of every table for each partition (see `enable_parallel_single_level_merge_by_index`).", ValueType::Number) \
     M(AggregationOptimizedEqualRangesOfKeys, "For how many blocks optimization of equal ranges of keys was applied", ValueType::Number) \
     M(AggregationSharedKeptKeysRebuilds, "Number of aggregation streams that rebuilt their hash table to the shared set of kept keys after the trivial GROUP BY LIMIT cutoff was reached (see the `optimize_trivial_group_by_limit_query` setting).", ValueType::Number) \
     M(AggregationSharedKeptKeysSpillReseeds, "Number of times a hash table that stopped admitting new keys under `group_by_overflow_mode = any` was re-seeded with the keys it kept after being flushed to a temporary file by external aggregation, so that their remaining rows keep being aggregated. Covers both the shared set of the trivial GROUP BY LIMIT cutoff (see the `optimize_trivial_group_by_limit_query` setting) and the per-stream set of a plain `max_rows_to_group_by` cap.", ValueType::Number) \
@@ -1734,6 +1741,14 @@ The server successfully detected this situation and will download merged part fr
     M(DiskConnectionsErrors, "Number of cases when creation of a connection for disk is failed", ValueType::Number) \
     M(DiskConnectionsElapsedMicroseconds, "Total time spend on creating connections for disk", ValueType::Microseconds) \
     \
+    M(AmberConnectionsCreated, "Number of created connections for Amber", ValueType::Number) \
+    M(AmberConnectionsReused, "Number of reused connections for Amber", ValueType::Number) \
+    M(AmberConnectionsReset, "Number of reset connections for Amber", ValueType::Number) \
+    M(AmberConnectionsPreserved, "Number of preserved connections for Amber", ValueType::Number) \
+    M(AmberConnectionsExpired, "Number of expired connections for Amber", ValueType::Number) \
+    M(AmberConnectionsErrors, "Number of cases when creation of a connection for Amber is failed", ValueType::Number) \
+    M(AmberConnectionsElapsedMicroseconds, "Total time spend on creating connections for Amber", ValueType::Microseconds) \
+    \
     M(HTTPConnectionsCreated, "Number of created client HTTP connections", ValueType::Number) \
     M(HTTPConnectionsReused, "Number of reused client HTTP connections", ValueType::Number) \
     M(HTTPConnectionsReset, "Number of reset client HTTP connections", ValueType::Number) \
@@ -1837,6 +1852,7 @@ The server successfully detected this situation and will download merged part fr
     M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
     M(ParquetPrunedRowGroups, "The total number of row groups pruned from parquet data before reading them (by min/max statistics and row group selection). Row groups pruned later by bloom filters and dictionaries are counted in `ParquetBloomFilterPrunedRowGroups` and `ParquetDictionaryFilterPrunedRowGroups`.", ValueType::Number) \
     M(ParquetRuntimeFilterPrunedRowGroups, "Number of Parquet row groups skipped because their column statistics cannot contain a key of a JOIN runtime filter", ValueType::Number) \
+    M(ParquetRuntimeFilterPrunedPages, "Number of Parquet pages skipped because their page index cannot contain a key of a JOIN runtime filter", ValueType::Number) \
     M(ParquetBloomFilterPrunedRowGroups, "The total number of parquet row groups pruned by bloom filters.", ValueType::Number) \
     M(ParquetDictionaryFilterPrunedRowGroups, "The total number of parquet row groups pruned by dictionary filters (with a bloom filter fallback for columns whose dictionary does not fit the pruning memory budget).", ValueType::Number) \
     M(ParquetFooterReadMicroseconds, "Total time spent reading and deserializing parquet file footers (not served from the parquet metadata cache).", ValueType::Microseconds) \
@@ -1885,7 +1901,7 @@ The server successfully detected this situation and will download merged part fr
     M(AutoParallelReplicasPlansNotComparable, "Number of times automatic parallel replicas skipped a query after building the plan with parallel replicas, or at a boundary remembered from building it earlier, because it could not match that plan with the local one well enough to compare or use it: for example, it could not pair their reads, or tell which read the replicas would split. The `AutoParallelReplicas` logger says which case it was", ValueType::Number) \
     M(AutoParallelReplicasPlanWithoutParallelReplicas, "Number of times automatic parallel replicas skipped a query after building the plan with parallel replicas, because the planner did not use parallel replicas in it, for example for too few rows per replica or a correlated subquery. The `Planner` logger says why", ValueType::Number) \
     M(AutoParallelReplicasNoStatistics, "Number of times automatic parallel replicas had no statistics yet, so it collected them instead of deciding", ValueType::Number) \
-    M(AutoParallelReplicasStatisticsDrifted, "Number of times the rows read from storage differed from the cached statistics by more than 2x, so automatic parallel replicas recollected them instead of deciding", ValueType::Number) \
+    M(AutoParallelReplicasStatisticsDrifted, "Number of times the rows read from storage differed from the cached statistics by more than `automatic_parallel_replicas_statistics_drift_ratio`, so automatic parallel replicas recollected them instead of deciding", ValueType::Number) \
     M(AutoParallelReplicasCostModelEvaluated, "Number of times automatic parallel replicas reached the cost model and compared the local plan against the parallel replicas plan", ValueType::Number) \
     M(AutoParallelReplicasApplied, "Number of times automatic parallel replicas replaced the query plan with the parallel replicas one", ValueType::Number) \
     M(AutoParallelReplicasSkippedEarly, "Number of times automatic parallel replicas did not even build the plan with parallel replicas, because index analysis already showed the largest read in the plan gives less than `automatic_parallel_replicas_min_bytes_per_replica` per replica", ValueType::Number) \
@@ -1949,6 +1965,7 @@ The server successfully detected this situation and will download merged part fr
     M(RuntimeFilterReceivesAbandoned, "Number of JOIN Runtime Filter streams whose sender disconnected after the connection was established, before the end of the stream; if the sender's state had not arrived, the affected filter is not used and rows pass unfiltered", ValueType::Number) \
     M(RuntimeFilterReceiveBranchFailures, "Number of tasks that failed to receive a JOIN Runtime Filter from another task; that task does not use the filter and rows pass unfiltered", ValueType::Number) \
     M(RuntimeFilterBloomFilterBuildsSkipped, "Number of JOIN Runtime Filter Bloom filter builds skipped because the build-side key count from the hash table statistics predicted that the filter would exceed the maximal ratio of set bits", ValueType::Number) \
+    M(RuntimeFilterDenseBitsetsBuilt, "Number of JOIN Runtime Filters on (U)Int8 or (U)Int16 keys that switched from the exact set of keys to a dense bitset instead of a Bloom filter", ValueType::Number) \
     M(RuntimeFilterIndexAnalysisReads, "Number of reads set up to prune granules with a JOIN runtime filter at read time. Counted when the read reaches its pipeline carrying the descriptors and has a primary key or skip index to prune them with, whether or not a granule is later examined, so it shows that the descriptors survived every rebuild of the read step.", ValueType::Number) \
     M(RuntimeFilterGranulesConsidered, "Number of granules examined for read time pruning by JOIN Runtime Filters", ValueType::Number) \
     M(RuntimeFilterGranulesDropped, "Number of granules pruned at read time by JOIN Runtime Filters", ValueType::Number) \
@@ -2031,6 +2048,7 @@ The server successfully detected this situation and will download merged part fr
     M(StatelessWorkerDiscoveryWorkersHeartbeatExpired, "Number of stateless workers reclaimed by the stateless worker discovery service because they stopped sending heartbeats.", ValueType::Number) \
     M(StatelessWorkerDiscoveryHeartbeatsRejected, "Number of heartbeats the stateless worker discovery service rejected because the worker had already been evicted.", ValueType::Number) \
     M(StatelessWorkerDiscoveryKeeperTransactionRetries, "Number of write transactions the stateless worker discovery service retried because its coordination store (Keeper) state was modified concurrently.", ValueType::Number) \
+    M(AmberFailedPromotions, "Number of times this node took the amber master lock but could not fence and recover the volume, so it gave the lock up.", ValueType::Number) \
     \
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

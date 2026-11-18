@@ -151,7 +151,7 @@ extern const SettingsBool use_iceberg_metadata_files_cache;
 extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool use_iceberg_manifest_list_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
-extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
+extern const SettingsBool input_format_parquet_preserve_order;
 extern const SettingsBool allow_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
 extern const SettingsBool allow_geo_types_in_iceberg;
@@ -240,7 +240,7 @@ std::pair<Iceberg::PersistentTableComponents, Iceberg::MetadataFileWithInfo> Ice
 {
     const auto latest_metadata
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, *configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, CompressionMethod::None, /* force_fetch_latest_metadata */ false);
-    const auto & [metadata_version, metadata_file_path, compression_method] = latest_metadata;
+    const auto & [metadata_version, metadata_file_path, compression_method, _] = latest_metadata;
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
     auto metadata_json_str = readMetadataJSONString(metadata_file_path, object_storage, cache_ptr != nullptr, context_, log, compression_method);
     auto metadata_object = parseMetadataJSONString(metadata_json_str, metadata_file_path);
@@ -338,21 +338,10 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
 }
 
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(
-    const ContextPtr & context, const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier) const
+    const ContextPtr & context, const Iceberg::MetadataFileWithInfo & metadata_file) const
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergGetTableStateMicroseconds);
-    const auto [metadata_version, metadata_file_path, _] = getLatestMetadataFileAndVersionWithCatalog(
-        object_storage,
-        catalog,
-        table_identifier,
-        persistent_components.table_path,
-        *data_lake_settings,
-        persistent_components.metadata_cache,
-        context,
-        log.get(),
-        persistent_components.table_uuid,
-        persistent_components.metadata_compression_method);
-    return getState(context, metadata_file_path, metadata_version);
+    return getState(context, metadata_file.path, metadata_file.version);
 }
 
 IcebergMetadata::IcebergMetadata(
@@ -1241,7 +1230,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
 IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_context) const
 {
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [metadata_version, metadata_file_path, compression_method, _] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
         getMetadataLookupSettings(),
@@ -1358,7 +1347,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
 
 IcebergMetadata::IcebergMetadataLogEntries IcebergMetadata::getMetadataLogEntries(ContextPtr local_context) const
 {
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [metadata_version, metadata_file_path, compression_method, _] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
         getMetadataLookupSettings(),
@@ -2058,11 +2047,8 @@ bool IcebergMetadata::shouldReloadSchemaForConsistency(ContextPtr) const
 
 void IcebergMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const
 {
-    /// `vortex.preserve_order` is not forced as well: position deletes are only supported for
-    /// Parquet data and delete files, so a Vortex data file never reaches the streaming transform.
-    if (!local_context.getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
-        /// IcebergStreamingPositionDeleteTransform requires increasing row numbers from both the
-        /// data reader and the deletes reader.
+    /// The format settings of an engine table are not taken from the query, so a query's request for order is applied here.
+    if (local_context.getSettingsRef()[Setting::input_format_parquet_preserve_order])
         format_settings.parquet.preserve_order = true;
 }
 
@@ -2148,7 +2134,7 @@ void IcebergMetadata::addDeleteTransformers(
                 has_time_equality_column
                     ? std::make_shared<FormatFilterInfo>(nullptr, local_context, delete_mapper, nullptr, nullptr)
                     : nullptr,
-                true,
+                object_storage->isRemote(),
                 compression_method);
             /// only get the delete columns and construct a set by 'block_for_set'
             while (true)
@@ -2266,12 +2252,19 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
         return nullptr;
     chassert(object_info->getFileFormat().has_value());
     /// Only these readers resolve columns through a mapper: `Parquet` and `Avro` for the columns they read
-    /// (and `Parquet` for its filters), `Vortex` for the filters it pushes into the scan.
+    /// (and `Parquet` for its filters), `Vortex` for the filters it pushes into the scan, `ORC` for the columns
+    /// absent from the file.
     const auto file_format = Poco::toLower(*object_info->getFileFormat());
-    if (file_format != "parquet" && file_format != "avro" && file_format != "vortex")
+    if (file_format != "parquet" && file_format != "avro" && file_format != "vortex" && file_format != "orc")
         return nullptr;
 
-    return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->info.underlying_format_read_schema_id);
+    auto column_mapper
+        = persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->info.underlying_format_read_schema_id);
+    /// An identity partition value of the file, even NULL, takes precedence over `initial-default`.
+    if (column_mapper)
+        for (const auto & [column_name, _] : iceberg_object_info->info.identity_partition_columns)
+            column_mapper->removeIcebergInitialDefault(column_name);
+    return column_mapper;
 }
 
 // (TODO): usage of this function is wrong and should be removed completely (it was done as a temporary workaround for a bug which occurred during supporting concurrent SELECTs).

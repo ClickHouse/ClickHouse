@@ -1,7 +1,9 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/DataFileStatistics.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
@@ -19,21 +21,36 @@ namespace ErrorCodes
 #if USE_AVRO
 
 DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_)
+    : required_field_ids(getRequiredFieldIds(schema_))
 {
     field_ids.resize(schema_->size());
     for (UInt32 i = 0; i < schema_->size(); ++i)
-    {
-        auto field = schema_->getObject(i);
-        size_t field_id = field->getValue<size_t>(Iceberg::f_id);
-        field_ids[i] =  field_id;
-    }
+        field_ids[i] = schema_->getObject(i)->getValue<Int64>(Iceberg::f_id);
 }
 
-DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_, std::vector<Int64> written_field_ids)
-    : DataFileStatistics(schema_)
+DataFileStatistics::DataFileStatistics(std::vector<Int64> written_field_ids, std::unordered_set<Int64> required_field_ids_)
+    : field_ids(std::move(written_field_ids))
+    , required_field_ids(std::move(required_field_ids_))
 {
-    if (!written_field_ids.empty())
-        field_ids = std::move(written_field_ids);
+}
+
+std::unordered_set<Int64> DataFileStatistics::getRequiredFieldIds(const Poco::JSON::Array::Ptr & schema)
+{
+    std::unordered_set<Int64> res;
+    for (UInt32 i = 0; i < schema->size(); ++i)
+    {
+        const auto field = schema->getObject(i);
+        if (field->getValue<bool>(Iceberg::f_required))
+            res.insert(field->getValue<Int64>(Iceberg::f_id));
+    }
+    return res;
+}
+
+static const ColumnVariant * getVariantColumn(const IColumn & column)
+{
+    if (const auto * dynamic_col = checkAndGetColumn<ColumnDynamic>(&column))
+        return &dynamic_col->getVariantColumn();
+    return checkAndGetColumn<ColumnVariant>(&column);
 }
 
 /// `getExtremes` compares with IEEE754 `<`, where -0.0 == +0.0, so which zero it returns depends on
@@ -131,6 +148,11 @@ void DataFileStatistics::update(const Chunk & chunk)
         ConstNullMapPtr null_map = nullable_col ? &nullable_col->getNullMapData() : nullptr;
         if (null_map)
             null_counts[i] += countBytesInFilter(*null_map);
+        else if (const auto * variant_col = getVariantColumn(*col); variant_col && !required_field_ids.contains(field_ids[i]))
+        {
+            for (auto discriminator : variant_col->getLocalDiscriminators())
+                null_counts[i] += discriminator == ColumnVariant::NULL_DISCRIMINATOR;
+        }
         const IColumn & nested_col = nullable_col ? nullable_col->getNestedColumn() : *col;
         if (auto nans = countNaNs(nested_col, null_map))
             nan_counts[i] += *nans;
