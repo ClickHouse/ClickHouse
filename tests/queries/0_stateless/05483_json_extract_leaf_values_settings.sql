@@ -58,12 +58,12 @@ INSERT INTO tab_leaf_dots SETTINGS json_type_escape_dots_in_keys = 1
 INSERT INTO tab_leaf_dots SETTINGS json_type_escape_dots_in_keys = 0
     VALUES (4, '{"a.b": "secret", "c": "x"}'), (5, '{"c": "secret", "a.c": "hello"}');
 
-SELECT groupArray(id) FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'secret') SETTINGS json_type_escape_dots_in_keys = 0;
-SELECT groupArray(id) FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'secret') SETTINGS json_type_escape_dots_in_keys = 0, use_skip_indexes = 0;
-SELECT groupArray(id) FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'secret') SETTINGS json_type_escape_dots_in_keys = 1;
-SELECT groupArray(id) FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'secret') SETTINGS json_type_escape_dots_in_keys = 1, use_skip_indexes = 0;
-SELECT groupArray(id) FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'hello') SETTINGS json_type_escape_dots_in_keys = 1;
-SELECT groupArray(id) FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'hello') SETTINGS json_type_escape_dots_in_keys = 1, use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'secret') SETTINGS json_type_escape_dots_in_keys = 0;
+SELECT arraySort(groupArray(id)) FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'secret') SETTINGS json_type_escape_dots_in_keys = 0, use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'secret') SETTINGS json_type_escape_dots_in_keys = 1;
+SELECT arraySort(groupArray(id)) FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'secret') SETTINGS json_type_escape_dots_in_keys = 1, use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'hello') SETTINGS json_type_escape_dots_in_keys = 1;
+SELECT arraySort(groupArray(id)) FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'hello') SETTINGS json_type_escape_dots_in_keys = 1, use_skip_indexes = 0;
 SELECT count() FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'secret') SETTINGS json_type_escape_dots_in_keys = 1, query_plan_optimize_count_from_text_index = 1;
 SELECT count() FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'secret') SETTINGS json_type_escape_dots_in_keys = 1, use_skip_indexes = 0;
 
