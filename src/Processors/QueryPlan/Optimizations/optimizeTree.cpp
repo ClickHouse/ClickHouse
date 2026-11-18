@@ -324,7 +324,8 @@ void optimizeTreeSecondPass(
         updateQueryConditionCache(stack, optimization_settings);
 
         /// Must be executed after index analysis and before PREWHERE optimization.
-        processAndOptimizeTextIndexFunctions(stack, nodes, optimization_settings.direct_read_from_text_index, extra_settings);
+        processAndOptimizeTextIndexFunctions(
+            stack, nodes, optimization_settings.direct_read_from_text_index, optimization_settings.find_single_node_read, extra_settings);
 
         auto & frame = stack.back();
 
@@ -540,7 +541,7 @@ void optimizeTreeSecondPass(
                 optimizeReadInOrder(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.distinct_in_order && !make_distributed_plan)
-                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
+                optimizeDistinctInOrder(stack, nodes, optimization_settings);
         },
         [&](auto & frame_node)
         {
@@ -701,7 +702,7 @@ void optimizeTreeSecondPass(
                 optimizeWindowPerPartition(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.distinct_in_order && !cascades_active)
-                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
+                optimizeDistinctInOrder(stack, nodes, optimization_settings);
 
             if (optimization_settings.limit_by_in_order)
                 optimizeLimitByInOrder(stack, nodes, optimization_settings);

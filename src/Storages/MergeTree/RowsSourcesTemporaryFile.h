@@ -51,7 +51,7 @@ public:
 
     /// The file was written by an earlier attempt.
     void restore(size_t file_size_);
-    size_t getFileSize() const;
+    [[nodiscard]] size_t getFileSize() const;
 
 private:
     MutableDataPartStoragePtr part_storage;
