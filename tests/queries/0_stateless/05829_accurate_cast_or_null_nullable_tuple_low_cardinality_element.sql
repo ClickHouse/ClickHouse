@@ -33,3 +33,10 @@ SELECT accurateCastOrNull(t, 'Nullable(Tuple(LowCardinality(String)))'), accurat
 FROM (SELECT arrayJoin([tuple('a'::Enum8('a' = 1)), arrayElementOrNull([tuple('a'::Enum8('a' = 1))], 2)]) AS t);
 SELECT accurateCastOrDefault(arrayElementOrNull([tuple('a'::Enum16('a' = 1000))], 2), 'Nullable(Tuple(LowCardinality(String)))');
 SELECT CAST(arrayElementOrNull([tuple('a'::Enum8('a' = 1))], 2), 'Nullable(Tuple(Nullable(String)))');
+
+-- So are those under a nullable element, whose own null map does not cover them.
+SELECT accurateCastOrNull(t, 'Nullable(Tuple(LowCardinality(String)))'), CAST(t, 'Nullable(Tuple(String))'), CAST(t, 'Nullable(Tuple(Nullable(String)))')
+FROM (SELECT CAST(arrayJoin([tuple('a'::Enum8('a' = 1)), arrayElementOrNull([tuple('a'::Enum8('a' = 1))], 2)]), 'Nullable(Tuple(Nullable(Enum8(\'a\' = 1))))') AS t);
+-- A LowCardinality element converts its dictionary, which is smaller than the tuple.
+SELECT accurateCastOrNull(t, 'Nullable(Tuple(LowCardinality(String)))'), CAST(t, 'Nullable(Tuple(String))')
+FROM (SELECT CAST(arrayElementOrNull([tuple(materialize('a'))], number % 3), 'Nullable(Tuple(LowCardinality(Nullable(String))))') AS t FROM numbers(6));

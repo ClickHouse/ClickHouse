@@ -22,3 +22,11 @@ Nullable(Tuple(LowCardinality(FixedString(2)))), Nullable(size = 1, Tuple(size =
 \N	\N
 \N
 \N
+('a')	('a')	('a')
+\N	\N	\N
+\N	\N
+('a')	('a')
+\N	\N
+\N	\N
+('a')	('a')
+\N	\N

@@ -3152,8 +3152,9 @@ FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(
                 tmp_rows_count = arg.column->size();
             }
 
-            /// Perform the requested conversion.
-            converted_column = wrapper(args, res_type, nullable_source, tmp_rows_count);
+            /// Perform the requested conversion. The null map of a surrounding `Nullable(Tuple(...))` is per row, not per dictionary value.
+            const bool converts_dictionary = from_low_cardinality && !src_converted_to_full_column;
+            converted_column = wrapper(args, res_type, converts_dictionary ? nullptr : nullable_source, tmp_rows_count);
         }
 
         if (to_low_cardinality)
@@ -3173,6 +3174,12 @@ FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(
         else
             return converted_column;
     };
+}
+
+/// A NULL row of a surrounding `Nullable(Tuple(...))` holds a placeholder value even where its element is not NULL.
+static ColumnPtr addParentNulls(const ColumnPtr & nullable_column, const ColumnNullable * parent)
+{
+    return parent ? wrapInNullable(nullable_column, parent->getNullMapColumnPtr()) : nullable_column;
 }
 
 FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
@@ -3217,13 +3224,14 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
             else
                 tmp_args = arguments;
 
-            /// Add original ColumnNullable for createStringToEnumWrapper(). A non-nullable source keeps the null map of a
-            /// surrounding `Nullable(Tuple(...))`, whose NULL rows hold placeholder values.
+            /// Add original ColumnNullable for createStringToEnumWrapper(), with the NULL rows of a surrounding `Nullable(Tuple(...))`.
+            ColumnPtr source_with_parent_nulls;
             if (source_is_nullable)
             {
                 if (arguments.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of arguments");
-                nullable_source = typeid_cast<const ColumnNullable *>(arguments.front().column.get());
+                source_with_parent_nulls = addParentNulls(arguments.front().column, nullable_source);
+                nullable_source = typeid_cast<const ColumnNullable *>(source_with_parent_nulls.get());
             }
 
             if (exclude_source_nulls)
@@ -3270,7 +3278,7 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
         /// Conversion from Nullable to non-Nullable.
 
         return [wrapper, skip_not_null_check, report_failures_as_null]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * parent_nullable_source, size_t input_rows_count) -> ColumnPtr
         {
             auto tmp_args = createBlockWithNestedColumns(arguments);
             auto nested_type = removeNullable(result_type);
@@ -3291,7 +3299,8 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
                     throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type");
             }
 
-            const ColumnNullable * nullable_source = typeid_cast<const ColumnNullable *>(arguments.front().column.get());
+            const ColumnPtr source_with_parent_nulls = addParentNulls(arguments.front().column, parent_nullable_source);
+            const auto * nullable_source = typeid_cast<const ColumnNullable *>(source_with_parent_nulls.get());
             auto tmp_res = wrapper(tmp_args, nested_type, nullable_source, input_rows_count);
 
             /// A conversion asked to report its failures as NULL returns ColumnNullable where source NULLs
