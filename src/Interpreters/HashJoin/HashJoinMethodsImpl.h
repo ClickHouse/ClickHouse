@@ -16,10 +16,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
