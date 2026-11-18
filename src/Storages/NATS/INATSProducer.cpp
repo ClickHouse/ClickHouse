@@ -91,9 +91,10 @@ void INATSProducer::publish()
         {
             LOG_DEBUG(log, "Something went wrong during publishing to NATS subject. Nats status text: {}. Last error message: {}",
                       natsStatus_GetText(status), getNATSLastError());
+            /// The client rejects a message over the server's max_payload before sending it, so a retry cannot succeed.
             if (status == NATS_NO_RESPONDERS)
                 publish_error = "there is no JetStream stream for this subject";
-            else if (!payloads.pushFront(payload))
+            else if (status == NATS_MAX_PAYLOAD || !payloads.pushFront(payload))
                 publish_error = fmt::format("{}. Last error message: {}", natsStatus_GetText(status), getNATSLastError());
             break;
         }

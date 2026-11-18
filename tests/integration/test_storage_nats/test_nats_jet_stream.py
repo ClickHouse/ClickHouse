@@ -765,9 +765,11 @@ def test_nats_insert_message_over_max_payload(nats_cluster):
         """
     )
 
-    # The message is larger than the server's max_payload (1 MiB by default).
+    # The first message is larger than the server's max_payload (1 MiB by default),
+    # and 5000 messages do not fit into the queue of the producer.
     error = instance.query_and_get_error(
-        "INSERT INTO test.nats SELECT 1, repeat('aa', 1000000)", timeout=60
+        "INSERT INTO test.nats SELECT number, repeat('aa', if(number = 0, 1000000, 0)) FROM numbers(5000)",
+        timeout=60,
     )
     assert "Cannot publish to NATS subject test_subject: Maximum Payload Exceeded" in error, error
 
