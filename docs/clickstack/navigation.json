@@ -1,10 +1,9 @@
 {
-  "icon": "/images/icons/icon-clickstack.svg",
   "item": "ClickHouse Observability",
   "dropdowns": [
     {
       "dropdown": "ClickHouse Observability",
-      "icon": "/images/icons/icon-clickhouse-cloud.svg",
+      "icon": "/images/icons/icon-clickhouse-observability.svg",
       "pages": [
         "clickstack/observability/index",
         {
@@ -51,6 +50,7 @@
             "clickstack/observability/features/event-patterns",
             "clickstack/observability/features/event-deltas",
             "clickstack/observability/features/alerts",
+            "clickstack/observability/features/anomaly-detection",
             "clickstack/observability/service-maps",
             "clickstack/observability/features/session-replay",
             "clickstack/observability/mcp",
@@ -380,7 +380,7 @@
     },
     {
       "dropdown": "ClickStack (OSS)",
-      "icon": "/images/clickstack/clickstack-mark.svg",
+      "icon": "/images/clickstack/clickstack-icon-dark.svg",
       "pages": [
         "clickstack",
         {
@@ -462,7 +462,6 @@
             "clickstack/features/event-patterns",
             "clickstack/features/event-deltas",
             "clickstack/features/alerts",
-            "clickstack/features/anomaly-detection",
             "clickstack/service-maps",
             "clickstack/features/session-replay",
             "clickstack/mcp",

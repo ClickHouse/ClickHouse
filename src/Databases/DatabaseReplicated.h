@@ -11,6 +11,7 @@
 #include <Parsers/SyncReplicaMode.h>
 #include <QueryPipeline/BlockIO.h>
 #include <base/defines.h>
+#include <Common/SecretString.h>
 #include <Common/ZooKeeper/IKeeper.h>
 
 
@@ -182,7 +183,7 @@ public:
 protected:
     void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                            const String & table_metadata_tmp_path, const String & table_metadata_path,
-                           ContextPtr query_context) override;
+                           const String & statement, ContextPtr query_context) override;
     void commitAlterTable(const StorageID & table_id,
                           const String & table_metadata_tmp_path, const String & table_metadata_path,
                           const String & statement, ContextPtr query_context) override;
@@ -205,8 +206,8 @@ private:
     struct
     {
         String cluster_username{"default"};
-        String cluster_password;
-        String cluster_secret;
+        SecretString cluster_password;
+        SecretString cluster_secret;
         bool cluster_secure_connection{false};
     } cluster_auth_info;
 
