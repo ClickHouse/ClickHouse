@@ -2922,7 +2922,16 @@ static BlockIO executeQueryImpl(
         bool probably_has_params = find_first_symbols<'{'>(begin, end) != end;
         if (out_ast && probably_has_params)
         {
-            ReplaceQueryParameterVisitor visitor(context->getQueryParameters(), settings[Setting::parameterize_view_by_alias_parameter]);
+            /// The query's own `SETTINGS` reach `context` only after the substitution, see `applySettingsFromQuery` below.
+            bool alias_parameterizes_view = settings[Setting::parameterize_view_by_alias_parameter];
+            if (const auto * create = out_ast->as<ASTCreateQuery>(); create && create->is_ordinary_view && create->select)
+            {
+                auto query_settings_context = Context::createCopy(context);
+                InterpreterSetQuery::applySettingsFromQuery(out_ast, query_settings_context);
+                alias_parameterizes_view = query_settings_context->getSettingsRef()[Setting::parameterize_view_by_alias_parameter];
+            }
+
+            ReplaceQueryParameterVisitor visitor(context->getQueryParameters(), alias_parameterizes_view);
             visitor.visit(out_ast);
             if (visitor.getNumberOfReplacedParameters())
                 query = out_ast->formatWithSecretsOneLine();
