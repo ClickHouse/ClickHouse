@@ -338,7 +338,12 @@ private:
             bool waited_alone = false;
             /// Batches with this key taken from the queue whose flush is not finished, including those waiting for the pool.
             size_t flushes_in_progress = 0;
+            /// Inserts with this key flushed at once since the last batch with it waited for its deadline.
+            size_t flushes_without_batching = 0;
         };
+        /// After this many inserts with a key are flushed at once, the next one waits for its busy timeout again, so that
+        /// inserts of other clients that started inserting with the key meanwhile are batched with it.
+        static constexpr size_t max_flushes_without_batching = 16;
         /// Keys with a flush in progress or with `waited_alone`. An insert with a key that waited alone and has no flush
         /// in progress is flushed at once: every earlier insert with the key is finished, and none is waiting to be batched.
         std::unordered_map<UInt128, KeyState> key_states TSA_GUARDED_BY(mutex);
