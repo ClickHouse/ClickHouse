@@ -84,6 +84,9 @@ struct ProfileTracesRegistry
 
     void release(size_t bytes) { buffered_bytes.fetch_sub(bytes, std::memory_order_relaxed); }
 
+    /// For memory that is already allocated: it counts against the bound of later `tryReserve` calls.
+    void forceReserve(size_t bytes) { buffered_bytes.fetch_add(bytes, std::memory_order_relaxed); }
+
     InternalProfileTracesQueuePtr find(UInt64 id)
     {
         std::lock_guard lock(mutex);
@@ -124,7 +127,7 @@ InternalProfileTracesQueue::~InternalProfileTracesQueue()
     std::lock_guard lock(registry->mutex);
     registry->subscriptions.erase(id);
     samples.clear();
-    registry->release(buffered_bytes);
+    registry->release(buffered_bytes + materialized_bytes);
 }
 
 size_t InternalProfileTracesQueue::Sample::byteSize() const
@@ -234,7 +237,7 @@ void InternalProfileTracesQueue::cancel()
     std::lock_guard lock(mutex);
     finished = true;
     samples.clear();
-    registry->release(std::exchange(buffered_bytes, 0));
+    registry->release(std::exchange(buffered_bytes, 0) + std::exchange(materialized_bytes, 0));
     pending_dropped = 0;
     pending_incomplete = false;
 }
@@ -257,16 +260,30 @@ Block InternalProfileTracesQueue::getBlock()
 {
     /// Formatting samples must not add the delivery path to this subscription.
     ProfileTracesBlocker blocker;
+    /// A local sample does not store the query ID, but every row of the block repeats it,
+    /// so bound the expanded size of a batch, not only its row count.
+    static constexpr size_t max_block_bytes = 1024 * 1024;
     std::vector<Sample> batch;
     {
         std::lock_guard lock(mutex);
+        /// The transport has destroyed the previous block before requesting this one.
+        registry->release(std::exchange(materialized_bytes, 0));
         const size_t metadata_rows = (pending_dropped != 0) + pending_incomplete;
         size_t rows = std::min(samples.size(), size_t{1024} - metadata_rows);
         batch.reserve(rows + metadata_rows);
         size_t released_bytes = 0;
+        size_t expanded_bytes = 0;
         while (batch.size() < rows)
         {
-            released_bytes += samples.front().byteSize();
+            const auto & sample = samples.front();
+            const size_t sample_bytes = sample.byteSize();
+            size_t row_bytes = sample_bytes;
+            if (!sample.symbolized)
+                row_bytes += host_name.size() + query_id.size();
+            if (!batch.empty() && expanded_bytes + row_bytes > max_block_bytes)
+                break;
+            expanded_bytes += row_bytes;
+            released_bytes += sample_bytes;
             batch.emplace_back(std::move(samples.front()));
             samples.pop_front();
         }
@@ -339,7 +356,17 @@ Block InternalProfileTracesQueue::getBlock()
         columns[6]->insert(symbols);
         columns[7]->insert(sample.size);
     }
-    return block.cloneWithColumns(std::move(columns));
+    block = block.cloneWithColumns(std::move(columns));
+
+    /// The block, including the repeated query IDs and the symbols, is allocated with memory tracking
+    /// blocked and lives until the transport has written it. Keep it in the shared byte bound until then.
+    {
+        std::lock_guard lock(mutex);
+        chassert(materialized_bytes == 0);
+        materialized_bytes = block.allocatedBytes();
+        registry->forceReserve(materialized_bytes);
+    }
+    return block;
 }
 
 void InternalProfileTracesQueue::pushBlock(const Block & block)

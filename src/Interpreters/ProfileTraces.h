@@ -29,6 +29,8 @@ public:
 
     UInt64 getId() const { return id; }
     static Block getSampleBlock();
+    /// Return the next batch. The caller must destroy the previous batch before requesting the next one:
+    /// its memory is untracked and stays reserved in the shared byte budget until then.
     Block getBlock();
     void pushBlock(const Block & block);
 
@@ -76,6 +78,10 @@ private:
     std::condition_variable flushed;
     std::deque<Sample> samples;
     size_t buffered_bytes = 0;
+    /// Bytes of the last block returned by `getBlock`, kept reserved in the registry until the transport
+    /// asks for the next block (both transports destroy a block before requesting the next one),
+    /// or until the subscription is cancelled or destroyed.
+    size_t materialized_bytes = 0;
     /// Metadata is kept outside the bounded sample queue so overflow cannot hide its own loss count.
     Int64 pending_dropped = 0;
     bool pending_incomplete = false;
