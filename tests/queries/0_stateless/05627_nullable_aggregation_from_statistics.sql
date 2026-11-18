@@ -7,9 +7,6 @@
 
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 SET optimize_syntax_fuse_functions = 0, optimize_arithmetic_operations_in_aggregate_functions = 1;
--- `optimize_functions_to_subcolumns` rewrites `count(column)` over a `Nullable` column to `sum(NOT column.null)`, which
--- is not answered from statistics.
-SET optimize_functions_to_subcolumns = 0;
 -- `use_statistics_for_min_max_aggregation` and `use_statistics_for_sum_avg_aggregation` keep their defaults.
 SET optimize_aggregation_in_order = 0, force_aggregation_in_order = 0;
 SET aggregate_functions_null_for_empty = 0;
@@ -56,6 +53,17 @@ SELECT min(i16), max(i16), min(i64), max(u256), min(d64), max(dt), min(f), max(f
 SELECT min(i16), max(i16), min(i64), max(u256), min(d64), max(dt), min(f), max(f), min(sparse), max(sparse) FROM t_null SETTINGS use_statistics_for_min_max_aggregation = 0;
 SELECT countIf(explain LIKE '%_statistics_projection%'), countIf(explain LIKE '%ReadFromMergeTree%')
 FROM (EXPLAIN SELECT sum(i16), avg(i64), sumCount(d64), count(dt), min(f), max(u256), sum(sparse), count() FROM t_null);
+
+-- `optimize_functions_to_subcolumns` rewrites `count(column)` over a `Nullable` column whose only use it is into
+-- `sum(not(column.null))`; both forms are the count of the non-NULL rows
+SELECT 'count(column) and its rewrite to sum(not(column.null))';
+SELECT count(dt), count(s) FROM t_null;
+SELECT count(dt), count(s) FROM t_null SETTINGS use_statistics_for_sum_avg_aggregation = 0;
+SELECT count() FROM (EXPLAIN actions = 1 SELECT count(dt) FROM t_null) WHERE explain LIKE '%Aggregates: sum(%dt.null%';
+SELECT countIf(explain LIKE '%_statistics_projection%'), countIf(explain LIKE '%ReadFromMergeTree%')
+FROM (EXPLAIN SELECT sum(i16), count(dt) FROM t_null);
+SELECT countIf(explain LIKE '%_statistics_projection%'), countIf(explain LIKE '%ReadFromMergeTree%')
+FROM (EXPLAIN SELECT sum(i16), count(dt) FROM t_null SETTINGS optimize_functions_to_subcolumns = 0);
 
 SELECT 'a part without statistics is read, the others are answered from statistics';
 INSERT INTO t_null (i16, d64) SETTINGS materialize_statistics_on_insert = 0 VALUES (-5, 5), (NULL, NULL);

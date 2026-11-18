@@ -622,6 +622,10 @@ struct StatisticsAggregate
     /// its non-NULL rows, and needs the NULL count that `basic` statistics record.
     bool is_nullable = false;
 
+    /// The aggregate is `sum(not(column.null))`, the form `optimize_functions_to_subcolumns` gives `count(column)`
+    /// over a `Nullable` column: a `Count` whose state is that of `sum`, and takes the count as the sum.
+    bool counts_null_map = false;
+
     [[nodiscard]] bool isSum() const { return kind == Kind::Sum || kind == Kind::SumAndCount; }
 };
 
@@ -738,13 +742,39 @@ static VectorWithMemoryTracking<StatisticsAggregate> getStatisticsAggregates(
         while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
             node = node->children.front();
 
-        if (node->type != ActionsDAG::ActionType::INPUT)
-            return {};
+        /// `optimize_functions_to_subcolumns` rewrites `count(column)` over a `Nullable` column into
+        /// `sum(not(column.null))`, which reads the null map subcolumn: the count of the non-NULL rows.
+        const ColumnDescription * column = nullptr;
+        bool counts_null_map = false;
+        if (kind == StatisticsAggregate::Kind::Sum && node->type == ActionsDAG::ActionType::FUNCTION
+            && node->function_base && node->function_base->getName() == "not" && node->children.size() == 1)
+        {
+            const auto * null_map = node->children.front();
+            while (null_map->type == ActionsDAG::ActionType::ALIAS && !null_map->children.empty())
+                null_map = null_map->children.front();
 
-        const auto * column = columns.tryGet(node->result_name);
-        if (!column || !column->type->equals(*node->result_type)
-            || !column->type->equals(*aggregate.function->getArgumentTypes().front()))
-            return {};
+            static constexpr std::string_view null_map_suffix = ".null";
+            if (null_map->type == ActionsDAG::ActionType::INPUT && WhichDataType(null_map->result_type).isUInt8()
+                && null_map->result_name.ends_with(null_map_suffix) && !columns.has(null_map->result_name))
+            {
+                column = columns.tryGet(null_map->result_name.substr(0, null_map->result_name.size() - null_map_suffix.size()));
+                if (!column || !column->type->isNullable())
+                    return {};
+                kind = StatisticsAggregate::Kind::Count;
+                counts_null_map = true;
+            }
+        }
+
+        if (!counts_null_map)
+        {
+            if (node->type != ActionsDAG::ActionType::INPUT)
+                return {};
+
+            column = columns.tryGet(node->result_name);
+            if (!column || !column->type->equals(*node->result_type)
+                || !column->type->equals(*aggregate.function->getArgumentTypes().front()))
+                return {};
+        }
 
         if (column->type->lowCardinality())
             return {};
@@ -782,10 +812,11 @@ static VectorWithMemoryTracking<StatisticsAggregate> getStatisticsAggregates(
 
         result.push_back({
             .kind = kind,
-            .column_name = node->result_name,
+            .column_name = column->name,
             .expected_field_type = expected_field_type,
             .aggregate = &aggregate,
-            .is_nullable = is_nullable});
+            .is_nullable = is_nullable,
+            .counts_null_map = counts_null_map});
     }
 
     return result;
@@ -1254,9 +1285,12 @@ static Block makeBlockFromStatistics(
         {
             /// Unlike for min/max, `add` cannot build the state from the value: the sum may not fit in the argument
             /// type (the sum of an `Int16` column is an `Int64`), and the state of `avg` and `sumCount` also holds the
-            /// number of rows. `count` takes only the rows.
+            /// number of rows. `count` takes only the rows, and as the sum when its state is that of `sum`.
             if (folded_non_null_rows[i] != 0)
-                function->setSumAndCount(place, folded_values[i], folded_non_null_rows[i]);
+                function->setSumAndCount(
+                    place,
+                    stats_aggregate.counts_null_map ? Field(folded_non_null_rows[i]) : folded_values[i],
+                    folded_non_null_rows[i]);
         }
         else if (folded_values[i].isNull())
         {
