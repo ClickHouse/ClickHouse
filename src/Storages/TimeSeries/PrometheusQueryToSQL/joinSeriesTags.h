@@ -15,6 +15,7 @@ struct ConverterContext;
 ///
 /// `per_id` is a new subquery made of `per_id_query`, `series` is the subquery from `SQLQueryPiece::series`.
 /// `series` can contain an identifier in multiple rows (one per unmerged part of the tags table), ANY joins one of them.
+/// `series` can also contain identifiers without samples in the range, INNER drops them.
 ASTPtr joinSeriesTags(ASTPtr && per_id_query, const String & series, const Strings & columns, ConverterContext & context);
 
 }

@@ -112,7 +112,8 @@ struct SQLQueryPiece
     ASTPtr select_query;
 
     /// `series` is used only if `store_method` is SAMPLES or TIMESTAMP_AND_VALUE: the name of a subquery outputting two columns
-    /// `id` and `tags` with the tags of the time series of `select_query` (an `id` can appear in multiple rows).
+    /// `id` and `tags` with the tags of the time series of `select_query`; it can also contain time series without samples in the range
+    /// and an `id` in multiple rows.
     String series;
 };
 

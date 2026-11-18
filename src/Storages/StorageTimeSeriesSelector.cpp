@@ -1364,7 +1364,7 @@ void StorageTimeSeriesSelector::readImpl(
 
     if (config.return_columns == Configuration::ReturnColumns::Tags)
     {
-        /// The tags of the time series whose samples the other modes read:
+        /// The tags of the time series in the id set the other modes read the samples of (filtered by stored time ranges, not by samples):
         /// SELECT _CAST(series_id, '<id type>') AS id, series_tags AS tags FROM (<the query made by makeSelectIDsQuery>)
         ASTPtr select_ids_query = makeSelectIDsQuery(
             *time_series_storage, time_series_storage->getTargetTableID(ViewTarget::Tags, context), *time_series_settings,

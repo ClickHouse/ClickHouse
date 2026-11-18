@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
--- `timeSeriesSelector(..., 'tags')` returns the tags of the time series whose samples the other values of `return_columns` read.
+-- `timeSeriesSelector(..., 'tags')` returns the tags of the time series matched by the selector and by their stored time ranges.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -32,10 +32,17 @@ SELECT tags FROM timeSeriesSelector(ts_buckets, 'm', 0, 10000, 'tags') ORDER BY 
 SELECT tags FROM timeSeriesSelector(ts_rows, 'm', 0, 10000, 'tags') ORDER BY tags;
 SELECT tags FROM timeSeriesSelector(ts_buckets, '{job="a"}', 0, 10000, 'tags') ORDER BY tags;
 
-SELECT '-- the time series without samples in the time range are not returned';
+SELECT '-- the time series whose stored time range does not intersect the range are not returned';
 SELECT tags FROM timeSeriesSelector(ts_buckets, 'm', 0, 5000, 'tags') ORDER BY tags;
 SELECT tags FROM timeSeriesSelector(ts_buckets, 'm', 5000, 10000, 'tags') ORDER BY tags;
 SELECT count() FROM timeSeriesSelector(ts_buckets, 'm', 20000, 30000, 'tags');
+
+SELECT '-- a time series with samples before and after the range but not in it is returned, it has no samples to join';
+SELECT tags FROM timeSeriesSelector(ts_buckets, 'm', 2000, 3000, 'tags') ORDER BY tags;
+SELECT count() FROM timeSeriesSelector(ts_buckets, 'm', 2000, 3000, 'samples');
+SELECT count()
+FROM (SELECT id FROM timeSeriesSelector(ts_buckets, 'm', 2000, 3000, 'samples') GROUP BY id) AS s
+ANY INNER JOIN timeSeriesSelector(ts_buckets, 'm', 2000, 3000, 'tags') AS t ON s.id = t.id;
 
 SELECT '-- the identifiers are the identifiers of the samples';
 SELECT (SELECT groupArraySorted(10)(id) FROM timeSeriesSelector(ts_buckets, 'm', 0, 5000, 'tags'))

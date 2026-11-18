@@ -12,10 +12,14 @@ tags	Array(Tuple(String, String))
 [('__name__','m'),('job','b')]
 [('__name__','m'),('env','prod'),('job','a')]
 [('__name__','other'),('job','a')]
--- the time series without samples in the time range are not returned
+-- the time series whose stored time range does not intersect the range are not returned
 [('__name__','m'),('env','prod'),('job','a')]
 [('__name__','m'),('job','b')]
 [('__name__','m'),('env','dev')]
+0
+-- a time series with samples before and after the range but not in it is returned, it has no samples to join
+[('__name__','m'),('env','prod'),('job','a')]
+0
 0
 -- the identifiers are the identifiers of the samples
 1

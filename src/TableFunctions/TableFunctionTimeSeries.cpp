@@ -241,8 +241,9 @@ in the columns chosen by the argument `return_columns`:
   Use the aggregate function `timeSeriesGroupArray` to merge the rows of a time series.
 - `'timestamp_and_value'` - the columns `timestamp` and `value` with one sample per row.
 - `'tags'` - the column `tags` with the tags of a time series (including `__name__`) as an array of tuples `(tag_name, tag_value)`
-  sorted by tag name, without samples. The function returns the same time series as with the other values of `return_columns`
-  for the same arguments, a time series can be returned in multiple rows if its identifier is stored in multiple unmerged parts.
+  sorted by tag name, without samples. The time series are filtered by the selector and by the time range stored for each of them
+  (if the table stores time ranges), not by their samples, so a time series without samples between `min_time` and `max_time` can be
+  returned too. A time series can be returned in multiple rows if its identifier is stored in multiple unmerged parts.
 
 A `TimeSeries` table of version 11 or later stores buckets of samples as arrays, the tables of earlier versions store one sample per row.
 The samples are converted when the requested columns differ from the layout of the table, which costs some time; the PromQL functions
