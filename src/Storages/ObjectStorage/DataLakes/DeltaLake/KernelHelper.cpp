@@ -94,7 +94,7 @@ public:
     ~BuilderGuard() { if (builder) ffi::free_engine_builder(builder); }
     BuilderGuard(const BuilderGuard &) = delete;
     BuilderGuard & operator=(const BuilderGuard &) = delete;
-    ffi::EngineBuilder * get() const { return builder; }
+    [[nodiscard]] ffi::EngineBuilder * get() const { return builder; }
     ffi::EngineBuilder * release() { auto * b = builder; builder = nullptr; return b; }
 private:
     ffi::EngineBuilder * builder = nullptr;
