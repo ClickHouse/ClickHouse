@@ -2,11 +2,13 @@
 
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/IDataType.h>
-#include <Formats/FormatSettings.h>
 
 
 namespace DB
 {
+
+class ConstantValue;
+struct FormatSettings;
 
 /** Column-native counterpart of `convertFieldToType` (see `convertFieldToType.h` for the exact
   * semantics — `strict` / `convert_inexact_floats`, the "not representable -> Null" contract, etc.).
@@ -47,18 +49,20 @@ ColumnPtr convertColumnToTypeOrNull(
     const IColumn & value,
     const DataTypePtr & from,
     const DataTypePtr & to,
-    const FormatSettings & format_settings = {},
+    const FormatSettings & format_settings,
     bool strict = false,
     bool convert_inexact_floats = false);
+ColumnPtr convertColumnToTypeOrNull(const IColumn & value, const DataTypePtr & from, const DataTypePtr & to);
 
 /// Same, but also returns `ColumnPtr{}` if conversion throws (twin of `tryConvertFieldToType`).
 ColumnPtr tryConvertColumnToTypeOrNull(
     const IColumn & value,
     const DataTypePtr & from,
     const DataTypePtr & to,
-    const FormatSettings & format_settings = {},
+    const FormatSettings & format_settings,
     bool strict = false,
     bool convert_inexact_floats = false);
+ColumnPtr tryConvertColumnToTypeOrNull(const IColumn & value, const DataTypePtr & from, const DataTypePtr & to);
 
 /// Twin of `convertFieldToTypeOrThrow`: throws `TYPE_MISMATCH` for a NULL value that `to` cannot hold,
 /// and `ARGUMENT_OUT_OF_BOUND` for a non-NULL value that is not representable in `to`.
@@ -66,7 +70,13 @@ ColumnPtr convertColumnToTypeOrThrow(
     const IColumn & value,
     const DataTypePtr & from,
     const DataTypePtr & to,
-    const FormatSettings & format_settings = {},
+    const FormatSettings & format_settings,
     bool convert_inexact_floats = false);
+ColumnPtr convertColumnToTypeOrThrow(const IColumn & value, const DataTypePtr & from, const DataTypePtr & to);
+
+/// For a non-`NULL` `Variant` or `Dynamic` constant, returns the value of its active alternative with that alternative's
+/// type (`CAST(1000 AS Dynamic)` -> `1000` of type `UInt16`); any other constant, or `NULL`, is returned unchanged. Used by
+/// consumers that dispatch on the type of a constant, since the container type alone does not say what the value is.
+ConstantValue resolveActiveAlternative(const ConstantValue & value);
 
 }

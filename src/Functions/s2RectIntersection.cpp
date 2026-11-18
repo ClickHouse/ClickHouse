@@ -37,25 +37,25 @@ public:
         return std::make_shared<FunctionS2RectIntersection>();
     }
 
-    std::string getName() const override
+    [[nodiscard]] std::string getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 4; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 4; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     /// `0` is not a valid S2 cell id.
-    bool canBeExecutedOnDefaultArguments() const override { return false; }
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(UInt64, UInt64, UInt64, UInt64) -> Tuple(UInt64, UInt64)";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)
