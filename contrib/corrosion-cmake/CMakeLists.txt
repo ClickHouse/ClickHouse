@@ -240,8 +240,6 @@ list(APPEND RUSTFLAGS "-C" "symbol-mangling-version=v0")
 list(APPEND RUSTFLAGS
     # delta-kernel-rs
     "-Adead_code"
-    # skim
-    "-Amismatched_lifetime_syntaxes"
     # wasmtime
     "-Aunused_parens -Aunused_imports"
 )
