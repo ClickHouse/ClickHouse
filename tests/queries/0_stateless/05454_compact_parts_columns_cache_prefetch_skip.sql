@@ -22,6 +22,9 @@ INSERT INTO t_compact_cc_prefetch SELECT number, number FROM numbers(32768);
 
 SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_compact_cc_prefetch' AND active;
 
+-- Read the data: do not answer `sum` from the column statistics of the part.
+SET use_statistics_for_sum_avg_aggregation = 0;
+
 SYSTEM DROP COLUMNS CACHE;
 
 SELECT sum(b) FROM t_compact_cc_prefetch SETTINGS

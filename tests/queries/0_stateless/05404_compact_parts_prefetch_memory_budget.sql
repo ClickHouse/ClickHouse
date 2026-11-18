@@ -18,6 +18,9 @@ SET allow_prefetched_read_pool_for_remote_filesystem = 1, remote_filesystem_read
     merge_tree_compact_parts_min_granules_to_multibuffer_read = 1, max_threads = 2, enable_parallel_replicas = 0,
     prefetch_buffer_size = 1048576;
 
+-- Read the data: do not answer `sum` from the column statistics of the part.
+SET use_statistics_for_sum_avg_aggregation = 0;
+
 SELECT sum(c2), sum(c3) FROM t_compact_prefetch_budget SETTINGS filesystem_prefetch_max_memory_usage = 1, log_comment = '05404_small_budget';
 SELECT sum(c2), sum(c3) FROM t_compact_prefetch_budget SETTINGS filesystem_prefetch_max_memory_usage = '1Gi', log_comment = '05404_large_budget';
 
