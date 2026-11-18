@@ -434,6 +434,7 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int INCORRECT_DATA;
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -5565,6 +5566,11 @@ void ReadFromMergeTree::readDistributedReadTaskBuckets(const BuildQueryPipelineS
     DB::FormatSettings format_settings;
     size_t num_lanes = 0;
     readVarUInt(num_lanes, buf);
+    /// The coordinator sends one lane per bucket of the task, an empty bucket included, and a read
+    /// without FINAL has one bucket per task.
+    if (num_lanes == 0 || (!isQueryWithFinal() && num_lanes != 1))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Distributed read: the task has {} lanes, expected {}", num_lanes, isQueryWithFinal() ? "at least 1" : "1");
     distributed_read_task_buckets.clear();
     distributed_read_task_buckets.reserve(num_lanes);
     for (size_t lane = 0; lane < num_lanes; ++lane)
@@ -5576,6 +5582,10 @@ void ReadFromMergeTree::readDistributedReadTaskBuckets(const BuildQueryPipelineS
         {
             size_t border_arity = 0;
             readVarUInt(border_arity, buf);
+            if (border_arity > primary_key.data_types.size())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Distributed read: the layer borders have {} columns, the primary key has {}",
+                    border_arity, primary_key.data_types.size());
             size_t num_borders = 0;
             readVarUInt(num_borders, buf);
             bucket.borders.assign(num_borders, VectorWithMemoryTracking<Field>(border_arity));
@@ -5586,6 +5596,25 @@ void ReadFromMergeTree::readDistributedReadTaskBuckets(const BuildQueryPipelineS
         }
         distributed_read_task_buckets.push_back(std::move(bucket));
     }
+
+    /// Every range is installed as it is, so it must lie within its part. A part this replica does not have
+    /// is reported where the marks are matched to the local parts.
+    std::unordered_map<String, size_t> marks_count_by_part;
+    if (prepared_parts)
+        for (const auto & part : *prepared_parts)
+            marks_count_by_part.emplace(part.data_part->info.getPartNameV1(), part.data_part->index_granularity->getMarksCountWithoutFinal());
+    for (const auto & bucket : distributed_read_task_buckets)
+        for (const auto & part_desc : bucket.marks)
+        {
+            auto it = marks_count_by_part.find(part_desc.info.getPartNameV1());
+            if (it == marks_count_by_part.end())
+                continue;
+            for (const auto & range : part_desc.ranges)
+                if (range.begin >= range.end || range.end > it->second)
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Distributed read: mark range [{}, {}) of part {} is not within its {} marks",
+                        range.begin, range.end, it->first, it->second);
+        }
 }
 
 bool ReadFromMergeTree::pinPartsToReceivedMarks()
