@@ -602,6 +602,29 @@ TEST(GCSHeaderTranslation, CreateIfAbsentWithHMACReportsALostRace)
     EXPECT_EQ(server.getRequests().size(), 2u);
 }
 
+/// The first attempt is stored but answered with an error, the retry fails the condition, and the id cannot be checked.
+/// The failed condition can be the answer to the stored attempt, so the outcome of the write is unknown.
+TEST(GCSHeaderTranslation, CreateIfAbsentWithHMACAfterAStoredAttemptIsUnknownWithoutProof)
+{
+    ScriptedGCSServer server([](size_t number, const Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+    {
+        if (number == 0)
+            respond(response, Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
+        else if (request.getMethod() == "PUT")
+            respond(response, Poco::Net::HTTPResponse::HTTP_PRECONDITION_FAILED, PRECONDITION_FAILED_BODY);
+        else
+            respond(response, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+    });
+    DB::RemoteHostFilter remote_host_filter;
+    auto client = makeClientTalkingToMockGCS(server.getPort(), remote_host_filter, {}, "GOOG1EXAMPLE", "secret", /* max_retries = */ 2);
+    ASSERT_TRUE(client);
+
+    auto request = makeCreateIfAbsentRequest("this-write");
+    const auto outcome = client->PutObject(request);
+    ASSERT_FALSE(outcome.IsSuccess());
+    EXPECT_EQ(request.getAttemptsRecord().outcome(), DB::WriteOutcome::Unknown);
+}
+
 /// GCS gets a server-side copy as `x-goog-copy-source` and answers it only after copying the data.
 TEST(GCSHeaderTranslation, CopyObjectIsNotRetriedAfterTheAdaptiveTimeout)
 {

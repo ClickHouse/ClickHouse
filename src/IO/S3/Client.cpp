@@ -1876,6 +1876,8 @@ Model::PutObjectOutcome Client::putObjectWithGOOG4Signature(const Model::PutObje
             error = BuildAWSError(response);
         }
 
+        /// This loop bypasses `RetryStrategy::RequestBookkeeping`, so it records its attempts itself.
+        recordFailedAttempt(error);
         if (!retry_strategy->ShouldRetry(error, retries))
             return Aws::S3::S3Error(error);
 
