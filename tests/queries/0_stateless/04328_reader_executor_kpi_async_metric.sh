@@ -57,6 +57,9 @@ do
     SET use_reader_executor = 1;
     SET remote_filesystem_read_method = 'read';
     SET enable_filesystem_cache = 0;
+    -- Every attempt rereads the same table, so caches that serve a reread without the executor stay off.
+    SET use_uncompressed_cache = 0;
+    SET use_columns_cache = 0;
 
     -- Baseline tick: establishes the previous-counter snapshot (and clears first_run),
     -- so the next update measures the delta produced by the read below.

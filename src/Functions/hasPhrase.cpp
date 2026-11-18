@@ -211,26 +211,6 @@ FunctionHasPhraseOverloadResolver::FunctionHasPhraseOverloadResolver(ContextPtr)
 {
 }
 
-DataTypePtr FunctionHasPhraseOverloadResolver::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
-{
-    FunctionArgumentDescriptors mandatory_args{
-        {"input",
-         static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedStringOrArrayOfStringOrFixedString),
-         nullptr,
-         "String, FixedString, Array(String) or Array(FixedString)"},
-        {"phrase",
-         static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrArrayOfStringType),
-         isColumnConst,
-         "const String or const Array(String)"}};
-
-    FunctionArgumentDescriptors optional_args{
-        {"tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}};
-
-    validateFunctionArguments(name, arguments, mandatory_args, optional_args);
-
-    return std::make_shared<DataTypeNumber<UInt8>>();
-}
-
 FunctionBasePtr
 FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const
 {
@@ -359,8 +339,7 @@ including duplicates. Empty phrase elements are ignored, because no tokenizer pr
 
 <Note>
 When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasPhrase` applies it to both `input` and `phrase` before tokenization.
-The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
-This inconsistency is tolerated to improve the usability of full-text search.
+The preprocessor is part of the index definition, so it is applied wherever the function is evaluated: in the `WHERE`/`PREWHERE` filter, in the `SELECT` list, and independently of whether the index is read (e.g. `SETTINGS use_skip_indexes = 0`).
 </Note>
 
 Unlike [`hasToken`](#hasToken), [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens), `hasPhrase` requires the tokens to appear in the same order

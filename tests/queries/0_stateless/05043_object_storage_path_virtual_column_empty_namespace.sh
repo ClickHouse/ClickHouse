@@ -16,7 +16,7 @@ mkdir -p "${BASE_DIR}/abs"
 CLIENT="${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1"
 
 $CLIENT -q "
-CREATE TABLE ice (id UInt64) ENGINE = IcebergLocal('${BASE_DIR}/abs/');
+CREATE TABLE ice (id Int64) ENGINE = IcebergLocal('${BASE_DIR}/abs/');
 INSERT INTO ice SELECT number FROM numbers(10);
 "
 
@@ -64,7 +64,7 @@ mkdir -p "${BASE_DIR}/rel"
 (
     cd "${BASE_DIR}" || exit 1
     ${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg=1 -q "
-    CREATE TABLE ice_rel (id UInt64) ENGINE = IcebergLocal('rel/');
+    CREATE TABLE ice_rel (id Int64) ENGINE = IcebergLocal('rel/');
     INSERT INTO ice_rel SELECT number FROM numbers(5);
     SELECT DISTINCT startsWith(_path, '/') FROM ice_rel;
     "

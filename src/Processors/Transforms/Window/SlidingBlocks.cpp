@@ -1,23 +1,15 @@
 #include <Processors/Transforms/Window/SlidingBlocks.h>
 
-#include <base/arithmeticOverflow.h>
-
 namespace DB
 {
 
-SlidingBlock & SlidingBlocks::add(Chunk chunk, Columns materialized_columns, SlidingIndex index)
+void SlidingBlocks::add(Chunk chunk, Columns materialized_columns, SlidingIndex index)
 {
     int64_t rows_count = chunk.getNumRows();
     Columns input_columns = chunk.detachColumns();
 
-    return blocks.emplace_back(SlidingBlock{
-        .input_columns = std::move(input_columns),
-        .materialized_columns = std::move(materialized_columns),
-        .rows_count = rows_count,
-        .block_number = next_block_number++,
-        .index = std::move(index),
-        .result_columns = {},
-    });
+    blocks.emplace_back(std::move(input_columns), std::move(materialized_columns), rows_count, next_block_number++, end_position, end_position + rows_count, std::move(index));
+    end_position += rows_count;
 }
 
 void SlidingBlocks::pop()
@@ -31,6 +23,11 @@ const SlidingBlock & SlidingBlocks::blockAt(int64_t block_number) const
     chassert(block_number >= first_block_number);
     chassert(block_number < next_block_number);
     return blocks[block_number - first_block_number];
+}
+
+const SlidingBlock & SlidingBlocks::front() const
+{
+    return blocks.front();
 }
 
 RowNumber SlidingBlocks::begin() const
@@ -59,14 +56,11 @@ RowNumber SlidingBlocks::prev(RowNumber row) const
         return {row.block, row.row - 1};
 }
 
-std::optional<RowNumber> SlidingBlocks::move(RowNumber row, int64_t offset) const
+RowNumber SlidingBlocks::move(RowNumber row, int64_t offset) const
 {
     /// The target row counted from the start of the row's block
-    int64_t target = 0;
-    if (common::addOverflow(row.row, offset, target))
-        return std::nullopt;
-
-    while (target < 0 && row.block > begin().block)
+    int64_t target = row.row + offset;
+    while (target < 0)
     {
         --row.block;
         target += blockAt(row.block).rows_count;
@@ -78,13 +72,16 @@ std::optional<RowNumber> SlidingBlocks::move(RowNumber row, int64_t offset) cons
         ++row.block;
     }
 
-    if (target < 0)
-        return std::nullopt;
-
-    if (target > 0 && row.block == end().block)
-        return std::nullopt;
-
+    chassert(row.block < end().block || target == 0);
     return RowNumber{row.block, target};
+}
+
+int64_t SlidingBlocks::positionOf(RowNumber row) const
+{
+    if (row == end())
+        return end_position;
+
+    return blockAt(row.block).begin_position + row.row;
 }
 
 }

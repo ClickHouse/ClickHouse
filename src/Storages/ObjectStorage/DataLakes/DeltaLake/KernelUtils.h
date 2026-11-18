@@ -40,7 +40,7 @@ namespace KernelUtils
 {
     /// Conversions functions to convert DeltaKernel string
     /// to std::string and vica versa.
-    ffi::KernelStringSlice toDeltaString(const std::string & string);
+    ffi::KernelStringSlice toDeltaString(std::string_view string);
     std::string fromDeltaString(ffi::KernelStringSlice slice);
 
     /// Allocation helpers, passed to DeltaKernel.
@@ -70,7 +70,7 @@ namespace KernelUtils
         }
         throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR,
-            "Invalid error ExternResult tag found!");
+            "Invalid error ExternResult tag found");
     }
 };
 

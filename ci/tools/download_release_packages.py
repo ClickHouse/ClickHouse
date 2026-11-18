@@ -8,6 +8,8 @@ from get_previous_release_tag import (
     ReleaseInfo,
     get_previous_release,
     get_release_by_tag,
+    missing_required_packages,
+    required_package_prefixes,
 )
 
 PACKAGES_DIR = Path("previous_release_package_folder")
@@ -18,16 +20,8 @@ PACKAGES_DIR = Path("previous_release_package_folder")
 # backoff is capped, so this extends the total time window rather than the sleep).
 RELEASE_PACKAGE_DOWNLOAD_RETRIES = 10
 
-# Packages that the upgrade check actually installs (see `install_packages` in
-# `tests/docker_scripts/stress_tests.lib`). Only these are essential; a hiccup
-# while downloading any of the other assets (e.g. `clickhouse-keeper`) must not
-# fail the job.
-REQUIRED_PACKAGE_PREFIXES = (
-    "clickhouse-common-static_",
-    "clickhouse-common-static-dbg_",
-    "clickhouse-server_",
-    "clickhouse-client_",
-)
+# The ClickHouse package repository serves the same .deb files as the GitHub release.
+PACKAGE_REPOSITORY_URL = "https://packages.clickhouse.com/deb/pool/main/c/clickhouse"
 
 
 def download_packages(
@@ -37,24 +31,35 @@ def download_packages(
 
     logging.info("Will download %s", release)
 
-    # The debug-symbols package is only downloaded (and installed) in debug mode,
-    # so it is only required there.
-    required_prefixes = tuple(
-        prefix for prefix in REQUIRED_PACKAGE_PREFIXES if debug or "-dbg_" not in prefix
-    )
+    required_prefixes = required_package_prefixes(debug)
 
     failed = {}
+    # Once GitHub fails a package, try the package repository first for the rest.
+    github_failed = False
     for pkg, url in release.assets.items():
         if not pkg.endswith("_amd64.deb") or (not debug and "-dbg_" in pkg):
             continue
         pkg_name = dest_path / pkg
-        try:
-            download_build_with_progress(
-                url, pkg_name, retries=RELEASE_PACKAGE_DOWNLOAD_RETRIES
-            )
-        except DownloadException as e:
-            failed[pkg] = str(e)
-            logging.error("Failed to download %s: %s", pkg, e)
+        sources = [url, f"{PACKAGE_REPOSITORY_URL}/{pkg}"]
+        if github_failed:
+            sources.reverse()
+        reasons = []
+        for source in sources:
+            try:
+                download_build_with_progress(
+                    source, pkg_name, retries=RELEASE_PACKAGE_DOWNLOAD_RETRIES
+                )
+                break
+            except DownloadException as e:
+                reasons.append(str(e))
+                github_failed = github_failed or source == url
+                logging.warning("Failed to download %s from %s: %s", pkg, source, e)
+        else:
+            failed[pkg] = "; ".join(reasons)
+            logging.error("Failed to download %s: %s", pkg, failed[pkg])
+            # The job cannot succeed without it, so do not spend time on the rest.
+            if pkg.startswith(required_prefixes):
+                break
 
     # A required package can be unusable for two reasons, and both must fail the
     # job loudly with a clear, attributable reason instead of letting a later
@@ -68,10 +73,8 @@ def download_packages(
         for pkg, reason in failed.items()
         if pkg.startswith(required_prefixes)
     }
-    available = [pkg for pkg in release.assets if pkg.endswith("_amd64.deb")]
-    for prefix in required_prefixes:
-        if not any(pkg.startswith(prefix) for pkg in available):
-            errors[prefix] = "not found in the release assets"
+    for prefix in missing_required_packages(release.assets, debug):
+        errors[prefix] = "not found in the release assets"
 
     if errors:
         details = "; ".join(f"{pkg}: {reason}" for pkg, reason in errors.items())

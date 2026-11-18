@@ -1,0 +1,384 @@
+---
+slug: /cloud/managed-postgres/guides/prisma
+sidebarTitle: 'Prisma'
+title: 'Utiliser Prisma avec ClickHouse Managed Postgres'
+description: 'Connectez une application TypeScript à ClickHouse Managed Postgres avec Prisma ORM, exécutez des migrations avec Prisma Migrate et interrogez la base via PgBouncer avec un chiffrement TLS vérifié'
+keywords: ['managed postgres', 'prisma', 'prisma orm', 'prisma migrate', 'typescript', 'node.js', 'orm', 'pgbouncer', 'tls']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-prisma-beta" />
+
+[Prisma ORM](https://www.prisma.io/orm) est un ORM TypeScript qui propose un schéma déclaratif, un outil de migration (Prisma Migrate) et un client généré à typage sûr. Dans ce guide, vous allez connecter Prisma à ClickHouse Managed Postgres, créer une table au moyen d&#39;une migration, puis l&#39;interroger depuis un script et un petit endpoint HTTP.
+
+Ce guide utilise Prisma ORM 7 (testé avec la version `7.10.0`), la version stable actuelle.
+
+## Prérequis {#prerequisites}
+
+* Node.js 20.19, 22.12, ou 24 et versions ultérieures
+* Un service ClickHouse Managed Postgres
+* [`psql`](https://www.postgresql.org/download/), pour créer la base de données. Vous pouvez également exécuter le statement `CREATE DATABASE` dans la [console SQL](/fr/integrations/connectors/sql-clients/sql-console).
+* Sous macOS : [Docker](https://docs.docker.com/get-started/get-docker/), pour exécuter Prisma Migrate (voir [Exécuter la migration](#migrate))
+
+## Créer un service ClickHouse Managed Postgres {#create-service}
+
+Dans la console ClickHouse Cloud, cliquez sur **New service** et sélectionnez **Postgres**. L&#39;instance est prête en quelques minutes. Pour une présentation pas à pas, consultez le [guide de démarrage rapide](/fr/products/managed-postgres/quickstart).
+
+## Obtenir les informations de connexion {#connection-details}
+
+Cliquez sur **Connect** dans la barre latérale gauche de votre service. La fenêtre modale affiche votre nom d&#39;utilisateur, votre mot de passe, le serveur et le port, ainsi que des chaînes de connexion prêtes à l&#39;emploi.
+
+Ce guide utilise deux connexions, car Prisma comporte deux composants qui communiquent avec la base de données :
+
+* **Votre application (Prisma Client)** se connecte **via PgBouncer** sur le port `6432`. PgBouncer mutualise les connexions, ce qui permet à de nombreux processus applicatifs ou instances serverless de partager un petit nombre de backends Postgres.
+* **La CLI Prisma (Prisma Migrate)** se connecte **directement** sur le port `5432`. Pendant son exécution, Prisma Migrate pose un verrou consultatif (advisory lock) au niveau de la session. En mode pool de connexions par transaction de PgBouncer, ce verrou peut rester actif sur un backend mutualisé qui sert ensuite d&#39;autres clients, et les migrations suivantes se retrouvent alors bloquées.
+
+En haut de la fenêtre modale, basculez entre **Directly** et **via PgBouncer** pour afficher le port correspondant. Le serveur et les identifiants sont identiques pour les deux connexions ; seul le port change.
+
+Lorsque **via PgBouncer** est sélectionné, cliquez sur **Download CA certificate**. Lorsque **Directly** est sélectionné, activez d&#39;abord **Use SSL** pour faire apparaître le bouton. Le fichier est nommé `<service-name>-ca-certificate.pem`. Vous le trouverez également sous **Settings → CA Certificate**. Ce certificat est propre à votre instance ; il vous permet de vous connecter avec `sslmode=verify-full`, qui vérifie que vous communiquez bien avec votre propre serveur.
+
+## Configurer le projet {#setup}
+
+Créez un projet TypeScript et installez la CLI Prisma, Prisma Client, l&#39;adaptateur de driver [node-postgres](https://node-postgres.com/) ainsi que `dotenv` :
+
+```bash
+mkdir hello-prisma
+cd hello-prisma
+npm init -y
+npm pkg set type=module
+npm install typescript tsx @types/node @types/pg --save-dev
+npm install prisma@7 --save-dev
+npm install @prisma/client@7 @prisma/adapter-pg pg dotenv
+```
+
+<Note>
+  Installez explicitement `prisma@7` et `@prisma/client@7`. Au moment de la rédaction de ce guide, le tag npm `latest` de `prisma` pointe vers une version candidate (RC) de Prisma 8, dont la configuration diffère de celle décrite ici.
+</Note>
+
+Créez un fichier `tsconfig.json` :
+
+```json
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "target": "ES2023",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  }
+}
+```
+
+<Tip>
+  **Vous l&#39;intégrez à une application existante ?**
+
+  Ignorez `mkdir`, `npm init` et le fichier `tsconfig.json`. Dans votre projet, exécutez `npm install tsx @types/pg prisma@7 --save-dev` et `npm install @prisma/client@7 @prisma/adapter-pg pg dotenv`, puis passez à l&#39;étape [Initialiser Prisma](#init).
+</Tip>
+
+## Initialiser Prisma {#init}
+
+<Steps>
+  <Step title="Exécuter prisma init">
+    ```bash
+    npx prisma init --datasource-provider postgresql --output ../generated/prisma
+    ```
+
+    Cette commande crée `prisma/schema.prisma` ainsi que le fichier de configuration Prisma `prisma7.config.ts`, ajoute un caractère de substitution pour `DATABASE_URL` dans `.env` et le client généré dans `.gitignore` (en créant ces fichiers si nécessaire), puis ajoute des skills Prisma destinés aux agents de code IA. À partir de la version 7.10, Prisma nomme le fichier de configuration `prisma7.config.ts` afin d&#39;éviter tout conflit avec le format de Prisma 8.
+  </Step>
+
+  <Step title="Ajouter le certificat de CA">
+    Déplacez le certificat de CA que vous avez téléchargé à la racine du projet et renommez-le en `ca-certificate.pem` :
+
+    ```bash
+    mv ~/Downloads/<service-name>-ca-certificate.pem ca-certificate.pem
+    ```
+
+    Les paths relatifs des certificats sont résolus à partir du répertoire depuis lequel vous exécutez les commandes : exécutez donc toutes les commandes de ce guide depuis la racine du projet.
+  </Step>
+</Steps>
+
+## Configurer la connexion {#configure}
+
+<Steps>
+  <Step title="Créer une base de données">
+    Créez une base de données pour l&#39;application. Remplacez `<PASSWORD>` et l&#39;hôte par les valeurs indiquées dans la fenêtre modale **Connect** :
+
+    ```bash
+    psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_prisma;"
+    ```
+
+    ```text
+    CREATE DATABASE
+    ```
+  </Step>
+
+  <Step title="Définir les URL de connexion">
+    Dans `.env`, remplacez le caractère de substitution de `DATABASE_URL` ajouté par `prisma init` par ces deux URL de connexion, qui pointent toutes deux vers la base de données `guide_prisma`. Utilisez le mot de passe indiqué dans la fenêtre modale Connect :
+
+    ```bash
+    # Prisma Client (your app): via PgBouncer, port 6432
+    DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/guide_prisma?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+
+    # Prisma CLI (migrations): direct connection, port 5432
+    DIRECT_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_prisma?sslmode=require&sslaccept=strict&sslcert=ca-certificate.pem"
+    ```
+
+    Les deux URL utilisent des paramètres TLS différents, car elles sont lues par des drivers différents :
+
+    * **`DATABASE_URL`** est lue par node-postgres via `@prisma/adapter-pg`. Elle prend en charge les paramètres standard `sslmode=verify-full&sslrootcert=...`, identiques à ceux affichés dans la fenêtre modale Connect.
+    * **`DIRECT_URL`** est lue par le moteur de schéma de la CLI Prisma, qui utilise ses propres paramètres : `sslcert` indique le path du certificat de CA, et `sslaccept=strict` active la vérification du certificat et du nom d’hôte.
+
+    <Warning>
+      N&#39;utilisez pas `sslmode=verify-full&sslrootcert=...` dans l&#39;URL destinée à la CLI Prisma. Le moteur de schéma ignore `sslrootcert` et, sans `sslaccept=strict`, ne vérifie absolument pas le certificat du serveur : la connexion est alors chiffrée, mais non authentifiée.
+    </Warning>
+  </Step>
+
+  <Step title="Faire pointer la CLI Prisma vers la connexion directe">
+    Remplacez le contenu de `prisma7.config.ts` :
+
+    ```typescript
+    import "dotenv/config";
+    import { defineConfig, env } from "prisma/config";
+
+    export default defineConfig({
+      schema: "prisma/schema.prisma",
+      migrations: {
+        path: "prisma/migrations",
+      },
+      datasource: {
+        url: env("DIRECT_URL"),
+      },
+    });
+    ```
+
+    Dans Prisma 7, l&#39;URL définie dans le fichier de configuration n&#39;est utilisée que par la CLI. Prisma Client obtient sa connexion via l&#39;adaptateur de driver, que vous configurerez dans [Interroger la base de données](#query).
+  </Step>
+</Steps>
+
+## Définir le schéma et exécuter la migration {#migrate}
+
+<Steps>
+  <Step title="Ajouter un modèle">
+    Ajoutez un modèle `Todo` à la fin de `prisma/schema.prisma` :
+
+    ```prisma
+    model Todo {
+      id        Int      @id @default(autoincrement())
+      title     String
+      done      Boolean  @default(false)
+      createdAt DateTime @default(now())
+    }
+    ```
+  </Step>
+
+  <Step title="Exécuter la migration">
+    Sous Linux, exécutez directement Prisma Migrate :
+
+    ```bash
+    npx prisma migrate dev --name init
+    ```
+
+    Sous macOS, exécutez la même commande dans un conteneur Linux :
+
+    ```bash
+    docker run --rm -it -v "$PWD":/app -w /app node:24 npx prisma migrate dev --name init
+    ```
+
+    <Warning>
+      ClickHouse Managed Postgres n&#39;accepte que TLS 1.3. Sous macOS, le moteur de schéma de la CLI Prisma s&#39;appuie sur la bibliothèque TLS du système, qui ne parvient pas à établir la connexion avec ces paramètres. La commande échoue alors avec l&#39;erreur `P1011: Error opening a TLS connection: One or more parameters passed to a function were not valid`, ou avec `bad protocol version` si vous supprimez `sslcert` ([prisma/orm#29600](https://github.com/prisma/orm/issues/29600)). Seules les commandes de la CLI qui se connectent à la base de données, comme `prisma migrate` et `prisma db pull`, sont concernées. Prisma Client n&#39;est pas affecté, car il se connecte via node-postgres. Pour contourner le problème, exécutez la CLI dans un conteneur Linux ou dans votre pipeline d&#39;intégration continue sous Linux.
+    </Warning>
+
+    Prisma crée la migration SQL dans `prisma/migrations/`, puis l&#39;applique :
+
+    ```text
+    Applying migration `20260930165244_init`
+
+    The following migration(s) have been created and applied from new schema changes:
+
+    prisma/migrations/
+      └─ 20260930165244_init/
+        └─ migration.sql
+
+    Your database is now in sync with your schema.
+    ```
+  </Step>
+
+  <Step title="Générer Prisma Client">
+    ```bash
+    npx prisma generate
+    ```
+
+    Le client est généré dans `generated/prisma`. Cette commande ne se connecte pas à la base de données : vous pouvez donc l&#39;exécuter sur n&#39;importe quelle plateforme.
+  </Step>
+</Steps>
+
+## Interroger la base de données {#query}
+
+<Steps>
+  <Step title="Créer le Prisma Client">
+    Créez `lib/prisma.ts`. L&#39;adaptateur `PrismaPg` se connecte via PgBouncer à l&#39;aide de `DATABASE_URL` :
+
+    ```typescript
+    import "dotenv/config";
+    import { PrismaPg } from "@prisma/adapter-pg";
+    import { PrismaClient } from "../generated/prisma/client";
+
+    const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+
+    export const prisma = new PrismaClient({ adapter });
+    ```
+
+    <Tip>
+      **Aucun paramètre PgBouncer requis**
+
+      `@prisma/adapter-pg` envoie chaque requête sous forme de prepared statement anonyme et n&#39;exécute jamais `DEALLOCATE`, ce qui le rend compatible avec le mode de pool de connexions par transaction de PgBouncer. Il gère sans erreur des centaines de requêtes distinctes exécutées simultanément sur les backends du pool. Le paramètre d’URL `pgbouncer=true` des anciennes versions de Prisma est inutile et n&#39;a aucun effet avec l&#39;adaptateur de driver.
+    </Tip>
+  </Step>
+
+  <Step title="Exécuter des requêtes CRUD">
+    Créez `script.ts` :
+
+    ```typescript
+    import { prisma } from "./lib/prisma";
+
+    async function main() {
+      // Création
+      const todo = await prisma.todo.create({
+        data: { title: "Connect Prisma to ClickHouse Managed Postgres" },
+      });
+      console.log("Created:", todo);
+
+      // Lecture
+      const open = await prisma.todo.findMany({ where: { done: false } });
+      console.log("Open todos:", open.length);
+
+      // Mise à jour
+      const updated = await prisma.todo.update({
+        where: { id: todo.id },
+        data: { done: true },
+      });
+      console.log("Updated:", updated);
+
+      // Suppression
+      await prisma.todo.delete({ where: { id: todo.id } });
+      console.log("Deleted todo", todo.id);
+    }
+
+    main().finally(() => prisma.$disconnect());
+    ```
+
+    Exécutez-le :
+
+    ```bash
+    npx tsx script.ts
+    ```
+
+    ```text
+    Created: {
+      id: 1,
+      title: 'Connect Prisma to ClickHouse Managed Postgres',
+      done: false,
+      createdAt: 2026-09-30T16:52:57.116Z
+    }
+    Open todos: 1
+    Updated: {
+      id: 1,
+      title: 'Connect Prisma to ClickHouse Managed Postgres',
+      done: true,
+      createdAt: 2026-09-30T16:52:57.116Z
+    }
+    Deleted todo 1
+    ```
+  </Step>
+
+  <Step title="Exposer les données via HTTP">
+    Créez `server.ts`, un serveur HTTP minimal qui crée des todos via `POST /todos` et les renvoie pour toute requête `GET` :
+
+    ```typescript
+    import { createServer } from "node:http";
+    import { prisma } from "./lib/prisma";
+
+    const port = Number(process.env.PORT ?? 3000);
+
+    createServer(async (req, res) => {
+      if (req.method === "POST" && req.url === "/todos") {
+        let body = "";
+        for await (const chunk of req) body += chunk;
+        const todo = await prisma.todo.create({ data: { title: JSON.parse(body).title } });
+        res.writeHead(201, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(todo));
+        return;
+      }
+
+      const todos = await prisma.todo.findMany({ orderBy: { id: "asc" } });
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(todos, null, 2));
+    }).listen(port, () => console.log(`Listening on http://localhost:${port}`));
+    ```
+
+    Démarrez le serveur :
+
+    ```bash
+    npx tsx server.ts
+    ```
+
+    Dans un deuxième terminal, ajoutez deux todos :
+
+    ```bash
+    curl -X POST localhost:3000/todos -H "Content-Type: application/json" -d '{"title": "Try Prisma with ClickHouse Managed Postgres"}'
+    curl -X POST localhost:3000/todos -H "Content-Type: application/json" -d '{"title": "Add a read replica"}'
+    ```
+
+    Ouvrez [http://localhost:3000/todos](http://localhost:3000/todos) dans votre navigateur pour les afficher. La réponse se présente ainsi :
+
+    ```json
+    [
+      {
+        "id": 2,
+        "title": "Try Prisma with ClickHouse Managed Postgres",
+        "done": false,
+        "createdAt": "2026-09-30T16:53:06.098Z"
+      },
+      {
+        "id": 3,
+        "title": "Add a read replica",
+        "done": false,
+        "createdAt": "2026-09-30T16:53:06.184Z"
+      }
+    ]
+    ```
+  </Step>
+</Steps>
+
+## Vérifier dans la console SQL {#verify}
+
+Dans la console ClickHouse Cloud, ouvrez la **console SQL** de votre service, développez votre base de données et le schéma `public`, puis sélectionnez la table `Todo`. Vous y verrez également la table `_prisma_migrations`, dans laquelle Prisma Migrate consigne les migrations appliquées.
+
+La table `Todo` contient les deux lignes que vous avez ajoutées via l&#39;endpoint HTTP :
+
+| id | title                                       | done  | createdAt               |
+| -- | ------------------------------------------- | ----- | ----------------------- |
+| 2  | Try Prisma with ClickHouse Managed Postgres | false | 2026-09-30 16:53:06.098 |
+| 3  | Add a read replica                          | false | 2026-09-30 16:53:06.184 |
+
+## Dépannage {#troubleshooting}
+
+| Erreur                                                                                                                        | Cause et solution                                                                                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `P1011: Error opening a TLS connection: One or more parameters passed to a function were not valid` ou `bad protocol version` | La CLI Prisma s&#39;exécute sous macOS. Exécutez-la dans un conteneur Linux, comme indiqué dans [Exécuter la migration](#migrate).                                |
+| `P1011: ... certificate verify failed`                                                                                        | La CLI Prisma ne parvient pas à vérifier le serveur. Vérifiez que `sslcert` dans `DIRECT_URL` pointe vers le certificat de CA de votre instance.                  |
+| `P1011: ... cert file not found`                                                                                              | Le path indiqué dans `sslcert` au sein de `DIRECT_URL` est incorrect. Exécutez la CLI depuis la racine du projet ou utilisez un path absolu.                  |
+| `unable to verify the first certificate`                                                                                      | Prisma Client ne parvient pas à vérifier le serveur. Vérifiez que `sslrootcert` dans `DATABASE_URL` pointe vers le certificat de CA de votre instance.            |
+| `ENOENT: no such file or directory`                                                                                           | Le path indiqué dans `sslrootcert` au sein de `DATABASE_URL` est incorrect. Exécutez votre application depuis la racine du projet ou utilisez un path absolu. |
+
+## Étapes suivantes {#next-steps}
+
+* [Connexion](/fr/products/managed-postgres/connection) : chaînes de connexion, PgBouncer et TLS
+* [Paramètres](/fr/products/managed-postgres/settings) : ajuster les paramètres de Postgres et de PgBouncer
+* [Répliques en lecture](/fr/products/managed-postgres/read-replicas) : faire évoluer les charges de travail à forte intensité de lecture
+* [Développement local](/fr/products/managed-postgres/local-development) : développer avec une instance Postgres locale dans Docker
+* [Prisma Migrate en production](https://www.prisma.io/docs/orm/prisma-migrate/workflows/development-and-production) : utiliser `prisma migrate deploy` dans votre pipeline d&#39;intégration continue

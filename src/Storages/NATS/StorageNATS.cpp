@@ -61,7 +61,7 @@ extern const SettingsUInt64 output_format_avro_rows_in_file;
 
 namespace NATSSetting
 {
-extern const NATSSettingsString nats_credentials;
+extern const NATSSettingsSecretString nats_credentials;
 extern const NATSSettingsString nats_credential_file;
 extern const NATSSettingsString nats_ca_file;
 extern const NATSSettingsString nats_client_cert_file;
@@ -74,8 +74,8 @@ extern const NATSSettingsStreamingHandleErrorMode nats_handle_error_mode;
 extern const NATSSettingsUInt64 nats_max_block_size;
 extern const NATSSettingsUInt64 nats_max_rows_per_message;
 extern const NATSSettingsString nats_consumer_name;
-extern const NATSSettingsUInt64 nats_num_consumers;
-extern const NATSSettingsString nats_password;
+extern const NATSSettingsNonZeroUInt64 nats_num_consumers;
+extern const NATSSettingsSecretString nats_password;
 extern const NATSSettingsString nats_queue_group;
 extern const NATSSettingsUInt64 nats_reconnect_wait;
 extern const NATSSettingsString nats_schema;
@@ -84,7 +84,7 @@ extern const NATSSettingsString nats_server_list;
 extern const NATSSettingsUInt64 nats_skip_broken_messages;
 extern const NATSSettingsUInt64 nats_startup_connect_tries;
 extern const NATSSettingsString nats_subjects;
-extern const NATSSettingsString nats_token;
+extern const NATSSettingsSecretString nats_token;
 extern const NATSSettingsString nats_url;
 extern const NATSSettingsString nats_stream;
 extern const NATSSettingsString nats_username;
@@ -107,6 +107,7 @@ extern const int QUERY_NOT_ALLOWED;
 namespace FailPoints
 {
 extern const char nats_pause_before_building_insert_pipeline[];
+extern const char nats_pause_before_checking_direct_select_connection[];
 }
 
 namespace
@@ -185,11 +186,18 @@ StorageNATS::StorageNATS(
     , throw_on_startup_failure(mode <= LoadingStrictnessLevel::CREATE)
     , fresh_definition(fresh_definition_)
 {
+    if (fresh_definition
+        && (subjects.empty() || std::any_of(subjects.begin(), subjects.end(), [](const String & s) { return s.empty(); })))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting `nats_subjects` must contain at least one subject, and subjects must not be empty");
+    }
     auto nats_username = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_username]);
-    auto nats_password = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_password]);
-    auto nats_token = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_token]);
+    auto nats_password = getContext()->getMacros()->expand(String((*nats_settings)[NATSSetting::nats_password].value));
+    auto nats_token = getContext()->getMacros()->expand(String((*nats_settings)[NATSSetting::nats_token].value));
     auto nats_credential_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credential_file]);
-    auto nats_credentials = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credentials]);
+    auto nats_credentials = getContext()->getMacros()->expand(String((*nats_settings)[NATSSetting::nats_credentials].value));
     auto nats_ca_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_ca_file]);
     auto nats_client_cert_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_client_cert_file]);
     auto nats_client_key_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_client_key_file]);
@@ -218,10 +226,10 @@ StorageNATS::StorageNATS(
         = {.url = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_url]),
            .servers = parseList(getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_server_list]), ','),
            .username = nats_username.empty() ? global_username : nats_username,
-           .password = nats_password.empty() ? global_password : nats_password,
-           .token = nats_token.empty() ? global_token : nats_token,
+           .password = SecretString(nats_password.empty() ? global_password : nats_password),
+           .token = SecretString(nats_token.empty() ? global_token : nats_token),
            .credential_file = nats_credential_file.empty() ? global_credential_file : nats_credential_file,
-           .credentials = nats_credentials,
+           .credentials = SecretString(nats_credentials),
            .ca_file = nats_ca_file,
            .client_cert_file = nats_client_cert_file,
            .client_key_file = nats_client_key_file,
@@ -415,13 +423,36 @@ void StorageNATS::initializeConsumersFunc()
     streaming_task->activateAndSchedule();
 }
 
+NATSConnectionPtr StorageNATS::getConsumersConnection() const
+{
+    std::lock_guard lock(consumers_connection_mutex);
+    return consumers_connection;
+}
+
+void StorageNATS::setConsumersConnection(NATSConnectionPtr connection)
+{
+    std::lock_guard lock(consumers_connection_mutex);
+    consumers_connection = std::move(connection);
+}
+
 void StorageNATS::createConsumersConnection()
 {
     /// The NATS client library closes a connection for good once the server has rejected the same
     /// credentials on two consecutive reconnect attempts - a rotated password and an expired token
     /// both take that path - and it never reopens a closed connection. Build a new one, otherwise
     /// the table would stay silently idle until it is detached and attached again.
-    if (consumers_connection && consumers_connection->isClosed())
+    NATSConnectionPtr closed_connection;
+    {
+        std::lock_guard setup_lock(consumers_setup_mutex);
+        if (auto connection = getConsumersConnection(); connection && connection->isClosed())
+        {
+            dropConsumers();
+            setConsumersConnection(nullptr);
+            closed_connection = std::move(connection);
+        }
+    }
+
+    if (closed_connection)
     {
         /// The table name is in the logger. The error handler of the client library reports the
         /// rejected credentials too, but it knows only the connection, so this is the line which
@@ -429,18 +460,17 @@ void StorageNATS::createConsumersConnection()
         LOG_WARNING(
             log,
             "The NATS client library closed the connection to {} for good. Last error: {}. Creating a new one",
-            consumers_connection->connectionInfoForLog(),
-            consumers_connection->lastErrorForLog());
-
-        dropConsumers();
-        consumers_connection.reset();
+            closed_connection->connectionInfoForLog(),
+            closed_connection->lastErrorForLog());
+        closed_connection.reset();
     }
 
-    if (consumers_connection)
+    std::lock_guard setup_lock(consumers_setup_mutex);
+    if (getConsumersConnection())
         return;
 
     auto connect_future = event_handler.createConnection(configuration);
-    consumers_connection = connect_future.get();
+    setConsumersConnection(connect_future.get());
 }
 
 void StorageNATS::dropConsumers()
@@ -455,14 +485,20 @@ void StorageNATS::dropConsumers()
 
 void StorageNATS::createConsumers()
 {
+    std::lock_guard setup_lock(consumers_setup_mutex);
+
     if (num_created_consumers != 0)
         return;
+
+    const auto connection = getConsumersConnection();
+    if (!connection)
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot create NATS consumers without a connection");
 
     for (size_t i = 0; i < num_consumers; ++i)
     {
         try
         {
-            pushConsumer(createConsumer());
+            pushConsumer(createConsumer(connection));
             ++num_created_consumers;
         }
         catch (...)
@@ -601,7 +637,8 @@ void StorageNATS::read(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    if (!consumers_connection || num_created_consumers == 0)
+    const auto connection = getConsumersConnection();
+    if (!connection || num_created_consumers == 0)
         throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "NATS consumers setup not finished. Connection might be not established");
 
     if (!local_context->getSettingsRef()[Setting::stream_like_engine_allow_direct_select])
@@ -619,8 +656,10 @@ void StorageNATS::read(
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
     auto modified_context = addSettings(local_context);
 
-    if (!consumers_connection->isConnected())
-        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "No connection to {}", consumers_connection->connectionInfoForLog());
+    FailPointInjection::pauseFailPoint(FailPoints::nats_pause_before_checking_direct_select_connection);
+
+    if (!connection->isConnected())
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "No connection to {}", connection->connectionInfoForLog());
 
     Pipes pipes;
     pipes.reserve(num_created_consumers);
@@ -679,7 +718,12 @@ StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot,
                 "This NATS engine reads from multiple subjects. "
                 "You must specify `stream_like_engine_insert_queue` to choose the subject to write to");
         }
-
+        if (subjects.empty() || subjects[0].empty())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "This NATS engine has no valid subject to write to, check the `nats_subjects` setting");
+        }
         subject = subjects[0];
     }
 
@@ -695,6 +739,7 @@ StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot,
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
         max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
     return std::make_shared<MessageQueueSink>(
+        std::make_shared<const Block>(metadata_snapshot->getSampleBlock()),
         std::make_shared<const Block>(metadata_snapshot->getSampleBlockNonMaterialized()),
         getFormatName(),
         max_rows,
@@ -745,12 +790,12 @@ void StorageNATS::shutdown(bool /* is_drop */)
     {
         unsubscribeConsumers();
 
-        if (consumers_connection)
+        if (const auto connection = getConsumersConnection())
         {
-            if (consumers_connection->isConnected())
-                natsConnection_Flush(consumers_connection->getConnection());
+            if (connection->isConnected())
+                natsConnection_Flush(connection->getConnection());
 
-            consumers_connection->disconnect();
+            connection->disconnect();
         }
 
         for (size_t i = 0; i < num_created_consumers; ++i)
@@ -797,20 +842,20 @@ INATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
 }
 
 
-INATSConsumerPtr StorageNATS::createConsumer()
+INATSConsumerPtr StorageNATS::createConsumer(const NATSConnectionPtr & connection)
 {
     auto stream_name = getStreamName();
     if (stream_name.empty())
     {
         auto queue_name = (*nats_settings)[NATSSetting::nats_queue_group].changed ? (*nats_settings)[NATSSetting::nats_queue_group].value
                                                                                   : getStorageID().getFullTableName();
-        return std::make_shared<NATSCoreConsumer>(consumers_connection, subjects, queue_name, log, queue_size, shutdown_called);
+        return std::make_shared<NATSCoreConsumer>(connection, subjects, queue_name, log, queue_size, shutdown_called);
     }
 
     auto queue_name = (*nats_settings)[NATSSetting::nats_queue_group];
 
     return std::make_shared<NATSJetStreamConsumer>(
-        consumers_connection, std::move(stream_name), getConsumerName(), subjects, queue_name, log, queue_size, shutdown_called);
+        connection, std::move(stream_name), getConsumerName(), subjects, queue_name, log, queue_size, shutdown_called);
 }
 
 INATSProducerPtr StorageNATS::createProducer(String subject)
@@ -883,7 +928,7 @@ void StorageNATS::threadFunc()
     ///
     /// No connection at all means a previous attempt dropped the closed one and then failed to
     /// connect, so try again.
-    if (!shutdown_called && (!consumers_connection || consumers_connection->isClosed()))
+    if (const auto connection = getConsumersConnection(); !shutdown_called && (!connection || connection->isClosed()))
     {
         try
         {
@@ -909,7 +954,8 @@ void StorageNATS::threadFunc()
         resubscribeStaleConsumers();
 
     const size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-    const bool is_connected = consumers_connection && consumers_connection->isConnected();
+    const auto connection = getConsumersConnection();
+    const bool is_connected = connection && connection->isConnected();
     const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
     const UInt64 refresh_epoch = last_seen_refresh_epoch.load();
     const bool deps_ready = num_views == 0 || checkDependencies(table_id);
@@ -1083,7 +1129,7 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
             source_consumer->ackConsumed();
     }
 
-    if (!consumers_connection || !consumers_connection->isConnected())
+    if (const auto connection = getConsumersConnection(); !connection || !connection->isConnected())
     {
         LOG_TRACE(log, "Reschedule streaming. Unable to restore connection");
         return true;
@@ -1402,10 +1448,10 @@ void registerStorageNATS(StorageFactory & factory)
         /// the check that prevents dropping credentials from a named collection.
         auto macros = args.getContext()->getMacros();
         (*nats_settings)[NATSSetting::nats_username] = macros->expand((*nats_settings)[NATSSetting::nats_username]);
-        (*nats_settings)[NATSSetting::nats_password] = macros->expand((*nats_settings)[NATSSetting::nats_password]);
-        (*nats_settings)[NATSSetting::nats_token] = macros->expand((*nats_settings)[NATSSetting::nats_token]);
+        (*nats_settings)[NATSSetting::nats_password] = macros->expand(String((*nats_settings)[NATSSetting::nats_password].value));
+        (*nats_settings)[NATSSetting::nats_token] = macros->expand(String((*nats_settings)[NATSSetting::nats_token].value));
         (*nats_settings)[NATSSetting::nats_credential_file] = macros->expand((*nats_settings)[NATSSetting::nats_credential_file]);
-        (*nats_settings)[NATSSetting::nats_credentials] = macros->expand((*nats_settings)[NATSSetting::nats_credentials]);
+        (*nats_settings)[NATSSetting::nats_credentials] = macros->expand(String((*nats_settings)[NATSSetting::nats_credentials].value));
         (*nats_settings)[NATSSetting::nats_ca_file] = macros->expand((*nats_settings)[NATSSetting::nats_ca_file]);
         (*nats_settings)[NATSSetting::nats_client_cert_file] = macros->expand((*nats_settings)[NATSSetting::nats_client_cert_file]);
         (*nats_settings)[NATSSetting::nats_client_key_file] = macros->expand((*nats_settings)[NATSSetting::nats_client_key_file]);
@@ -1433,6 +1479,25 @@ void registerStorageNATS(StorageFactory & factory)
 
         if ((*nats_settings)[NATSSetting::nats_consumer_name].changed && !(*nats_settings)[NATSSetting::nats_stream].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "To use NATS jet stream, you must specify `nats_stream` setting");
+
+        /// The consumer semaphore takes an `int`. A bigger value can wrap to a valid one, so it is rejected only for a new definition,
+        /// to keep existing tables loadable.
+        const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
+        const UInt64 num_consumers = (*nats_settings)[NATSSetting::nats_num_consumers].value;
+        if (is_fresh_definition && num_consumers > std::numeric_limits<int>::max())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `nats_num_consumers` can not be bigger than {}, got {}",
+                std::numeric_limits<int>::max(),
+                num_consumers);
+
+        const UInt64 reconnect_wait = (*nats_settings)[NATSSetting::nats_reconnect_wait].value;
+        if (is_fresh_definition && reconnect_wait > std::numeric_limits<int>::max())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `nats_reconnect_wait` can not be bigger than {}, got {}",
+                std::numeric_limits<int>::max(),
+                reconnect_wait);
 
         return std::make_shared<StorageNATS>(
             args.table_id,
@@ -1656,9 +1721,7 @@ The number of rows in one NATS message depends on whether the format is row-base
 ## Using JetStream {#using-jetstream}
 
 Before using NATS engine with NATS JetStream, you must create a NATS stream and a durable pull consumer. For this, you can use, for example, the nats utility from the [NATS CLI](https://github.com/nats-io/natscli) package:
-<details>
-<summary>creating stream</summary>
-
+<Accordion title="creating stream">
 ```bash
 $ nats stream add
 ? Stream Name stream_name
@@ -1713,11 +1776,9 @@ State:
            Last Sequence: 0
         Active Consumers: 0
 ```
-</details>
+</Accordion>
 
-<details>
-<summary>creating durable pull consumer</summary>
-
+<Accordion title="creating durable pull consumer">
 ```bash
 $ nats consumer add
 ? Select a Stream stream_name
@@ -1753,7 +1814,7 @@ Last Delivered Message: Consumer sequence: 0 Stream sequence: 0
     Unprocessed Messages: 0
            Waiting Pulls: 0 of maximum 512
 ```
-</details>
+</Accordion>
 
 After creating stream and durable pull consumer, we can create a table with NATS engine. To do this, you need to initialize: nats_stream, nats_consumer_name, and nats_subjects:
 

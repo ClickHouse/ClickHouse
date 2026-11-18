@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 Algumas funções de agregação podem aceitar não apenas colunas de argumentos (usadas para compressão), mas também um conjunto de parâmetros — constantes para inicialização. A sintaxe usa dois pares de parênteses em vez de um. O primeiro é para os parâmetros, e o segundo, para os argumentos.
 
-<div id="histogram">
-  ## histogram
-</div>
+## histogram {#histogram}
 
 Calcula um histograma adaptativo. Os resultados podem não ser precisos.
 
@@ -84,9 +82,7 @@ FROM
 
 Nesse caso, lembre-se de que você não conhece os limites das classes do histograma.
 
-<div id="sequencematch">
-  ## sequenceMatch
-</div>
+## sequenceMatch {#sequencematch}
 
 Verifica se a sequência contém uma cadeia de eventos que corresponde ao padrão.
 
@@ -97,14 +93,14 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 ```
 
 <Note>
-  Eventos que ocorrem no mesmo segundo podem aparecer na sequência em uma ordem indefinida, afetando o resultado.
+  Eventos que compartilham o mesmo timestamp podem aparecer na sequência em uma ordem indefinida, afetando o resultado. Um timestamp `DateTime64` também leva em conta a fração de segundo na ordenação; portanto, apenas eventos que compartilham o mesmo tick têm ordem ambígua.
 </Note>
 
 **Argumentos**
 
-* `timestamp` — Coluna que contém dados temporais. Os tipos de dados típicos são `Date` e `DateTime`. Você também pode usar qualquer um dos tipos de dados [UInt](/pt-BR/reference/data-types/int-uint) suportados.
+* `timestamp` — Coluna que contém dados temporais. Os tipos de dados típicos são `Date`, `DateTime` e `DateTime64`. Você também pode usar qualquer um dos tipos de dados [UInt](/pt-BR/reference/data-types/int-uint) suportados.
 
-* `cond1`, `cond2` — Condições que descrevem a sequência de eventos. Tipo de dado: `UInt8`. Você pode passar até 32 argumentos de condição. A função considera apenas os eventos descritos nessas condições. Se a sequência contiver dados não descritos por nenhuma condição, a função os ignora.
+* `cond1`, `cond2` — Condições que descrevem a cadeia de eventos. Tipo de dado: `UInt8`. Você pode passar até 32 argumentos de condição. A função considera apenas os eventos descritos nessas condições. Se a sequência contiver dados não descritos por nenhuma condição, a função os ignora.
 
 **Parâmetros**
 
@@ -117,15 +113,13 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 
 Tipo: `UInt8`.
 
-<div id="pattern-syntax">
-  #### Sintaxe do padrão
-</div>
+#### Sintaxe do padrão {#pattern-syntax}
 
 * `(?N)` — Corresponde ao argumento de condição na posição `N`. As condições são numeradas no intervalo `[1, 32]`. Por exemplo, `(?1)` corresponde ao argumento passado para o parâmetro `cond1`.
 
 * `.*` — Corresponde a qualquer número de eventos. Você não precisa de argumentos condicionais para corresponder a esse elemento do padrão.
 
-* `(?t operator value)` — Define o tempo, em segundos, que deve separar dois eventos. Por exemplo, o padrão `(?1)(?t>1800)(?2)` corresponde a eventos que ocorrem com mais de 1800 segundos de diferença entre si. Pode haver qualquer número de eventos entre esses eventos. Você pode usar os operadores `>=`, `>`, `<`, `<=`, `==`.
+* `(?t operator value)` — Define o tempo que deve separar dois eventos. Por exemplo, o padrão `(?1)(?t>1800)(?2)` corresponde a eventos que ocorrem com mais de 1800 segundos de diferença entre si. Pode haver qualquer número de eventos entre esses eventos. Você pode usar os operadores `>=`, `>`, `<`, `<=`, `==`. Para um timestamp `DateTime` ou `DateTime64`, o valor é expresso em segundos, independentemente da precisão de `DateTime64`. Assim, o padrão mantém o mesmo significado quando a coluna alterna entre `DateTime` e `DateTime64` de qualquer escala. Para um timestamp `Date`, o valor é expresso em dias; para um timestamp inteiro sem sinal, ele é expresso nas unidades do inteiro.
 
 **Exemplos**
 
@@ -179,14 +173,12 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 
 * [sequenceCount](#sequencecount)
 
-<div id="sequencecount">
-  ## sequenceCount
-</div>
+## sequenceCount {#sequencecount}
 
 Conta o número de cadeias de eventos que corresponderam ao padrão. A função procura cadeias de eventos que não se sobrepõem. Ela começa a procurar a próxima cadeia depois que a cadeia atual é encontrada.
 
 <Note>
-  Eventos que ocorrem no mesmo segundo podem ficar na sequência em uma ordem indefinida, afetando o resultado.
+  Eventos que compartilham o mesmo timestamp podem aparecer na sequência em uma ordem indefinida, afetando o resultado. Um timestamp `DateTime64` também considera as frações de segundo na ordenação, portanto só há ambiguidade entre eventos que compartilham o mesmo tick.
 </Note>
 
 **Sintaxe**
@@ -197,7 +189,7 @@ sequenceCount(pattern)(timestamp, cond1, cond2, ...)
 
 **Argumentos**
 
-* `timestamp` — Coluna considerada como contendo dados de tempo. Os tipos de dados mais comuns são `Date` e `DateTime`. Você também pode usar qualquer um dos tipos de dados [UInt](/pt-BR/reference/data-types/int-uint) compatíveis.
+* `timestamp` — Coluna considerada como contendo dados de tempo. Os tipos de dados mais comuns são `Date`, `DateTime` e `DateTime64`. Você também pode usar qualquer um dos tipos de dados [UInt](/pt-BR/reference/data-types/int-uint) compatíveis.
 
 * `cond1`, `cond2` — Condições que descrevem a cadeia de eventos. Tipo de dado: `UInt8`. Você pode passar até 32 argumentos de condição. A função considera apenas os eventos descritos nessas condições. Se a sequência contiver dados que não estejam descritos em uma condição, a função os ignora.
 
@@ -238,14 +230,12 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="sequencematchevents">
-  ## sequenceMatchEvents
-</div>
+## sequenceMatchEvents {#sequencematchevents}
 
 Retorna os timestamps dos eventos das cadeias de eventos mais longas que corresponderam ao padrão.
 
 <Note>
-  Eventos que ocorrem no mesmo segundo podem ficar na sequência em uma ordem indefinida, o que afeta o resultado.
+  Eventos que compartilham o mesmo timestamp podem ficar na sequência em uma ordem indefinida, o que afeta o resultado. Um timestamp `DateTime64` também leva em conta a fração de segundo na ordenação, portanto, apenas eventos que compartilham o mesmo tick têm ordem ambígua.
 </Note>
 
 **Sintaxe**
@@ -256,7 +246,7 @@ sequenceMatchEvents(pattern)(timestamp, cond1, cond2, ...)
 
 **Argumentos**
 
-* `timestamp` — Coluna considerada como contendo dados de tempo. Os tipos de dados mais comuns são `Date` e `DateTime`. Você também pode usar qualquer um dos tipos de dados [UInt](/pt-BR/reference/data-types/int-uint) compatíveis.
+* `timestamp` — Coluna considerada como contendo dados de tempo. Os tipos de dados mais comuns são `Date`, `DateTime` e `DateTime64`. Você também pode usar qualquer um dos tipos de dados [UInt](/pt-BR/reference/data-types/int-uint) compatíveis.
 
 * `cond1`, `cond2` — Condições que descrevem a cadeia de eventos. Tipo de dado: `UInt8`. Você pode passar até 32 argumentos de condição. A função considera apenas os eventos descritos nessas condições. Se a sequência contiver dados que não estejam descritos em uma condição, a função os ignora.
 
@@ -301,9 +291,7 @@ SELECT sequenceMatchEvents('(?1).*(?2).*(?1)(?3)')(time, number = 1, number = 2,
 
 * [sequenceMatch](#sequencematch)
 
-<div id="windowfunnel">
-  ## windowFunnel
-</div>
+## windowFunnel {#windowfunnel}
 
 Procura cadeias de eventos em uma janela de tempo deslizante e calcula o número máximo de eventos ocorridos na cadeia.
 
@@ -427,9 +415,7 @@ GROUP BY level
 ORDER BY level ASC;
 ```
 
-<div id="retention">
-  ## retention
-</div>
+## retention {#retention}
 
 A função recebe de 1 a 32 argumentos do tipo `UInt8`, que representam um conjunto de condições e indicam se determinada condição foi atendida para o evento.
 Qualquer condição pode ser especificada como argumento (como em [WHERE](/pt-BR/reference/statements/select/where)).
@@ -576,9 +562,7 @@ Onde:
 * `r2`- o número de visitantes únicos que visitaram o site durante um período específico entre 2020-01-01 e 2020-01-02 (as condições `cond1` e `cond2`).
 * `r3`- o número de visitantes únicos que visitaram o site durante um período específico em 2020-01-01 e 2020-01-03 (as condições `cond1` e `cond3`).
 
-<div id="uniquptonx">
-  ## uniqUpTo(N)(x)
-</div>
+## uniqUpTo(N)(x) {#uniquptonx}
 
 Calcula o número de valores distintos do argumento até um limite especificado, `N`. Se o número de valores distintos do argumento for maior que `N`, esta função retorna `N` + 1; caso contrário, calcula o valor exato.
 
@@ -598,9 +582,7 @@ HAVING uniqUpTo(4)(UserID) >= 5
 
 `uniqUpTo(4)(UserID)` calcula o número de valores únicos de `UserID` para cada `SearchPhrase`, mas conta apenas até 4 valores únicos. Se houver mais de 4 valores únicos de `UserID` para uma `SearchPhrase`, a função retornará 5 (4 + 1). A cláusula `HAVING` então filtra os valores de `SearchPhrase` para os quais o número de valores únicos de `UserID` é menor que 5. Isso fornecerá uma lista de palavras-chave de pesquisa que foram usadas por pelo menos 5 usuários únicos.
 
-<div id="summapfiltered">
-  ## sumMapFiltered
-</div>
+## sumMapFiltered {#summapfiltered}
 
 Esta função se comporta da mesma forma que [sumMap](/pt-BR/reference/functions/aggregate-functions/sumMap), exceto que também aceita, como parâmetro, um array de chaves para filtrar. Isso pode ser especialmente útil ao trabalhar com alta cardinalidade de chaves.
 
@@ -646,9 +628,7 @@ SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) FROM sum_
    └─────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="summapfilteredwithoverflow">
-  ## sumMapFilteredWithOverflow
-</div>
+## sumMapFilteredWithOverflow {#summapfilteredwithoverflow}
 
 Esta função se comporta da mesma forma que [sumMap](/pt-BR/reference/functions/aggregate-functions/sumMap), exceto que também aceita, como parâmetro, um array de chaves para filtrar. Isso pode ser especialmente útil ao trabalhar com alta cardinalidade de chaves. Ela difere da função [sumMapFiltered](#summapfiltered) porque realiza a soma com overflow — ou seja, retorna para a soma o mesmo tipo de dado do tipo de dado do argumento.
 
@@ -706,9 +686,7 @@ SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) as summap
    └──────────────────────┴────────────────────────────────────┘
 ```
 
-<div id="sequencenextnode">
-  ## sequenceNextNode
-</div>
+## sequenceNextNode {#sequencenextnode}
 
 Retorna o valor do próximo evento que correspondeu a uma cadeia de eventos.
 

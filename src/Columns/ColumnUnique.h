@@ -28,6 +28,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
@@ -84,6 +85,7 @@ public:
     }
     bool isDefaultAt(size_t n) const override { return n == 0; }
     std::string_view getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
+    bool supportsGetDataAt() const override { return getNestedColumn()->supportsGetDataAt(); }
     UInt64 get64(size_t n) const override { return getNestedColumn()->get64(n); }
     UInt64 getUInt(size_t n) const override { return getNestedColumn()->getUInt(n); }
     Int64 getInt(size_t n) const override { return getNestedColumn()->getInt(n); }
@@ -628,6 +630,9 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(ReadBuffer 
     if (in.available() < string_size)
         throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize string value in ColumnUnique.");
 
+    if (unlikely(string_size < serialize_string_with_zero_byte))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "String size is smaller than its zero-byte terminator");
+
     size_t ret = uniqueInsertData(in.position(), string_size - serialize_string_with_zero_byte);
     in.ignore(string_size);
     return ret;
@@ -636,39 +641,8 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(ReadBuffer 
 template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
 {
-    if (is_nullable)
-    {
-        UInt8 val = 0;
-        readBinaryLittleEndian<UInt8>(val, in);
-
-        if (val)
-            return getNullValueIndex();
-
-    }
-
-    /// Numbers, FixedString
-    if (size_of_value_if_fixed)
-    {
-        if (in.available() < size_of_value_if_fixed)
-            throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize fixed size value in ColumnUnique.");
-
-        size_t ret = uniqueInsertData(in.position(), size_of_value_if_fixed);
-        in.ignore(size_of_value_if_fixed);
-        return ret;
-
-    }
-
-    /// String
-    /// For compatibility, serialized string value contains zero byte at the end, we just ignore this byte.
-    size_t string_size_with_zero_byte = 0;
-    readBinaryLittleEndian<size_t>(string_size_with_zero_byte, in);
-    if (in.available() < string_size_with_zero_byte)
-        throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize string value in ColumnUnique.");
-
-    size_t ret = uniqueInsertData(in.position(), string_size_with_zero_byte - 1);
-    in.ignore(string_size_with_zero_byte);
-
-    return ret;
+    const auto settings = IColumn::SerializationSettings::createForAggregationState();
+    return uniqueDeserializeAndInsertFromArena(in, &settings);
 }
 
 template <typename ColumnType>
