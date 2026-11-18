@@ -11,8 +11,8 @@ namespace DB
 {
 
 /// Counts the distinct non-NULL values of a column whose equal values are adjacent. Used for a single `uniqExact`
-/// without `GROUP BY` when the input is read in order of its argument. Sorting groups 0.0 with -0.0 and all NaNs,
-/// which `uniqExact` tells apart by their bits, so the rows of these runs are passed to the `uniqExact` itself.
+/// without `GROUP BY` when the input is read in order of its argument. Sorting groups all NaNs, which `uniqExact`
+/// tells apart by their bits, so the rows of these runs, and of the run of zeros, are passed to the `uniqExact` itself.
 class UniqExactInOrderTransform final : public IAccumulatingTransform
 {
 public:
