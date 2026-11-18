@@ -522,7 +522,7 @@ Result<ArrowFlightServer::DecodeResult> ArrowFlightServer::decodeDescriptor(
             {
                 FLIGHT_ASSIGN_OR_RAISE(auto ps_info, calls_data->getPreparedStatement(sql_set->sql, username))
                 FLIGHT_ASSIGN_OR_RAISE(auto resolved_query, buildQueryWithValues(ps_info.query_parts, ps_info.bound_parameters))
-                return DecodeResult {std::move(resolved_query), {}, {}, {}};
+                return DecodeResult {std::move(resolved_query), ArrowFlight::SchemaModifier{}, ArrowFlight::BlockModifier{}, ArrowFlight::TablePtr{}};
             }
 
             return DecodeResult {sql_set->sql, sql_set->schema_modifier, sql_set->block_modifier, {}};
@@ -793,7 +793,7 @@ Status ArrowFlightServer::getFlightInfo(const AuthMiddleware & auth, const Fligh
 {
     LOG_INFO(log, "GetFlightInfo is called for descriptor {}", descriptorForLogging(request));
 
-    auto session = auth.getSession();
+    const auto & session = auth.getSession();
 
     std::string sql;
     ArrowFlight::SchemaModifier schema_modifier;
@@ -848,7 +848,7 @@ Status ArrowFlightServer::getSchema(const AuthMiddleware & auth, const FlightDes
 {
     LOG_INFO(log, "GetSchema is called for descriptor {}", descriptorForLogging(request));
 
-    auto session = auth.getSession();
+    const auto & session = auth.getSession();
 
     String schema;
 
@@ -920,7 +920,7 @@ Status ArrowFlightServer::pollFlightInfo(const AuthMiddleware & auth, const Flig
 {
     LOG_INFO(log, "PollFlightInfo is called for descriptor {}", descriptorForLogging(request));
 
-    auto session = auth.getSession();
+    const auto & session = auth.getSession();
 
     std::shared_ptr<const PollDescriptorInfo> poll_info;
     String schema;
@@ -1115,7 +1115,7 @@ Status ArrowFlightServer::doGet(const AuthMiddleware & auth, const protocol::Tic
     TablePtr table;
     bool should_cancel_ticket = false;
 
-    auto session = auth.getSession();
+    const auto & session = auth.getSession();
 
     if (hasTicketPrefix(request.ticket()))
     {
@@ -1200,7 +1200,7 @@ Status ArrowFlightServer::doPut(
     const FlightDescriptor request = first.flight_descriptor();
     LOG_INFO(log, "DoPut is called for descriptor {}", descriptorForLogging(request));
 
-    auto session = auth.getSession();
+    const auto & session = auth.getSession();
 
     std::optional<ArrowIPC::IPCMessage> pending_first = toIPCMessage(first);
     auto next_message = [&](ArrowIPC::IPCMessage & message) -> bool
@@ -1363,7 +1363,7 @@ Status ArrowFlightServer::doAction(const AuthMiddleware & auth, const protocol::
 {
     LOG_INFO(log, "DoAction is called for action {}", action.type());
 
-    auto session = auth.getSession();
+    const auto & session = auth.getSession();
 
     std::vector<String> results; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 

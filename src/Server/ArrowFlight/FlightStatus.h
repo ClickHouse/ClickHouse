@@ -89,12 +89,12 @@ public:
         return status;
     }
 
-    bool ok() const { return code == Code::OK; }
-    bool IsIOError() const { return code == Code::IOError; }
-    const String & message() const { return message_text; }
+    [[nodiscard]] bool ok() const { return code == Code::OK; }
+    [[nodiscard]] bool IsIOError() const { return code == Code::IOError; }
+    [[nodiscard]] const String & message() const { return message_text; }
 
     /// As `arrow::Status::ToString`, e.g. "Invalid: message".
-    String ToString() const;
+    [[nodiscard]] String ToString() const;
 
     /// The gRPC status, and the trailing metadata that encodes the original status for clients of Arrow.
     grpc::Status toGrpcStatus(grpc::ServerContext * context) const;
@@ -108,8 +108,8 @@ private:
         return result;
     }
 
-    String codeAsString() const;
-    std::optional<String> detail() const;
+    [[nodiscard]] String codeAsString() const;
+    [[nodiscard]] std::optional<String> detail() const;
 
     Code code = Code::OK;
     String message_text;
@@ -137,16 +137,16 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "An Arrow Flight result was made from an OK status without a value");
     }
 
-    bool ok() const { return std::holds_alternative<T>(value); }
+    [[nodiscard]] bool ok() const { return std::holds_alternative<T>(value); }
 
-    Status status() const { return ok() ? Status::OK() : std::get<Status>(value); }
+    [[nodiscard]] Status status() const { return ok() ? Status::OK() : std::get<Status>(value); }
 
     T & ValueOrDie() &
     {
         check();
         return std::get<T>(value);
     }
-    const T & ValueOrDie() const &
+    [[nodiscard]] const T & ValueOrDie() const &
     {
         check();
         return std::get<T>(value);
@@ -157,7 +157,7 @@ public:
         return std::move(std::get<T>(value));
     }
     T & ValueUnsafe() & { return ValueOrDie(); }
-    const T & ValueUnsafe() const & { return ValueOrDie(); }
+    [[nodiscard]] const T & ValueUnsafe() const & { return ValueOrDie(); }
     T ValueUnsafe() && { return std::move(*this).ValueOrDie(); }
 
     T & operator*() & { return ValueOrDie(); }
@@ -194,11 +194,14 @@ Status toStatus(const Result<T> & result) { return result.status(); }
             return _flight_status; \
     } while (false)
 
+/// `lhs` can be a declaration, e.g. `auto value`, so it cannot be enclosed in parentheses.
+/// NOLINTBEGIN(bugprone-macro-parentheses)
 #define FLIGHT_ASSIGN_OR_RAISE_IMPL(result_name, lhs, rexpr) \
     auto && result_name = (rexpr); \
     if (!result_name.ok()) \
         return result_name.status(); \
     lhs = std::move(result_name).ValueUnsafe();
+/// NOLINTEND(bugprone-macro-parentheses)
 
 /// As `ARROW_ASSIGN_OR_RAISE`: assigns the value of a `Result`, or returns its status from the enclosing function.
 #define FLIGHT_ASSIGN_OR_RAISE(lhs, rexpr) FLIGHT_ASSIGN_OR_RAISE_IMPL(FLIGHT_CONCAT(_flight_result_, __COUNTER__), lhs, rexpr)
