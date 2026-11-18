@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/Defines.h>
+#include <Interpreters/JoinUtils.h>
 #include <Processors/Transforms/BlockNestedLoopJoinTransform.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
@@ -760,6 +761,17 @@ void BlockNestedLoopProbeTransform::dropEmittedPairs()
     walk.matched_rows_offset = 0;
 }
 
+/// `rows` copies of the type default, which for an `Enum` is its smallest value rather than the column's zero.
+static MutableColumnPtr createDefaultsColumn(const DataTypePtr & type, size_t rows)
+{
+    auto column = type->createColumn();
+    if (type->isDefaultInsertTrivial())
+        column->insertManyDefaults(rows);
+    else
+        JoinCommon::addDefaultValues(*column, type, rows);
+    return column;
+}
+
 Chunk BlockNestedLoopProbeTransform::takeUnmatchedProbeRows()
 {
     auto indexes = ColumnUInt64::create();
@@ -785,11 +797,7 @@ Chunk BlockNestedLoopProbeTransform::takeUnmatchedProbeRows()
     /// The default of the column type, which is NULL where `addToNullableIfNeeded` made the padded
     /// side's columns `Nullable` in the pre-join actions.
     for (const auto & column_with_type : *data->getHeader())
-    {
-        auto padded = column_with_type.type->createColumn();
-        padded->insertManyDefaults(unmatched.size());
-        result.push_back(std::move(padded));
-    }
+        result.push_back(createDefaultsColumn(column_with_type.type, unmatched.size()));
 
     ProfileEvents::increment(ProfileEvents::JoinResultRowCount, unmatched.size());
 
@@ -917,11 +925,7 @@ Chunk BlockNestedLoopUnmatchedBuildRowsTransform::generate()
         /// The default of the column type, which is NULL where `addToNullableIfNeeded` made the
         /// padded side's columns `Nullable` in the pre-join actions.
         for (size_t i = 0; i < num_probe_columns; ++i)
-        {
-            auto padded = header.getByPosition(i).type->createColumn();
-            padded->insertManyDefaults(unmatched.size());
-            result.push_back(std::move(padded));
-        }
+            result.push_back(createDefaultsColumn(header.getByPosition(i).type, unmatched.size()));
         for (const auto & column : block->columns)
             result.push_back(column->index(*indexes, 0));
 
