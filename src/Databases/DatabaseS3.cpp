@@ -7,7 +7,6 @@
 
 #include <Common/Logger.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -21,7 +20,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <boost/algorithm/string.hpp>
@@ -182,11 +180,11 @@ ASTPtr DatabaseS3::getCreateDatabaseQueryImpl() const
     ParserCreateQuery parser;
 
     std::string creation_args;
-    creation_args += quoteString(config.url_prefix);
+    creation_args += fmt::format("'{}'", config.url_prefix);
     if (config.no_sign_request)
         creation_args += ", 'NOSIGN'";
     else if (config.access_key_id.has_value() && config.secret_access_key.has_value())
-        creation_args += fmt::format(", {}, {}", quoteString(config.access_key_id.value()), quoteString(config.secret_access_key.value()));
+        creation_args += fmt::format(", '{}', '{}'", config.access_key_id.value(), config.secret_access_key.value());
     else if (config.use_environment_credentials)
         creation_args += ", use_environment_credentials = 1";
 
@@ -344,7 +342,7 @@ void registerDatabaseS3(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseS3>(args.database_name, config, args.context);
     };
-    factory.registerDatabase("S3", create_fn, s3DatabaseSecretArguments(), {
+    factory.registerDatabase("S3", create_fn, {
         .supports_arguments = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::S3,

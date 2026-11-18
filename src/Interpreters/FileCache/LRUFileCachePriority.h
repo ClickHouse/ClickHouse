@@ -60,15 +60,13 @@ public:
 
     std::string getStateInfoForLog(const CacheStateGuard::Lock & lock) const override;
 
-    /// A single queue has no sub-queues to choose between, so `reservee_queue_type` is ignored.
-    EvictionInfoPtr collectEvictionInfo( /// NOLINT
+    EvictionInfoPtr collectEvictionInfo(
         size_t size,
         size_t elements,
         IFileCachePriority::Iterator * reservee,
         bool is_total_space_cleanup,
         const IFileCachePriority::OriginInfo & origin,
-        const CacheStateGuard::Lock &,
-        QueueEntryType reservee_queue_type = QueueEntryType::None) override;
+        const CacheStateGuard::Lock &) override;
 
     bool canFit( /// NOLINT
         size_t size,
@@ -101,7 +99,7 @@ public:
 
     void sealStructure() { structure_sealed = true; }
 
-    bool collectCandidatesForEviction( /// NOLINT
+    bool collectCandidatesForEviction(
         EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
@@ -110,8 +108,7 @@ public:
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
-        CacheStateGuard &,
-        QueueEntryType reservee_queue_type = QueueEntryType::None) override;
+        CacheStateGuard &) override;
 
     bool tryIncreasePriority(
         Iterator & iterator,
@@ -293,9 +290,9 @@ public:
     LRUIterator & operator =(const LRUIterator & other);
     bool operator ==(const LRUIterator & other) const;
 
-    [[nodiscard]] EntryPtr getEntry() const override;
+    EntryPtr getEntry() const override;
 
-    [[nodiscard]] bool isValid(const CachePriorityGuard::WriteLock &) const override;
+    bool isValid(const CachePriorityGuard::WriteLock &) const override;
 
     void remove(const CachePriorityGuard::WriteLock &) override;
 
@@ -309,14 +306,14 @@ public:
 
     void decrementSize(size_t size) override;
 
-    [[nodiscard]] QueueEntryType getType() const override { return QueueEntryType::LRU; }
+    QueueEntryType getType() const override { return QueueEntryType::LRU; }
 
-    [[nodiscard]] CachePriorityGuard & getPriorityGuard() const override { return cache_priority->getPriorityGuard(); }
+    CachePriorityGuard & getPriorityGuard() const override { return cache_priority->getPriorityGuard(); }
 
-    [[nodiscard]] LRUQueue::iterator get() const { return iterator; }
+    LRUQueue::iterator get() const { return iterator; }
 
 private:
-    bool assertValid() const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
+    bool assertValid() const;
 
     void invalidateImpl() noexcept;
 

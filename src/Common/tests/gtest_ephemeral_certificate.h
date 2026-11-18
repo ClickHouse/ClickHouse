@@ -56,7 +56,7 @@ struct EphemeralCert
         (void)unlink(key_path.c_str());
     }
 
-    [[nodiscard]] Poco::Net::Context::Ptr makeContext(Poco::Net::Context::Usage usage) const
+    Poco::Net::Context::Ptr makeContext(Poco::Net::Context::Usage usage) const
     {
         Poco::Net::Context::Params params;
         params.privateKeyFile = key_path;

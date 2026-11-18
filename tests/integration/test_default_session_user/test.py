@@ -96,17 +96,11 @@ def write_string(text):
     return write_varuint(len(data)) + data
 
 
-# Only the response read gets the wide deadline: on a slow lane a rejected Hello can take tens
-# of seconds to come back, while an unreachable listener must still fail fast.
-NATIVE_CONNECT_TIMEOUT = 10
-NATIVE_RESPONSE_TIMEOUT = 60
-
-
 def native_hello(port, user, password=""):
     """Send a native protocol Hello packet and return the type of the first
     packet of the response: 0 is ServerHello (authentication succeeded),
     2 is an Exception."""
-    with socket.create_connection((node1.ip_address, port), timeout=NATIVE_CONNECT_TIMEOUT) as sock:
+    with socket.create_connection((node1.ip_address, port), timeout=10) as sock:
         packet = write_varuint(0)  # Hello
         packet += write_string("test-client")
         packet += write_varuint(26)  # version major
@@ -116,7 +110,6 @@ def native_hello(port, user, password=""):
         packet += write_string(user)
         packet += write_string(password)
         sock.sendall(packet)
-        sock.settimeout(NATIVE_RESPONSE_TIMEOUT)
         response = sock.recv(1)
         assert len(response) == 1
         return response[0]

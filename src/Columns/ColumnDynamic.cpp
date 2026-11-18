@@ -23,7 +23,6 @@
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Common/checkStackSize.h>
 
 namespace DB
 {
@@ -322,9 +321,6 @@ Field ColumnDynamic::operator[](size_t n) const
 
 void ColumnDynamic::get(size_t n, Field & res) const
 {
-    /// Object, Dynamic and Variant values nest into each other to a depth that comes from the data, not from the declared type.
-    checkStackSize();
-
     const auto & variant_col = getVariantColumn();
     /// Check if value is not in shared variant.
     if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
@@ -922,22 +918,15 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
         auto value = getSharedVariant().getDataAt(variant_col.offsetAt(n));
         ReadBufferFromMemory buf(value);
         auto type = decodeDataType(buf);
-        updateHashWithTypeName(hash, type->getName());
+        hash.update(type->getName());
         auto tmp_column = type->createColumn();
         type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, getFormatSettings());
         tmp_column->updateHashWithValue(0, hash);
         return;
     }
 
-    updateHashWithTypeName(hash, variant_info.variant_names[discr]);
+    hash.update(variant_info.variant_names[discr]);
     variant_col.getVariantByGlobalDiscriminator(discr).updateHashWithValue(variant_col.offsetAt(n), hash);
-}
-
-void ColumnDynamic::updateHashWithTypeName(SipHash & hash, std::string_view type_name)
-{
-    hash.update(UInt8(0));
-    hash.update(type_name.size());
-    hash.update(type_name);
 }
 
 void ColumnDynamic::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
@@ -1286,7 +1275,7 @@ struct ColumnDynamic::ComparatorBase
     {
     }
 
-    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         return parent.compareAt(lhs, rhs, parent, nan_direction_hint);
     }

@@ -162,20 +162,17 @@ def check_remote_write_response(response):
 
 # Prepares a protobuf of type remote_pb2.ReadRequest to read time series via the RemoteRead protocol.
 def convert_read_request_to_protobuf(
-    metric_name_regexp, start_timestamp, end_timestamp, matchers=None
+    metric_name_regexp, start_timestamp, end_timestamp
 ):
     read_request = remote_pb2.ReadRequest()
     query = remote_pb2.Query()
     query.start_timestamp_ms = int(round(float(start_timestamp) * 1000))
     query.end_timestamp_ms = int(round(float(end_timestamp) * 1000))
-    if matchers is None:
-        matchers = [(types_pb2.LabelMatcher.Type.RE, "__name__", metric_name_regexp)]
-    for matcher_type, name, value in matchers:
-        matcher = types_pb2.LabelMatcher()
-        matcher.type = matcher_type
-        matcher.name = name
-        matcher.value = value
-        query.matchers.append(matcher)
+    matcher = types_pb2.LabelMatcher()
+    matcher.type = types_pb2.LabelMatcher.Type.RE
+    matcher.name = "__name__"
+    matcher.value = metric_name_regexp
+    query.matchers.append(matcher)
     read_request.queries.append(query)
     return read_request
 
@@ -300,13 +297,8 @@ def extract_error_from_http_api_response(response):
 
 
 # Returns whether the differences between correspondent values of two HTTP API responses are not greater than `eps`.
-# If `ordered` is False, the series of a "vector" result are compared regardless of their order.
 # Also may return False if any response has unexpected structure.
-def http_api_response_close_to(response1, response2, eps=0, ordered=True):
-    if not ordered:
-        response1 = sort_series_of_vector(response1)
-        response2 = sort_series_of_vector(response2)
-
+def http_api_response_close_to(response1, response2, eps=0):
     if response1 == response2:
         return True
 
@@ -407,20 +399,6 @@ def http_api_response_close_to(response1, response2, eps=0, ordered=True):
 
     # Unexpected result_type
     return False
-
-
-# The series of an instant vector have no defined order, so they are sorted by labels before comparing.
-def sort_series_of_vector(response):
-    data = json.loads(response)
-    if (
-        isinstance(data, dict)
-        and data.get("resultType") == "vector"
-        and isinstance(data.get("result"), list)
-    ):
-        data["result"] = sorted(
-            data["result"], key=lambda ts: sorted(ts.get("metric", {}).items())
-        )
-    return json.dumps(data)
 
 
 def time_value_pair_close_to(time_value_pair1, time_value_pair2, eps):

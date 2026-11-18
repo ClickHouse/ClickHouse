@@ -25,7 +25,6 @@ const auto KAFKA_CONSUMER_CLOSE_TIMEOUT_S = 60;
 /// List of available types supported in KafkaSettings object
 #define KAFKA_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, ArrowCompression) \
-    M(CLASS_NAME, ArrowUnsupportedTypes) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \
@@ -71,7 +70,7 @@ struct KafkaSettings
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection);
 
-    [[nodiscard]] SettingsChanges getFormatSettings() const;
+    SettingsChanges getFormatSettings() const;
 
     void sanityCheck(ContextPtr global_context) const;
 

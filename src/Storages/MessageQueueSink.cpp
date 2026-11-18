@@ -4,12 +4,13 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
+#include <numeric>
+
 namespace DB
 {
 
 MessageQueueSink::MessageQueueSink(
     SharedHeader header,
-    SharedHeader format_header_,
     const String & format_name_,
     size_t max_rows_per_message_,
     std::unique_ptr<IMessageProducer> producer_,
@@ -17,14 +18,12 @@ MessageQueueSink::MessageQueueSink(
     const ContextPtr & context_)
     : MessageQueueSink(
           header,
-          format_header_,
+          header,
           [&]()
           {
-              std::vector<size_t> indices;
-              indices.reserve(format_header_->columns());
-              for (const auto & column : *format_header_)
-                  indices.push_back(header->getPositionByName(column.name));
-              return indices;
+              std::vector<size_t> identity_indices(header->columns());
+              std::iota(identity_indices.begin(), identity_indices.end(), size_t{0});
+              return identity_indices;
           }(),
           format_name_,
           max_rows_per_message_,
