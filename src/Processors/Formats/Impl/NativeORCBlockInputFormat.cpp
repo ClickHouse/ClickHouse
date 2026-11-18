@@ -1625,6 +1625,15 @@ void NativeORCBlockInputFormat::prepareFileReader()
     }
     include_indices.assign(include_typeids.begin(), include_typeids.end());
 
+    /// A struct is read with only its selected fields, so whether they are matched by field id is told on the file's struct.
+    UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids;
+    if (column_mapper)
+    {
+        for (const auto * orc_struct : requested_structs)
+            if (!getORCFieldIcebergIds(*orc_struct))
+                structs_without_field_ids.insert(orc_struct->getColumnId());
+    }
+
     /// The filter names the columns of the current schema, also tuple elements that the header has only through their parent.
     const ColumnMapper * filter_column_mapper = format_filter_info && format_filter_info->current_schema_column_mapper
         ? format_filter_info->current_schema_column_mapper.get()
@@ -1657,7 +1666,8 @@ void NativeORCBlockInputFormat::prepareFileReader()
         column_mapper,
         std::move(absent_columns),
         std::move(absent_column_defaults),
-        std::move(nested_table_type_hints));
+        std::move(nested_table_type_hints),
+        std::move(structs_without_field_ids));
 
     if (format_settings.orc.filter_push_down && format_filter_info && format_filter_info->key_condition && !sargs
         && !absent_column_has_namesake)
@@ -1883,7 +1893,8 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     const ColumnMapper * column_mapper_,
     NameSet absent_columns_,
     UnorderedMapWithMemoryTracking<String, Field> absent_column_defaults_,
-    UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints_)
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints_,
+    UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids_)
     : header(header_)
     , allow_missing_columns(allow_missing_columns_)
     , null_as_default(null_as_default_)
@@ -1895,6 +1906,7 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     , absent_columns(std::move(absent_columns_))
     , absent_column_defaults(std::move(absent_column_defaults_))
     , nested_table_type_hints(std::move(nested_table_type_hints_))
+    , structs_without_field_ids(std::move(structs_without_field_ids_))
 {
 }
 
@@ -3357,7 +3369,8 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             std::optional<VectorWithMemoryTracking<Int64>> file_field_ids;
             VectorWithMemoryTracking<bool> element_is_read(tuple_type_hint ? tuple_type_hint->getElements().size() : 0);
             VectorWithMemoryTracking<std::optional<Int64>> element_field_ids;
-            if (column_mapper && !mapper_path.empty() && tuple_type_hint && tuple_type_hint->hasExplicitNames())
+            if (column_mapper && !mapper_path.empty() && tuple_type_hint && tuple_type_hint->hasExplicitNames()
+                && !structs_without_field_ids.contains(orc_type->getColumnId()))
             {
                 file_field_ids = getORCFieldIcebergIds(*orc_type);
                 if (file_field_ids)

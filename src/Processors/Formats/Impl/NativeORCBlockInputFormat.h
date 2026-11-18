@@ -165,7 +165,8 @@ public:
         const ColumnMapper * column_mapper_ = nullptr,
         NameSet absent_columns_ = {},
         UnorderedMapWithMemoryTracking<String, Field> absent_column_defaults_ = {},
-        UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints_ = {});
+        UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints_ = {},
+        UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids_ = {});
 
     void orcTableToCHChunk(
         Chunk & res,
@@ -204,6 +205,9 @@ private:
     NameSet absent_columns;
     UnorderedMapWithMemoryTracking<String, Field> absent_column_defaults;
     UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints;
+    /// ORC column ids of the structs of the file a field of which has no Iceberg field id: their fields are matched by name,
+    /// also when the fields read have one.
+    const UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids;
 };
 }
 #endif
