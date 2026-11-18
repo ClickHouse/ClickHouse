@@ -30,6 +30,8 @@ multipart body with a wrong hash: 400 Code: 36
 query body with a wrong hash: 400 Code: 117
 path filter: 200 1	Hello
 encoded slash instead of a separator: 403 Code: 516
+legacy query endpoint: 200 endpoint
+encoded character in the legacy query endpoint: 403 Code: 516
 signed query with a plus: 200 a+b
 plus instead of an encoded plus: 403 Code: 516
 signed query_id with an encoded hash: 200 1	Hello
@@ -65,7 +67,7 @@ PUT with the INSERT grant on the non-EPHEMERAL columns: 200
 GET after PUT into a table with an EPHEMERAL column: 200 18
 PUT over the temporary data limit: 500 Code: 396
 PUT presigned Values with a SETTINGS clause: 400 Code: 27
-PUT without a table over the temporary data limit: 501 
+PUT without a table over the temporary data limit: no 100 Continue, got b'HTTP/1.1 501'
 PUT with a deferred 100 Continue: 200 
 POST with a deferred 100 Continue: 200 
 GET after PUT: 200 1	Hello

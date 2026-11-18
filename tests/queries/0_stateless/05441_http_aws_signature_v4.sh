@@ -37,6 +37,9 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${CLICKHOUSE_DATABASE}.private (s String) ENGINE = MergeTree ORDER BY s;
     INSERT INTO ${CLICKHOUSE_DATABASE}.private VALUES ('private');
     GRANT SELECT ON ${CLICKHOUSE_DATABASE}.private TO ${USER_NAME};
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.query (s String) ENGINE = MergeTree ORDER BY s;
+    INSERT INTO ${CLICKHOUSE_DATABASE}.query VALUES ('table');
+    GRANT SELECT ON ${CLICKHOUSE_DATABASE}.query TO ${USER_NAME};
 "
 
 python3 - "${CLICKHOUSE_HOST}" "${CLICKHOUSE_PORT_HTTP}" "${CLICKHOUSE_DATABASE}" "${USER_NAME}" "${HASHED_USER_NAME}" \
@@ -239,6 +242,10 @@ filtered_path = f"/{database}/t.TSV/s=Hello/"
 show("path filter", send("GET", filtered_path, presigned_params("GET", filtered_path)))
 show("encoded slash instead of a separator", send("GET", filtered_path, presigned_params("GET", filtered_path),
      tamper_url=lambda url: url.replace("Hello/?", "Hello%2F?")))
+# An unreserved character encoded in the path has the same canonical form, but `/%71uery` would be read as the table `query`.
+show("legacy query endpoint", send("GET", "/query", presigned_params("GET", "/query", [("query", "SELECT 'endpoint'"), ("database", database)])))
+show("encoded character in the legacy query endpoint", send("GET", "/query",
+     presigned_params("GET", "/query", [("query", "SELECT 'endpoint'"), ("database", database)]), tamper_url=lambda url: url.replace("/query?", "/%71uery?")))
 show("signed query with a plus", send("GET", "/", presigned_params("GET", "/", [("query", "SELECT 'a+b'")])))
 show("plus instead of an encoded plus", send("GET", "/", presigned_params("GET", "/", [("query", "SELECT 'a+b'")]),
      tamper_url=lambda url: url.replace("%2B", "+")))
@@ -303,8 +310,11 @@ show("PUT presigned Values with a SETTINGS clause", send("PUT", values_path,
      presigned_params("PUT", values_path, [("allow_settings_after_format_in_insert", "1")]),
      body=f"SETTINGS input_format_values_interpret_expressions = 1 (15, (SELECT s FROM {database}.private LIMIT 1))".encode()))
 # An upload without a table is rejected before its body is staged: a `PUT` without a format in the path is not routed to the query handler.
+# The client waits for `100 Continue` before sending the body: the server answers without reading it, and a body sent
+# right away could make the server reset the connection before the client reads the answer.
 show("PUT without a table over the temporary data limit", signed_request("PUT", "/query",
-     body=b"".join(b"%d,\"large\"\n" % i for i in range(1000, 2000)), params=[("max_temporary_data_on_disk_size_for_query", "100")]))
+     body=b"".join(b"%d,\"large\"\n" % i for i in range(1000, 2000)), params=[("max_temporary_data_on_disk_size_for_query", "100")],
+     transport=send_expect_continue))
 # A deferred `100 Continue` is sent before a signed body is received.
 show("PUT with a deferred 100 Continue", signed_request("PUT", csv_path, body=b"16,\"continue\"\n",
      headers={"X-ClickHouse-100-Continue": "defer"}, transport=send_expect_continue))

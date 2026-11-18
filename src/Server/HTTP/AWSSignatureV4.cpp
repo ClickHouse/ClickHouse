@@ -313,6 +313,23 @@ String buildCanonicalRequest(
     /// and it is not normalized. Each component is decoded and encoded separately: `parseHTTPPath` splits the path
     /// by the literal slashes, and an encoded slash (`%2F`) is a part of a component, so they must not be confused.
     std::string_view raw_path = getRawPath(request);
+
+    /// The canonical form encodes the unreserved characters as themselves, so `/%71uery` and `/query` have the same
+    /// signature. But the request handling compares parts of the raw path literally (e.g. the legacy `/query` endpoint
+    /// is not parsed as a table path), and different spellings could be executed differently under one signature.
+    /// AWS clients never encode the unreserved characters, so such a spelling is rejected.
+    for (size_t i = 0; i < raw_path.size(); ++i)
+    {
+        if (raw_path[i] != '%')
+            continue;
+        if (i + 2 >= raw_path.size() || !isHexDigit(raw_path[i + 1]) || !isHexDigit(raw_path[i + 2]))
+            throwInvalid("malformed percent-encoding in the URL");
+        char c = static_cast<char>(unhex2(&raw_path[i + 1]));
+        if (isAlphaNumericASCII(c) || c == '-' || c == '_' || c == '.' || c == '~')
+            throwInvalid("the path must not contain percent-encoded unreserved characters (letters, digits, '-', '_', '.', '~')");
+        i += 2;
+    }
+
     for (size_t begin = 0;;)
     {
         size_t end = raw_path.find('/', begin);
