@@ -967,7 +967,7 @@ ColumnPtr convertColumnToTypeOrThrow(const IColumn & value, const DataTypePtr & 
 
 ConstantValue resolveActiveAlternative(const ConstantValue & value)
 {
-    const DataTypePtr active_type = resolveActiveAlternativeType(value.getColumn()->getDataColumn(), value.getType());
+    const DataTypePtr active_type = resolveActiveAlternative(value.getColumn()->getDataColumn(), value.getType(), 0).type;
     if (active_type == value.getType())
         return value;
 
