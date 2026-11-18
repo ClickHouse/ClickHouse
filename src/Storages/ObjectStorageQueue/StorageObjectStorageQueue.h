@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config.h"
 #include <chrono>
 #include <optional>
 #include <Common/Macros.h>
@@ -41,6 +42,11 @@ public:
         bool keep_data_in_keeper_);
 
     String getName() const override { return engine_name; }
+
+#if CLICKHOUSE_CLOUD
+    ObjectStoragePtr getObjectStorage() const { return object_storage; }
+    StorageObjectStorageConfigurationPtr getObjectStorageConfiguration() const { return configuration; }
+#endif
 
     ObjectStorageType getType() { return type; }
 
@@ -143,7 +149,6 @@ private:
     std::string zookeeper_name;
     fs::path zk_path;
     const bool enable_logging_to_queue_log;
-    const bool parallel_inserts;
     mutable std::mutex mutex;
     UInt64 polling_min_timeout_ms TSA_GUARDED_BY(mutex);
     UInt64 polling_max_timeout_ms TSA_GUARDED_BY(mutex);

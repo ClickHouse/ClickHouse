@@ -1135,6 +1135,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         is_cut = true;
         serialized_fragment.resize(UTF8::computeBytesBeforeWidth(
             reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), prefix, format_settings.pretty.max_value_width));
+        /// Narrower than `max_value_width` when a wide character does not fit.
+        size_t kept_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), prefix);
 
         if (color)
         {
@@ -1146,7 +1148,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         else
             serialized_fragment += ellipsis;
 
-        value_width = format_settings.pretty.max_value_width;
+        value_width = kept_width;
     }
 
     auto write_padding = [&]()
@@ -1177,7 +1179,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         write_padding();
     }
 
-    if (start_from_offset != serialized_value->size())
+    /// After a cut, the ellipsis takes the place of the line feed marker: the next line starts with `line_continuation`.
+    if (start_from_offset != serialized_value->size() && !is_cut)
     {
         if (color)
             out << "\033[90m";
@@ -1402,9 +1405,9 @@ SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact
 └───────────────────────────────┘
 ```
 
-`TAB`, the line feed and `ESC` are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them - a tab advances to the next tab stop, and an ANSI escape sequence is what lets the data carry a visualization. A line feed keeps breaking the line too: inside a table cell when [`output_format_pretty_multiline_fields`](/operations/settings/formats#output_format_pretty_multiline_fields) is enabled, and as is otherwise. A column name is the exception to that exception: the header and the footer are a single line, so a line feed in a name is replaced like any other control character.
+`TAB`, the line feed and `ESC` are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them - a tab advances to the next tab stop, and an ANSI escape sequence is what lets the data carry a visualization. A line feed keeps breaking the line too: inside a table cell when [`output_format_pretty_multiline_fields`](/reference/settings/formats#output_format_pretty_multiline_fields) is enabled, and as is otherwise. A column name is the exception to that exception: the header and the footer are a single line, so a line feed in a name is replaced like any other control character.
 
-To print control characters verbatim instead, disable [`output_format_pretty_display_control_characters`](/operations/settings/formats#output_format_pretty_display_control_characters):
+To print control characters verbatim instead, disable [`output_format_pretty_display_control_characters`](/reference/settings/formats#output_format_pretty_display_control_characters):
 
 ```sql title="Query"
 SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact

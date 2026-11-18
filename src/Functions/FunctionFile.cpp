@@ -2,6 +2,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
+#include <Functions/FunctionAccessCheck.h>
 #include <Functions/FunctionFactory.h>
 #include <Access/Common/AccessFlags.h>
 #include <DataTypes/DataTypeString.h>
@@ -35,36 +36,46 @@ public:
     static constexpr auto name = "file";
     static FunctionPtr create(ContextPtr context)
     {
-        if (context && context->getApplicationType() != Context::ApplicationType::LOCAL)
-            context->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
-
-        return std::make_shared<FunctionFile>();
+        return std::make_shared<FunctionFile>(context);
     }
 
-    bool isVariadic() const override { return true; }
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
+    explicit FunctionFile(const ContextPtr & context)
+    {
+        if (context && context->getApplicationType() != Context::ApplicationType::LOCAL)
+            access_check.emplace(context);
+    }
 
-    String getSignatureString() const override
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+
+    void checkAccessOnBuild() const override
+    {
+        if (access_check)
+            access_check->check(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
+    }
+
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
+
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(String, NULL) -> Nullable(String) OR (String, [const String]) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;
         const ColumnString * column_src = checkAndGetColumn<ColumnString>(column.get());
@@ -150,6 +161,10 @@ public:
 
         return result;
     }
+
+private:
+    /// Not set for `clickhouse-local` and for the creation without a context.
+    std::optional<FunctionAccessCheck> access_check;
 };
 
 
