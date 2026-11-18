@@ -31,21 +31,21 @@ Considere o seguinte exemplo de JSON, que representa uma linha do [Python PyPI d
 }
 ```
 
-Para carregar este objeto JSON no ClickHouse, é necessário definir um esquema de tabela.
+Para carregar este objeto JSON no ClickHouse, é necessário definir um schema de tabela.
 
 Neste caso simples, nossa estrutura é estática, os nomes das colunas são conhecidos e seus tipos são bem definidos.
 
 Embora o ClickHouse suporte dados semiestruturados por meio de um tipo JSON, onde os nomes das chaves e seus tipos podem ser dinâmicos, isso não é necessário neste caso.
 
 <Info>
-  **Prefira esquemas estáticos sempre que possível**
+  **Prefira schemas estáticos sempre que possível**
 
-  Nos casos em que suas colunas têm nomes e tipos fixos, e não se espera a criação de novas colunas, sempre prefira um esquema definido estaticamente em produção.
+  Nos casos em que suas colunas têm nomes e tipos fixos, e não se espera a criação de novas colunas, sempre prefira um schema definido estaticamente em produção.
 
   O tipo JSON é preferível para dados altamente dinâmicos, em que os nomes e tipos das colunas podem mudar. Esse tipo também é útil para prototipagem e exploração de dados.
 </Info>
 
-Um esquema simples para isso é mostrado abaixo, onde **as chaves JSON são mapeadas para os nomes das colunas**:
+Um schema simples para isso é mostrado abaixo, onde **as chaves JSON são mapeadas para os nomes das colunas**:
 
 ```sql
 CREATE TABLE pypi (
@@ -72,7 +72,7 @@ O ClickHouse pode carregar dados JSON em vários formatos, inferindo automaticam
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
 LIMIT 1
 ```
 
@@ -81,13 +81,13 @@ LIMIT 1
 │ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8 │
 └────────────┴──────────────┴────────────────────┴─────────────┴──────────────┴──────────────┴────────┴─────────┘
 
-1 linha no conjunto. Elapsed: 1.232 sec.
+1 row in set. Elapsed: 1.232 sec.
 ```
 
 Observe que não é necessário especificar o formato do arquivo. Em vez disso, usamos um glob pattern para ler todos os arquivos `*.json.gz` no bucket. O ClickHouse infere automaticamente que o formato é `JSONEachRow` (ndjson) com base na extensão e no conteúdo do arquivo. Um formato pode ser especificado manualmente por meio de funções de parâmetro caso o ClickHouse não consiga detectá-lo automaticamente.
 
 ```sql
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONEachRow)
 ```
 
 <Info>
@@ -99,7 +99,7 @@ SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi
 Para carregar as linhas nesses arquivos, podemos usar um [`INSERT INTO SELECT`](/pt-BR/reference/statements/insert-into#inserting-the-results-of-select):
 
 ```sql
-INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
 ```
 
 ```response
@@ -159,7 +159,7 @@ Considere o exemplo a seguir de uma versão estendida do [Python PyPI dataset](h
 
 ```
 
-A coluna `tags` aqui é imprevisível e, portanto, impossível de modelar. Para carregar esses dados, podemos usar nosso esquema anterior, mas incluir uma coluna adicional `tags` do tipo [`JSON`](/pt-BR/reference/data-types/newjson):
+A coluna `tags` aqui é imprevisível e, portanto, impossível de modelar. Para carregar esses dados, podemos usar nosso schema anterior, mas incluir uma coluna adicional `tags` do tipo [`JSON`](/pt-BR/reference/data-types/newjson):
 
 ```sql
 SET enable_json_type = 1;
@@ -183,12 +183,12 @@ ORDER BY (project, date);
 Preenchemos a tabela usando a mesma abordagem adotada para o conjunto de dados original:
 
 ```sql
-INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
 ```
 
 ```sql
 INSERT INTO pypi_with_tags SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
 ```
 
 ```response

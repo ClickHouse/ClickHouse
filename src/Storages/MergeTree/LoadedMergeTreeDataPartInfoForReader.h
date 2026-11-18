@@ -18,91 +18,108 @@ public:
     {
     }
 
-    bool isCompactPart() const override { return DB::isCompactPart(data_part); }
+    [[nodiscard]] bool isCompactPart() const override { return DB::isCompactPart(data_part); }
 
-    bool isWidePart() const override { return DB::isWidePart(data_part); }
+    [[nodiscard]] bool isWidePart() const override { return DB::isWidePart(data_part); }
 
-    bool isProjectionPart() const override { return data_part->isProjectionPart(); }
+    [[nodiscard]] bool isProjectionPart() const override { return data_part->isProjectionPart(); }
 
-    bool hasLightweightDelete() const override { return data_part->hasLightweightDelete(); }
+    [[nodiscard]] bool hasLightweightDelete() const override { return data_part->hasLightweightDelete(); }
 
-    const String & getPartName() const override { return data_part->name; }
+    [[nodiscard]] const String & getPartName() const override { return data_part->name; }
 
-    const MergeTreePartInfo & getPartInfo() const override { return data_part->info; }
+    [[nodiscard]] const MergeTreePartInfo & getPartInfo() const override { return data_part->info; }
 
-    Int64 getMinDataVersion() const override
+    [[nodiscard]] const MergeTreePartition & getPartition() const override { return data_part->partition; }
+
+    [[nodiscard]] Int64 getMinDataVersion() const override
     {
         return data_part->info.isPatch()
             ? data_part->getPatchPartIndex().getMinDataVersion()
             : data_part->info.getDataVersion();
     }
 
-    Int64 getMaxDataVersion() const override
+    [[nodiscard]] Int64 getMaxDataVersion() const override
     {
         return data_part->info.isPatch()
             ? data_part->getPatchPartIndex().getMaxDataVersion()
             : data_part->info.getDataVersion();
     }
 
-    IndexPtr getIndexPtr() const override { return data_part->getIndex(); }
+    [[nodiscard]] IndexPtr getIndexPtr() const override { return data_part->getIndex(); }
 
-    DataPartStoragePtr getDataPartStorage() const override { return data_part->getDataPartStoragePtr(); }
+    [[nodiscard]] MergeTreePartMinMaxIndexPtr getMinMaxIndex() const override { return data_part->getMinMaxIndex(); }
 
-    const NamesAndTypesList & getColumns() const override { return data_part->getColumns(); }
+    [[nodiscard]] DataPartStoragePtr getDataPartStorage() const override { return data_part->getDataPartStoragePtr(); }
 
-    const ColumnsDescription & getColumnsDescription() const override { return data_part->getColumnsDescription(); }
+    [[nodiscard]] const NamesAndTypesList & getColumns() const override { return data_part->getColumns(); }
 
-    const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const override { return data_part->getColumnsDescriptionWithCollectedNested(); }
+    [[nodiscard]] const ColumnsDescription & getColumnsDescription() const override { return data_part->getColumnsDescription(); }
 
-    const ColumnsSubstreams & getColumnsSubstreams() const override { return data_part->getColumnsSubstreams(); }
+    [[nodiscard]] const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const override { return data_part->getColumnsDescriptionWithCollectedNested(); }
 
-    std::optional<size_t> getColumnPosition(const String & column_name) const override { return data_part->getColumnPosition(column_name); }
+    [[nodiscard]] const ColumnsSubstreams & getColumnsSubstreams() const override { return data_part->getColumnsSubstreams(); }
 
-    std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const override { return data_part->tryGetColumn(column_name); }
+    [[nodiscard]] std::optional<size_t> getColumnPosition(const String & column_name) const override { return data_part->getColumnPosition(column_name); }
 
-    bool isSystemColumnInvalidated(const String & column_name) const override { return data_part->isSystemColumnInvalidated(column_name); }
+    [[nodiscard]] std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const override { return data_part->tryGetColumn(column_name); }
 
-    AlterConversionsPtr getAlterConversions() const override { return alter_conversions; }
+    [[nodiscard]] bool isSystemColumnInvalidated(const String & column_name) const override { return data_part->isSystemColumnInvalidated(column_name); }
 
-    String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const override
+    [[nodiscard]] AlterConversionsPtr getAlterConversions() const override { return alter_conversions; }
+
+    [[nodiscard]] String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const override
     {
         return data_part->getColumnNameWithMinimumCompressedSize(available_columns);
     }
 
-    String getParentPartName() const override { return data_part->getParentPartName(); }
+    [[nodiscard]] String getParentPartName() const override { return data_part->getParentPartName(); }
 
-    ColumnSize getColumnSize(const String & column_name) const override { return data_part->getColumnSize(column_name); }
+    [[nodiscard]] ColumnSize getColumnSize(const String & column_name) const override { return data_part->getColumnSize(column_name); }
 
-    std::shared_ptr<const std::unordered_map<String, ColumnSize>> getColumnSizes() const override
+    [[nodiscard]] std::shared_ptr<const std::unordered_map<String, ColumnSize>> getColumnSizes() const override
     {
         return data_part->getColumnSizes();
     }
 
-    ColumnSize getSubcolumnSize(const String & subcolumn_name) const override { return data_part->getSubcolumnSize(subcolumn_name); }
+    [[nodiscard]] CompressionCodecPtr getDefaultCompressionCodec() const override { return data_part->default_codec; }
 
-    const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->checksums; }
+    [[nodiscard]] ColumnSize getSubcolumnSize(const String & subcolumn_name) const override { return data_part->getSubcolumnSize(subcolumn_name); }
+
+    [[nodiscard]] const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->checksums; }
+
+    [[nodiscard]] const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes() const override { return data_part->getSecondaryIndexColumnTypes(); }
 
     void reportBroken() override { data_part->storage.reportBrokenPart(data_part); }
 
-    size_t getMarksCount() const override { return data_part->getMarksCount(); }
+    [[nodiscard]] size_t getMarksCount() const override { return data_part->getMarksCount(); }
 
-    size_t getFileSizeOrZero(const std::string & file_name) const override { return data_part->getFileSizeOrZero(file_name); }
+    [[nodiscard]] size_t getFileSizeOrZero(const std::string & file_name) const override { return data_part->getFileSizeOrZero(file_name); }
 
-    const MergeTreeIndexGranularityInfo & getIndexGranularityInfo() const override { return data_part->index_granularity_info; }
+    [[nodiscard]] const MergeTreeIndexGranularityInfo & getIndexGranularityInfo() const override { return data_part->index_granularity_info; }
 
-    const MergeTreeIndexGranularity & getIndexGranularity() const override { return *data_part->index_granularity; }
+    [[nodiscard]] const MergeTreeIndexGranularity & getIndexGranularity() const override { return *data_part->index_granularity; }
 
-    const SerializationInfoByName & getSerializationInfos() const override { return data_part->getSerializationInfos(); }
+    [[nodiscard]] const SerializationInfoByName & getSerializationInfos() const override { return data_part->getSerializationInfos(); }
 
-    SerializationPtr getSerialization(const NameAndTypePair & column) const override { return data_part->getSerialization(column.name); }
+    [[nodiscard]] SerializationPtr getSerialization(const NameAndTypePair & column) const override { return data_part->getSerialization(column.name); }
 
-    String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
+    [[nodiscard]] SerializationPtr tryGetSerialization(const String & column_name) const override { return data_part->tryGetSerialization(column_name); }
 
-    MergeTreeSettingsPtr getStorageSettings() const override { return data_part->storage.getSettings(); }
+    [[nodiscard]] SerializationPtr tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const override
+    {
+        return data_part->tryGetSubcolumnSerialization(column_name, subcolumn_name);
+    }
 
-    std::shared_ptr<const IMergeTreeDataPart> getDataPart() const override { return data_part; }
+    [[nodiscard]] String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
 
-    size_t getRowCount() const override { return data_part->rows_count; }
+    [[nodiscard]] UUID getTableUUID() const override { return data_part->storage.getStorageID().uuid; }
+
+    [[nodiscard]] MergeTreeSettingsPtr getStorageSettings() const override { return data_part->storage.getSettings(); }
+
+    [[nodiscard]] std::shared_ptr<const IMergeTreeDataPart> getDataPart() const override { return data_part; }
+
+    [[nodiscard]] size_t getRowCount() const override { return data_part->rows_count; }
 private:
     MergeTreeData::DataPartPtr data_part;
     AlterConversionsPtr alter_conversions;

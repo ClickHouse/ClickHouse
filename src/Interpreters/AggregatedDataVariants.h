@@ -2,11 +2,17 @@
 #include <Core/Block_fwd.h>
 #include <Core/Names.h>
 #include <Interpreters/AggregatedData.h>
+#include <Interpreters/AggregationCellIndex.h>
 #include <Interpreters/AggregationMethod.h>
+#include <Common/PODArray.h>
 
+#include <atomic>
 #include <memory>
+#include <optional>
 #include <boost/noncopyable.hpp>
 
+
+class MemoryTracker;
 
 namespace DB
 {
@@ -49,6 +55,10 @@ struct AggregatedDataVariants : private boost::noncopyable
     Arenas aggregates_pools;
     Arena * aggregates_pool{};    /// The pool that is currently used for allocation.
 
+    /// Accounts for the whole state of this table, including memory that aggregate
+    /// states allocate outside the arenas. Attached by the aggregator on the first block.
+    std::unique_ptr<MemoryTracker> memory_tracker;
+
     /** Specialization for the case when there are no keys, and for keys not fitted into max_rows_to_group_by.
       */
     AggregatedDataWithoutKey without_key = nullptr;
@@ -73,6 +83,12 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyVoid, false>> key64_void;
     std::unique_ptr<AggregationMethodStringNoCache<AggregatedDataWithShortStringKey>>               key_string;
     std::unique_ptr<AggregationMethodPackedString<AggregatedDataWithPackedStringKey>>        key_packed_string;
+    std::unique_ptr<AggregationMethodKeysAndPackedString<AggregatedDataWithKeys32AndPackedString>>   keys32_packed_string;
+    std::unique_ptr<AggregationMethodKeysAndPackedString<AggregatedDataWithKeys64AndPackedString>>   keys64_packed_string;
+    std::unique_ptr<AggregationMethodKeysAndPackedString<AggregatedDataWithKeys128AndPackedString>>  keys128_packed_string;
+    std::unique_ptr<AggregationMethodKeysAndPackedString<AggregatedDataWithKeys32AndPackedStringVoid>>   keys32_packed_string_void;
+    std::unique_ptr<AggregationMethodKeysAndPackedString<AggregatedDataWithKeys64AndPackedStringVoid>>   keys64_packed_string_void;
+    std::unique_ptr<AggregationMethodKeysAndPackedString<AggregatedDataWithKeys128AndPackedStringVoid>>  keys128_packed_string_void;
     std::unique_ptr<AggregationMethodFixedStringNoCache<AggregatedDataWithShortStringKey>>          key_fixed_string;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt16Key, false, false, false>>  keys16;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt32Key>>                   keys32;
@@ -99,6 +115,12 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyVoidTwoLevel, false>> key64_void_two_level;
     std::unique_ptr<AggregationMethodStringNoCache<AggregatedDataWithShortStringKeyTwoLevel>>       key_string_two_level;
     std::unique_ptr<AggregationMethodPackedString<AggregatedDataWithPackedStringKeyTwoLevel>>       key_packed_string_two_level;
+    std::unique_ptr<AggregationMethodKeysAndPackedString<AggregatedDataWithKeys32AndPackedStringTwoLevel>>  keys32_packed_string_two_level;
+    std::unique_ptr<AggregationMethodKeysAndPackedString<AggregatedDataWithKeys64AndPackedStringTwoLevel>>  keys64_packed_string_two_level;
+    std::unique_ptr<AggregationMethodKeysAndPackedString<AggregatedDataWithKeys128AndPackedStringTwoLevel>> keys128_packed_string_two_level;
+    std::unique_ptr<AggregationMethodKeysAndPackedString<AggregatedDataWithKeys32AndPackedStringVoidTwoLevel>>  keys32_packed_string_void_two_level;
+    std::unique_ptr<AggregationMethodKeysAndPackedString<AggregatedDataWithKeys64AndPackedStringVoidTwoLevel>>  keys64_packed_string_void_two_level;
+    std::unique_ptr<AggregationMethodKeysAndPackedString<AggregatedDataWithKeys128AndPackedStringVoidTwoLevel>> keys128_packed_string_void_two_level;
     std::unique_ptr<AggregationMethodFixedStringNoCache<AggregatedDataWithShortStringKeyTwoLevel>>  key_fixed_string_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt32KeyTwoLevel>>           keys32_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt64KeyTwoLevel>>           keys64_two_level;
@@ -216,6 +238,12 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys256_void_two_level,     true) \
         M(key_string,                 false) \
         M(key_packed_string,          false) \
+        M(keys32_packed_string,       false) \
+        M(keys64_packed_string,       false) \
+        M(keys128_packed_string,      false) \
+        M(keys32_packed_string_void,  false) \
+        M(keys64_packed_string_void,  false) \
+        M(keys128_packed_string_void, false) \
         M(key_fixed_string,           false) \
         M(keys16,                    false) \
         M(keys32,                    false) \
@@ -245,6 +273,12 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(key64_two_level,            true) \
         M(key_string_two_level,       true) \
         M(key_packed_string_two_level, true) \
+        M(keys32_packed_string_two_level, true) \
+        M(keys64_packed_string_two_level, true) \
+        M(keys128_packed_string_two_level, true) \
+        M(keys32_packed_string_void_two_level, true) \
+        M(keys64_packed_string_void_two_level, true) \
+        M(keys128_packed_string_void_two_level, true) \
         M(key_fixed_string_two_level, true) \
         M(keys32_two_level,          true) \
         M(keys64_two_level,          true) \
@@ -317,6 +351,12 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys256_void)     \
         M(key_string)       \
         M(key_packed_string) \
+        M(keys32_packed_string) \
+        M(keys64_packed_string) \
+        M(keys128_packed_string) \
+        M(keys32_packed_string_void) \
+        M(keys64_packed_string_void) \
+        M(keys128_packed_string_void) \
         M(key_fixed_string) \
         M(keys32)           \
         M(keys64)           \
@@ -396,6 +436,12 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys256_void_two_level)     \
         M(key_string_two_level)       \
         M(key_packed_string_two_level) \
+        M(keys32_packed_string_two_level) \
+        M(keys64_packed_string_two_level) \
+        M(keys128_packed_string_two_level) \
+        M(keys32_packed_string_void_two_level) \
+        M(keys64_packed_string_void_two_level) \
+        M(keys128_packed_string_void_two_level) \
         M(key_fixed_string_two_level) \
         M(keys32_two_level)           \
         M(keys64_two_level)           \
@@ -452,6 +498,30 @@ struct AggregatedDataVariants : private boost::noncopyable
     #undef M
     };
     Type type = Type::EMPTY;
+    bool top_k_heap_ever_rejected = false;
+
+    /// The table admits no key outside the set `kept_keys_seed` holds, under
+    /// `group_by_overflow_mode = ANY`. Only such a table may be flushed to a temporary file
+    /// while the shared cutoff holds (see `ManyAggregatedData::SharedKeptKeys`): everything it
+    /// contains is a kept key, and `Aggregator` re-seeds it with the kept keys after the flush
+    /// so the remaining rows of those keys keep being aggregated.
+    bool restricted_to_kept_keys = false;
+
+    /// Keys with empty aggregate states, in the mergeable block layout; the `Aggregator` puts
+    /// them back into the table after an external-aggregation spill has emptied it. With the
+    /// shared cutoff of the trivial `GROUP BY ... LIMIT` optimization this is the frozen set
+    /// shared by all the streams (`ManyAggregatedData::SharedKeptKeys::seed`), captured before
+    /// the table is rebuilt around it, and set together with `restricted_to_kept_keys`; with a
+    /// plain `max_rows_to_group_by` cap it is refreshed by every flush from what that flush
+    /// wrote, which is every key the stream has admitted so far.
+    ConstBlockPtr kept_keys_seed;
+
+    /// The table is being rebuilt around the kept keys, or re-seeded with them after a flush.
+    /// Those merges only re-insert data the table already held, so an external-aggregation spill
+    /// in the middle of them must be skipped: it would empty the table while the rest of the
+    /// rebuild is merged into it under `no_more_keys`, dropping everything accumulated so far.
+    bool kept_keys_rebuild_in_progress = false;
+
     AggregatedDataVariants();
     ~AggregatedDataVariants();
     bool empty() const { return type == Type::EMPTY; }
@@ -467,33 +537,131 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// the arenas and the overflow row, and leaves the variants empty, with no arena. Calling
     /// this while the variants still own live nontrivial states would leak them undestroyed.
     void resetAfterStateOwnershipTransfer();
-    void init(Type type_, std::optional<size_t> size_hint = std::nullopt);
+    /// The expected number of keys of a table, which `init` preallocates the table for.
+    struct SizeHint
+    {
+        size_t keys = 0;
+        /// The part of `keys` with an empty string, which a table of fixed-width keys and one `String` keeps
+        /// in a sub-table of its own (see `KeysAndPackedStringHashTable`). Such a table is preallocated only
+        /// when the hint tells this part.
+        std::optional<size_t> keys_with_empty_string = std::nullopt;
+    };
+
+    void init(Type type_, std::optional<SizeHint> size_hint = std::nullopt);
     /// Number of rows (different keys).
     size_t size() const;
+    /// The number of keys with an empty string in a table of fixed-width keys and one `String` (see
+    /// `SizeHint`), and 0 for the other methods.
+    size_t sizeWithEmptyString() const;
     size_t sizeWithoutOverflowRow() const;
     /// Memory held by the variants: the arenas (keys and states) plus the active method's
     /// hash-table buffer, which dominates for inline states over fixed keys.
     size_t allocatedBytes() const;
+    /// Bytes of the active method's hash-table buffer: its cells, which hold the keys (references to
+    /// the bytes of string keys) and the states' pointers, or the states themselves where they are
+    /// stored inline.
+    size_t hashTableBufferBytes() const;
+    /// Bytes that the keys and states took in the arenas. Unlike the arenas' allocated bytes,
+    /// which grow by whole chunks of doubling size, they follow every allocation.
+    size_t usedArenaBytes() const;
+    /// Tracked size of the state; without a tracker (merge-only aggregation) only arenas and
+    /// hash table are known.
+    size_t memoryUsage() const;
 
-    /// The adaptive bucket-parallel merge's per-bucket arenas, populated on the merge
-    /// destination when the merge sources are created. Deliberately outside
-    /// `aggregates_pools`: the output conversion captures that list wholesale into every
-    /// bucket's non-final and -State columns, while these slots are handed out per bucket and
-    /// reset as buckets retire (`Aggregator::retireAdaptiveMergedBucket`), so a converted
-    /// bucket's drained and merged states free early. States adopted from the producers'
-    /// mixed arenas stay in `aggregates_pools` and live until the variants die.
+    /// The adaptive bucket-parallel merge's arena slots, one per bucket, populated on the merge
+    /// destination (see `Aggregator::createAdaptiveMergeDestination`). A slot holds the arena of
+    /// the bucket's unit being merged, takes a fresh one for every unit and is reset when the
+    /// bucket retires (see `Aggregator::mergeAndConvertAdaptiveBucket`), so a converted unit's
+    /// drained and merged states free early. Deliberately outside `aggregates_pools`: the output
+    /// conversion captures that list wholesale into every bucket's non-final and -State columns,
+    /// while each conversion captures only the arena of its unit. States adopted from the
+    /// producers' mixed arenas stay in `aggregates_pools` and live until the variants die.
     Arenas adaptive_merge_bucket_arenas;
+
+    /// Keys consumed and produced by the two-level bucket merges that have completed
+    /// (`Aggregator::mergeBucketImpl`). The buckets are uniform hash samples of one key set,
+    /// so the measured result/input ratio predicts the merged size of the remaining buckets.
+    std::atomic<UInt64> merged_buckets_input_keys{0};
+    std::atomic<UInt64> merged_buckets_result_keys{0};
     const char * getMethodName() const;
     bool isTwoLevel() const;
     bool isConvertibleToTwoLevel() const;
     static bool isConvertibleToTwoLevel(Type type);
+    /// Whether `type` is a method of fixed-width keys and one `String` key: `keys32_packed_string`,
+    /// `keys64_packed_string`, `keys128_packed_string`, their key-only forms (`_void`) or a two-level form of
+    /// them.
+    static bool isKeysAndPackedString(Type type);
     void convertToTwoLevel();
+    /// Builds the cell index of the single-level table (see `AggregationCellIndex`): its cells grouped by
+    /// `partition_of(hash)`, so that a merge reads the cells of any run of consecutive partitions without
+    /// walking the table, which spares its conversion to two-level. The caller guarantees that the method has
+    /// a two-level counterpart and the table is single-level (see `isConvertibleToTwoLevel`), and that
+    /// `partition_of` returns a partition below `num_partitions`. Counts the table in
+    /// `AggregationIndexedTables`, as `convertToTwoLevel` counts a conversion.
+    template <typename PartitionOf>
+    void indexCells(size_t num_partitions, PartitionOf && partition_of);
+    /// Whether `indexCells` indexed the table's cells and nothing cleared the index since (see `cell_index`).
+    bool hasCellIndex() const { return cell_index.has_value(); }
+    /// The cell index of the single-level table, which hands out the table's cells for writing. The caller
+    /// guarantees that the table is indexed (see `hasCellIndex`).
+    AggregationCellIndex & cellIndex() { return *cell_index; }
+    /// Drops the cell index before an insertion into the table, which may move the cells it points to.
+    void dropCellIndex() { cell_index.reset(); }
+    /// Replaces an empty two-level table with an empty single-level table of the same method: the reverse of
+    /// `convertToTwoLevel` for a table whose data was written to disk.
+    void resetToSingleLevel();
     bool isLowCardinality() const;
+    /// Serialized hash methods; `Aggregator` passes non-nullable `LowCardinality` key columns
+    /// to them without materializing full columns first.
+    bool isSerialized() const;
     static ColumnsHashing::HashMethodContextPtr createCache(Type type, const ColumnsHashing::HashMethodContextSettings & settings);
+    bool topKHeapEverRejected() const;
+    /// Whether the active method's top-K heap is inactive for the block about to be processed: it has
+    /// already frozen, or `Aggregator::executeImpl` will certainly freeze it before processing row 0 of
+    /// that block (see `TopKAggregationHeapBase::willBeInactive`). Conservative: when the shared-boundary
+    /// exchange may still keep the heap running, the heap is reported as active.
+    bool topKHeapInactive() const;
 
     /** Select the aggregation method based on the number and types of keys. */
     static Type chooseMethod(const Block & header, const Names & keys, Sizes & out_key_sizes);
+
+private:
+    /// The index of the cells of the single-level table (see `indexCells`). It points into the table's
+    /// buffer, so it serves only while the table takes no more keys: the serial merge, which inserts into the
+    /// first table, drops the index of that table first (see `dropCellIndex`), and `init`,
+    /// `convertToTwoLevel` and `resetAfterStateOwnershipTransfer`, which replace the table, clear it.
+    std::optional<AggregationCellIndex> cell_index;
+
+    /// Stores the index that `indexCells` built, and counts it.
+    void setCellIndex(AggregationCellIndex && index);
+
+    [[noreturn]] void throwCannotIndexCells() const;
 };
+
+template <typename PartitionOf>
+void AggregatedDataVariants::indexCells(size_t num_partitions, PartitionOf && partition_of)
+{
+    auto index_table = [&]<typename TwoLevelTable>(std::type_identity<TwoLevelTable>, auto & table)
+    {
+        /// The merges read the cells of either kind of table as the cells of a bucket of the two-level table.
+        static_assert(cellsReadableAs<std::decay_t<decltype(table)>, typename TwoLevelTable::Impl>());
+        setCellIndex(AggregationCellIndex(table, num_partitions, partition_of));
+    };
+
+    switch (type)
+    {
+    #define M(NAME) \
+        case Type::NAME: \
+            index_table(std::type_identity<decltype(NAME ## _two_level)::element_type::Data>{}, (NAME)->data); \
+            break;
+
+        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+
+    #undef M
+        default:
+            throwCannotIndexCells();
+    }
+}
 
 using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;
 using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;

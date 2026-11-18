@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <base/types.h>
@@ -95,7 +95,7 @@ public:
     }
 
     /// Number of distinct right rows marked as matched.
-    size_t countMatched() const
+    [[nodiscard]] size_t countMatched() const
     {
         size_t result = 0;
         for (const auto & [_, flags] : per_row_flags)

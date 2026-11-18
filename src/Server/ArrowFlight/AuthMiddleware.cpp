@@ -5,6 +5,7 @@
 
 #include <Server/ArrowFlight/CallsData.h>
 
+#include <Core/ServerSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -23,6 +24,11 @@ namespace ErrorCodes
     extern const int AUTHENTICATION_FAILED;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SESSION_TIMEOUT;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_session_user;
 }
 
 void AuthMiddleware::SendingHeaders(arrow::flight::AddCallHeaders * outgoing_headers)
@@ -168,9 +174,9 @@ String AuthMiddlewareFactory::TokenStorage::getToken(std::string username, std::
 
     auto token = toString(UUIDHelpers::generateV4());
     auto expiration_time = std::chrono::steady_clock::now() + std::chrono::seconds(config.getInt("default_session_timeout", 60));
-    auto exp_iter = token_expiration_list.insert({expiration_time, token});
-    token_expiration_list_index[token] = exp_iter;
-    token_to_credentials[token] = {username, password};
+    auto exp_iter = token_expiration_list.insert({expiration_time, SecretString(token)});
+    token_expiration_list_index[SecretString(token)] = exp_iter;
+    token_to_credentials[SecretString(token)] = {username, SecretString(password)};
 
     return token;
 }
@@ -185,10 +191,10 @@ std::optional<std::pair<std::string, std::string>> AuthMiddlewareFactory::TokenS
     if (it != token_to_credentials.end())
     {
         auto expiration_time = std::chrono::steady_clock::now() + std::chrono::seconds(config.getInt("default_session_timeout", 60));
-        auto new_iter = token_expiration_list.insert({expiration_time, token});
-        token_expiration_list.erase(token_expiration_list_index[token]);
-        token_expiration_list_index[token] = new_iter;
-        return it->second;
+        auto new_iter = token_expiration_list.insert({expiration_time, it->first});
+        token_expiration_list.erase(token_expiration_list_index[it->first]);
+        token_expiration_list_index[it->first] = new_iter;
+        return std::pair{it->second.first, String(it->second.second)};
     }
     return std::nullopt;
 }
@@ -211,7 +217,7 @@ arrow::Status AuthMiddlewareFactory::StartCall(
 {
     const auto & headers = context.incoming_headers();
 
-    std::string username("default");
+    std::string username;
     std::string password;
     std::string token;
     auto session = std::make_shared<Session>(server.context(), ClientInfo::Interface::ARROW_FLIGHT);
@@ -241,6 +247,27 @@ arrow::Status AuthMiddlewareFactory::StartCall(
         {
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Unsupported 'authorization' header");
         }
+
+        /// An empty user name (no `authorization` header, or Basic credentials with an empty
+        /// user name) means the default session user (the `default_session_user` server setting).
+        /// A Bearer token cannot carry an empty user name: tokens are issued below after
+        /// authentication, when the user name has already been resolved.
+        if (username.empty())
+        {
+            username = server.context()->getServerSettings()[ServerSetting::default_session_user];
+
+            /// The default session user can be explicitly configured to be empty to prohibit
+            /// connections without a user name. The reject is recorded in `system.session_log`
+            /// as a login failure, so that prohibited anonymous attempts remain auditable.
+            if (username.empty())
+            {
+                auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Anonymous connections are prohibited (the `default_session_user` server setting is empty), specify a user name.");
+                session->onAuthenticationFailure(username, getClientAddress(context), exception);
+                return arrow::flight::MakeFlightError(arrow::flight::FlightStatusCode::Unauthenticated, exception.message());
+            }
+        }
+
         session->authenticate(username, password, getClientAddress(context));
     }
     catch (DB::Exception & e)

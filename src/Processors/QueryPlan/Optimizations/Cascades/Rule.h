@@ -14,10 +14,10 @@ class IOptimizationRule
 {
 public:
     virtual ~IOptimizationRule() = default;
-    virtual String getName() const = 0;
-    virtual bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const = 0;
-    virtual Promise getPromise() const = 0;
-    virtual bool isTransformation() const = 0;
+    [[nodiscard]] virtual String getName() const = 0;
+    [[nodiscard]] virtual bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const = 0;
+    [[nodiscard]] virtual Promise getPromise() const = 0;
+    [[nodiscard]] virtual bool isTransformation() const = 0;
 
     std::vector<GroupExpressionPtr> apply(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const;
 
@@ -26,7 +26,8 @@ protected:
 
     /// Inserts a rule-produced physical expression into its group and appends it to `result` when
     /// it was actually inserted (a structural duplicate is dropped). Marks the expression with
-    /// this rule so it is not re-applied to its own product.
+    /// this rule so it is not re-applied to its own product. When the duplicate is an enforcer,
+    /// the equal enforcer of the group gets the required properties that the new one was made for.
     void addPhysicalToMemo(GroupExpressionPtr expression, const ExpressionProperties & required_properties,
         Memo & memo, std::vector<GroupExpressionPtr> & result) const;
 
@@ -49,13 +50,17 @@ using OptimizationRulePtr = std::shared_ptr<const IOptimizationRule>;
 OptimizationRulePtr createJoinCommutativity();
 OptimizationRulePtr createHashJoinImplementation();
 OptimizationRulePtr createAggregationImplementation();
+OptimizationRulePtr createDistinctImplementation();
 OptimizationRulePtr createTwoStageAggregationTransformation();
+OptimizationRulePtr createMergingAggregationImplementation();
+OptimizationRulePtr createAggregationPushdown();
 OptimizationRulePtr createLocalReadImplementation();
 OptimizationRulePtr createParallelReadImplementation();
 OptimizationRulePtr createReplicatedReadImplementation();
 OptimizationRulePtr createReplicatedSubplanImplementation();
 OptimizationRulePtr createTopNImplementation();
 OptimizationRulePtr createTwoStageTopN();
+OptimizationRulePtr createWindowImplementation();
 OptimizationRulePtr createDefaultImplementation();
 OptimizationRulePtr createDistributionPassthrough();
 OptimizationRulePtr createDistributionEnforcer();

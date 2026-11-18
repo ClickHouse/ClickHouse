@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 
 #include <Columns/ColumnMap.h>
@@ -17,6 +18,7 @@
 #if USE_SSL
     #include <Poco/Net/SSLManager.h>
     #include <Common/Crypto/X509Certificate.h>
+    #include <Server/CertificateReloader.h>
 #endif
 
 namespace DB
@@ -29,6 +31,27 @@ namespace ErrorCodes
 
 namespace
 {
+
+#if USE_SSL
+/// The certificate that the server currently serves to clients.
+/// It is not always the certificate of the default SSL context: when certificates are provisioned
+/// dynamically (the `<acme>` configuration), that context has no certificate at all, and only
+/// `CertificateReloader` knows the certificate in use.
+std::optional<X509Certificate> getServerCertificate()
+{
+    auto served_certificate = CertificateReloader::instance().getCertificate(Poco::Net::SSLManager::CFG_SERVER_PREFIX);
+    if (served_certificate)
+        return served_certificate;
+
+    X509 * context_certificate = SSL_CTX_get0_certificate(Poco::Net::SSLManager::instance().defaultServerContext()->sslContext());
+    if (!context_certificate)
+        return {};
+
+    /// `SSL_CTX_get0_certificate` does not transfer the ownership, and `X509` is reference counted.
+    X509_up_ref(context_certificate);
+    return X509Certificate(context_certificate);
+}
+#endif
 
 // showCertificate()
 class FunctionShowCertificate final : public IFunction
@@ -51,18 +74,22 @@ public:
     explicit FunctionShowCertificate(const std::string & certificate_ = "") : certificate(certificate_) {}
 #endif
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    /// The connection's client certificate, or the executing node's own server certificate.
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isServerConstant() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+
+    [[nodiscard]] String getSignatureString() const override
     {
-        return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
+        return "() -> Map(String, String)";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         MutableColumnPtr keys = DataTypeString().createColumn();
         MutableColumnPtr values = DataTypeString().createColumn();
@@ -71,15 +98,11 @@ public:
         if (input_rows_count)
         {
 #if USE_SSL
-            std::unique_ptr<X509Certificate> x509_cert;
+            std::optional<X509Certificate> x509_cert;
             if (!certificate.empty())
-                x509_cert = std::make_unique<X509Certificate>(certificate);
-
-            if (!x509_cert)
-            {
-                const auto * server_context_cert = SSL_CTX_get0_certificate(Poco::Net::SSLManager::instance().defaultServerContext()->sslContext());
-                x509_cert = std::make_unique<X509Certificate>(X509_dup(server_context_cert));
-            }
+                x509_cert.emplace(certificate);
+            else
+                x509_cert = getServerCertificate();
 
             if (x509_cert)
             {
@@ -143,6 +166,7 @@ REGISTER_FUNCTION(ShowCertificate)
 {
     FunctionDocumentation::Description description = R"(
 Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured.
+An empty map is returned if the server has no certificate, for example, when the certificate is provisioned with ACME and has not been issued yet.
 See [Configuring TLS](/concepts/features/security/tls/configuring-tls) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
     )";
     FunctionDocumentation::Syntax syntax = "showCertificate()";

@@ -9,12 +9,17 @@ from ci.praktika.utils import MetaClasses, Shell, Utils
 
 TEMP = "/tmp"
 
-LLVM_VERSION = "22"
+LLVM_VERSION = "23"
 
 LLVM_SOURCE_DIR = f"{TEMP}/llvm-project"
 NINJA_SOURCE_DIR = f"{TEMP}/ninja-src"
 NINJA_BUILD_DIR = f"{TEMP}/ninja-build"
 NINJA_LOG_SHARE_DIR = "share/clickhouse-build"
+JEMALLOC_VERSION = "5.4.0"
+JEMALLOC_URL = "https://github.com/jemalloc/jemalloc/releases/download/5.4.0/jemalloc-5.4.0.tar.bz2"
+JEMALLOC_SHA256 = "200776fac271093e7c2f21edd6d62657ecd2be578d9328633f2a86bfa6ef4f1d"
+JEMALLOC_SOURCE_DIR = f"{TEMP}/jemalloc-{JEMALLOC_VERSION}"
+JEMALLOC_LIBRARY = f"{JEMALLOC_SOURCE_DIR}/lib/libjemalloc_pic.a"
 STAGE1_BUILD_DIR = f"{TEMP}/toolchain-stage1"
 STAGE1_INSTALL_DIR = f"{TEMP}/toolchain-stage1-install"
 STAGE2_BUILD_DIR = f"{TEMP}/toolchain-stage2"
@@ -29,13 +34,53 @@ REPO_PATH = "/ClickHouse"
 
 OUTPUT_DIR = f"{Utils.cwd()}/ci/tmp"
 
-# BOLT profile collection settings: time-limited to avoid filling disk
-# with fdata files (~15 MB per compilation unit)
-BOLT_PROFILE_TIMEOUT = 1200  # 20 minutes
-BOLT_PROFILE_PARALLELISM = 4
+# BOLT profile collection is time-limited to avoid filling disk with fdata files
+# (~15 MB per clang process). It runs at full parallelism: the limit is on the
+# number of profiles, so idle cores would only stretch the same work out in time.
+# Four jobs for 20 minutes collected ~1600 profiles on amd64; 150 seconds at full
+# parallelism collected 755 on amd64 and 1248 on aarch64, so this collects about as many.
+BOLT_PROFILE_TIMEOUT = 300
 
-# All LLVM projects for the final toolchain (note: "all" doesn't work with cmake)
-STAGE2_LLVM_PROJECTS = "clang;clang-tools-extra;lld;bolt;polly"
+# LLVM projects for the final toolchain (note: "all" doesn't work with cmake).
+# `bolt` is needed by the BOLT stage of this job and by the ClickHouse BOLT builds.
+STAGE2_LLVM_PROJECTS = "clang;lld;bolt"
+
+# Backends of the final toolchain: the architectures ClickHouse is built for
+# (Linux, FreeBSD and Darwin targets). Emscripten ships its own LLVM for wasm.
+STAGE2_LLVM_TARGETS = "X86;AArch64;PowerPC;SystemZ;RISCV;LoongArch"
+
+# What the toolchain archive contains, i.e. what gets built and installed in stage 2.
+# Everything that CI invokes from the toolchain must be listed here: ClickHouse's CMake
+# looks up `ld.lld`, `llvm-ar` and the other binutils in the compiler's directory first, and
+# `/usr/local/bin` precedes the distro LLVM on `PATH`, so `llvm-profdata`, `llvm-cov` and
+# `llvm-bolt` must match the compiler's profile formats. `clang-tidy` comes from the distro
+# package: `cmake/clang_tidy.cmake` prefers the versioned name.
+STAGE2_DISTRIBUTION_COMPONENTS = [
+    "clang",
+    "clang-resource-headers",
+    "lld",
+    "builtins",
+    "runtimes",
+    "bolt",
+    "llvm-ar",
+    "llvm-ranlib",
+    "llvm-objcopy",
+    "llvm-strip",
+    "llvm-install-name-tool",
+    "llvm-nm",
+    "llvm-profdata",
+    "llvm-cov",
+    "llvm-symbolizer",
+    "llvm-addr2line",
+    "llvm-cxxfilt",
+    "llvm-objdump",
+    "llvm-readobj",
+    "llvm-readelf",
+    "llvm-dwarfdump",
+    "llvm-dwp",
+    "llvm-size",
+    "llvm-strings",
+]
 
 # Cross-target triples for compiler-rt builtins. Builtins are freestanding C code
 # (no sysroot needed), built via LLVM_BUILTIN_TARGETS so the toolchain is
@@ -48,15 +93,16 @@ CROSS_BUILTIN_TARGETS = [
     ("powerpc64le-unknown-linux-gnu", "Linux"),
     ("riscv64-unknown-linux-gnu", "Linux"),
     ("loongarch64-unknown-linux-gnu", "Linux"),
-    ("x86_64-pc-freebsd13", "FreeBSD"),
-    ("aarch64-unknown-freebsd13", "FreeBSD"),
-    ("powerpc64le-unknown-freebsd13", "FreeBSD"),
+    ("x86_64-pc-freebsd14", "FreeBSD"),
+    ("aarch64-unknown-freebsd14", "FreeBSD"),
+    ("powerpc64le-unknown-freebsd14", "FreeBSD"),
 ]
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
     CLONE_LLVM = "clone_llvm"
     BUILD_NINJA = "build_ninja"
+    BUILD_JEMALLOC = "build_jemalloc"
     STAGE1_BUILD = "stage1_build"
     PROFILE_COLLECTION = "profile_collection"
     STAGE2_BUILD = "stage2_build"
@@ -186,6 +232,40 @@ def main():
             # Clean up source dir to save space
             clean_dirs(NINJA_SOURCE_DIR)
 
+    # Stage 0.6: Build jemalloc, which the final toolchain executables link instead of glibc malloc
+    if res and JobStages.BUILD_JEMALLOC in stages:
+        clean_dirs(JEMALLOC_SOURCE_DIR)
+        jemalloc_tarball = f"{TEMP}/jemalloc-{JEMALLOC_VERSION}.tar.bz2"
+        results.append(
+            Result.from_commands_run(
+                name=f"Download jemalloc {JEMALLOC_VERSION}",
+                command=f"curl -fsSL -o {jemalloc_tarball} {JEMALLOC_URL}",
+                retries=3,
+            )
+        )
+        res = results[-1].is_ok()
+
+        if res:
+            # jemalloc fails to start if the kernel page is larger than its own; aarch64 kernels use up to 64 KiB.
+            # Huge pages (2 MiB with 4 KiB pages) back the heap and metadata unless MALLOC_CONF says otherwise.
+            lg_page = 16 if arch == "aarch64" else 12
+            results.append(
+                Result.from_commands_run(
+                    name="Build jemalloc",
+                    command=[
+                        f"echo '{JEMALLOC_SHA256}  {jemalloc_tarball}' | sha256sum -c",
+                        f"tar -xjf {jemalloc_tarball} -C {TEMP}",
+                        f"cd {JEMALLOC_SOURCE_DIR} && ./configure"
+                        f" CC=clang-{LLVM_VERSION} CXX=clang++-{LLVM_VERSION}"
+                        f" EXTRA_CFLAGS=-g0 EXTRA_CXXFLAGS=-g0"
+                        f" --with-lg-page={lg_page} --with-lg-hugepage=21"
+                        f" --with-malloc-conf=thp:always,metadata_thp:always",
+                        f"make -C {JEMALLOC_SOURCE_DIR} -j$(nproc) build_lib_static",
+                    ],
+                )
+            )
+            res = results[-1].is_ok()
+
     # Stage 1: Build instrumented clang for PGO profile collection
     # Only needs clang + lld (for compilation/linking) and compiler-rt (profiling runtime)
     if res and JobStages.STAGE1_BUILD in stages:
@@ -204,7 +284,7 @@ def main():
             f" -DLLVM_ENABLE_LLD=ON"
             f" -DLLVM_ENABLE_TERMINFO=OFF"
             f" -DLLVM_ENABLE_ZLIB=FORCE_ON"
-            f" -DLLVM_ENABLE_ZSTD=OFF"
+            f" -DLLVM_ENABLE_ZSTD=FORCE_ON"
             f" -DCMAKE_INSTALL_PREFIX={STAGE1_INSTALL_DIR}"
             f" -S {LLVM_SOURCE_DIR}/llvm"
             f" -B {STAGE1_BUILD_DIR}"
@@ -404,18 +484,22 @@ def main():
             f"cmake -G Ninja"
             f' -DLLVM_ENABLE_PROJECTS="{STAGE2_LLVM_PROJECTS}"'
             f' -DLLVM_ENABLE_RUNTIMES="compiler-rt"'
-            f" -DLLVM_TARGETS_TO_BUILD=all"
+            f' -DLLVM_TARGETS_TO_BUILD="{STAGE2_LLVM_TARGETS}"'
+            f' -DLLVM_DISTRIBUTION_COMPONENTS="{";".join(STAGE2_DISTRIBUTION_COMPONENTS)}"'
+            # Otherwise the runtimes depend on the test tools (`opt`, `lli`, `FileCheck`, ...)
+            f" -DLLVM_INCLUDE_TESTS=OFF"
             f" -DCMAKE_BUILD_TYPE=Release"
             f" -DLLVM_PROFDATA_FILE={PROFDATA_PATH}"
             f" -DCMAKE_C_COMPILER=clang-{LLVM_VERSION}"
             f" -DCMAKE_CXX_COMPILER=clang++-{LLVM_VERSION}"
             f" -DLLVM_ENABLE_LLD=ON"
             f" -DLLVM_ENABLE_LTO=Thin"
-            f' -DCMAKE_EXE_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
+            # CMake links its compiler checks with these too, so add the libstdc++ that jemalloc's C++ part needs
+            f' -DCMAKE_EXE_LINKER_FLAGS="-Wl,--emit-relocs,-znow -Wl,--whole-archive {JEMALLOC_LIBRARY} -Wl,--no-whole-archive -lstdc++"'
             f' -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
             f" -DLLVM_ENABLE_TERMINFO=OFF"
             f" -DLLVM_ENABLE_ZLIB=FORCE_ON"
-            f" -DLLVM_ENABLE_ZSTD=OFF"
+            f" -DLLVM_ENABLE_ZSTD=FORCE_ON"
             f" -DLLVM_BINUTILS_INCDIR=/usr/include"
             f' -DLLVM_BUILTIN_TARGETS="{builtin_targets}"'
             f" {builtin_cmake_args}"
@@ -431,11 +515,13 @@ def main():
         )
         res = results[-1].is_ok()
 
+        # The default target would build every LLVM tool, test utility and fuzzer, each
+        # one a separate ThinLTO link, so build only the distribution
         if res:
             results.append(
                 Result.from_commands_run(
                     name="Stage 2 Build",
-                    command=f"{CUSTOM_NINJA} -C {STAGE2_BUILD_DIR}",
+                    command=f"{CUSTOM_NINJA} -C {STAGE2_BUILD_DIR} distribution",
                 )
             )
             res = results[-1].is_ok()
@@ -444,7 +530,7 @@ def main():
             results.append(
                 Result.from_commands_run(
                     name="Stage 2 Install",
-                    command=f"{CUSTOM_NINJA} -C {STAGE2_BUILD_DIR} install",
+                    command=f"{CUSTOM_NINJA} -C {STAGE2_BUILD_DIR} install-distribution",
                 )
             )
             res = results[-1].is_ok()
@@ -455,7 +541,7 @@ def main():
 
     # Stage 4: BOLT optimization (best-effort)
     # BOLT can fail due to architecture-specific issues (e.g., ADR relaxation
-    # on aarch64 with AMDGPU code) or disk space constraints (fdata files are
+    # on aarch64 with AMDGPU code, before that backend was dropped) or disk space constraints (fdata files are
     # ~15 MB per compilation unit). If BOLT fails, we still have a PGO-optimized
     # toolchain which provides ~23% compilation speedup.
     if res and JobStages.BOLT_OPTIMIZATION in stages:
@@ -501,7 +587,7 @@ def main():
             bolt_ok = False
             print(
                 "BOLT instrumentation failed"
-                " (known issue on aarch64 with AMDGPU backend code)."
+                " (it used to fail on aarch64 with the AMDGPU backend, which is no longer built)."
                 " Continuing with PGO-only toolchain."
             )
 
@@ -544,16 +630,14 @@ def main():
                 print("BOLT profile collection cmake failed. Continuing with PGO-only.")
 
         # Step 4: Time-limited build to collect BOLT profiles
-        # Each compilation unit writes ~15 MB fdata file. With -j4 and a 20 minute
-        # timeout, we expect ~300 compilations producing ~4.5 GB of profiles,
-        # which gives BOLT enough data to optimize hot code paths.
+        # Each clang process writes a ~15 MB fdata file; see BOLT_PROFILE_TIMEOUT.
         if bolt_ok:
             result = Result.from_commands_run(
                 name="BOLT profile collection build (time-limited)",
                 command=(
                     f"bash -c 'timeout --signal=INT --kill-after=120"
                     f" {BOLT_PROFILE_TIMEOUT}"
-                    f" {CUSTOM_NINJA} -j{BOLT_PROFILE_PARALLELISM} -k0"
+                    f" {CUSTOM_NINJA} -k0"
                     f" -C {CH_BOLT_BUILD_DIR} clickhouse"
                     f" ; exit 0'"
                 ),
@@ -677,6 +761,19 @@ def main():
             )
         )
         res = results[-1].is_ok()
+
+        # The executables link jemalloc statically, and its license must ship with them
+        if res:
+            results.append(
+                Result.from_commands_run(
+                    name="Install jemalloc license",
+                    command=(
+                        f"install -D -m 644 {JEMALLOC_SOURCE_DIR}/COPYING"
+                        f" {STAGE2_INSTALL_DIR}/share/doc/jemalloc/COPYING"
+                    ),
+                )
+            )
+            res = results[-1].is_ok()
 
         if res:
             output_path = f"{OUTPUT_DIR}/clang-pgo-bolt.tar.zst"

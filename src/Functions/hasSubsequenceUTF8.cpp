@@ -41,18 +41,18 @@ Like [`hasSubsequence`](/reference/functions/regular-functions/string-search-fun
         "Usage example",
         "SELECT hasSubsequenceUTF8('картошка', 'кошка');",
         R"(
-┌─hasSubsequen⋯', 'кошка')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasSubsequenceUTF8('картошка', 'кошка')─┐
+│                                       1 │
+└─────────────────────────────────────────┘
         )"
     },
     {
         "Non-matching subsequence",
         "SELECT hasSubsequenceUTF8('картошка', 'апельсин');",
         R"(
-┌─hasSubsequen⋯'апельсин')─┐
-│                        0 │
-└──────────────────────────┘
+┌─hasSubsequenceUTF8('картошка', 'апельсин')─┐
+│                                          0 │
+└────────────────────────────────────────────┘
         )"
     }
     };

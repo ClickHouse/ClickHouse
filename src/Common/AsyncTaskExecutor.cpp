@@ -6,10 +6,14 @@
 namespace DB
 {
 
-AsyncTaskExecutor::AsyncTaskExecutor(std::unique_ptr<AsyncTask> task_, String operation_name_)
+AsyncTaskExecutor::AsyncTaskExecutor(
+    std::unique_ptr<AsyncTask> task_,
+    String operation_name_,
+    std::optional<OpenTelemetry::TracingContextOnThread> external_trace_context_)
     : task(std::move(task_))
     , operation_name(std::move(operation_name_))
     , parent_trace_context(OpenTelemetry::CurrentContext())
+    , external_trace_context(std::move(external_trace_context_))
 {
 }
 
@@ -18,23 +22,23 @@ void AsyncTaskExecutor::resume()
     if (routine_is_finished)
         return;
 
-    /// Create fiber lazily on first resume() call.
-    if (!fiber)
-        createFiber();
+    /// Create coroutine lazily on first resume() call.
+    if (!coroutine)
+        createCoroutine();
 
     if (!checkBeforeTaskResume())
         return;
 
     {
-        std::lock_guard guard(fiber_lock);
+        std::lock_guard guard(coroutine_lock);
         if (is_cancelled)
             return;
 
         resumeUnlocked();
 
-        /// Destroy fiber when it's finished.
+        /// Destroy coroutine when it's finished.
         if (routine_is_finished)
-            destroyFiber();
+            destroyCoroutine();
 
         if (exception)
             processException(exception);
@@ -45,15 +49,15 @@ void AsyncTaskExecutor::resume()
 
 void AsyncTaskExecutor::resumeUnlocked()
 {
-    fiber.resume();
+    coroutine.resume();
 }
 
 void AsyncTaskExecutor::cancel()
 {
-    std::lock_guard guard(fiber_lock);
+    std::lock_guard guard(coroutine_lock);
     is_cancelled = true;
     {
-        SCOPE_EXIT({ destroyFiber(); });
+        SCOPE_EXIT({ destroyCoroutine(); });
         cancelBefore();
     }
     cancelAfter();
@@ -61,9 +65,9 @@ void AsyncTaskExecutor::cancel()
 
 void AsyncTaskExecutor::restart()
 {
-    std::lock_guard guard(fiber_lock);
+    std::lock_guard guard(coroutine_lock);
     if (!routine_is_finished)
-        destroyFiber();
+        destroyCoroutine();
     routine_is_finished = false;
 }
 
@@ -86,8 +90,14 @@ struct AsyncTaskExecutor::Routine
 
     void operator()(SuspendCallback suspend_callback)
     {
-        /// Stores the fiber-local tracing context from the thread that created the executor and open one span per task execution.
-        OpenTelemetry::TracingContextHolder trace_context_holder(executor.operation_name, executor.parent_trace_context);
+        /// Either run inside the caller-owned span, or seed the fiber-local tracing context from the
+        /// thread that created the executor and open one span per task execution.
+        std::optional<OpenTelemetry::TracingContextGuard> trace_context_guard;
+        std::optional<OpenTelemetry::TracingContextHolder> trace_context_holder;
+        if (executor.external_trace_context)
+            trace_context_guard.emplace(*executor.external_trace_context);
+        else
+            trace_context_holder.emplace(executor.operation_name, executor.parent_trace_context);
 
         auto async_callback = AsyncCallback{executor, suspend_callback};
         try
@@ -96,7 +106,7 @@ struct AsyncTaskExecutor::Routine
         }
         catch (const boost::context::detail::forced_unwind &)
         {
-            /// This exception is thrown by fiber implementation in case if fiber is being deleted but hasn't exited
+            /// This exception is thrown by coroutine implementation in case if coroutine is being deleted but hasn't exited
             /// It should not be caught or it will segfault.
             /// Other exceptions must be caught
             throw;
@@ -110,14 +120,14 @@ struct AsyncTaskExecutor::Routine
     }
 };
 
-void AsyncTaskExecutor::createFiber()
+void AsyncTaskExecutor::createCoroutine()
 {
-    fiber = Fiber(fiber_stack, Routine{*this});
+    coroutine = StackfulCoroutine(coroutine_stack, Routine{*this});
 }
 
-void AsyncTaskExecutor::destroyFiber()
+void AsyncTaskExecutor::destroyCoroutine()
 {
-    Fiber to_destroy = std::move(fiber);
+    StackfulCoroutine to_destroy = std::move(coroutine);
 }
 
 String getSocketTimeoutExceededMessageByTimeoutType(AsyncEventTimeoutType type, Poco::Timespan timeout, const String & socket_description)

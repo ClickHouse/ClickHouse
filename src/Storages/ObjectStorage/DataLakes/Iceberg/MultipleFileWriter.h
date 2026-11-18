@@ -11,6 +11,9 @@ namespace DB
 
 #if USE_AVRO
 
+class IOutputFormat;
+using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
+
 class MultipleFileWriter
 {
 public:
@@ -33,29 +36,29 @@ public:
     void cancel();
     void clearAllDataFiles() const;
 
-    UInt64 getResultBytes() const;
+    [[nodiscard]] UInt64 getResultBytes() const;
 
-    const std::vector<Iceberg::IcebergPathFromMetadata> & getDataFiles() const
+    [[nodiscard]] const std::vector<Iceberg::IcebergPathFromMetadata> & getDataFiles() const
     {
         return data_file_names;
     }
 
-    const std::vector<UInt64> & getDataFileRowCounts() const
+    [[nodiscard]] const std::vector<UInt64> & getDataFileRowCounts() const
     {
         return data_file_row_counts;
     }
 
-    const std::vector<UInt64> & getDataFileByteCounts() const
+    [[nodiscard]] const std::vector<UInt64> & getDataFileByteCounts() const
     {
         return data_file_byte_counts;
     }
 
-    const DataFileStatistics & getResultStatistics() const
+    [[nodiscard]] const DataFileStatistics & getResultStatistics() const
     {
         return stats;
     }
 
-    const std::vector<DataFileStatisticsPtr> & getPerFileStatistics() const
+    [[nodiscard]] const std::vector<DataFileStatisticsPtr> & getPerFileStatistics() const
     {
         return completed_file_stats;
     }
@@ -63,16 +66,15 @@ public:
 private:
     UInt64 max_data_file_num_rows;
     UInt64 max_data_file_num_bytes;
-    Poco::JSON::Array::Ptr schema;
-    DataFileStatistics stats;
-    DataFileStatisticsPtr current_file_stats;
-    std::vector<DataFileStatisticsPtr> completed_file_stats;
     /// Pre-built ColumnMapper for `startNewFile`. Traversing the Iceberg schema is invariant
     /// for the lifetime of the writer, so we compute the mapping once and reuse it across
     /// every rolled-over data file instead of recomputing it on each rollover.
     ColumnMapperPtr column_mapper;
+    std::unordered_set<Int64> required_field_ids;
+    DataFileStatistics stats;
+    DataFileStatisticsPtr current_file_stats;
+    std::vector<DataFileStatisticsPtr> completed_file_stats;
     std::optional<size_t> current_file_num_rows = std::nullopt;
-    std::optional<size_t> current_file_num_bytes = std::nullopt;
     std::vector<Iceberg::IcebergPathFromMetadata> data_file_names;
     std::vector<UInt64> data_file_row_counts;
     std::vector<UInt64> data_file_byte_counts;

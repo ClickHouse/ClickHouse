@@ -1,0 +1,23 @@
+-- bloom_filter
+Granules: 4/4
+Name: idx_bf
+Granules: 1/4
+5
+1
+5
+1
+5
+5
+1
+5
+-- text
+Granules: 4/4
+Name: idx_text
+Granules: 1/4
+5
+-- the granule with NULL is skipped, so the query does not throw
+5
+-- the text index is not read directly instead of a cast that throws on NULL
+0
+5
+1

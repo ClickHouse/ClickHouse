@@ -30,19 +30,24 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayAutocorrelation>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(Array(Integer | NativeFloat | Decimal | IsNothing), [NativeInteger]) -> Array(Float64)";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty() || arguments.size() > 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires 1 or 2 arguments.", getName());
@@ -282,7 +287,7 @@ public:
         return executeWithConstArray<Float64>(*converted, col_max_lag, input_rows_count);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IColumn * col_max_lag = nullptr;
         if (arguments.size() > 1)
@@ -443,10 +448,10 @@ If `max_lag` is not provided, calculates for all possible lags.
     FunctionDocumentation::ReturnedValue returned_value
         = {"Returns an array of Float64. Returns NaN if variance is 0.", {"Array(Float64)"}};
     FunctionDocumentation::Examples examples
-        = {{"Linear", "SELECT arrayAutocorrelation([1, 2, 3, 4, 5]);", "[1, 0.4, -0.1, -0.4, -0.4]"},
-           {"Symmetric", "SELECT arrayAutocorrelation([10, 20, 10]);", "[1, -0.6666666666666669, 0.16666666666666674]"},
-           {"Constant", "SELECT arrayAutocorrelation([5, 5, 5]);", "[nan, nan, nan]"},
-           {"Limited", "SELECT arrayAutocorrelation([1, 2, 3, 4, 5], 2);", "[1, 0.4]"}};
+        = {{"Linear", "SELECT arrayAutocorrelation([1, 2, 3, 4, 5]);", "[1,0.4,-0.1,-0.4,-0.4]"},
+           {"Symmetric", "SELECT arrayAutocorrelation([10, 20, 10]);", "[1,-0.6666666666666669,0.16666666666666674]"},
+           {"Constant", "SELECT arrayAutocorrelation([5, 5, 5]);", "[nan,nan,nan]"},
+           {"Limited", "SELECT arrayAutocorrelation([1, 2, 3, 4, 5], 2);", "[1,0.4]"}};
 
     FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

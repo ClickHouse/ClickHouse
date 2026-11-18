@@ -1,0 +1,305 @@
+---
+slug: /cloud/managed-postgres/guides/django
+sidebarTitle: 'Django'
+title: 'ClickHouse Managed Postgres에서 Django 사용하기'
+description: 'psycopg 3와 검증된 TLS를 사용해 PgBouncer를 거쳐 Django 앱을 ClickHouse Managed Postgres에 연결하고, 마이그레이션을 실행한 뒤 간단한 JSON API를 제공하는 방법을 안내합니다'
+keywords: ['managed postgres', 'django', 'python', 'psycopg', 'psycopg 3', 'orm', 'migrations', 'pgbouncer', 'conn_max_age', 'server-side cursors']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-django-beta" />
+
+[Django](https://www.djangoproject.com/)는 ORM과 마이그레이션(migration) 시스템을 내장한 Python 웹 프레임워크로, [psycopg 3](https://www.psycopg.org/psycopg3/) 드라이버를 사용해 PostgreSQL과 통신합니다. 이 가이드에서는 새 Django 프로젝트를 PgBouncer를 거쳐 ClickHouse Managed Postgres에 연결하고, 마이그레이션으로 `todos` 테이블을 생성한 뒤, 간단한 JSON 뷰로 생성, 조회, 수정, 삭제 요청을 처리합니다. 모든 연결에는 전체 인증서 검증을 수행하는 TLS가 적용됩니다.
+
+## 사전 요구 사항 {#prerequisites}
+
+* Python 3.12 이상(Django 6 요구 사항). 이 가이드는 Python 3.13, Django 6.1.1, psycopg 3.3.6 환경에서 테스트되었습니다.
+* ClickHouse Cloud 계정
+* 데이터베이스 생성에 사용할 [`psql`](https://www.postgresql.org/download/). [SQL 콘솔](/ko/integrations/connectors/sql-clients/sql-console)에서 `CREATE DATABASE` SQL 문을 실행해도 됩니다.
+
+## ClickHouse Managed Postgres 서비스 생성 {#create-service}
+
+ClickHouse Cloud 콘솔에서 **New service**를 클릭한 후 **Postgres**를 선택하십시오. 몇 분 내에 인스턴스가 준비됩니다. 단계별 안내는 [빠른 시작 가이드](/ko/products/managed-postgres/quickstart)를 참조하십시오.
+
+## 연결 정보 확인하기 {#connection-details}
+
+서비스의 왼쪽 사이드바에서 **Connect**를 클릭하세요. 모달에 사용자 이름, 비밀번호, 서버, 포트가 표시되며, **Directly** / **via PgBouncer** 토글도 있습니다.
+
+이 가이드에서는 번들로 제공되는 [PgBouncer](/ko/products/managed-postgres/connection#pgbouncer)를 통해 포트 `6432`로 Django를 연결합니다. 프로덕션 환경의 Django 앱은 보통 여러 머신에서 여러 개의 worker 프로세스를 실행하며, 각 프로세스가 개별적으로 연결을 엽니다. PgBouncer는 트랜잭션 풀링 모드(transaction pooling mode)로 동작하며, 이 모든 프로세스가 소수의 Postgres 연결을 공유하도록 해 줍니다. 트랜잭션 풀링을 사용하려면 Django에 몇 가지 설정이 필요하며, 이 가이드에는 해당 설정이 포함되어 있습니다. 자세한 설명은 [Django용 PgBouncer 설정](#pgbouncer)을 참고하세요.
+
+풀링된 연결 정보를 확인하려면 **via PgBouncer**를 선택하세요. 포트가 `6432`로 바뀌고, 연결 문자열에 `sslmode=verify-full`이 포함됩니다.
+
+모달에서 **Download CA certificate**를 클릭하세요. **Settings → CA Certificate**에서도 다운로드할 수 있습니다. 이 인증서는 인스턴스마다 고유하므로, 드라이버는 이를 사용해 실제 서버와 통신하고 있는지 검증할 수 있습니다.
+
+## 프로젝트 설정 {#project-setup}
+
+가상 환경이 포함된 프로젝트 디렉터리를 만들고 Django와 psycopg 3을 설치한 다음, `todos` 앱이 포함된 Django 프로젝트를 생성하세요:
+
+```bash
+mkdir django-managed-postgres && cd django-managed-postgres
+python3 -m venv .venv
+source .venv/bin/activate
+pip install django "psycopg[binary]"
+django-admin startproject mysite .
+python manage.py startapp todos
+```
+
+`psycopg[binary]`에는 최신 `libpq`가 포함되어 있으므로 로컬에 PostgreSQL을 따로 설치할 필요가 없습니다.
+
+<Tip>
+  **기존 앱에 추가하는 경우**
+
+  위의 명령어는 건너뛰십시오. 프로젝트의 가상 환경에서 `pip install "psycopg[binary]"`를 실행한 다음, [연결 구성](#configure-connection) 단계로 진행하여 기존 SQLite `DATABASES` 설정을 대체하세요. SQLite 데이터를 옮기려면 다음과 같이 진행하세요.
+
+  * `DATABASES`를 변경하기 전에 `python manage.py dumpdata --natural-foreign --natural-primary -e contenttypes -e auth.permission -o data.json`을 실행하세요.
+  * `python manage.py migrate`를 실행한 후 `python manage.py loaddata data.json`을 실행하세요.
+</Tip>
+
+## 연결 구성하기 {#configure-connection}
+
+다운로드한 CA 인증서를 프로젝트 디렉터리의 `manage.py`와 같은 위치로 옮긴 다음, 파일 이름을 `ca-certificate.pem`으로 변경하십시오.
+
+앱에서 사용할 데이터베이스를 생성하십시오. `<PASSWORD>`와 호스트는 **Connect** 모달에 표시된 값으로 바꾸십시오.
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_django;"
+```
+
+```text
+CREATE DATABASE
+```
+
+호스트와 비밀번호가 코드에 포함되지 않도록 환경 변수로 설정하십시오:
+
+```bash
+export DB_HOST="your-instance.pg.clickhouse.cloud"
+export DB_PASSWORD='<PASSWORD>'
+```
+
+`mysite/settings.py`를 열고 `from pathlib import Path` 아래에 `import os`를 추가한 후, `DATABASES` 설정을 다음과 같이 변경하십시오:
+
+```python title="mysite/settings.py"
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "HOST": os.environ["DB_HOST"],
+        "PORT": "6432",
+        "NAME": "guide_django",
+        "USER": "postgres",
+        "PASSWORD": os.environ["DB_PASSWORD"],
+        # Reuse connections across requests instead of opening one per request
+        "CONN_MAX_AGE": 600,
+        "CONN_HEALTH_CHECKS": True,
+        # Server-side cursors don't work with PgBouncer transaction pooling
+        "DISABLE_SERVER_SIDE_CURSORS": True,
+        "OPTIONS": {
+            "sslmode": "verify-full",
+            "sslrootcert": BASE_DIR / "ca-certificate.pem",
+        },
+    }
+}
+```
+
+Django는 `OPTIONS`의 키를 psycopg에 전달하고, psycopg는 이를 다시 `libpq`에 넘깁니다. `sslmode`를 `verify-full`로 설정하면 `libpq`는 서버 인증서가 서비스의 CA로 서명되었는지, 그리고 호스트명과 일치하는지 검사합니다. `BASE_DIR`을 사용하면 인증서 경로가 절대 경로가 되므로, 어느 디렉터리에서 Django를 시작하든 설정이 정상적으로 동작합니다.
+
+<Note>
+  `sslrootcert`가 잘못된 CA를 가리키면 `SSL error: certificate verify failed` 오류가 발생하며 연결에 실패합니다. `sslrootcert`를 지정하지 않으면 `libpq`가 기본 CA 위치로 폴백하므로 `root certificate file ".../.postgresql/root.crt" does not exist` 오류가 발생하며 연결에 실패합니다. 호스트명 대신 IP 주소로 연결하면 `server certificate for "..." does not match host name` 오류가 발생하며 연결에 실패합니다.
+</Note>
+
+<Tip>
+  앱에서 [`dj-database-url`](https://github.com/jazzband/dj-database-url)을 사용해 `DATABASE_URL`을 읽는다면, URL 쿼리 문자열에 포함된 `sslmode`와 `sslrootcert`가 `OPTIONS`로 전달됩니다. 동일한 설정을 적용하려면 `dj_database_url.config(conn_max_age=600, conn_health_checks=True, disable_server_side_cursors=True)`를 호출하세요. URL에 상대 경로로 지정한 `sslrootcert`는 Django를 시작한 디렉터리를 기준으로 해석됩니다.
+</Tip>
+
+## 모델 생성 및 마이그레이션 실행 {#migrations}
+
+`mysite/settings.py`의 `INSTALLED_APPS`에 `todos` 앱을 추가합니다:
+
+```python title="mysite/settings.py"
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    'todos',
+]
+```
+
+`todos/models.py`에 `Todo` 모델을 정의합니다:
+
+```python title="todos/models.py"
+from django.db import models
+
+
+class Todo(models.Model):
+    title = models.CharField(max_length=200)
+    done = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+```
+
+모델에 대한 마이그레이션을 생성하고 모든 마이그레이션을 적용합니다:
+
+```bash
+python manage.py makemigrations todos
+python manage.py migrate
+```
+
+```text
+Migrations for 'todos':
+  todos/migrations/0001_initial.py
+    + Create model Todo
+Operations to perform:
+  Apply all migrations: admin, auth, contenttypes, sessions, todos
+Running migrations:
+  Applying contenttypes.0001_initial... OK
+  Applying auth.0001_initial... OK
+  Applying admin.0001_initial... OK
+  Applying admin.0002_logentry_remove_auto_add... OK
+  Applying admin.0003_logentry_add_action_flag_choices... OK
+  Applying contenttypes.0002_remove_content_type_name... OK
+  Applying auth.0002_alter_permission_name_max_length... OK
+  Applying auth.0003_alter_user_email_max_length... OK
+  Applying auth.0004_alter_user_username_opts... OK
+  Applying auth.0005_alter_user_last_login_null... OK
+  Applying auth.0006_require_contenttypes_0002... OK
+  Applying auth.0007_alter_validators_add_error_messages... OK
+  Applying auth.0008_alter_user_username_max_length... OK
+  Applying auth.0009_alter_user_last_name_max_length... OK
+  Applying auth.0010_alter_group_name_max_length... OK
+  Applying auth.0011_update_proxy_permissions... OK
+  Applying auth.0012_alter_user_first_name_max_length... OK
+  Applying sessions.0001_initial... OK
+  Applying todos.0001_initial... OK
+```
+
+`migrate`는 `todos_todo` 외에도 `auth_user`, `django_session` 등 Django 기본 제공 앱의 테이블을 생성하고, 적용된 마이그레이션을 `django_migrations`에 기록합니다. 기존 앱에서는 `todos` 모델 단계를 건너뛰고 `python manage.py migrate`만 실행하십시오. 이 명령으로 앱의 모든 테이블이 새 데이터베이스에 생성됩니다.
+
+`migrate`는 세션 수준의 권고 잠금(advisory lock)을 사용하지 않으므로 PgBouncer를 거쳐도 정상적으로 동작합니다. 다만 동시 실행을 방지하지는 않으므로, 하나의 배포 단계처럼 한 곳에서만 마이그레이션을 실행하십시오.
+
+## JSON 엔드포인트 추가 {#query}
+
+`todos/views.py`의 내용을 Django ORM으로 할 일(todo)을 생성, 조회, 수정, 삭제하는 두 개의 뷰로 교체하십시오.
+
+```python title="todos/views.py"
+import json
+
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+from django.views.decorators.csrf import csrf_exempt
+
+from .models import Todo
+
+FIELDS = ["id", "title", "done", "created_at"]
+
+
+def as_dict(todo):
+    return {field: getattr(todo, field) for field in FIELDS}
+
+
+# This example API skips CSRF checks; add authentication before you deploy it
+@csrf_exempt
+def todo_list(request):
+    if request.method == "POST":
+        # Create
+        todo = Todo.objects.create(title=json.loads(request.body)["title"])
+        return JsonResponse(as_dict(todo), status=201)
+    # Read
+    return JsonResponse(list(Todo.objects.order_by("id").values(*FIELDS)), safe=False)
+
+
+@csrf_exempt
+def todo_detail(request, pk):
+    todo = get_object_or_404(Todo, pk=pk)
+    if request.method == "PATCH":
+        # Update: toggle the done flag
+        todo.done = not todo.done
+        todo.save(update_fields=["done"])
+    elif request.method == "DELETE":
+        # Delete
+        data = as_dict(todo)
+        todo.delete()
+        return JsonResponse(data)
+    return JsonResponse(as_dict(todo))
+```
+
+`/todos`와 `/todos/<id>`를 뷰로 라우팅하도록 `mysite/urls.py`의 내용을 다음과 같이 바꾸십시오:
+
+```python title="mysite/urls.py"
+from django.contrib import admin
+from django.urls import path
+
+from todos import views
+
+urlpatterns = [
+    path("admin/", admin.site.urls),
+    path("todos", views.todo_list),
+    path("todos/<int:pk>", views.todo_detail),
+]
+```
+
+## 실행 및 확인 {#verify}
+
+개발 서버를 시작합니다:
+
+```bash
+python manage.py runserver 3111
+```
+
+```text
+Performing system checks...
+
+System check identified no issues (0 silenced).
+October 01, 2026 - 14:39:10
+Django version 6.1.1, using settings 'mysite.settings'
+Starting WSGI development server at http://127.0.0.1:3111/
+Quit the server with CONTROL-C.
+```
+
+두 번째 터미널에서 할 일 2개를 생성하고, 첫 번째 할 일은 완료로 표시한 다음 두 번째 할 일은 삭제하세요:
+
+```bash
+curl -X POST http://localhost:3111/todos -d '{"title": "Try Django"}'
+curl -X POST http://localhost:3111/todos -d '{"title": "Write a migration"}'
+curl -X PATCH http://localhost:3111/todos/1
+curl -X DELETE http://localhost:3111/todos/2
+```
+
+`PATCH` 요청은 업데이트된 행을 반환합니다.
+
+```json
+{"id": 1, "title": "Try Django", "done": true, "created_at": "2026-10-01T14:38:51.036Z"}
+```
+
+브라우저에서 `http://localhost:3111/todos`를 열면 남은 할 일 목록을 확인할 수 있습니다. 응답은 다음과 같습니다:
+
+```json
+[{"id": 1, "title": "Try Django", "done": true, "created_at": "2026-10-01T14:38:51.036Z"}]
+```
+
+콘솔에서 데이터를 확인하려면 서비스의 왼쪽 사이드바에서 **SQL 콘솔**을 열고 `guide_django`와 `public`을 차례로 펼친 다음 `todos_todo` 테이블을 클릭하십시오. 테이블에는 다음과 같이 남은 행이 표시됩니다.
+
+| id | title      | done | created&#95;at                |
+| -- | ---------- | ---- | ----------------------------- |
+| 1  | Try Django | true | 2026-10-01 14:38:51.036352+00 |
+
+## Django를 위한 PgBouncer 설정 {#pgbouncer}
+
+PgBouncer는 트랜잭션 풀링 모드(transaction pooling mode)로 동작합니다. 즉, 각 트랜잭션 또는 트랜잭션 외부의 개별 SQL 문은 서로 다른 Postgres 연결에서 실행될 수 있습니다. 이 동작이 위의 설정과 기타 Django 기능에 미치는 영향은 다음과 같습니다.
+
+* **`DISABLE_SERVER_SIDE_CURSORS`**: `QuerySet.iterator`는 서버 측 커서를 통해 행을 청크 단위로 읽습니다. 트랜잭션 외부에서는 Django가 커서를 `WITH HOLD`로 선언하고 청크를 하나씩 따로 가져오므로, PgBouncer를 거치면 가져오기 요청이 해당 커서가 없는 Postgres 연결로 전달되어 `cursor "_django_curs_..." does not exist` 오류와 함께 실패할 수 있습니다. 이 문제는 다른 클라이언트가 동시에 풀을 사용할 때만 발생하므로 개발 환경에서는 드러나지 않는 경우가 많습니다. 이 설정을 켜면 `.iterator()`는 일반 커서를 사용하며, psycopg가 전체 결과를 메모리에 로드합니다. 매우 큰 테이블을 스트리밍해야 한다면 이 설정을 끈 상태에서 포트 `5432`의 직접 연결로 해당 코드를 실행하십시오.
+* **`CONN_MAX_AGE`**: 기본값(`0`)에서는 Django가 요청마다 새 연결을 엽니다. TLS 연결은 PgBouncer를 거치든 직접 연결하든 연결을 여는 데 여러 번의 네트워크 왕복이 필요하므로, 연결을 재사용하면 요청 속도가 크게 빨라집니다. 노트북에서 4개의 Gunicorn worker로 테스트한 결과, `CONN_MAX_AGE`를 `600`으로 설정하자 요청 시간 중앙값이 약 670 ms에서 95 ms로 줄었습니다. PgBouncer를 거치면 열려 있는 Django 연결이 트랜잭션 사이에 Postgres 연결을 점유하지 않으므로, 영구 연결을 사용해도 `max_connections`가 소진되지 않습니다. `CONN_HEALTH_CHECKS`를 사용하면 Django가 각 요청을 시작할 때 재사용하는 연결을 확인하고, 연결이 끊어졌으면 다시 연결합니다.
+* **연결 풀(Connection pool)**: Django의 내장 풀(`OPTIONS`의 `"pool": True`, `pip install "psycopg[binary,pool]"` 필요)도 비슷한 속도 향상 효과가 있으며 PgBouncer를 거쳐도 동작합니다. 내장 풀을 사용하려면 `CONN_MAX_AGE`를 `0`으로 설정해야 하며, 프로세스당 최소 4개의 연결이 항상 열려 있습니다. PgBouncer를 사용한다면 대부분의 앱은 `CONN_MAX_AGE`만으로 충분하며, 스레드 기반 서버나 ASGI 서버에서는 풀 사용을 고려하십시오.
+* **Prepared statement**: 별도의 설정이 필요하지 않습니다. Django는 기본적으로 psycopg의 `prepare_threshold`를 `None`으로 설정하고 쿼리 매개변수를 클라이언트에서 바인딩하므로 서버 측 prepared statement를 생성하지 않습니다. `OPTIONS`에서 `"server_side_binding": True`를 켜고 `"prepare_threshold"`를 설정하는 경우에도 prepared statement는 PgBouncer를 거쳐 정상적으로 동작합니다. `psycopg[binary]`에는 `libpq` 18이 번들로 포함되어 있어 프로토콜 수준의 `Close` 메시지로 SQL 문을 해제하기 때문입니다. 반면 `libpq` 16 이하로 빌드된 psycopg에서는 트랜잭션 내부에서 SQL 문을 해제할 때 `prepared statement "_pg3_0" does not exist` 오류가 발생합니다. 버전을 확인하려면 `python -c "import psycopg; print(psycopg.pq.version())"`를 실행하십시오. 결과가 `170000` 이상이어야 합니다.
+* **세션 상태(Session state)**: `SET search_path`와 같은 `SET` 문은 해당 문을 실행한 Postgres 연결에만 적용됩니다. 따라서 이후 쿼리에는 반영되지 않을 수 있으며, 오히려 다른 클라이언트에 반영될 수도 있습니다. PgBouncer는 Django의 `"options": "-c search_path=..."` 설정을 `unsupported startup parameter in options: search_path` 오류와 함께 거부합니다. 대신 `ALTER DATABASE guide_django SET search_path = myschema, public;`처럼 데이터베이스 수준에서 기본값을 설정하십시오. `SET ROLE`을 실행하는 `assume_role` 옵션은 사용하지 마십시오. Django 자체의 `TIME_ZONE` 처리와 `isolation_level` 옵션은 PgBouncer를 거쳐도 정상적으로 동작합니다.
+
+PgBouncer 대신 직접 연결하려면 `PORT`를 `5432`로 설정하고 `DISABLE_SERVER_SIDE_CURSORS`를 제거하십시오. 이 경우 각 Django worker가 자체 Postgres 연결을 유지하므로, 전체 worker 수가 `max_connections`를 넘지 않도록 하십시오.
+
+## 다음 단계 {#next-steps}
+
+* [연결](/ko/products/managed-postgres/connection): 연결 문자열, PgBouncer, TLS
+* [설정](/ko/products/managed-postgres/settings): `max_connections` 등 Postgres 및 PgBouncer 매개변수
+* [읽기 레플리카](/ko/products/managed-postgres/read-replicas): Django의 [다중 데이터베이스](https://docs.djangoproject.com/en/stable/topics/db/multi-db/) 기능을 활용해 읽기 요청을 레플리카로 분산
+* [보안](/ko/products/managed-postgres/security): IP 액세스 목록 및 프라이빗 네트워킹

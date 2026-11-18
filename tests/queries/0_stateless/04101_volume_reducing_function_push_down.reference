@@ -22,6 +22,16 @@ plan: sibling alias below outer sort and limit — not pushed
 0
 plan: small FixedString lengthUTF8 — not pushed
 0
+plan: wide FixedString length — pushed
+1
+plan: wide FixedString lengthUTF8 — pushed
+1
+plan: wide FixedString lengthUTF8 — no pushdown when disabled
+0
+result: wide FixedString lengthUTF8
+64
+64
+58
 plan: array length — not pushed
 0
 plan: nested expression (lengthUTF8(s)+1) below filter — not pushed

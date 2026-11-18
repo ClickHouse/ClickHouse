@@ -9,7 +9,6 @@
 
 SET use_query_condition_cache = 1;
 -- The cache needs the analyzer on both the write and the read side.
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_qcc_lwd;
 

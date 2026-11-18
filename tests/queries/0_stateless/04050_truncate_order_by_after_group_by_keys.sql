@@ -4,7 +4,6 @@
 -- This also applies when GROUP BY ALL and ORDER BY ALL are used together.
 SET explain_query_plan_default = 'legacy';
 
-SET enable_analyzer = 1;
 SET optimize_truncate_order_by_after_group_by_keys = 1;
 
 DROP TABLE IF EXISTS t;

@@ -1,0 +1,61 @@
+└──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = ["half", "third"]))
+tab_bitpacking
+['half','third']	any	133333
+['half','third']	all	33334
+['half','third']	all leapfrog	33334
+['half','third']	all bruteforce	33334
+['half','seventh']	any	114286
+['half','seventh']	all	14286
+['half','seventh']	all leapfrog	14286
+['half','seventh']	all bruteforce	14286
+['every','third']	any	200000
+['every','third']	all	66667
+['every','third']	all leapfrog	66667
+['every','third']	all bruteforce	66667
+['head','tail']	any	60000
+['head','tail']	all	0
+['head','tail']	all leapfrog	0
+['head','tail']	all bruteforce	0
+['head','half','seventh']	any	127143
+['head','half','seventh']	all	2143
+['head','half','seventh']	all leapfrog	2143
+['head','half','seventh']	all bruteforce	2143
+['tail','rare']	any	30170
+['tail','rare']	all	30
+['tail','rare']	all leapfrog	30
+['tail','rare']	all bruteforce	30
+['half','rare']	any	100000
+['half','rare']	all	200
+['half','rare']	all leapfrog	200
+['half','rare']	all bruteforce	200
+['every','half','third','seventh']	any	200000
+['every','half','third','seventh']	all	4762
+['every','half','third','seventh']	all leapfrog	4762
+['every','half','third','seventh']	all bruteforce	4762
+['third','missing']	any	66667
+['third','missing']	all	0
+['third','missing']	all leapfrog	0
+['third','missing']	all bruteforce	0
+['burst','third']	any	69333
+['burst','third']	all	1334
+['burst','third']	all leapfrog	1334
+['burst','third']	all bruteforce	1334
+['burst','every']	any	200000
+['burst','every']	all	4000
+['burst','every']	all leapfrog	4000
+['burst','every']	all bruteforce	4000
+tab_pfor
+['half','third']	any	133333
+['half','third']	all	33334
+['head','tail']	any	60000
+['head','tail']	all	0
+['tail','rare']	any	30170
+['tail','rare']	all	30
+['every','half','third','seventh']	any	200000
+['every','half','third','seventh']	all	4762
+materialize apply mode
+33334
+60000
+cursors are used only in lazy apply mode
+probe lazy	1
+probe materialize	0

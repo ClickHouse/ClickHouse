@@ -3,6 +3,8 @@
 #include <Common/ColumnsHashing.h>
 
 #include <Columns/ColumnString.h>
+#include <Interpreters/TopKAggregationHeap.h>
+
 namespace DB
 {
 class IColumn;
@@ -42,6 +44,7 @@ struct AggregationMethodOneNumber
     using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodOneNumber() = default;
 
@@ -85,6 +88,7 @@ struct AggregationMethodString
     using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodString() = default;
 
@@ -121,6 +125,7 @@ struct AggregationMethodStringNoCache
     using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodStringNoCache() = default;
 
@@ -154,6 +159,7 @@ struct AggregationMethodPackedString
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodPackedString() = default;
 
@@ -182,6 +188,46 @@ struct AggregationMethodPackedString
     }
 };
 
+/// For the case of fixed-width keys and one non-nullable `String` key, stored as `KeysAndPackedString`.
+template <typename TData>
+struct AggregationMethodKeysAndPackedString
+{
+    using Data = TData;
+    using Key = typename Data::key_type;
+    using Mapped = AggregationMethodMapped<Data>;
+
+    Data data;
+    TopKAggregationHeap<Key> top_k_heap;
+
+    AggregationMethodKeysAndPackedString() = default;
+
+    /// Preallocates the table for `size_hint` keys, `size_hint_with_empty_string` of them with an empty string.
+    AggregationMethodKeysAndPackedString(size_t size_hint, size_t size_hint_with_empty_string) : data(size_hint, size_hint_with_empty_string) { }
+
+    template <typename Other>
+    explicit AggregationMethodKeysAndPackedString(const Other & other) : data(other.data)
+    {
+    }
+
+    /// The state keeps no consecutive-keys cache, so both states are the same.
+    template <bool>
+    using StateImpl = ColumnsHashing::HashMethodKeysAndPackedString<typename Data::value_type, Mapped, decltype(Key::keys)>;
+
+    using State = StateImpl<true>;
+    using StateNoCache = StateImpl<false>;
+
+    static const bool low_cardinality_optimization = false;
+    static const bool one_key_nullable_optimization = false;
+
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
+    {
+        return State::shuffleKeyColumns(key_columns, key_sizes);
+    }
+
+    static void insertKeyIntoColumns(
+        const Key & key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes, const IColumn::SerializationSettings * settings);
+};
+
 /// For the case where there is one fixed-length string key.
 template <typename TData>
 struct AggregationMethodFixedString
@@ -191,6 +237,7 @@ struct AggregationMethodFixedString
     using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodFixedString() = default;
 
@@ -224,6 +271,7 @@ struct AggregationMethodFixedStringNoCache
     using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodFixedStringNoCache() = default;
 
@@ -258,6 +306,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     using Key = typename Base::Key;
     using Mapped = typename Base::Mapped;
     using Base::data;
+    using Base::top_k_heap;
 
     template <bool use_cache>
     using BaseStateImpl = typename Base::template StateImpl<use_cache>;
@@ -295,6 +344,7 @@ struct AggregationMethodKeysFixed
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodKeysFixed() = default;
 
@@ -342,6 +392,7 @@ struct AggregationMethodSerialized
     using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodSerialized() = default;
 

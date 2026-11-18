@@ -5,10 +5,11 @@
 namespace DB
 {
 
-#define THREAD_NAME_VALUES(M)\
+#define THREAD_NAME_VALUES(M) \
     M(AGGREGATED_ZOOKEEPER_LOG, "AggrZooLog") \
     M(AGGREGATOR_DESTRUCTION, "AggregDestruct") \
     M(AGGREGATOR_POOL, "AggregatorPool") \
+    M(AI_REQUEST, "AIRequest") \
     M(ARROW_FILE, "ArrowFile") \
     M(ARROW_FLIGHT, "ArrowFlight") \
     M(ARROW_FLIGHT_EXPR, "ArrowFlightExpr") \
@@ -34,17 +35,18 @@ namespace DB
     M(BACKUP_COORDINATION, "BackupCoord") \
     M(BACKUP_COORDINATION_INTERNAL, "BackupCoordInt") \
     M(BACKUP_WORKER, "BackupWorker") \
+    M(BUCKETED_METRIC_LOG, "BMetricLog") \
     M(CACHE_DICTIONARY_UPDATE_QUEUE, "UpdQueue") \
     M(CGROUP_MEMORY_OBSERVER, "CgrpMemUsgObsr") \
     M(CLICKHOUSE_WATCH, "ClickHouseWatch") \
     M(CLUSTER_DISCOVERY, "ClusterDiscover") \
     M(COMPLETED_PIPELINE_EXECUTOR, "QueryCompPipeEx") \
     M(CONFIG_RELOADER, "ConfigReloader") \
-    M(CONCURRENT_JOIN, "ConcurrentJoin") \
     M(CREATE_TABLES, "CreateTables") \
     M(DATABASE_BACKUP, "DatabaseBackup") \
     M(DATABASE_ON_DISK, "DatabaseOnDisk") \
     M(DATABASE_REPLICAS, "DBReplicas") \
+    M(DATALAKE_GLUE_CATALOG, "GlueCatalog") \
     M(DATALAKE_REST_CATALOG, "RestCatalog") \
     M(DATALAKE_TABLE_SNAPSHOT, "TableSnapshot") \
     M(DDL_WORKER, "DDLWorker") \
@@ -61,14 +63,17 @@ namespace DB
     M(DISTRIBUTED_INDEX_ANALYSIS, "DistIdxAnalysis") \
     M(DISTRIBUTED_QUERY_TASK, "DistQueryTask") \
     M(DROP_TABLES, "DropTables") \
+    M(SHUTDOWN_TABLES, "ShutdownTables") \
     M(DWARF_DECODER, "DWARFDecoder") \
     M(ERROR_LOG, "ErrorLog") \
     M(EXTERNAL_LOADER, "ExternalLoader") \
+    M(FILE_LOG_WATCH, "FileLogWatch") \
     M(FILESYSTEM_CACHE_DROP, "FSCacheDropKeys") \
     M(GRPC_SERVER_CALL, "gRPCServerCall") \
     M(GRPC_SERVER_QUEUE, "gRPCServerQueue") \
     M(HASHED_DICT_DTOR, "HashedDictDtor") \
     M(HASHED_DICT_LOAD, "HashedDictLoad") \
+    M(HASH_JOIN_DTOR, "HashJoinDtor") \
     M(HTTP_HANDLER, "HTTPHandler") \
     M(HTTP_SERVER_CONN, "HTTPSrvConn") \
     M(ICEBERG_ITERATOR, "IcebergIter") \
@@ -100,6 +105,7 @@ namespace DB
     M(MERGETREE_INDEX, "MergeTreeIndex") \
     M(MERGETREE_LOAD_ACTIVE_PARTS, "ActiveParts") \
     M(MERGETREE_LOAD_OUTDATED_PARTS, "OutdatedParts") \
+    M(MERGETREE_LOAD_STATISTICS, "LoadStatistics") \
     M(MERGETREE_LOAD_UNEXPECTED_PARTS, "UnexpectedParts") \
     M(MERGETREE_MOVE, "Move") \
     M(MERGETREE_PARTS_CLEANUP, "PartsCleaning") \
@@ -164,6 +170,7 @@ namespace DB
     M(TCP_HANDLER, "TCPHandler") \
     M(TEST_KEEPER_PROC, "TestKeeperProc") \
     M(TEST_SCHEDULER, "TestScheduler") \
+    M(TIMER_DESCRIPTOR, "TimerDescriptor") \
     M(TRACE_COLLECTOR, "TraceCollector") \
     M(TRANSPOSED_METRIC_LOG, "TMetricLog") \
     M(TRUNCATE_TABLE, "TruncTbls") \
@@ -171,6 +178,8 @@ namespace DB
     M(UNIQ_EXACT_CONVERT, "UniqExaConvert") \
     M(UNIQ_EXACT_MERGER, "UniqExactMerger") \
     M(USER_DEFINED_WATCH, "UserDefWatch") \
+    M(VORTEX_DECODER, "VortexDecoder") \
+    M(VORTEX_READER, "VortexReader") \
     M(WORKLOAD_ENTRY_WATCH, "WrkldEntWatch") \
     M(WORKLOAD_RESOURCE_MANAGER, "WorkloadResMgr") \
     M(ZOOKEEPER_ACL_WATCHER, "ZooACLWatch") \
@@ -179,8 +188,9 @@ namespace DB
     M(BLOB_KILLER_TASK, "BlobKillerTask") \
     M(BLOB_COPIER_TASK, "BlobCopierTask") \
     M(DISK_OBJECT_STORAGE_COPY, "DiskObjStCopy") \
+    M(DISK_OBJECT_STORAGE_WRITE_BLOB, "DiskObjStWrBlob") \
     M(DISTRIBUTED_CACHE, "DistribCache") \
-    M(DISTRIBUTED_CACHE_DROP, "DropDistCache") \
+    M(DISTRIBUTED_CACHE_DROP, "DropDistCache")
 
 
 enum class ThreadName : uint8_t
@@ -206,6 +216,9 @@ enum class ThreadName : uint8_t
   */
 void setThreadName(ThreadName name);
 ThreadName getThreadName();
+/// The calling thread's cached name, by reference: valid while the thread lives, and current after a
+/// later setThreadName. The macOS query profiler reads it for a stopped thread (StackTrace::SuspendedThread).
+const ThreadName & getThreadNameRef();
 
 std::string_view toString(ThreadName name);
 

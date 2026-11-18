@@ -1,0 +1,7 @@
+function_sleep_max_microseconds_per_block MAX 4000: refused
+function_sleep_max_microseconds_per_block MIN 2000: refused
+function_sleep_max_microseconds_per_block CHANGEABLE_IN_READONLY: refused
+function_sleep_max_microseconds_per_block MIN 2000 MAX 4000: ok
+function_sleep_max_microseconds_per_block CONST: ok
+function_sleep_max_microseconds_per_block = 3000: ok
+config-defined user, MAX 4000: ok

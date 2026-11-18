@@ -1,0 +1,25 @@
+--- EventStream, JSONEachRow
+more than one data packet
+payloads reproduce the plain output
+no zero bytes
+--- EventStream, JSONEachRow&output_format_json_validate_utf8=1
+more than one data packet
+payloads reproduce the plain output
+no zero bytes
+--- EventStream, JSONCompactStringsEachRowWithNamesAndTypes
+more than one data packet
+payloads reproduce the plain output
+no zero bytes
+--- EventStream, XML
+more than one data packet
+payloads reproduce the plain output
+no zero bytes
+--- JSONEachPacketBase64, JSONEachRow
+more than one data packet
+payloads reproduce the plain output
+no zero bytes
+--- exception after several data packets
+no zero bytes
+every row is complete
+no row is repeated
+event: exception

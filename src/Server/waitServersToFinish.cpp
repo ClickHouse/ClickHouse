@@ -7,6 +7,15 @@ namespace DB
 
 size_t waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, std::mutex & mutex, size_t seconds_to_wait)
 {
+    return waitServersToFinish(servers, mutex, seconds_to_wait, [](const auto &) { return true; });
+}
+
+size_t waitServersToFinish(
+    std::vector<DB::ProtocolServerAdapter> & servers,
+    std::mutex & mutex,
+    size_t seconds_to_wait,
+    const ProtocolServerFilter & server_filter)
+{
     const size_t sleep_max_ms = 1000 * seconds_to_wait;
     const size_t sleep_one_ms = 100;
     size_t sleep_current_ms = 0;
@@ -19,6 +28,9 @@ size_t waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, std
             std::lock_guard lock{mutex};
             for (auto & server : servers)
             {
+                if (!server_filter(server))
+                    continue;
+
                 server.stop();
                 current_connections += server.currentConnections();
             }

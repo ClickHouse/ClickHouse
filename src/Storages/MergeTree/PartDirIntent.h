@@ -16,6 +16,9 @@ enum class PartDirIntent : uint8_t
     /// Directory is guaranteed clean by the claim (`MergeTreeData::claimTemporaryPartDirectory`):
     /// granularity comes from the settings, nothing is read from disk.
     CreateFresh,
+    /// The part never touches its directory: nothing is read from it, and nothing is created or
+    /// removed. For parts that only exist in memory to carry an index and a granularity.
+    Synthetic,
 };
 
 }

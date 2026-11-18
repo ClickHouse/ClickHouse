@@ -1,0 +1,11 @@
+aggregation, small set	100
+aggregation, large set	1000000
+threshold below the memory of spilling, small set	1
+threshold below the memory of spilling, large set	10
+aggregation, small set	0
+aggregation, large set	1
+threshold below the memory of spilling, small set	0
+threshold below the memory of spilling, large set	1
+aggregation, small set	1
+aggregation, large set	1
+marks	1

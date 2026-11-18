@@ -15,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
@@ -30,15 +31,19 @@
 
 #include <algorithm>
 
+#if USE_EMBEDDED_COMPILER
+#include <DataTypes/Native.h>
+#endif
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 template <is_decimal T>
@@ -103,6 +108,25 @@ Int64 ColumnDecimal<T>::compareTrackAt(size_t n, size_t m, const IColumn & rhs_,
         [&](size_t row) { return decimalLess<T>(rhs_data[row], a, other.scale, scale); });
 }
 
+#if USE_EMBEDDED_COMPILER
+
+template <is_decimal T>
+bool ColumnDecimal<T>::isComparatorCompilable() const
+{
+    return std::is_integral_v<NativeT>;
+}
+
+template <is_decimal T>
+llvm::Value * ColumnDecimal<T>::compileComparator(llvm::IRBuilderBase & builder, llvm::Value * lhs, llvm::Value * rhs, llvm::Value *) const
+{
+    if constexpr (std::is_integral_v<NativeT>)
+        return compileIntegerComparator(builder, lhs, rhs, std::is_signed_v<NativeT>);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Method compileComparator is not supported for type {}", TypeName<T>);
+}
+
+#endif
+
 template <is_decimal T>
 size_t ColumnDecimal<T>::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int) const
 {
@@ -129,12 +153,6 @@ void ColumnDecimal<T>::deserializeAndInsertFromArena(ReadBuffer & in, const ICol
     T dec{};
     readBinaryLittleEndian(dec, in);
     data.push_back(std::move(dec));
-}
-
-template <is_decimal T>
-void ColumnDecimal<T>::skipSerializedInArena(ReadBuffer & in) const
-{
-    in.ignore(sizeof(T));
 }
 
 template <is_decimal T>
@@ -304,8 +322,9 @@ void ColumnDecimal<T>::updatePermutation(IColumn::PermutationSortDirection direc
 
         if (size >= 256 && size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
         {
-            bool try_sort = trySort(begin, end, pred);
-            if (try_sort)
+            /// `trySort` can reorder equal values even when it returns false.
+            /// Stable radix sorting must preserve the incoming order within equal ranges.
+            if (!sort_is_stable && trySort(begin, end, pred))
                 return;
 
             PaddedPODArray<ValueWithIndex<NativeT>> pairs(size);
@@ -413,7 +432,7 @@ template <is_decimal T>
 bool ColumnDecimal<T>::tryInsert(const Field & x)
 {
     DecimalField<T> value;
-    if (!x.tryGet<DecimalField<T>>(value))
+    if (!x.tryGet<DecimalField<T>>(value) || value.getScale() != scale)
         return false;
     data.push_back(value);
     return true;
@@ -436,10 +455,8 @@ void ColumnDecimal<T>::doInsertRangeFrom(const IColumn & src, size_t start, size
 {
     const ColumnDecimal & src_vec = assert_cast<const ColumnDecimal &>(src);
 
-    if (start + length > src_vec.data.size())
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound "
-                        "in ColumnDecimal<T>::insertRangeFrom method (data.size() = {}).",
-                        toString(start), toString(length), toString(src_vec.data.size()));
+    if (start > src_vec.data.size() || length > src_vec.data.size() - start)
+        throwInsertRangeFromOutOfBound("ColumnDecimal<T>", start, length, src_vec.data.size());
 
     size_t old_size = data.size();
     data.resize(old_size + length);
@@ -486,11 +503,7 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
             {
                 size_t index = std::countr_zero(mask);
                 res_data.push_back(data_pos[index]);
-            #ifdef __BMI__
-                mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
+                mask = mask & (mask - 1);
             }
         }
 
@@ -546,11 +559,7 @@ void ColumnDecimal<T>::filter(const IColumn::Filter & filt)
             {
                 size_t index = std::countr_zero(mask);
                 res_data[res_size++] = data_pos[index];
-            #ifdef __BMI__
-                mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
+                mask = mask & (mask - 1);
             }
         }
 
@@ -668,6 +677,36 @@ void ColumnDecimal<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_
 {
     const auto & src_data = assert_cast<const Self &>(src).getData();
     data[dst_pos] = src_data[src_pos];
+}
+
+template <is_decimal T>
+bool ColumnDecimal<T>::hasOnlyTypeDefaults() const
+{
+    return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
+}
+
+template <is_decimal T>
+ColumnPtr ColumnDecimal<T>::createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
+{
+    if (offsets.size() + shift != size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Incompatible sizes of offsets ({}), shift ({}) and size of column {}", offsets.size(), shift, size());
+
+    auto res = this->create(total_rows, scale);
+    auto & res_data = res->getData();
+
+    T default_value = assert_cast<const Self &>(column_with_default_value.getDataColumn()).getElement(0);
+    std::fill(res_data.begin(), res_data.end(), default_value);
+
+    for (size_t i = 0; i < offsets.size(); ++i)
+    {
+        const size_t position = offsets[i];
+        if (position >= total_rows) [[unlikely]]
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Offset of a non-default value {} is out of range [0, {})", position, total_rows);
+        res_data[position] = data[i + shift];
+    }
+
+    return res;
 }
 
 template <is_decimal T>

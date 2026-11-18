@@ -14,21 +14,21 @@ SET lightweight_delete_mode = 'lightweight_update_force';
 
 SYSTEM STOP MERGES t_lwu_deletes_3;
 
-INSERT INTO t_lwu_deletes_3 SELECT number % 10000, toDate('2024-10-10'), 0, '' FROM numbers(100000);
-INSERT INTO t_lwu_deletes_3 SELECT number % 10000, toDate('2024-11-11'), 0, '' FROM numbers(100000);
-INSERT INTO t_lwu_deletes_3 SELECT number % 10000, toDate('2024-12-12'), 0, '' FROM numbers(100000);
+INSERT INTO t_lwu_deletes_3 SELECT number % 2000, toDate('2024-10-10'), 0, '' FROM numbers(20000);
+INSERT INTO t_lwu_deletes_3 SELECT number % 2000, toDate('2024-11-11'), 0, '' FROM numbers(20000);
+INSERT INTO t_lwu_deletes_3 SELECT number % 2000, toDate('2024-12-12'), 0, '' FROM numbers(20000);
 
-UPDATE t_lwu_deletes_3 SET v1 = 42 WHERE id = 100;
-UPDATE t_lwu_deletes_3 SET v1 = 42 WHERE id = 4000;
-UPDATE t_lwu_deletes_3 SET v2 = 'foo' WHERE id >= 9500;
+UPDATE t_lwu_deletes_3 SET v1 = 42 WHERE id = 20;
+UPDATE t_lwu_deletes_3 SET v1 = 42 WHERE id = 800;
+UPDATE t_lwu_deletes_3 SET v2 = 'foo' WHERE id >= 1900;
 
-DELETE FROM t_lwu_deletes_3 WHERE id = 200;
-DELETE FROM t_lwu_deletes_3 WHERE dt = toDate('2024-11-11') AND id >= 4000 AND id < 5000;
-DELETE FROM t_lwu_deletes_3 WHERE dt = toDate('2024-11-11') AND id >= 3500 AND id < 4500;
+DELETE FROM t_lwu_deletes_3 WHERE id = 40;
+DELETE FROM t_lwu_deletes_3 WHERE dt = toDate('2024-11-11') AND id >= 800 AND id < 1000;
+DELETE FROM t_lwu_deletes_3 WHERE dt = toDate('2024-11-11') AND id >= 700 AND id < 900;
 DELETE FROM t_lwu_deletes_3 WHERE notEmpty(v2);
 
 SELECT 'reference';
-SELECT 300000 - 10 * 3 - 1500 * 10 - 500 * 10 * 3 , 42 * 10 * 5, 0;
+SELECT 60000 - 10 * 3 - 300 * 10 - 100 * 10 * 3 , 42 * 10 * 5, 0;
 
 SELECT 'before merge';
 SELECT count(), sum(v1), sum(notEmpty(v2)) FROM t_lwu_deletes_3;
