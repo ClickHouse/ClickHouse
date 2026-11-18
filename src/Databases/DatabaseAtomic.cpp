@@ -16,7 +16,6 @@
 #include <Storages/StorageTimeSeries.h>
 #include <base/isSharedPtrUnique.h>
 #include <Common/PoolId.h>
-#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
 #include <Common/logger_useful.h>
@@ -40,10 +39,6 @@ namespace Setting
 namespace FailPoints
 {
     extern const char rename_database_after_dependency_check[];
-}
-
-namespace FailPoints
-{
     extern const char database_atomic_fail_after_committing_metadata_transaction[];
 }
 
