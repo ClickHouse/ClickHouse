@@ -2725,7 +2725,7 @@ void JoinStepLogical::buildPhysicalJoin(
             join_step->join_algorithm_params->rhs_size_estimation = join_step->right_relation.estimated_rows;
 
         join_step->join_algorithm_params->sender_estimated_small_right_side = join_step->sender_estimated_small_right_side;
-        join_step->join_algorithm_params->has_runtime_filter = join_step->runtime_filter_added;
+        join_step->join_algorithm_params->runtime_filter_keeps_matching_rows = join_step->runtime_filter_keeps_matching_rows;
 
         if (join_step->result_rows_estimation)
             join_step->join_algorithm_params->result_rows_estimation = join_step->result_rows_estimation;
@@ -3097,8 +3097,9 @@ void JoinStepLogical::serialize(Serialization & ctx) const
     /// A step that crosses the wire tells the receiver which decisions were already taken on it, so
     /// that the receiver does not take them again. Both bits stand for a decision that reads a row
     /// estimate, and estimates are deliberately not part of the plan format, so a receiver that
-    /// decided for itself would decide from an empty estimate and could decide differently. The byte
-    /// is left out of a plan cache key because it differs between the single-node and the
+    /// decided for itself would decide from an empty estimate and could decide differently. The one
+    /// exception is the packed-key bit: a receiver that has statistics of the right key and a row estimate of its own
+    /// decides from them and ignores the bit. The byte is left out of a plan cache key because it differs between the single-node and the
     /// parallel-replicas plan build, and those two builds have to hash alike.
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_DECISIONS && !ctx.for_cache_key)
     {
@@ -3239,7 +3240,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->optimized = optimized;
     result_step->runtime_filter_declined_small_probe = runtime_filter_declined_small_probe;
     result_step->sender_estimated_small_right_side = sender_estimated_small_right_side;
-    result_step->runtime_filter_added = runtime_filter_added;
+    result_step->runtime_filter_keeps_matching_rows = runtime_filter_keeps_matching_rows;
     result_step->result_rows_estimation = result_rows_estimation;
     result_step->estimated_cost = estimated_cost;
     result_step->estimated_selectivity = estimated_selectivity;

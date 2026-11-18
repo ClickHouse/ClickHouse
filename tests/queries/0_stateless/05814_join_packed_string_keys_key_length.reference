@@ -17,6 +17,16 @@ long_big_stats:left:min_rows_0	0	1
 long_big_stats:left_semi:min_rows_large	0	1
 long_big_stats:left_anti:min_rows_large	0	0
 long_big_stats:left_anti:min_rows_0	0	1
+long_big_nullable_stats:inner:min_rows_large	0	0
+long_big_nullable_stats:inner:min_rows_0	0	1
+short_big_stats:subquery:min_rows_large	1	0
+short_big_stats:expression:min_rows_large	0	0
+short_big_stats:expression:left:min_rows_large	0	0
+short_small_plain:no_estimate	1	0
+short_small_stats:no_estimate	0	0
+short_big_stats:no_estimate:min_rows_large	1	0
+long_big_stats:inner:no_estimate:min_rows_large	0	1
+long_big_stats:left:no_estimate:min_rows_large	0	0
 long_big_stats:inner:min_rows_0	0	1
 long_big_plain:min_rows_large	0	0
 long_big_plain:default	0	1

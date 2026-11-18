@@ -277,8 +277,8 @@ struct JoinAlgorithmParams
     std::optional<UInt64> local_rhs_rows_estimation;
     /// The sender of the plan estimated the right side below `min_rows_for_packed_string_keys_in_hash_join`.
     bool sender_estimated_small_right_side = false;
-    /// This host added a runtime filter that keeps only the left rows which can match, so not a `LEFT ANTI` filter.
-    bool has_runtime_filter = false;
+    /// This host added a runtime filter that passes mostly the left rows which match. See `tryAddJoinRuntimeFilter`.
+    bool runtime_filter_keeps_matching_rows = false;
 
     explicit JoinAlgorithmParams(const Context & context);
 

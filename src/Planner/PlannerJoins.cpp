@@ -1205,7 +1205,7 @@ static bool shouldPackStringJoinKeys(const JoinAlgorithmParams & params, Float64
         if (avg_key_length > UnhashedPackedStringRef::MAX_SMALL_LEN)
         {
             const bool enough_rows = *rows >= params.min_rows_for_packed_string_keys_in_hash_join;
-            return exact_table_exceeds_cache && (params.has_runtime_filter || enough_rows);
+            return exact_table_exceeds_cache && (params.runtime_filter_keeps_matching_rows || enough_rows);
         }
         return exact_table_exceeds_cache;
     }
