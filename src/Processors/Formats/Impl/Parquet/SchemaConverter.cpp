@@ -362,6 +362,28 @@ void SchemaConverter::processSubtree(TraversalNode & node)
             ///   insert into function file('t.parquet') select [(10,20,30)] as x;
             ///   select * from file('t.parquet', Parquet, '`x.2` Array(UInt8)'); -- outputs [20]
             std::optional<size_t> pos = sample_block->findPositionByName(node.name, options.format.parquet.case_insensitive_column_matching);
+
+            /// The `size` subcolumn of a `String` column outside of arrays (see `filterTupleColumnsToRead`)
+            /// is read from the lengths of the values, without the values themselves.
+            if (!pos.has_value() && !node.requested && isPrimitiveNode(*node.element) && node.element->__isset.type
+                && node.element->type == parq::Type::BYTE_ARRAY
+                && node.element->repetition_type != parq::FieldRepetitionType::REPEATED
+                && levels.back().rep == 0
+                && !node.element->logicalType.__isset.DECIMAL
+                && !(node.element->__isset.converted_type && node.element->converted_type == parq::ConvertedType::DECIMAL)
+                && !geo_columns.contains(node.getParquetName()))
+            {
+                pos = sample_block->findPositionByName(node.name + ".size", options.format.parquet.case_insensitive_column_matching);
+                if (pos.has_value())
+                {
+                    const auto & column = sample_block->getByPosition(pos.value());
+                    if (!WhichDataType(removeNullable(column.type)).isUInt64())
+                        throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of the size subcolumn {} is {}, expected UInt64",
+                            column.name, column.type->getName());
+                    node.read_string_sizes = true;
+                }
+            }
+
             if (pos.has_value())
             {
                 if (node.requested)
@@ -607,9 +629,29 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     PageDecoderInfo decoder;
     try
     {
-        processPrimitiveColumn(
-            *node.element, primitive_type_hint, time_as_stored_integer, decoder, decoded_type, inferred_type, geo_metadata,
-            primitive_column_idx - 1);
+        if (node.read_string_sizes)
+        {
+            /// Decode the column as `String` to check that its values are stored as they are, then take only their lengths.
+            processPrimitiveColumn(
+                *node.element, std::make_shared<DataTypeString>(), /*time_as_stored_integer=*/ false, decoder, decoded_type,
+                inferred_type, /*geo_metadata=*/ std::nullopt, primitive_column_idx - 1);
+            if (!decoder.string_converter || !decoder.string_converter->isTrivial()
+                || (decoded_type && !WhichDataType(decoded_type).isString()))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot read the size subcolumn of a column whose values are converted to String");
+            /// The statistics of the strings, if usable, bound the sizes too (see `StringSizeConverter::convertField`).
+            decoder.string_converter = std::make_shared<StringSizeConverter>();
+            decoder.allow_hash_filters = false;
+            decoder.cast_stats_to_output_type = false;
+            decoded_type = std::make_shared<DataTypeUInt64>();
+            inferred_type = decoded_type;
+        }
+        else
+        {
+            processPrimitiveColumn(
+                *node.element, primitive_type_hint, time_as_stored_integer, decoder, decoded_type, inferred_type, geo_metadata,
+                primitive_column_idx - 1);
+        }
     }
     catch (Exception & e)
     {

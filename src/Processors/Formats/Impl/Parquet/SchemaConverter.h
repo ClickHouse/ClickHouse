@@ -94,6 +94,8 @@ private:
         std::optional<String> parquet_name;
         DataTypePtr type_hint;
         bool requested = false;
+        /// The `size` subcolumn of this `String` leaf is requested, not the leaf itself.
+        bool read_string_sizes = false;
         /// The element or one of its ancestors is not in the data lake schema (see useColumnMapperIfNeeded).
         bool not_in_datalake_schema = false;
 

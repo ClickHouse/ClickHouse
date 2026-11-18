@@ -123,6 +123,8 @@ public:
     /// Unlike `.null`/`.size0`, a tuple element is a real leaf in the file, so the format can serve
     /// `t.x` on its own and prune on it.
     bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
+    /// The Parquet reader reads the lengths of the values of a `String` column without the values.
+    bool supportsOptimizationToStringSizeSubcolumn(const String & column_name) const override;
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 

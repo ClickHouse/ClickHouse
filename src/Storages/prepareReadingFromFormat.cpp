@@ -1,5 +1,6 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/Serializations/SerializationString.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
@@ -46,7 +47,8 @@ ReadFromFormatInfo prepareReadingFromFormat(
     const ContextPtr & context,
     bool supports_subset_of_columns,
     bool supports_tuple_elements,
-    const PrepareReadingFromFormatHiveParams & hive_parameters)
+    const PrepareReadingFromFormatHiveParams & hive_parameters,
+    bool supports_string_sizes)
 {
     const NamesAndTypesList & columns_in_data_file =
         hive_parameters.file_columns.empty() ? storage_snapshot->metadata->getColumns().getAllPhysical() : hive_parameters.file_columns;
@@ -86,7 +88,19 @@ ReadFromFormatInfo prepareReadingFromFormat(
     {
         if (supports_tuple_elements)
         {
-            columns_to_read = filterTupleColumnsToRead(info.requested_columns);
+            std::function<bool(const String &)> can_read_string_sizes;
+            if (supports_string_sizes)
+            {
+                /// A hive partition column is not in the file, and a missing column with a `DEFAULT` gets its value
+                /// after the format, so the format can read the sizes of neither.
+                const auto & columns = storage_snapshot->metadata->getColumns();
+                can_read_string_sizes = [&](const String & name_in_storage)
+                {
+                    return !hive_parameters.hive_partition_columns_to_read_from_file_path_map.contains(name_in_storage)
+                        && !columns.hasDefault(name_in_storage);
+                };
+            }
+            columns_to_read = filterTupleColumnsToRead(info.requested_columns, can_read_string_sizes);
         }
         else if (!columns_to_read.empty())
         {
@@ -146,7 +160,34 @@ ReadFromFormatInfo prepareReadingFromFormat(
     return info;
 }
 
-Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
+bool isStringSizesSubcolumnReadByFormat(const IDataType & type, const String & subcolumn_name)
+{
+    auto resolved = type.tryGetSubcolumnInfo(subcolumn_name);
+    if (!resolved || !SerializationString::isStringSizesSubcolumn(resolved->substreams_path))
+        return false;
+    const auto & path = resolved->substreams_path;
+    for (size_t i = 0; i + 1 < path.size(); ++i)
+        if (path[i].type != ISerialization::Substream::TupleElement && path[i].type != ISerialization::Substream::NullableElements)
+            return false;
+    return true;
+}
+
+void addStringSizesSubcolumnsReadByFormat(NameSet & names, const ColumnsDescription & columns)
+{
+    NameSet added;
+    for (const auto & name : names)
+    {
+        const auto * column = columns.tryGet(name);
+        if (!column)
+            continue;
+        for (const auto & subcolumn : columns.getSubcolumns(name))
+            if (isStringSizesSubcolumnReadByFormat(*column->type, subcolumn.getSubcolumnName()))
+                added.insert(subcolumn.name);
+    }
+    names.insert(added.begin(), added.end());
+}
+
+Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns, const std::function<bool(const String &)> & can_read_string_sizes)
 {
     /// Format can read tuple element subcolumns, e.g. `t.x` or `t.a.x`.
     /// But we still need to do some processing on the set of requested columns:
@@ -228,6 +269,19 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
 
             if (!column_info.path.empty())
                 column_info.type = ISerialization::createFromPath(column_info.path, column_info.path.size()).type;
+
+            /// The `size` subcolumn of a `String`: the format reads it from the lengths of the values. The path is the whole
+            /// subcolumn, so it is read as is.
+            if (can_read_string_sizes && can_read_string_sizes(column_to_read.getNameInStorage())
+                && isStringSizesSubcolumnReadByFormat(*type, column_to_read.getSubcolumnName()))
+            {
+                column_info.path = type->tryGetSubcolumnInfo(column_to_read.getSubcolumnName())->substreams_path;
+                column_info.type = column_to_read.type;
+                column_info.name = column_to_read.name;
+                bool emplaced = name_to_idx.emplace(column_info.name, idx).second;
+                column_info.is_duplicate = !emplaced;
+                continue;
+            }
         }
 
         column_info.name = column_to_read.getNameInStorage();

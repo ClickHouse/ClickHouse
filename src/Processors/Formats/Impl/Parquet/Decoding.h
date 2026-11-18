@@ -204,6 +204,9 @@ struct StringConverter
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StringConverter subclass doesn't support decoding Field");
     }
 
+    /// If false, `convertColumn` looks only at `offsets`, so the decoder does not have to gather the bytes of the values.
+    [[nodiscard]] virtual bool needsChars() const { return true; }
+
     virtual ~StringConverter() = default;
 };
 
@@ -368,6 +371,15 @@ struct TrivialStringConverter : public StringConverter
 
     void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
     [[nodiscard]] std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
+};
+
+/// Output column type: UInt64, the length of each string in bytes (the `size` subcolumn of a `String`).
+struct StringSizeConverter : public StringConverter
+{
+    void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
+    /// From the min/max string: a nonempty min means that all strings are nonempty, an empty max that all are empty.
+    [[nodiscard]] std::optional<Field> convertField(std::span<const char> data, bool is_max) const override;
+    [[nodiscard]] bool needsChars() const override { return false; }
 };
 
 /// A thing that byteswaps and sign-extends integers up to 32 bytes long.
