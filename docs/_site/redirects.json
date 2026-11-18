@@ -57338,5 +57338,81 @@
   {
     "destination": "/zh/agents/:path*",
     "source": "/zh/products/cloud/features/ai-ml/agents/:path*"
+  },
+  {
+    "source": "/products/cloud/api-reference/postgres/postgres-instance-config-get",
+    "destination": "/products/cloud/api-reference/postgres/get-postgresql-service-configuration"
+  },
+  {
+    "source": "/products/cloud/api-reference/postgres/postgres-instance-config-patch",
+    "destination": "/products/cloud/api-reference/postgres/update-postgres-service-configuration"
+  },
+  {
+    "source": "/products/cloud/api-reference/postgres/postgres-instance-config-post",
+    "destination": "/products/cloud/api-reference/postgres/replace-postgres-service-configuration"
+  },
+  {
+    "source": "/products/cloud/api-reference/postgres/postgres-instance-create-read-replica",
+    "destination": "/products/cloud/api-reference/postgres/create-a-read-replica-for-a-postgres-service"
+  },
+  {
+    "source": "/products/cloud/api-reference/postgres/postgres-instance-metrics-get",
+    "destination": "/products/cloud/api-reference/postgres/get-postgres-time-series-metrics"
+  },
+  {
+    "source": "/products/cloud/api-reference/postgres/postgres-instance-restore",
+    "destination": "/products/cloud/api-reference/postgres/restore-a-postgres-service"
+  },
+  {
+    "source": "/products/cloud/api-reference/postgres/postgres-logs-get-list",
+    "destination": "/products/cloud/api-reference/postgres/list-postgres-server-logs"
+  },
+  {
+    "source": "/products/cloud/api-reference/postgres/postgres-service-backup-get-list",
+    "destination": "/products/cloud/api-reference/postgres/list-of-postgres-service-backups"
+  },
+  {
+    "source": "/products/cloud/api-reference/postgres/postgres-service-certs-get",
+    "destination": "/products/cloud/api-reference/postgres/get-postgres-ca-certs"
+  },
+  {
+    "source": "/products/cloud/api-reference/postgres/postgres-service-delete",
+    "destination": "/products/cloud/api-reference/postgres/delete-a-postgresql-service"
+  },
+  {
+    "source": "/products/cloud/api-reference/postgres/postgres-service-get-list",
+    "destination": "/products/cloud/api-reference/postgres/list-of-organization-postgres-services"
+  },
+  {
+    "source": "/products/cloud/api-reference/postgres/postgres-service-get",
+    "destination": "/products/cloud/api-reference/postgres/get-postgresql-service-details"
+  },
+  {
+    "source": "/products/cloud/api-reference/postgres/postgres-service-patch-state",
+    "destination": "/products/cloud/api-reference/postgres/update-postgres-service-state"
+  },
+  {
+    "source": "/products/cloud/api-reference/postgres/postgres-service-patch",
+    "destination": "/products/cloud/api-reference/postgres/update-a-postgresql-service"
+  },
+  {
+    "source": "/products/cloud/api-reference/postgres/postgres-service-set-password",
+    "destination": "/products/cloud/api-reference/postgres/update-postgres-superuser-password"
+  },
+  {
+    "source": "/products/cloud/api-reference/postgres/slow-query-pattern-get",
+    "destination": "/products/cloud/api-reference/postgres/get-a-postgres-slow-query-pattern-with-recent-executions"
+  },
+  {
+    "source": "/products/cloud/api-reference/postgres/slow-query-patterns-get-list",
+    "destination": "/products/cloud/api-reference/postgres/list-postgres-slow-query-patterns"
+  },
+  {
+    "source": "/products/cloud/api-reference/prometheus/postgres-instance-prometheus-get",
+    "destination": "/products/cloud/api-reference/prometheus/get-postgresql-service-metrics"
+  },
+  {
+    "source": "/products/cloud/api-reference/prometheus/postgres-org-prometheus-get",
+    "destination": "/products/cloud/api-reference/prometheus/get-organization-postgresql-metrics"
   }
 ]

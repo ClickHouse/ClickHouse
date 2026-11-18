@@ -202,6 +202,8 @@ public:
 
     ObjectStoragePtr getObjectStorage() override;
 
+    std::unordered_map<Location, ObjectStoragePtr> getObjectStorages() const { return object_storages->getRegistry(); }
+
     bool supportsCache() const override;
 
     /// Is object storage read only?
