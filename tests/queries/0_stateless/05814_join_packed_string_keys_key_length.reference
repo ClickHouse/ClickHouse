@@ -22,6 +22,7 @@ long_big_nullable_stats:inner:min_rows_0	0	1
 short_big_stats:subquery:min_rows_large	1	0
 short_big_stats:expression:min_rows_large	0	0
 short_big_stats:expression:left:min_rows_large	0	0
+short_big_stats:hex:left:min_rows_large	0	0
 short_small_plain:no_estimate	1	0
 short_small_stats:no_estimate	0	0
 short_big_stats:no_estimate:min_rows_large	1	0

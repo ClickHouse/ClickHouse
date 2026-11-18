@@ -97,13 +97,16 @@ FORMAT Null SETTINGS min_rows_for_packed_string_keys_in_hash_join = 100000000, l
 SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l INNER JOIN long_big_nullable_stats AS r ON l.k = r.k
 FORMAT Null SETTINGS min_rows_for_packed_string_keys_in_hash_join = 0, log_comment = '05814:long_big_nullable_stats:inner:min_rows_0';
 
--- Where the key has statistics: a subquery that passes the column on keeps them, the result of an expression such as `concat` has none.
+-- Where the key has statistics: a subquery that passes the column on keeps them. The result of an expression in `ON` has none, also when the
+-- expression returns the type of its argument and the statistics of the column would apply to its width, as `hex` doubles it.
 SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l INNER JOIN (SELECT k FROM short_big_stats) AS r ON l.k = r.k
 FORMAT Null SETTINGS min_rows_for_packed_string_keys_in_hash_join = 100000000, log_comment = '05814:short_big_stats:subquery:min_rows_large';
 SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l INNER JOIN short_big_stats AS r ON l.k = concat(r.k, 'x')
 FORMAT Null SETTINGS min_rows_for_packed_string_keys_in_hash_join = 100000000, log_comment = '05814:short_big_stats:expression:min_rows_large';
 SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l LEFT JOIN short_big_stats AS r ON l.k = concat(r.k, 'x')
 FORMAT Null SETTINGS min_rows_for_packed_string_keys_in_hash_join = 100000000, log_comment = '05814:short_big_stats:expression:left:min_rows_large';
+SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l LEFT JOIN short_big_stats AS r ON l.k = hex(r.k)
+FORMAT Null SETTINGS min_rows_for_packed_string_keys_in_hash_join = 100000000, log_comment = '05814:short_big_stats:hex:left:min_rows_large';
 
 -- Without an estimate of the optimizer, the right side is as large as its own read is estimated to be.
 SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l INNER JOIN short_small_plain AS r ON l.k = r.k

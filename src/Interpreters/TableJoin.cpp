@@ -1333,7 +1333,9 @@ Float64 TableJoin::getRightHashKeyAvgBytes() const
     const auto & clause = clauses.front();
     /// The last key of an `ASOF` join is not in the hash table.
     const size_t hash_keys = clause.keysCount() - (strictness() == JoinStrictness::Asof);
-    return hash_keys == 1 ? getRightColumnAvgBytes(clause.key_names_right.front()) : 0;
+    if (hash_keys != 1 || right_columns_computed.contains(clause.key_names_right.front()))
+        return 0;
+    return getRightColumnAvgBytes(clause.key_names_right.front());
 }
 
 bool TableJoin::preferParallelHashLayout(
