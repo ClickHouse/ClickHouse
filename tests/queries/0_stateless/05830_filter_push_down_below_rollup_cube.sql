@@ -36,6 +36,16 @@ SELECT 'disjunction with an aggregate';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT id, k, sum(v) AS sv FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE (id = 4 AND sv > 100) OR (id = 5 AND sv > 150)) WHERE explain LIKE '%Condition:%';
 SELECT * FROM (SELECT id, k, sum(v) AS sv FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE (id = 4 AND sv > 100) OR (id = 5 AND sv > 150) ORDER BY ALL;
 
+SELECT 'having, then where';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k) HAVING k = 2) WHERE id = 4) WHERE explain LIKE '%Condition:%';
+SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k) HAVING k = 2) WHERE id = 4 ORDER BY ALL;
+
+SELECT 'the condition has the name of a column below the step';
+SELECT id % 3 AS a, count() FROM t_rollup_filter GROUP BY a WITH ROLLUP HAVING a ORDER BY ALL;
+SELECT * FROM (SELECT id, k, count() FROM t_rollup_filter GROUP BY ROLLUP(id, k) HAVING k = 1) WHERE id ORDER BY ALL LIMIT 3;
+SELECT * FROM (SELECT id % 5 > 2 AS f, id % 5 AS a, count() FROM t_rollup_filter GROUP BY f, a WITH CUBE) WHERE a > 2 ORDER BY ALL;
+SELECT * FROM (SELECT id = 1 AND k = 1 AS f, id, k, count() FROM t_rollup_filter GROUP BY f, id, k WITH ROLLUP) WHERE id = 1 AND k = 1 ORDER BY ALL;
+
 SELECT 'only the conjunct that rejects the subtotal value';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id = 4 AND k != 1) WHERE explain LIKE '%Condition:%';
 SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id = 4 AND k != 1 ORDER BY ALL;
