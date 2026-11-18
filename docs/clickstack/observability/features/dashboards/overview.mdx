@@ -7,6 +7,7 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'visualization', 'monitoring', 'observability']
 ---
 
+import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 ClickHouse Observability supports visualizing events, with built-in support for charting in the UI. These charts can be added to dashboards for sharing with other users.
 
@@ -461,7 +462,7 @@ Open the dashboard's **Tags** menu to select or create tags. You can assign mult
 
 ## Custom filters and variables {#custom-filters}
 
-In addition to the [free-text filters](#filter-dashboards) available on all dashboards, saved dashboards support custom dropdown filters populated by data queried from ClickHouse. These provide reusable, point-and-click filter controls so that dashboard viewers can filter without writing expressions manually.
+In addition to the [free-text filters](#filter-dashboards) available on all dashboards, saved dashboards support custom filters and variables. These provide reusable, point-and-click controls so that dashboard viewers can filter without writing expressions manually. Their values can come from a column queried from a source, a hand-written list, a SQL query, Prometheus label values, or freely chosen key-value conditions. Variables can also determine which data source or connection a tile queries. See [Filter types](#filter-types) for the full list.
 
 <div className="ch-image-lg">
 
@@ -478,14 +479,14 @@ Each filter allows the viewer to choose one or more values, and does one or both
 - **Broadcast** — applies the selection as a filter condition on matching tiles. Tiles do not need to be updated to reference the filter.
 - **Variable** — exposes the selection to tile queries as `$variableName`, so each tile decides where and how the value is used.
 
-A filter must do at least one of the two. Broadcast is enabled by default when creating a filter.
+Which of the two a filter supports depends on its [type](#filter-types). A **SQL expression values** filter must do at least one of the two, and broadcasts by default.
 
 The following steps demonstrate adding a filter to the dashboard created in the ["Creating dashboards"](#creating-dashboards) section.
 
 <Steps>
 <Step title="Open the Edit Filters dialog" id="open-edit-filters">
 
-Open a saved dashboard and select **Edit Filters and Variables** from the toolbar.
+Open a saved dashboard and select **Edit filters and variables** from the toolbar.
 
 <div className="ch-image-lg">
 
@@ -499,7 +500,7 @@ Open a saved dashboard and select **Edit Filters and Variables** from the toolba
 </Step>
 <Step title="Add a new filter" id="add-new-filter">
 
-Click **Add new filter**. Configure the filter by providing a **Display Name**, selecting a **Data source**, and entering a **Filter expression** — a SQL column or expression whose distinct values will populate the dropdown. Click **Save filter**.
+Click **Add new filter**. Choose a **Type** — this example uses the default, **SQL expression values** — then configure the filter by providing a **Display name**, selecting a **Data source**, and entering a **Filter expression** — a SQL column or expression whose distinct values will populate the dropdown. Click **Save filter**.
 
 For example, to add a service filter for trace data, use `ServiceName` as the filter expression with the `Traces` data source. The "Dropdown values filter" is optional, and provides a way to restrict which values appear in the dropdown.
 
@@ -561,15 +562,136 @@ To persist a filter selection as the dashboard default, choose **Save Query & Fi
 Custom dropdown filters are available on saved dashboards. For an example of this pattern in action, see the [Kubernetes dashboard](#kubernetes-dashboard), which provides built-in dropdown filters for Pod, Deployment, Node name, Namespace, and Cluster.
 </Note>
 
+### Filter types {#filter-types}
+
+The **Type** selector in the filter dialog decides where a filter's values come from and how they reach tiles.
+
+| Type | Values come from | Broadcast | Variable |
+|------|------------------|-----------|----------|
+| [SQL expression values](#sql-expression-values-filters) | The distinct values of an expression, queried from a source | Optional, enabled by default | Optional |
+| [Static values](#static-values-filters) | A hand-written list | No | Always |
+| [SQL query values](#sql-query-filters) | The first column of a SQL query | No | Always |
+| [PromQL label values](#promql-label-filters) | The values of a Prometheus label | No | Always |
+| [Ad hoc keys and values](#adhoc-filters) | `key operator value` conditions built from the keys and values of one or more sources | Always | No |
+| [Data source](#data-source-variables) | The team's sources | No | Always, as a [source reference](#source-connection-variables) |
+| [Connection](#connection-variables) | The team's ClickHouse connections | No | Always, as a [connection reference](#source-connection-variables) |
+
+#### SQL expression values {#sql-expression-values-filters}
+
+Its dropdown lists the distinct values of the **Filter expression** in the selected **Data source**, optionally narrowed by a **Dropdown values filter**. For metric sources, also choose a **Metric type**. A SQL expression values filter can [broadcast](#broadcast-filters) its selection, be [available as a variable](#dashboard-variables), or both.
+
+#### Static values {#static-values-filters}
+
+Its dropdown offers a hand-written list of values. Type each value in **Options** and press Enter. A filter can hold up to 1000 options.
+
+A static values filter is always a variable and never broadcasts, so tiles use it by referencing its variable, for example `$__filter(SeverityText, $severity)`. This is useful for values that aren't stored in a column, or for a fixed, curated list.
+
+#### SQL query values {#sql-query-filters}
+
+Its dropdown lists the first column returned by a ClickHouse SQL query, in the order the query returns rows, up to 10,000 values. Configure:
+
+- **Connection** — the ClickHouse connection the query runs on, or a [connection variable](#connection-variables).
+- **Source** — optional. A source on the same connection, or a [data source variable](#data-source-variables). With a source selected, the query can use `$__sourceTable` and `$__filters`, which applies the dashboard's broadcast filter selections for that source, the same way [raw SQL tiles](/clickstack/observability/features/dashboards/sql-visualizations#dashboard-filter-macro) do.
+- **SQL query** — the query itself. It can use the [time macros](/clickstack/observability/features/dashboards/sql-visualizations#time-filter-macros) and reference the dashboard's other variables. The editor previews the values the query returns for the dashboard's current time range.
+
+For example, the following query lists the services that logged events in the dashboard's time range, limited to the environments selected in an `environment` filter:
+
+```sql
+SELECT DISTINCT ServiceName
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ResourceAttributes['deployment.environment'], $environment)
+ORDER BY ServiceName
+```
+
+A SQL query values filter is always a variable and never broadcasts.
+
+#### PromQL label values {#promql-label-filters}
+
+<PrivatePreviewBadge/>
+
+Its dropdown lists the values of a Prometheus label. Select a PromQL **Data source**, and enter the **Label** whose values populate the dropdown, such as `job`, `instance`, or `__name__`. Optionally, enter **Series matchers** — a Prometheus series selector, such as `up{job="api"}`, that narrows which series the values are read from. Series matchers can reference the dashboard's other variables.
+
+A PromQL label values filter is always a variable and never broadcasts. In PromQL tiles, reference it inside a label matcher, for example `rate(http_requests_total{job=~"$job"}[$__rate_interval])`. See [Referencing a variable](#referencing-variables) for how values are rendered.
+
+#### Ad hoc keys and values {#adhoc-filters}
+
+Instead of offering a single dropdown, an ad hoc filter lets the viewer build a list of `key operator value` conditions from the keys of its sources: columns and map keys for SQL sources, or labels for Prometheus sources. Keys and values are suggested as the viewer types. Configure:
+
+- **Source type** — SQL (log, trace, or session sources) or Prometheus.
+- **Data sources** — the sources whose keys and values the filter suggests.
+- **Keys and values filter** — optional, SQL sources only. A SQL or Lucene condition that narrows the rows keys and values are suggested from. It can reference the dashboard's other variables.
+- **Applies to sources** — the sources the conditions are broadcast to. Leave it empty to broadcast to every tile that uses one of the filter's data sources.
+- **Unique name** — identifies the filter's conditions in the [dashboard URL](/clickstack/observability/url-parameters#dashboard-filter-values).
+
+Conditions support the following operators: `=`, `!=`, `=~` (regex), `!~` (regex), `LIKE`, `NOT LIKE`, `IN`.
+
+Viewers can also add a condition by clicking a value in a table, time series, or search tile on the dashboard.
+
+Ad hoc conditions are always broadcast, and can't be referenced as variables. Chart builder tiles and PromQL tiles on the matching sources pick them up automatically, and raw SQL tiles apply them through the [`$__filters` macro](/clickstack/observability/features/dashboards/sql-visualizations#dashboard-filter-macro).
+
+#### Data source {#data-source-variables}
+
+A data source variable lets the viewer choose which source a tile queries. Select the **Source kinds** offered in its dropdown, for example only log sources, and optionally limit them to one **Connection**, which can itself be a connection variable. See [Data source and connection variables](#source-connection-variables) for how tiles and filters use it.
+
+#### Connection {#connection-variables}
+
+A connection variable lets the viewer choose which ClickHouse connection raw SQL tiles, SQL query values filters, and data source variables use. It has no settings beyond its name.
+
+### Data source and connection variables {#source-connection-variables}
+
+Data source and connection variables stand in for a source or connection ID, rather than for a value in query text. Wherever a source or connection picker accepts them, the dashboard's variables are listed under a **Variables** group. Choosing one stores a `$name` reference that resolves to the viewer's current selection. This makes it possible to build one dashboard that switches between, for example, the logs of several environments, or several ClickHouse clusters.
+
+| Used in | Accepts a data source variable | Accepts a connection variable |
+|---------|--------------------------------|-------------------------------|
+| Chart builder tiles | Source | — |
+| Raw SQL tiles | Source | Connection |
+| PromQL tiles | Source | — |
+| SQL expression values filters | Data source, Applies to sources | — |
+| PromQL label values filters | Data source | — |
+| Ad hoc filters | Data sources, Applies to sources | — |
+| SQL query values filters | Source | Connection |
+| Data source variables | — | Connection |
+
+A data source variable is only offered where at least one of its source kinds fits. For example, a PromQL tile only offers data source variables that allow PromQL sources.
+
+Data source and connection variables are always single-select and required, since a tile can't query without a source or connection. Until a value is selected, the tiles and filters that reference the variable wait for it. Enable **Block every tile** to hold the whole dashboard instead. A [dashboard link](/clickstack/observability/url-parameters#dashboard-filter-values) can select a source or connection by name as well as by ID.
+
+<Note>
+Alerts aren't available on tiles that use a data source or connection variable. Saving such a tile removes its alert.
+</Note>
+
+### Selection options {#filter-selection-options}
+
+SQL expression values, static values, SQL query values, and PromQL label values filters have these additional options:
+
+- **Single select** — only one value can be selected at a time.
+- **Required** — tiles that use the filter, through its variable or through broadcast, don't load until the filter has a selection.
+  - **Block every tile** — block every tile on the dashboard until the filter has a selection, not only the tiles that use it.
+
+### Chained filters {#chained-filters}
+
+A filter's own configuration can reference the dashboard's other variables, so that its values depend on another filter's selection. For example, a service filter can list only the services in the environment selected by an `environment` filter. Variables can be referenced in:
+
+- A SQL expression values filter's **Dropdown values filter**, for example `$__filter(ResourceAttributes['deployment.environment'], $environment)`.
+- A SQL query values filter's **SQL query**.
+- A PromQL label values filter's **Series matchers**, for example `up{env="$env"}`.
+- An ad hoc filter's **Keys and values filter**.
+- Source and connection fields, through [data source and connection variables](#source-connection-variables).
+
+When the referenced filter's selection changes, the dependent filter's values are queried again. While a referenced required filter has nothing selected, an ad hoc filter that depends on it can't add or edit conditions, and names the filter it's waiting on.
+
 ### Broadcasting {#broadcast-filters}
 
-With **Broadcast filter condition** enabled, the selected values are applied as a filter condition on the dashboard's tiles, without any tile explicitly referencing the filter. By default the condition reaches every tile. Use **Applies to sources** to restrict it to tiles that use a given set of sources — useful when the filter's expression only makes sense for some of the data on the dashboard.
+SQL expression values filters can broadcast their selection, and ad hoc filters always broadcast their conditions. With **Broadcast filter condition** enabled on a SQL expression values filter, the selected values are applied as a filter condition on the dashboard's tiles, without any tile explicitly referencing the filter. By default the condition reaches every tile. Use **Applies to sources** to restrict it to tiles that use a given set of sources — useful when the filter's expression only makes sense for some of the data on the dashboard.
 
 Chart builder tiles pick up broadcast filters automatically. Raw SQL tiles must include the [`$__filters` macro](/clickstack/observability/features/dashboards/sql-visualizations#dashboard-filter-macro) and have a source selected, since the UI cannot infer where the condition belongs in a hand-written query.
 
 ### Variables {#dashboard-variables}
 
-With **Available as variable** enabled, the filter's selection is also exposed to tile queries as `$variableName`. The **Variable name** defaults to the filter's display name with illegal characters removed, and can be overridden. Names must start with a letter and may contain only letters, digits, and underscores.
+Static values, SQL query values, and PromQL label values filters are always variables. A SQL expression values filter becomes a variable when **Available as variable** is enabled. A variable exposes the filter's selection to tile queries as `$variableName`. The **Variable name** defaults to the filter's display name with illegal characters removed, and can be overridden. Names must start with a letter and may contain only letters, digits, and underscores.
+
+Ad hoc filters are never variables, and data source and connection variables are [references to a source or connection](#source-connection-variables) rather than values in query text.
 
 Use a variable when broadcasting a `WHERE` condition is not what you want — for example, to put the value in a `SELECT` expression, a `HAVING` clause, or a join key, or to filter a tile on a column other than the filter's own expression.
 
@@ -584,6 +706,7 @@ A variable expands to the values currently selected in its dropdown. The referen
 | `${name:csv}`         | Unquoted and comma-separated: `a,b`. Not escaped for SQL.                                         | empty string    |
 | `${name:regex}`       | A regex alternation, regex-escaped: `(a\|b)`.                                                     | `.*`            |
 | `${name:lucene}`      | An `OR` of quoted terms, for Lucene inputs: `("a" OR "b")`.                                       | `("")`          |
+| `${name:promql}`      | The default in PromQL tiles. For a single-select filter, the selected value, for use in `label="$name"`. Otherwise a regex alternation, for use in `label=~"$name"`. | `.*` (empty string when single-select) |
 
 Because `$name` renders as `NULL` before anything is selected, prefer the following macros wherever a SQL predicate is expected. Both macros expand to `1=1` while their variable has no selection, so the query stays valid:
 
