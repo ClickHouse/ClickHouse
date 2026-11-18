@@ -115,9 +115,9 @@ To disable the split of `Resize` nodes, set this setting to 0. This will prevent
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "100000"},{"label": "New setting: `enable_packed_string_keys_in_hash_join` applies only when the right side of the join is estimated at 100000 rows or more, or has no estimate."}]}]}/>
 
-The minimum number of rows in the right side of a join for `enable_packed_string_keys_in_hash_join` to apply. A join whose right side is estimated at fewer rows compares its `String` keys exactly. The hash table of a small right side stays in the CPU cache, so packed keys save little there. Hashing the keys of 16 bytes or more costs more than that.
+The minimum estimated number of rows in the right side of a join for `enable_packed_string_keys_in_hash_join` to apply. Smaller joins gain little from it, and can be slower with long keys.
 
-The estimate is the number of right rows seen in an earlier run of the same join, when `collect_hash_table_stats_during_joins` keeps such statistics. Otherwise it is the row estimate of the query optimizer. `parallel_hash_join_threshold` uses the same estimate. A join without an estimate uses packed keys.
+The estimate is the number of right-side rows in an earlier run of the same join, if `collect_hash_table_stats_during_joins` is enabled. Otherwise it is the query optimizer's estimate. `parallel_hash_join_threshold` uses the same estimate. A join without an estimate always uses `enable_packed_string_keys_in_hash_join`.
 
 0 means no minimum.
 
