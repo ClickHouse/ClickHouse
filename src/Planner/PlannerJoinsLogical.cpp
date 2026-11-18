@@ -414,8 +414,8 @@ static JoinCondition concatConditions(const JoinCondition & lhs, const JoinCondi
 }
 
 static std::vector<JoinCondition> makeCrossProduct(
-    const std::vector<JoinCondition> & rhs,
     const std::vector<JoinCondition> & lhs,
+    const std::vector<JoinCondition> & rhs,
     size_t max_expanded,
     const IQueryTreeNode & node)
 {
