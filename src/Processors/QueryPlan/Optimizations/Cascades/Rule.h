@@ -26,7 +26,8 @@ protected:
 
     /// Inserts a rule-produced physical expression into its group and appends it to `result` when
     /// it was actually inserted (a structural duplicate is dropped). Marks the expression with
-    /// this rule so it is not re-applied to its own product.
+    /// this rule so it is not re-applied to its own product. When the duplicate is an enforcer,
+    /// the equal enforcer of the group gets the required properties that the new one was made for.
     void addPhysicalToMemo(GroupExpressionPtr expression, const ExpressionProperties & required_properties,
         Memo & memo, std::vector<GroupExpressionPtr> & result) const;
 
