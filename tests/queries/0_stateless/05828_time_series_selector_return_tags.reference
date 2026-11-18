@@ -26,6 +26,18 @@ tags	Array(Tuple(String, String))
 1
 [('__name__','m'),('env','prod'),('job','a')]	[('1970-01-01 00:01:40.000',1),('1970-01-01 01:06:40.000',2)]
 [('__name__','m'),('job','b')]	[('1970-01-01 00:02:30.000',10)]
+-- a NULL bound is unlimited
+[('__name__','m'),('env','dev')]
+[('__name__','m'),('env','prod'),('job','a')]
+[('__name__','m'),('job','b')]
+[('__name__','m'),('env','dev')]
+[('__name__','m'),('env','prod'),('job','a')]
+[('__name__','m'),('job','b')]
+4	4
+1
+2
+1
+1
 -- the tags stored in columns named like the columns of the generated queries
 [('__name__','m'),('env','prod'),('job','a')]
 [('__name__','m'),('env','prod'),('job','a')]

@@ -88,27 +88,30 @@ namespace
         TimestampType min_time = node_range.start_time - node_range.window + 1;
         TimestampType max_time = node_range.end_time;
 
-        auto make_selector = [&](const char * return_columns)
+        auto make_selector = [&](ASTPtr min_time_ast, ASTPtr max_time_ast, const char * return_columns)
         {
             return makeASTFunction(
                 "timeSeriesSelector",
                 make_intrusive<ASTLiteral>(context.time_series_storage_id.getDatabaseName()),
                 make_intrusive<ASTLiteral>(context.time_series_storage_id.getTableName()),
                 make_intrusive<ASTLiteral>(String{instant_selector_text}),
-                timeSeriesTimestampToAST(min_time, context.result_timestamp_type),
-                timeSeriesTimestampToAST(max_time, context.result_timestamp_type),
+                std::move(min_time_ast),
+                std::move(max_time_ast),
                 make_intrusive<ASTLiteral>(String{return_columns}));
         };
 
-        builder.from_table_function = make_selector(table_has_bucketed_samples ? "samples" : "timestamp_and_value");
+        builder.from_table_function = make_selector(
+            timeSeriesTimestampToAST(min_time, context.result_timestamp_type),
+            timeSeriesTimestampToAST(max_time, context.result_timestamp_type),
+            table_has_bucketed_samples ? "samples" : "timestamp_and_value");
         res.select_query = builder.getSelectQuery();
 
-        /// The tags of the same time series:
-        /// SELECT id, tags FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>, 'tags')
+        /// The tags of the time series matching the selector, with no time filter (joinSeriesTags keeps the series with samples):
+        /// SELECT id, tags FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, NULL, NULL, 'tags')
         SelectQueryBuilder series_builder;
         series_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::ID));
         series_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
-        series_builder.from_table_function = make_selector("tags");
+        series_builder.from_table_function = make_selector(make_intrusive<ASTLiteral>(Field{}), make_intrusive<ASTLiteral>(Field{}), "tags");
         context.subqueries.emplace_back(context.subqueries.size(), series_builder.getSelectQuery(), SQLSubqueryType::TABLE);
         res.series = context.subqueries.back().name;
 

@@ -29,8 +29,8 @@ ASTPtr joinSeriesTags(ASTPtr && per_id_query, const String & series, const Strin
         builder.select_list.back()->setAlias(column);
     }
 
-    builder.from_table = per_id;
-    builder.join_table = series;
+    builder.from_table = series;
+    builder.join_table = per_id;
     builder.join_kind = JoinKind::Inner;
     builder.join_strictness = JoinStrictness::Any;
     builder.join_on = makeASTFunction(

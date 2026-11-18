@@ -224,8 +224,8 @@ timeSeriesSelector('time_series_table', 'instant_query', min_time, max_time, ret
 - `db_name` - The name of the database where a TimeSeries table is located.
 - `time_series_table` - The name of a TimeSeries table.
 - `instant_query` - An instant selector written in [PromQL syntax](https://prometheus.io/docs/prometheus/latest/querying/basics/#instant-vector-selectors), without `@` or `offset` modifiers.
-- `min_time` - Start timestamp, inclusive.
-- `max_time` - End timestamp, inclusive.
+- `min_time` - Start timestamp, inclusive, or `NULL` for no lower bound.
+- `max_time` - End timestamp, inclusive, or `NULL` for no upper bound.
 - `return_columns` - The returned columns: `'samples'`, `'timestamp_and_value'` or `'tags'`, see below.
 
 `min_time` and `max_time` can have fractions of a second even if the timestamps in the table are whole seconds:

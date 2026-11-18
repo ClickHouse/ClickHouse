@@ -149,6 +149,11 @@ bool isWithinRecentSamplesTTL(UInt64 recent_samples_ttl_seconds, Int64 now_secon
     return timestamp_seconds >= now_seconds - static_cast<Int64>(recent_samples_ttl_seconds) + safety_margin_seconds;
 }
 
+String timeBoundToString(const std::optional<DateTime64> & bound)
+{
+    return bound ? std::to_string(bound->value) : "NULL";
+}
+
 /// The smallest and the largest timestamps representable in the timestamp type of the table:
 /// `DateTime` and `UInt32` can't hold timestamps before 1970 or after 2106.
 DateTime64 minRepresentableTime(const DataTypePtr & table_timestamp_type)
@@ -300,8 +305,15 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
     UInt32 table_timestamp_scale = tryGetDecimalScale(*table_timestamp_type).value_or(0);
     UInt32 parameters_scale = getTimeScale(table_timestamp_scale, min_time_value.getType(), max_time_value.getType());
-    auto min_time = parseTimeSeriesTimestamp(resolveActiveAlternative(min_time_value), parameters_scale);
-    auto max_time = parseTimeSeriesTimestamp(resolveActiveAlternative(max_time_value), parameters_scale);
+    auto parse_bound = [&](const ConstantValue & value) -> std::optional<DateTime64>
+    {
+        auto resolved = resolveActiveAlternative(value);
+        if (resolved.isNull())
+            return std::nullopt;
+        return parseTimeSeriesTimestamp(resolved, parameters_scale);
+    };
+    auto min_time = parse_bound(min_time_value);
+    auto max_time = parse_bound(max_time_value);
 
     /// The argument `return_columns` chooses the returned columns: 'samples', 'timestamp_and_value' or 'tags'.
     String return_columns_str = getStringConstArgument(args[argument_index++], context, "return_columns");
@@ -332,9 +344,9 @@ StorageTimeSeriesSelector::StorageTimeSeriesSelector(
     if (!node || (node->node_type != PrometheusQueryTree::NodeType::InstantSelector))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} is not an instant selector", quoteString(config.selector.toString()));
 
-    if (config.min_time > config.max_time)
+    if (config.min_time && config.max_time && (*config.min_time > *config.max_time))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Max time {} is less than min time {}",
-                        Field{config.max_time}, Field{config.min_time});
+                        Field{*config.max_time}, Field{*config.min_time});
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -1422,14 +1434,14 @@ void StorageTimeSeriesSelector::readImpl(
     if (recent_samples_ttl_seconds && context->getSettingsRef()[Setting::time_series_prefer_recent_samples_table])
     {
         /// If the start of the range is within the TTL, the whole range is: the recent samples table keeps everything after that.
-        if (isWithinRecentSamplesTTL(recent_samples_ttl_seconds, std::time(nullptr), config.min_time, config.time_scale)
+        if (config.min_time && isWithinRecentSamplesTTL(recent_samples_ttl_seconds, std::time(nullptr), *config.min_time, config.time_scale)
             && time_series_storage->tryGetTargetTable(ViewTarget::RecentSamples, context))
         {
             samples_table_kind = ViewTarget::RecentSamples;
             if (time_series_settings->hasBucketedSamples())
                 bucket_step_seconds = (*time_series_settings)[TimeSeriesSetting::recent_samples_bucket_step_seconds];
             LOG_DEBUG(log, "Selector {} time range [{}, {}] fits in the recent samples TTL window: reading from the recent samples table",
-                      quoteString(config.selector.toString()), config.min_time.value, config.max_time.value);
+                      quoteString(config.selector.toString()), timeBoundToString(config.min_time), timeBoundToString(config.max_time));
         }
     }
 
@@ -1444,7 +1456,7 @@ void StorageTimeSeriesSelector::readImpl(
     {
         /// No timestamp of the table is in the time range. Nothing is read - an uninitialized query plan reads from an empty source.
         LOG_DEBUG(log, "Selector {} time range [{}, {}] contains no timestamp of the table: returning no samples",
-                  quoteString(config.selector.toString()), config.min_time.value, config.max_time.value);
+                  quoteString(config.selector.toString()), timeBoundToString(config.min_time), timeBoundToString(config.max_time));
         return;
     }
     const TableTimeRange time_range_to_filter_samples = table_time_range;

@@ -33,8 +33,9 @@ public:
         /// of the arguments `min_time` and `max_time` of the table function and not less than 3 (milliseconds).
         /// The time range is converted to the scale of the table when the samples are read.
         UInt32 time_scale = 0;
-        DateTime64 min_time{};
-        DateTime64 max_time{};
+        /// An absent bound (the argument is NULL) is unlimited.
+        std::optional<DateTime64> min_time;
+        std::optional<DateTime64> max_time;
 
         /// The columns the table function timeSeriesSelector() returns besides `id`:
         /// `samples` (of type `Array(Tuple(table_timestamp_type, table_value_type))`); or

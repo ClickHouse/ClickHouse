@@ -56,6 +56,20 @@ FROM (SELECT id, timeSeriesGroupArray(samples) AS samples FROM timeSeriesSelecto
 ANY INNER JOIN timeSeriesSelector(ts_buckets, 'm', 0, 5000, 'tags') AS t ON s.id = t.id
 ORDER BY tags;
 
+SELECT '-- a NULL bound is unlimited';
+SELECT tags FROM timeSeriesSelector(ts_buckets, 'm', NULL, NULL, 'tags') ORDER BY tags;
+SELECT tags FROM timeSeriesSelector(ts_buckets, 'm', 5000, NULL, 'tags') ORDER BY tags;
+SELECT tags FROM timeSeriesSelector(ts_rows, 'm', NULL, 1000, 'tags') ORDER BY tags;
+SELECT count(), sum(length(samples)) FROM timeSeriesSelector(ts_buckets, 'm', NULL, NULL, 'samples');
+SELECT count() FROM timeSeriesSelector(ts_rows, 'm', NULL, 120, 'timestamp_and_value');
+SELECT count() FROM timeSeriesSelector(ts_buckets, 'm', 2000, NULL, 'samples');
+DROP TABLE IF EXISTS ts_recent;
+CREATE TABLE ts_recent ENGINE = TimeSeries;
+INSERT INTO ts_recent (metric_name, tags, samples) SELECT 'm', map('job', 'a'), [(now64(3) - 60, 1.)];
+SELECT count() FROM timeSeriesSelector(ts_recent, 'm', NULL, NULL, 'samples');
+SELECT count() FROM timeSeriesSelector(ts_recent, 'm', now64(3) - 3600, NULL, 'samples');
+DROP TABLE ts_recent;
+
 SELECT '-- the tags stored in columns named like the columns of the generated queries';
 CREATE TABLE ts_names ENGINE = TimeSeries SETTINGS tags_to_columns = {'job': 'series_tags', 'env': 'series_id'}, recent_samples_ttl_seconds = 0;
 CREATE TABLE ts_names_rows ENGINE = TimeSeries SETTINGS version = 10, tags_to_columns = {'job': 'series_tags', 'env': 'series_id'}, recent_samples_ttl_seconds = 0;

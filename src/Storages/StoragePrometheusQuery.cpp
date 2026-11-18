@@ -193,6 +193,9 @@ void StoragePrometheusQuery::applySettingsForPrometheusQuery(Context & context)
         context.setSetting("enable_materialized_cte", true);
 
     context.setSetting("empty_result_for_aggregation_by_empty_set", false);
+
+    /// The legacy behaviour keeps every row of the left table in `ANY INNER JOIN`, the generated SQL needs one row per key.
+    context.setSetting("any_join_distinct_right_table_keys", false);
 }
 
 
