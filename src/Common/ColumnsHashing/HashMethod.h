@@ -63,7 +63,7 @@ static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
   * has to hash the key by definition, and `HashMethodString`/`HashMethodPackedString` still profit
   * because building their key holder is free.
   *
-  * `has_cheap_key_calculation` - read by the JOIN probe loop, via `join_prefetch_supported` in
+  * `has_cheap_key_calculation` - read by `LimitByTransform`, and by the JOIN probe loop via `join_prefetch_supported` in
   * HashJoinMethodsImpl.h (the `KeyGetterForType` aliases in HashJoin/KeyGetter.h resolve to these
   * same hash methods). It is the stricter "the whole key calculation, hashing included, is cheap",
   * and is left as it was: the JOIN probe loop has its own cost balance, which this file's
