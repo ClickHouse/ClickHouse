@@ -387,4 +387,11 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
     return false;
 }
 
+MutableColumnPtr createColumnWithInsertedDefault(const IDataType & type)
+{
+    auto column = type.createColumn();
+    type.insertDefaultInto(*column);
+    return column;
+}
+
 }

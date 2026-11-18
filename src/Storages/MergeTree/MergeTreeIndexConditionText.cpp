@@ -40,6 +40,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Utils.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
@@ -2007,7 +2009,8 @@ static bool mayBeTrueOnDefaultValue(const ActionsDAG & subdag)
 {
     const auto * input = subdag.getInputs().front();
     ActionsDAG::IntermediateExecutionResult default_input;
-    default_input.emplace(input, ColumnWithTypeAndName(input->result_type->createColumnConstWithDefaultValue(1), input->result_type, input->result_name));
+    default_input.emplace(input, ColumnWithTypeAndName(
+        ColumnConst::create(createColumnWithInsertedDefault(*input->result_type), 1), input->result_type, input->result_name));
 
     ColumnsWithTypeAndName result;
     try
