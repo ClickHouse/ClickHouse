@@ -502,7 +502,7 @@ struct FixedWidthKeyColumns
 
     /// The per-row packer: the layout every key of a state that packs in clause order must have.
     template <typename Key>
-    Key expected(size_t row) const
+    [[nodiscard]] Key expected(size_t row) const
     {
         if (!null_map)
             return packFixed<Key>(row, sizes.size(), nested, sizes);
