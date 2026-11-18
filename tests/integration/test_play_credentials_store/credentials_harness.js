@@ -969,6 +969,63 @@ scenario('proxy-authenticated-replay-joins-optional-probe', async js => {
     assertEqual(after.fetched.filter(f => String(f.options.body).includes('currentUser()')).length, 1, 'only the required probe is sent');
 });
 
+/// The complete passwordless Download of an implicit result (the sequence of the Download handler:
+/// `replayConnectionUser`, `implicitReplayAuthentication`, `submitDownload`) while an optional probe
+/// (e.g. from `storeCredentials`) is in flight, with `max_concurrent_queries_for_user = 1`. The account
+/// is already known, so `replayConnectionUser` sends nothing, but the verification of the pinned
+/// export request is another probe request, which `learnImplicitUser` does not coalesce with. It must
+/// wait for the probe in flight instead of losing the slot to it, which would refuse the export.
+scenario('passwordless-download-waits-for-probe', async js => {
+    const settle = async () => { for (let i = 0; i < 5; ++i) await new Promise(resolve => setImmediate(resolve)); };
+    const ctx = boot(js);
+    ctx.implicit_user = 'alice';
+    ctx.password_elem.value = '';
+    ctx.server = 'http://host:8123/';
+    vm.runInContext("rememberImplicitUser(server, 'alice')", ctx);
+    const fetch = ctx.fetch;
+    let in_flight = 0;
+    let rejected = 0;
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    ctx.fetch = async (url, options) => {
+        if (in_flight) {
+            ++rejected;
+            ctx.fetched.push({ url, options });
+            return { ok: false, status: 500, headers: { get: () => null }, json: async () => ({}), text: async () => 'TOO_MANY_SIMULTANEOUS_QUERIES' };
+        }
+        ++in_flight;
+        try {
+            const response = await fetch(url, options);
+            await held;
+            return response;
+        } finally {
+            --in_flight;
+        }
+    };
+    const probes = () => ctx.fetched.filter(f => String(f.options.body).includes('currentUser()')).length;
+    const optional = vm.runInContext("learnImplicitUser(server, '')", ctx);
+    await settle();
+    assertEqual(probes(), 1, 'the optional probe is in flight');
+    ctx.entry = { server: ctx.server, user: '', implicitUser: 'alice' };
+    const download = vm.runInContext(`(async () => {
+        const user = await replayConnectionUser(entry.server, entry.user, entry.implicitUser, password_elem.value);
+        if (user) return 'user=' + user;
+        const authentication = await implicitReplayAuthentication(entry.server, resolvedImplicitUser(entry.server, entry.implicitUser));
+        if (authentication === null) return null;
+        await submitDownload(entry.server, entry.server + '?default_format=CSV' + authentication, 'SELECT 1');
+        return authentication;
+    })()`, ctx);
+    await settle();
+    assertEqual(probes(), 1, 'the verification waits for the probe in flight');
+    assertEqual(ctx.submitted.length, 0, 'no Download while the probe is in flight');
+    release();
+    assertEqual(await optional, 'alice', 'the optional probe learns the account');
+    assertEqual(await download, '&password=', 'the export pins the verified implicit account');
+    assertEqual(rejected, 0, 'no request is rejected for the single slot');
+    assertEqual(probes(), 2, 'the verification is sent once the probe has settled');
+    assertEqual(ctx.submitted.length, 1, 'the Download is submitted');
+});
+
 /// The login of an empty field is saved under the name of the account (`storeCredentials`), so the
 /// next visit refills that name. A later passwordless authentication of the empty field must be
 /// recorded for that name as well, or the stale autofilled password of the refilled login is kept,

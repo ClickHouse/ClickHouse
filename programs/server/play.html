@@ -17115,12 +17115,13 @@ async function learnImplicitUser(server_address, password, required = false) {
 /// Admission of the implicit-user probes (`learnImplicitUser`) against the queries of runs (`postImpl`).
 /// A probe is an ordinary query of the same user, so it competes with the queries of the user for
 /// the user's query slots: with `max_concurrent_queries_for_user = 1` the server rejects whichever of
-/// the two arrives second with `TOO_MANY_SIMULTANEOUS_QUERIES`. The probes are bookkeeping and must
-/// never displace a query of the user, whichever path starts them (`storeCredentials`,
-/// `rememberAuthenticationOutcome` after the database panel or the completions, Download, the
-/// startup auto-run). So, per server (`serverAdmissionKey`): a probe is sent only while no query of a
-/// run is in flight, waiting for them to finish otherwise, and a run that starts while a probe is in
-/// flight sends its query only after the probe has settled. A run counts from its admission to the
+/// the two arrives second with `TOO_MANY_SIMULTANEOUS_QUERIES`. Two probes compete for it the same
+/// way, so the probes of a server are sent one at a time, each waiting for the one in flight to
+/// settle. The probes are bookkeeping and must never displace a query of the user, whichever path
+/// starts them (`storeCredentials`, `rememberAuthenticationOutcome` after the database panel or the
+/// completions, Download, the startup auto-run). So, per server (`serverAdmissionKey`): a probe is
+/// sent only while no query of a run is in flight, waiting for them to finish otherwise, and a run
+/// that starts while a probe is in flight sends its query only after the probe has settled. A run counts from its admission to the
 /// end of its response, as the server holds the slot until then. The probe is a short status query
 /// with a bounded lifetime (`IMPLICIT_USER_PROBE_TIMEOUT_MS`), so a run waits for it only briefly; a
 /// probe can wait as long as the runs go on. A run that is stopped while it waits (`signal`) stops
@@ -17160,8 +17161,11 @@ async function admitRunQuery(server_address, signal, run) {
 const IMPLICIT_USER_PROBE_SKIPPED = Symbol('implicit user probe skipped');
 async function admitImplicitUserProbe(server_address, probe, required = false) {
     const admission = implicitUserProbeAdmission(server_address);
-    /// Rechecked after every wake-up: a run may have been admitted between the wake-up and this point.
-    while (admission.runs) await new Promise(resolve => admission.idle.push(resolve));
+    /// Rechecked after every wake-up: a run may have been admitted, or another probe sent, between the
+    /// wake-up and this point. The probes of a server are sent one at a time as well: two different
+    /// probe requests (another password, or the verification of `implicitReplayAuthentication`, which
+    /// `learnImplicitUser` does not coalesce with) also compete for the same query slot.
+    while (admission.runs || admission.probes.size) await new Promise(resolve => admission.idle.push(resolve));
     if (admission.exported && !required) return IMPLICIT_USER_PROBE_SKIPPED;
     const pending = probe();
     admission.probes.add(pending);
@@ -17169,6 +17173,7 @@ async function admitImplicitUserProbe(server_address, probe, required = false) {
         return await pending;
     } finally {
         admission.probes.delete(pending);
+        if (admission.runs === 0) for (const wake of admission.idle.splice(0)) wake();
     }
 }
 
