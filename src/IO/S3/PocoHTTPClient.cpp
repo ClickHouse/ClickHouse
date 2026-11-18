@@ -486,8 +486,8 @@ void PocoHTTPClient::makeRequestInternal(
 {
     /// The client decides a failed write from the answers to all its attempts, which it records on the thread of the
     /// call. A conditional attempt sent elsewhere would lose its answer, and the write could be taken for not applied.
-    const bool is_write = request.GetMethod() == Aws::Http::HttpMethod::HTTP_PUT || request.GetMethod() == Aws::Http::HttpMethod::HTTP_POST;
-    if (is_write && (request.HasHeader("if-none-match") || request.HasHeader("if-match")) && !S3::isRecordingWriteAttempts())
+    const auto * scope = S3::Client::RequestScope::current();
+    if (S3::isConditionalWriteAttempt(request) && !(scope && scope->attempts_record))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "An attempt of a conditional write to {} is sent without the record of its attempts",

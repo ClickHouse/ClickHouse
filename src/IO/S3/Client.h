@@ -101,9 +101,9 @@ bool isS3ExpressEndpoint(const std::string & endpoint);
 /// applied proves that it was not. Any other answer, or no answer, proves nothing.
 bool attemptMayHaveBeenApplied(Aws::Http::HttpResponseCode code, const Aws::String & exception_name);
 
-/// Whether the current thread records the attempts of a write that publishes an object (`Client::PutObject`,
-/// `Client::CompleteMultipartUpload`). `PocoHTTPClient` refuses a conditional attempt on a thread without the record.
-bool isRecordingWriteAttempts();
+/// Whether an attempt on the wire is a write with a precondition: a `PUT` or a `POST` with `If-None-Match` or `If-Match`.
+/// The HTTP client sees only this request, not the request of the client that it was built from.
+bool isConditionalWriteAttempt(const Aws::Http::HttpRequest & request);
 
 struct ClientSettings
 {
@@ -135,6 +135,29 @@ class Client : private Aws::S3::S3Client
 {
 public:
     class RetryStrategy;
+
+    /// The state of one call of a request. The SDK reports every attempt of a call to the retry strategy on the thread
+    /// that sends it, but all requests share the strategy, and it gets no request, so it finds the state through the
+    /// thread. That works while every attempt runs on the thread of the call, as with the synchronous calls of the SDK.
+    /// `PocoHTTPClient` refuses a conditional attempt that runs without a record of its attempts. Scopes nest.
+    class RequestScope
+    {
+    public:
+        explicit RequestScope(AttemptsRecord * attempts_record_);
+        ~RequestScope();
+
+        RequestScope(const RequestScope &) = delete;
+        RequestScope & operator=(const RequestScope &) = delete;
+
+        /// The scope of the call that the current thread sends, or null.
+        static RequestScope * current();
+
+        /// Where the attempts of a write that publishes an object are recorded, or null.
+        AttemptsRecord * const attempts_record;
+
+    private:
+        RequestScope * const previous;
+    };
 
     /// we use a factory method to verify arguments before creating a client because
     /// there are certain requirements on arguments for it to work correctly

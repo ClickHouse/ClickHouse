@@ -249,29 +249,30 @@ static constexpr auto IDEMPOTENCY_ID_METADATA_KEY = "clickhouse-idempotency-id";
 /// racing for one key.
 static constexpr size_t IDEMPOTENCY_ID_LENGTH = 22;
 
+/// What the attempts of a write that publishes an object told, and the outcome of its last call. The retry loops of
+/// the writer send the request again, so the record covers all calls with it.
+struct AttemptsRecord
+{
+    /// An attempt got no answer that proves that it was not applied.
+    bool may_have_been_applied = false;
+    /// Set by the client at the end of each call, also on an exception.
+    std::optional<WriteOutcome> outcome;
+};
+
 /// The id the writer stamped in the object's metadata. Set it and the client accepts a failure whose
 /// object carries it. Left empty, the client asks nothing.
-///
-/// The request of a write that publishes an object also keeps what the attempts of the write told, and the outcome
-/// of its last call. The retry loops of the writer send the request again, so the history covers all calls with it.
 class RequestWithIdempotencyId
 {
 public:
     void setIdempotencyId(Aws::String value) { idempotency_id = std::move(value); }
     [[nodiscard]] const Aws::String & getIdempotencyId() const { return idempotency_id; }
 
-    /// An attempt got no answer that proves that it was not applied.
-    void markMayHaveBeenApplied() { may_have_been_applied = true; }
-    [[nodiscard]] bool mayHaveBeenApplied() const { return may_have_been_applied; }
-
-    /// Set by the client at the end of each call, also on an exception.
-    void setOutcome(std::optional<WriteOutcome> value) { outcome = value; }
-    [[nodiscard]] std::optional<WriteOutcome> getOutcome() const { return outcome; }
+    [[nodiscard]] AttemptsRecord & getAttemptsRecord() { return attempts_record; }
+    [[nodiscard]] const AttemptsRecord & getAttemptsRecord() const { return attempts_record; }
 
 private:
     Aws::String idempotency_id;
-    bool may_have_been_applied = false;
-    std::optional<WriteOutcome> outcome;
+    AttemptsRecord attempts_record;
 };
 
 class PutObjectRequest : public ExtendedRequest<Model::PutObjectRequest>, public RequestWithIdempotencyId

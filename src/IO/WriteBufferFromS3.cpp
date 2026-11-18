@@ -758,7 +758,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
 
 void WriteBufferFromS3::reportOutcome(const S3::RequestWithIdempotencyId & request)
 {
-    if (const auto outcome = request.getOutcome())
+    if (const auto outcome = request.getAttemptsRecord().outcome)
         write_outcome.store(static_cast<int>(*outcome));
 }
 
