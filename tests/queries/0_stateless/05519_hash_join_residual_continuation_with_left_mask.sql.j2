@@ -1,5 +1,5 @@
 -- A join with a residual condition such as `l.x < r.y` stops after `max_joined_block_size_rows` output rows and
--- continues with the left rows it has not reached. In every continuation, a left row with a NULL key, or one that the
+-- continues with the left rows it has not reached. In every continuation, a left row with a `NULL` key, or one that the
 -- left-only condition `l.flag = 1` rejects, must not match through its clause. Each result must equal the result
 -- without the limit.
 

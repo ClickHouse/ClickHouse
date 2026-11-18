@@ -276,7 +276,11 @@ bool HashJoinTable::tryConvertToFixedHashMap(bool is_signed)
             else if (key_type == Type::key32)
                 return is_signed ? tryConvertToFixedHashMapImpl<true, UInt32>(maps_) : tryConvertToFixedHashMapImpl<false, UInt32>(maps_);
             else
+            {
+                /// `HashJoin::canConvertToFixedHashMap` lets only `key32` and `key64` through.
+                chassert(key_type == Type::key64);
                 return is_signed ? tryConvertToFixedHashMapImpl<true, UInt64>(maps_) : tryConvertToFixedHashMapImpl<false, UInt64>(maps_);
+            }
         },
         maps);
 }

@@ -287,8 +287,8 @@ std::string_view keyBytes(const Key & key)
 {
     if constexpr (std::is_same_v<Key, std::string_view>)
     {
-        /// An empty string must have a non-null pointer, because `ColumnNullable::insertData` treats nullptr as NULL. The empty
-        /// `std::string_view` of the zero key of a hash table has `data() == nullptr`, but it is an empty string, not a NULL.
+        /// An empty string must have a non-null pointer, because `ColumnNullable::insertData` treats nullptr as `NULL`. The empty
+        /// `std::string_view` of the zero key of a hash table has `data() == nullptr`, but it is an empty string, not a `NULL`.
         return key.data() ? key : std::string_view("");
     }
     else
@@ -480,7 +480,7 @@ NO_INLINE size_t probeAllRows(
 
 }
 
-/// The hash table of one ON disjunct of a `HashJoin`. All the tables of a join have one key type. `probe` and `probeAll` take
+/// The hash table of one `ON` disjunct of a `HashJoin`. All the tables of a join have one key type. `probe` and `probeAll` take
 /// that type as a template argument, so `HashJoin` switches on it once per block. The other methods switch on the stored type.
 class HashJoinTable
 {
@@ -490,7 +490,8 @@ public:
     using Cursor = std::any;
 
     /// `key_class` is the key type of a one-bucket map. A two-level `layout` turns it into the two-level type.
-    /// `robin_hood_allowed` is the setting `enable_robin_hood_hash_for_joins`: a two-level map may switch to the Robin Hood mode when it grows large.
+    /// `robin_hood_allowed` is the setting `enable_robin_hood_hash_for_joins`: a two-level map may switch to the Robin Hood mode
+    /// when it grows large.
     HashJoinTable(
         Type key_class,
         Sizes key_sizes_,
@@ -505,9 +506,6 @@ public:
 
     /// The key range of a direct-addressed map. Only `tryConvertToFixedHashMap` sets it.
     const JoinKeyRange & keyRange() const { return key_range; }
-
-    /// The sizes of the key columns, the `ASOF` column last.
-    const Sizes & keySizes() const { return key_sizes; }
 
     /// The number of keys inserted so far. Other threads may be inserting.
     size_t keys() const { return num_keys.load(std::memory_order_relaxed); }
@@ -631,8 +629,8 @@ public:
     void releaseMaps();
 
     /// Looks up the key of every row of `selector`. For each row, calls `on_row(i, ind, find_result, offset)` with the position `i`,
-    /// the row `ind`, and the output offset. The loop keeps the offset so that it stays in a register. A row with a NULL key
-    /// or one the ON-section mask filters out gets a result that is not found; `fast_path` assumes there is none. `TYPE` is `type()`.
+    /// the row `ind`, and the output offset. The loop keeps the offset so that it stays in a register. A row with a `NULL` key
+    /// or one the `ON`-section mask filters out gets a result that is not found; `fast_path` assumes there is none. `TYPE` is `type()`.
     template <Type TYPE, typename Maps, bool fast_path, typename OnRow>
     ALWAYS_INLINE void probe(
         const JoinOnKeyColumns & keys,
@@ -705,11 +703,11 @@ public:
 
     /// Looks up the key of every row of `selector` in `tables`, in order. For each table that has the key, calls
     /// `on_match(i, ind, find_result, is_last_disjunct, row_state, offset)`, where `row_state` is a `RowState` made for the row.
-    /// Then calls `on_row_end(i, found, offset)`. Skips the NULL and masked keys as `probe` does. With `stops_at_first_match`, a
+    /// Then calls `on_row_end(i, found, offset)`. Skips the `NULL` and masked keys as `probe` does. With `stops_at_first_match`, a
     /// row stops at its first match. The loop stops before a row once `offset` reaches `max_offset`, and returns the rows processed.
     /// It prefetches the first table. With `prefetch_later_maps` it also prefetches the two-level tables after the first, up to
     /// the first one that fits in the cache. With `stops_at_first_match` it prefetches only as many as `MultiMapLookupSampler` allows.
-    /// `lazy_row_filter` checks the NULL key and the mask of each row when the loop visits it, instead of building skip bytes
+    /// `lazy_row_filter` checks the `NULL` key and the mask of each row when the loop visits it, instead of building skip bytes
     /// for all of `selector`. That is cheaper when a call visits few rows, as a join with a residual condition does, and costs
     /// two checks per row otherwise. A key getter that builds its keys ahead (the `hashed` and packed `String` keys) still gets
     /// the skip bytes of all of `selector`. `lazy_row_filter` excludes `fast_path`, which has nothing to check, and
@@ -1103,7 +1101,9 @@ private:
         using Map = JoinMapOf<TYPE, Maps>;
         using KeyGetter = typename KeyGetterForType<TYPE, std::remove_cvref_t<Map>>::Type;
 
-        chassert(key_outputs.size() == key_sizes.size());
+        if (key_outputs.size() != key_sizes.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "StorageJoin has {} key names but {} key sizes", key_outputs.size(), key_sizes.size());
 
         detail::KeyLayout layout;
         /// `key32` and `keys32` (likewise `key64` and `keys64`) share one map type, so `TYPE` chooses the key getter: only the

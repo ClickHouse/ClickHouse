@@ -63,7 +63,8 @@ private:
     /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
     /// `fast_path` compiles out the per-row null-map and join-mask checks for the common case of
     /// non-nullable keys and no ON-section condition (the checks are done at runtime otherwise).
-    /// With `flag_per_row`, `tables` holds one table per ON disjunct and the used flags are per right row. Without it, there is one table.
+    /// With `flag_per_row`, `tables` holds one table per `ON` disjunct and the used flags are per right row.
+    /// Without it, there is one table.
     template <HashJoin::Type TYPE, bool need_filter, bool fast_path, bool flag_per_row, typename AddedColumns>
     static size_t joinRightColumns(
         Tables tables,

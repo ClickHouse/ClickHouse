@@ -615,7 +615,7 @@ public:
 
         void spliceBuildStreamLists();
 
-        /// One table per ON disjunct:
+        /// One table per `ON` disjunct:
         /// tab1 join tab2 on t1.x = t2.x or t1.y = t2.y
         /// =>
         /// tab1 join tab2 on t1.x = t2.x

@@ -802,13 +802,6 @@ public:
         /// The output position of each key, in clause order. It comes from the clause and not from
         /// `right_table_keys`, which deduplicates a repeated key name while the packed key does not.
         const auto & key_names_right = table_join.getOnlyClause().key_names_right;
-        const auto & key_sizes = join->data->tables.at(0)->keySizes();
-        if (key_names_right.size() != key_sizes.size())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "StorageJoin has {} key names but {} key sizes",
-                key_names_right.size(),
-                key_sizes.size());
 
         is_key_column.assign(sample_block->columns(), false);
         for (const auto & key_name : key_names_right)

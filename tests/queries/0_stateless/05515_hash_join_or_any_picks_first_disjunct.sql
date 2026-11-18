@@ -1,5 +1,6 @@
 -- The left row matches one right row through the first disjunct and another right row through the second.
--- `ANY` and `SEMI` joins return the row of the first disjunct in ON order, so swapping the disjuncts swaps the row.
+-- `LEFT ANY`, `INNER ANY` and `LEFT SEMI` joins return the row of the first disjunct in `ON` order,
+-- so swapping the disjuncts swaps the row.
 
 SET query_plan_join_swap_table = 0;
 SET enable_parallel_replicas = 0;
