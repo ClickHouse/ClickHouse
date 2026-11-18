@@ -31,5 +31,4 @@ print(client.get_schema(query, opts).schema.names)
 print("cache entries after GetSchema:", cache_entries())
 info = client.get_flight_info(query, opts)
 print("rows:", sum(client.do_get(endpoint.ticket, opts).read_all().num_rows for endpoint in info.endpoints))
-print("cache entries after the query:", cache_entries())
 EOF
