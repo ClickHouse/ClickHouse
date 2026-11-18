@@ -76,7 +76,7 @@ ENGINE = CollapsingMergeTree(meta.sign) ORDER BY key
 SETTINGS add_implicit_sign_column_constraint_for_collapsing_engine = 1;
 
 INSERT INTO c_constraint VALUES (1, (1, 0)), (2, (-1, 0));
-INSERT INTO c_constraint VALUES (3, (2, 0)); -- { serverError VIOLATED_CONSTRAINT }
+INSERT INTO c_constraint VALUES (3, (2, 0)); -- { serverError INCORRECT_DATA }
 SELECT * FROM c_constraint ORDER BY key;
 
 SELECT '-- MATERIALIZED column';

@@ -1407,10 +1407,16 @@ It is useful for multi-tenant, temporary, and demo services.
 If true, data from INSERT query is stored in queue and later flushed to
 table in background.
 )", 0) \
-    DECLARE(Bool, add_implicit_sign_column_constraint_for_collapsing_engine, false, R"(
-If true, adds an implicit constraint for the `sign` column of a CollapsingMergeTree
-or VersionedCollapsingMergeTree table to allow only valid values (`1` and `-1`).
-)", 0) \
+    DECLARE(Bool, add_implicit_sign_column_constraint_for_collapsing_engine, true, R"(
+If true, inserts into a CollapsingMergeTree or VersionedCollapsingMergeTree table
+reject rows whose `sign` column is not `1` or `-1`.
+)", 0, \
+        {"26.11", false, true, "Reject invalid values of the sign column on insert by default, also with `optimize_on_insert = 0` and for VersionedCollapsingMergeTree. The check fails with `INCORRECT_DATA`, like the insert-time merge, instead of `VIOLATED_CONSTRAINT`."}) \
+    DECLARE(Bool, add_implicit_is_deleted_column_constraint_for_replacing_engine, true, R"(
+If true, inserts into a ReplacingMergeTree table reject rows whose `is_deleted`
+column is not `0` or `1`. A part with another value cannot be merged.
+)", 0, \
+        {"26.11", false, true, "New setting to reject invalid values of the is_deleted column on insert, also with `optimize_on_insert = 0`."}) \
     DECLARE(Milliseconds, sleep_before_commit_local_part_in_replicated_table_ms, 0, R"(
 For testing. Do not change it.
 )", 0) \

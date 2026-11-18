@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>
@@ -95,6 +96,8 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool add_implicit_is_deleted_column_constraint_for_replacing_engine;
+    extern const MergeTreeSettingsBool add_implicit_sign_column_constraint_for_collapsing_engine;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsUInt64 max_bytes_to_buffer_for_packed_part;
     extern const MergeTreeSettingsBool fsync_after_insert;
@@ -119,6 +122,7 @@ namespace MergeTreeSetting
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
     extern const int NOT_ENOUGH_SPACE;
@@ -126,6 +130,42 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Rejects invalid values of the `sign` column of `CollapsingMergeTree` and `VersionedCollapsingMergeTree` and of the
+/// `is_deleted` column of `ReplacingMergeTree`. The insert-time merge (`optimize_on_insert`) rejects them too, except for
+/// `VersionedCollapsingMergeTree`, but it can be disabled, and background merges keep such rows or fail on them.
+void checkSignAndIsDeletedColumns(const Block & block, const MergeTreeData::MergingParams & merging_params, const MergeTreeSettings & settings)
+{
+    if ((merging_params.mode == MergeTreeData::MergingParams::Collapsing
+            || merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
+        && settings[MergeTreeSetting::add_implicit_sign_column_constraint_for_collapsing_engine])
+    {
+        const auto column = block.getColumnOrSubcolumnByName(merging_params.sign_column).column->convertToFullIfWrapped();
+        const auto & signs = assert_cast<const ColumnInt8 &>(*column).getData();
+        bool all_valid = true;
+        for (const Int8 sign : signs)
+            all_valid &= (sign == 1) | (sign == -1);
+        if (!all_valid)
+        {
+            const Int8 sign = *std::ranges::find_if(signs, [](Int8 value) { return value != 1 && value != -1; });
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect data: Sign = {} (must be 1 or -1).", static_cast<Int32>(sign));
+        }
+    }
+    else if (merging_params.mode == MergeTreeData::MergingParams::Replacing && !merging_params.is_deleted_column.empty()
+        && settings[MergeTreeSetting::add_implicit_is_deleted_column_constraint_for_replacing_engine])
+    {
+        const auto column = block.getColumnOrSubcolumnByName(merging_params.is_deleted_column).column->convertToFullIfWrapped();
+        const auto & values = assert_cast<const ColumnUInt8 &>(*column).getData();
+        UInt8 all_bits = 0;
+        for (const UInt8 value : values)
+            all_bits |= value;
+        if (all_bits > 1)
+        {
+            const UInt8 value = *std::ranges::find_if(values, [](UInt8 v) { return v > 1; });
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect data: is_deleted = {} (must be 1 or 0).", static_cast<UInt32>(value));
+        }
+    }
+}
 
 bool isOptimizeRowOrderExplicitlySet(const SettingsChanges & settings_changes)
 {
@@ -838,6 +878,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     const auto minmax_columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
     minmax_idx->update(block, minmax_columns);
+
+    if (!isPatchPartitionId(partition_id))
+        checkSignAndIsDeletedColumns(block, data.merging_params, *data_settings);
 
     const bool optimize_on_insert = !isPatchPartitionId(partition_id)
         && global_settings[Setting::optimize_on_insert]
