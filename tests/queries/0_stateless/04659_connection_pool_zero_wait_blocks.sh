@@ -51,7 +51,7 @@ function wait_holding() {
 # Counts the pool wait lines of one shape in a waiter's own server logs. These come over its connection,
 # while system.text_log drops lines when the async logger's queue is full.
 function pool_wait_lines() {
-    grep -c -E "ConnectionPool .*: No free connections in pool\. Waiting $2\$" "${CLICKHOUSE_TMP}/${QUERY_PREFIX}_$1_waiter.log"
+    grep -c -E "ConnectionPool .*: No free connections in pool\. Waiting $2( \(skipped [0-9]+ similar messages\))?\$" "${CLICKHOUSE_TMP}/${QUERY_PREFIX}_$1_waiter.log"
 }
 
 # Runs one pair of queries at the given connection_pool_max_wait_ms and leaves the waiter's log the
