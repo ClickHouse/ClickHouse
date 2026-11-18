@@ -60,7 +60,7 @@ struct ReplicatedMergeTreeTableMetadata
         ContextPtr context);
 
     void write(WriteBuffer & out) const;
-    String toString() const;
+    [[nodiscard]] String toString() const;
 
     /// Use these whenever a field of this structure is filled in, instead of formatting the AST
     /// directly. `formatDefinition` also normalizes function names; `formatDefinitionList` (skip
@@ -88,27 +88,27 @@ struct ReplicatedMergeTreeTableMetadata
         bool ttl_table_changed = false;
         String new_ttl_table;
 
-        bool empty() const
+        [[nodiscard]] bool empty() const
         {
             return !sorting_key_changed && !sampling_expression_changed && !skip_indices_changed && !projections_changed
                 && !ttl_table_changed && !constraints_changed;
         }
 
-        StorageInMemoryMetadata getNewMetadata(const ColumnsDescription & new_columns, const VirtualColumnsDescription & virtuals, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const;
+        [[nodiscard]] StorageInMemoryMetadata getNewMetadata(const ColumnsDescription & new_columns, const VirtualColumnsDescription & virtuals, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const;
     };
 
     /// The comparisons below compare the serialized expression fields as ASTs, not as text, since
     /// the stored form may have been written by a server version whose formatting differs. The
     /// fields are parsed purely syntactically and are not resolved against any column set.
 
-    bool checkEquals(
+    [[nodiscard]] bool checkEquals(
         const ReplicatedMergeTreeTableMetadata & from_zk,
         const std::string & table_name_for_error_message,
         bool check_index_granularity = true,
         bool strict_check = true,
         LoggerPtr logger = nullptr) const;
 
-    Diff checkAndFindDiff(
+    [[nodiscard]] Diff checkAndFindDiff(
         const ReplicatedMergeTreeTableMetadata & from_zk,
         const std::string & table_name_for_error_message,
         bool check_index_granularity = true) const;

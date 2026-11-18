@@ -338,14 +338,14 @@ fi
 
 # Randomize async_load_databases
 if [ $((RANDOM % 2)) -eq 0 ]; then
-    sudo echo "<clickhouse><async_load_databases>false</async_load_databases></clickhouse>" \
-        > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
+    echo "<clickhouse><async_load_databases>false</async_load_databases></clickhouse>" \
+        | sudo tee /etc/clickhouse-server/config.d/enable_async_load_databases.xml > /dev/null
 fi
 
 # Randomize concurrent_threads_scheduler (default is max_min_fair)
 if [ $((RANDOM % 2)) -eq 1 ]; then
-    sudo echo "<clickhouse><concurrent_threads_scheduler>fair_round_robin</concurrent_threads_scheduler></clickhouse>" \
-        > /etc/clickhouse-server/config.d/enable_max_min_fair_scheduler.xml
+    echo "<clickhouse><concurrent_threads_scheduler>fair_round_robin</concurrent_threads_scheduler></clickhouse>" \
+        | sudo tee /etc/clickhouse-server/config.d/enable_max_min_fair_scheduler.xml > /dev/null
 fi
 
 # Cap the recursion-controlling parser/AST settings. The stress test ignores `no-*` build
@@ -353,6 +353,22 @@ fi
 # 04412's formatQuery of a 20000-deep array literal) would otherwise build huge queries that
 # hang the server under sanitizers and trip the hung check.
 cp -av --dereference /repo/ci/jobs/scripts/fuzzer/limit-recursion-settings.xml /etc/clickhouse-server/users.d/
+
+# Randomize Keeper fault injection for `S3Queue`. It is read from the settings of the global context,
+# which take the default profile only at startup, so it cannot be a query or a reloaded setting.
+# Use `tee` to write as root: a plain `>` redirect runs in the current shell, which `sudo` does not elevate.
+if [ $((RANDOM % 2)) -eq 0 ]; then
+    echo "<clickhouse><profiles><default><s3queue_keeper_fault_injection_probability>0.01</s3queue_keeper_fault_injection_probability></default></profiles></clickhouse>" \
+        | sudo tee /etc/clickhouse-server/users.d/s3queue_keeper_fault_injection.xml > /dev/null
+fi
+
+# Randomize Keeper fault injection around a `ReplicatedMergeTree` part commit, to exercise the commit
+# retry path. These are `MergeTree` settings, read only by `StorageReplicatedMergeTree`, so they go in
+# the default `<merge_tree>` config and affect replicated tables only.
+if [ $((RANDOM % 2)) -eq 0 ]; then
+    echo "<clickhouse><merge_tree><fault_probability_before_part_commit>0.01</fault_probability_before_part_commit><fault_probability_after_part_commit>0.01</fault_probability_after_part_commit></merge_tree></clickhouse>" \
+        | sudo tee /etc/clickhouse-server/config.d/replicated_part_commit_fault_injection.xml > /dev/null
+fi
 
 start_server || { echo "Failed to start server"; exit 1; }
 

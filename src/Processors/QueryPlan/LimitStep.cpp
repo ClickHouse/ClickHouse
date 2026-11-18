@@ -9,8 +9,11 @@
 #include <Processors/Port.h>
 #include <Core/Defines.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <Common/JSONBuilder.h>
 #include <unordered_set>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -43,14 +46,14 @@ LimitStep::LimitStep(
 {
 }
 
-IQueryPlanStep::UnneededInputPositions LimitStep::getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
+IQueryPlanStep::UnneededInputPositions LimitStep::getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const
 {
     auto unneeded = unneeded_output_positions;
     if (with_ties)
     {
         /// `LimitTransform` compares the first column of each name in `description`, so only that copy stays.
         const auto & header = *input_headers.front();
-        std::unordered_set<size_t> compared_positions;
+        UnorderedSetWithMemoryTracking<size_t> compared_positions;
         for (const auto & column : description)
             compared_positions.insert(header.getPositionByName(column.column_name));
 
@@ -61,7 +64,7 @@ IQueryPlanStep::UnneededInputPositions LimitStep::getUnneededColumns(const std::
 }
 
 IQueryPlanStep::RemoveUnusedColumnsResult
-LimitStep::removeUnusedColumns(const std::vector<size_t> & /*unneeded_output_positions*/, const std::vector<PrunedInput> & inputs)
+LimitStep::removeUnusedColumns(const VectorWithMemoryTracking<size_t> & /*unneeded_output_positions*/, const VectorWithMemoryTracking<PrunedInput> & inputs)
 {
     const auto & pruned = inputs.at(0);
 

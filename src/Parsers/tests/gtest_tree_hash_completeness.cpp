@@ -4,6 +4,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -13,6 +14,8 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+
+#include <algorithm>
 
 using namespace DB;
 
@@ -268,12 +271,48 @@ TEST(TreeHashCompleteness, CloneHashesEqual)
         "CREATE MATERIALIZED VIEW v REFRESH EVERY 1 HOUR COMMENT 'c' AS SELECT 1",
         "KILL QUERY WHERE query_id = 'x' FORMAT JSONEachRow",
         "SELECT 1 INTO OUTFILE 'x' FORMAT JSONEachRow",
+        "SHOW CREATE DATABASE db INTO OUTFILE 'x'",
+        "EXISTS DATABASE db FORMAT JSONEachRow",
+        "DELETE FROM db.t WHERE a = 1 SETTINGS mutations_sync = 1",
+        "UPDATE db.t SET a = 1 WHERE a = 2 SETTINGS mutations_sync = 1",
     };
 
     for (const auto & query : queries)
     {
         ASTPtr ast = parse(query);
         EXPECT_EQ(ast->clone()->getTreeHash(/*ignore_aliases=*/ false), ast->getTreeHash(/*ignore_aliases=*/ false)) << query;
+    }
+}
+
+TEST(TreeHashCompleteness, CloneOwnsOutputOptions)
+{
+    /// A clone must deep copy the output options into its own `children`. The parser rejects them
+    /// for some of these queries, but the AST fuzzer adds them to any `ASTQueryWithOutput`.
+    const std::string queries[] = {
+        "SHOW CREATE DATABASE db",
+        "EXISTS DATABASE db",
+        "CREATE INDEX i ON db.t (a) TYPE minmax",
+        "DROP INDEX i ON db.t",
+        "CREATE HYPOTHETICAL INDEX i ON db.t (a) TYPE minmax",
+        "DROP HYPOTHETICAL INDEX i ON db.t",
+        "DELETE FROM db.t WHERE a = 1",
+        "UPDATE db.t SET a = 1 WHERE a = 2",
+        "SHOW GRANTS FOR u",
+        "SHOW CREATE USER u",
+        "SHOW USERS",
+    };
+
+    for (const auto & query : queries)
+    {
+        ASTPtr ast = parse(query);
+        auto & with_output = dynamic_cast<ASTQueryWithOutput &>(*ast);
+        with_output.set(with_output.out_file, make_intrusive<ASTLiteral>("x"));
+
+        ASTPtr cloned = ast->clone();
+        const ASTPtr & cloned_out_file = dynamic_cast<const ASTQueryWithOutput &>(*cloned).out_file;
+        ASSERT_TRUE(cloned_out_file) << query;
+        EXPECT_NE(cloned_out_file.get(), with_output.out_file.get()) << query;
+        EXPECT_NE(std::ranges::find(cloned->children, cloned_out_file), cloned->children.end()) << query;
     }
 }
 
