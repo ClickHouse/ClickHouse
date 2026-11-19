@@ -21,11 +21,12 @@
 namespace DB
 {
 
+class QueryStatus;
 
 class StatelessTaskExecutor
 {
 public:
-    StatelessTaskExecutor(size_t max_threads, size_t max_free_threads, size_t queue_size);
+    explicit StatelessTaskExecutor(size_t max_queries_);
     virtual ~StatelessTaskExecutor() = default;
 
     enum Result
@@ -73,7 +74,8 @@ public:
     Result startTask(const String & unique_task_id, DistributedQueryTaskDescription task, const String & unique_temp_file_path, const TaskCollectors & collectors);
     /// Starts the tasks of a `start_tasks` batch of the query `unique_query_id`, skipping those cancelled before their start or
     /// already started. A task that cannot be scheduled fails the call; the tasks scheduled before it keep running.
-    void startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors);
+    /// Returns false, having started nothing, for a query new on this worker when `max_queries` queries run already.
+    bool startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors);
     TaskStatus getStatus(const String & task_id, UInt64 wait_milliseconds);
     /// Remembers an unknown id: the coordinator sends the starts of a stage concurrently, so a cancel can overtake a start.
     Result cancelTask(const String & task_id);
@@ -98,6 +100,20 @@ private:
         std::optional<TaskFailure> failure TSA_GUARDED_BY(mutex);
     };
 
+    /// Cancels a task: the flag covers the time before the task's process-list entry exists, the entry's query the rest.
+    class TaskCancellation
+    {
+    public:
+        void cancel();
+        /// Publishes the running task's query; false when the task was cancelled before, so it must not run.
+        bool setQuery(std::weak_ptr<QueryStatus> query_);
+
+    private:
+        std::mutex mutex;
+        bool cancelled TSA_GUARDED_BY(mutex) = false;
+        std::weak_ptr<QueryStatus> query TSA_GUARDED_BY(mutex);
+    };
+
     /// Not guarded by `tasks_mutex`: the task sets it, and `shutdown` holds that mutex while it waits for the tasks.
     class LogsQueueSlot
     {
@@ -117,7 +133,7 @@ private:
         /// Fulfilled when the task ends: with nothing on success, with the failure otherwise.
         std::shared_future<std::optional<TaskFailure>> completion_future;
         std::shared_ptr<FailureSlot> failure = std::make_shared<FailureSlot>();
-        std::shared_ptr<std::atomic<bool>> cancelled = std::make_shared<std::atomic<bool>>(false);
+        std::shared_ptr<TaskCancellation> cancellation = std::make_shared<TaskCancellation>();
         std::shared_ptr<Progress> progress = std::make_shared<Progress>();
         /// What the coordinator asked to collect for this task; decides which payloads a status reply carries.
         TaskCollectors collectors;
@@ -146,6 +162,9 @@ private:
     void scheduleTask(const String & unique_task_id, TaskStatePtr task_state, TaskPromisePtr task_promise,
         DistributedQueryTaskDescription task_description_, const String & unique_temp_file_path, OpenTelemetry::TracingContext trace_context_);
 
+    /// The most queries with tasks on this worker; a query holds its slot while it has a `WorkerQueryController`.
+    const size_t max_queries;
+    /// A thread for every task, as many as the global thread pool has: a task waiting for its peers holds only its own.
     ThreadPool thread_pool;
 
     std::unordered_map<String, TaskStatePtr> tasks TSA_GUARDED_BY(tasks_mutex);

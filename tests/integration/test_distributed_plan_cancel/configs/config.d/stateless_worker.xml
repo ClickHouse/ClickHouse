@@ -2,6 +2,7 @@
     <stateless_worker_server>
         <enabled>1</enabled>
         <endpoint>localhost</endpoint>
+        <max_queries>2</max_queries>
     </stateless_worker_server>
 
     <stateless_worker_client>
