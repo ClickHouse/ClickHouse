@@ -1,0 +1,12 @@
+accepted: new String from DateTime, iso output	1	{"a":"2024-01-15 12:30:00"} {} {}
+accepted: new String from DateTime, iso output	0	{"a":"2024-01-15T12:30:00Z"} {} {}
+accepted: new String from DateTime, unix_timestamp output	1	{"a":"2024-01-15 12:30:00"} {} {}
+accepted: new String from DateTime, unix_timestamp output	0	{"a":"1705321800"} {} {}
+accepted: removed DateTime64(0)	1	{"a":"2024-01-15 12:30:00.000000000"} {\'a\':\'DateTime64(9)\'} {}
+accepted: removed DateTime64(0)	0	{"a":"2024-01-15 12:30:00"} {\'a\':\'DateTime\'} {}
+accepted: removed Float64 whole number	1	{"a":5} {\'a\':\'Float64\'} {}
+accepted: removed Float64 whole number	0	{"a":5} {\'a\':\'Int64\'} {}
+accepted: removed String holding a date	1	{"a":"2024-01-15"} {\'a\':\'String\'} {}
+accepted: removed String holding a date	0	{"a":"2024-01-15"} {\'a\':\'Date\'} {}
+accepted: removed empty Array	1	{"a":[]} {\'a\':\'Array(Nullable(Int64))\'} {}
+accepted: removed empty Array	0	{"a":[]} {\'a\':\'Array(Nullable(String))\'} {}

@@ -60,6 +60,7 @@ json_shared_typed_paths.xml                              # JSON column
 json_subcolumn_serialization_cache.xml                   # JSON column
 json_subcolumns_required_conversions.xml                 # JSON column
 json_to_string.xml                                       # JSON column
+json_type_conversion.xml                                 # JSON column
 json_type_skip_regexp.xml                                # JSON column
 json_typed_path_subcolumn_lookup.xml                     # JSON column
 json_typed_paths_insert.xml                              # JSON column
