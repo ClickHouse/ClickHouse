@@ -46,6 +46,7 @@
 
 #include <cppkafka/cppkafka.h>
 #include <librdkafka/rdkafka.h>
+#include <Databases/IDatabase.h>
 
 #if USE_KRB5
 #    include <Access/KerberosInit.h>
@@ -382,8 +383,6 @@ void registerStorageKafka(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-
 # Kafka table engine
 
 <Tip>
@@ -438,8 +437,10 @@ Required parameters:
 
 - `kafka_broker_list` — A comma-separated list of brokers (for example, `localhost:9092`).
 - `kafka_topic_list` — A list of Kafka topics.
-- `kafka_group_name` — A group of Kafka consumers. Reading margins are tracked for each group separately. If you do not want messages to be duplicated in the cluster, use the same group name everywhere.
+- `kafka_group_name` — A group of Kafka consumers. Reading margins are tracked for each group separately. If you do not want messages to be duplicated in the cluster, use the same group name everywhere. Supports macro expansion (e.g., `'consumers_{replica}'`), which lets each replica use its own consumer group and read all messages.
 - `kafka_format` — Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](/reference/formats/index) section.
+
+The values of `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_client_id` and `kafka_schema` support macro expansion: `{database}` and `{table}` are replaced with the table's database and name, and other macros such as `{shard}` and `{replica}` are taken from the server's `macros` configuration.
 
 Optional parameters:
 
@@ -642,6 +643,24 @@ Example, using [named collections](/concepts/features/configuration/server-confi
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+
+The following table settings control how often the consumed data is written to the materialized views:
+
+- `kafka_max_block_size` — a block is flushed as soon as it has this many rows. Default: `max_insert_block_size` divided by `kafka_num_consumers`.
+- `kafka_flush_interval_ms` — a block is flushed after this time even if it is not full. Default: [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms) (7500 ms). Decrease it to reduce the delay between producing a message and seeing it in the target table.
+- `kafka_consumer_reschedule_ms` — when there are no new messages, the engine waits this long before polling again. Default: `500` ms.
+
+These are settings of the Kafka table, set in its `SETTINGS` clause. They cannot be set in the `<kafka>` section of the server configuration file: every key there is passed to librdkafka as a property (see [Configuration](#configuration)), so for example `<flush_interval_ms>` is not a ClickHouse setting there.
+
+```sql
+CREATE TABLE queue (timestamp UInt64, level String, message String)
+ENGINE = Kafka
+SETTINGS kafka_broker_list = 'localhost:9092',
+         kafka_topic_list = 'topic',
+         kafka_group_name = 'group1',
+         kafka_format = 'JSONEachRow',
+         kafka_flush_interval_ms = 1000;
+```
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
