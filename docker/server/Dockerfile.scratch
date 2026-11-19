@@ -153,6 +153,9 @@ RUN mkdir -p \
         /output/var/log/clickhouse-server \
         /output/docker-entrypoint-initdb.d \
         /output/tmp \
+        /output/root \
+    # The home of `root` in `/etc/passwd`, where the tools started as root keep their history files.
+    && chmod 700 /output/root \
     && cp /usr/bin/clickhouse /output/usr/bin/clickhouse \
     # All the tools of the multi-tool binary, as installed by the packages (`clickhouse-client`,
     # `clickhouse-local`, `clickhouse-format`, ...), and the ones the entrypoint relies on.
