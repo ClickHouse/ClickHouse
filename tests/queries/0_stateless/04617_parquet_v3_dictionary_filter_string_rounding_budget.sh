@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Random settings limits: output_format_parquet_compression_method=('zstd', 'zstd')
 
 # The value-set reservation in `hashDictionaryValues` must be a genuine upper bound on what the
 # pruning path really allocates. Its materialized-payload term must be derived from the exact total
