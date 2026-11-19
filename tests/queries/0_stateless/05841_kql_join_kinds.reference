@@ -1,0 +1,18 @@
+-- kind=rightouter keeps the right row without a match --
+2	b	2	p
+0		3	q
+-- kind=fullouter keeps the unmatched rows of both sides --
+0		3	q
+1	a	0	
+2	b	2	p
+-- kind=leftsemi keeps the left rows that match --
+2	b	2	p
+-- kind=rightsemi keeps the right rows that match --
+2	b	2	p
+-- kind=leftanti keeps the left rows that do not match --
+1	a	0	
+-- kind=rightanti keeps the right rows that do not match --
+0		3	q
+-- leftantisemi is the same kind under another name --
+1	a	0	
+-- the set of kind names is closed --
