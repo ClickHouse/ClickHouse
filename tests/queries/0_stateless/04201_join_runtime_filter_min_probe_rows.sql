@@ -83,6 +83,19 @@ FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x LE
 SELECT 'key from a larger right input below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
 FROM (EXPLAIN SELECT count() FROM key_path_b b JOIN key_path_p p ON b.x = p.x JOIN key_path_s s ON p.y = s.y);
 
+SELECT 'multi-key LEFT ANTI, keys from one input' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x LEFT ANTI JOIN key_path_s s ON p.y = s.y AND p.x = s.z);
+
+-- A filter on a computed or renamed key reads the columns the key is computed from, unless computing it is not deterministic.
+SELECT 'computed key' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON p.y + 1 = s.y);
+
+SELECT 'renamed key' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM (SELECT p.y AS py FROM key_path_p p JOIN key_path_b b ON p.x = b.x) t JOIN key_path_s s ON t.py = s.y);
+
+SELECT 'non-deterministic key' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON p.y + rand() = s.y);
+
 DROP TABLE small_probe;
 DROP TABLE large_probe;
 DROP TABLE build_side;

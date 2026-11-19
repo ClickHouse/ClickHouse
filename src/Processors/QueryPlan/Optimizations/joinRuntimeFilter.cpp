@@ -386,29 +386,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     {
         const UInt64 limit = optimization_settings.join_runtime_filter_min_probe_rows;
         auto probe_size = join_step->getInputRowsEstimation(JoinTableSide::Left);
-        if (probe_size && *probe_size <= limit)
+        if (probe_size && *probe_size <= limit && !runtimeFilterReachesInputAbove(node, check_left_does_not_contain, limit))
         {
-            Names probe_keys;
-            for (const auto & condition : join_operator.expression)
-            {
-                auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
-                if (predicate_op != JoinConditionOperator::Equals)
-                    continue;
-                if (lhs.fromLeft() && rhs.fromRight())
-                    probe_keys.push_back(lhs.getColumnName());
-                else if (lhs.fromRight() && rhs.fromLeft())
-                    probe_keys.push_back(rhs.getColumnName());
-            }
-
-            /// A multi-key LEFT ANTI filter is one tuple condition, not pushed below a join whose inputs each hold only some of the keys.
-            const bool walk_key_paths = !(check_left_does_not_contain && probe_keys.size() > 1);
-            const bool filter_reaches_large_input = walk_key_paths
-                && std::ranges::any_of(probe_keys, [&](const String & key) { return keyPathHasInputAbove(node.children[0], key, limit); });
-            if (!filter_reaches_large_input)
-            {
-                join_step->setRuntimeFilterDeclinedForSmallProbe();
-                return false;
-            }
+            join_step->setRuntimeFilterDeclinedForSmallProbe();
+            return false;
         }
     }
 

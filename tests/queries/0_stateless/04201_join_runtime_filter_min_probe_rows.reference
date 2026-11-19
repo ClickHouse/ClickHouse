@@ -8,3 +8,7 @@ key from a larger input below	2
 same, LEFT ANTI	2
 multi-key LEFT ANTI	1
 key from a larger right input below	1
+multi-key LEFT ANTI, keys from one input	2
+computed key	2
+renamed key	2
+non-deterministic key	1
