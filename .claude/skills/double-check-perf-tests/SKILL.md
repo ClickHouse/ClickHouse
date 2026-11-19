@@ -84,6 +84,10 @@ skill:
 - `--no-cpu-pinning`: don't pin the servers with `taskset` and don't cap
   `max_threads`. Only for a machine where pinning is undesirable — it
   measures under noisier conditions than the report being checked.
+- `--allow-optimization-mismatch`: compare the binaries even when only one
+  of them is a ThinLTO build. By default this is refused: a PR build of the
+  same commit without a performance comparison is built without ThinLTO and
+  overwrites the artifacts that the report measured.
 - `--use-working-tree-tests`: run this checkout's `tests/performance` and
   configs instead of the ones from the commit under test. Only for iterating
   on a local change to a test — see the note on pinning below.

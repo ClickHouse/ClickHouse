@@ -1698,6 +1698,11 @@ def parse_args():
     parser.add_argument("--param", help="Optional job start stage", default=None)
     parser.add_argument("--test", help="Optional test name pattern", default="")
     parser.add_argument("--reference-path", help="Local reference clickhouse binary", default="")
+    parser.add_argument(
+        "--allow-non-thinlto",
+        action="store_true",
+        help="Compare a tested binary built without ThinLTO with the ThinLTO reference anyway",
+    )
     return parser.parse_args()
 
 
@@ -3400,8 +3405,10 @@ def main():
         # built without ThinLTO (`record_thinlto_choice`), and a re-run of failed jobs of a
         # run can download such a build when a later run on the same commit overwrote the
         # artifacts. Comparing it with the ThinLTO reference would report bogus changes, so
-        # refuse it: re-run the whole workflow instead.
-        if res and not info.is_local_run:
+        # refuse it: re-run the whole workflow instead. A local run (`praktika run ... --pr N
+        # --sha SHA`) downloads the same artifacts, so it is checked too, unless it compares
+        # with its own `--reference-path` binary or opts out explicitly.
+        if res and not args.reference_path and not args.allow_non_thinlto:
             link_flags = Shell.get_output_or_raise(
                 f"{local_command(f'{ch_path}/clickhouse')} --query \"SELECT value FROM system.build_options WHERE name = 'LINK_FLAGS'\""
             )
@@ -3409,7 +3416,8 @@ def main():
                 Result(
                     name="Tested binary is a ThinLTO build",
                     status=Result.Status.OK if "-flto=thin" in link_flags else Result.Status.FAIL,
-                    info=f"LINK_FLAGS: {link_flags}",
+                    info=f"LINK_FLAGS: {link_flags}"
+                    + ("" if "-flto=thin" in link_flags else "; pass --allow-non-thinlto to compare it anyway"),
                 )
             )
             res = results[-1].is_ok()
