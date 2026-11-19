@@ -83,6 +83,9 @@ NullTableSubscriptionPtr NullTableSubscribers::subscribe(size_t max_queued_block
 {
     auto subscription = std::make_shared<NullTableSubscription>(max_queued_blocks);
     std::lock_guard lock(mutex);
+    /// Also reclaim the ended subscriptions here, not only on insert: otherwise starting and cancelling readers
+    /// of a table without inserts would grow the list without a bound.
+    std::erase_if(subscriptions, [](const auto & weak) { return weak.expired(); });
     subscriptions.push_back(subscription);
     num_subscribers.store(subscriptions.size(), std::memory_order_relaxed);
     return subscription;
