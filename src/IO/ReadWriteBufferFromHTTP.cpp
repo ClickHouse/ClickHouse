@@ -405,17 +405,9 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
     std::exception_ptr exception = nullptr;
     String error_message;
 
-    /// A read that is cancelled, or whose query reached its soft time limit, is reported as interrupted even past the
-    /// deadline, as on the last attempt.
     auto throw_deadline_exceeded = [&]
     {
-        const bool deadline_soft_time_limit_reached = isQueryTimeLimitReached() && cancellation;
-        if (deadline_soft_time_limit_reached && cancellation)
-            cancellation->cancel(true);
-
-        if (deadline_soft_time_limit_reached || isReadCancelled())
-            throw ReadInterruptedException(exception);
-
+        throwIfInterrupted(cancellation, exception);
         throwDeadlineExceeded(initial_uri, error_message);
     };
 
@@ -610,6 +602,17 @@ void ReadWriteBufferFromHTTP::throwDeadlineExceeded(const Poco::URI & uri, const
         "Request to '{}' did not complete by its deadline{}",
         maskedURI(uri),
         error_message.empty() ? String() : fmt::format(". Last error: {}", error_message));
+}
+
+
+void ReadWriteBufferFromHTTP::throwIfInterrupted(const CancellationPtr & cancellation, std::exception_ptr exception)
+{
+    const bool soft_time_limit_reached = isQueryTimeLimitReached() && cancellation;
+    if (soft_time_limit_reached)
+        cancellation->cancel(true);
+
+    if (soft_time_limit_reached || (cancellation && cancellation->isCancelled()))
+        throw ReadInterruptedException(std::move(exception));
 }
 
 
@@ -1160,7 +1163,10 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
 {
     /// Proxy discovery can make a request of its own.
     if (deadline && std::chrono::steady_clock::now() >= *deadline)
+    {
+        ReadWriteBufferFromHTTP::throwIfInterrupted(cancellation, nullptr);
         ReadWriteBufferFromHTTP::throwDeadlineExceeded(uri, {});
+    }
 
     ProxyConfiguration proxy_configuration;
 

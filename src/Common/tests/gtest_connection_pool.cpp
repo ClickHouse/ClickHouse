@@ -1298,6 +1298,21 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPCancelledOpenResponseAtDeadlin
     ASSERT_THROW(buf->next(), DB::ReadInterruptedException);
 }
 
+TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPCancelledPastDeadlineIsInterrupted)
+{
+    auto cancellation = std::make_shared<DB::ReadWriteBufferFromHTTP::Cancellation>();
+    cancellation->cancel(/*softly=*/ false);
+    Poco::Net::HTTPBasicCredentials empty_creds;
+    ASSERT_THROW(
+        DB::BuilderRWBufferFromHTTP(Poco::URI(getServerUrl()))
+            .withBypassProxy(true)
+            .withDeadline(std::chrono::steady_clock::now())
+            .withCancellation(cancellation)
+            .withDelayInit(false)
+            .create(empty_creds),
+        DB::ReadInterruptedException);
+}
+
 TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPPastDeadlineOpensNoConnection)
 {
     auto metrics = getPool()->getMetrics();

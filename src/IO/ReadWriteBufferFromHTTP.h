@@ -223,6 +223,10 @@ private:
 
     [[noreturn]] static void throwDeadlineExceeded(const Poco::URI & uri, const String & error_message);
 
+    /// Throws `ReadInterruptedException` for a read that is cancelled or whose query reached its soft time limit; the
+    /// deadline exits call it first.
+    static void throwIfInterrupted(const CancellationPtr & cancellation, std::exception_ptr exception);
+
     /// Whether the code that reads from this buffer has cancelled the read, see doWithRetries.
     bool isReadCancelled() const;
 
