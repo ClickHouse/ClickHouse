@@ -151,7 +151,6 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/StatisticsCache.h>
-#include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
