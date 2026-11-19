@@ -73,8 +73,9 @@ public:
     String getFormatName() const { return format_name; }
 
     void pushConsumer(PulsarConsumerPtr consumer);
-    PulsarConsumerPtr popConsumer();
-    PulsarConsumerPtr popConsumer(std::chrono::milliseconds timeout);
+    /// Take a free consumer from the pool, waiting at most `timeout` (zero means no waiting).
+    /// Returns `nullptr` on timeout or when `is_cancelled` returns true while waiting.
+    PulsarConsumerPtr popConsumer(std::chrono::milliseconds timeout, const std::function<bool()> & is_cancelled);
 
     /// Return a consumer taken with `popConsumer`. A usable consumer goes back to the pool;
     /// an unusable one (see `PulsarConsumer::isUsable`) is closed and its slot is recreated

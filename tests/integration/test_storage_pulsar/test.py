@@ -1922,3 +1922,26 @@ def test_physical_columns_shadow_virtual_columns(pulsar_cluster):
         "1\tpayload\t1690000000",
         "SELECT DISTINCT key, topic, toUnixTimestamp(ts) FROM test.view ORDER BY key",
     )
+
+
+def test_repeated_reads_with_zero_wait_finish(pulsar_cluster):
+    # Each branch of `UNION ALL` over the same table is a separate source. With a
+    # single consumer, the first branch keeps it until the pipeline is destroyed,
+    # so the other branch must not wait for a free consumer forever: with
+    # `pulsar_max_wait_ms = 0` it does not wait at all and returns no rows.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query(pulsar_table("test.pulsar_reader", "zero_wait_topic", "zero_wait_group"))
+
+    deadline = time.monotonic() + 120
+    while time.monotonic() < deadline:
+        result = instance.query_and_get_answer_with_error("SELECT * FROM test.pulsar_reader")
+        if "CANNOT_CONNECT_PULSAR" not in result[1]:
+            break
+        time.sleep(1)
+
+    result = instance.query(
+        "SELECT key FROM test.pulsar_reader UNION ALL SELECT key FROM test.pulsar_reader",
+        settings={"pulsar_max_wait_ms": 0, "max_threads": 1},
+        timeout=60,
+    )
+    assert result.strip() == ""

@@ -108,7 +108,7 @@ Chunk PulsarSource::generateImpl()
     if (!consumer)
     {
         auto timeout = std::chrono::milliseconds(context->getSettingsRef()[Setting::pulsar_max_wait_ms].totalMilliseconds());
-        consumer = storage.popConsumer(timeout);
+        consumer = storage.popConsumer(timeout, [this] { return isCancelled() || storage.isConsumeCancelRequested(cancel_epoch); });
     }
 
     if (is_finished || !consumer)
@@ -122,14 +122,18 @@ Chunk PulsarSource::generateImpl()
     auto put_error_to_stream = handle_error_mode == StreamingHandleErrorMode::STREAM;
 
     EmptyReadBuffer empty_buf;
-    auto input_format = FormatFactory::instance().getInput(
-        storage.getFormatName(),
-        empty_buf,
-        non_virtual_header,
-        context,
-        max_block_size,
-        std::nullopt,
-        FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
+    auto parser_shared_resources = FormatParserSharedResources::singleThreaded(context->getSettingsRef());
+    auto create_format = [&]
+    {
+        return FormatFactory::instance().getInput(
+            storage.getFormatName(),
+            empty_buf,
+            non_virtual_header,
+            context,
+            max_block_size,
+            std::nullopt,
+            parser_shared_resources);
+    };
 
     std::optional<std::string> exception_message;
     size_t total_rows = 0;
@@ -172,7 +176,7 @@ Chunk PulsarSource::generateImpl()
         }
     };
 
-    StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
+    StreamingFormatExecutor executor(non_virtual_header, std::move(create_format), std::move(on_error));
 
     /// An exit condition for reading from an empty topic: without it, a direct SELECT
     /// (which has no time limit) would poll forever. Mirrors Kafka's failed-poll counter.

@@ -3,6 +3,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
+#include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/assert_cast.h>
 

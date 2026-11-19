@@ -434,18 +434,23 @@ void StoragePulsar::pushConsumer(PulsarConsumerPtr consumer)
     semaphore.set();
 }
 
-PulsarConsumerPtr StoragePulsar::popConsumer()
+PulsarConsumerPtr StoragePulsar::popConsumer(std::chrono::milliseconds timeout, const std::function<bool()> & is_cancelled)
 {
-    return popConsumer(std::chrono::milliseconds::zero());
-}
-
-PulsarConsumerPtr StoragePulsar::popConsumer(std::chrono::milliseconds timeout)
-{
-    // Wait for the first free consumer
-    if (timeout == std::chrono::milliseconds::zero())
-        semaphore.wait();
-    else if (!semaphore.tryWait(timeout.count()))
-        return nullptr;
+    /// Wait for a free consumer in short slices, so that a cancelled query (`KILL QUERY` does not wake
+    /// the semaphore) stops waiting. A zero timeout does not wait at all: an unbounded wait could never
+    /// finish when another source of the same pipeline (e.g. `UNION ALL` over the same table) holds the
+    /// only consumer until it is destroyed together with the pipeline.
+    static constexpr std::chrono::milliseconds wait_slice{100};
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (true)
+    {
+        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+        auto slice = std::clamp(remaining, std::chrono::milliseconds::zero(), wait_slice);
+        if (semaphore.tryWait(slice.count()))
+            break;
+        if (slice < wait_slice || is_cancelled())
+            return nullptr;
+    }
 
     // Take the first available consumer from the list
     std::lock_guard lock{consumers_mutex};
@@ -521,7 +526,9 @@ StoragePulsar::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
     if (topics.size() > 1)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't write to Pulsar table with multiple topics!");
 
-    const auto & header = metadata_snapshot->getSampleBlockNonMaterialized();
+    /// The insert chain ends with all physical columns (including MATERIALIZED ones), while the
+    /// message payload contains only the non-materialized columns, as they are read back.
+    const auto & header = metadata_snapshot->getSampleBlock();
 
     size_t max_rows = max_rows_per_message;
     /// Need for backward compatibility.
@@ -539,7 +546,13 @@ StoragePulsar::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
     auto producer = std::make_unique<PulsarProducer>(createProducer(), topics[0], shutdown_called, header);
 
     return std::make_shared<MessageQueueSink>(
-        std::make_shared<const Block>(header), getFormatName(), max_rows, std::move(producer), getName(), modified_context);
+        std::make_shared<const Block>(header),
+        std::make_shared<const Block>(metadata_snapshot->getSampleBlockNonMaterialized()),
+        getFormatName(),
+        max_rows,
+        std::move(producer),
+        getName(),
+        modified_context);
 }
 
 ContextMutablePtr StoragePulsar::addSettings(ContextPtr local_context) const
