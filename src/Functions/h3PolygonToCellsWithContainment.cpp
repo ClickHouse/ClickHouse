@@ -60,17 +60,17 @@ class Functionh3PolygonToCellsWithContainment : public IFunction
 {
 public:
     static constexpr auto name = "h3PolygonToCellsWithContainment";
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
     static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<Functionh3PolygonToCellsWithContainment>();
     }
 
-    size_t getNumberOfArguments() const override { return 3; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!WhichDataType(arguments[2].get()).isNativeInteger())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -80,7 +80,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /// One polygon can expand to hundreds of millions of cells, so the executor's between-blocks check
         /// cannot bound this call. Resolved from the executing thread rather than captured: this instance

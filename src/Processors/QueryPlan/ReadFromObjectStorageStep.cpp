@@ -32,6 +32,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 
@@ -256,7 +257,7 @@ Pipe ReadFromObjectStorageStep::buildInOrderPipe(
     /// Never collapse to one port: the sorting step installs no merge above a single port, so a
     /// single group would leave the concatenation unmerged.
     const size_t num_groups = std::max<size_t>(2, (num_files + threshold - 1) / threshold);
-    std::vector<Pipes> grouped(num_groups);
+    VectorWithMemoryTracking<Pipes> grouped(num_groups);
     for (size_t i = 0; i < num_files; ++i)
         grouped[i % num_groups].emplace_back(std::move(pipes[i]));
 
@@ -319,6 +320,12 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         /// The amount of keys (zero) was probably underestimated.
         /// We will keep one stream for this particular case.
         num_streams = 1;
+    }
+
+    if (lazy_row_index_registry)
+    {
+        std::lock_guard lock(lazy_row_index_registry->mutex);
+        lazy_row_index_registry->main_read_streams = num_streams;
     }
 
     // here create for node -> query -> level thread pool
@@ -450,7 +457,8 @@ void ReadFromObjectStorageStep::createIterator()
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(context), object_storage, iterator_metadata, distributed_processing,
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
-        /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
+        /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"),
+        format_settings);
 
     /// The build side registers a join runtime filter in the lookup of the thread's query context, which is not always this step's context.
     if (!join_runtime_filters_for_file_pruning.empty())
@@ -789,7 +797,9 @@ std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnly
         format_settings,
         std::move(*lazy_info),
         getContext(),
-        max_block_size);
+        max_block_size,
+        /*main_read_leaf_columns_=*/ countLeafColumns(info.format_header).value_or(1),
+        /*max_num_streams_=*/ max_num_streams);
 
     return lazy_step;
 }

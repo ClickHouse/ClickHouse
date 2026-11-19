@@ -3,6 +3,7 @@
 #include <Functions/FunctionFactory.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -98,11 +99,13 @@ public:
         else
             return;
 
-        QueryTreeNodePtr argument_node;
-        if (condition_boolean_value)
-            argument_node = function_node->getArguments().getNodes()[1];
-        else
-            argument_node = function_node->getArguments().getNodes()[2];
+        const auto & arguments = function_node->getArguments().getNodes();
+        QueryTreeNodePtr argument_node = arguments[condition_boolean_value ? 1 : 2];
+        const auto & dropped_node = arguments[condition_boolean_value ? 2 : 1];
+
+        /// Aggregate functions and `arrayJoin` decide the number of rows, so a branch with them must not be dropped.
+        if (hasAggregateFunctionNodes(dropped_node) || hasFunctionNode(dropped_node, "arrayJoin"))
+            return;
 
         if (node->getResultType()->equals(*argument_node->getResultType()))
         {
