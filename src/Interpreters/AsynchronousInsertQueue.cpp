@@ -600,6 +600,8 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
         /// background flush: by then the query has already returned success to the user (with
         /// `wait_for_async_insert = 0`) and the user's privileges may have changed.
         table->checkInsertIsAllowed(query_context);
+        /// The query log row of this INSERT is written before the data is flushed, so the inserted table and its
+        /// columns are recorded here. The flush is logged as a query of its own.
         query_context->getQueryContext()->addQueryAccessInfo(table->getStorageID(), column_names);
     }
 

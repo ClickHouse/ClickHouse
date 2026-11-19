@@ -1,7 +1,6 @@
--- Every table that receives data from an INSERT is recorded in system.query_log.columns with its own column names:
--- the table named in the statement with the columns the statement writes, and the target of each materialized view
--- with the columns the SELECT of the view writes into it, under the names of the target. A materialized view itself
--- is listed in `views`.
+-- Every table an INSERT writes to is listed in `system.query_log.columns` with the columns written into it: the table
+-- named in the statement with the columns of the statement, the target of a materialized view with the columns its
+-- SELECT produces, under the target's names. The views themselves are listed in `views`.
 
 -- With asynchronous inserts the row of an INSERT with inline data is written before the data is
 -- flushed, so the columns would be recorded on the flush row instead.
@@ -27,7 +26,7 @@ INSERT INTO src SETTINGS log_comment = '05498_renamed_through_views' VALUES (1),
 
 SELECT * FROM dst_second ORDER BY c;
 
--- Only the columns the statement writes are recorded for the target table.
+-- With a column list, only the listed columns are recorded for the inserted table.
 CREATE TABLE wide (a UInt64, b String, c UInt64 MATERIALIZED a * 2) ENGINE = MergeTree ORDER BY a;
 INSERT INTO wide (a) SETTINGS log_comment = '05498_explicit_column_list' VALUES (1);
 -- Without a column list the DEFAULT columns are recorded, the MATERIALIZED one is not.

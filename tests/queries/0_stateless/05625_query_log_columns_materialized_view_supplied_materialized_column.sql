@@ -14,8 +14,8 @@ CREATE TABLE dst (a UInt64, m UInt64 MATERIALIZED a + 1, d UInt64 DEFAULT 42) EN
 CREATE MATERIALIZED VIEW mv_declared TO dst (a UInt64, m UInt64) AS SELECT a FROM src;
 INSERT INTO mv_declared (a, m) SETTINGS log_comment = '05625_insert_into_view' VALUES (7, 70);
 
--- Inserting into `src` runs both views. Each supplies only `a`, so the declared `m` of `mv_declared` is not listed,
--- and the target computes `m` and `d`.
+-- Inserting into `src` runs both views. Each supplies only `a`, so only `dst.a` is listed: the target computes `m` and
+-- `d` itself, and the `m` that `mv_declared` declares is not supplied by its SELECT.
 CREATE MATERIALIZED VIEW mv_plain TO dst AS SELECT a + 100 AS a FROM src;
 INSERT INTO src SETTINGS log_comment = '05625_insert_into_source' VALUES (1);
 

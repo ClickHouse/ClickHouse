@@ -21,7 +21,7 @@ SELECT * FROM dst;
 
 SYSTEM FLUSH LOGS query_log;
 
--- `mv.extra` must not be listed: the view's SELECT produces only `a`
+-- `dst.extra` must not be listed: the SELECT of the view produces only `a`, and the target fills `extra` itself
 SELECT tables, views, columns
 FROM system.query_log
 WHERE current_database = currentDatabase()

@@ -1504,6 +1504,7 @@ BlockIO InterpreterInsertQuery::execute()
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
     StoragePtr table = getTable(query);
+    setInsertContextValues(context, query, table);
     if (context->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE
         && query.table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
@@ -1560,15 +1561,13 @@ BlockIO InterpreterInsertQuery::execute()
     /// SELECT` into a temporary `_tmp_replace_*` table; the final-name `INSERT` privilege is verified up
     /// front by the caller, so re-authorizing `INSERT` on the meaningless temporary name would be a
     /// spurious `ACCESS_DENIED` for table-scoped grants. Source `SELECT` access is still checked below.
-
-    Names column_names = query_sample_block.getNames();
     if (!query.table_function && !skip_target_insert_access_check)
-        context->checkAccess(AccessType::INSERT, query.table_id, column_names);
+        context->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
-    setInsertContextValues(context, query, table, column_names);
-
+    /// Record the inserted table and its columns in the query log. The tables written by materialized views are
+    /// recorded by `InsertDependenciesBuilder`.
     if (context->hasQueryContext())
-        context->getQueryContext()->addQueryAccessInfo(table->getStorageID(), column_names);
+        context->getQueryContext()->addQueryAccessInfo(table->getStorageID(), query_sample_block.getNames());
 
     /// Access the storage itself guards the write with (e.g. the source access of a table of a
     /// `URL` database). It is also checked when the sink is created, but that happens in a
@@ -1784,30 +1783,25 @@ void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
     extendQueryLogElemImpl(elem, context_);
 }
 
-void InterpreterInsertQuery::setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table, const Names& column_names)
+void InterpreterInsertQuery::setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table)
 {
     const auto metadata_snapshot = table->getInMemoryMetadataPtr(context_, false);
-    Names found_insert_columns;
+    std::optional<Names> insert_columns;
     if (insert_query.columns)
     {
         const auto columns_ast = processColumnTransformers(context_->getCurrentDatabase(), table, metadata_snapshot, insert_query.columns);
-        found_insert_columns.reserve(columns_ast->children.size());
+        Names names;
+        names.reserve(columns_ast->children.size());
         for (const auto & identifier : columns_ast->children)
         {
             std::string current_name = identifier->getColumnName();
-            found_insert_columns.emplace_back(std::move(current_name));
+            names.emplace_back(std::move(current_name));
         }
+
+        insert_columns = std::move(names);
     }
-    if (found_insert_columns.empty())
-    {
-        found_insert_columns = column_names;
-    }
-    std::optional<Names> names;
-    if (!found_insert_columns.empty())
-    {
-        names = found_insert_columns;
-    }
-    context_->setInsertionTable(insert_query.table_id, names, std::make_shared<ColumnsDescription>(metadata_snapshot->columns));
+
+    context_->setInsertionTable(insert_query.table_id, insert_columns, std::make_shared<ColumnsDescription>(metadata_snapshot->columns));
 }
 
 void registerInterpreterInsertQuery(InterpreterFactory & factory);

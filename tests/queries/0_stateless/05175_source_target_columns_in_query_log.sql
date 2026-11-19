@@ -1,3 +1,5 @@
+-- An `INSERT ... SELECT` lists in `system.query_log.columns` the columns it writes into the target table, next to the
+-- columns the SELECT reads from the source. The QueryStart row has them too: they are known before any data moves.
 DROP TABLE IF EXISTS tgt;
 DROP TABLE IF EXISTS src;
 
