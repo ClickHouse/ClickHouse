@@ -79,7 +79,6 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.use_skip_indexes_for_top_k,
         optimization_settings.use_top_k_dynamic_filtering,
         optimization_settings.use_top_k_dynamic_filtering_for_variable_length_types,
-        optimization_settings.use_top_k_dynamic_filtering_for_single_string_sort_column,
         optimization_settings.max_limit_for_top_k_optimization,
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
@@ -318,7 +317,8 @@ void optimizeTreeSecondPass(
         updateQueryConditionCache(stack, optimization_settings);
 
         /// Must be executed after index analysis and before PREWHERE optimization.
-        processAndOptimizeTextIndexFunctions(stack, nodes, optimization_settings.direct_read_from_text_index, extra_settings);
+        processAndOptimizeTextIndexFunctions(
+            stack, nodes, optimization_settings.direct_read_from_text_index, optimization_settings.find_single_node_read, extra_settings);
 
         auto & frame = stack.back();
 
@@ -1015,15 +1015,7 @@ void optimizeTreeSecondPass(
     if (!optimization_settings.make_distributed_plan)
         optimizeParallelFullSortingMergeJoin(root, optimization_settings.max_threads);
 
-    /// After every pass that converts a full sorting or gives it partitions.
-    traverseQueryPlan(stack, root, [&](auto & frame_node) { disableSpreadingSmallReadUnderFullSorting(frame_node); });
-
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
-
-    /// Run after every optimization that works with `SortingStep`, so that it only changes how the sorting is executed.
-    /// Keep `SortingStep` while building distributed fragments; replace it only when optimizing a local executable plan.
-    if (optimization_settings.use_shuffle_for_order_by_rand && !optimization_settings.make_distributed_plan)
-        traverseQueryPlan(stack, root, [&](auto & frame_node) { useShuffleForOrderByRand(frame_node); });
 
     /// Run after every optimization that can rewrite aggregation, sorting, projections,
     /// distributed fragments, or parallel replicas. This placement makes the pass a pure
@@ -1039,9 +1031,6 @@ void optimizeTreeSecondPass(
         traverseQueryPlan(
             stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
     }
-
-    /// Last: it reads the final consumers of every remote read.
-    allowReadingShardsFromSeveralReplicas(root);
 }
 
 void addStepsToBuildSets(

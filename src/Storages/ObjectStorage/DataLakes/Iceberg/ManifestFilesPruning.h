@@ -28,6 +28,7 @@ namespace DB::Iceberg
 {
 
 struct ProcessedManifestFileEntry;
+class ManifestFileIterator;
 
 DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name);
 
@@ -63,27 +64,21 @@ private:
     const IcebergSchemaProcessor & schema_processor;
     Int32 current_schema_id;
     Int32 initial_schema_id;
-    const DB::KeyDescription * partition_key = nullptr;
+    const DB::KeyDescription * partition_key;
     std::optional<DB::KeyCondition> partition_key_condition;
-    /// The same key over Nullable inputs, for a partition tuple that holds NULL.
-    std::optional<DB::KeyDescription> nullable_partition_key;
-    std::optional<DB::KeyCondition> nullable_partition_key_condition;
 
     std::unordered_map<Int32, DB::KeyCondition> min_max_key_conditions;
     std::unordered_map<Int32, DB::NameAndTypePair> row_lineage_columns;
     std::unordered_map<Int32, DB::DataTypePtr> min_max_column_types;
 
 public:
-    /// `partition_key_` may be nullptr and must outlive the pruner.
-    /// `require_ready_sets` makes `IN` conditions whose sets are not built yet unknown instead of building them.
     ManifestFilesPruner(
         const IcebergSchemaProcessor & schema_processor_,
         Int32 current_schema_id_,
         Int32 initial_schema_id_,
         const DB::ActionsDAG * filter_dag,
-        const DB::KeyDescription * partition_key_,
-        DB::ContextPtr context,
-        bool require_ready_sets = false);
+        const ManifestFileIterator & manifest_file,
+        DB::ContextPtr context);
 
     PruningReturnStatus canBePruned(const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const;
 

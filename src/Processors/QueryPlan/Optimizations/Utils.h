@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <Core/SortDescription.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -13,7 +12,6 @@ namespace DB
 {
 
 class ActionsDAG;
-class ReadFromMergeTree;
 
 struct IDescriptionHolder
 {
@@ -80,6 +78,10 @@ enum class FilterResult
 
 [[nodiscard]] bool dagContainsNonDeterministicFunction(const ActionsDAG & dag);
 
+[[nodiscard]] bool dagReadsUnspecifiedValueUnderNull(const ActionsDAG & dag);
+
+[[nodiscard]] bool nodeReadsUnspecifiedValueUnderNull(const ActionsDAG::Node * root);
+
 /// True when the expression holds a function that is non-deterministic within the query (`rand`), stateful
 /// (`rowNumberInAllBlocks`, `aiEmbed`), or has observable side effects (`sleep`), so an observer can see how
 /// many times and on which rows it was evaluated.
@@ -106,13 +108,6 @@ using ConstantColumns = std::unordered_map<const QueryPlan::Node *, NameSet>;
     ActionsDAG pre_actions_dag,
     const ActionsDAG & filter_dag,
     const String & filter_column_name);
-
-/// move `node` below the `ExpressionStep`s that only pass the sort keys through and rename the keys to the inputs,
-/// false if a step computes a key, has `arrayJoin` or depends on the number of evaluated rows
-[[nodiscard]] bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & description, size_t max_peel = 4);
-
-/// the `ReadFromMergeTree` at the end of a chain of single-child steps, or nullptr
-const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node);
 
 struct NoOp
 {

@@ -12,7 +12,6 @@
 #include <theta_a_not_b.hpp>
 
 #include <Common/Exception.h>
-#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -20,9 +19,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_READ_ALL_DATA;
     extern const int CORRUPTED_DATA;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 
@@ -176,25 +173,10 @@ public:
     /// You can only call for an empty object.
     void read(DB::ReadBuffer & in)
     {
-        size_t size = 0;
-        readVarUInt(size, in);
-        if (size > DEFAULT_MAX_STRING_SIZE)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
-        if (size == 0)
-            return;
-
-        /// The size comes from the state, so the bytes are appended as they arrive rather than allocated up front.
         datasketches::compact_theta_sketch::vector_bytes bytes;
-        while (bytes.size() < size)
-        {
-            if (in.eof())
-                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                    "Cannot read all data. Bytes read: {}. Bytes expected: {}.", bytes.size(), size);
-            const size_t done = bytes.size();
-            const size_t chunk = std::min(size - done, in.available());
-            bytes.resize(done + chunk);
-            in.readStrict(reinterpret_cast<char *>(bytes.data() + done), chunk);
-        }
+        readVectorBinary(bytes, in);
+        if (bytes.empty())
+            return;
 
         try
         {

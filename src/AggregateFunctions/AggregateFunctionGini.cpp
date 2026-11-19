@@ -25,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INCORRECT_DATA;
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
@@ -67,17 +68,26 @@ struct AggregateFunctionGiniData
             return static_cast<long double>(value);
     }
 
-    void add(const Value & x)
+    /// Returns false for NaN, which is skipped. Throws for unsupported values.
+    static bool checkValue(const Value & x)
     {
-        /// Skip NaNs as they are not compatible with comparison sorting.
+        /// NaNs are not compatible with comparison sorting.
         if (isNaN(x))
-            return;
+            return false;
 
         if (!isFinite(x))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function `gini` does not support infinite values");
 
         if (x < Value{})
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function `gini` does not support negative values");
+
+        return true;
+    }
+
+    void add(const Value & x)
+    {
+        if (!checkValue(x))
+            return;
 
         if (unlikely(array.size() >= GINI_MAX_ARRAY_SIZE))
             throwTooLargeArraySize();
@@ -107,6 +117,12 @@ struct AggregateFunctionGiniData
         checkArraySize(size);
         array.resize(size);
         buf.readStrict(reinterpret_cast<char *>(array.data()), size * sizeof(array[0]));
+
+        for (const auto & value : array)
+        {
+            if (!checkValue(value))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "NaN in serialized state of aggregate function `gini`");
+        }
     }
 
     /** Gini coefficient of the collected values. For sorted values x, the sum of
@@ -267,7 +283,7 @@ SELECT gini(x) FROM (SELECT number AS x FROM numbers(10));
     FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    factory.registerFunction("gini", {createAggregateFunctionGini, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction("gini", {createAggregateFunctionGini, documentation});
 }
 
 }

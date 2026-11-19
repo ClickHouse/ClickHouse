@@ -54,18 +54,6 @@ For more examples, see our [Working with JSON guide](/integrations/clickpipes/mo
 
 This error typically occurs when the oplog is truncated and ClickPipe is unable to resume the change stream at the expected point. To resolve this issue, [resync the ClickPipe](/integrations/clickpipes/mongodb/resync). To avoid this issue from recurring, we recommend increasing the oplog retention period. See instructions for [MongoDB Atlas](/integrations/clickpipes/mongodb/source/atlas#enable-oplog-retention), [self-managed MongoDB](/integrations/clickpipes/mongodb/source/generic#enable-oplog-retention), or [Amazon DocumentDB](/integrations/clickpipes/mongodb/source/documentdb#configure-change-stream-log-retention).
 
-### How do I handle `Cannot open a new cursor since too many cursors are already opened` error? {#too-many-cursors-error}
-
-Some managed MongoDB providers, like Amazon DocumentDB, limit how many cursors can be open at the same time on each instance. In Amazon DocumentDB, the limit depends on the instance class. For example, `t3.medium` and `t4g.medium` instances allow only 30 open cursors. See [instance limits](https://docs.aws.amazon.com/documentdb/latest/devguide/limits.html#limits.instance) for the limit of each instance class.
-
-ClickPipe needs a cursor to read the change stream. When other workloads on the instance use all available cursors, ClickPipe can't open the change stream. ClickPipe retries automatically and resumes replication once cursors become available.
-
-To resolve this issue:
-
-1. Check how many cursors are open on the instance that ClickPipe reads from. Connect to the instance with `mongosh` and run `db.serverStatus().metrics.cursor.open`. In Amazon DocumentDB, you can also compare the `DatabaseCursorsMax` and `DatabaseCursorsLimit` metrics in Amazon CloudWatch.
-2. Reduce the number of cursors that other workloads keep open. For example, close cursors when the application no longer needs them.
-3. If your workload needs more cursors, scale the instance to a larger instance class.
-
 ### How is replication managed? {#how-is-replication-managed}
 
 We use MongoDB's native Change Streams API to track changes in the database. Change Streams API provides a resumable stream of database changes by leveraging MongoDB's oplog (operations log). ClickPipe uses MongoDB's resume tokens to track the position in the oplog and ensure every change is replicated to ClickHouse.

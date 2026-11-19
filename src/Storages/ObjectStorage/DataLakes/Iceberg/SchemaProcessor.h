@@ -129,9 +129,6 @@ public:
     /// Nullable in the ClickHouse type, so a writer emitting Iceberg `required` must consult this.
     static std::unordered_set<String> collectIcebergOptionalPaths(Poco::JSON::Array::Ptr schema);
 
-    /// Field ids (including nested ones) whose Iceberg type is `time`.
-    static std::unordered_set<Int64> collectIcebergTimeFieldIds(Poco::JSON::Array::Ptr schema);
-
     void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
     Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;
     std::optional<Int32> tryGetSchemaIdForSnapshot(Int64 snapshot_id) const;
@@ -171,10 +168,6 @@ private:
         bool is_subfield_of_root = false);
 
     bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
-    /// Returns `new_holder[key]` in which every nested primitive changed by a legal promotion is replaced by the
-    /// type at the same place in `old_holder` (struct fields are matched by id). The arguments are not modified.
-    Poco::Dynamic::Var getTypeWithOldPrimitives(
-        const Poco::JSON::Object::Ptr & old_holder, const Poco::JSON::Object::Ptr & new_holder, const String & key);
     const Node * getDefaultNodeForField(const Poco::JSON::Object::Ptr & field);
 
     std::shared_ptr<ActionsDAG> getSchemaTransformationDag(

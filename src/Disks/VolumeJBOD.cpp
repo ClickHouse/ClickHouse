@@ -5,8 +5,6 @@
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 
-#include <algorithm>
-
 namespace DB
 {
 
@@ -21,7 +19,7 @@ VolumeJBOD::VolumeJBOD(
     const String & config_prefix,
     DiskSelectorPtr disk_selector)
     : IVolume(name_, config, config_prefix, disk_selector)
-    , disks_with_size(disks.begin(), disks.end())
+    , disks_by_size(disks.begin(), disks.end())
 {
     LoggerPtr logger = getLogger("StorageConfiguration");
 
@@ -106,18 +104,13 @@ DiskPtr VolumeJBOD::getDisk(size_t /* index */) const
         case VolumeLoadBalancing::LEAST_USED:
         {
             std::lock_guard lock(mutex);
-            updateUnreservedSpaceIfExpired();
-            return std::max_element(disks_with_size.begin(), disks_with_size.end())->disk;
+            if (!least_used_ttl_ms || least_used_update_watch.elapsedMilliseconds() >= least_used_ttl_ms)
+            {
+                disks_by_size = LeastUsedDisksQueue(disks.begin(), disks.end());
+                least_used_update_watch.restart();
+            }
+            return disks_by_size.top().disk;
         }
-    }
-}
-
-void VolumeJBOD::updateUnreservedSpaceIfExpired() const
-{
-    if (!least_used_ttl_ms || least_used_update_watch.elapsedMilliseconds() >= least_used_ttl_ms)
-    {
-        disks_with_size = std::vector<DiskWithSize>(disks.begin(), disks.end());
-        least_used_update_watch.restart();
     }
 }
 
@@ -167,19 +160,29 @@ ReservationPtr VolumeJBOD::reserveImpl(UInt64 bytes, const std::optional<Reserva
         case VolumeLoadBalancing::LEAST_USED:
         {
             std::lock_guard lock(mutex);
-            updateUnreservedSpaceIfExpired();
 
-            /// A reservation tries the disks from the most unreserved space to the least, each once: every
-            /// attempt moves the untried disk with the most space to the front of the untried ones.
-            for (auto it = disks_with_size.begin(); it != disks_with_size.end(); ++it)
+            ReservationPtr reservation;
+            for (size_t i = 0; i < disks.size() && !reservation; ++i)
             {
-                std::iter_swap(it, std::max_element(it, disks_with_size.end()));
-                ReservationPtr reservation = try_reserve(it->disk);
-                it->unreserved_space = reservation ? reservation->getUnreservedSpace() : it->disk->getUnreservedSpace();
-                if (reservation)
-                    return reservation;
+                if (i == 0 && (!least_used_ttl_ms || least_used_update_watch.elapsedMilliseconds() >= least_used_ttl_ms))
+                {
+                    disks_by_size = LeastUsedDisksQueue(disks.begin(), disks.end());
+                    least_used_update_watch.restart();
+
+                    DiskWithSize disk = disks_by_size.top();
+                    reservation = try_reserve(disk.disk);
+                }
+                else
+                {
+                    DiskWithSize disk = disks_by_size.top();
+                    disks_by_size.pop();
+
+                    reservation = try_reserve(disk.disk);
+                    disks_by_size.push(disk);
+                }
             }
-            return {};
+
+            return reservation;
         }
     }
 }

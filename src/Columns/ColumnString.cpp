@@ -11,6 +11,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/Function.h>
@@ -649,9 +650,12 @@ void ColumnString::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
     size_t new_chars_size = chars.size();
     for (const auto & source_column : source_columns)
     {
-        const auto & source_string_column = assert_cast<const ColumnString &>(*source_column);
-        new_size += source_string_column.size();
-        new_chars_size += source_string_column.chars.size();
+        const auto * source_string_column = typeid_cast<const ColumnString *>(source_column.get());
+        if (!source_string_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for squashing of {} is not String, but {}", getName(), source_column->getName());
+
+        new_size += source_string_column->size();
+        new_chars_size += source_string_column->chars.size();
     }
 
     offsets.reserve_exact(new_size * factor);
@@ -689,20 +693,6 @@ void ColumnString::getExtremes(Field & min, Field & max, size_t start, size_t en
     get(max_idx, max);
 }
 
-namespace
-{
-
-void restoreOffsets(const Memory<> & offsets_compressed, bool offsets_were_compressed, IColumn::Offsets & offsets)
-{
-    if (offsets_were_compressed)
-        ColumnCompressed::decompressBuffer(
-            offsets_compressed.data(), offsets.data(), offsets_compressed.size(), offsets.size() * sizeof(IColumn::Offset));
-    else
-        memcpy(offsets.data(), offsets_compressed.data(), offsets_compressed.size());
-}
-
-}
-
 ColumnPtr ColumnString::compress(bool force_compression) const
 {
     const size_t source_chars_size = chars.size();
@@ -735,17 +725,6 @@ ColumnPtr ColumnString::compress(bool force_compression) const
 
     const size_t chars_compressed_size = chars_compressed->size();
     const size_t offsets_compressed_size = offsets_compressed->size();
-
-    ColumnPtr offsets_part = ColumnCompressed::create(
-        source_offsets_elements,
-        offsets_compressed_size,
-        [my_offsets_compressed = offsets_compressed, source_offsets_elements, offsets_were_compressed]
-        {
-            auto res = ColumnUInt64::create(source_offsets_elements);
-            restoreOffsets(*my_offsets_compressed, offsets_were_compressed, res->getData());
-            return res;
-        });
-
     return ColumnCompressed::create(
         source_offsets_elements,
         chars_compressed_size + offsets_compressed_size,
@@ -762,11 +741,22 @@ ColumnPtr ColumnString::compress(bool force_compression) const
 
             ColumnCompressed::decompressBuffer(
                 my_chars_compressed->data(), res->getChars().data(), my_chars_compressed->size(), source_chars_size);
-            restoreOffsets(*my_offsets_compressed, offsets_were_compressed, res->getOffsets());
+
+            if (offsets_were_compressed)
+            {
+                ColumnCompressed::decompressBuffer(
+                    my_offsets_compressed->data(),
+                    res->getOffsets().data(),
+                    my_offsets_compressed->size(),
+                    source_offsets_elements * sizeof(Offset));
+            }
+            else
+            {
+                memcpy(res->getOffsets().data(), my_offsets_compressed->data(), my_offsets_compressed->size());
+            }
 
             return res;
-        },
-        Columns{std::move(offsets_part)});
+        });
 }
 
 #if USE_EMBEDDED_COMPILER
