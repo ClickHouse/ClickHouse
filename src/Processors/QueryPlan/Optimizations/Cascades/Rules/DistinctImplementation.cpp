@@ -4,8 +4,10 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StorageLayout.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Common/typeid_cast.h>
+#include <algorithm>
 #include <memory>
 
 namespace DB
@@ -83,6 +85,27 @@ protected:
                 by_one_column.columns.push_back({column});
                 add_alternative(strategySingleton<ShuffleDistinctStrategy>(), by_one_column, fmt::format("Shuffle (by {})", column));
             }
+        }
+
+        /// A consumer above requires the rows divided by ranges of key values at given borders, which only
+        /// the table reads below can deliver. The `DISTINCT` passes the function on to its input when each
+        /// required column is one of its columns: equal rows are then in one range, and each row stays there.
+        const auto & required = required_properties.distribution;
+        if (memo.getContext().distributed_plan_use_primary_key_range_layout
+            && required.layout_function && required.layout_function->tryGetKeyRanges() && !required.is_replicated)
+        {
+            DistributionDescription by_required_ranges;
+            by_required_ranges.node_count = required.node_count;
+            by_required_ranges.layout_function = required.layout_function;
+            for (const auto & required_column : required.columns)
+            {
+                auto column = std::ranges::find_if(columns, [&](const String & name) { return required_column.contains(name); });
+                if (column == columns.end())
+                    return result;
+                by_required_ranges.columns.push_back({*column});
+            }
+            add_alternative(strategySingleton<ShuffleDistinctStrategy>(), by_required_ranges,
+                fmt::format("Co-located (by {})", required.layout_function->dump()));
         }
         return result;
     }

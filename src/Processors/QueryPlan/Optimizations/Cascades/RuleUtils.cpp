@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/StorageLayout.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -348,6 +349,20 @@ const KeyRangeLayoutCandidates & getKeyRangeLayoutCandidates(Memo & memo, GroupI
                 *join_step,
                 getKeyRangeLayoutCandidates(memo, expression->inputs[0].group_id),
                 getKeyRangeLayoutCandidates(memo, expression->inputs[1].group_id));
+        }
+        else if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step);
+            aggregating_step && aggregating_step->getFinal() && !aggregating_step->isGroupingSets() && expression->inputs.size() == 1)
+        {
+            /// A candidate only: the aggregation delivers the layout if it runs on the nodes of its input,
+            /// which its rule checks when a consumer requires the layout from this group.
+            candidates = restrictKeyRangeLayoutCandidates(
+                getKeyRangeLayoutCandidates(memo, expression->inputs.front().group_id), aggregating_step->getParams().keys);
+        }
+        else if (const auto * distinct_step = typeid_cast<const DistinctStep *>(step);
+            distinct_step && !distinct_step->isPreliminary() && expression->inputs.size() == 1)
+        {
+            candidates = restrictKeyRangeLayoutCandidates(
+                getKeyRangeLayoutCandidates(memo, expression->inputs.front().group_id), distinct_step->getColumnNames());
         }
     }
 

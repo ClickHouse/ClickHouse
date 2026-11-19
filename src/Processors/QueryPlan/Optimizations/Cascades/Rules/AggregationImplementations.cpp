@@ -288,6 +288,31 @@ void AggregationImplementation::StrategyEnumerator::addCoLocatedAggregations(siz
 void AggregationImplementation::StrategyEnumerator::addCoLocatedAggregationsByKeyRanges(size_t node_count)
 {
     const auto & keys = agg_step.getParams().keys;
+
+    /// A consumer above selected the borders, for example a join of this aggregation with another table.
+    /// Other borders cannot satisfy it, so the aggregation passes the function on to its input. Each
+    /// required column must be a group key: the rows of a group are then in one range, and the group stays there.
+    const auto & required = required_properties.distribution;
+    if (required.layout_function && required.layout_function->tryGetKeyRanges())
+    {
+        if (required.is_replicated || required.node_count != node_count)
+            return;
+
+        DistributionDescription by_required_ranges;
+        by_required_ranges.node_count = node_count;
+        by_required_ranges.layout_function = required.layout_function;
+        for (const auto & required_column : required.columns)
+        {
+            auto key = std::ranges::find_if(keys, [&](const String & key_name) { return required_column.contains(key_name); });
+            if (key == keys.end())
+                return;
+            by_required_ranges.columns.push_back({*key});
+        }
+
+        addAlternative(strategySingleton<ShuffleAggregationStrategy>(), by_required_ranges, by_required_ranges,
+            fmt::format("Co-located (by {}) {}", required.layout_function->dump(), agg_step.getStepDescription()));
+        return;
+    }
     for (const auto & candidate : getKeyRangeLayoutCandidates(memo, expression->inputs[0].group_id))
     {
         DistributionDescription by_ranges;

@@ -132,4 +132,10 @@ std::optional<KeyRangeLayoutCandidate> getKeyRangeLayoutCandidate(
 /// A candidate keeps the key columns before the first one that does not reach the output unchanged.
 KeyRangeLayoutCandidates remapKeyRangeLayoutCandidates(const KeyRangeLayoutCandidates & candidates, const ActionsDAG & actions);
 
+/// The candidates through a step that brings the rows with equal values of `columns` together and returns
+/// these columns unchanged: a final aggregation by them, or a `DISTINCT` on them. When the key columns are
+/// some of `columns`, such rows are in one range already, and each result row stays in the range of its key.
+/// A candidate keeps the key columns before the first one that is not one of `columns`.
+KeyRangeLayoutCandidates restrictKeyRangeLayoutCandidates(const KeyRangeLayoutCandidates & candidates, const Names & columns);
+
 }

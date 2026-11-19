@@ -450,4 +450,29 @@ KeyRangeLayoutCandidates remapKeyRangeLayoutCandidates(const KeyRangeLayoutCandi
     return result;
 }
 
+KeyRangeLayoutCandidates restrictKeyRangeLayoutCandidates(const KeyRangeLayoutCandidates & candidates, const Names & columns)
+{
+    const NameSet column_set(columns.begin(), columns.end());
+
+    KeyRangeLayoutCandidates result;
+    for (const auto & candidate : candidates)
+    {
+        KeyRangeLayoutCandidate restricted_candidate = candidate;
+        size_t size = 0;
+        for (; size < candidate.key_columns.size(); ++size)
+        {
+            auto & names = restricted_candidate.key_columns[size];
+            std::erase_if(names, [&](const String & name) { return !column_set.contains(name); });
+            if (names.empty())
+                break;
+        }
+
+        if (size == 0)
+            continue;
+        restricted_candidate.resize(size);
+        result.push_back(std::move(restricted_candidate));
+    }
+    return result;
+}
+
 }
