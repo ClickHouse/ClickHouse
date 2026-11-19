@@ -30,7 +30,7 @@ namespace QueryPlanSerializationSetting
 using namespace DB;
 
 /// External `DISTINCT` thresholds are serialized only to peers whose plan version supports them.
-/// The reader of the step settings in an older peer rejects unknown setting names, so older peers receive
+/// `QueryPlanSerializationSettings::readBinary` rejects unknown setting names, so older peers receive
 /// neither threshold and use in-memory execution with its memory requirements.
 ///
 /// Step version 1 carries the input-order flag and is introduced at the same global version. Older
@@ -96,11 +96,11 @@ bool inputOrderFlagAfterRoundTrip(const DistinctStep & step, const SharedHeader 
     return dynamic_cast<const DistinctStep &>(*restored).preservesInputOrder();
 }
 
-/// Checks whether the settings stream contains the given setting name.
+/// Checks whether the binary settings stream contains the given setting name.
 bool wireCarries(const QueryPlanSerializationSettings & settings, std::string_view name)
 {
     WriteBufferFromOwnString out;
-    settings.write(out);
+    settings.writeChangedBinary(out);
     return out.str().contains(name);
 }
 
@@ -171,10 +171,10 @@ TEST(ExternalDistinctPlanSetting, MaxBlockSizeRoundTripsOnDeserialization)
         plan_settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
 
         WriteBufferFromOwnString out;
-        plan_settings.write(out);
+        plan_settings.writeChangedBinary(out);
         ReadBufferFromString in(out.str());
         QueryPlanSerializationSettings restored_settings;
-        restored_settings.read(in);
+        restored_settings.readBinary(in);
 
         EXPECT_EQ(DistinctStep::Settings(restored_settings).max_block_size, max_block_size);
     }
@@ -253,10 +253,10 @@ TEST(ExternalDistinctPlanSetting, SpillBlockByteTargetRoundTrips)
         original.prefer_external_sort_block_bytes = bytes;
         const auto settings = serializeDistinctStep(original, current_version);
         WriteBufferFromOwnString out;
-        settings.write(out);
+        settings.writeChangedBinary(out);
         ReadBufferFromString in(out.str());
         QueryPlanSerializationSettings restored;
-        restored.read(in);
+        restored.readBinary(in);
         EXPECT_EQ(DistinctStep::Settings(restored).prefer_external_sort_block_bytes, bytes);
     }
 }

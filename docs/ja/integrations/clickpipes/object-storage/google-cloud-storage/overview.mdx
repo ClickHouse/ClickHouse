@@ -38,13 +38,17 @@ GCS ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび
 
 継続的インジェストが有効な場合、ClickPipes は指定されたパスからデータを継続的に取り込みます。インジェスト順序の判定には、GCS ClickPipe はデフォルトでファイルの暗黙的な[辞書式順序](#continuous-ingestion-lexicographical-order)を使用します。また、[バケット通知を行うよう設定した](https://docs.cloud.google.com/storage/docs/reporting-changes#command-line) [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) サブスクリプションを使用して、ファイルを[任意の順序](#continuous-ingestion-any-order)で取り込むように構成することもできます。
 
-#### 辞書式順序 {#continuous-ingestion-lexicographical-order}
+<div id="continuous-ingestion-lexicographical-order">
+  #### 辞書式順序
+</div>
 
 GCS ClickPipe は、ファイルがバケットに辞書式順序で追加されることを前提としており、この暗黙的な順序に基づいてファイルを順番に取り込みます。つまり、新しいファイルは、最後に取り込まれたファイルよりも辞書式で後に来る名前である**必要があります**。たとえば、`file1`、`file2`、`file3` という名前のファイルは順番に取り込まれますが、新たに `file 0` がバケットに追加された場合、ファイル名が最後に取り込まれたファイルよりも辞書式で後ではないため、**無視**されます。
 
 このモードでは、GCS ClickPipe は指定されたパス内の**すべてのファイル**を初期ロードし、その後、設定可能な間隔 (デフォルトでは 30 秒) で新しいファイルがないかポーリングします。特定のファイルの後から継続的インジェストを開始するには、**Start after** を設定します。ClickPipes は、設定値以下の辞書式順序のファイルをスキップし、その時点から新しいファイルの取り込みを継続します。
 
-#### 任意の順序 {#continuous-ingestion-any-order}
+<div id="continuous-ingestion-any-order">
+  #### 順不同
+</div>
 
 <Tip>
   手順については、[継続的インジェストの順不同モードの設定](/ja/integrations/clickpipes/object-storage/google-cloud-storage/unordered-mode)を参照してください。
@@ -53,10 +57,10 @@ GCS ClickPipe は、ファイルがバケットに辞書式順序で追加され
 バケットから通知を受け取る [Google Cloud Pub/Sub](https://docs.cloud.google.com/storage/docs/pubsub-notifications) サブスクリプションを設定すると、暗黙的な順序を持たないファイルを取り込むように GCS ClickPipe を構成できます。これにより、ClickPipes はオブジェクト作成イベントを監視し、ファイル名の命名規則に関係なく新しいファイルを取り込めるようになります。
 
 <Note>
-  公開バケットでは**順不同モード**はサポートされていません。これを使用するには、アップロードした秘密鍵または GCP Workload Identity のいずれかを用いた service account 認証と、バケットに接続された [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) サブスクリプションが必要です。
+  公開バケットでは**順不同モード**はサポートされていません。これを使用するには、**サービス アカウント**認証と、バケットに接続された [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) サブスクリプションが必要です。
 </Note>
 
-このモードでは、GCS ClickPipe は選択したパス内の**すべてのファイル**を初期ロードし、その後、指定したパスに一致する Pub/Sub サブスクリプション経由の `OBJECT_FINALIZE` 通知を待ち受けます。すでに確認済みのファイル、パスに一致しないファイル、または別種のイベントに対するメッセージは、すべて**無視**されます。サブスクリプション経由で配信されたファイルのみを取り込むには、**初回読み込みをスキップ**を有効にします。有効にすると、ClickPipes は選択したパス内の既存ファイルの初期スキャンをスキップし、Pub/Sub サブスクリプション経由で配信されたファイルのみを処理します。
+このモードでは、GCS ClickPipe は選択したパス内の**すべてのファイル**を初期ロードし、その後、指定したパスに一致する Pub/Sub サブスクリプション経由の `OBJECT_FINALIZE` 通知を待ち受けます。すでに確認済みのファイル、パスに一致しないファイル、または別種のイベントに対するメッセージは、すべて**無視**されます。サブスクリプション経由で配信されたファイルのみを取り込むには、**初期ロードをスキップ**を有効にします。有効にすると、ClickPipes は選択したパス内の既存ファイルの初期スキャンをスキップし、Pub/Sub サブスクリプション経由で配信されたファイルのみを処理します。
 
 <div id="file-pattern-matching">
   ### ファイルパターンのマッチング
@@ -147,12 +151,9 @@ ClickPipes が使用するサービス アカウントでは、バケット レ�
 
 Pub/Sub 通知で[順不同モード](#continuous-ingestion-any-order)を使用する場合は、サービス アカウント認証が必要です。認証方法として **Service Account** を選択し、サービス アカウントの秘密鍵の JSON ファイルをアップロードします。
 
-#### GCP Workload Identity (ベータ) {#gcp-workload-identity}
-
-[GCP Workload Identity ガイド](/ja/integrations/clickpipes/security/gcp-workload-identity)に従い、ClickPipes のサービスコンテキストからマネージドの service account を取得します。ソースバケットに対してこの service account に `roles/storage.objectViewer` を付与し、`SERVICE_ACCOUNT_WORKLOAD_IDENTITY` 認証でパイプを作成します。unordered モードでインジェストする場合は、既存の通知サブスクリプションに対して `roles/pubsub.subscriber` と `roles/pubsub.viewer` も付与し、サブスクリプションの完全修飾名 `projects/<project-id>/subscriptions/<subscription-id>` を指定してください。
-
-<a id="hmac-credentials" />
-#### HMAC認証情報
+<div id="hmac-credentials">
+  #### HMAC認証情報
+</div>
 
 [HMACキー](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) を使用して認証するには、ClickPipe 接続を設定する際に **Authentication method** で `Credentials` を選択します。次に、`Access key` と `Secret key` に、それぞれアクセスキー (例: `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) とシークレットキー (例: `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) を入力します。
 
@@ -173,8 +174,9 @@ GCS ClickPipes では、メタデータの検出とデータのインジェス�
   curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.gcp[] | select(.region == "<your-region>") | .egress_ips[]'
   ```
 
-<a id="advanced-settings" />
-## 詳細設定
+<div id="advanced-settings">
+  ## 詳細設定
+</div>
 
 ClickPipes には、ほとんどのユースケースの要件を満たす妥当なデフォルト設定が用意されています。さらに細かなチューニングが必要な場合は、以下の設定を調整できます。
 

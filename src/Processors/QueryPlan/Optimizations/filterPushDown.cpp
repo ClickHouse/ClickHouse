@@ -246,10 +246,8 @@ static size_t addNewFilterStepOrThrow(
 
     /// New filter column is the first one.
     String split_filter_column_name = split_filter.dag.getOutputs()[split_filter.filter_pos]->result_name;
-    auto new_filter = std::make_unique<FilterStep>(
+    node.step = std::make_unique<FilterStep>(
         node.children.at(0)->step->getOutputHeader(), std::move(split_filter.dag), std::move(split_filter_column_name), split_filter.remove_filter);
-    new_filter->setOptimizeConstantColumnsAfterFilter(filter->getOptimizeConstantColumnsAfterFilter());
-    node.step = std::move(new_filter);
     node.step->setStepDescription(*filter);
 
     child->updateInputHeader(node.step->getOutputHeader(), child_idx);
@@ -793,15 +791,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             cross_type_equivalent_columns.insert(replaced_name);
 
             /// A source that already has the supertype is not cast by the JOIN either, so it can stand in
-            /// under its own name, provided that name carries the source's type wherever it also occurs in
-            /// the JOIN output, and does occur at that type in the input of the stream this filter is pushed to.
-            const auto & source_stream_input_header
-                = source.fromLeft() ? *left_stream_input_header : *right_stream_input_header;
+            /// under its own name provided that name denotes a single type here: the JOIN republishes an
+            /// input's name at its output type, and a pushed filter binds its inputs to those outputs by name.
             const auto * source_in_output = join_output_header.findByName(source.getColumnName());
-            const auto * source_in_stream = source_stream_input_header.findByName(source.getColumnName());
             if (source.getType()->equals(*supertype)
-                && (!source_in_output || source_in_output->type->equals(*source.getType()))
-                && source_in_stream && source_in_stream->type->equals(*source.getType()))
+                && (!source_in_output || source_in_output->type->equals(*source.getType())))
             {
                 equivalent_columns[replaced_name] = source.getColumn();
                 return;
@@ -879,11 +873,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         && !isSensitiveToEvaluationCount(filter->getExpression())
         && filterResultForNotMatchedRows(filter->getExpression(), filter->getFilterColumnName(), Block{}) == FilterResult::FALSE;
 
-    const JoinKind join_kind = logical_join ? logical_join->getJoinOperator().kind : table_join_ptr->kind();
-    const JoinStrictness join_strictness = logical_join ? logical_join->getJoinOperator().strictness : table_join_ptr->strictness();
-    const bool left_stream_only_matched = join_kind == JoinKind::Right && join_strictness != JoinStrictness::Semi;
-    const bool right_stream_only_matched = join_kind == JoinKind::Left && join_strictness != JoinStrictness::Semi;
-
     auto join_filter_push_down_actions = filter->getExpression().splitActionsForJOINFilterPushDown(
         filter->getFilterColumnName(),
         filter->removesFilterColumn(),
@@ -895,8 +884,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         equivalent_left_stream_column_to_right_stream_column,
         equivalent_right_stream_column_to_left_stream_column,
         cross_type_equivalent_columns,
-        left_stream_only_matched,
-        right_stream_only_matched,
         filter_is_always_false);
 
     if (is_filter_column_const_before && !join_filter_push_down_actions.is_filter_const_after_all_push_downs)
@@ -1260,9 +1247,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             auto identifiers_in_predicate = findIdentifiersOfNode(&filter_node, index_hint_inputs);
 
             const auto & grouping_sets = aggregating ? aggregating->getGroupingSetsParamsList() : merging_aggregated->getGroupingSetsParamsList();
-            /// A grouping set without keys returns a row for an empty input, like an aggregation without keys.
-            if (std::ranges::any_of(grouping_sets, [](const GroupingSetsParams & grouping_set) { return grouping_set.used_keys.empty(); }))
-                return 0;
             if (!identifiersIsAmongAllGroupingSets(grouping_sets, identifiers_in_predicate))
                 return 0;
 
@@ -1466,13 +1450,11 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             filter_node.children.push_back(parent_node->children[i]);
             parent_node->children[i] = &filter_node;
 
-            auto new_filter = std::make_unique<FilterStep>(
+            filter_node.step = std::make_unique<FilterStep>(
                 filter_node.children.front()->step->getOutputHeader(),
                 filter->getExpression().clone(),
                 filter->getFilterColumnName(),
                 filter->removesFilterColumn());
-            new_filter->setOptimizeConstantColumnsAfterFilter(filter->getOptimizeConstantColumnsAfterFilter());
-            filter_node.step = std::move(new_filter);
         }
 
         ///       - Filter - Something

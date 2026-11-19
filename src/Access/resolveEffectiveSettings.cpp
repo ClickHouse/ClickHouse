@@ -116,8 +116,7 @@ ResolvedSettingsProfileElements resolveSettingsProfileElements(
     const UUID & user_id,
     const boost::container::flat_set<UUID> & enabled_roles,
     const SettingsProfileElements & settings_from_enabled_roles,
-    const SettingsProfileElements & settings_from_user,
-    const std::function<bool(const UUID & profile_id)> & skip_profile)
+    const SettingsProfileElements & settings_from_user)
 {
     ResolvedSettingsProfileElements result;
     if (default_profile_id)
@@ -125,8 +124,6 @@ ResolvedSettingsProfileElements resolveSettingsProfileElements(
 
     for (const auto & [profile_id, profile] : all_profiles)
     {
-        if (skip_profile && skip_profile(profile_id))
-            continue;
         if (profile->to_roles.match(user_id, enabled_roles))
             result.elements.emplace_back().parent_profile = profile_id;
     }
@@ -437,13 +434,7 @@ namespace
             return foldElements(
                 access_control,
                 resolveSettingsProfileElements(
-                    default_profile,
-                    profiles,
-                    user_id,
-                    roles_info.enabled_roles,
-                    roles_info.settings_from_enabled_roles,
-                    own_settings,
-                    [&](const UUID & profile_id) { return access_control.shouldSkipSQLAccessEntityForUser(profile_id, user_id); })
+                    default_profile, profiles, user_id, roles_info.enabled_roles, roles_info.settings_from_enabled_roles, own_settings)
                     .elements);
         }
 

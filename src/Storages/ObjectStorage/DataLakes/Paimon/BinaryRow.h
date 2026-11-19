@@ -112,10 +112,7 @@ public:
                         "data size larger than target_size, data size: {}, target_size: {}.",
                         data.size(),
                         target_size);
-                /// The bytes are a big-endian two's complement integer (Java `BigInteger.toByteArray`),
-                /// so a negative value must be sign-extended with 0xFF, not padded with zeros.
-                const char pad = (!data.empty() && (static_cast<UInt8>(data[0]) & 0x80)) ? '\xFF' : '\0';
-                String result(target_size, pad);
+                String result(target_size, 0);
                 size_t start_pos = target_size - data.size();
                 for (size_t i = 0; i < data.size(); ++i)
                     result[start_pos + i] = data[i];

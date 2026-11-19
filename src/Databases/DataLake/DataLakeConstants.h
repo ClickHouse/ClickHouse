@@ -45,7 +45,6 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
     /// Google credentials
     {"google_adc_client_secret", DB::hideSecretValue},
     {"google_adc_refresh_token", DB::hideSecretValue},
-    {"google_service_account_key", DB::hideSecretValue},
     /// DLF credentials
     {"dlf_access_key_id", DB::hideSecretValue},
     {"dlf_access_key_secret", DB::hideSecretValue},
