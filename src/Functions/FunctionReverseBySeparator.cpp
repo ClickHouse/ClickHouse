@@ -37,7 +37,7 @@ public:
         findNextSeparator();
     }
 
-    bool hasNext() const { return current_pos <= haystack.size(); }
+    [[nodiscard]] bool hasNext() const { return current_pos <= haystack.size(); }
 
     std::string_view nextToken()
     {

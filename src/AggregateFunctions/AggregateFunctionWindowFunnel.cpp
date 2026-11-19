@@ -69,7 +69,7 @@ struct AggregateFunctionWindowFunnelData
     bool sorted = true;
     TimestampEvents events_list;
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         return events_list.size();
     }
@@ -180,7 +180,7 @@ struct AggregateFunctionWindowFunnelStrictOnceData
     UInt64 next_unique_id = 1;
     bool sorted = true;
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         return events_list.size();
     }
@@ -506,7 +506,7 @@ private:
     }
 
 public:
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return "windowFunnel";
     }
@@ -548,7 +548,7 @@ public:
         }
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
