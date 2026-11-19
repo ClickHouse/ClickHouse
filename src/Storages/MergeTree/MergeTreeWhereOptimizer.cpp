@@ -476,10 +476,12 @@ static bool mustFollowPrecedingConditions(const RPNBuilderTreeNode & node, Short
         }
         else if (dag_node->type == ActionsDAG::ActionType::FUNCTION)
         {
+            /// The constant columns are passed as well: with them `canThrow` knows, for example, that `LIKE` with
+            /// a constant pattern cannot throw, as in `prewhereConditionCannotThrow`.
             DataTypesWithConstInfo arguments;
             arguments.reserve(dag_node->children.size());
             for (const auto * child : dag_node->children)
-                arguments.push_back({child->result_type, child->column != nullptr});
+                arguments.push_back({child->result_type, child->column != nullptr, child->column.get()});
 
             const auto & function = *dag_node->function_base;
             lazy = force_lazy_execution || has_lazy_child || function.isSuitableForShortCircuitArgumentsExecution(arguments);
