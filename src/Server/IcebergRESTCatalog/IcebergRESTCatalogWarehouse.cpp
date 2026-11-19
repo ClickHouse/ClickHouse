@@ -193,10 +193,27 @@ IcebergRESTCatalogWarehouse::RenameTableResult IcebergRESTCatalogWarehouse::rena
     return store->renameTable(source_ns, source, dest_ns, dest);
 }
 
-IcebergRESTCatalogWarehouse::UpdateTableResult IcebergRESTCatalogWarehouse::updateTable(
-    const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected, const IcebergTablePointer & new_pointer) const
+IcebergRESTCatalogWarehouse::UpdateTablesResult IcebergRESTCatalogWarehouse::updateTables(const std::vector<TableUpdate> & updates) const
 {
-    return store->updateTable(ns, table, expected, new_pointer);
+    return store->updateTables(updates);
+}
+
+void IcebergRESTCatalogWarehouse::checkStorageAccess() const
+{
+#if USE_AWS_S3
+    /// The credentials stay empty when STS refuses the role. S3 requests are then sent anonymously, and a public bucket accepts them.
+    const auto credentials = object_storage->getS3StorageClient()->getCredentials();
+    if (credentials.GetAWSAccessKeyId().empty() || credentials.GetAWSSecretKey().empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot assume the role of warehouse {}. See the server log for the STS error", name);
+#endif
+
+    /// The trailing slash keeps the listing inside the warehouse. A role can be restricted to this prefix.
+    auto prefix = objectKey(base_location);
+    if (!prefix.empty())
+        prefix += '/';
+
+    RelativePathsWithMetadata children;
+    object_storage->listObjects(prefix, children, /*max_keys*/ 1);
 }
 
 String stripTrailingSlashes(String location)
