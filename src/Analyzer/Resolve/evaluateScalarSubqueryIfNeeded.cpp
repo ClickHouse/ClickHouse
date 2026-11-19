@@ -4,8 +4,12 @@
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/IdentifierNode.h>
+#include <Analyzer/MatcherNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 #include <Planner/Utils.h>
@@ -18,19 +22,34 @@
 
 #include <Core/Settings.h>
 #include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
 #include <Access/EnabledQuota.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/ProfileEvents.h>
+
+#include <Poco/String.h>
+#include <fmt/format.h>
+
+#include <algorithm>
+#include <ranges>
 
 namespace ProfileEvents
 {
@@ -59,6 +78,12 @@ namespace Setting
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsBool enable_scalar_subquery_optimization;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool optimize_merge_scalar_subqueries;
+    extern const SettingsBool empty_result_for_aggregation_by_empty_set;
+    extern const SettingsMap additional_table_filters;
+    extern const SettingsUInt64 max_columns_to_read;
+    extern const SettingsUInt64 max_temporary_columns;
+    extern const SettingsUInt64 max_temporary_non_const_columns;
 }
 
 namespace
@@ -82,6 +107,1201 @@ bool subtreeHasViewSource(const IQueryTreeNode * node, const Context & context)
     return false;
 }
 
+void wrapScalarBlockWithNullableOrTuple(Block & block)
+{
+    block = materializeBlock(block);
+    if (block.columns() == 1)
+    {
+        auto & column = block.getByPosition(0);
+        /// Here we wrap type to nullable if we can.
+        /// It is needed cause if subquery return no rows, it's result will be Null.
+        /// In case of many columns, do not check it cause tuple can't be nullable.
+        if (!column.type->isNullable() && column.type->canBeInsideNullable())
+        {
+            column.type = makeNullable(column.type);
+            column.column = makeNullable(column.column);
+        }
+    }
+    else
+    {
+        /** Make unique column names for tuple.
+          *
+          * Example: SELECT (SELECT 2 AS x, x)
+          */
+        makeUniqueColumnNamesInBlock(block);
+        block = Block({{
+            ColumnTuple::create(block.getColumns()),
+            std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames()),
+            "tuple"
+        }});
+    }
+}
+
+ContextMutablePtr createSubqueryExecutionContext(const ContextPtr & source_context)
+{
+    auto subquery_context = Context::createCopy(source_context);
+
+    Settings subquery_settings = source_context->getSettingsCopy();
+    subquery_settings[Setting::max_result_rows] = 1;
+    subquery_settings[Setting::extremes] = false;
+    subquery_settings[Setting::implicit_table_at_top_level] = "";
+    /// When execute `INSERT INTO t WITH ... SELECT ...`, it may lead to `Unknown columns`
+    /// exception with this settings enabled(https://github.com/ClickHouse/ClickHouse/issues/52494).
+    subquery_settings[Setting::use_structure_from_insertion_table_in_table_functions] = false;
+    subquery_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+    subquery_context->setSettings(subquery_settings);
+
+    return subquery_context;
+}
+
+bool hasSimpleSelectQueryClauses(const QueryNode & query)
+{
+    return !query.isCorrelated()
+        && !query.hasSettingsChanges()
+        && !query.isCTE()
+        && !query.isMaterialized()
+        && !query.isRecursiveWith()
+        && !query.isDistinct()
+        && !query.isGroupByAll()
+        && !query.isGroupByWithTotals()
+        && !query.isGroupByWithRollup()
+        && !query.isGroupByWithCube()
+        && !query.isGroupByWithGroupingSets()
+        && !query.isOrderByAll()
+        && !query.isLimitByAll()
+        && !query.isLimitAfterAll()
+        && !query.isLimitWithTies()
+        && !query.isShuffle()
+        && !query.hasWith()
+        && !query.hasPrewhere()
+        && query.hasWhere()
+        && !query.hasGroupBy()
+        && !query.hasHaving()
+        && !query.hasWindow()
+        && !query.hasQualify()
+        && !query.hasOrderBy()
+        && !query.hasInterpolate()
+        && !query.hasLimitByLimit()
+        && !query.hasLimitByOffset()
+        && !query.hasLimitBy()
+        && !query.hasLimit()
+        && !query.hasLimitAfter()
+        && !query.hasLimitUntil()
+        && !query.hasOffset();
+}
+
+bool hasSupportedTableModifiers(const std::optional<TableExpressionModifiers> & modifiers)
+{
+    if (!modifiers)
+        return true;
+
+    return !modifiers->hasSampleSizeRatio()
+        && !modifiers->hasSampleOffsetRatio()
+        && !modifiers->hasStream();
+}
+
+bool isNarrowColumnType(const DataTypePtr & type)
+{
+    auto unwrapped = removeNullable(removeLowCardinality(type));
+    if (unwrapped->isValueRepresentedByNumber())
+        return true;
+
+    return isFixedString(unwrapped) && unwrapped->getSizeOfValueInMemory() <= 32;
+}
+
+bool areTypesSafeToCompare(const DataTypePtr & lhs, const DataTypePtr & rhs)
+{
+    auto t0 = removeNullable(removeLowCardinality(lhs));
+    auto t1 = removeNullable(removeLowCardinality(rhs));
+
+    if (t0->onlyNull() || t1->onlyNull())
+        return !t0->hasDynamicSubcolumnsData() && !t1->hasDynamicSubcolumnsData();
+
+    if ((isInteger(t0) || isFloat(t0)) && (isInteger(t1) || isFloat(t1)))
+        return true;
+
+    /// Rescaling a decimal or a date/time to a different scale can overflow on rows that the
+    /// subquery's own filter would have excluded, so only same-scale decimals may be compared.
+    if (isDecimal(t0) && isDecimal(t1))
+        return getDecimalScale(*t0) == getDecimalScale(*t1)
+            && !WhichDataType(t0).isDecimal256() && !WhichDataType(t1).isDecimal256();
+
+    if (isDecimal(t0) || isDecimal(t1))
+        return false;
+
+    if (isStringOrFixedString(t0) && isStringOrFixedString(t1))
+        return true;
+
+    return t0->equals(*t1) && !t0->hasDynamicSubcolumnsData();
+}
+
+bool isAllowedAggregateName(const String & name_lowercase, bool & is_count)
+{
+    if (name_lowercase == "count" || name_lowercase == "countornull")
+    {
+        is_count = true;
+        return true;
+    }
+
+    is_count = false;
+    return name_lowercase == "sum" || name_lowercase == "sumornull"
+        || name_lowercase == "avg" || name_lowercase == "avgornull"
+        || name_lowercase == "min" || name_lowercase == "minornull"
+        || name_lowercase == "max" || name_lowercase == "maxornull";
+}
+
+bool isSafeLogicalOrNullFunction(const String & name_lowercase)
+{
+    return name_lowercase == "and" || name_lowercase == "or" || name_lowercase == "xor"
+        || name_lowercase == "not" || name_lowercase == "isnull" || name_lowercase == "isnotnull";
+}
+
+bool isSafeComparisonFunction(const String & name_lowercase)
+{
+    return name_lowercase == "equals" || name_lowercase == "notequals"
+        || name_lowercase == "less" || name_lowercase == "greater"
+        || name_lowercase == "lessorequals" || name_lowercase == "greaterorequals";
+}
+
+bool isSafeResolvedExpression(
+    const QueryTreeNodePtr & expr,
+    const TableNode & expected_table,
+    const ColumnsDescription & columns_desc,
+    bool & all_columns_narrow)
+{
+    if (!expr)
+        return false;
+
+    if (const auto * constant = expr->as<ConstantNode>())
+        return constant->isDeterministic() && !constant->hasSourceExpression();
+
+    if (const auto * column = expr->as<ColumnNode>())
+    {
+        if (column->getColumnSourceOrNull().get() != &expected_table || column->hasExpression())
+            return false;
+
+        const auto & col_name = column->getColumnName();
+        if (!columns_desc.hasPhysical(col_name))
+            return false;
+
+        if (const auto default_desc = columns_desc.getDefault(col_name); default_desc && default_desc->expression)
+            return false;
+
+        if (!isNarrowColumnType(column->getColumnType()))
+            all_columns_narrow = false;
+
+        return true;
+    }
+
+    const auto * function = expr->as<FunctionNode>();
+    if (!function || !function->isOrdinaryFunction() || !function->isResolved() || function->hasWindow())
+        return false;
+
+    if (!function->getParameters().getNodes().empty() || function->getNullsAction() != NullsAction::EMPTY)
+        return false;
+
+    if (auto fn_base = function->getFunction(); !fn_base || !fn_base->isDeterministic() || !fn_base->isDeterministicInScopeOfQuery())
+        return false;
+
+    const String lower_name = Poco::toLower(function->getFunctionName());
+    const auto & args = function->getArguments().getNodes();
+
+    if (isSafeComparisonFunction(lower_name))
+    {
+        if (args.size() != 2)
+            return false;
+        if (!areTypesSafeToCompare(args[0]->getResultType(), args[1]->getResultType()))
+            return false;
+    }
+    else if (isSafeLogicalOrNullFunction(lower_name))
+    {
+        if (args.empty())
+            return false;
+    }
+    else
+    {
+        return false;
+    }
+
+    return std::ranges::all_of(args, [&](const QueryTreeNodePtr & child)
+    {
+        return isSafeResolvedExpression(child, expected_table, columns_desc, all_columns_narrow);
+    });
+}
+
+void splitConjunctionsQueryTree(const QueryTreeNodePtr & node, QueryTreeNodes & out)
+{
+    if (!node)
+        return;
+
+    if (const auto * fn = node->as<FunctionNode>();
+        fn && fn->isOrdinaryFunction() && fn->getFunctionName() == "and" && fn->getParameters().getNodes().empty())
+    {
+        for (const auto & child : fn->getArguments().getNodes())
+            splitConjunctionsQueryTree(child, out);
+        return;
+    }
+
+    out.push_back(node);
+}
+
+bool expressionReferencesAnyColumn(const QueryTreeNodePtr & node, const std::unordered_set<String> & target_columns)
+{
+    if (!node || target_columns.empty())
+        return false;
+
+    if (const auto * col = node->as<ColumnNode>())
+        return target_columns.contains(col->getColumnName());
+
+    for (const auto & child : node->getChildren())
+        if (child && expressionReferencesAnyColumn(child, target_columns))
+            return true;
+
+    return false;
+}
+
+std::unordered_set<String> collectIndexAndKeyColumns(const StorageInMemoryMetadata & metadata)
+{
+    std::unordered_set<String> result;
+    const auto key_column_lists = {
+        metadata.getColumnsRequiredForPartitionKey(),
+        metadata.getColumnsRequiredForSortingKey(),
+        metadata.getColumnsRequiredForPrimaryKey(),
+        metadata.getColumnsRequiredForSampling()};
+    for (const auto & names : key_column_lists)
+    {
+        result.insert(names.begin(), names.end());
+    }
+
+    for (const auto & index : metadata.getSecondaryIndices())
+    {
+        result.insert(index.column_names.begin(), index.column_names.end());
+        if (index.expression)
+        {
+            auto required = index.expression->getRequiredColumns();
+            result.insert(required.begin(), required.end());
+        }
+    }
+
+    return result;
+}
+
+struct ResolvedScalarCandidate
+{
+    QueryTreeNodePtrWithHash node_with_hash;
+    String str_hash;
+    TableNodePtr table_node;
+    QueryTreeNodePtr agg_node_ptr;
+    const FunctionNode * agg_node = nullptr;
+    DataTypePtr original_result_type;
+    QueryTreeNodePtr where_expr;
+    QueryTreeNodes conjuncts;
+    bool all_columns_narrow = true;
+    String sub_group_key;
+};
+
+/// Identifies the table a candidate reads, including the `FINAL` modifier.
+String computeCandidateTableKey(const TableNode & table_node)
+{
+    String key = table_node.isTemporaryTable()
+        ? ("T:" + table_node.getTemporaryTableName())
+        : ("C:" + table_node.getStorageID().getFullNameNotQuoted());
+
+    if (const auto & modifiers = table_node.getTableExpressionModifiers(); modifiers && modifiers->hasFinal())
+        key += ":FINAL";
+
+    return key;
+}
+
+String computeCandidateSubGroupKey(
+    const TableNode & table_node,
+    const QueryTreeNodes & conjuncts,
+    bool all_columns_narrow,
+    const std::unordered_set<String> & index_columns)
+{
+    String key = computeCandidateTableKey(table_node);
+
+    std::vector<String> hash_parts;
+    QueryTreeNodePtrWithHashIgnoreAliasesSet seen;
+
+    for (const auto & conjunct : conjuncts)
+    {
+        if (all_columns_narrow && !expressionReferencesAnyColumn(conjunct, index_columns))
+            continue;
+
+        QueryTreeNodePtrWithHashIgnoreAliases item(conjunct);
+        if (seen.insert(item).second)
+            hash_parts.push_back(fmt::format("{:016x}{:016x}", item.hash.high64, item.hash.low64));
+    }
+
+    std::ranges::sort(hash_parts);
+    key += all_columns_narrow ? "|K:" : "|W:";
+    for (const auto & part : hash_parts)
+    {
+        key += part;
+        key += ',';
+    }
+
+    return key;
+}
+
+std::optional<ResolvedScalarCandidate> extractResolvedScalarCandidate(
+    const QueryTreeNodePtr & resolved_node,
+    const QueryTreeNodePtrWithHash & node_with_hash,
+    bool view_source_in_subqueries)
+{
+    const auto * query = resolved_node->as<QueryNode>();
+    if (!query || !query->isResolved() || !hasSimpleSelectQueryClauses(*query))
+        return std::nullopt;
+
+    const auto & query_ctx = query->getContext();
+    if (getViewSourceIfRead(query_ctx, view_source_in_subqueries) && subtreeHasViewSource(query, *query_ctx))
+        return std::nullopt;
+
+    auto table_node = std::dynamic_pointer_cast<TableNode>(query->getJoinTreeNode());
+    if (!table_node || table_node->isMaterializedCTE() || !hasSupportedTableModifiers(table_node->getTableExpressionModifiers()))
+        return std::nullopt;
+
+    const auto & storage = table_node->getStorage();
+    const auto & snapshot = table_node->getStorageSnapshot();
+    if (!storage || !snapshot || !snapshot->metadata)
+        return std::nullopt;
+
+    const bool is_merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()) != nullptr;
+    const bool is_memory = storage->getName() == "Memory";
+    if (!is_merge_tree && !is_memory)
+        return std::nullopt;
+
+    const auto & metadata = *snapshot->metadata;
+    if (metadata.hasProjections())
+        return std::nullopt;
+
+    const auto & projection_nodes = query->getProjection().getNodes();
+    if (projection_nodes.size() != 1 || query->getProjectionColumns().size() != 1)
+        return std::nullopt;
+
+    const auto & agg_node_ptr = projection_nodes[0];
+    const auto * agg_node = agg_node_ptr->as<FunctionNode>();
+    if (!agg_node || !agg_node->isAggregateFunction() || !agg_node->isResolved() || agg_node->hasWindow())
+        return std::nullopt;
+
+    if (!agg_node->getParameters().getNodes().empty() || agg_node->getNullsAction() != NullsAction::EMPTY)
+        return std::nullopt;
+
+    bool is_count = false;
+    if (!isAllowedAggregateName(Poco::toLower(agg_node->getFunctionName()), is_count))
+        return std::nullopt;
+
+    const auto & agg_args = agg_node->getArguments().getNodes();
+    if (is_count ? (agg_args.size() > 1) : (agg_args.size() != 1))
+        return std::nullopt;
+
+    const auto & columns_desc = metadata.getColumns();
+    bool all_columns_narrow = true;
+
+    for (const auto & arg : agg_args)
+    {
+        if (!isSafeResolvedExpression(arg, *table_node, columns_desc, all_columns_narrow))
+            return std::nullopt;
+    }
+
+    if (!isSafeResolvedExpression(query->getWhere(), *table_node, columns_desc, all_columns_narrow))
+        return std::nullopt;
+
+    QueryTreeNodes conjuncts;
+    splitConjunctionsQueryTree(query->getWhere(), conjuncts);
+
+    const auto index_columns = collectIndexAndKeyColumns(metadata);
+    String sub_group_key = computeCandidateSubGroupKey(*table_node, conjuncts, all_columns_narrow, index_columns);
+
+    return ResolvedScalarCandidate{
+        .node_with_hash = node_with_hash,
+        .str_hash = DB::toString(node_with_hash.hash),
+        .table_node = std::move(table_node),
+        .agg_node_ptr = agg_node_ptr,
+        .agg_node = agg_node,
+        .original_result_type = query->getProjectionColumns()[0].type,
+        .where_expr = query->getWhere(),
+        .conjuncts = std::move(conjuncts),
+        .all_columns_narrow = all_columns_narrow,
+        .sub_group_key = std::move(sub_group_key),
+    };
+}
+
+bool hasAnyExpressionAlias(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+    if (node->hasAlias())
+        return true;
+
+    return std::ranges::any_of(node->getChildren(), [](const QueryTreeNodePtr & child)
+    {
+        return child && hasAnyExpressionAlias(child);
+    });
+}
+
+bool isNameShadowedInScopeChain(const String & name, const IdentifierResolveScope * start_scope, bool check_functions)
+{
+    for (const auto * current = start_scope; current != nullptr; current = current->parent_scope)
+    {
+        if (check_functions)
+        {
+            if (current->aliases.alias_name_to_lambda_node.contains(name)
+                || current->global_with_aliases.alias_name_to_lambda_node.contains(name))
+                return true;
+        }
+        else
+        {
+            if (current->aliases.alias_name_to_expression_node.contains(name)
+                || current->global_with_aliases.alias_name_to_expression_node.contains(name)
+                || current->cte_name_to_query_node.contains(name))
+                return true;
+        }
+    }
+
+    return false;
+}
+
+bool isCustomFunctionName(const String & function_name, const ContextPtr & context, const IdentifierResolveScope * scope_chain)
+{
+    if (isNameShadowedInScopeChain(function_name, scope_chain, /*check_functions=*/ true))
+        return true;
+    if (UserDefinedSQLFunctionFactory::instance().tryGet(function_name))
+        return true;
+    if (UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, context)) /// NOLINT(readability-static-accessed-through-instance)
+        return true;
+    return false;
+}
+
+DataTypePtr validateUnresolvedExpressionAndInferType(
+    const QueryTreeNodePtr & expr,
+    const TableNode & target_table,
+    const String & table_qualifier,
+    bool table_has_alias,
+    const ColumnsDescription & columns_desc,
+    const ContextPtr & query_context,
+    const IdentifierResolveScope * parent_scope)
+{
+    if (!expr)
+        return nullptr;
+
+    if (const auto * constant = expr->as<ConstantNode>())
+    {
+        if (!constant->isDeterministic() || constant->hasSourceExpression())
+            return nullptr;
+        return constant->getResultType();
+    }
+
+    if (const auto * id_node = expr->as<IdentifierNode>())
+    {
+        const auto & id = id_node->getIdentifier();
+        if (id.empty() || isNameShadowedInScopeChain(id[0], parent_scope, /*check_functions=*/ false))
+            return nullptr;
+
+        String col_name;
+        if (id.getPartsSize() == 1)
+        {
+            col_name = id[0];
+        }
+        else if (id.getPartsSize() == 2)
+        {
+            if (id[0] != table_qualifier)
+                return nullptr;
+            col_name = id[1];
+        }
+        else if (id.getPartsSize() == 3 && !table_has_alias && !target_table.isTemporaryTable())
+        {
+            const auto & storage_id = target_table.getStorageID();
+            if (id[0] != storage_id.getDatabaseName() || id[1] != storage_id.getTableName())
+                return nullptr;
+            col_name = id[2];
+        }
+        else
+        {
+            return nullptr;
+        }
+
+        if (!columns_desc.hasPhysical(col_name))
+            return nullptr;
+
+        if (const auto default_desc = columns_desc.getDefault(col_name); default_desc && default_desc->expression)
+            return nullptr;
+
+        if (!target_table.isTemporaryTable())
+        {
+            const auto & storage_id = target_table.getStorageID();
+            const auto access_rights = query_context->getAccess()->getAccessRightsWithImplicit();
+            if (!access_rights->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, col_name))
+                return nullptr;
+        }
+
+        return columns_desc.getPhysical(col_name).type;
+    }
+
+    const auto * fn = expr->as<FunctionNode>();
+    if (!fn || fn->hasWindow() || !fn->getParameters().getNodes().empty() || fn->getNullsAction() != NullsAction::EMPTY)
+        return nullptr;
+
+    if (isCustomFunctionName(fn->getFunctionName(), query_context, parent_scope))
+        return nullptr;
+
+    const String lower_name = Poco::toLower(fn->getFunctionName());
+    const auto & args = fn->getArguments().getNodes();
+
+    if (isSafeComparisonFunction(lower_name))
+    {
+        if (args.size() != 2)
+            return nullptr;
+
+        auto lhs_type = validateUnresolvedExpressionAndInferType(
+            args[0], target_table, table_qualifier, table_has_alias, columns_desc, query_context, parent_scope);
+        auto rhs_type = validateUnresolvedExpressionAndInferType(
+            args[1], target_table, table_qualifier, table_has_alias, columns_desc, query_context, parent_scope);
+        if (!lhs_type || !rhs_type || !areTypesSafeToCompare(lhs_type, rhs_type))
+            return nullptr;
+
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    if (lower_name == "not" || lower_name == "isnull" || lower_name == "isnotnull")
+    {
+        if (args.size() != 1)
+            return nullptr;
+
+        auto arg_type = validateUnresolvedExpressionAndInferType(
+            args[0], target_table, table_qualifier, table_has_alias, columns_desc, query_context, parent_scope);
+        return arg_type ? std::make_shared<DataTypeUInt8>() : nullptr;
+    }
+
+    if (lower_name == "and" || lower_name == "or" || lower_name == "xor")
+    {
+        if (args.size() < 2)
+            return nullptr;
+
+        for (const auto & child : args)
+        {
+            auto child_type = validateUnresolvedExpressionAndInferType(
+                child, target_table, table_qualifier, table_has_alias, columns_desc, query_context, parent_scope);
+            if (!child_type || !isNarrowColumnType(child_type))
+                return nullptr;
+        }
+
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    return nullptr;
+}
+
+bool isUnresolvedSiblingSafeToResolve(
+    const QueryNode & sibling,
+    const TableNode & target_table,
+    const ColumnsDescription & columns_desc,
+    const IdentifierResolveScope * parent_scope)
+{
+    if (!hasSimpleSelectQueryClauses(sibling))
+        return false;
+
+    const auto * table_id_node = sibling.getJoinTreeNode()->as<IdentifierNode>();
+    if (!table_id_node)
+        return false;
+
+    if (table_id_node->getTableExpressionModifiers() != target_table.getTableExpressionModifiers())
+        return false;
+
+    const auto & table_id = table_id_node->getIdentifier();
+    const auto & sibling_ctx = sibling.getContext();
+
+    if (table_id.getPartsSize() == 1)
+    {
+        if (parent_scope)
+        {
+            for (const auto * s = parent_scope; s != nullptr; s = s->parent_scope)
+                if (s->cte_name_to_query_node.contains(table_id[0]))
+                    return false;
+        }
+
+        if (target_table.isTemporaryTable())
+        {
+            if (table_id[0] != target_table.getTemporaryTableName())
+                return false;
+        }
+        else
+        {
+            if (sibling_ctx->tryResolveStorageID(StorageID{"", table_id[0]}, Context::ResolveExternal))
+                return false;
+
+            const auto & expected_id = target_table.getStorageID();
+            if (expected_id.getDatabaseName() != sibling_ctx->getCurrentDatabase()
+                || expected_id.getTableName() != table_id[0])
+                return false;
+        }
+    }
+    else if (table_id.getPartsSize() == 2 && !target_table.isTemporaryTable())
+    {
+        const auto & expected_id = target_table.getStorageID();
+        if (expected_id.getDatabaseName() != table_id[0] || expected_id.getTableName() != table_id[1])
+            return false;
+    }
+    else
+    {
+        return false;
+    }
+
+    if (hasAnyExpressionAlias(sibling.getProjectionNode()) || hasAnyExpressionAlias(sibling.getWhere()))
+        return false;
+
+    const auto & proj_nodes = sibling.getProjection().getNodes();
+    if (proj_nodes.size() != 1)
+        return false;
+
+    const auto * agg_fn = proj_nodes[0]->as<FunctionNode>();
+    if (!agg_fn || agg_fn->hasWindow() || !agg_fn->getParameters().getNodes().empty() || agg_fn->getNullsAction() != NullsAction::EMPTY)
+        return false;
+
+    if (isCustomFunctionName(agg_fn->getFunctionName(), sibling_ctx, parent_scope))
+        return false;
+
+    bool is_count = false;
+    const String lower_agg = Poco::toLower(agg_fn->getFunctionName());
+    if (!isAllowedAggregateName(lower_agg, is_count))
+        return false;
+
+    const String table_qualifier = table_id_node->hasAlias() ? table_id_node->getAlias() : table_id.back();
+    const bool table_has_alias = table_id_node->hasAlias();
+
+    const auto & agg_args = agg_fn->getArguments().getNodes();
+    if (is_count)
+    {
+        if (agg_args.size() > 1)
+            return false;
+        if (agg_args.size() == 1)
+        {
+            if (const auto * matcher = agg_args[0]->as<MatcherNode>())
+            {
+                if (!matcher->isAsteriskMatcher() || !matcher->isUnqualified() || !matcher->getColumnTransformers().getNodes().empty())
+                    return false;
+            }
+            else if (!validateUnresolvedExpressionAndInferType(
+                         agg_args[0], target_table, table_qualifier, table_has_alias, columns_desc, sibling_ctx, parent_scope))
+            {
+                return false;
+            }
+        }
+    }
+    else
+    {
+        if (agg_args.size() != 1)
+            return false;
+
+        auto arg_type = validateUnresolvedExpressionAndInferType(
+            agg_args[0], target_table, table_qualifier, table_has_alias, columns_desc, sibling_ctx, parent_scope);
+        if (!arg_type)
+            return false;
+
+        auto unwrapped_arg = removeNullable(removeLowCardinality(arg_type));
+        if ((lower_agg.starts_with("sum") || lower_agg.starts_with("avg")) && (!isNumber(unwrapped_arg) || isBool(unwrapped_arg)))
+            return false;
+    }
+
+    auto where_type = validateUnresolvedExpressionAndInferType(
+        sibling.getWhere(), target_table, table_qualifier, table_has_alias, columns_desc, sibling_ctx, parent_scope);
+    return where_type && isNarrowColumnType(where_type);
+}
+
+void collectCandidateSubqueryNodes(
+    const QueryTreeNodePtr & node,
+    const ContextPtr & context,
+    const IdentifierResolveScope * parent_scope,
+    QueryTreeNodes & out)
+{
+    if (!node)
+        return;
+
+    const auto node_type = node->getNodeType();
+    if (node_type == QueryTreeNodeType::QUERY)
+    {
+        out.push_back(node);
+        return;
+    }
+
+    if (node_type == QueryTreeNodeType::UNION
+        || node_type == QueryTreeNodeType::LAMBDA
+        || node_type == QueryTreeNodeType::WINDOW
+        || node_type == QueryTreeNodeType::TABLE
+        || node_type == QueryTreeNodeType::TABLE_FUNCTION)
+    {
+        return;
+    }
+
+    if (const auto * fn = node->as<FunctionNode>())
+    {
+        if (fn->hasWindow())
+            return;
+
+        const auto & fn_name = fn->getFunctionName();
+        const String lower_name = Poco::toLower(fn_name);
+        if (lower_name == "exists" || lower_name == "notexists" || isNameOfInFunction(fn_name))
+            return;
+
+        if (!fn->isResolved() && isCustomFunctionName(fn_name, context, parent_scope))
+            return;
+
+        /// Do not pre-evaluate inside constant-short-circuitable AND/OR trees where the analyzer's
+        /// early short-circuit optimization skips executing the dead scalar subquery branch.
+        if (!fn->isResolved() && (lower_name == "and" || lower_name == "or"))
+        {
+            const bool has_const_child = std::ranges::any_of(fn->getArguments().getNodes(), [](const QueryTreeNodePtr & arg)
+            {
+                return arg && arg->as<ConstantNode>() != nullptr;
+            });
+            if (has_const_child)
+                return;
+        }
+
+        for (const auto & arg : fn->getArguments().getNodes())
+            collectCandidateSubqueryNodes(arg, context, parent_scope, out);
+        return;
+    }
+
+    for (const auto & child : node->getChildren())
+        collectCandidateSubqueryNodes(child, context, parent_scope, out);
+}
+
+void rebindColumnsToTable(const QueryTreeNodePtr & node, const TableExpressionNodePtr & target_table)
+{
+    if (!node)
+        return;
+
+    if (auto * col = node->as<ColumnNode>())
+    {
+        col->setColumnSource(target_table);
+        return;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child)
+            rebindColumnsToTable(child, target_table);
+}
+
+QueryTreeNodePtr cloneAndRebindToTable(const QueryTreeNodePtr & node, const TableExpressionNodePtr & target_table)
+{
+    auto cloned = node->clone();
+    cloned->removeAlias();
+    rebindColumnsToTable(cloned, target_table);
+    return cloned;
+}
+
+QueryTreeNodePtr ensureBoolCondition(QueryTreeNodePtr cond, const ContextPtr & context)
+{
+    const auto & type = cond->getResultType();
+    if (!type->lowCardinality() && isUInt8(removeNullable(type)))
+        return cond;
+
+    return createResolvedFunction(context, "toBool", {std::move(cond)});
+}
+
+QueryTreeNodePtr combineConditions(
+    const QueryTreeNodes & conditions,
+    const String & op_name,
+    const TableExpressionNodePtr & target_table,
+    const ContextPtr & context)
+{
+    if (conditions.empty())
+        return nullptr;
+
+    if (conditions.size() == 1)
+        return cloneAndRebindToTable(conditions[0], target_table);
+
+    QueryTreeNodes args;
+    args.reserve(conditions.size());
+    for (const auto & cond : conditions)
+        args.push_back(ensureBoolCondition(cloneAndRebindToTable(cond, target_table), context));
+
+    return createResolvedFunction(context, op_name, std::move(args));
+}
+
+struct SplitQueryTreeConditions
+{
+    QueryTreeNodes shared;
+    std::vector<QueryTreeNodes> own;
+};
+
+SplitQueryTreeConditions splitSharedQueryTreeConjuncts(const std::vector<ResolvedScalarCandidate> & group)
+{
+    SplitQueryTreeConditions result;
+    result.own.resize(group.size());
+
+    QueryTreeNodePtrWithHashIgnoreAliasesSet shared_set;
+    for (const auto & conjunct : group.front().conjuncts)
+    {
+        QueryTreeNodePtrWithHashIgnoreAliases key(conjunct);
+        if (shared_set.contains(key))
+            continue;
+
+        const bool in_all = std::ranges::all_of(group, [&](const ResolvedScalarCandidate & candidate)
+        {
+            return std::ranges::any_of(candidate.conjuncts, [&](const QueryTreeNodePtr & other)
+            {
+                return QueryTreeNodePtrWithHashIgnoreAliases(other) == key;
+            });
+        });
+
+        if (in_all)
+        {
+            shared_set.insert(key);
+            result.shared.push_back(conjunct);
+        }
+    }
+
+    for (size_t i = 0; i < group.size(); ++i)
+    {
+        for (const auto & conjunct : group[i].conjuncts)
+        {
+            if (!shared_set.contains(QueryTreeNodePtrWithHashIgnoreAliases(conjunct)))
+                result.own[i].push_back(conjunct);
+        }
+    }
+
+    return result;
+}
+
+QueryTreeNodePtr buildMergedWhereQueryTree(
+    const SplitQueryTreeConditions & split,
+    const TableExpressionNodePtr & target_table,
+    const ContextPtr & context)
+{
+    QueryTreeNodePtr shared = combineConditions(split.shared, "and", target_table, context);
+
+    QueryTreeNodes unique_alternatives;
+    QueryTreeNodePtrWithHashIgnoreAliasesSet seen_alternatives;
+
+    for (const auto & own : split.own)
+    {
+        if (own.empty())
+            return shared;
+
+        auto branch = combineConditions(own, "and", target_table, context);
+        QueryTreeNodePtrWithHashIgnoreAliases branch_key(branch);
+        if (seen_alternatives.insert(branch_key).second)
+            unique_alternatives.push_back(std::move(branch));
+    }
+
+    QueryTreeNodePtr disjunction;
+    if (unique_alternatives.size() == 1)
+    {
+        disjunction = std::move(unique_alternatives[0]);
+    }
+    else
+    {
+        QueryTreeNodes bool_alternatives;
+        bool_alternatives.reserve(unique_alternatives.size());
+        for (auto & alt : unique_alternatives)
+            bool_alternatives.push_back(ensureBoolCondition(std::move(alt), context));
+        disjunction = createResolvedFunction(context, "or", std::move(bool_alternatives));
+    }
+
+    if (!shared)
+        return disjunction;
+
+    return createResolvedFunction(
+        context,
+        "and",
+        {ensureBoolCondition(std::move(shared), context), ensureBoolCondition(std::move(disjunction), context)});
+}
+
+}
+
+bool QueryAnalyzer::tryEvaluateMergedScalarSubqueries(
+    const QueryTreeNodePtr & first_node,
+    const QueryTreeNodePtrWithHash & first_node_with_hash,
+    IdentifierResolveScope & scope,
+    bool can_use_global_scalars)
+{
+    if (!scope.parent_scope)
+        return false;
+
+    const auto & current_settings = scope.context->getSettingsRef();
+    /// A merged scan reads the columns of all subqueries in one step, so limits that are checked per
+    /// read step could reject it while every original subquery fits.
+    if (!current_settings[Setting::optimize_merge_scalar_subqueries]
+        || current_settings[Setting::empty_result_for_aggregation_by_empty_set]
+        || current_settings[Setting::max_columns_to_read]
+        || current_settings[Setting::max_temporary_columns]
+        || current_settings[Setting::max_temporary_non_const_columns]
+        /// Table filters are keyed by table alias, and the merged scan keeps only one member's
+        /// table expression, so a member could lose or inherit another member's filter.
+        || !current_settings[Setting::additional_table_filters].value.empty())
+        return false;
+
+    auto * enclosing_query_scope = scope.parent_scope->getNearestQueryScope();
+    if (!enclosing_query_scope || !enclosing_query_scope->scope_node)
+        return false;
+
+    const auto * enclosing_query = enclosing_query_scope->scope_node->as<QueryNode>();
+    if (!enclosing_query)
+        return false;
+
+    auto first_candidate = extractResolvedScalarCandidate(first_node, first_node_with_hash, view_source_in_subqueries);
+    if (!first_candidate)
+        return false;
+
+    auto & scalars_cache = can_use_global_scalars ? scalar_subquery_to_scalar_value_global : scalar_subquery_to_scalar_value_local;
+    const auto & target_table = *first_candidate->table_node;
+
+    /// Resolve the siblings over this table once per enclosing query and bucket them by group key.
+    /// Re-resolving every sibling for each new group key would make analysis quadratic in the number
+    /// of scalar subqueries that cannot be merged (for example, ones over distinct primary key ranges).
+    auto [table_candidates_it, inserted] = mergeable_scalar_subqueries.try_emplace(
+        std::make_pair(static_cast<const IQueryTreeNode *>(enclosing_query), computeCandidateTableKey(target_table)));
+    auto & table_candidates = table_candidates_it->second;
+
+    if (inserted)
+    {
+        QueryTreeNodes raw_subquery_nodes;
+        collectCandidateSubqueryNodes(
+            enclosing_query->getProjectionNode(),
+            enclosing_query->getContext(),
+            scope.parent_scope,
+            raw_subquery_nodes);
+
+        const auto & columns_desc = target_table.getStorageSnapshot()->metadata->getColumns();
+
+        for (const auto & raw_subquery : raw_subquery_nodes)
+        {
+            if (raw_subquery.get() == first_node.get())
+                continue;
+
+            const auto * sibling_query = raw_subquery->as<QueryNode>();
+            if (!sibling_query)
+                continue;
+
+            if (!sibling_query->isResolved() && !isUnresolvedSiblingSafeToResolve(*sibling_query, target_table, columns_desc, scope.parent_scope))
+                continue;
+
+            QueryTreeNodePtr resolved_sibling = raw_subquery->clone();
+            resolved_sibling->removeAlias();
+
+            if (!sibling_query->isResolved())
+            {
+                auto & cloned_query = resolved_sibling->as<QueryNode &>();
+                cloned_query.getMutableContext() = Context::createCopy(cloned_query.getContext());
+                if (scope.parent_scope->context)
+                    cloned_query.getMutableContext()->setDistributed(scope.parent_scope->context->isDistributed());
+
+                QueryAnalyzer sibling_analyzer(
+                    /*only_analyze_=*/ false,
+                    positional_arguments_already_resolved,
+                    replaced_storage,
+                    view_source_in_subqueries);
+
+                IdentifierResolveScope sibling_scope(resolved_sibling, nullptr /*parent_scope*/);
+                sibling_scope.subquery_depth = scope.subquery_depth;
+                sibling_analyzer.resolveQuery(resolved_sibling, sibling_scope);
+                sibling_analyzer.restoreReplacedTableStoragesIfNeeded(resolved_sibling);
+            }
+
+            QueryTreeNodePtrWithHash sibling_with_hash(resolved_sibling);
+            if (auto candidate = extractResolvedScalarCandidate(resolved_sibling, sibling_with_hash, view_source_in_subqueries))
+                table_candidates[candidate->sub_group_key].push_back(std::move(resolved_sibling));
+        }
+    }
+
+    auto group_candidates_it = table_candidates.find(first_candidate->sub_group_key);
+    if (group_candidates_it == table_candidates.end())
+        return false;
+
+    /// A group is merged at most once: its other members are in the scalar cache afterwards.
+    const QueryTreeNodes group_siblings = std::move(group_candidates_it->second);
+    table_candidates.erase(group_candidates_it);
+
+    std::vector<ResolvedScalarCandidate> group;
+    QueryTreeNodePtrWithHashSet seen_candidates;
+    seen_candidates.insert(first_candidate->node_with_hash);
+    group.push_back(std::move(*first_candidate));
+
+    for (const auto & resolved_sibling : group_siblings)
+    {
+        QueryTreeNodePtrWithHash sibling_with_hash(resolved_sibling);
+        if (seen_candidates.contains(sibling_with_hash) || scalars_cache.contains(sibling_with_hash))
+            continue;
+
+        if (can_use_global_scalars && scope.context->hasQueryContext()
+            && scope.context->getQueryContext()->hasComputedScalar(DB::toString(sibling_with_hash.hash)))
+            continue;
+
+        auto candidate = extractResolvedScalarCandidate(resolved_sibling, sibling_with_hash, view_source_in_subqueries);
+        chassert(candidate);
+        seen_candidates.insert(candidate->node_with_hash);
+        group.push_back(std::move(*candidate));
+    }
+
+    if (group.size() < 2)
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ScalarSubqueriesCacheMiss);
+
+    auto & context = scope.context;
+    auto subquery_context = createSubqueryExecutionContext(context);
+
+    auto merged_query = std::make_shared<QueryNode>(subquery_context);
+    merged_query->setIsSubquery(true);
+
+    auto merged_table_node = std::static_pointer_cast<TableNode>(group.front().table_node->clone());
+    merged_table_node->removeAlias();
+    merged_query->getJoinTreeNode() = merged_table_node;
+
+    const auto split_conditions = splitSharedQueryTreeConjuncts(group);
+    if (auto merged_where = buildMergedWhereQueryTree(split_conditions, merged_table_node, subquery_context))
+        merged_query->getWhere() = std::move(merged_where);
+
+    auto & merged_projection = merged_query->getProjection().getNodes();
+    merged_projection.reserve(group.size());
+
+    NamesAndTypes merged_projection_columns;
+    merged_projection_columns.reserve(group.size());
+
+    for (size_t i = 0; i < group.size(); ++i)
+    {
+        const auto & candidate = group[i];
+        QueryTreeNodePtr proj_expr;
+
+        if (split_conditions.own[i].empty())
+        {
+            proj_expr = cloneAndRebindToTable(candidate.agg_node_ptr, merged_table_node);
+        }
+        else
+        {
+            auto own_cond = ensureBoolCondition(
+                combineConditions(split_conditions.own[i], "and", merged_table_node, subquery_context),
+                subquery_context);
+
+            const String if_agg_name = candidate.agg_node->getFunctionName() + "If";
+            auto fn_node = std::make_shared<FunctionNode>(if_agg_name);
+            auto & fn_args = fn_node->getArguments().getNodes();
+
+            const auto & orig_args = candidate.agg_node->getArguments().getNodes();
+            fn_args.reserve(orig_args.size() + 1);
+            for (const auto & orig_arg : orig_args)
+                fn_args.push_back(cloneAndRebindToTable(orig_arg, merged_table_node));
+            fn_args.push_back(std::move(own_cond));
+
+            resolveAggregateFunctionNodeByName(*fn_node, if_agg_name);
+            proj_expr = std::move(fn_node);
+
+            if (!proj_expr->getResultType()->equals(*candidate.original_result_type))
+                proj_expr = buildCastFunction(proj_expr, candidate.original_result_type, subquery_context);
+        }
+
+        merged_projection_columns.emplace_back(fmt::format("__merged_scalar_{}", i), proj_expr->getResultType());
+        merged_projection.push_back(std::move(proj_expr));
+    }
+
+    merged_query->resolveProjectionColumns(std::move(merged_projection_columns));
+
+    QueryTreeNodePtr merged_query_tree = std::move(merged_query);
+    auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
+    options.only_analyze = false;
+    options.view_source_in_subqueries = view_source_in_subqueries;
+    options.forceMaterializeCTE();
+
+    QueryTreePassManager query_tree_pass_manager(subquery_context);
+    addQueryTreePasses(query_tree_pass_manager, options.only_analyze);
+    query_tree_pass_manager.run(merged_query_tree);
+
+    auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(merged_query_tree, subquery_context, options);
+    auto & query_plan = interpreter->getQueryPlan();
+
+    if (!interpreter->ignoreQuota())
+    {
+        if (auto quota = subquery_context->getQuota())
+            quota->checkExceededProfileEvents(subquery_context->getNormalizedQueryHash());
+        if (auto process_list_elem = subquery_context->getProcessListElement())
+            process_list_elem->markNonExemptScalarSubqueryExecuted();
+    }
+
+    QueryPlanOptimizationSettings optimization_settings(subquery_context);
+    BuildQueryPipelineSettings build_pipeline_settings(subquery_context);
+    query_plan.setConcurrencyControl(subquery_context->getSettingsRef()[Setting::use_concurrency_control]);
+
+    auto pipeline_builder = std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
+
+    BlockIO io;
+    io.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
+    io.pipeline.setQuota(subquery_context->getQuota());
+    io.pipeline.setNormalizedQueryHash(subquery_context->getNormalizedQueryHash());
+    io.pipeline.setProgressCallback(context->getProgressCallback());
+    io.pipeline.setProcessListElement(context->getProcessListElement());
+    io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
+
+    PullingAsyncPipelineExecutor executor(io.pipeline);
+    if (auto cancel_cb = context->hasQueryContext() ? context->getQueryContext()->getInteractiveCancelCallback() : nullptr)
+        executor.setCancelCallback(std::move(cancel_cb), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
+
+    Chunk chunk;
+    while (chunk.getNumRows() == 0 && executor.pull(chunk))
+    {
+    }
+
+    if (chunk.getNumRows() == 0)
+    {
+        const auto & sample_block = interpreter->getSampleBlock();
+        for (size_t i = 0; i < group.size(); ++i)
+        {
+            DataTypePtr type = sample_block->getByPosition(i).type;
+            if (!type->isNullable())
+            {
+                if (!type->canBeInsideNullable())
+                    throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY,
+                        "Scalar subquery returned empty result of type {} which cannot be Nullable",
+                        type->getName());
+                type = makeNullable(type);
+            }
+
+            auto scalar_column = type->createColumn();
+            scalar_column->insert(Null());
+
+            Block single_block;
+            single_block.insert({std::move(scalar_column), type, "null"});
+
+            scalars_cache.emplace(group[i].node_with_hash, single_block);
+            if (can_use_global_scalars && context->hasQueryContext())
+                context->getQueryContext()->addScalar(group[i].str_hash, single_block);
+        }
+    }
+    else
+    {
+        if (chunk.getNumRows() != 1)
+            throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
+
+        Chunk tmp_chunk;
+        while (tmp_chunk.getNumRows() == 0 && executor.pull(tmp_chunk))
+        {
+        }
+
+        if (tmp_chunk.getNumRows() != 0)
+            throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
+
+        Block full_block = materializeBlock(executor.getHeader().cloneWithColumns(chunk.getColumns()));
+        if (full_block.columns() != group.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Merged scalar subquery expected {} columns, got {}",
+                group.size(),
+                full_block.columns());
+
+        for (size_t i = 0; i < group.size(); ++i)
+        {
+            Block single_block{full_block.getByPosition(i)};
+            wrapScalarBlockWithNullableOrTuple(single_block);
+
+            scalars_cache.emplace(group[i].node_with_hash, single_block);
+            if (can_use_global_scalars && context->hasQueryContext())
+                context->getQueryContext()->addScalar(group[i].str_hash, single_block);
+        }
+    }
+
+    logProcessorProfile(context, io.pipeline.getProcessors());
+    return true;
 }
 
 /// Evaluate scalar subquery and perform constant folding if scalar subquery does not have constant value
@@ -156,20 +1376,18 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         scalar_subquery_to_scalar_value_global.emplace(node_with_hash, scalar_block);
         ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
     }
+    /// In only-analyze mode a subquery is executed only when it is a table function or parameterized
+    /// view argument; merging would also execute its `SELECT`-list siblings, which are only analyzed.
+    else if (!only_analyze && !only_analyze_subquery && !execute_for_exists && !early_short_circuit_type_inference_in_process
+        && query_node != nullptr
+        && tryEvaluateMergedScalarSubqueries(node, node_with_hash, scope, can_use_global_scalars))
+    {
+        scalar_block = scalars_cache.at(node_with_hash);
+    }
     else
     {
         ProfileEvents::increment(ProfileEvents::ScalarSubqueriesCacheMiss);
-        auto subquery_context = Context::createCopy(context);
-
-        Settings subquery_settings = context->getSettingsCopy();
-        subquery_settings[Setting::max_result_rows] = 1;
-        subquery_settings[Setting::extremes] = false;
-        subquery_settings[Setting::implicit_table_at_top_level] = "";
-        /// When execute `INSERT INTO t WITH ... SELECT ...`, it may lead to `Unknown columns`
-        /// exception with this settings enabled(https://github.com/ClickHouse/ClickHouse/issues/52494).
-        subquery_settings[Setting::use_structure_from_insertion_table_in_table_functions] = false;
-        subquery_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
-        subquery_context->setSettings(subquery_settings);
+        auto subquery_context = createSubqueryExecutionContext(context);
 
         auto query_tree = node->clone();
         /// Update context for the QueryTree, because apparently Planner would use this context.
@@ -229,35 +1447,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             replaceStorageInQueryTree(query_tree, subquery_context, storage);
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_tree, subquery_context, options);
 
-        auto wrap_with_nullable_or_tuple = [](Block & block)
-        {
-            block = materializeBlock(block);
-            if (block.columns() == 1)
-            {
-                auto & column = block.getByPosition(0);
-                /// Here we wrap type to nullable if we can.
-                /// It is needed cause if subquery return no rows, it's result will be Null.
-                /// In case of many columns, do not check it cause tuple can't be nullable.
-                if (!column.type->isNullable() && column.type->canBeInsideNullable())
-                {
-                    column.type = makeNullable(column.type);
-                    column.column = makeNullable(column.column);
-                }
-            } else
-            {
-                /** Make unique column names for tuple.
-                *
-                * Example: SELECT (SELECT 2 AS x, x)
-                */
-                makeUniqueColumnNamesInBlock(block);
-                block = Block({{
-                        ColumnTuple::create(block.getColumns()),
-                        std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames()),
-                        "tuple"
-                    }});
-            }
-        };
-
         if (only_analyze_subquery)
         {
             /// If query is only analyzed, then constants are not correct.
@@ -278,7 +1467,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 }
             }
 
-            wrap_with_nullable_or_tuple(scalar_block);
+            wrapScalarBlockWithNullableOrTuple(scalar_block);
         }
         else
         {
@@ -395,7 +1584,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 else
                 {
                     auto block = executor->getHeader().cloneWithColumns(chunk.getColumns());
-                    wrap_with_nullable_or_tuple(block);
+                    wrapScalarBlockWithNullableOrTuple(block);
                     scalar_block = std::move(block);
                 }
             }

@@ -5959,6 +5959,10 @@ Possible values:
 If it is set to true, prevent scalar subqueries from (de)serializing large scalar values and possibly avoid running the same subquery more than once.
 )", 0, \
         {"19.18", false, true, "Prevent scalar subqueries from (de)serializing large scalar values and possibly avoid running the same subquery more than once"}) \
+    DECLARE(Bool, optimize_merge_scalar_subqueries, true, R"(
+Merge uncorrelated scalar subqueries in the `SELECT` list that compute a single `count`, `sum`, `avg`, `min` or `max` over the same local `MergeTree` or `Memory` table into one shared scan during query analysis. Each aggregate uses the `-If` combinator with its own non-shared `WHERE` condition, while shared `WHERE` conjuncts (including partition and primary-key filters) remain pushed to the table scan. Subqueries over views or tables with projections, subqueries without `WHERE`, subqueries whose non-shared conditions reference key or secondary-index columns, and subqueries reading variable-width columns across different `WHERE` conditions are not merged. Merging is also skipped when `max_columns_to_read`, `max_temporary_columns` or `max_temporary_non_const_columns` is set, because the merged scan reads the columns of all subqueries at once, and when `additional_table_filters` is set, because those filters are keyed by table alias. Requires `enable_analyzer = 1`.
+)", 0, \
+        {"26.11", false, true, "New setting to merge aggregate scalar subqueries over the same table into one scan."}) \
     DECLARE(Bool, optimize_trivial_count_query, true, R"(
 Enables or disables the optimization to trivial query `SELECT count() FROM table` using metadata from MergeTree. If you need to use row-level security, disable this setting.
 
