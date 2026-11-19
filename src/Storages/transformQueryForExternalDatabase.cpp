@@ -40,6 +40,7 @@ namespace Setting
 {
     extern const SettingsBool external_table_strict_query;
     extern const SettingsBool external_storage_push_down_limit;
+    extern const SettingsBool input_format_tsv_enum_as_number;
     extern const SettingsUInt64 parallel_replicas_count;
 }
 
@@ -435,13 +436,10 @@ bool fieldRequiresClickHouseOnlySyntax(const Field & field)
     }
 }
 
-/// Returns true if `node` references a column of `UUID` or `Enum` type, including when that reference
-/// is nested inside a tuple or another expression (e.g. the row comparison
-/// `(uuid_col, x) < (...)`). ClickHouse and external databases (e.g. PostgreSQL) sort UUIDs
-/// differently, and ClickHouse orders an `Enum` by its number while the external database orders the
-/// stored string, so range comparisons involving such a column cannot be pushed down without
-/// silently dropping rows.
-bool containsColumnWithDifferentOrder(const ASTPtr & node, const NamesAndTypesList & available_columns)
+/// Returns true if `node` references a column whose type satisfies `matches`, including when that reference
+/// is nested inside a tuple or another expression (e.g. the row comparison `(uuid_col, x) < (...)`).
+/// `LowCardinality` and `Nullable` are removed from the type first, so e.g. `LowCardinality(UUID)` is recognised too.
+bool containsColumnOfType(const ASTPtr & node, const NamesAndTypesList & available_columns, bool (*matches)(const DataTypePtr &))
 {
     /// The depth of the AST is user-controlled: fail with TOO_DEEP_RECURSION instead of exhausting the stack.
     checkStackSize();
@@ -450,14 +448,12 @@ bool containsColumnWithDifferentOrder(const ASTPtr & node, const NamesAndTypesLi
     {
         for (const auto & column : available_columns)
             if (column.name == identifier->name())
-                /// Unwrap LowCardinality / Nullable so e.g. LowCardinality(UUID) is recognised too.
-                return WhichDataType(removeLowCardinalityAndNullable(column.type)).isUUID()
-                    || isEnum(removeLowCardinalityAndNullable(column.type));
+                return matches(removeLowCardinalityAndNullable(column.type));
         return false;
     }
 
     for (const auto & child : node->children)
-        if (containsColumnWithDifferentOrder(child, available_columns))
+        if (containsColumnOfType(child, available_columns, matches))
             return true;
 
     return false;
@@ -608,7 +604,8 @@ bool isCompatible(
     const NamesAndTypesList & available_columns,
     RowValueContext row_value_context,
     const NameSet & unsupported_functions,
-    bool require_dialect_neutral_literals)
+    bool require_dialect_neutral_literals,
+    bool enum_as_number)
 {
     /// The AST comes from a user query, so its depth is unbounded - fail with `TOO_DEEP_RECURSION`
     /// instead of exhausting the stack.
@@ -654,8 +651,18 @@ bool isCompatible(
         /// are applied locally instead. See https://github.com/ClickHouse/ClickHouse/issues/105558.
         if (name == "less" || name == "greater" || name == "lessOrEquals" || name == "greaterOrEquals")
         {
+            auto is_uuid_or_enum = [](const DataTypePtr & type) { return isUUID(type) || isEnum(type); };
             for (const auto & argument : function->arguments->children)
-                if (containsColumnWithDifferentOrder(argument, available_columns))
+                if (containsColumnOfType(argument, available_columns, is_uuid_or_enum))
+                    return false;
+        }
+
+        /// Under `input_format_tsv_enum_as_number`, `=` and `!=` read a string constant compared with an `Enum`
+        /// as the `Enum` number, while the external database compares it with the stored name.
+        if (enum_as_number && (name == "equals" || name == "notEquals"))
+        {
+            for (const auto & argument : function->arguments->children)
+                if (containsColumnOfType(argument, available_columns, [](const DataTypePtr & type) { return isEnum(type); }))
                     return false;
         }
 
@@ -688,7 +695,7 @@ bool isCompatible(
         for (size_t i = 0; i < arguments.size(); ++i)
             if (!isCompatible(arguments[i], literal_escaping_style, available_columns,
                               argumentRowValueContext(name, i, row_value_context), unsupported_functions,
-                              require_dialect_neutral_literals))
+                              require_dialect_neutral_literals, enum_as_number))
                 return false;
 
         /// Normalize a single-row multi-column IN set so it does not collapse to scalars when
@@ -1032,6 +1039,7 @@ String transformQueryForExternalDatabaseImpl(
 {
     bool strict = context->getSettingsRef()[Setting::external_table_strict_query];
     bool push_down_limit = allow_limit_push_down && context->getSettingsRef()[Setting::external_storage_push_down_limit];
+    bool enum_as_number = context->getSettingsRef()[Setting::input_format_tsv_enum_as_number];
 
     if (!push_down_limit)
         limit.reset();
@@ -1107,7 +1115,7 @@ String transformQueryForExternalDatabaseImpl(
         ReplaceLiteralToExprVisitor(replace_literal_to_expr_data).visit(original_where);
 
         if (isCompatible(original_where, literal_escaping_style, pushdown_columns, RowValueContext::BooleanPredicate, unsupported_functions,
-                         require_dialect_neutral_literals))
+                         require_dialect_neutral_literals, enum_as_number))
         {
             if (limit_push_down_allowed && original_where->dumpTree() == dumped_original_where)
                 where_fully_copied = true;
@@ -1133,7 +1141,7 @@ String transformQueryForExternalDatabaseImpl(
                     for (auto & elem : func->arguments->children)
                     {
                         if (isCompatible(elem, literal_escaping_style, pushdown_columns, RowValueContext::BooleanPredicate,
-                                         unsupported_functions, require_dialect_neutral_literals))
+                                         unsupported_functions, require_dialect_neutral_literals, enum_as_number))
                             new_function_and->arguments->children.push_back(elem);
                         else if (const auto * child = elem->as<ASTFunction>(); child && (child->name == "and" || child->name == "tuple"))
                             predicates.push(child);
