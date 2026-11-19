@@ -12,13 +12,15 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_sequential_then_another (n UInt64) ENGINE = MergeTree ORDER BY n;
     SYSTEM STOP MERGES t_sequential_then_another;"
 
-# The busy timeout of the queue shard is shared with other tests, which can raise it to the maximum, so the maximum is
-# kept moderate. It is still longer than any pause between the inserts, so none of them is flushed at once because the
-# previous one was longer than the maximum ago.
+# The busy timeout of the queue shard is shared with other tests, which leave values of up to 600000 ms in it. The huge
+# decrease rate drops it to the minimum, unless another insert came to the shard less than the minimum before; then the
+# low maximum bounds the wait. An insert that waits stays in the queue long enough to be seen. When the maximum passes
+# between inserts that wait, the insert that should wait can be flushed at once; the next one waits then.
 function insert()
 {
     ${CLICKHOUSE_CLIENT} --async_insert 1 --wait_for_async_insert 1 --async_insert_use_adaptive_busy_timeout 1 \
-        --async_insert_busy_timeout_min_ms 3000 --async_insert_busy_timeout_max_ms 20000 \
+        --async_insert_busy_timeout_min_ms 3000 --async_insert_busy_timeout_max_ms 5000 \
+        --async_insert_busy_timeout_decrease_rate 1000000000 \
         --query_id "${CLICKHOUSE_DATABASE}_$1" --query "INSERT INTO t_sequential_then_another VALUES ($2)"
 }
 
