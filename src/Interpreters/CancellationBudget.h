@@ -7,21 +7,22 @@
 namespace DB
 {
 
-/// Throttled cancellation checkpoint for a loop inside one function call. Lives on the stack of a single
-/// vector call, so it is never shared between threads. Counted in loop ITERATIONS, not bytes: an iteration
-/// can cost a full search or match attempt while advancing almost no data. Bytes are charged on top,
-/// scaled down, because one iteration can also touch megabytes.
+/// Throttled cancellation checkpoint for a loop inside one function or operator call. Lives on the stack
+/// of a single call, so it is never shared between threads. Counted in loop ITERATIONS, not bytes: an
+/// iteration can cost a full search or match attempt while advancing almost no data. Bytes are charged on
+/// top, scaled down, because one iteration can also touch megabytes.
 struct CancellationBudget
 {
-    /// About 30ms of granularity on the cheapest loop.
-    static constexpr size_t units_per_check = 1ULL << 16;
+    /// Default checkpoint interval: about 30ms of granularity on the cheapest loop. A caller with its own
+    /// natural cadence (e.g. a per-block row count) passes its own interval to the constructor.
+    static constexpr size_t default_units_per_check = 1ULL << 16;
     /// Bytes of data read or written that count as one unit of work.
     static constexpr size_t bytes_per_unit = 16;
     /// Units a caller may accumulate locally before charging them in one call.
     static constexpr size_t units_per_instruction_charge = 4096;
 
-    explicit CancellationBudget(const std::function<void()> & check_)
-        : check(check_ ? &check_ : nullptr) {}
+    explicit CancellationBudget(const std::function<void()> & check_, size_t units_per_check_ = default_units_per_check)
+        : check(check_ ? &check_ : nullptr), units_per_check(units_per_check_), units_left(units_per_check_) {}
 
     /// One iteration of an unbounded loop, plus the bytes of data that iteration touched.
     void charge(size_t bytes = 0) { chargeUnits(1 + bytes / bytes_per_unit); }
@@ -41,7 +42,8 @@ struct CancellationBudget
 
 private:
     const std::function<void()> * check;
-    size_t units_left = units_per_check;
+    size_t units_per_check;
+    size_t units_left;
 };
 
 /// Observes the running query's elapsed-time limit and killed flag, and throws when either is reached.

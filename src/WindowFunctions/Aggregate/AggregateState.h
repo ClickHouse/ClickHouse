@@ -2,7 +2,7 @@
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 
-#include <Functions/CancellationBudget.h>
+#include <Interpreters/CancellationBudget.h>
 
 #include <Columns/IColumn_fwd.h>
 
