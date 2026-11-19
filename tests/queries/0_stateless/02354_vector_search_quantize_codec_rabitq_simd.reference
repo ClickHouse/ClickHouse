@@ -2,3 +2,28 @@ code_length	132
 unfiltered_exact	1
 recall_at_10_ge_8	1
 nearest_is_self	1
+show_create	1	1
+code_lengths	68	100	132	164	196	228	260
+full_precision_rows	2000
+plan	1	1
+exact_2bit	1
+exact_3bit	1
+exact_4bit	1
+exact_5bit	1
+exact_6bit	1
+exact_7bit	1
+exact_8bit	1
+recall_2bit_ge_8	1
+recall_3bit_ge_8	1
+recall_4bit_ge_8	1
+recall_5bit_ge_8	1
+recall_6bit_ge_8	1
+recall_7bit_ge_8	1
+recall_8bit_ge_8	1
+self_2bit	1
+self_3bit	1
+self_4bit	1
+self_5bit	1
+self_6bit	1
+self_7bit	1
+self_8bit	1
