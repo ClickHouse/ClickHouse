@@ -1,0 +1,92 @@
+--- nullable string shards populated
+1
+1
+--- nullable string empty-string pruning
+1
+1
+1
+1
+--- nullable string vs FixedString
+1	[]
+2	[00]
+3	[0000]
+4	[000000]
+1	[]
+2	[00]
+3	[0000]
+4	[000000]
+2	[00]
+2	[00]
+--- lc nullable string empty-string pruning and FixedString
+1
+1
+1
+1
+1	[]
+2	[00]
+3	[0000]
+4	[000000]
+1	[]
+2	[00]
+3	[0000]
+4	[000000]
+--- non-nullable string vs FixedString
+1	[]
+2	[00]
+3	[0000]
+4	[000000]
+1	[]
+2	[00]
+3	[0000]
+4	[000000]
+--- nullable decimal128 shards populated and vs Float64
+1
+1
+1	1
+2	1.000000000000000001
+1	1
+2	1.000000000000000001
+1	1
+1	1
+--- non-nullable decimal128 vs Float64
+1	1
+2	1.000000000000000001
+1	1
+2	1.000000000000000001
+--- nullable float64 signed zero shards populated and vs zero
+1
+1
+1
+2
+1
+2
+1
+2
+1
+2
+1	0
+2	9223372036854775808
+1	0
+2	9223372036854775808
+1	0
+2	9223372036854775808
+1	0
+2	9223372036854775808
+--- non-nullable float64 same-type and cross-type signed zero
+1
+1
+1	0
+2	9223372036854775808
+1	0
+2	9223372036854775808
+1
+2
+1
+2
+--- tuple containing float64 same-type signed zero
+1
+1
+1
+2
+1
+2

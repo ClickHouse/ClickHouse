@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/hasNullable.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
@@ -549,14 +550,54 @@ namespace
         return match.node;
     }
 
+    /// Equality on floating-point values (`-0.0 == +0.0`) and runtime-typed values
+    /// (`Variant`/`Dynamic`/`JSON`, where e.g. `1::Int64 == 1.0::Float64` or `'a'::String == 'a'::FixedString(1)`)
+    /// can match distinct representations that hash to different shards, even when both sides have the same type.
+    bool canInferSingleKeyRepresentationFromEquality(const DataTypePtr & lhs_type, const DataTypePtr & rhs_type)
+    {
+        return !hasTypeThatCanContainFloat(lhs_type)
+            && !hasTypeThatCanContainFloat(rhs_type)
+            && !hasRuntimeTypedType(lhs_type)
+            && !hasRuntimeTypedType(rhs_type);
+    }
+
+    bool canCastPreserveAllMatchingKeys(const DataTypePtr & from_type, const DataTypePtr & to_type)
+    {
+        if (!canInferSingleKeyRepresentationFromEquality(from_type, to_type))
+            return false;
+
+        auto from_unwrapped = removeNullable(recursiveRemoveLowCardinality(from_type));
+        auto to_unwrapped = removeNullable(recursiveRemoveLowCardinality(to_type));
+        if (!to_unwrapped->canBeInsideNullable())
+            return false;
+
+        /// Wrapper-only differences (`Nullable` / `LowCardinality`) over the same non-float base type
+        /// preserve a 1-to-1 value bijection (including `Nullable(String)` / `LowCardinality(Nullable(String))` `= ''`).
+        if (from_unwrapped->equals(*to_unwrapped))
+            return true;
+
+        /// `String` vs `FixedString` equality pads zero bytes (`''`, `'\0'`, `'\0\0'` all match
+        /// `toFixedString('', 1)`), and `String` vs temporal types parses multiple strings to one value.
+        if (isString(to_unwrapped))
+            return false;
+
+        /// Historically `Nullable` keys declined cross-type casts completely (`Nullable::canBeInsideNullable() == false`).
+        /// Keep cross-type `Nullable` inference limited to exact integer-to-integer casts.
+        if (recursiveRemoveLowCardinality(to_type)->isNullable())
+            return isInteger(from_unwrapped) && isInteger(to_unwrapped)
+                && !from_unwrapped->hasCustomName() && !to_unwrapped->hasCustomName();
+
+        return true;
+    }
+
     ColumnPtr tryCastColumn(ColumnPtr col, const DataTypePtr & from_type, const DataTypePtr & to_type)
     {
-        auto to_type_no_lc = recursiveRemoveLowCardinality(to_type);
-        // std::cerr << ".. casting " << from_type->getName() << " -> " << to_type_no_lc->getName() << std::endl;
-        if (!to_type_no_lc->canBeInsideNullable())
+        if (!canCastPreserveAllMatchingKeys(from_type, to_type))
             return {};
 
-        auto res = castColumnAccurateOrNull({col, from_type, std::string()}, makeNullable(to_type_no_lc));
+        auto to_type_unwrapped = removeNullable(recursiveRemoveLowCardinality(to_type));
+
+        auto res = castColumnAccurateOrNull({col, from_type, std::string()}, makeNullable(to_type_unwrapped));
         if (res->onlyNull())
             return nullptr;
 
@@ -578,6 +619,9 @@ namespace
         {
             if (const auto * node = findMatch(key, matches))
             {
+                if (!canInferSingleKeyRepresentationFromEquality(value->result_type, node->result_type))
+                    return {};
+
                 /// ActionsDAG::addColumn normalizes ColumnConst to size 0; expand to size 1
                 /// because the conjunction map is consumed by evaluatePartialResult with
                 /// input_rows_count == 1, and downstream consumers (e.g. createBlockSelector)
@@ -692,6 +736,9 @@ namespace
         for (size_t i = 0; i < components.size(); ++i)
         {
             auto & component = components[i];
+            if (!canInferSingleKeyRepresentationFromEquality(types[i], component.node->result_type))
+                return {};
+
             if (types[i]->equals(*component.node->result_type))
                 continue;
 
@@ -761,6 +808,19 @@ namespace
 
                 if (auto val = analyzeConstant(rhs_node, lhs_node, matches))
                     return DisjunctionList{ConjunctionMap{std::move(*val)}};
+            }
+            else if (node->function_base->getName() == "empty" && node->children.size() == 1)
+            {
+                const auto * arg_node = node->children.at(0);
+                if (isStringOrFixedString(removeNullable(removeLowCardinality(arg_node->result_type))))
+                {
+                    ActionsDAG::Node empty_const;
+                    empty_const.type = ActionsDAG::ActionType::COLUMN;
+                    empty_const.result_type = arg_node->result_type;
+                    empty_const.column = empty_const.result_type->createColumnConst(1, Field(String{}));
+                    if (auto val = analyzeConstant(arg_node, &empty_const, matches))
+                        return DisjunctionList{ConjunctionMap{std::move(*val)}};
+                }
             }
             else if (node->function_base->getName() == "in")
             {

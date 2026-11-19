@@ -413,7 +413,8 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
             const auto order_info = getInputOrderIfReadInOrderIsUseful(
                 probe_sort_step,
                 reading->getStorageMetadata()->getSortingKey(),
-                *preserved_input_node);
+                *preserved_input_node,
+                &reading->getStorageMetadata()->getColumns());
 
             const bool reverse_read_blocks_pass2
                 = order_info && order_info->direction != 1 && !reading->canReadInReverseOrder();

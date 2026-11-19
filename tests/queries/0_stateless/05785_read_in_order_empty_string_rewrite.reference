@@ -1,0 +1,93 @@
+--- full PK: String
+ReadType: InOrder
+ReadType: InReverseOrder
+10
+20
+30
+40
+30
+10
+20
+30
+--- full PK: LowCardinality(String)
+ReadType: InOrder
+10
+20
+30
+40
+30
+--- full PK: Nullable(String)
+ReadType: InOrder
+10
+20
+30
+--- shortened PK: String
+Read type: InOrder
+ReadType: InOrder
+ReadType: InReverseOrder
+ReadType: InOrder
+10
+20
+30
+40
+30
+10
+20
+30
+10
+20
+30
+--- shortened PK: LowCardinality(String)
+ReadType: InOrder
+10
+20
+30
+10
+20
+30
+--- shortened PK: Nullable(String)
+ReadType: InOrder
+10
+20
+30
+10
+20
+30
+--- Merge and wrapper sources
+1
+ReadType: InOrder
+ReadType: InOrder
+ReadType: InReverseOrder
+ReadType: InReverseOrder
+10
+15
+20
+30
+40
+35
+30
+ReadType: InOrder
+10
+20
+30
+ReadType: InOrder
+10
+20
+30
+ReadType: InOrder
+10
+20
+30
+--- controls
+1
+1
+1
+2
+ReadType: Default
+2
+3
+ReadType: Default
+2
+3
+ReadType: Default
+10

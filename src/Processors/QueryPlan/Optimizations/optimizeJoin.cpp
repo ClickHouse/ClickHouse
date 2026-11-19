@@ -1115,7 +1115,11 @@ static VectorWithMemoryTracking<QueryGraph::ReadInOrder> findReadInOrderPrefixes
             for (const auto & name : names)
                 sort_description.emplace_back(name);
             SortingStep sorting(header, std::move(sort_description), 0, sorting_settings);
-            auto order = getInputOrderIfReadInOrderIsUseful(sorting, reading->getStorageMetadata()->getSortingKey(), *inputs[i]);
+            auto order = getInputOrderIfReadInOrderIsUseful(
+                sorting,
+                reading->getStorageMetadata()->getSortingKey(),
+                *inputs[i],
+                &reading->getStorageMetadata()->getColumns());
             return order && order->direction == 1 && order->sort_description_for_merging.size() >= names.size();
         };
 

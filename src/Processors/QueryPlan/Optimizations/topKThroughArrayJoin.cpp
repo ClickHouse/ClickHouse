@@ -44,7 +44,11 @@ bool shouldSkipTopKAboveMergeTreeInput(
 
     /// a reverse read may be impossible (`FINAL`)
     SortingStep probe_sort_step(input_node.step->getOutputHeader(), description, limit, sort_step.getSettings());
-    const auto order_info = getInputOrderIfReadInOrderIsUseful(probe_sort_step, reading->getStorageMetadata()->getSortingKey(), input_node);
+    const auto order_info = getInputOrderIfReadInOrderIsUseful(
+        probe_sort_step,
+        reading->getStorageMetadata()->getSortingKey(),
+        input_node,
+        &reading->getStorageMetadata()->getColumns());
     return order_info && (order_info->direction == 1 || reading->canReadInReverseOrder());
 }
 

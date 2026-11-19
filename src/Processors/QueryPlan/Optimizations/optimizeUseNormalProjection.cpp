@@ -539,7 +539,8 @@ UseProjectionsResult optimizeUseNormalProjections(
         return getInputOrderIfReadInOrderIsUseful(
                    *outer_sorting_step,
                    projection->metadata->getSortingKey(),
-                   *iter->node->children[iter->next_child - 1])
+                   *iter->node->children[iter->next_child - 1],
+                   &projection->metadata->getColumns())
             != nullptr;
     };
 

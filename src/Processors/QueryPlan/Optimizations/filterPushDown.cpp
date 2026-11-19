@@ -1200,9 +1200,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 /// Whether a conjunct might fix a column to a single value, and so let a read go in order:
 /// `tenant = 42` can, `tenant > 42` or a join runtime filter cannot. Any column counts, in the sorting
 /// key or not: the read is inside the fragment and its key is not looked up here. A superset of what
-/// `appendFixedColumnsFromFilterExpression`, the analysis read-in-order uses, can find: an `equals` or an
-/// `isNotDistinctFrom` anywhere inside, or an input reached the way it looks for one - through aliases and
-/// `and`. Such an input is a column of the fragment, which may compute it as an equality.
+/// `appendFixedColumnsFromFilterExpression`, the analysis read-in-order uses, can find: an `equals`,
+/// `isNotDistinctFrom`, or `empty` anywhere inside, or an input reached the way it looks for one - through
+/// aliases and `and`. Such an input is a column of the fragment, which may compute it as an equality.
 static bool mayFixColumn(const ActionsDAG::Node * conjunct)
 {
     VectorWithMemoryTracking<const ActionsDAG::Node *> stack{conjunct};
@@ -1222,7 +1222,7 @@ static bool mayFixColumn(const ActionsDAG::Node * conjunct)
         if (node->type == ActionsDAG::ActionType::FUNCTION)
         {
             const auto & name = node->function_base->getName();
-            if (name == "equals" || name == "isNotDistinctFrom")
+            if (name == "equals" || name == "isNotDistinctFrom" || name == "empty")
                 return true;
         }
         return false;
