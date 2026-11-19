@@ -85,4 +85,13 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id, k, sum(v) FROM t_r
 SELECT k, count() FROM (SELECT toUInt64(1) AS k FROM numbers(40)) GROUP BY ROLLUP(k) HAVING k = 1 AND k + sleepEachRow(0.1) = 1 ORDER BY ALL SETTINGS max_threads = 1, max_block_size = 1000;
 SELECT k, count() FROM (SELECT toUInt64(1) AS k FROM numbers(40)) GROUP BY CUBE(k) HAVING k = 1 AND k + sleepEachRow(0.1) = 1 ORDER BY ALL SETTINGS max_threads = 1, max_block_size = 1000;
 
+SELECT 'not pushed: a condition that reads the representation of a key';
+-- below the aggregation the key is a constant, above it the key is a full column
+SELECT k, count() FROM (SELECT toUInt64(1) AS k FROM numbers(10)) GROUP BY ROLLUP(k) HAVING k != 0 AND NOT isConstant(k) ORDER BY ALL;
+SELECT k, count() FROM (SELECT toUInt64(1) AS k FROM numbers(10)) GROUP BY CUBE(k) HAVING k != 0 AND NOT isConstant(k) ORDER BY ALL;
+SELECT k, count() FROM (SELECT toUInt64(1) AS k FROM numbers(10)) GROUP BY ROLLUP(k) HAVING k != 0 AND arrayAll(x -> NOT isConstant(k), [1]) ORDER BY ALL;
+SELECT k, count() FROM (SELECT toUInt64(1) AS k FROM numbers(10)) GROUP BY CUBE(k) HAVING k != 0 AND arrayAll(x -> NOT isConstant(k), [1]) ORDER BY ALL;
+SELECT k, count() FROM (SELECT toNullable(toUInt64(1)) AS k FROM numbers(10)) GROUP BY ROLLUP(k) HAVING k != 0 AND NOT isConstant(k) ORDER BY ALL SETTINGS group_by_use_nulls = 1;
+SELECT k, count() FROM (SELECT toNullable(toUInt64(1)) AS k FROM numbers(10)) GROUP BY CUBE(k) HAVING k != 0 AND NOT isConstant(k) ORDER BY ALL SETTINGS group_by_use_nulls = 1;
+
 DROP TABLE t_rollup_filter;

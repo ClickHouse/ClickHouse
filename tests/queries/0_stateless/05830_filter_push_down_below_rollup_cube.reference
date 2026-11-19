@@ -106,3 +106,10 @@ only the conditions without side effects
 Condition: (id in [4, 4])
 1	40
 1	40
+not pushed: a condition that reads the representation of a key
+1	10
+1	10
+1	10
+1	10
+1	10
+1	10
