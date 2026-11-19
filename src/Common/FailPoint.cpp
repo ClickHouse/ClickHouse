@@ -25,7 +25,7 @@ static struct InitFiu
 } init_fiu;
 #endif
 
-/// We should define different types of failpoints here. There are four types of them:
+/// We should define different types of failpoints here. There are four types of them
 /// - ONCE: the failpoint will only be triggered once.
 /// - REGULAR: the failpoint will always be triggered until disableFailPoint is called.
 /// - PAUSEABLE_ONCE: the failpoint will be blocked one time when pauseFailPoint is called, until disableFailPoint is called.
