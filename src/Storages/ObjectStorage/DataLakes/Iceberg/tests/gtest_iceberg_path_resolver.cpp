@@ -142,3 +142,26 @@ TEST(IcebergLocationURI, NativeGCSUsesGsScheme)
     EXPECT_EQ(Iceberg::makeIcebergLocationURI("gcs", "bucket", "table/metadata/v1.metadata.json"),
         "gs://bucket/table/metadata/v1.metadata.json");
 }
+
+TEST(IcebergPathResolver, StorageIdentity)
+{
+    auto identity = [](const IcebergPathResolver & resolver, const String & path)
+    { return resolver.storageIdentity(Iceberg::IcebergPathFromMetadata::deserialize(path)); };
+
+    IcebergPathResolver s3("s3://bucket/tbl", "tbl", {.type_name = "s3", .namespace_name = "bucket", .allow_foreign_namespaces = true});
+    EXPECT_EQ(identity(s3, "s3://bucket/tbl/data/x.parquet"), "bucket/tbl/data/x.parquet");
+    EXPECT_EQ(identity(s3, "s3a://bucket/tbl/data/x.parquet"), "bucket/tbl/data/x.parquet");
+    EXPECT_EQ(identity(s3, "s3://other/tbl/x.parquet"), "other/tbl/x.parquet");
+    EXPECT_EQ(identity(s3, "s3a://other/tbl/x.parquet"), "other/tbl/x.parquet");
+
+    IcebergPathResolver azure("abfss://c@a.dfs.core.windows.net", "", {.type_name = "azure", .namespace_name = "c", .allow_foreign_namespaces = false});
+    EXPECT_EQ(identity(azure, "abfss://c@a.dfs.core.windows.net/foo://bar/x"), "c/foo://bar/x");
+
+    IcebergPathResolver local("/w/t", "/w/t", {.type_name = "local", .namespace_name = "", .allow_foreign_namespaces = false});
+    for (const auto * path : {"/w/t/metadata/s.avro", "file:///w/t/metadata/s.avro", "/w/t/metadata//s.avro", "/w/t/./metadata/s.avro"})
+        EXPECT_EQ(identity(local, path), "/w/t/metadata/s.avro") << path;
+
+    IcebergPathResolver hdfs("hdfs://h:9000/w/t", "/w/t", {.type_name = "hdfs", .namespace_name = "h:9000", .allow_foreign_namespaces = false});
+    for (const auto * path : {"hdfs://h:9000/w/t/data/x.parquet", "hdfs://h:9000/w/t/data//x.parquet", "hdfs://h:9000/w/t/./data/x.parquet"})
+        EXPECT_EQ(identity(hdfs, path), "/w/t/data/x.parquet") << path;
+}

@@ -203,7 +203,7 @@ public:
     ObjectStoragePtr getObjectStorage() override;
 
     /// The object storages of every location, including the non-local ones, which `getObjectStorage` does not return.
-    std::unordered_map<Location, ObjectStoragePtr> getObjectStoragesByLocation() const { return object_storages->getRegistry(); }
+    std::unordered_map<Location, ObjectStoragePtr> getObjectStorages() const { return object_storages->getRegistry(); }
 
     bool supportsCache() const override;
 
