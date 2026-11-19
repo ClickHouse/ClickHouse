@@ -4,7 +4,8 @@
 
 # A read of an explicit version of an S3 object (`?versionId=`) must use the metadata (the size) of that version,
 # not of the current one: the size bounds the read (e.g. with the small-file prefetch), so a historical version that
-# is larger than the current one was silently truncated.
+# is larger than the current one was silently truncated. The same for a wildcard, whose listing describes the current
+# versions of the objects.
 #
 # The server below mimics S3 for one versioned object: the current version is `9\n`, the version `old` is `1\n2\n`.
 
@@ -35,7 +36,24 @@ class Handler(BaseHTTPRequestHandler):
 
     def respond(self, with_body):
         url = urlsplit(self.path)
-        version = parse_qs(url.query).get('versionId', [None])[0]
+        query = parse_qs(url.query)
+        if url.path.rstrip('/') == '/test' and 'list-type' in query:
+            data, etag = VERSIONS[None]
+            body = ('<?xml version=\"1.0\" encoding=\"UTF-8\"?>'
+                '<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">'
+                '<Name>test</Name><Prefix>' + query.get('prefix', [''])[0] + '</Prefix>'
+                '<KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated>'
+                '<Contents><Key>data.csv</Key><LastModified>2026-11-02T00:00:00.000Z</LastModified>'
+                '<ETag>&quot;cur&quot;</ETag><Size>' + str(len(data)) + '</Size><StorageClass>STANDARD</StorageClass></Contents>'
+                '</ListBucketResult>').encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/xml')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            if with_body:
+                self.wfile.write(body)
+            return
+        version = query.get('versionId', [None])[0]
         if url.path != '/test/data.csv' or version not in VERSIONS:
             self.send_response(404)
             self.send_header('Content-Length', '0')
@@ -82,11 +100,16 @@ for _ in $(seq 1 50); do
 done
 
 url="http://127.0.0.1:${HTTP_PORT}/test/data.csv"
+wildcard_url="http://127.0.0.1:${HTTP_PORT}/test/data*.csv"
 
 for prefetch in 0 1; do
     ${CLICKHOUSE_LOCAL} --query "
         SELECT 'current', groupArray(x) FROM s3('${url}', 'test', 'testtest', 'CSV', 'x UInt64')
             SETTINGS remote_filesystem_read_prefetch = ${prefetch};
         SELECT 'old', groupArray(x) FROM s3('${url}?versionId=old', 'test', 'testtest', 'CSV', 'x UInt64')
+            SETTINGS remote_filesystem_read_prefetch = ${prefetch};
+        SELECT 'wildcard current', groupArray(x) FROM s3('${wildcard_url}', 'test', 'testtest', 'CSV', 'x UInt64')
+            SETTINGS remote_filesystem_read_prefetch = ${prefetch};
+        SELECT 'wildcard old', groupArray(x) FROM s3('${wildcard_url}?versionId=old', 'test', 'testtest', 'CSV', 'x UInt64')
             SETTINGS remote_filesystem_read_prefetch = ${prefetch};"
 done
