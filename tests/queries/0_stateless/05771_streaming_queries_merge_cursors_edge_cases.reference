@@ -1,0 +1,16 @@
+--- a table name with a dot
+t.dot	3
+--- a database name with a dot
+t	3
+--- a nested Merge table
+NOT_IMPLEMENTED
+--- parallel replicas do not expand a streaming read
+r2	42
+--- incremental refresh from a table without persisted block columns
+must set enable_block_number_column = 1 and enable_block_offset_column = 1
+--- incremental refresh from a ReplacingMergeTree table
+uses a merging engine
+--- incremental refresh after a table is dropped and created again
+before	[1,2]
+after	[1,2,100]
+next	[1,2,100,200]

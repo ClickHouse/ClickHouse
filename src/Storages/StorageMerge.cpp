@@ -91,6 +91,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageFile.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageURL.h>
@@ -1725,6 +1726,13 @@ void ReadFromMerge::setStreamForChild(
             "Table {} of {} doesn't support STREAM (engine {})",
             storage->getStorageID().getNameForLogs(), storage_merge->getStorageID().getNameForLogs(), storage->getName());
 
+    /// The `_database` and `_table` virtual columns of a nested `Merge` table identify the table it reads and not
+    /// the nested `Merge` table itself, so the cursor could not be reconstructed from the result.
+    if (std::dynamic_pointer_cast<StorageMerge>(storage))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "STREAM from {} is not supported, because its table {} has engine Merge",
+            storage_merge->getStorageID().getNameForLogs(), storage->getStorageID().getNameForLogs());
+
     const auto & modifiers = *query_info.table_expression_modifiers;
     StreamSettings stream_settings = *modifiers.getStreamSettings();
     if (stream_settings.watermark)
@@ -1741,6 +1749,24 @@ void ReadFromMerge::setStreamForChild(
         path.insert(path.end(), parts.begin(), parts.end());
     }
 
+    /// An incremental refresh of a materialized view: the bounded read of every table reports its cursor in the
+    /// holder of the refresh. The tables matching the `Merge` table may change, so they are checked on every refresh.
+    auto streaming_cursor = modified_context->getStreamingCursor();
+    if (streaming_cursor)
+    {
+        StorageMaterializedView::validateIncrementalRefreshSource(storage);
+
+        /// The cursor persisted by the refresh is bound to the UUID of the table: a table that is dropped and
+        /// created again under the same name has its blocks numbered from the beginning, so it must be read from
+        /// the beginning instead of resuming from the cursor of its predecessor.
+        const auto uuid = storage->getStorageID().uuid;
+        if (uuid == UUIDHelpers::Nil)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Table {} of {} has no UUID, so it cannot be the source of an incremental refresh of a materialized view",
+                storage->getStorageID().getNameForLogs(), storage_merge->getStorageID().getNameForLogs());
+        path.push_back(toString(uuid));
+    }
+
     CursorTreeNodePtr table_cursor = stream_settings.cursor;
     for (const auto & key : path)
         table_cursor = table_cursor && table_cursor->hasSubtree(key) ? table_cursor->getSubtree(key) : nullptr;
@@ -1753,16 +1779,8 @@ void ReadFromMerge::setStreamForChild(
     if (auto * table_node = modified_query_info.table_expression ? modified_query_info.table_expression->as<TableNode>() : nullptr)
         table_node->setTableExpressionModifiers(child_modifiers);
 
-    /// An incremental refresh of a materialized view: the bounded read of every table reports its cursor under the
-    /// database and the table. The tables matching the `Merge` table may change, so they are checked on every refresh.
-    if (auto streaming_cursor = modified_context->getStreamingCursor())
-    {
-        if (!storage->reportsStreamingCursor())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Table {} of {} has engine {}, which does not report the cursor of a streaming read for an incremental refresh",
-                storage->getStorageID().getNameForLogs(), storage_merge->getStorageID().getNameForLogs(), storage->getName());
-        modified_context->setStreamingCursor(StreamingCursor::createChild(std::move(streaming_cursor), path));
-    }
+    if (streaming_cursor)
+        modified_context->setStreamingCursor(StreamingCursor::createChild(std::move(streaming_cursor), std::move(path)));
 }
 
 SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & modified_context,
@@ -3075,6 +3093,13 @@ std::vector<StorageID> ReadFromMerge::computeExpandableReads(
     /// `MergeTree` reads. This tells the caller whether that is possible, and which tables the union would
     /// read, without touching the plan - so that the decision to distribute can be taken before anything is
     /// rewritten.
+
+    /// A streaming read is never expanded: the union would concatenate the streams of the children, while a
+    /// streaming read of a child never finishes (see `initializePipeline`), and a streaming read cannot be
+    /// shipped to the replicas anyway.
+    if (query_info.isStream())
+        return {};
+
     filterTablesAndCreateChildrenPlans();
 
     if (selected_tables.empty() || child_plans->empty())
@@ -3161,7 +3186,6 @@ bool ReadFromMerge::mayBeExpandedForParallelReplicas(const std::function<bool(co
     return settings[Setting::parallel_replicas_plan_based]
         && settings[Setting::parallel_replicas_allow_merge_tables]
         && !InterpreterSelectQuery::isQueryWithFinal(query_info)
-        && !query_info.isStream()
         && !computeExpandableReads(can_ship_read).empty();
 }
 
@@ -3498,7 +3522,7 @@ SELECT _table, _block_number, _block_offset, * FROM merge_table
 STREAM CURSOR {'db': {'t1': {'all': {'block_number': 5, 'block_offset': 99}}}}
 ```
 
-A table without an entry in the cursor is read from the beginning. The set of tables is determined at the start of the query. If all the tables support it, a `Merge` table can be the source of an incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`); a table that starts matching later is read from the beginning by the next refresh. `WATERMARK` is not supported.
+A table without an entry in the cursor is read from the beginning. The set of tables is determined at the start of the query. If all the tables can be the source of an incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`), so can the `Merge` table; the tables are checked on every refresh, and a table that starts matching later, or is dropped and created again, is read from the beginning by the next refresh. `WATERMARK` and nested `Merge` tables are not supported.
 
 ## Virtual columns {#virtual-columns}
 

@@ -129,6 +129,11 @@ public:
 
     static String generateInnerTableName(const StorageID & view_id);
 
+    /// Throws if the table cannot be the source of an incremental refresh (`APPEND INCREMENTAL`): it must support
+    /// STREAM, report the cursor of a streaming read, and, for `MergeTree`, keep the cursor stable across merges.
+    /// A composite source (`Merge`) checks every table it reads on every refresh.
+    static void validateIncrementalRefreshSource(const StoragePtr & source);
+
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
