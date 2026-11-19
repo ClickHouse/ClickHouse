@@ -6,8 +6,13 @@
 
 #include <cerrno>
 #include <functional>
+#include <thread>
 
+#include <base/scope_guard.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/ErrnoException.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/WriteOutcome.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -192,6 +197,54 @@ private:
     Wrap wrap;
 };
 
+/// Reports `outcome` and from then on fails every allocation of its thread, as at a memory limit, unless it is blocked.
+class FaultingWriteBuffer final : public FailingWriteBuffer
+{
+public:
+    FaultingWriteBuffer(std::string path_, WriteOutcome outcome_, MemoryTracker & tracker_)
+        : FailingWriteBuffer(
+              [](const std::string & path) { throw Exception(ErrorCodes::S3_ERROR, "Write of {} failed in the test stub", path); },
+              std::move(path_),
+              outcome_)
+        , tracker(tracker_)
+    {
+    }
+
+    std::optional<WriteOutcome> getWriteOutcome() const override
+    {
+        tracker.setFaultProbability(1.0);
+        return FailingWriteBuffer::getWriteOutcome();
+    }
+
+private:
+    MemoryTracker & tracker;
+};
+
+class FaultingObjectStorage final : public ThrowingObjectStorage
+{
+public:
+    FaultingObjectStorage(WriteOutcome outcome_, MemoryTracker & tracker_)
+        : ThrowingObjectStorage({}, [](size_t) { return false; }, {})
+        , outcome(outcome_)
+        , tracker(tracker_)
+    {
+    }
+
+    std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
+        const StoredObject & object,
+        WriteMode,
+        std::optional<ObjectAttributes>,
+        size_t,
+        const WriteSettings &) override
+    {
+        return std::make_unique<FaultingWriteBuffer>(object.remote_path, outcome, tracker);
+    }
+
+private:
+    WriteOutcome outcome;
+    MemoryTracker & tracker;
+};
+
 /// Drives the real commit against `object_storage`.
 bool commitTo(ObjectStoragePtr object_storage)
 {
@@ -331,6 +384,46 @@ TEST(IcebergCommitPropagation, WriteWithoutAnOutcomeIsUnknown)
     {
         EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION) << e.message();
         EXPECT_TRUE(e.message().contains("the storage reports no outcome of the write")) << e.message();
+    }
+}
+
+TEST(IcebergCommitPropagation, MemoryLimitInTheDiagnosticsKeepsTheOutcome)
+{
+    /// Every allocation may throw, as with a small `min_allocation_size_to_throw_on_memory_limit`.
+    const UInt64 saved_min_allocation_to_throw = CurrentMemoryTracker::getMinAllocationSizeBytesToThrow();
+    CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1);
+    SCOPE_EXIT(CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(saved_min_allocation_to_throw));
+
+    for (const auto outcome : {WriteOutcome::Applied, WriteOutcome::Unknown})
+    {
+        MemoryTracker user_tracker(&total_memory_tracker, VariableContext::User, false);
+        std::optional<bool> committed;
+        std::optional<int> error_code;
+        std::thread([&]
+        {
+            ThreadStatus thread_status;
+            thread_status.memory_tracker.setParent(&user_tracker);
+            thread_status.untracked_memory_limit = 0;
+            try
+            {
+                committed = commitTo(std::make_shared<FaultingObjectStorage>(outcome, user_tracker));
+            }
+            catch (const Exception & e)
+            {
+                user_tracker.setFaultProbability(0);
+                error_code = e.code();
+            }
+            user_tracker.setFaultProbability(0);
+        }).join();
+
+        if (outcome == WriteOutcome::Applied)
+        {
+            EXPECT_EQ(committed, true) << "error code " << error_code.value_or(0);
+        }
+        else
+        {
+            EXPECT_EQ(error_code, ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION) << "error code " << error_code.value_or(0);
+        }
     }
 }
 

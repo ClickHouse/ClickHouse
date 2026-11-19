@@ -38,6 +38,7 @@
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ErrnoException.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadStatus.h>
@@ -403,6 +404,8 @@ static bool isRefusedWrite(const Exception & e)
 /// The upload was sent and failed without proof either way, so it may have published the new version.
 [[noreturn]] static void throwCommitOutcomeUnknown(const String & storage_metadata_path, std::string_view reason = "")
 {
+    /// The diagnostics allocate, and a memory limit must not turn this error into one that lets the caller roll back.
+    LockMemoryExceptionInThread lock(VariableContext::Global);
     /// The new error tells the caller to keep the files, and the log keeps the original one with its stack trace.
     tryLogCurrentException(
         getLogger("IcebergWrites"),
@@ -425,6 +428,8 @@ bool isCommitOutcomeUnknown()
 /// published, false after a lost race, and rethrows the exception being handled when nothing was published.
 static bool decideByWriteOutcome(WriteOutcome outcome, const String & storage_metadata_path)
 {
+    /// The diagnostics allocate, and a memory limit must not change the decision.
+    LockMemoryExceptionInThread lock(VariableContext::Global);
     switch (outcome)
     {
         case WriteOutcome::Applied:
@@ -622,6 +627,7 @@ bool writeMetadataFileAndVersionHint(
     }
     catch (...)
     {
+        LockMemoryExceptionInThread lock(VariableContext::Global);
         tryLogCurrentException(
             getLogger("IcebergWrites"),
             fmt::format("The version hint is not advanced to the published metadata file {}", metadata_file_info.path.serialize()));
