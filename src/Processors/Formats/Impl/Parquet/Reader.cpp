@@ -712,6 +712,23 @@ bool Reader::topKShouldSkipRowGroup(const RowGroup & row_group) const
     return !tracker.isValueInsideThreshold(boundary);
 }
 
+std::optional<Field> Reader::getTopKSortColumnBound() const
+{
+    if (!top_k_primitive_idx.has_value())
+        return std::nullopt;
+    const bool ascending = format_filter_info->top_k_filter->threshold_tracker->getDirection() == 1;
+    std::optional<Field> bound;
+    for (const auto & row_group : row_groups)
+    {
+        if (!row_group.top_k_sort_column_range.has_value())
+            return std::nullopt;
+        const Field & value = ascending ? row_group.top_k_sort_column_range->left : row_group.top_k_sort_column_range->right;
+        if (!bound.has_value() || (ascending ? accurateLess(value, *bound) : accurateLess(*bound, value)))
+            bound = value;
+    }
+    return bound;
+}
+
 bool Reader::topKRowGroupMayBeBoundedByDictionary(size_t row_group_idx, const std::optional<Range> & statistics_range) const
 {
     /// A range exists only for a chunk without nulls (see `getTopKSortColumnRange`), which the dictionary does not hold.
@@ -984,6 +1001,14 @@ static size_t heapBytesOfField(const Field & field)
 }
 
 void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selection)
+{
+    prefilterRowGroups(row_group_selection);
+    if (min_max_chunk.has_value())
+        return;
+    initRowGroups();
+}
+
+void Reader::prefilterRowGroups(const RowGroupSelection & row_group_selection)
 {
     extended_sample_block = *sample_block;
     for (const auto & col : format_filter_info->additional_columns)
@@ -1626,7 +1651,10 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
     if (rows_to_read && !rows_to_read->empty() && rows_to_read->back() >= total_rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Requested to read row {} of a parquet file that has only {} rows", rows_to_read->back(), total_rows);
+}
 
+void Reader::initRowGroups()
+{
     if (row_groups.empty())
         return; // all row groups were skipped
 

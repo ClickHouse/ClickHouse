@@ -702,6 +702,8 @@ struct Reader
         VectorWithMemoryTracking<FileColumnChunksPtr> cached_column_chunks_ = {},
         SharedFileColumnChunksPtr shared_column_chunks_ = nullptr);
     void prefilterAndInitRowGroups(const RowGroupSelection & row_group_selection);
+    /// The part of `prefilterAndInitRowGroups` that fills `row_groups`, without preparing to read them.
+    void prefilterRowGroups(const RowGroupSelection & row_group_selection);
     /// Takes or parses the column chunks of `primitive_columns`; called by prefilterAndInitRowGroups.
     void parseColumnChunks();
     /// Takes from the cache, from `shared_column_chunks`, or parses those of `column_indices` (sorted, unique)
@@ -799,6 +801,9 @@ struct Reader
     /// top-K heap, so the row group can be skipped without reading its column data. The threshold
     /// only ever tightens, so a `false` result is safely revisited by the row filter later.
     bool topKShouldSkipRowGroup(const RowGroup & row_group) const;
+    /// The smallest minimum (ascending order) or the largest maximum (descending order) of the sort column
+    /// over `row_groups`; nullopt if a row group has no usable statistics for it.
+    std::optional<Field> getTopKSortColumnBound() const;
     bool topKRowGroupMayBeBoundedByDictionary(size_t row_group_idx, const std::optional<Range> & statistics_range) const;
     void refineTopKRangeFromDictionary(RowGroup & row_group) const;
     /// Folds the sort column of a chunk delivered from the row group into RowGroup::top_k_best_value.
@@ -877,6 +882,7 @@ private:
     bool spatialBboxStatsHaveNoNulls(size_t row_group_idx, size_t spatial_key_condition_idx) const;
     /// Returns false if the range is inverted (min > max): such statistics must be ignored.
     [[nodiscard]] bool adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const;
+    void initRowGroups();
     void prepareBloomFilterCondition();
     /// Look up the row groups in the columns cache and decide which columns to write to it.
     void initColumnsCache();
