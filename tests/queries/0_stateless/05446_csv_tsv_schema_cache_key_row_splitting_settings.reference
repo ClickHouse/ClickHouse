@@ -1,0 +1,32 @@
+-- input_format_csv_allow_cr_end_of_line
+1
+c1	Nullable(String)
+-- format_csv_allow_single_quotes
+1
+c1	Nullable(String)
+c2	Nullable(String)
+c3	Nullable(String)
+-- format_csv_allow_double_quotes
+1
+c1	Nullable(String)
+c2	Nullable(String)
+c3	Nullable(String)
+-- input_format_csv_trim_whitespaces
+1
+c1	Nullable(String)
+c2	Nullable(String)
+-- input_format_csv_allow_variable_number_of_columns
+2
+CANNOT_EXTRACT_TABLE_STRUCTURE
+-- input_format_csv_skip_trailing_empty_lines
+3
+c1	Nullable(Int64)
+-- input_format_tsv_crlf_end_of_line
+2
+CANNOT_EXTRACT_TABLE_STRUCTURE
+-- input_format_tsv_allow_variable_number_of_columns
+2
+CANNOT_EXTRACT_TABLE_STRUCTURE
+-- input_format_tsv_skip_trailing_empty_lines
+3
+c1	Nullable(Int64)
