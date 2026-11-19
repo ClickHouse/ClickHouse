@@ -1,7 +1,7 @@
 #include <Common/Wyrd/Facade/Clock.h>
 
 #if defined(WYRD_SIMULATION)
-#    include <Common/Wyrd/Random.h>
+#    include <Common/Wyrd/Strategies/Simulation/Syscall.h>
 #else
 #    include <Common/Stopwatch.h>
 #endif
@@ -13,9 +13,7 @@ namespace DB::Wyrd
 
 UInt64 monotonicNanoseconds()
 {
-    thread_local UInt64 clock_ns = 0;
-    clock_ns += 1'000 + randomNumber() % 9'000;
-    return clock_ns;
+    return advanceClock();
 }
 
 #elif defined(WYRD_ADVERSARY)

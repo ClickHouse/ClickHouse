@@ -8,38 +8,32 @@ namespace DB::Wyrd
 
 void enterThread()
 {
-    if (auto * current = adversary())
-        current->threadEnter();
+    adversary()->threadEnter();
 }
 
 void failThread(std::exception_ptr exception)
 {
-    if (auto * current = adversary())
-        current->threadFail(std::move(exception));
+    adversary()->threadFail(std::move(exception));
 }
 
 void exitThread()
 {
-    if (auto * current = adversary())
-        current->threadExit();
+    adversary()->threadExit();
 }
 
 void enterLockFreeScope()
 {
-    if (auto * current = adversary())
-        current->threadEnterLockFreeScope();
+    adversary()->threadEnterLockFreeScope();
 }
 
 void leaveLockFreeScope()
 {
-    if (auto * current = adversary())
-        current->threadLeaveLockFreeScope();
+    adversary()->threadLeaveLockFreeScope();
 }
 
 void progressHint()
 {
-    if (auto * current = adversary())
-        current->threadProgress();
+    adversary()->threadProgress();
 }
 
 }

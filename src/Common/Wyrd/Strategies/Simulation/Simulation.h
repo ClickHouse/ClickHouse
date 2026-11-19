@@ -63,6 +63,7 @@ public:
     void progressHint(std::source_location location);
     void trace(std::string message);
     void brokenInvariant(std::string message);
+    UInt64 advanceClock();
 
 private:
     const SimulationParams params;
@@ -77,6 +78,7 @@ private:
     UInt32 next_thread_id = 1;
 
     size_t steps = 0;
+    UInt64 clock_ns = 0;
     SipHash digest;
     std::exception_ptr exception;
     std::string broken_invariant;

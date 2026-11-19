@@ -1,5 +1,7 @@
 #pragma once
 
+#include <base/types.h>
+
 #include <functional>
 #include <source_location>
 #include <string>
@@ -17,5 +19,6 @@ void leaveLockFreeScope(std::source_location location = std::source_location::cu
 void progressHint(std::source_location location = std::source_location::current());
 void trace(std::string message);
 void brokenInvariant(std::string message);
+UInt64 advanceClock();
 
 }

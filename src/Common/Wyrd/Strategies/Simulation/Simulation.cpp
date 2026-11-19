@@ -249,6 +249,12 @@ void Simulation::brokenInvariant(std::string message)
     running_thread->suspend();
 }
 
+UInt64 Simulation::advanceClock()
+{
+    clock_ns += 1'000 + randomNumber() % 9'000;
+    return clock_ns;
+}
+
 }
 
 }
