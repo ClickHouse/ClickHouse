@@ -13,6 +13,9 @@ SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 -- The Fast test profile sets a non-zero max_rows_to_group_by, which keeps aggregations local.
 SET max_rows_to_group_by = 0;
+-- The test profile also limits the size of a `DISTINCT`, which keeps each final `DISTINCT` on one node.
+SET max_rows_in_distinct = 0;
+SET max_bytes_in_distinct = 0;
 SET use_statistics = 0;
 -- The test pins full EXPLAIN outputs, so the randomized settings that shape these plans are pinned.
 SET query_plan_optimize_join_order_randomize = 0;
