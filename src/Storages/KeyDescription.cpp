@@ -2,9 +2,12 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <DataTypes/TypeTree.h>
 
+#include <Core/Settings.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -18,15 +21,108 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
+#include <unordered_set>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool formatdatetime_e_with_space_padding;
+    extern const SettingsBool formatdatetime_f_prints_scale_number_of_digits;
+    extern const SettingsBool formatdatetime_f_prints_single_zero;
+    extern const SettingsBool formatdatetime_format_without_leading_zeros;
+    extern const SettingsBool formatdatetime_parsedatetime_m_is_month_name;
+    extern const SettingsBool parsedatetime_e_requires_space_padding;
+    extern const SettingsBool parsedatetime_parse_without_leading_zeros;
+}
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+using FunctionPredicate = std::function<bool(const IFunctionBase &)>;
+
+bool callsAnyOf(const IFunctionBase & function, const FunctionPredicate & is_carrier);
+
+bool nodeCallsAnyOf(const ActionsDAG::Node & node, const FunctionPredicate & is_carrier)
+{
+    /// A constant-folded call is a COLUMN node that keeps the `function_base` of the call.
+    if (node.type == ActionsDAG::ActionType::COLUMN && node.function_base && callsAnyOf(*node.function_base, is_carrier))
+        return true;
+    return !allNodeFunctions(node, [&](const IFunctionBase & function) { return !callsAnyOf(function, is_carrier); });
+}
+
+/// A lambda body is a separate DAG held by its `FunctionCapture` (`FunctionExpression` once folded), not a child node.
+bool callsAnyOf(const IFunctionBase & function, const FunctionPredicate & is_carrier)
+{
+    if (is_carrier(function))
+        return true;
+
+    const ActionsDAG * body = nullptr;
+    if (const auto * capture = typeid_cast<const FunctionCapture *>(&function))
+        body = &capture->getAcionsDAG();
+    else if (const auto * expression = typeid_cast<const FunctionExpression *>(&function))
+        body = &expression->getAcionsDAG();
+    if (!body)
+        return false;
+
+    return std::ranges::any_of(body->getNodes(), [&](const ActionsDAG::Node & node) { return nodeCallsAnyOf(node, is_carrier); });
+}
+
+}
+
+NameSet getKeySubexpressionsWithSessionDependentValues(const ExpressionActions & key_expr, const ContextPtr & context)
+{
+    NameSet result;
+    if (!context)
+        return result;
+
+    const auto & settings = context->getSettingsRef();
+    const auto & global_settings = context->getGlobalContext()->getSettingsRef();
+    auto deviates = [&](const auto & setting) { return settings[setting] != global_settings[setting]; };
+
+    /// The settings these functions capture when they are built, which change the value they produce.
+    const bool format_deviates = deviates(Setting::formatdatetime_parsedatetime_m_is_month_name)
+        || deviates(Setting::formatdatetime_f_prints_single_zero) || deviates(Setting::formatdatetime_f_prints_scale_number_of_digits)
+        || deviates(Setting::formatdatetime_format_without_leading_zeros) || deviates(Setting::formatdatetime_e_with_space_padding);
+    const bool parse_deviates = deviates(Setting::formatdatetime_parsedatetime_m_is_month_name)
+        || deviates(Setting::parsedatetime_parse_without_leading_zeros) || deviates(Setting::parsedatetime_e_requires_space_padding);
+    if (!format_deviates && !parse_deviates)
+        return result;
+
+    static const std::unordered_set<std::string_view> parse_functions = {
+        "parseDateTime", "parseDateTimeOrZero", "parseDateTimeOrNull", "parseDateTime64", "parseDateTime64OrZero", "parseDateTime64OrNull"};
+
+    auto is_carrier = [&](const IFunctionBase & function)
+    {
+        const auto & name = function.getName();
+        if (format_deviates
+            && (name == "formatDateTime" || (name == "fromUnixTimestamp" && function.getArgumentTypes().size() >= 2)))
+            return true;
+        return parse_deviates && parse_functions.contains(name);
+    };
+
+    /// Actions are linearized children-first, so one pass propagates the taint up to the key columns.
+    std::unordered_set<const ActionsDAG::Node *> tainted;
+    for (const auto & action : key_expr.getActions())
+    {
+        const auto * node = action.node;
+        bool is_tainted = nodeCallsAnyOf(*node, is_carrier)
+            || std::ranges::any_of(node->children, [&](const auto * child) { return tainted.contains(child); });
+        if (is_tainted)
+        {
+            tainted.insert(node);
+            result.insert(node->result_name);
+        }
+    }
+    return result;
 }
 
 KeyDescription::KeyDescription(const KeyDescription & other)
