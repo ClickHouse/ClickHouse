@@ -8,7 +8,7 @@ class LockFreeScope
 {
 public:
     LockFreeScope();
-    ~LockFreeScope();
+    ~LockFreeScope(); /// NOLINT(performance-trivially-destructible)
 
     LockFreeScope(const LockFreeScope &) = delete;
     LockFreeScope & operator=(const LockFreeScope &) = delete;

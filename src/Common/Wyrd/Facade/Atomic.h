@@ -136,7 +136,7 @@ public:
         name = std::move(new_name);
     }
 
-    const std::string & getName() const
+    [[nodiscard]] const std::string & getName() const
     {
         return name;
     }

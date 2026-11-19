@@ -5,11 +5,11 @@
 #    include <Common/SetWithMemoryTracking.h>
 #    include <Common/VectorWithMemoryTracking.h>
 #    include <Common/randomSeed.h>
+#    include <base/EnumReflection.h>
 
 #    include <fmt/format.h>
 #    include <gtest/gtest-spi.h>
 #    include <gtest/gtest.h>
-#    include <magic_enum.hpp>
 
 #    include <algorithm>
 #    include <cstdlib>
@@ -38,7 +38,7 @@ namespace DB::Wyrd
 
 static std::optional<UInt64> seedFromEnvironment()
 {
-    const char * value = std::getenv("WYRD_SEED");
+    const char * value = std::getenv("WYRD_SEED"); // NOLINT(concurrency-mt-unsafe)
     if (!value)
         return std::nullopt;
     return std::stoull(value);
@@ -46,13 +46,13 @@ static std::optional<UInt64> seedFromEnvironment()
 
 static bool timelineRequested()
 {
-    const char * value = std::getenv("WYRD_TIMELINE");
+    const char * value = std::getenv("WYRD_TIMELINE"); // NOLINT(concurrency-mt-unsafe)
     return value && std::string_view(value) != "0";
 }
 
 static size_t threadsFromEnvironment()
 {
-    const char * value = std::getenv("WYRD_THREADS");
+    const char * value = std::getenv("WYRD_THREADS"); // NOLINT(concurrency-mt-unsafe)
     if (!value)
         return std::max<size_t>(1, std::thread::hardware_concurrency());
     return std::stoull(value);

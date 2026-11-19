@@ -15,7 +15,7 @@ struct SimulatedThread
 
     void resume();
     void suspend();
-    bool finished() const;
+    [[nodiscard]] bool finished() const;
 
     const UInt32 id;
 

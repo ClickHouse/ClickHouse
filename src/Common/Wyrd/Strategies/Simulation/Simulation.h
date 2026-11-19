@@ -29,10 +29,10 @@ struct SimulationResult
         BrokenInvariant,
     };
 
-    Status status;
+    Status status = Status::Ok;
     std::string exception_message;
-    size_t total_steps;
-    UInt64 digest;
+    size_t total_steps = 0;
+    UInt64 digest = 0;
     std::string timeline;
 };
 

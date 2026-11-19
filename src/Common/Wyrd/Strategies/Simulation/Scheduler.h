@@ -15,8 +15,8 @@ public:
     explicit Scheduler(SimulationParams params_);
 
     SimulatedThread * pickNext();
-    bool shouldHold() const;
-    bool shouldWakeSpuriously() const;
+    [[nodiscard]] bool shouldHold() const;
+    [[nodiscard]] bool shouldWakeSpuriously() const;
 
     void onSync();
     void onYield();
