@@ -2104,9 +2104,14 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
     };
 
     std::lock_guard lock(cluster_nodes_mutex);
-    auto & node_data = cluster_nodes_data[key];
-    if (!node_data.directory_queue)
+    auto it = cluster_nodes_data.find(key);
+    if (it == cluster_nodes_data.end() || !it->second.directory_queue)
     {
+        /// Build the node off the map. `operator[]` would insert a default entry, whose
+        /// `directory_queue` is null, before `parseAddresses` or `createPool` can throw
+        /// (`CLUSTER_DOESNT_EXIST` after `DROP CLUSTER`). `system.distribution_queue`,
+        /// `SYSTEM FLUSH DISTRIBUTED`, `TRUNCATE` and `RENAME` then dereference that null.
+        ///
         /// Sample the version before the topology. `parseAddresses` and `getClustersVersion` take
         /// `clusters_mutex` separately, so an `ALTER CLUSTER` can land between them. Recording the
         /// version first keeps it behind the addresses when that happens, and the next insert
@@ -2114,16 +2119,23 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
         /// after which every insert skips the refresh and keeps sending to the removed host.
         const auto clusters_version = getContext()->getClustersVersion();
         FailPointInjection::pauseFailPoint(FailPoints::distributed_async_insert_queue_pause_after_version_snapshot);
-        node_data.addresses = parseAddresses(name);
-        node_data.clusters_version = clusters_version;
-        node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(node_data.addresses, *this);
-        node_data.directory_queue = std::make_shared<DistributedAsyncInsertDirectoryQueue>(
+
+        ClusterNodeData new_node;
+        new_node.addresses = parseAddresses(name);
+        new_node.clusters_version = clusters_version;
+        new_node.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(new_node.addresses, *this);
+        new_node.directory_queue = std::make_shared<DistributedAsyncInsertDirectoryQueue>(
             *this, disk, relative_data_path + name,
-            node_data.connection_pool,
+            new_node.connection_pool,
             async_insert_blocker,
             getContext()->getDistributedSchedulePool());
+        auto queue = new_node.directory_queue;
+        cluster_nodes_data.insert_or_assign(key, std::move(new_node));
+        return queue;
     }
-    else if (const auto clusters_version = getContext()->getClustersVersion(); node_data.clusters_version < clusters_version)
+
+    auto & node_data = it->second;
+    if (const auto clusters_version = getContext()->getClustersVersion(); node_data.clusters_version < clusters_version)
     {
         /// If the node changes, only replace the connection pool of the existing queue. A new queue over the same
         /// directory would start a second sender, which could send a file that the old one is still sending.
