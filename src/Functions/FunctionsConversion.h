@@ -1597,14 +1597,20 @@ struct ConvertThroughParsing
             if constexpr (std::is_same_v<FromDataType, DataTypeString>
                 && (std::is_same_v<typename ToDataType::FieldType, Float32> || std::is_same_v<typename ToDataType::FieldType, Float64>))
             {
-                /// A row that is exactly one number is parsed straight from the column; anything else takes the generic path below, which also reports errors.
-                if (settings.precise_float_parsing
-                    && tryParseFloatFromPaddedRange(vec_to[i], PaddedRange(*chars, current_offset, text.size())))
+                if (settings.precise_float_parsing)
                 {
-                    if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
-                        (*vec_null_map_to)[i] = false;
-                    current_offset = next_offset;
-                    continue;
+                    /// For a `String` row the generic path below makes this same parse call, so its result decides the row.
+                    /// Only the `Throw` mode takes the generic path for a rejected row, which builds the exception message.
+                    if constexpr (exception_mode != ConvertFromStringExceptionMode::Throw)
+                        vec_to[i] = static_cast<typename ToDataType::FieldType>(0);
+                    const bool parsed = tryParseFloatFromPaddedRange(vec_to[i], PaddedRange(*chars, current_offset, text.size()));
+                    if (parsed || exception_mode != ConvertFromStringExceptionMode::Throw)
+                    {
+                        if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
+                            (*vec_null_map_to)[i] = !parsed;
+                        current_offset = next_offset;
+                        continue;
+                    }
                 }
             }
 

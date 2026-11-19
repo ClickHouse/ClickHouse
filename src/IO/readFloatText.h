@@ -134,9 +134,8 @@ private:
     const char * end_pos;
 };
 
-/// Parses `range` as one whole number, as `readFloatTextPrecise` parses a padded in-memory buffer.
-/// Returns false and leaves `x` unchanged if the range is empty or is not exactly one number, so that the
-/// caller can fall back to `readFloatTextPrecise`, which reports the error. Instantiated for Float32 and Float64.
+/// Parses `range` as one whole number. Returns false, leaving `x` unchanged, exactly when `tryReadFloatTextPrecise` on a
+/// padded in-memory buffer holding `range` fails or leaves bytes unread (so also for an empty range). Float32 and Float64.
 template <typename T> bool tryParseFloatFromPaddedRange(T & x, PaddedRange range);
 
 template <typename T> void readFloatImpreciseForCompatibility(T & x, ReadBuffer & in);
