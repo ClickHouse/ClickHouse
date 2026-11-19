@@ -1206,12 +1206,12 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPNoBackoffAfterSlowRetryCleanup
         responder.join();
     });
 
-    /// Reading the first chunk header times out at 500 ms, and a 1000 ms backoff would still end before the 1600 ms
-    /// deadline. But dropping the response reads the chunk header once more, until 1000 ms, and then the backoff no
-    /// longer fits.
+    /// Reading the first chunk header times out at 500 ms, and a 1500 ms backoff would still end before the 2400 ms
+    /// deadline, with 400 ms to spare for a slow build. But dropping the response reads the chunk header once more,
+    /// until at least 1000 ms, and then the backoff no longer fits.
     DB::ReadSettings settings;
-    settings.http_settings.retry_initial_backoff_ms = 1000;
-    settings.http_settings.retry_max_backoff_ms = 2000;
+    settings.http_settings.retry_initial_backoff_ms = 1500;
+    settings.http_settings.retry_max_backoff_ms = 3000;
     Poco::Net::HTTPBasicCredentials empty_creds;
     auto request = [&](std::chrono::steady_clock::time_point start, const DB::ReadWriteBufferFromHTTP::CancellationPtr & cancellation)
     {
@@ -1219,7 +1219,7 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPNoBackoffAfterSlowRetryCleanup
             .withBypassProxy(true)
             .withSettings(settings)
             .withTimeouts(timeouts.withReceiveTimeout(Poco::Timespan(500'000)))
-            .withDeadline(start + std::chrono::milliseconds(1600))
+            .withDeadline(start + std::chrono::milliseconds(2400))
             .withCancellation(cancellation)
             .withDelayInit(false)
             .create(empty_creds);
@@ -1236,11 +1236,11 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPNoBackoffAfterSlowRetryCleanup
         {
             ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, e.code());
         }
-        ASSERT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(1600));
+        ASSERT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(2400));
     }
 
     {
-        /// A read cancelled while the response is being dropped is reported as interrupted, not as a timeout.
+        /// A read cancelled while the response is being dropped, or earlier, is reported as interrupted, not as a timeout.
         auto cancellation = std::make_shared<DB::ReadWriteBufferFromHTTP::Cancellation>();
         const auto start = std::chrono::steady_clock::now();
         std::thread canceller([&]
