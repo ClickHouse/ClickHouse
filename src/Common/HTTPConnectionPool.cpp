@@ -966,6 +966,7 @@ public:
             reused_connection->sampleIdleTime();
 
             setTimeouts(*reused_connection, timeouts);
+            /// For a reconnect while the connection is borrowed, see `PooledConnection::reconnect`.
             reused_connection->deadline = deadline;
 
             /// Apply socket buffer sizes outside the lock because applySocketBufferSizes
@@ -976,6 +977,8 @@ public:
             return reused_connection;
         }
 
+        /// `prepareNewConnection` keeps to the deadline while connecting; the connection keeps it for a reconnect while
+        /// it is borrowed, see `PooledConnection::reconnect`.
         auto new_connection = prepareNewConnection(timeouts, connect_time, deadline);
         new_connection->deadline = deadline;
         return new_connection;
