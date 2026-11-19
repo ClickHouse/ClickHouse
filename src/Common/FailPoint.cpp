@@ -131,6 +131,7 @@ static struct InitFiu
     ONCE(distributed_cache_temp_fail_release) \
     PAUSEABLE(distributed_cache_temp_pause_before_read) \
     PAUSEABLE(distributed_cache_temp_pause_before_renewal_batch) \
+    PAUSEABLE(distributed_cache_pause_after_request_header) \
     REGULAR(distributed_cache_temp_renewal_due_soon) \
     ONCE(distributed_cache_fail_continue_read_request) \
     ONCE(distributed_cache_fail_choose_server) \
@@ -140,7 +141,9 @@ static struct InitFiu
     ONCE(distributed_cache_server_fail_metrics_request) \
     ONCE(distributed_cache_server_fail_show_request) \
     ONCE(distributed_cache_server_fail_show_streaming) \
+    ONCE(distributed_cache_fail_show_row_insert) \
     ONCE(distributed_cache_server_reply_slow_down) \
+    ONCE(distributed_cache_server_refuse_over_connection_limit) \
     REGULAR(distributed_cache_fail_request_in_the_middle_of_request_always) \
     REGULAR(distributed_cache_assume_gap_buffered_on_seek) \
     REGULAR(distributed_cache_simulate_undrained_leftovers) \
@@ -185,6 +188,7 @@ static struct InitFiu
     REGULAR(database_catalog_shutdown_sleep_per_table) \
     REGULAR(dummy_failpoint) \
     ONCE(system_log_pipeline_fail_after_smt_restore) \
+    REGULAR(system_log_pipeline_inject_test_column) \
     REGULAR(prefetched_reader_pool_failpoint) \
     REGULAR(runtime_filter_skip_finish_insert) \
     REGULAR(taskstats_counters_reset_throw) \
@@ -427,6 +431,7 @@ static struct InitFiu
     REGULAR(smt_merge_selecting_task_max_part_size) \
     REGULAR(smt_force_txn_rollback_invalidation) \
     ONCE(shared_set_full_update_fails_when_initializing) \
+    PAUSEABLE(shared_set_updater_pause) \
     PAUSEABLE(after_snapshot_clean_pause) \
     ONCE(parallel_replicas_reading_response_timeout) \
     ONCE(prepared_sets_build_ordered_set_inplace_fail) \
@@ -494,6 +499,9 @@ static struct InitFiu
     PAUSEABLE(iceberg_compaction_merge_pause_in_step) \
     PAUSEABLE_ONCE(iceberg_compaction_pause_before_metadata_commit) \
     PAUSEABLE_ONCE(iceberg_reader_pause_before_next_file) \
+    PAUSEABLE_ONCE(datalake_optimize_pause_before_arming_compaction) \
+    PAUSEABLE_ONCE(datalake_background_pause_before_loading_metadata) \
+    PAUSEABLE_ONCE(datalake_shutdown_pause_between_drains) \
     REGULAR(tcp_handler_fail_connection_setup) \
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
     PAUSEABLE(keeper_changelog_read_plan_resolved) \

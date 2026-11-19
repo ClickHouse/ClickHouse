@@ -170,6 +170,9 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
+    /// Renaming the files read (`rename_files_after_processing`) is a write to the source.
+    static void checkAccessForRenamingFiles(const ContextPtr & context);
+
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
