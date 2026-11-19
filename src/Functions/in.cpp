@@ -77,6 +77,34 @@ namespace
     return (isFloat(left) && isDecimal(right)) || (isDecimal(left) && isFloat(right));
 }
 
+[[nodiscard]] bool hasCompoundNumericTypeMismatch(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    const auto left = removeNullable(removeLowCardinality(left_type));
+    const auto right = removeNullable(removeLowCardinality(right_type));
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
+    {
+        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
+            return hasCompoundNumericTypeMismatch(left_array->getNestedType(), right_array->getNestedType());
+    }
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
+    {
+        if (const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+            right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        {
+            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+                if (hasCompoundNumericTypeMismatch(left_tuple->getElements()[i], right_tuple->getElements()[i]))
+                    return true;
+        }
+    }
+    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
+    {
+        if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
+            return hasCompoundNumericTypeMismatch(left_map->getKeyType(), right_map->getKeyType())
+                || hasCompoundNumericTypeMismatch(left_map->getValueType(), right_map->getValueType());
+    }
+    return isNumber(left) && isNumber(right) && !left->equals(*right);
+}
+
 [[nodiscard]] bool hasNestedCalendarDateInComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
     const auto left = removeNullable(removeLowCardinality(left_type));
@@ -736,6 +764,12 @@ public:
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
                     left_arg.type->getName(), set_types[0]->getName(), getName());
             if (mixed_temporal_types && !only_null_key)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
+                    left_arg.type->getName(), set_types[0]->getName(), getName());
+            if ((isArray(left_type) || isMap(left_type) || isTuple(left_type))
+                && hasCompoundNumericTypeMismatch(left_type, key_type) && !only_null_key)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",

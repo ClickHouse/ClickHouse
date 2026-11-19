@@ -3625,7 +3625,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                 in_first_argument->getResultType()->getName(), non_const_set_candidate->getResultType()->getName());
                         if (rhs_array && lhs_array
                             && rhs_array->getNumberOfDimensions() == lhs_array->getNumberOfDimensions()
-                            && !isCompoundCarrierForIn(in_first_argument->getResultType(), rhs_array->getNestedType())
                             && !(isIncompatibleNullableScalarForComplexIn(rhs_array->getNestedType())
                                 && !tryGetLeastSupertype(DataTypes{in_first_argument->getResultType(), non_const_set_candidate->getResultType()})))
                         {
@@ -3864,7 +3863,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             }
 
                             bind_argument(element);
-                            const bool numeric_element = isNumber(removeNullable(removeLowCardinality(element->getResultType())));
+                            const bool numeric_element = numeric_left
+                                && isNumber(removeNullable(removeLowCardinality(element->getResultType())));
                             QueryTreeNodePtr right_argument = std::make_shared<IdentifierNode>(Identifier{argument_names.back()});
                             const auto source_type = removeNullable(removeLowCardinality(element->getResultType()));
                             const bool carrier_element = isDynamic(source_type) || isVariant(source_type);
@@ -3881,7 +3881,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                 if (!numeric_element)
                                 {
                                     auto cast_type = makeNullableOrLowCardinalityNullableSafe(in_first_argument->getResultType());
-                                    if (needsExactInCastCheck(element->getResultType(), cast_type))
+                                    if (needsExactInCastCheck(element->getResultType(), cast_type)
+                                        && !needsCalendarDateInCast(element->getResultType(), cast_type))
                                         right_argument = makeExactInCast(right_argument, element->getResultType(), cast_type);
                                     else
                                     {
