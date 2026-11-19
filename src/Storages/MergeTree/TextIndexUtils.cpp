@@ -1066,10 +1066,6 @@ void MergeTextIndexesTask::flushDictionaryBlock()
     if (output_infos.empty())
         return;
 
-    auto tokens_format = params.dictionary_block_frontcoding_compression
-        ? TextIndexSerialization::TokensFormat::FrontCodedStrings
-        : TextIndexSerialization::TokensFormat::RawStrings;
-
     size_t num_tokens = output_infos.size();
     auto & output_str = assert_cast<ColumnString &>(*output_tokens);
     auto * dictionary_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexDictionary);
@@ -1084,7 +1080,7 @@ void MergeTextIndexesTask::flushDictionaryBlock()
     assert_cast<ColumnString &>(*sparse_index_tokens).insertData(first_token.data(), first_token.size());
     assert_cast<ColumnUInt64 &>(*sparse_index_offsets).insertValue(current_mark.offset_in_compressed_file);
 
-    TextIndexSerialization::serializeTokens(output_str, ostr, tokens_format);
+    TextIndexSerialization::serializeTokens(output_str, ostr, params.dictionary_block_encoding);
 
     for (size_t i = 0; i < num_tokens; ++i)
     {

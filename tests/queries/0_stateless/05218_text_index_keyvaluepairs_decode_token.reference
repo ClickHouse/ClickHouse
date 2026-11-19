@@ -3,7 +3,7 @@ part_name	String
 token	String					
 token_key	String					
 token_value	String					
-dictionary_compression	Enum8(\'raw\' = 0, \'front_coded\' = 1)					
+dictionary_compression	Enum8(\'raw\' = 0, \'front_coded\' = 1, \'front_coded_v2\' = 2)					
 cardinality	UInt64					
 num_posting_blocks	UInt64					
 has_embedded_postings	UInt8					
@@ -48,7 +48,7 @@ ReadFromTextIndexCount (Trivial count from text index (idx, token = {"a\\"b": "c
 -- other tokenizers do not have the columns
 part_name	String					
 token	String					
-dictionary_compression	Enum8(\'raw\' = 0, \'front_coded\' = 1)					
+dictionary_compression	Enum8(\'raw\' = 0, \'front_coded\' = 1, \'front_coded_v2\' = 2)					
 cardinality	UInt64					
 num_posting_blocks	UInt64					
 has_embedded_postings	UInt8					
