@@ -39,6 +39,10 @@ final without index	12
 sample	324
 sample without index	324
 sample expected	324
+folded min max	005
+folded sample	473
+folded sample without index	473
+folded sample expected	473
 modulo partition	(\'May\',1)
 modulo partition pruning	1
 distinct in order	300

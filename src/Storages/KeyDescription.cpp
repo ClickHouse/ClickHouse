@@ -53,6 +53,9 @@ bool callsAnyOf(const IFunctionBase & function, const FunctionPredicate & is_car
 
 bool nodeCallsAnyOf(const ActionsDAG::Node & node, const FunctionPredicate & is_carrier)
 {
+    /// A constant-folded call is a COLUMN node that keeps the `function_base` of the call.
+    if (node.type == ActionsDAG::ActionType::COLUMN && node.function_base && callsAnyOf(*node.function_base, is_carrier))
+        return true;
     return !allNodeFunctions(node, [&](const IFunctionBase & function) { return !callsAnyOf(function, is_carrier); });
 }
 
