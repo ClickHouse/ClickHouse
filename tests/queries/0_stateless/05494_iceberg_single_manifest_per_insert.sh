@@ -5,8 +5,8 @@
 # writes one manifest for all the partitions it touches, like Spark and PyIceberg, instead of one manifest per partition;
 # with `max_insert_threads = 1` the whole INSERT writes exactly one manifest. The manifest-list entry must then describe the whole manifest:
 # real file/row counts and a `partitions` summary whose bounds span every partition tuple, with `contains_null` when
-# one of them is NULL. Partition pruning keeps working on such a manifest, and DROP PARTITION refuses to drop one of
-# its partitions, since that would require rewriting a manifest shared with other partitions.
+# one of them is NULL. Partition pruning keeps working on such a manifest, and DROP PARTITION drops one of its
+# partitions by rewriting the manifest without the files of that partition.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -111,8 +111,8 @@ echo "--- second INSERT: manifests written"
 count_manifests "${TABLE_PATH}"
 describe_manifest_list "$(latest_manifest_list "${TABLE_PATH}")"
 
-echo "--- DROP PARTITION 11 is rejected: its manifest is shared with partitions 10 and 12"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${TABLE} DROP PARTITION 11" 2>&1 | grep -o 'NOT_IMPLEMENTED' | head -1
+echo "--- DROP PARTITION 11 rewrites the manifest it shares with partitions 10 and 12"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${TABLE} DROP PARTITION 11"
 ${CLICKHOUSE_CLIENT} --query "SELECT p, count(), sum(toInt64(v)) FROM ${TABLE} GROUP BY p ORDER BY p"
 
 echo "--- NULL and non-NULL partition values in one INSERT"

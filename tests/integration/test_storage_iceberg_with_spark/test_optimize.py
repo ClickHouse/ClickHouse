@@ -322,10 +322,11 @@ def test_optimize_position_delete_other_partition_spec(started_cluster_iceberg_w
     TABLE_NAME = "test_optimize_delete_other_spec_" + get_uuid_str()
     table_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
 
-    # OPTIMIZE must not apply a position delete to a data file of another partition spec. An ORC
+    # A position delete must not be applied to a data file of another partition spec. An ORC
     # data file under `identity(region)` and a position delete under `truncate(1, region)` share the
     # partition tuple, and `write.data.path` places the ORC file between the two Parquet files the
-    # delete references, so only the partition spec tells the ORC file apart.
+    # delete references, so only the partition spec tells the ORC file apart. OPTIMIZE cannot rewrite
+    # the ORC file under the default spec, so it must refuse and leave the table intact.
     spark.sql(
         f"""
         CREATE TABLE {TABLE_NAME} (id long, region string) USING iceberg PARTITIONED BY (region)
@@ -376,30 +377,73 @@ def test_optimize_position_delete_other_partition_spec(started_cluster_iceberg_w
     assert len({f[2] for f in files}) == 1, files
     assert parquet[0] < orc[0] < parquet[1], files
 
-    # OPTIMIZE must keep the partition keys; the default spec is not spec 0, which regenerated metadata gets.
-    metadata_before = get_latest_metadata(instance, table_path)
-    assert metadata_before["default-spec-id"] != 0, metadata_before["partition-specs"]
+    # OPTIMIZE rewrites every data file under the default spec `truncate(1, region)` with its partition tuple as is,
+    # which is only valid for the files written under that spec: the ORC file of `identity(region)` must be refused,
+    # before anything is written.
+    list_files = ["bash", "-c", f"find {table_path} -type f | sort"]
+    files_before = instance.exec_in_container(list_files)
 
     expected_ids = "0\n3\n4\n"
     assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == expected_ids
 
-    instance.query(
+    error = instance.query_and_get_error(
         f"OPTIMIZE TABLE {TABLE_NAME};",
         settings={"allow_experimental_iceberg_compaction": 1},
     )
+    assert "NOT_IMPLEMENTED" in error and "other partition fields" in error, error
 
     assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == expected_ids
-    assert "POSITION_DELETE" not in instance.query(
-        f"SELECT content FROM system.iceberg_files WHERE database = currentDatabase() AND table = '{TABLE_NAME}'"
-    )
+    assert instance.exec_in_container(list_files) == files_before
 
-    metadata_after = get_latest_metadata(instance, table_path)
-    changed = {
-        key: (metadata_before[key], metadata_after.get(key))
-        for key in ("partition-specs", "default-spec-id", "last-partition-id")
-        if metadata_after.get(key) != metadata_before[key]
-    }
-    assert not changed, changed
+
+def test_optimize_refuses_partition_spec_of_another_source(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_spec_source_" + get_uuid_str()
+    table_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+
+    # The partition spec changes from `identity(a)` to `identity(b)`: the arity is the same, but the old partition
+    # tuples hold values of `a`, so rewriting the old files under the new spec would declare wrong values of `b`.
+    # Spark must not merge the manifests itself: a data file listed in several manifests is refused by an earlier check.
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (a int, b int) USING iceberg PARTITIONED BY (a)
+        TBLPROPERTIES (
+            'format-version' = '2',
+            'write.delete.mode' = 'merge-on-read',
+            'commit.manifest-merge.enabled' = 'false'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 10)")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (2, 20)")
+    spark.sql(f"ALTER TABLE {TABLE_NAME} REPLACE PARTITION FIELD a WITH b")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (3, 30), (4, 30)")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE a = 3")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        "local",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table("local", instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    list_files = ["bash", "-c", f"find {table_path} -type f | sort"]
+    files_before = instance.exec_in_container(list_files)
+
+    expected = "1\t10\n2\t20\n4\t30\n"
+    assert instance.query(f"SELECT a, b FROM {TABLE_NAME} ORDER BY a") == expected
+
+    error = instance.query_and_get_error(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={"allow_experimental_iceberg_compaction": 1},
+    )
+    assert "NOT_IMPLEMENTED" in error and "other partition fields" in error, error
+
+    assert instance.query(f"SELECT a, b FROM {TABLE_NAME} ORDER BY a") == expected
+    assert instance.query(f"SELECT a, b FROM {TABLE_NAME} WHERE b = 10") == "1\t10\n"
+    assert instance.exec_in_container(list_files) == files_before
 
 
 def test_optimize_refuses_partition_tuple_of_another_arity(started_cluster_iceberg_with_spark):
