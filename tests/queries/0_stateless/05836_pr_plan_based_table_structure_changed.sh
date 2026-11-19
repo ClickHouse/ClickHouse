@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # Tag no-parallel: the failpoints are global, and the pause would stop the shipped plan of any other query.
+# Tag no-fasttest: a test that has to run alone is kept out of the fast test.
 
 # Under plan-based parallel replicas (`parallel_replicas_plan_based`), a replica can deserialize the shipped plan after
 # the table changed its structure: here the replica is cancelled as unused, its query returns, and the replica gets to
@@ -50,7 +51,7 @@ for _ in {1..600}; do
     found=$($CLICKHOUSE_CLIENT -q "
         SELECT count() FROM system.query_log
         WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE
-            AND initial_query_id = '$query_id' AND NOT is_initial_query AND type != 'QueryStart'
+            AND initial_query_id = '$query_id' AND NOT is_initial_query AND type != 'QueryStart' AND has(databases, currentDatabase())
     ")
     [ "$found" -ge 1 ] && break
     sleep 0.1
@@ -59,7 +60,7 @@ done
 $CLICKHOUSE_CLIENT -q "
     SELECT type, errorCodeToName(exception_code) FROM system.query_log
     WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE
-        AND initial_query_id = '$query_id' AND NOT is_initial_query AND type != 'QueryStart'
+        AND initial_query_id = '$query_id' AND NOT is_initial_query AND type != 'QueryStart' AND has(databases, currentDatabase())
 "
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_pr_structure_changed"
