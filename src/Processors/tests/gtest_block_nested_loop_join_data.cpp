@@ -1,4 +1,3 @@
-#include <Common/VectorWithMemoryTracking.h>
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -144,7 +143,7 @@ TEST(BlockNestedLoopJoinData, EmptyBlocksAreNotStored)
     data->finish();
 
     EXPECT_EQ(data->getNumBlocks(), 0);
-    EXPECT_EQ(data->getRowOffsets(), (VectorWithMemoryTracking<size_t>{0}));
+    EXPECT_EQ(data->getRowOffsets(), (std::vector<size_t>{0}));
     EXPECT_EQ(data->getTotalRows(), 0);
 }
 
@@ -494,7 +493,7 @@ TEST(BlockNestedLoopJoinData, SpilledBlocksRoundTrip)
     /// live has changed.
     EXPECT_EQ(data->getTotalRows(), 6);
     EXPECT_GT(data->getTotalBytes(), 0);
-    EXPECT_EQ(data->getRowOffsets(), (VectorWithMemoryTracking<size_t>{0, 3, 4, 6}));
+    EXPECT_EQ(data->getRowOffsets(), (std::vector<size_t>{0, 3, 4, 6}));
     EXPECT_EQ(storedValues(data), (std::vector<UInt64>{1, 2, 3, 4, 5, 6}));
 }
 
@@ -555,7 +554,7 @@ TEST(BlockNestedLoopJoinData, SpillingOnDemandMovesTheStoredBlocksOut)
     EXPECT_EQ(data->getNumSpilledBlocks(), 4);
     data->finish();
 
-    EXPECT_EQ(data->getRowOffsets(), (VectorWithMemoryTracking<size_t>{0, 2, 3, 5, 6}));
+    EXPECT_EQ(data->getRowOffsets(), (std::vector<size_t>{0, 2, 3, 5, 6}));
     EXPECT_EQ(storedValues(data), (std::vector<UInt64>{1, 2, 3, 4, 5, 6}));
 }
 

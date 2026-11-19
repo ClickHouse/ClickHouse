@@ -493,8 +493,8 @@ static DecimalField<T> readDecimalFieldBinary(ReadBuffer & buf)
     readBinary(value, buf);
     UInt32 scale = 0;
     readBinary(scale, buf);
-    /// The scale comes from the data; an out-of-range value later overruns a
-    /// fixed-size buffer in the decimal text writer, so reject it here.
+    /// The scale is attacker-controlled wire data; an out-of-range value later overruns a
+    /// fixed-size buffer in the decimal text writer, so reject it at the boundary.
     if (scale > DecimalUtils::max_precision<T>)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})",
                         scale, DecimalUtils::max_precision<T>);
@@ -767,10 +767,11 @@ void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
     }
     else
         scale = -exponent;
-    /// The scale comes from the text: an exponent-form value such as `Decimal64_'1e-1000'` (e.g. in a
-    /// `CUSTOM`-flagged setting parsed by `SettingFieldCustom::parseFromString`) builds a scale that
-    /// bypasses the binary reader's check. An out-of-range scale later overruns a fixed-size buffer in
-    /// the decimal text writer, so reject it here, matching `readDecimalFieldBinary` and `DataTypeDecimalBase`.
+    /// The scale comes from untrusted text: `restoreFromDump` is reached from the pre-auth native
+    /// settings reader for a `CUSTOM`-flagged setting (`SettingFieldCustom::parseFromString`), and an
+    /// exponent-form value such as `Decimal64_'1e-1000'` builds a scale that bypasses the binary
+    /// reader's check. An out-of-range scale later overruns a fixed-size buffer in the decimal text
+    /// writer, so reject it here, matching `readDecimalFieldBinary` and `DataTypeDecimalBase`.
     if (scale > DecimalUtils::max_precision<T>)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})",
                         scale, DecimalUtils::max_precision<T>);

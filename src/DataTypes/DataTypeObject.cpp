@@ -16,7 +16,6 @@
 #include <DataTypes/Serializations/SerializationObjectDistinctPaths.h>
 #include <DataTypes/Serializations/SerializationObjectCombinedPath.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnDynamic.h>
 #include <Interpreters/castColumn.h>
@@ -36,7 +35,6 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
-#include <IO/ReadHelpers.h>
 #include <boost/algorithm/string.hpp>
 
 #include "config.h"
@@ -171,17 +169,6 @@ bool DataTypeObject::isDefaultInsertTrivial() const
 {
     return std::all_of(typed_paths.begin(), typed_paths.end(),
         [](const auto & pair) { return pair.second->isDefaultInsertTrivial(); });
-}
-
-MutableColumnConstPtr DataTypeObject::createColumnConst(size_t size, const Field & field) const
-{
-    /// `ColumnObject::insert` gives each typed path absent from the `Object` the zero of its column.
-    if (field.getType() != Field::Types::Object || !field.safeGet<Object>().empty())
-        return IDataType::createColumnConst(size, field);
-
-    auto column = createColumn();
-    insertDefaultInto(*column);
-    return ColumnConst::create(std::move(column), size);
 }
 
 bool DataTypeObject::equals(const IDataType & rhs) const
@@ -458,7 +445,7 @@ struct PathAndSubcolumn
     String remaining;
 
     /// Reconstruct the full subcolumn (type_hint + "." + remaining).
-    [[nodiscard]] String fullSubcolumn() const
+    String fullSubcolumn() const
     {
         if (type_hint.empty())
             return {};

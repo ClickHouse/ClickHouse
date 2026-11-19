@@ -251,7 +251,7 @@ clickhouse-client --host your-clickhouse-host --secure --login \
   --oauth-scope "openid profile offline_access api://<app-client-id>/.default"
 ```
 
-발급된 액세스 토큰(access token)은 JWT 형태로 ClickHouse에 전달됩니다. 역할 및 권한 부여 매핑은 여전히 서버 측 JWT 인증자 구성(예: `clickhouse:roles` 클레임)에 따라 결정됩니다. ClickHouse Cloud에서 이 흐름을 사용하는 데 필요한 Entra ID 애플리케이션 설정은 [Microsoft Entra ID를 사용한 JWT 인증](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id)을 참조하십시오.
+발급된 액세스 토큰(access token)은 JWT 형태로 ClickHouse에 전달됩니다. 역할 및 권한 부여 매핑은 여전히 서버 측 JWT 인증자 구성(예: `clickhouse:roles` 클레임)에 따라 결정됩니다.
 
 <div id="clickhouse-cloud-built-in">
   ## ClickHouse Cloud 내장 JWT 인증자
@@ -277,7 +277,7 @@ clickhouse-client --host your-clickhouse-host --secure --login \
 
 <EnterprisePlanFeatureBadge feature="사용자 지정 IdP(Identity Provider)를 통한 JWT 인증" />
 
-기본 제공 인증자 외에도 자체 IdP(Identity Provider)(예: Microsoft Entra 또는 Okta)가 발급한 JWT를 허용하도록 ClickHouse Cloud 서비스를 구성할 수 있습니다. 이 기능은 ClickHouse 버전 26.4 이상을 실행하는 서비스에서 Enterprise 플랜으로 이용할 수 있습니다. **설정 → Security → JWT 인증**에서 Cloud Console을 통해 직접 구성할 수 있습니다. 단계별 지침은 [JWT 인증 설정](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)을, Entra ID의 전체 설정 과정은 [Microsoft Entra ID를 사용한 JWT 인증](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id)을 참조하십시오. 각 IdP(Identity Provider)는 다음으로 정의됩니다.
+기본 제공 인증자 외에도 자체 IdP(Identity Provider)(예: Microsoft Entra 또는 Okta)가 발급한 JWT를 허용하도록 ClickHouse Cloud 서비스를 구성할 수 있습니다. 이 기능은 ClickHouse 버전 26.4 이상을 실행하는 서비스에서 Enterprise 플랜으로 이용할 수 있습니다. **설정 → Security → JWT 인증**에서 Cloud Console을 통해 직접 구성할 수 있습니다. 단계별 지침은 [JWT 인증 설정](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)을 참조하십시오. 각 IdP(Identity Provider)는 다음으로 정의됩니다.
 
 | 매개변수          | 설명                                                                                                                                                                                                                                                                                                                 |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

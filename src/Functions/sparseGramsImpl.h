@@ -82,22 +82,22 @@ private:
             return true;
         }
 
-        [[nodiscard]] bool isEnd() const
+        bool isEnd() const
         {
             return data + right_iterator >= end;
         }
 
-        [[nodiscard]] std::pair<size_t, size_t> getNGramPositions() const
+        std::pair<size_t, size_t> getNGramPositions() const
         {
             return {left_iterator, right_iterator};
         }
 
-        [[nodiscard]] size_t getRightSymbol() const
+        size_t getRightSymbol() const
         {
             return num_increments;
         }
 
-        [[nodiscard]] size_t getNextPosition(size_t iterator) const
+        size_t getNextPosition(size_t iterator) const
         {
             if constexpr (is_utf8)
                 return std::min(size_t(end - data), iterator + UTF8::seqLength(data[iterator]));
@@ -198,8 +198,6 @@ private:
 
 public:
     static constexpr auto name = is_utf8 ? "sparseGramsUTF8" : "sparseGrams";
-    static constexpr auto signature
-        = "(String, [const NativeInteger], [const NativeInteger], [const NativeInteger]) -> Array(String)";
     static constexpr auto strings_argument_position = 0uz;
     static bool isVariadic() { return true; }
     static size_t getNumberOfArguments() { return 0; }

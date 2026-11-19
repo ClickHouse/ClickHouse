@@ -5,7 +5,6 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
-#include <Core/UUID.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <IO/Operators.h>
@@ -20,7 +19,6 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
-#include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/sort.h>
@@ -61,7 +59,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE_OF_QUERY;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int LOGICAL_ERROR;
-    extern const int QUERY_IS_PROHIBITED;
     extern const int DNS_ERROR;
     extern const int UNKNOWN_USER;
     extern const int UNKNOWN_ROLE;
@@ -418,8 +415,6 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     /// diverge (identifier `__table1.x` vs result name `x`) and distributed execution fails with
     /// `NOT_FOUND_COLUMN_IN_BLOCK`.
     query_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
-
-    query_context->setQueryExecutionStartedCallback(query_execution_started_callback);
 
     if (submitting_user_context)
     {
@@ -811,12 +806,6 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
         chassert(!ddl_query->database);
         ddl_query->setDatabase(database->getDatabaseName());
     }
-    else if (auto * rename = query->as<ASTRenameQuery>(); rename && !rename->database)
-    {
-        /// The entry may still name the initiator's local database.
-        rename->resetDatabases();
-        rename->setDatabaseIfNotExists(database->getDatabaseName());
-    }
     formatRewrittenQuery(context);
 }
 
@@ -826,8 +815,6 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
     query_context->setDDLOrOnClusterInternal(true);
     query_context->setQueryKindReplicatedDatabaseInternal();
     query_context->setCurrentDatabase(database->getDatabaseName());
-    if (entry.parent_table_uuid)
-        query_context->setParentTable(*entry.parent_table_uuid);
 
     auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, database->zookeeper_path, is_initial_query, entry_path);
     query_context->initZooKeeperMetadataTransaction(txn);
@@ -838,15 +825,19 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
         txn->addOp(zkutil::makeCreateRequest(entry_path + "/committed", host_id_str, zkutil::CreateMode::Persistent));
         txn->addOp(zkutil::makeSetRequest(database->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
 
-        /// Make sure that we did not disable replicated DDL queries. The in-memory flag rejects the entries
-        /// that are processed after `SYSTEM STOP REPLICATED DDL QUERIES`, and the flag in Keeper makes the commit
-        /// fail for the entries that passed this check before the stop.
-        if (!DatabaseCatalog::instance().canPerformReplicatedDDLQueries())
-            throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Replicated DDL queries are disabled");
+        /// Make sure that we did not disable replicated DDL queries
+        const auto & macros = from_context->getMacros();
+        bool should_check_stop_flag = macros->getMacroMap().contains("replica");
+        if (should_check_stop_flag)
+        {
+            String stop_flag_path = "/clickhouse/stop_replicated_ddl_queries/{replica}";
+            stop_flag_path = macros->expand(stop_flag_path);
 
-        String stop_flag_path = getStopReplicatedDDLQueriesFlagPath(*database);
-        txn->addOp(zkutil::makeCreateRequest(stop_flag_path, "", zkutil::CreateMode::Persistent));
-        txn->addOp(zkutil::makeRemoveRequest(stop_flag_path, -1));
+            zookeeper->createAncestors(stop_flag_path);
+
+            txn->addOp(zkutil::makeCreateRequest(stop_flag_path, "", zkutil::CreateMode::Persistent));
+            txn->addOp(zkutil::makeRemoveRequest(stop_flag_path, -1));
+        }
     }
 
     txn->addOp(getOpToUpdateLogPointer());
@@ -856,14 +847,6 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
     ops.clear();
 
     return query_context;
-}
-
-String DatabaseReplicatedTask::getStopReplicatedDDLQueriesFlagPath(const DatabaseReplicated & database)
-{
-    /// The ephemeral flag of a killed server stays in Keeper until its session expires, so the path identifies
-    /// the current process to not mistake that flag for the flag of this process after a restart.
-    static const String process_id = toString(UUIDHelpers::generateV4());
-    return fmt::format("{}/stop_replicated_ddl_queries_{}", database.replica_path, process_id);
 }
 
 Coordination::RequestPtr DatabaseReplicatedTask::getOpToUpdateLogPointer()

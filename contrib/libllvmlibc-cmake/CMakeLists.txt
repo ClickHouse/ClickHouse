@@ -54,7 +54,6 @@ set(SRCS
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/scalbn.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/scalbnl.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/sin.cpp"
-    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/sincos.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/sqrt.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/sqrtf.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/sqrtl.cpp"
@@ -84,14 +83,6 @@ if (ARCH_AMD64)
     # Without -fno-builtin, clang's loop-idiom pass rewrites the mem* inner loops
     # into calls to the very functions being defined (infinite recursion).
     target_compile_options(libllvmlibc PRIVATE -ffreestanding -fno-builtin)
-
-    # With clang 23 cbrt's fast path is 91 straight-line instructions whose two `bzhi` counts are
-    # materialised with byte-sized moves (`mov dl, 0x3f`) into the register that holds the
-    # previous call's result, so in a loop every call waits for the previous one through a
-    # partial-register merge: 13 ns per call against 4.7 ns with clang 22 on Sapphire Rapids, and
-    # 13.1 ns against 5.9 ns for glibc's generic C cbrt on Zen 5. Without BMI2 the masks become
-    # shifts and the hazard is gone: 3.2 ns per call on Zen 5, identical results.
-    set_source_files_properties("${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/cbrt.cpp" PROPERTIES COMPILE_OPTIONS "-mno-bmi2")
 
     if (X86_ARCH_LEVEL VERSION_LESS 3)
         # Compat build: SSE2 baseline

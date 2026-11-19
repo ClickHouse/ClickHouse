@@ -5,7 +5,7 @@
   var DISMISSED_KEY = 'ch-cloud-sidebar-ad-dismissed';
   var MCP_LINK_PATH = '/set-up-clickhouse-documentation-mcp-server';
   var SIGNUP_HREF = 'https://clickhouse.cloud/signUp?loc=docs-card-banner';
-  var dismissedForPage = {};
+  var dismissedForPage = false;
   var AD_COPY = {
     en: {
       ariaLabel: 'ClickHouse Cloud advert',
@@ -62,32 +62,7 @@
     return window.location.pathname.replace(/^\/docs(?=\/|$)/, '');
   }
 
-  function isClickStackOssPage() {
-    var path = normalizedPath();
-    return /^\/(?:(?:ar|es|fr|ja|ko|pt-BR|ru|zh)\/)?clickstack(?:\/|$)/.test(path)
-      && !/^\/(?:(?:ar|es|fr|ja|ko|pt-BR|ru|zh)\/)?clickstack\/(?:observability|self-configured)(?:\/|$)/.test(path);
-  }
-
-  function adSettings() {
-    return isClickStackOssPage() ? {
-      id: 'observability',
-      dismissedKey: 'ch-observability-sidebar-ad-dismissed',
-      href: 'https://clickhouse.cloud/signUp?loc=docs-observability-sidebar',
-      eventPrefix: 'docs.sidebarObservabilityAdvert',
-    } : {
-      id: 'cloud', dismissedKey: DISMISSED_KEY,
-      href: SIGNUP_HREF, eventPrefix: 'docs.sidebarCloudAdvert',
-    };
-  }
-
   function getAdCopy() {
-    if (isClickStackOssPage()) return {
-      ariaLabel: 'Try ClickHouse Observability',
-      dismissLabel: 'Dismiss ClickHouse Observability advert permanently',
-      title: 'Try ClickHouse Observability',
-      description: 'Explore logs, metrics, traces, and session replays in one place, without managing the infrastructure.',
-      linkLabel: 'Get started free',
-    };
     var localeMatch = normalizedPath().match(/^\/(ar|es|fr|ja|ko|pt-BR)(?:\/|$)/);
     return localeMatch ? AD_COPY[localeMatch[1]] : AD_COPY.en;
   }
@@ -155,9 +130,7 @@
   }
 
   function createAdSlot(tagName) {
-    var settings = adSettings();
     var slot = document.createElement(tagName);
-    slot.dataset.adVariant = settings.id;
     slot.id = AD_SLOT_ID;
     slot.className = 'ch-cloud-sidebar-ad-slot';
 
@@ -169,9 +142,9 @@
     dismissButton.type = 'button';
     dismissButton.textContent = '\u00d7';
     dismissButton.onclick = function () {
-      dismissedForPage[settings.id] = true;
-      storageSet(settings.dismissedKey, 'true');
-      track(settings.eventPrefix + '.advertDismissed', settings.href);
+      dismissedForPage = true;
+      storageSet(DISMISSED_KEY, 'true');
+      track('docs.sidebarCloudAdvert.advertDismissed', SIGNUP_HREF);
       slot.remove();
     };
 
@@ -183,11 +156,11 @@
 
     var link = document.createElement('a');
     link.className = 'ch-cloud-sidebar-ad-link';
-    link.href = settings.href;
+    link.href = SIGNUP_HREF;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
     link.onclick = function () {
-      track(settings.eventPrefix + '.clickedThrough', settings.href);
+      track('docs.sidebarCloudAdvert.clickedThrough', SIGNUP_HREF);
     };
 
     card.appendChild(dismissButton);
@@ -201,16 +174,11 @@
 
   function injectAd() {
     var existing = document.getElementById(AD_SLOT_ID);
-    var settings = adSettings();
-    if (existing && existing.dataset.adVariant !== settings.id) {
-      existing.remove();
-      existing = null;
-    }
-    if (!isGetStartedPage() && !isClickStackOssPage()) {
+    if (!isGetStartedPage()) {
       if (existing) existing.remove();
       return true;
     }
-    if (dismissedForPage[settings.id] || storageGet(settings.dismissedKey) === 'true') {
+    if (dismissedForPage || storageGet(DISMISSED_KEY) === 'true') {
       if (existing) existing.remove();
       return true;
     }

@@ -450,7 +450,6 @@ ASTPtr tryParseQuery(
         diagnostics->expected.variants.clear();
         diagnostics->expected.max_parsed_pos = nullptr;
         diagnostics->expected.highlights.clear();
-        diagnostics->expected.failed_keyword_readings.reset();
         diagnostics->error_token = Token{};
     }
 
