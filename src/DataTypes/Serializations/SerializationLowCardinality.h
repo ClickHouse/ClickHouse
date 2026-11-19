@@ -29,7 +29,7 @@ public:
 
     KindStack getKindStack() const override;
 
-    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
+    MutableColumnPtr createColumnForDeserialization(const IDataType & type) const override;
 
     bool supportsPooling() const override { return dict_inner_serialization->supportsPooling(); }
 

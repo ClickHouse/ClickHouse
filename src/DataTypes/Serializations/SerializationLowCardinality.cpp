@@ -72,13 +72,13 @@ ISerialization::KindStack SerializationLowCardinality::getKindStack() const
     return {Kind::DEFAULT, Kind::LOW_CARDINALITY};
 }
 
-MutableColumnPtr SerializationLowCardinality::wrapColumnForDeserialization(MutableColumnPtr column) const
+MutableColumnPtr SerializationLowCardinality::createColumnForDeserialization(const IDataType & type) const
 {
     /// For the automatic (non-native) LowCardinality serialization the data type is not LowCardinality,
-    /// so the base column must be replaced with a dictionary-encoded one to deserialize into.
+    /// so the column to deserialize into is a dictionary-encoded one instead of `type.createColumn()`.
     if (!is_native_low_cardinality)
         return createEmptyLowCardinalityColumn(*dictionary_type, /*is_native=*/false);
-    return column;
+    return ISerialization::createColumnForDeserialization(type);
 }
 
 UInt128 SerializationLowCardinality::getHash(const DataTypePtr & dictionary_type_, bool is_native_low_cardinality_)
