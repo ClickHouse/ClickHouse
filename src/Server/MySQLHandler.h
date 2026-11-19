@@ -141,6 +141,8 @@ protected:
 };
 
 #if USE_SSL
+class MySQLKeyPairHolder;
+
 class MySQLHandlerSSL : public MySQLHandler
 {
 public:
@@ -152,7 +154,7 @@ public:
         bool secure_required_,
         uint32_t connection_id_,
         std::optional<String> default_session_user_,
-        KeyPair & private_key_,
+        MySQLKeyPairHolder & private_key_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
@@ -165,7 +167,7 @@ private:
         size_t packet_size, char * buf, size_t pos,
         std::function<void(size_t)> read_bytes, MySQLProtocol::ConnectionPhase::HandshakeResponse & packet) override;
 
-    KeyPair & private_key;
+    MySQLKeyPairHolder & private_key;
     std::shared_ptr<Poco::Net::SecureStreamSocket> ss;
 };
 #endif

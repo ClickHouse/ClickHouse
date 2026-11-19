@@ -62,6 +62,17 @@ enum class HTTPConnectionGroupType : uint8_t
     AMBER,
 };
 
+/// How a pooled connection does socket I/O. It is fixed for the lifetime of the connection,
+/// including a response body that is read later. Independent of `HTTPConnectionGroupType`,
+/// which defines limits and metrics.
+enum class HTTPConnectionTransport : uint8_t
+{
+    /// Poco sockets: waiting for I/O in a fiber holds its scheduler thread, so the other fibers of the thread do not run.
+    FiberUnaware,
+    /// Silk sockets: waiting for I/O suspends the calling fiber, a plain thread waits through a proxy fiber.
+    FiberAware,
+};
+
 class HTTPConnectionPools
 {
 public:
@@ -109,7 +120,11 @@ public:
     [[nodiscard]] SocketBufferSizes getSocketBufferSizes(HTTPConnectionGroupType type) const;
     void dropCache();
 
-    IHTTPConnectionPoolForEndpoint::Ptr getPool(HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration);
+    IHTTPConnectionPoolForEndpoint::Ptr getPool(
+        HTTPConnectionGroupType type,
+        const Poco::URI & uri,
+        const ProxyConfiguration & proxy_configuration,
+        HTTPConnectionTransport transport = HTTPConnectionTransport::FiberUnaware);
 
     /// Collect socket inodes of all tracked HTTP connections, grouped by pool type.
     /// Inodes are cached snapshots updated on connect, reconnect, and keep-alive store.

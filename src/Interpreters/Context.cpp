@@ -21,6 +21,7 @@
 #include <Common/EventNotifier.h>
 #include <Common/FailPoint.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
 #include <base/getMemoryAmount.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
@@ -68,6 +69,7 @@
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataFilesCache.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Storages/StreamingStorageRegistry.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
@@ -371,6 +373,7 @@ namespace Setting
     extern const SettingsUInt64 hsts_max_age;
     extern const SettingsString local_filesystem_read_method;
     extern const SettingsBool local_filesystem_read_prefetch;
+    extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_backup_bandwidth;
     extern const SettingsUInt64 max_local_read_bandwidth;
     extern const SettingsUInt64 max_local_write_bandwidth;
@@ -389,7 +392,9 @@ namespace Setting
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsUInt64 prefetch_buffer_size;
+    extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
+    extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_cache_temporarily;
     extern const SettingsBool read_from_page_cache_if_exists_otherwise_bypass_cache;
     extern const SettingsUInt64 page_cache_block_size;
     extern const SettingsUInt64 page_cache_lookahead_blocks;
@@ -3458,6 +3463,15 @@ void Context::addQueryAccessInfo(const Names & partition_names)
         query_access_info->partitions.emplace(partition_name);
 }
 
+void Context::addUsedDataSkippingIndex(const StorageID & storage_id, const String & index_name)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+
+    std::lock_guard<std::mutex> lock(query_access_info->mutex);
+    query_access_info->data_skipping_indices.emplace(fmt::format("{}.{}", storage_id.getFullTableName(), backQuoteIfNeed(index_name)));
+}
+
 void Context::addViewAccessInfo(const String & view_name)
 {
     if (isGlobalContext())
@@ -3465,6 +3479,33 @@ void Context::addViewAccessInfo(const String & view_name)
 
     std::lock_guard<std::mutex> lock(query_access_info->mutex);
     query_access_info->views.emplace(view_name);
+}
+
+void Context::addSQLSecurityOverriddenBody(const StorageID & view_id, const ContextPtr & body_context, const ASTPtr & body_query)
+{
+    /// Only the context of a `DEFINER` / `NONE` body has a query context of its own.
+    if (!body_context->hasQueryContext() || body_context->getQueryContext().get() == this)
+        return;
+
+    const auto hash = body_query->getTreeHash(/*ignore_aliases=*/ false);
+    const std::pair<UInt64, UInt64> query_hash{hash.low64, hash.high64};
+    auto user = body_context->getUserName();
+    auto current_database = body_context->getCurrentDatabase();
+    auto body_query_context = body_context->getQueryContext();
+
+    std::lock_guard lock(query_access_info->mutex);
+    auto & bodies = query_access_info->sql_security_overridden_bodies;
+    for (const auto & body : bodies)
+    {
+        if (body->query_hash == query_hash && body->user == user && StorageID::DatabaseAndTableNameEqual{}(body->view, view_id))
+        {
+            body_query_context->setQueryAccessInfo(body->access_info);
+            return;
+        }
+    }
+    bodies.push_back(std::make_shared<const SQLSecurityOverriddenBody>(SQLSecurityOverriddenBody{
+        .view = view_id, .query_hash = query_hash, .user = std::move(user), .current_database = std::move(current_database),
+        .query = body_query, .access_info = body_query_context->getQueryAccessInfoPtr()}));
 }
 
 void Context::addUsedRowPolicy(const String & policy_name)
@@ -3578,11 +3619,7 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
 
 void Context::addQueryPrivilegesInfo(const String & privilege, bool granted) const
 {
-    std::lock_guard lock(query_privileges_info->mutex);
-    if (granted)
-        query_privileges_info->used_privileges.emplace(privilege);
-    else
-        query_privileges_info->missing_privileges.emplace(privilege);
+    query_privileges_info->add(privilege, granted);
 }
 
 static bool findIdentifier(const ASTFunction * function)
@@ -3654,6 +3691,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             create.set(create.sql_security, sql_security);
 
             auto view_context = view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+            if (hasQueryContext())
+                getQueryContext()->addSQLSecurityOverriddenBody(table->getStorageID(), view_context, query);
             auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
@@ -3946,6 +3985,8 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     create.set(create.sql_security, sql_security);
 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+    if (hasQueryContext())
+        getQueryContext()->addSQLSecurityOverriddenBody(original_view->getStorageID(), view_context, query);
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,
@@ -5931,12 +5972,27 @@ VectorSimilarityIndexCachePtr Context::getVectorSimilarityIndexCache() const
     return shared->vector_similarity_index_cache;
 }
 
-void Context::clearVectorSimilarityIndexCache() const
+void Context::clearVectorSimilarityIndexCache(const StorageID & table_id) const
 {
-    std::lock_guard lock(shared->mutex);
+    if (table_id)
+    {
+        auto table = DatabaseCatalog::instance().getTable(table_id, shared_from_this());
 
-    if (shared->vector_similarity_index_cache)
-        shared->vector_similarity_index_cache->clear();
+        auto table_lock = table->lockForShare(getCurrentQueryId(), getSettingsRef()[Setting::lock_acquire_timeout]);
+
+        auto merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load);
+
+        /// Only `MergeTree` tables can have vector similarity indexes, so there is nothing to clear for other tables.
+        if (merge_tree)
+            merge_tree->clearVectorSimilarityIndexCache();
+    }
+    else
+    {
+        std::lock_guard lock(shared->mutex);
+
+        if (shared->vector_similarity_index_cache)
+            shared->vector_similarity_index_cache->clear();
+    }
 }
 
 void Context::setTextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
@@ -8950,7 +9006,8 @@ const S3SettingsByEndpoint & Context::getStorageS3Settings() const
     if (!shared->storage_s3_settings)
     {
         const auto & config = shared->getConfigRefWithLock(lock);
-        shared->storage_s3_settings.emplace().loadFromConfig(config, "s3", getSettingsRef());
+        /// Shared by all queries, so built from the server settings, as on a config reload.
+        shared->storage_s3_settings.emplace().loadFromConfig(config, "s3", getGlobalContext()->getSettingsRef());
     }
 
     return *shared->storage_s3_settings;
@@ -10076,8 +10133,14 @@ StatelessWorkersProviderPtr Context::getStatelessWorkersProvider() const
     auto query_context_ptr = getQueryContext();
     std::lock_guard lock(query_context_ptr->stateless_worker_allocation_mutex);
     if (!query_context_ptr->stateless_worker_provider)
-        query_context_ptr->stateless_worker_provider = query_context_ptr->getStatelessWorkersProvider(
+    {
+        auto provider = query_context_ptr->getStatelessWorkersProvider(
             query_context_ptr->getSettingsRef()[Setting::distributed_plan_worker_cluster]);
+        /// Taken one time, so that the planning and the allocation of the query see the same workers.
+        if (auto query_snapshot = provider->tryGetQuerySnapshot())
+            provider = std::move(query_snapshot);
+        query_context_ptr->stateless_worker_provider = std::move(provider);
+    }
     return query_context_ptr->stateless_worker_provider;
 }
 
@@ -10221,8 +10284,12 @@ ReadSettings Context::getReadSettings() const
     res.remote_fs_settings.max_backoff_ms = settings_ref[Setting::remote_fs_read_max_backoff_ms];
     res.remote_fs_settings.max_retries = settings_ref[Setting::remote_fs_read_backoff_max_tries];
     res.enable_filesystem_cache = settings_ref[Setting::enable_filesystem_cache];
+    const bool bypass_filesystem_cache = settings_ref[Setting::read_from_filesystem_cache_if_exists_otherwise_bypass_cache];
+    /// A variant of the bypass: readers without the temporary mode bypass the cache. The plain bypass wins.
+    res.filesystem_cache_settings.cache_temporarily
+        = !bypass_filesystem_cache && settings_ref[Setting::read_from_filesystem_cache_if_exists_otherwise_cache_temporarily];
     res.filesystem_cache_settings.read_if_exists_otherwise_bypass
-        = settings_ref[Setting::read_from_filesystem_cache_if_exists_otherwise_bypass_cache];
+        = bypass_filesystem_cache || res.filesystem_cache_settings.cache_temporarily;
     res.filesystem_cache_settings.enable_log = settings_ref[Setting::enable_filesystem_cache_log];
     res.filesystem_cache_settings.verbose_logging = settings_ref[Setting::filesystem_cache_verbose_logging];
     res.filesystem_cache_settings.segments_batch_size = settings_ref[Setting::filesystem_cache_segments_batch_size];
@@ -10309,6 +10376,9 @@ ReadSettings Context::getReadSettings() const
     res.http_settings.retry_max_backoff_ms = settings_ref[Setting::http_retry_max_backoff_ms];
     res.http_settings.skip_not_found_url_for_globs = settings_ref[Setting::http_skip_not_found_url_for_globs];
     res.http_settings.make_head_request = settings_ref[Setting::http_make_head_request];
+    res.http_settings.max_fields = settings_ref[Setting::http_max_fields];
+    res.http_settings.max_field_name_size = settings_ref[Setting::http_max_field_name_size];
+    res.http_settings.max_field_value_size = settings_ref[Setting::http_max_field_value_size];
 
     res.remote_fs_settings.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
     res.remote_fs_settings.enable_blob_storage_log = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
@@ -10648,6 +10718,19 @@ StorageSnapshotPtr Context::getPinnedStorageSnapshot(const UUID & table_uuid) co
 const ServerSettings & Context::getServerSettings() const
 {
     return shared->server_settings;
+}
+
+void Context::enablePlanLogCapture()
+{
+    query_plan_log_capture = std::make_shared<QueryPlanLogCapture>();
+    setJoinAnalyzeMode(JoinAnalyzeMode::Derived);
+}
+
+QueryPlanLogCapturePtr Context::getPlanLogCapture() const
+{
+    if (!hasQueryContext())
+        return nullptr;
+    return getQueryContext()->query_plan_log_capture;
 }
 
 ServerSettings Context::getServerSettingsCopy() const
