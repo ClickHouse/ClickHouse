@@ -397,8 +397,9 @@ bool isSafeNativeCastLeafPair(const IDataType & source, const IDataType & destin
     if (isNativePrimitiveNumericType(source) && isNativePrimitiveNumericType(destination))
         return true;
 
+    /// Custom text serialization can depend on format settings, as it does for `Bool`.
     if ((isNativePrimitiveNumericType(source) || isNativeDecimalType(source)) && typeid(destination) == typeid(DataTypeString))
-        return true;
+        return !source.getCustomSerialization();
 
     if ((typeid(source) == typeid(DataTypeString) || typeid(source) == typeid(DataTypeFixedString)) && isNativeEnumType(destination))
         return true;

@@ -883,3 +883,55 @@ def test_date_cast_bloom_index_is_safe_across_server_timezone_restart():
             _assert_timezone_context("UTC", 1577923200, 1577923200000)
         finally:
             node.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+
+
+def test_bool_text_cast_bloom_index_is_safe_across_restart():
+    database = f"{DATABASE}_bool_text"
+    config_path = "/etc/clickhouse-server/users.d/bool_true_representation.xml"
+    config = os.path.join(SCRIPT_DIR, "configs/bool_true_representation.xml")
+    settings = dict(
+        QUERY_SETTINGS,
+        query_plan_enable_optimizations=1,
+        query_plan_lower_array_join_function=1,
+        query_plan_fuse_filter_into_array_join=1,
+    )
+    predicate = (
+        "arrayJoin(CAST(CAST(CAST(flags AS Array(String)) AS Dynamic) "
+        "AS Array(String))) IN ('yes')"
+    )
+
+    try:
+        assert (
+            node.query("SELECT getSetting('bool_true_representation')").strip() == "true"
+        )
+        node.query(f"CREATE DATABASE {database} ENGINE = Atomic")
+        node.query(f"""
+            CREATE TABLE {database}.flags
+            (
+                id UInt64,
+                flags Array(Bool),
+                INDEX idx CAST(flags AS Array(String))
+                    TYPE bloom_filter(0.000001) GRANULARITY 1
+            )
+            ENGINE = MergeTree
+            ORDER BY id
+            SETTINGS index_granularity = 1, index_granularity_bytes = 0
+            """)
+        node.query(f"INSERT INTO {database}.flags VALUES (1, [true]), (2, [false])")
+
+        node.copy_file_to_container(config, config_path)
+        node.restart_clickhouse()
+        assert (
+            node.query("SELECT getSetting('bool_true_representation')").strip() == "yes"
+        )
+
+        _assert_indexed_rows_match_full_scan(
+            "flags", predicate, "[1]", settings=settings, database=database
+        )
+        _assert_unsafe_index_declined(f"{database}.flags WHERE {predicate}", settings)
+    finally:
+        try:
+            node.exec_in_container(["rm", "-f", config_path])
+            node.restart_clickhouse()
+        finally:
+            node.query(f"DROP DATABASE IF EXISTS {database} SYNC")
