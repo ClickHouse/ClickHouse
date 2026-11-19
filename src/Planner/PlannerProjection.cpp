@@ -1,5 +1,6 @@
 #include <Planner/PlannerProjection.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -9,6 +10,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
@@ -25,6 +27,7 @@
 #include <Planner/Planner.h>
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -81,7 +84,7 @@ private:
     Chunk chunk;
 };
 
-void writeStoredNames(const QueryTreeNodes & nodes, WriteBuffer & out);
+void writeStoredNames(const QueryTreeNodes & nodes, const ContextPtr & context, WriteBuffer & out);
 
 /// the old analysis names an array or a tuple of literals as a literal
 bool isLiteral(const QueryTreeNodePtr & node)
@@ -99,7 +102,7 @@ bool isLiteral(const QueryTreeNodePtr & node)
 }
 
 /// writes the name that a projection part stores the expression under: the name that the old analysis gave to the expression
-void writeStoredName(const QueryTreeNodePtr & node, WriteBuffer & out)
+void writeStoredName(const QueryTreeNodePtr & node, const ContextPtr & context, WriteBuffer & out)
 {
     if (const auto * column_node = node->as<ColumnNode>())
     {
@@ -116,7 +119,7 @@ void writeStoredName(const QueryTreeNodePtr & node, WriteBuffer & out)
                 ASTLiteral(constant_node->getValue()).appendColumnName(out);
             /// a constant folded from an expression has the name of that expression
             else
-                writeStoredName(constant_node->getSourceExpression(), out);
+                writeStoredName(constant_node->getSourceExpression(), context, out);
             return;
         }
 
@@ -129,21 +132,35 @@ void writeStoredName(const QueryTreeNodePtr & node, WriteBuffer & out)
 
     if (const auto * function_node = node->as<FunctionNode>())
     {
-        out << function_node->getFunctionName();
+        /// The node of an aggregate function has the name of the function that the factory gives, which can be
+        /// another function (`any(b) RESPECT NULLS`, `sum(NULL)`, `median(a)`). The stored name has the name that the
+        /// analysis takes for the name of the query. This is not for a call that the analysis replaces
+        /// with a call of other arguments (`count(*)`, `sum(1)`).
+        const auto * written_function
+            = function_node->isAggregateFunction() && node->hasOriginalAST() ? node->getOriginalAST()->as<ASTFunction>() : nullptr;
+        bool has_written_name = written_function
+            && (written_function->arguments ? written_function->arguments->children.size() : 0) == function_node->getArguments().getNodes().size();
+        auto nulls_action = has_written_name ? written_function->getNullsAction() : function_node->getNullsAction();
+
+        if (has_written_name)
+            out << getAggregateFunctionCanonicalNameIfAny(
+                QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(written_function->name, nulls_action, context));
+        else
+            out << function_node->getFunctionName();
         if (!function_node->getParameters().getNodes().empty())
         {
             out << '(';
-            writeStoredNames(function_node->getParameters().getNodes(), out);
+            writeStoredNames(function_node->getParameters().getNodes(), context, out);
             out << ')';
         }
 
         out << '(';
-        writeStoredNames(function_node->getArguments().getNodes(), out);
+        writeStoredNames(function_node->getArguments().getNodes(), context, out);
         out << ')';
 
-        if (function_node->getNullsAction() == NullsAction::RESPECT_NULLS)
+        if (nulls_action == NullsAction::RESPECT_NULLS)
             out << " RESPECT NULLS";
-        else if (function_node->getNullsAction() == NullsAction::IGNORE_NULLS)
+        else if (nulls_action == NullsAction::IGNORE_NULLS)
             out << " IGNORE NULLS";
         return;
     }
@@ -151,7 +168,7 @@ void writeStoredName(const QueryTreeNodePtr & node, WriteBuffer & out)
     if (const auto * lambda_node = node->as<LambdaNode>())
     {
         out << "lambda(tuple(" << fmt::format("{}", fmt::join(lambda_node->getArguments().getNames(), ", ")) << "), ";
-        writeStoredName(lambda_node->getExpression(), out);
+        writeStoredName(lambda_node->getExpression(), context, out);
         out << ')';
         return;
     }
@@ -171,20 +188,20 @@ void writeStoredName(const QueryTreeNodePtr & node, WriteBuffer & out)
     out << "__subquery_" << hash.low64 << '_' << hash.high64;
 }
 
-void writeStoredNames(const QueryTreeNodes & nodes, WriteBuffer & out)
+void writeStoredNames(const QueryTreeNodes & nodes, const ContextPtr & context, WriteBuffer & out)
 {
     for (size_t i = 0; i < nodes.size(); ++i)
     {
         if (i)
             out << ", ";
-        writeStoredName(nodes[i], out);
+        writeStoredName(nodes[i], context, out);
     }
 }
 
-String getStoredName(const QueryTreeNodePtr & node)
+String getStoredName(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     WriteBufferFromOwnString out;
-    writeStoredName(node, out);
+    writeStoredName(node, context, out);
     return out.str();
 }
 
@@ -366,7 +383,7 @@ ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const StoragePtr 
     NameSet unique_aggregation_keys;
     for (const auto & key_node : query_node.getGroupBy().getNodes())
     {
-        auto key_name = getStoredName(key_node);
+        auto key_name = getStoredName(key_node, query_node.getContext());
         if (!unique_aggregation_keys.emplace(key_name).second)
             continue;
 
@@ -378,7 +395,7 @@ ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const StoragePtr 
     for (const auto & aggregate_function_node : collectAggregateFunctionNodes(query_tree))
     {
         auto aggregate = extractAggregateDescriptions({aggregate_function_node}, *planner_context).front();
-        aggregate.column_name = getStoredName(aggregate_function_node);
+        aggregate.column_name = getStoredName(aggregate_function_node, query_node.getContext());
         if (unique_aggregate_names.emplace(aggregate.column_name).second)
             aggregates.push_back(std::move(aggregate));
     }
@@ -491,7 +508,7 @@ QueryPlan ProjectionPlanner::buildPlanForNormalProjection(Block source)
     NameSet constant_names;
     for (const auto & expression : stored_expressions)
     {
-        auto stored_name = getStoredName(expression);
+        auto stored_name = getStoredName(expression, planner_context->getQueryContext());
         if (expression->as<ConstantNode>())
             constant_names.insert(stored_name);
         if (stored_names.emplace(stored_name).second)

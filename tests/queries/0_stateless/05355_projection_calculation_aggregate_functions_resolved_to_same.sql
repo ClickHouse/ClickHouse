@@ -1,5 +1,6 @@
 -- Expressions spelled differently in a projection may be resolved by the Analyzer to the same one
--- (`count()` and `count() IGNORE NULLS`, `countDistinct(a)` and `uniqExact(a)`): the projection stores it once.
+-- (`count()` and `count() IGNORE NULLS`, `countDistinct(a)` and `uniqExact(a)`): the pipeline calculates
+-- it once, while the projection metadata describes a separate column for every spelling.
 
 DROP TABLE IF EXISTS t_projection_same_aggregate;
 

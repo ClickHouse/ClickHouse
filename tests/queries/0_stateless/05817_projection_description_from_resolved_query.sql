@@ -1,4 +1,4 @@
--- the columns of a projection part have the names of the query as the analyzer resolves it
+-- the columns of a projection part have the names that the old analysis gave to the expressions of the query
 
 DROP TABLE IF EXISTS t_projection_resolved;
 
@@ -9,9 +9,9 @@ CREATE TABLE t_projection_resolved
     c String,
     m Int64 MATERIALIZED a * 2,
     al ALIAS a + 1,
-    -- the names that do not change
+    -- the analysis replaces these calls, and the name is the name of the new call
     PROJECTION p_same (SELECT a % 10 AS k, count(*), count(1), sum(1), countDistinct(c), sumIf(a, a > 1 + 1), sum(al) GROUP BY k),
-    -- the function that the analyzer resolves gives the name
+    -- the analysis takes another function for these calls, and the name is the name that the query writes
     PROJECTION p_resolved (SELECT a, any(b) RESPECT NULLS, count() IGNORE NULLS, sum(NULL), median(a) GROUP BY a),
     -- a constant key is not stored, and the last key takes its place
     PROJECTION p_keys (SELECT c, max(b) GROUP BY 'x', c, a),
