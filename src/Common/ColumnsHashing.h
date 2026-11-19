@@ -144,6 +144,14 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         visit_cache[index] = value;
     }
 
+    /// Called by `emplaceKey` before it changes the hash table, so that its `setVisited` does not allocate after the change:
+    /// if `emplaceKey` throws, the table must not have a key whose insertion the caller never saw.
+    ALWAYS_INLINE void reserveVisited(size_t index)
+    {
+        if (visit_cache[index] == VisitValue::Empty)
+            filled_visit_cache_indexes.reserve(filled_visit_cache_indexes.size() + 1);
+    }
+
     /// If initialized column is nullable.
     bool is_nullable = false;
 
@@ -284,6 +292,8 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         if (is_nullable && row == 0)
         {
+            if (!mappedInTableOnly())
+                reserveVisited(row);
             bool has_null_key = data.hasNullKeyData();
             data.hasNullKeyData() = true;
 
@@ -309,6 +319,8 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
                 return EmplaceResult(false);
         }
 
+        if (!mappedInTableOnly())
+            reserveVisited(row);
         auto key_holder = getKeyHolder(row_, pool);
         auto key = keyHolderGetKey(key_holder);
 
