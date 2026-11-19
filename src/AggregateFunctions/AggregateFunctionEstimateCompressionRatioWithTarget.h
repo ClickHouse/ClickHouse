@@ -19,6 +19,7 @@ ASTPtr parseEstimateCompressionRatioCodec(const String & codec);
 
 /// `estimateCompressionRatio` with a `target_type`. `settings` is null when no query creates the function.
 AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatioWithTarget(
+    const String & name,
     const DataTypes & arguments,
     const Array & parameters,
     DataTypePtr target_type,

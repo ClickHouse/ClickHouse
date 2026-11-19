@@ -309,7 +309,7 @@ static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
 
     if (target_type)
         return createAggregateFunctionEstimateCompressionRatioWithTarget(
-            arguments, parameters, std::move(target_type), codec, block_size_bytes, settings);
+            name, arguments, parameters, std::move(target_type), codec, block_size_bytes, settings);
 
     /// The function without a target type gets its codec at the first row. A query checks it here as well, so that a
     /// misspelled codec, or a type name taken for a codec, is an error also without rows. Loading a table does not, so that

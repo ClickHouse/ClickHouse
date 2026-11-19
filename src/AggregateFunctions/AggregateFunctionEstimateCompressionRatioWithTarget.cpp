@@ -167,16 +167,48 @@ struct TargetPart
     }
 };
 
-/// How rows are converted to the target type: the cast and the type validation of the query that created the function, with
-/// its settings copied. A state keeps the one of its pending rows, so that a later query that merges or reads the state (one
-/// kept in a `Memory` table) converts them as the query that added them would have.
-struct Conversion
+/// Converts rows as `ALTER TABLE ... MODIFY COLUMN` does, with `_CAST` and the settings of the query that creates it (of the
+/// server without a query). A state keeps the conversion of its pending rows, for a later query that reads it.
+class Conversion
 {
-    /// Null when the target type is the source type. Prepared once: a prepared function can run in several threads at once,
-    /// as in the actions of an expression.
-    FunctionBasePtr cast;
-    ExecutableFunctionPtr prepared_cast;
+public:
+    Conversion(const DataTypePtr & source_type, DataTypePtr target_type_, std::optional<DataTypeValidationSettings> validation_settings_)
+        : target_type(std::move(target_type_))
+        , validation_settings(std::move(validation_settings_))
+    {
+        /// By name: `Bool` equals `UInt8`, but `CAST` turns every value that is not 0 into 1.
+        if (source_type->getName() == target_type->getName())
+            return;
+        ContextPtr context = CurrentThread::tryGetQueryContext();
+        if (!context)
+            context = Context::getGlobalContextInstance();
+        ColumnsWithTypeAndName arguments{
+            {source_type->createColumn(), source_type, ""},
+            {DataTypeString().createColumnConst(1, target_type->getName()), std::make_shared<DataTypeString>(), ""}};
+        cast = FunctionFactory::instance().get("_CAST", context)->build(arguments);
+        prepared_cast = cast->prepare({});
+    }
+
+    /// Validates the target type at every call, since the rows of several queries can go into one part.
+    ColumnPtr convert(const ColumnPtr & rows) const
+    {
+        if (validation_settings)
+            validateDataType(target_type, *validation_settings);
+        if (!cast)
+            return rows;
+        /// With the cast's own types: a `DateTime` without a time zone takes the session's, which a later query may change.
+        ColumnsWithTypeAndName arguments{
+            {rows, cast->getArgumentTypes()[0], ""},
+            {DataTypeString().createColumnConst(rows->size(), target_type->getName()), std::make_shared<DataTypeString>(), ""}};
+        return prepared_cast->execute(arguments, cast->getResultType(), rows->size(), /*dry_run=*/false);
+    }
+
+private:
+    DataTypePtr target_type;
     std::optional<DataTypeValidationSettings> validation_settings;
+    FunctionBasePtr cast;
+    /// Can run in several threads at once.
+    ExecutableFunctionPtr prepared_cast;
 };
 using ConversionPtr = std::shared_ptr<const Conversion>;
 
@@ -218,54 +250,18 @@ public:
         const DataTypes & arguments,
         const Array & params,
         DataTypePtr target_type_,
-        const std::optional<String> & codec,
+        ASTPtr codec_description_,
         std::optional<UInt64> block_size_bytes,
-        std::optional<DataTypeValidationSettings> validation_settings_)
+        std::optional<DataTypeValidationSettings> validation_settings)
         : IAggregateFunctionDataHelper(arguments, params, std::make_shared<DataTypeFloat64>())
         , source_type(arguments[0])
         , source_serialization(source_type->getDefaultSerialization())
         , target_type(std::move(target_type_))
         , max_compress_block_size(block_size_bytes.value_or(merge_tree.max_compress_block_size))
         , min_compress_block_size(block_size_bytes.value_or(merge_tree.min_compress_block_size))
+        , conversion(std::make_shared<const Conversion>(source_type, target_type, std::move(validation_settings)))
+        , codec_description(std::move(codec_description_))
     {
-        /// `Dynamic` and `JSON`, also nested, are not supported. As a target, their streams depend on the data, and the writer
-        /// has more rules for them. As a source, pending rows keep the dynamic structure of the blocks they came in, and the
-        /// numerator would depend on the blocks.
-        const auto has_dynamic_structure = [](const IDataType & type) { return isDynamic(type) || isObject(type); };
-        if (anyInTypeTree(*target_type, has_dynamic_structure))
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED, "Aggregate function {} does not support target type {}", getName(), target_type->getName());
-        /// Nor is a source with `LowCardinality`, which reaches the function only inside a `Variant` (the factory removes it
-        /// elsewhere): it writes a dictionary with each serialization, so the numerator would depend on where granules end.
-        if (anyInTypeTree(*source_type, [&](const IDataType & type) { return has_dynamic_structure(type) || type.lowCardinality(); }))
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Aggregate function {} with a target type does not support argument type {}; convert the argument in the query first",
-                getName(), source_type->getName());
-
-        codec_description = codec ? parseEstimateCompressionRatioCodec(*codec) : CompressionCodecFactory::instance().getDefaultCodec()->getFullCodecDescription();
-
-        /// The values are converted as `ALTER TABLE ... MODIFY COLUMN` converts them: with `_CAST`, which returns exactly the
-        /// target type. It copies the conversion settings of the query, or of the server when there is no query (a table being
-        /// loaded, a TTL `GROUP BY` in a background merge). Prepared here, so that a conversion the types do not allow is an
-        /// error before any row comes.
-        /// Equal types can still convert values: `Bool` equals `UInt8`, but `CAST` turns every value that is not 0 into 1. So
-        /// the cast is left out only when the target is the same type, by name.
-        auto own_conversion = std::make_shared<Conversion>();
-        own_conversion->validation_settings = std::move(validation_settings_);
-        if (source_type->getName() != target_type->getName())
-        {
-            ContextPtr context = CurrentThread::tryGetQueryContext();
-            if (!context)
-                context = Context::getGlobalContextInstance();
-            ColumnsWithTypeAndName cast_arguments{
-                {source_type->createColumn(), source_type, ""},
-                {DataTypeString().createColumnConst(1, target_type->getName()), std::make_shared<DataTypeString>(), ""}};
-            own_conversion->cast = FunctionFactory::instance().get("_CAST", context)->build(cast_arguments);
-            own_conversion->prepared_cast = own_conversion->cast->prepare({});
-        }
-        conversion = std::move(own_conversion);
-
         /// The codec and block size of each stream, resolved once for the parts of all states, and here, so that a codec the
         /// target type cannot take is an error before any row comes.
         auto serialization = target_type->getSerialization(merge_tree.info_settings);
@@ -468,16 +464,9 @@ private:
         throwIfBroken(data_ref);
         chassert(data_ref.granule_rows + data_ref.pending->size() <= merge_tree.granule_rows);
 
-        /// `CAST` validates the target type with the settings of the query (suspicious and experimental types), here those of
-        /// the query that added the rows, at every write, since rows of several queries can go into one part. Here and not in
-        /// the constructor, so that a stored state type that names such a type can still be attached, read and merged.
         chassert(data_ref.conversion);
-        const Conversion & rows_conversion = *data_ref.conversion;
-        if (rows_conversion.validation_settings)
-            validateDataType(target_type, *rows_conversion.validation_settings);
-
         ColumnPtr rows = data_ref.pending->getPtr();
-        ColumnPtr converted = convert(rows, rows_conversion);
+        ColumnPtr converted = data_ref.conversion->convert(rows);
         const UInt64 rows_bytes = sourceBytes(*rows, /*first_in_part=*/!data_ref.part);
 
         data_ref.broken = true;
@@ -507,21 +496,6 @@ private:
         data_ref.source_bytes += rows_bytes;
         data_ref.pending.reset();
         data_ref.broken = false;
-    }
-
-    /// The rows in the target type. A value that `CAST` cannot convert is an error here, before the state changes.
-    ColumnPtr convert(const ColumnPtr & rows, const Conversion & rows_conversion) const
-    {
-        const auto & cast = rows_conversion.cast;
-        if (!cast)
-            return rows;
-        /// With the types the cast was built with: a `DateTime` without a time zone takes the time zone of the session that
-        /// creates the type, and the query that reads a state may have another. The cast does not read its second argument,
-        /// but it must be a constant.
-        ColumnsWithTypeAndName arguments{
-            {rows, cast->getArgumentTypes()[0], ""},
-            {DataTypeString().createColumnConst(rows->size(), target_type->getName()), std::make_shared<DataTypeString>(), ""}};
-        return rows_conversion.prepared_cast->execute(arguments, cast->getResultType(), rows->size(), /*dry_run=*/false);
     }
 
     /// How many of the converted rows from `offset` the open granule takes, and their bytes. A granule ends after
@@ -667,15 +641,16 @@ private:
     const DataTypePtr target_type;
     const size_t max_compress_block_size;
     const size_t min_compress_block_size;
-    /// The conversion of the rows this function adds, given to the states with them.
-    ConversionPtr conversion;
-    ASTPtr codec_description;
+    /// Given to the states with the rows this function adds.
+    const ConversionPtr conversion;
+    const ASTPtr codec_description;
     UnorderedMapWithMemoryTracking<String, StreamLayout> stream_layouts;
 };
 
 }
 
 AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatioWithTarget(
+    const String & name,
     const DataTypes & arguments,
     const Array & parameters,
     DataTypePtr target_type,
@@ -683,11 +658,27 @@ AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatioWithTarget(
     std::optional<UInt64> block_size_bytes,
     const Settings * settings)
 {
+    /// As a target, `Dynamic` and `JSON` have streams that depend on the data. As a source, pending rows keep the dynamic
+    /// structure of their blocks, and the numerator would depend on the blocks.
+    const auto has_dynamic_structure = [](const IDataType & type) { return isDynamic(type) || isObject(type); };
+    if (anyInTypeTree(*target_type, has_dynamic_structure))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Aggregate function {} does not support target type {}", name, target_type->getName());
+    /// `LowCardinality` reaches here only inside `Variant`. It writes a dictionary per call, so the numerator would depend on
+    /// where granules end.
+    const auto & source_type = arguments[0];
+    if (anyInTypeTree(*source_type, [&](const IDataType & type) { return has_dynamic_structure(type) || type.lowCardinality(); }))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Aggregate function {} with a target type does not support argument type {}; convert the argument in the query first",
+            name, source_type->getName());
+
+    ASTPtr codec_description = codec ? parseEstimateCompressionRatioCodec(*codec)
+                                     : CompressionCodecFactory::instance().getDefaultCodec()->getFullCodecDescription();
     std::optional<DataTypeValidationSettings> validation_settings;
     if (settings)
         validation_settings.emplace(*settings);
     return std::make_shared<AggregateFunctionEstimateCompressionRatioWithTarget>(
-        arguments, parameters, std::move(target_type), codec, block_size_bytes, std::move(validation_settings));
+        arguments, parameters, std::move(target_type), std::move(codec_description), block_size_bytes, std::move(validation_settings));
 }
 
 }
