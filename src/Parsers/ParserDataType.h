@@ -10,7 +10,7 @@ namespace DB
 class ParserDataType : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "data type"; }
+    const char * getName() const override { return "data type"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

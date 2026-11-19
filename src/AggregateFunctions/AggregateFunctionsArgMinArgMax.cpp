@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
 
@@ -35,9 +34,9 @@ private:
 
 public:
     ResultType & result() { return result_data; }
-    [[nodiscard]] const ResultType & result() const { return result_data; }
+    const ResultType & result() const { return result_data; }
     ValueType & value() { return value_data; }
-    [[nodiscard]] const ValueType & value() const { return value_data; }
+    const ValueType & value() const { return value_data; }
 
     AggregateFunctionArgMinMaxData() = default;
     explicit AggregateFunctionArgMinMaxData(const DataTypePtr &) {}
@@ -60,9 +59,9 @@ private:
 
 public:
     SingleValueDataBase & result() { return result_data.get(); }
-    [[nodiscard]] const SingleValueDataBase & result() const { return result_data.get(); }
+    const SingleValueDataBase & result() const { return result_data.get(); }
     ValueType & value() { return value_data; }
-    [[nodiscard]] const ValueType & value() const { return value_data; }
+    const ValueType & value() const { return value_data; }
 
     [[noreturn]] AggregateFunctionArgMinMaxDataGeneric() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     {
@@ -110,7 +109,8 @@ NO_INLINE void validateArgMinMaxValueType(const DataTypePtr & type_val, const St
                 function_name,
                 getNumericVariantSupertypeHint(type.getPtr()));
     };
-    forEachInTypeTree(*type_val, check_not_dynamic_or_variant);
+    check_not_dynamic_or_variant(*type_val);
+    type_val->forEachChild(check_not_dynamic_or_variant);
 }
 
 [[noreturn]] NO_INLINE void throwArgMinMaxInvalidDeserializedState(const String & function_name, bool has_value, bool has_result)
@@ -165,7 +165,7 @@ public:
 
     /// Parameters are non-semantic here and never reach the serialized state, so parameterized and
     /// parameterless states share one representation and stay Merge-/CAST-compatible.
-    [[nodiscard]] DataTypePtr getNormalizedStateType() const override
+    DataTypePtr getNormalizedStateType() const override
     {
         DataTypes normalized_argument_types;
         normalized_argument_types.reserve(this->argument_types.size());
@@ -179,7 +179,7 @@ public:
         new (place) Data(data_type_res);
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         if (return_both)
         {
@@ -303,7 +303,7 @@ public:
             throwArgMinMaxInvalidDeserializedState(getName(), this->data(place).value().has(), this->data(place).result().has());
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override
+    bool allocatesMemoryInArena() const override
     {
         return Data::allocatesMemoryInArena(result_type_index);
     }
@@ -472,7 +472,7 @@ AggregateFunctionPtr createAggregateFunctionArgMinMax(
 void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::AllExceptFirst};
+    AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
 
     FunctionDocumentation::Description description_argMin = R"(
 Calculates the `arg` value for a minimum `val` value. If there are multiple rows with equal `val` being the maximum, which of the associated `arg` is returned is not deterministic.

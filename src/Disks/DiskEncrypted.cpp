@@ -2,7 +2,6 @@
 
 #if USE_SSL
 #include <Disks/DiskFactory.h>
-#include <Disks/loadLocalDiskConfig.h>
 #include <IO/ReadPipeline.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
@@ -17,13 +16,9 @@
 #include <boost/algorithm/hex.hpp>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-
 #if CLICKHOUSE_CLOUD
 #include <Core/KMS.h>
 #endif
-
-#include <algorithm>
-#include <filesystem>
 
 
 namespace DB
@@ -68,22 +63,6 @@ namespace
     {
         Strings config_keys;
         config.keys(config_prefix, config_keys);
-
-        /// The keys are picked by a pattern of their names (`key`, `key[1]`, ...). Look up the bare names,
-        /// so that a configuration tracking the read keys (`ConfigurationWithUsageTracking`, used for
-        /// a definition of a disk) knows that the elements with these names are read even when they are absent.
-        config.has(config_prefix + ".key");
-        config.has(config_prefix + ".key_hex");
-#if CLICKHOUSE_CLOUD
-        config.has(config_prefix + ".key_aws");
-        config.has(config_prefix + ".key_gcp");
-        config.has(config_prefix + ".key_azure");
-        /// The options of a key management service are read only to decrypt a key, so they are read only
-        /// when there is such a key. Look them up as well, so that they are known for a disk that gets
-        /// such a key on a configuration reload.
-        config.has(config_prefix + ".no_sign_request");
-        config.has(config_prefix + ".aws_kms_endpoint");
-#endif
 
         for (const std::string & config_key : config_keys)
         {
@@ -210,16 +189,6 @@ namespace
         return parseAlgorithmFromString(config.getString(path));
     }
 
-    void checkCustomDiskPathIsInsideWrappedDisk(const String & path)
-    {
-        std::filesystem::path fs_path(path);
-        if (fs_path.is_absolute() || std::ranges::any_of(fs_path, [](const auto & component) { return component == ".."; }))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Path of the encrypted custom disk must be relative to the wrapped disk and must not contain `..`, but got {}",
-                quoteString(path));
-    }
-
     /// Reads the name of a wrapped disk & the path on the wrapped disk and then finds that disk in a disk map.
     void getDiskAndPathFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const DisksMap & map,
                                   DiskPtr & out_disk, String & out_path)
@@ -328,9 +297,9 @@ namespace
         }
 
         void next() override { delegate->next(); }
-        [[nodiscard]] bool isValid() const override { return delegate->isValid(); }
+        bool isValid() const override { return delegate->isValid(); }
 
-        [[nodiscard]] String path() const override
+        String path() const override
         {
             auto delegate_path = delegate->path();
 
@@ -344,7 +313,7 @@ namespace
             return delegate_path.substr(path_prefix.size());
         }
 
-        [[nodiscard]] String name() const override { return delegate->name(); }
+        String name() const override { return delegate->name(); }
 
     private:
         DirectoryIteratorPtr delegate;
@@ -360,17 +329,17 @@ public:
     {
     }
 
-    [[nodiscard]] UInt64 getSize() const override { return reservation->getSize(); }
-    [[nodiscard]] std::optional<UInt64> getUnreservedSpace() const override { return reservation->getUnreservedSpace(); }
+    UInt64 getSize() const override { return reservation->getSize(); }
+    std::optional<UInt64> getUnreservedSpace() const override { return reservation->getUnreservedSpace(); }
 
-    [[nodiscard]] DiskPtr getDisk(size_t i) const override
+    DiskPtr getDisk(size_t i) const override
     {
         if (i != 0)
             throw Exception(ErrorCodes::INCORRECT_DISK_INDEX, "Can't use i != 0 with single disk reservation");
         return disk;
     }
 
-    [[nodiscard]] Disks getDisks() const override { return {disk}; }
+    Disks getDisks() const override { return {disk}; }
 
     void update(UInt64 new_size) override { reservation->update(new_size); }
 
@@ -419,15 +388,6 @@ ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
 ReservationPtr DiskEncrypted::reserve(UInt64 bytes, const ReservationConstraints & constraints)
 {
     auto reservation = delegate->reserve(bytes, constraints);
-    if (!reservation)
-        return {};
-    return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
-}
-
-ReservationPtr DiskEncrypted::reserveAndGetUnreservedSpace(
-    UInt64 bytes, const std::optional<ReservationConstraints> & constraints, std::optional<UInt64> & unreserved_space)
-{
-    auto reservation = delegate->reserveAndGetUnreservedSpace(bytes, constraints, unreserved_space);
     if (!reservation)
         return {};
     return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
@@ -611,24 +571,11 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
         const String & name,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        ContextPtr context,
+        ContextPtr,
         const DisksMap & map,
-        bool attach,
-        bool custom_disk) -> DiskPtr
+        bool, bool) -> DiskPtr
     {
-        bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false) || global_skip_access_check;
-
-        if (custom_disk && !attach)
-        {
-            DiskPtr wrapped_disk;
-            String path;
-            getDiskAndPathFromConfig(config, config_prefix, map, wrapped_disk, path);
-
-            checkCustomDiskPathIsInsideWrappedDisk(path);
-            if (!wrapped_disk->isRemote())
-                checkCustomLocalDiskPath(wrapped_disk->getPath() + path, context);
-        }
-
+        bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
         DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map);
         disk->startup(skip_access_check);
         return disk;

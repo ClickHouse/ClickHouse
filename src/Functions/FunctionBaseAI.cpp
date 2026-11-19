@@ -300,7 +300,17 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
     if (params.collection.endpoint.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", credentials);
 
-    const Poco::URI endpoint_uri(params.collection.endpoint);
+    /// The endpoint can carry a secret, so the error below names only the collection.
+    Poco::URI endpoint_uri;
+    try
+    {
+        endpoint_uri = Poco::URI(params.collection.endpoint);
+    }
+    catch (const Poco::SyntaxException &)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' has a malformed endpoint", credentials);
+    }
+
     context->getRemoteHostFilter().checkURL(endpoint_uri);
 
     /// Refuse to send prompts and API keys over an unencrypted connection to a remote host.
@@ -309,10 +319,10 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
         && !isLoopbackHost(endpoint_uri.getHost())
         && !context->getSettingsRef()[Setting::ai_function_allow_insecure_endpoint])
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "AI named collection '{}' uses an insecure endpoint '{}': prompts and the API key would be sent to a "
+            "AI named collection '{}' uses an insecure endpoint: prompts and the API key would be sent to a "
             "remote host over an unencrypted connection. Use an 'https://' endpoint, or set "
             "'ai_function_allow_insecure_endpoint' to allow plaintext requests to remote hosts.",
-            credentials, params.collection.endpoint);
+            credentials);
 
     /// A function that does not declare `model` (i.e. `aiEmbed`, which takes it as an argument) must
     /// not silently ignore a `model` defined in the named collection: reject it instead.

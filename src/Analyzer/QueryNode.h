@@ -12,8 +12,6 @@
 
 #include <Interpreters/Context_fwd.h>
 
-#include <vector>
-
 namespace DB
 {
 
@@ -70,21 +68,20 @@ using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 class QueryNode final : public ITableExpressionNode
 {
 public:
-    /// Construct query node with context and changed or reset settings and query parameters.
-    explicit QueryNode(
-        ContextMutablePtr context_, SettingsChanges settings_changes_, std::vector<String> default_settings_ = {}, NameToNameVector query_parameters_ = {});
+    /// Construct query node with context and changed settings
+    explicit QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_);
 
     /// Construct query node with context
     explicit QueryNode(ContextMutablePtr context_);
 
     /// Get context
-    [[nodiscard]] ContextPtr getContext() const
+    ContextPtr getContext() const
     {
         return context;
     }
 
     /// Get mutable context
-    [[nodiscard]] const ContextMutablePtr & getMutableContext() const
+    const ContextMutablePtr & getMutableContext() const
     {
         return context;
     }
@@ -95,39 +92,25 @@ public:
         return context;
     }
 
-    /// Returns true if query node has settings changes, resets, or query parameters, false otherwise.
-    [[nodiscard]] bool hasSettingsChanges() const
+    /// Returns true if query node has settings changes, false otherwise
+    bool hasSettingsChanges() const
     {
-        return !settings_changes.empty() || !default_settings.empty() || !query_parameters.empty();
+        return !settings_changes.empty();
     }
 
     /// Get query node settings changes
-    [[nodiscard]] const SettingsChanges & getSettingsChanges() const
+    const SettingsChanges & getSettingsChanges() const
     {
         return settings_changes;
-    }
-
-    /// Get query node settings that are reset to their default values
-    [[nodiscard]] const std::vector<String> & getDefaultSettings() const
-    {
-        return default_settings;
-    }
-
-    /// Get query parameters set in the query SETTINGS clause.
-    [[nodiscard]] const NameToNameVector & getQueryParameters() const
-    {
-        return query_parameters;
     }
 
     void clearSettingsChanges()
     {
         settings_changes.clear();
-        default_settings.clear();
-        query_parameters.clear();
     }
 
     /// Returns true if query node is subquery, false otherwise
-    [[nodiscard]] bool isSubquery() const
+    bool isSubquery() const
     {
         return is_subquery;
     }
@@ -139,7 +122,7 @@ public:
     }
 
     /// Returns true if query node is CTE, false otherwise
-    [[nodiscard]] bool isCTE() const
+    bool isCTE() const
     {
         return is_cte;
     }
@@ -151,7 +134,7 @@ public:
     }
 
     /// Get query node CTE name
-    [[nodiscard]] const std::string & getCTEName() const
+    const std::string & getCTEName() const
     {
         return cte_name;
     }
@@ -163,7 +146,7 @@ public:
     }
 
     /// Returns true if query node is a MATERIALIZED CTE, false otherwise
-    [[nodiscard]] bool isMaterialized() const noexcept
+    bool isMaterialized() const noexcept
     {
         return is_materialized;
     }
@@ -175,7 +158,7 @@ public:
     }
 
     /// Returns true if query node has RECURSIVE WITH, false otherwise
-    [[nodiscard]] bool isRecursiveWith() const
+    bool isRecursiveWith() const
     {
         return is_recursive_with;
     }
@@ -187,7 +170,7 @@ public:
     }
 
     /// Returns true if query node has DISTINCT, false otherwise
-    [[nodiscard]] bool isDistinct() const
+    bool isDistinct() const
     {
         return is_distinct;
     }
@@ -198,7 +181,7 @@ public:
         is_distinct = is_distinct_value;
     }
 
-    [[nodiscard]] bool isLimitByAll() const
+    bool isLimitByAll() const
     {
         return is_limit_by_all;
     }
@@ -208,7 +191,7 @@ public:
         is_limit_by_all = is_limit_by_all_value;
     }
 
-    [[nodiscard]] bool isLimitAfterAll() const
+    bool isLimitAfterAll() const
     {
         return is_limit_after_all;
     }
@@ -219,7 +202,7 @@ public:
     }
 
     /// Returns true if query node has LIMIT WITH TIES, false otherwise
-    [[nodiscard]] bool isLimitWithTies() const
+    bool isLimitWithTies() const
     {
         return is_limit_with_ties;
     }
@@ -231,7 +214,7 @@ public:
     }
 
     /// Returns true, if query node has GROUP BY WITH TOTALS, false otherwise
-    [[nodiscard]] bool isGroupByWithTotals() const
+    bool isGroupByWithTotals() const
     {
         return is_group_by_with_totals;
     }
@@ -243,7 +226,7 @@ public:
     }
 
     /// Returns true, if query node has GROUP BY with ROLLUP modifier, false otherwise
-    [[nodiscard]] bool isGroupByWithRollup() const
+    bool isGroupByWithRollup() const
     {
         return is_group_by_with_rollup;
     }
@@ -255,7 +238,7 @@ public:
     }
 
     /// Returns true, if query node has GROUP BY with CUBE modifier, false otherwise
-    [[nodiscard]] bool isGroupByWithCube() const
+    bool isGroupByWithCube() const
     {
         return is_group_by_with_cube;
     }
@@ -267,7 +250,7 @@ public:
     }
 
     /// Returns true, if query node has GROUP BY with GROUPING SETS modifier, false otherwise
-    [[nodiscard]] bool isGroupByWithGroupingSets() const
+    bool isGroupByWithGroupingSets() const
     {
         return is_group_by_with_grouping_sets;
     }
@@ -279,7 +262,7 @@ public:
     }
 
     /// Returns true, if query node has GROUP BY ALL modifier, false otherwise
-    [[nodiscard]] bool isGroupByAll() const
+    bool isGroupByAll() const
     {
         return is_group_by_all;
     }
@@ -291,7 +274,7 @@ public:
     }
 
     /// Returns true, if query node has ORDER BY ALL modifier, false otherwise
-    [[nodiscard]] bool isOrderByAll() const
+    bool isOrderByAll() const
     {
         return is_order_by_all;
     }
@@ -302,26 +285,14 @@ public:
         is_order_by_all = is_order_by_all_value;
     }
 
-    /// Returns true if query node has `SHUFFLE`, false otherwise
-    [[nodiscard]] bool isShuffle() const
-    {
-        return is_shuffle;
-    }
-
-    /// Set query node `SHUFFLE` value
-    void setIsShuffle(bool is_shuffle_value)
-    {
-        is_shuffle = is_shuffle_value;
-    }
-
     /// Returns true if query node WITH section is not empty, false otherwise
-    [[nodiscard]] bool hasWith() const
+    bool hasWith() const
     {
         return !getWith().getNodes().empty();
     }
 
     /// Get WITH section
-    [[nodiscard]] const ListNode & getWith() const
+    const ListNode & getWith() const
     {
         return children[with_child_index]->as<const ListNode &>();
     }
@@ -333,7 +304,7 @@ public:
     }
 
     /// Get WITH section node
-    [[nodiscard]] const QueryTreeNodePtr & getWithNode() const
+    const QueryTreeNodePtr & getWithNode() const
     {
         return children[with_child_index];
     }
@@ -345,7 +316,7 @@ public:
     }
 
     /// Get PROJECTION section
-    [[nodiscard]] const ListNode & getProjection() const
+    const ListNode & getProjection() const
     {
         return children[projection_child_index]->as<const ListNode &>();
     }
@@ -357,7 +328,7 @@ public:
     }
 
     /// Get PROJECTION section node
-    [[nodiscard]] const QueryTreeNodePtr & getProjectionNode() const
+    const QueryTreeNodePtr & getProjectionNode() const
     {
         return children[projection_child_index];
     }
@@ -369,7 +340,7 @@ public:
     }
 
     /// Get JOIN TREE section node
-    [[nodiscard]] const ITableExpressionNode & getJoinTree() const
+    const ITableExpressionNode & getJoinTree() const
     {
         return children[join_tree_child_index]->assertTableExpression();
     }
@@ -381,26 +352,26 @@ public:
     }
 
     /// Get JOIN TREE section node
-    [[nodiscard]] const QueryTreeNodePtr & getJoinTreeNode() const
+    const QueryTreeNodePtr & getJoinTreeNode() const
     {
         return children[join_tree_child_index];
     }
 
     /// Get JOIN TREE section node
-    [[nodiscard]] TableExpressionNodePtr getJoinTreeNodeTyped() const
+    TableExpressionNodePtr getJoinTreeNodeTyped() const
     {
         children[join_tree_child_index]->assertTableExpression();
         return static_pointer_cast<ITableExpressionNode>(children[join_tree_child_index]);
     }
 
     /// Returns true if query node PREWHERE section is not empty, false otherwise
-    [[nodiscard]] bool hasPrewhere() const
+    bool hasPrewhere() const
     {
         return children[prewhere_child_index] != nullptr;
     }
 
     /// Get PREWHERE section node
-    [[nodiscard]] const QueryTreeNodePtr & getPrewhere() const
+    const QueryTreeNodePtr & getPrewhere() const
     {
         return children[prewhere_child_index];
     }
@@ -412,13 +383,13 @@ public:
     }
 
     /// Returns true if query node WHERE section is not empty, false otherwise
-    [[nodiscard]] bool hasWhere() const
+    bool hasWhere() const
     {
         return children[where_child_index] != nullptr;
     }
 
     /// Get WHERE section node
-    [[nodiscard]] const QueryTreeNodePtr & getWhere() const
+    const QueryTreeNodePtr & getWhere() const
     {
         return children[where_child_index];
     }
@@ -430,13 +401,13 @@ public:
     }
 
     /// Returns true if query node GROUP BY section is not empty, false otherwise
-    [[nodiscard]] bool hasGroupBy() const
+    bool hasGroupBy() const
     {
         return !getGroupBy().getNodes().empty();
     }
 
     /// Get GROUP BY section
-    [[nodiscard]] const ListNode & getGroupBy() const
+    const ListNode & getGroupBy() const
     {
         return children[group_by_child_index]->as<const ListNode &>();
     }
@@ -448,7 +419,7 @@ public:
     }
 
     /// Get GROUP BY section node
-    [[nodiscard]] const QueryTreeNodePtr & getGroupByNode() const
+    const QueryTreeNodePtr & getGroupByNode() const
     {
         return children[group_by_child_index];
     }
@@ -460,13 +431,13 @@ public:
     }
 
     /// Returns true if query node HAVING section is not empty, false otherwise
-    [[nodiscard]] bool hasHaving() const
+    bool hasHaving() const
     {
         return getHaving() != nullptr;
     }
 
     /// Get HAVING section node
-    [[nodiscard]] const QueryTreeNodePtr & getHaving() const
+    const QueryTreeNodePtr & getHaving() const
     {
         return children[having_child_index];
     }
@@ -478,13 +449,13 @@ public:
     }
 
     /// Returns true if query node WINDOW section is not empty, false otherwise
-    [[nodiscard]] bool hasWindow() const
+    bool hasWindow() const
     {
         return !getWindow().getNodes().empty();
     }
 
     /// Get WINDOW section
-    [[nodiscard]] const ListNode & getWindow() const
+    const ListNode & getWindow() const
     {
         return children[window_child_index]->as<const ListNode &>();
     }
@@ -496,7 +467,7 @@ public:
     }
 
     /// Get WINDOW section node
-    [[nodiscard]] const QueryTreeNodePtr & getWindowNode() const
+    const QueryTreeNodePtr & getWindowNode() const
     {
         return children[window_child_index];
     }
@@ -508,13 +479,13 @@ public:
     }
 
     /// Returns true if query node QUALIFY section is not empty, false otherwise
-    [[nodiscard]] bool hasQualify() const
+    bool hasQualify() const
     {
         return getQualify() != nullptr;
     }
 
     /// Get QUALIFY section node
-    [[nodiscard]] const QueryTreeNodePtr & getQualify() const
+    const QueryTreeNodePtr & getQualify() const
     {
         return children[qualify_child_index];
     }
@@ -526,13 +497,13 @@ public:
     }
 
     /// Returns true if query node ORDER BY section is not empty, false otherwise
-    [[nodiscard]] bool hasOrderBy() const
+    bool hasOrderBy() const
     {
         return !getOrderBy().getNodes().empty();
     }
 
     /// Get ORDER BY section
-    [[nodiscard]] const ListNode & getOrderBy() const
+    const ListNode & getOrderBy() const
     {
         return children[order_by_child_index]->as<const ListNode &>();
     }
@@ -544,7 +515,7 @@ public:
     }
 
     /// Get ORDER BY section node
-    [[nodiscard]] const QueryTreeNodePtr & getOrderByNode() const
+    const QueryTreeNodePtr & getOrderByNode() const
     {
         return children[order_by_child_index];
     }
@@ -556,13 +527,13 @@ public:
     }
 
     /// Returns true if query node INTERPOLATE section is not empty, false otherwise
-    [[nodiscard]] bool hasInterpolate() const
+    bool hasInterpolate() const
     {
         return getInterpolate() != nullptr;
     }
 
     /// Get INTERPOLATE section node
-    [[nodiscard]] const QueryTreeNodePtr & getInterpolate() const
+    const QueryTreeNodePtr & getInterpolate() const
     {
         return children[interpolate_child_index];
     }
@@ -574,13 +545,13 @@ public:
     }
 
     /// Returns true if query node LIMIT BY LIMIT section is not empty, false otherwise
-    [[nodiscard]] bool hasLimitByLimit() const
+    bool hasLimitByLimit() const
     {
         return children[limit_by_limit_child_index] != nullptr;
     }
 
     /// Get LIMIT BY LIMIT section node
-    [[nodiscard]] const QueryTreeNodePtr & getLimitByLimit() const
+    const QueryTreeNodePtr & getLimitByLimit() const
     {
         return children[limit_by_limit_child_index];
     }
@@ -592,13 +563,13 @@ public:
     }
 
     /// Returns true if query node LIMIT BY OFFSET section is not empty, false otherwise
-    [[nodiscard]] bool hasLimitByOffset() const
+    bool hasLimitByOffset() const
     {
         return children[limit_by_offset_child_index] != nullptr;
     }
 
      /// Get LIMIT BY OFFSET section node
-    [[nodiscard]] const QueryTreeNodePtr & getLimitByOffset() const
+    const QueryTreeNodePtr & getLimitByOffset() const
     {
         return children[limit_by_offset_child_index];
     }
@@ -610,13 +581,13 @@ public:
     }
 
     /// Returns true if query node LIMIT BY section is not empty, false otherwise
-    [[nodiscard]] bool hasLimitBy() const
+    bool hasLimitBy() const
     {
         return !getLimitBy().getNodes().empty();
     }
 
     /// Get LIMIT BY section
-    [[nodiscard]] const ListNode & getLimitBy() const
+    const ListNode & getLimitBy() const
     {
         return children[limit_by_child_index]->as<const ListNode &>();
     }
@@ -628,7 +599,7 @@ public:
     }
 
     /// Get LIMIT BY section node
-    [[nodiscard]] const QueryTreeNodePtr & getLimitByNode() const
+    const QueryTreeNodePtr & getLimitByNode() const
     {
         return children[limit_by_child_index];
     }
@@ -640,13 +611,13 @@ public:
     }
 
     /// Returns true if query node LIMIT section is not empty, false otherwise
-    [[nodiscard]] bool hasLimit() const
+    bool hasLimit() const
     {
         return children[limit_child_index] != nullptr;
     }
 
     /// Get LIMIT section node
-    [[nodiscard]] const QueryTreeNodePtr & getLimit() const
+    const QueryTreeNodePtr & getLimit() const
     {
         return children[limit_child_index];
     }
@@ -658,13 +629,13 @@ public:
     }
 
     /// Returns true if query node LIMIT AFTER section is not empty, false otherwise
-    [[nodiscard]] bool hasLimitAfter() const
+    bool hasLimitAfter() const
     {
         return children[limit_after_child_index] != nullptr;
     }
 
     /// Get LIMIT AFTER section node
-    [[nodiscard]] const QueryTreeNodePtr & getLimitAfter() const
+    const QueryTreeNodePtr & getLimitAfter() const
     {
         return children[limit_after_child_index];
     }
@@ -676,13 +647,13 @@ public:
     }
 
     /// Returns true if query node LIMIT UNTIL section is not empty, false otherwise
-    [[nodiscard]] bool hasLimitUntil() const
+    bool hasLimitUntil() const
     {
         return children[limit_until_child_index] != nullptr;
     }
 
     /// Get LIMIT UNTIL section node
-    [[nodiscard]] const QueryTreeNodePtr & getLimitUntil() const
+    const QueryTreeNodePtr & getLimitUntil() const
     {
         return children[limit_until_child_index];
     }
@@ -694,13 +665,13 @@ public:
     }
 
     /// Returns true if query node OFFSET section is not empty, false otherwise
-    [[nodiscard]] bool hasOffset() const
+    bool hasOffset() const
     {
         return children[offset_child_index] != nullptr;
     }
 
     /// Get OFFSET section node
-    [[nodiscard]] const QueryTreeNodePtr & getOffset() const
+    const QueryTreeNodePtr & getOffset() const
     {
         return children[offset_child_index];
     }
@@ -712,13 +683,13 @@ public:
     }
 
     /// Get query node projection columns
-    [[nodiscard]] const NamesAndTypes & getProjectionColumns() const
+    const NamesAndTypes & getProjectionColumns() const
     {
         return projection_columns;
     }
 
     /// Returns true if query node is resolved, false otherwise
-    [[nodiscard]] bool isResolved() const
+    bool isResolved() const
     {
         return !projection_columns.empty();
     }
@@ -735,7 +706,7 @@ public:
     /// Remove unused projection columns
     void removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes);
 
-    [[nodiscard]] bool isCorrelated() const
+    bool isCorrelated() const
     {
         return !children[correlated_columns_list_index]->as<ListNode>()->getNodes().empty();
     }
@@ -750,20 +721,20 @@ public:
         return children[correlated_columns_list_index]->as<ListNode &>();
     }
 
-    [[nodiscard]] const ListNode & getCorrelatedColumns() const
+    const ListNode & getCorrelatedColumns() const
     {
         return children[correlated_columns_list_index]->as<ListNode &>();
     }
 
-    [[nodiscard]] ColumnNodePtrWithHashSet getCorrelatedColumnsSet() const;
+    ColumnNodePtrWithHashSet getCorrelatedColumnsSet() const;
 
     void addCorrelatedColumn(const QueryTreeNodePtr & correlated_column);
 
     /// Returns result type of projection expression if query is correlated
     /// or throws an exception otherwise.
-    [[nodiscard]] DataTypePtr getResultType() const override;
+    DataTypePtr getResultType() const override;
 
-    [[nodiscard]] QueryTreeNodeType getNodeType() const override
+    QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::QUERY;
     }
@@ -775,19 +746,19 @@ public:
         projection_aliases_to_override = std::move(pr_aliases);
     }
 
-    [[nodiscard]] const Names & getProjectionAliasesToOverride() const
+    const Names & getProjectionAliasesToOverride() const
     {
         return projection_aliases_to_override;
     }
 
 protected:
-    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const override;
 
     void updateTreeHashImpl(HashState &, CompareOptions options) const override;
 
-    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
+    QueryTreeNodePtr cloneImpl() const override;
 
-    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     bool is_subquery = false;
@@ -803,7 +774,6 @@ private:
     bool is_group_by_all = false;
     bool is_order_by_all = false;
     bool is_limit_by_all = false;
-    bool is_shuffle = false;
     bool is_limit_after_all = false;
 
     std::string cte_name;
@@ -811,8 +781,6 @@ private:
     Names projection_aliases_to_override;
     ContextMutablePtr context;
     SettingsChanges settings_changes;
-    std::vector<String> default_settings;
-    NameToNameVector query_parameters;
 
     static constexpr size_t with_child_index = 0;
     static constexpr size_t projection_child_index = 1;

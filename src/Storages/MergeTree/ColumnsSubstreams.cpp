@@ -298,14 +298,14 @@ bool ColumnsSubstreams::operator==(const ColumnsSubstreams & other) const
 #pragma clang diagnostic ignored "-Wused-but-marked-unused"
 
 /// Feed a string into the hash state, length-prefixed so concatenations are unambiguous.
-static void updateHashWithString(XXH_INLINE_XXH3_state_t & state, std::string_view s)
+static void updateHashWithString(XXH3_state_t & state, std::string_view s)
 {
     UInt64 size = s.size();
     XXH_INLINE_XXH3_128bits_update(&state, &size, sizeof(size));
     XXH_INLINE_XXH3_128bits_update(&state, s.data(), s.size());
 }
 
-static void updateHashWithColumnEntry(XXH_INLINE_XXH3_state_t & state, const ColumnsSubstreams::ColumnEntry & entry)
+static void updateHashWithColumnEntry(XXH3_state_t & state, const ColumnsSubstreams::ColumnEntry & entry)
 {
     updateHashWithString(state, entry.column);
     UInt64 size = entry.substreams.size();
@@ -319,7 +319,7 @@ UInt128 ColumnsSubstreams::getHash() const
     /// XXH3 instead of the more usual SipHash: this hashes hundreds of substream names per part
     /// on the part loading path, and XXH3 is several times faster (the hash is only used to key
     /// an in-memory cache, so it does not need to be cryptographic or stable across versions).
-    XXH_INLINE_XXH3_state_t state;
+    XXH3_state_t state;
     XXH_INLINE_XXH3_128bits_reset(&state);
 
     UInt64 columns = columns_substreams.size();
@@ -334,7 +334,7 @@ UInt128 ColumnsSubstreams::getHash() const
 
 UInt128 ColumnsSubstreams::getColumnEntryHash(const ColumnEntry & entry)
 {
-    XXH_INLINE_XXH3_state_t state;
+    XXH3_state_t state;
     XXH_INLINE_XXH3_128bits_reset(&state);
     updateHashWithColumnEntry(state, entry);
     auto hash = XXH_INLINE_XXH3_128bits_digest(&state);

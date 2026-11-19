@@ -99,9 +99,9 @@ public:
 
         explicit SubcolumnCreator(const ColumnPtr & offsets_) : offsets(offsets_) {}
 
-        [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override;
-        [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
-        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override;
+        DataTypePtr create(const DataTypePtr & prev) const override;
+        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
+        ColumnPtr create(const ColumnPtr & prev) const override;
     };
 
     const SerializationPtr & getNestedSerialization() const { return nested; }
@@ -110,8 +110,5 @@ private:
     template <typename ReturnType>
     ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
 };
-
-/// Converts the offsets of an array (a `ColumnArray::ColumnOffsets`) to the sizes of its elements.
-ColumnPtr arrayOffsetsToSizes(const IColumn & column);
 
 }

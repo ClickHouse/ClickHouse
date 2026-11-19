@@ -21,7 +21,7 @@ class ISynonymsExtension
 public:
     using Synset = std::vector<String>;
 
-    [[nodiscard]] virtual const Synset * getSynonyms(std::string_view token) const = 0;
+    virtual const Synset * getSynonyms(std::string_view token) const = 0;
 
     virtual ~ISynonymsExtension() = default;
 };

@@ -16,7 +16,9 @@ class CloudJWTProvider : public JWTProvider
 {
 public:
     CloudJWTProvider(
-        JWTProviderOptions options,
+        std::string auth_url,
+        std::string client_id,
+        std::string audience,
         std::string host,
         std::ostream & out,
         std::ostream & err);
@@ -24,8 +26,7 @@ public:
     std::string getJWT() override;
 
 private:
-    [[nodiscard]] std::string getAudience() const override;
-    [[nodiscard]] bool preferCompleteVerificationURI() const override;
+    std::string getAudience() const override;
 
     struct AuthEndpoints
     {
