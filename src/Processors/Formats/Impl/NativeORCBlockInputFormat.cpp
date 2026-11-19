@@ -2056,6 +2056,10 @@ template <bool fixed_string>
 static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
     const ORC::ColumnVectorBatch * orc_column, const ORC::Type * orc_type, const String & column_name, bool nullable)
 {
+    const auto & orc_str_column = dynamic_cast<const ORC::EncodedStringVectorBatch &>(*orc_column);
+    /// NULL rows stay NULL: the conversion to the requested type gives them its default.
+    nullable = nullable || orc_str_column.hasNulls;
+
     /// Fill CH holder_column with ORC dictionary
     /// Note that holder_column is always a ColumnString or ColumnFixedstring whether nullable is true or false, because ORC dictionary doesn't contain null values.
     DataTypePtr holder_type;
@@ -2067,7 +2071,6 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
     DataTypePtr nested_type = nullable ? std::make_shared<DataTypeNullable>(holder_type) : holder_type;
     auto internal_type = std::make_shared<DataTypeLowCardinality>(std::move(nested_type));
 
-    const auto & orc_str_column = dynamic_cast<const ORC::EncodedStringVectorBatch &>(*orc_column);
     size_t rows = orc_str_column.numElements;
     const auto & orc_dict = assert_cast<const ColumnString &>(*orc_str_column.dictionary->column);
     size_t dict_size = orc_dict.size();
@@ -2148,8 +2151,7 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
         {
             for (size_t i = 0; i < rows; ++i)
             {
-                /// Set index 0 if we meet null value. If dictionary_column is nullable, 0 represents null value.
-                /// Otherwise 0 represents default string value, it is reasonable because null values are converted to default values when casting nullable column to non-nullable.
+                /// Index 0 of the nullable dictionary is the NULL value.
                 new_index_data[i] = orc_str_column.notNull[i] ? index_data[check_index(orc_str_column.index[i], i)] : 0;
             }
         }

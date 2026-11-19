@@ -72,6 +72,11 @@ SELECT * FROM file(currentDatabase() || '_05618_null.Native', 'Native', 'id UInt
 SELECT * FROM file(currentDatabase() || '_05618_null.Native', 'Native', 'id UInt64, e5 Array(Tuple(String, Int8))') SETTINGS input_format_native_allow_types_conversion = 0; -- { serverError TYPE_MISMATCH }
 {% endif -%}
 {% endfor -%}
+INSERT INTO FUNCTION file(currentDatabase() || '_05618_dict.ORC', 'ORC') SELECT number AS id, [CAST('7', 'Nullable(String)'), NULL][number + 1] AS e1
+FROM numbers(2) SETTINGS output_format_orc_dictionary_key_size_threshold = 1;
+SELECT * FROM file(currentDatabase() || '_05618_dict.ORC', 'ORC', 'id UInt64, e1 Int32') ORDER BY id SETTINGS input_format_orc_dictionary_as_low_cardinality = 1, input_format_null_as_default = 1;
+SELECT * FROM file(currentDatabase() || '_05618_dict.ORC', 'ORC', 'id UInt64, e1 String DEFAULT \'fallback\'') ORDER BY id SETTINGS input_format_orc_dictionary_as_low_cardinality = 1, input_format_null_as_default = 1;
+SELECT * FROM file(currentDatabase() || '_05618_dict.ORC', 'ORC', 'id UInt64, e1 String') SETTINGS input_format_orc_dictionary_as_low_cardinality = 1, input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 SELECT count() FROM file(currentDatabase() || '_05618_null.Parquet', 'Parquet', 'e2 Enum8(\'a\' = 1, \'b\' = 2)') WHERE e2 = 'a' SETTINGS input_format_parquet_dictionary_filter_push_down = 0;
 SELECT count() FROM file(currentDatabase() || '_05618_null.Parquet', 'Parquet', 'e2 Enum8(\'a\' = 1, \'b\' = 2)') WHERE e2 = 'a' SETTINGS input_format_parquet_dictionary_filter_push_down = 1048576;
 
