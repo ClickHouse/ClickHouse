@@ -2970,6 +2970,17 @@ def test_namespace_two_part_name_resolution(started_cluster):
         assert "ACCESS_DENIED" in err, f"row policy must read the database table: {err}"
         # the catalog table would be printed as ON <catalog>.`X.P`
         assert f"ON {X}.{P}" in err, f"the missing grant must be on the database table: {err}"
+        # the same policy enabling namespaces only inside its subquery: still the database table
+        node.query(
+            f"ALTER ROW POLICY {policy} ON default.{T2} USING symbol IN "
+            f"(SELECT symbol FROM {X}.{P} SETTINGS allow_experimental_table_namespaces = 1)"
+        )
+        for outer in ({}, on):
+            _, err = node.query_and_get_answer_with_error(
+                f"USE {CATALOG_NAME}; SELECT count() FROM default.{T2}", settings=outer, user=policy_user
+            )
+            assert "ACCESS_DENIED" in err, f"nested SETTINGS, outer {outer}: {err}"
+            assert f"ON {X}.{P}" in err, f"the missing grant must be on the database table: {err}"
     finally:
         for kind in ("catalog", "database", "neither"):
             node.query(f"DROP USER IF EXISTS u_{kind}_{test_ref}")
