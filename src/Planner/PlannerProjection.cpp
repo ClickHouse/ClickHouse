@@ -20,6 +20,7 @@
 #include <Planner/Planner.h>
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
+#include <Planner/Utils.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -233,11 +234,16 @@ QueryPlan ProjectionPlanner::buildPlanForSource(Block source)
     /// the functions of the steps refer to the context of the analysis
     plan.addInterpreterContext(planner_context->getQueryContext());
 
+    const auto & query_node = query_tree->as<QueryNode &>();
+    /// the query reads a subcolumn as a column, and the block has only the column that contains it
+    for (const auto & column_name : collectReferencedColumnNames(query_tree, query_node.getJoinTreeNode()))
+        if (!source.has(column_name))
+            source.insert(source.getColumnOrSubcolumnByName(column_name));
+
     /// TODO: read the block from StorageValues, then the plan reads it as a table
     plan.addStep(std::make_unique<ReadFromPreparedSource>(
         Pipe(std::make_shared<ProjectionDataSource>(std::make_shared<const Block>(std::move(source))))));
 
-    const auto & query_node = query_tree->as<QueryNode &>();
     if (query_node.hasWhere())
     {
         auto filter_dag = buildActions({query_node.getWhere()});
