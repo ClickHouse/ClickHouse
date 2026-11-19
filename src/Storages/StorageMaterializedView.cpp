@@ -60,8 +60,10 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsDouble limit;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsDouble offset;
 }
 
 namespace ServerSetting
@@ -177,6 +179,15 @@ namespace
         if (countTableExpressions(*select_with_union) != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Incremental refresh requires exactly one source table, but the query references other tables (in a JOIN or a subquery)");
+
+        /// The refresh resumes from the cursor that the read reports after it reaches the end of the snapshot. A `LIMIT`
+        /// stops the read before that, so the cursor would stay unchanged and the next refresh would append the same rows
+        /// again; and the cursor of the rows that were read would skip the rows read but discarded by the limit.
+        const auto & select = select_with_union->as<ASTSelectWithUnionQuery &>().list_of_selects->children[0]->as<ASTSelectQuery &>();
+        if (select.limitLength() || select.limitOffset() || select.limitAfter() || select.limitUntil()
+            || context->getSettingsRef()[Setting::limit] != 0 || context->getSettingsRef()[Setting::offset] != 0)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Incremental refresh does not support LIMIT and OFFSET: the source would not be read to the end of its snapshot");
 
         const auto * identifier = source_table_expr.database_and_table_name->as<ASTTableIdentifier>();
         if (!identifier)
