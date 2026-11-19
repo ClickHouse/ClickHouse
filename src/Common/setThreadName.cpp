@@ -21,6 +21,8 @@
 #include <base/scope_guard.h>
 
 #include <atomic>
+#include <optional>
+#include <string>
 
 constexpr size_t THREAD_NAME_SIZE = 16;
 
@@ -130,6 +132,36 @@ static void nameCurrentThreadStackVMA() noexcept
 }
 #endif
 
+/// Writes the OS-level name, the cache and the jemalloc profile name. `name` is what `name_str`
+/// parses to: UNKNOWN for a comm absent from the enum, which keeps getThreadName re-reading the OS.
+static void setThreadNameImpl(ThreadName name, const std::string & name_str [[maybe_unused]])
+{
+#if defined(OS_FREEBSD)
+    pthread_set_name_np(pthread_self(), name_str.data());
+    if ((false))
+#elif defined(OS_DARWIN)
+    if (0 != pthread_setname_np(name_str.data()))
+#elif defined(OS_SUNOS)
+    // On illumos, pthread_setname_np is prohibitively expensive due to contention in procfs.
+    // To avoid the performance penalty, skip os-level thread renaming, and fall back to the
+    // cached thread-local name. Note: revert if illumos learns a fast path for thread renaming.
+    if ((false))
+#elif defined(OS_WASM)
+    // Emscripten has no `pthread_setname_np`.
+    if ((false))
+#else
+    if (0 != prctl(PR_SET_NAME, name_str.data(), 0, 0, 0))
+#endif
+        if (errno != ENOSYS && errno != EPERM)    /// It's ok if the syscall is unsupported or not allowed in some environments.
+            throw DB::ErrnoException(DB::ErrorCodes::PTHREAD_ERROR, "Cannot set thread name with prctl(PR_SET_NAME, ...)");
+
+    thread_name = name;
+
+#if USE_JEMALLOC
+    DB::Jemalloc::setValue("thread.prof.name", name_str.data());
+#endif
+}
+
 void setThreadName(ThreadName name)
 {
 #if !defined(OS_DARWIN) && !defined(OS_SUNOS) && !defined(OS_FREEBSD) && !defined(OS_WASM)
@@ -156,32 +188,48 @@ void setThreadName(ThreadName name)
 
     // copy string view to string to avoid tidy build error:
     // `call may not be null terminated, provide size information to the callee to prevent potential issues`
-    auto thread_name_str = std::string(thread_name_view);
+    setThreadNameImpl(name, std::string(thread_name_view));
+}
 
-#if defined(OS_FREEBSD)
-    pthread_set_name_np(pthread_self(), thread_name_str.data());
-    if ((false))
-#elif defined(OS_DARWIN)
-    if (0 != pthread_setname_np(thread_name_str.data()))
+/// The OS-level name; empty where it cannot be read.
+static std::string getThreadComm()
+{
+    char comm[THREAD_NAME_SIZE] = {};
+
+#if defined(OS_DARWIN)
+    if (pthread_getname_np(pthread_self(), comm, THREAD_NAME_SIZE))
+        throw DB::Exception(DB::ErrorCodes::PTHREAD_ERROR, "Cannot get thread name with pthread_getname_np()");
 #elif defined(OS_SUNOS)
-    // On illumos, pthread_setname_np is prohibitively expensive due to contention in procfs.
-    // To avoid the performance penalty, skip os-level thread renaming, and fall back to the
-    // cached thread-local name. Note: revert if illumos learns a fast path for thread renaming.
-    if ((false))
+    // Skip os-level thread name lookup on illumos, since we skip thread renames in setThreadName.
 #elif defined(OS_WASM)
-    // Emscripten has no `pthread_setname_np`.
-    if ((false))
+    // Emscripten has no `pthread_getname_np`; the cached thread-local name is all there is.
+#elif defined(OS_FREEBSD)
+// TODO: make test. freebsd will have this function soon https://freshbsd.org/commit/freebsd/r337983
+//    if (pthread_get_name_np(pthread_self(), comm, THREAD_NAME_SIZE))
+//        throw DB::Exception(DB::ErrorCodes::PTHREAD_ERROR, "Cannot get thread name with pthread_get_name_np()");
 #else
-    if (0 != prctl(PR_SET_NAME, thread_name_str.data(), 0, 0, 0))
-#endif
+    if (0 != prctl(PR_GET_NAME, comm, 0, 0, 0))
         if (errno != ENOSYS && errno != EPERM)    /// It's ok if the syscall is unsupported or not allowed in some environments.
-            throw DB::ErrnoException(DB::ErrorCodes::PTHREAD_ERROR, "Cannot set thread name with prctl(PR_SET_NAME, ...)");
-
-    thread_name = name;
-
-#if USE_JEMALLOC
-    DB::Jemalloc::setValue("thread.prof.name", thread_name_str.data());
+            throw DB::ErrnoException(DB::ErrorCodes::PTHREAD_ERROR, "Cannot get thread name with prctl(PR_GET_NAME)");
 #endif
+
+    return comm;
+}
+
+std::optional<ThreadNamePair> saveThreadName()
+{
+    ThreadNamePair snapshot{.comm = getThreadComm(), .cached = thread_name};
+    if (snapshot.comm.empty() && snapshot.cached == ThreadName::UNKNOWN)
+        return std::nullopt;
+    return snapshot;
+}
+
+void restoreThreadName(const ThreadNamePair & snapshot)
+{
+    if (snapshot.comm.empty())
+        setThreadName(snapshot.cached);
+    else
+        setThreadNameImpl(snapshot.cached, snapshot.comm);
 }
 
 const ThreadName & getThreadNameRef()
@@ -195,26 +243,7 @@ ThreadName getThreadName()
     if (thread_name != ThreadName::UNKNOWN)
         return thread_name;
 
-    char tmp_thread_name[THREAD_NAME_SIZE] = {};
-
-#if defined(OS_DARWIN)
-    if (pthread_getname_np(pthread_self(), tmp_thread_name, THREAD_NAME_SIZE))
-        throw DB::Exception(DB::ErrorCodes::PTHREAD_ERROR, "Cannot get thread name with pthread_getname_np()");
-#elif defined(OS_SUNOS)
-    // Skip os-level thread name lookup on illumos, since we skip thread renames in setThreadName.
-#elif defined(OS_WASM)
-    // Emscripten has no `pthread_getname_np`; the cached thread-local name is all there is.
-#elif defined(OS_FREEBSD)
-// TODO: make test. freebsd will have this function soon https://freshbsd.org/commit/freebsd/r337983
-//    if (pthread_get_name_np(pthread_self(), thread_name, THREAD_NAME_SIZE))
-//        throw DB::Exception(DB::ErrorCodes::PTHREAD_ERROR, "Cannot get thread name with pthread_get_name_np()");
-#else
-    if (0 != prctl(PR_GET_NAME, tmp_thread_name, 0, 0, 0))
-        if (errno != ENOSYS && errno != EPERM)    /// It's ok if the syscall is unsupported or not allowed in some environments.
-            throw DB::ErrnoException(DB::ErrorCodes::PTHREAD_ERROR, "Cannot get thread name with prctl(PR_GET_NAME)");
-#endif
-
-    return parseThreadName(std::string_view{tmp_thread_name});
+    return parseThreadName(getThreadComm());
 }
 
 bool isThreadStackVMANamingUnsupported() noexcept

@@ -18,6 +18,7 @@
 
 #include <Poco/Event.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/setThreadName.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ThreadWithStackSize.h>
 #include <Common/Priority.h>
@@ -147,16 +148,20 @@ public:
     /// located on the stack of the current thread, the stack must not be unwound until all jobs are finished. However,
     /// if ThreadPool is a local object, it will wait for all scheduled jobs in its own destructor.
     void scheduleOrThrowOnError(Job job, Priority priority = {});
+    /// `name` names the job in the trace (the operation name of its span); without it, the span is named after the type of the job.
+    void scheduleOrThrowOnError(DB::ThreadName name, Job job, Priority priority = {});
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or return false.
     /// The timeout is signed, because it is fed by settings such as `lock_acquire_timeout`, whose value is an
     /// Int64 count of microseconds and can be negative. A negative timeout means "already expired", i.e. give up
     /// immediately if there is no free thread, the same as `wait_microseconds = 0`.
     [[nodiscard]] bool trySchedule(Job job, Priority priority = {}, Int64 wait_microseconds = 0) noexcept;
+    [[nodiscard]] bool trySchedule(DB::ThreadName name, Job job, Priority priority = {}, Int64 wait_microseconds = 0) noexcept;
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or throw an exception.
     /// See trySchedule() above about the sign of `wait_microseconds`.
     void scheduleOrThrow(Job job, Priority priority = {}, Int64 wait_microseconds = 0, bool propagate_opentelemetry_tracing_context = true);
+    void scheduleOrThrow(DB::ThreadName name, Job job, Priority priority = {}, Int64 wait_microseconds = 0, bool propagate_opentelemetry_tracing_context = true);
 
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
@@ -252,7 +257,7 @@ private:
     size_t idle_thread_count = 0;
 
     template <typename ReturnType>
-    ReturnType scheduleImpl(Job job, Priority priority, std::optional<Int64> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
+    ReturnType scheduleImpl(DB::ThreadName name, Job job, Priority priority, std::optional<Int64> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
 
     /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with the mutex locked.
     void startNewThreadsNoLock();
@@ -348,6 +353,7 @@ struct ThreadFromGlobalPoolState
 /// Worker entry point implementing ThreadFromGlobalPoolImpl's constructor body.
 /// Lives in the .cpp so that ThreadStatus, scope_guard and friends do not leak via this header.
 void startThreadFromGlobalPool(
+    DB::ThreadName name,
     std::shared_ptr<ThreadFromGlobalPoolState> state,
     std::function<void()> func,
     UInt64 global_profiler_real_time_period_ns,
@@ -370,9 +376,17 @@ public:
 
     template <typename Function, typename... Args>
     explicit ThreadFromGlobalPoolImpl(Function && func, Args &&... args)
+        : ThreadFromGlobalPoolImpl(DB::ThreadName::UNKNOWN, std::forward<Function>(func), std::forward<Args>(args)...)
+    {
+    }
+
+    /// `name` names the thread in the trace, see ThreadPool::scheduleOrThrow.
+    template <typename Function, typename... Args>
+    explicit ThreadFromGlobalPoolImpl(DB::ThreadName name, Function && func, Args &&... args)
         : state(std::make_shared<ThreadFromGlobalPoolState>())
     {
         startThreadFromGlobalPool(
+            name,
             state,
             [my_func = std::forward<Function>(func),
              my_args = std::make_tuple(std::forward<Args>(args)...)]() mutable

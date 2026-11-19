@@ -168,7 +168,7 @@ void PushingAsyncPipelineExecutor::start()
         threadFunction(*data, thread_group, pipeline.getNumThreads(), pipeline.getConcurrencyControl());
     };
 
-    data->thread = ThreadFromGlobalPool(std::move(func));
+    data->thread = ThreadFromGlobalPool(ThreadName::PUSHING_ASYNC_EXECUTOR, std::move(func));
 }
 
 [[noreturn]] static void throwOnUnexpectedPipelineFinish(const IProcessor & pushing_source)

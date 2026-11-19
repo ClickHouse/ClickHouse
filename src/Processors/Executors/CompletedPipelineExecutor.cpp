@@ -92,7 +92,7 @@ void CompletedPipelineExecutor::execute()
             threadFunction(*data_ptr, thread_group, num_threads, concurrency_control);
         };
 
-        data->thread = ThreadFromGlobalPool(std::move(func));
+        data->thread = ThreadFromGlobalPool(ThreadName::COMPLETED_PIPELINE_EXECUTOR, std::move(func));
 
         while (!data->is_finished)
         {

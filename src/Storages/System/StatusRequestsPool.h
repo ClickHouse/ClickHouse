@@ -265,7 +265,7 @@ public:
 
             try
             {
-                thread_pool.scheduleOrThrowOnError(std::move(get_status_task));
+                thread_pool.scheduleOrThrowOnError(get_thread_name(), std::move(get_status_task));
             }
             catch (...)
             {

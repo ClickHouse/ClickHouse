@@ -1360,7 +1360,7 @@ void MergeTreeData::loadStatisticsOfPartsInParallel(
             for (size_t job = 0; job < num_jobs; ++job)
             {
                 /// A copy of `load_parts`: it is destroyed before `pool`, whose destructor joins the running jobs.
-                pool->scheduleOrThrowOnError(
+                pool->scheduleOrThrowOnError(ThreadName::MERGETREE_LOAD_STATISTICS,
                     [load_parts, thread_group = CurrentThread::getGroup()]
                     {
                         ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_LOAD_STATISTICS);

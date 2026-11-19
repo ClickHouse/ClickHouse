@@ -175,7 +175,7 @@ Chunk ParallelParsingInputFormat::read()
             return {};
 
         segmentator_thread = ThreadFromGlobalPool(
-            &ParallelParsingInputFormat::segmentatorThreadFunction, this, CurrentThread::getGroup());
+            ThreadName::PARALLEL_PARSING_SEGMENTATOR, &ParallelParsingInputFormat::segmentatorThreadFunction, this, CurrentThread::getGroup());
     }
 
     if (isCancelled() || parsing_finished)

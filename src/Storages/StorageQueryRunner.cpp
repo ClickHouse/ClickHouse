@@ -395,7 +395,7 @@ public:
 
     void submit(QueryRunnerJob job)
     {
-        if (pool.trySchedule([this, scheduled_job = std::move(job)] { runJob(scheduled_job); }))
+        if (pool.trySchedule(ThreadName::QUERY_RUNNER, [this, scheduled_job = std::move(job)] { runJob(scheduled_job); }))
             return;
 
         if (shutdown_called)

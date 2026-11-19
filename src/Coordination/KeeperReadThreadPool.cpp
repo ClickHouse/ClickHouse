@@ -60,7 +60,7 @@ void KeeperReadThreadPool::execute(size_t count, const CoordinationSettings & co
         ++running_threads;
         try
         {
-            pool->scheduleOrThrowOnError([this, thread_group = CurrentThread::getGroup()]
+            pool->scheduleOrThrowOnError(ThreadName::KEEPER_READ, [this, thread_group = CurrentThread::getGroup()]
                 {
                     ThreadGroupSwitcher switcher(thread_group, ThreadName::KEEPER_READ);
                     threadFunction();

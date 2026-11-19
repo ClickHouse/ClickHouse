@@ -752,7 +752,7 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
         const size_t remaining_capacity = tasks.upscale(thread_num);
 
         /// Start new thread
-        pool->scheduleOrThrowOnError([this, thread_num, thread_group = CurrentThread::getGroup(), my_slot = std::move(slot)]
+        pool->scheduleOrThrowOnError(ThreadName::QUERY_ASYNC_EXECUTOR, [this, thread_num, thread_group = CurrentThread::getGroup(), my_slot = std::move(slot)]
         {
             ThreadGroupSwitcher switcher(thread_group, ThreadName::QUERY_ASYNC_EXECUTOR);
 

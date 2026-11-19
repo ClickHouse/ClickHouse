@@ -650,7 +650,7 @@ void DistributedSink::writeSync(const Block & block)
         finished_jobs_count = 0;
         for (size_t shard_index : collections::range(start, end))
             for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
-                pool->scheduleOrThrowOnError(runWritingJob(job, block_to_send, num_shards));
+                pool->scheduleOrThrowOnError(ThreadName::DISTRIBUTED_SINK, runWritingJob(job, block_to_send, num_shards));
     }
     catch (...)
     {
@@ -699,7 +699,7 @@ void DistributedSink::onFinish()
                 {
                     if (job.executor)
                     {
-                        pool->scheduleOrThrowOnError([&job, thread_group = CurrentThread::getGroup()]()
+                        pool->scheduleOrThrowOnError(ThreadName::DISTRIBUTED_SINK, [&job, thread_group = CurrentThread::getGroup()]()
                         {
                             ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_SINK);
 
