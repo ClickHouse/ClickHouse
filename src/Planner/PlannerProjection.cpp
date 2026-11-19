@@ -22,7 +22,6 @@
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/TableExpressionData.h>
-#include <Planner/Utils.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -55,9 +54,10 @@ namespace
 class ProjectionDataSource final : public ISource
 {
 public:
-    explicit ProjectionDataSource(SharedHeader block)
-        : ISource(std::make_shared<const Block>(block->cloneEmpty()))
-        , chunk(block->getColumns(), block->rows())
+    /// the block can have no columns, so it does not always know the number of rows
+    ProjectionDataSource(const Block & block, size_t rows)
+        : ISource(std::make_shared<const Block>(block.cloneEmpty()))
+        , chunk(block.getColumns(), rows)
     {
     }
 
@@ -204,6 +204,22 @@ ActionsDAG ProjectionPlanner::buildActions(const QueryTreeNodes & expressions)
                 actions_dag.getOutputs().push_back(node);
     }
 
+    return actions_dag;
+}
+
+ActionsDAG ProjectionPlanner::buildKeysAndArgumentsActions()
+{
+    QueryTreeNodes expressions{query_tree->as<QueryNode &>().getGroupByNode()};
+    for (const auto & aggregate_function_node : collectAggregateFunctionNodes(query_tree))
+        expressions.push_back(aggregate_function_node->as<FunctionNode &>().getArgumentsNode());
+
+    return buildActions(expressions);
+}
+
+ActionsDAG ProjectionPlanner::buildBeforeAggregationActions(ActionsDAG::NodeRawConstPtrs & stored_keys)
+{
+    auto actions_dag = buildKeysAndArgumentsActions();
+
     /// the source has the names of the columns, and the actions read the identifiers of the columns
     const auto & source_columns = planner_context->getTableExpressionDataOrThrow(query_tree->as<QueryNode &>().getJoinTreeNode());
     ActionsDAG rename_dag;
@@ -215,24 +231,11 @@ ActionsDAG ProjectionPlanner::buildActions(const QueryTreeNodes & expressions)
 
         rename_dag.getOutputs().push_back(&rename_dag.addAlias(rename_dag.addInput(*column_name, input->result_type), input->result_name));
     }
+    actions_dag = ActionsDAG::merge(std::move(rename_dag), std::move(actions_dag));
 
-    return ActionsDAG::merge(std::move(rename_dag), std::move(actions_dag));
-}
-
-ActionsDAG ProjectionPlanner::buildBeforeAggregationActions()
-{
-    QueryTreeNodes expressions{query_tree->as<QueryNode &>().getGroupByNode()};
-    for (const auto & aggregate_function_node : collectAggregateFunctionNodes(query_tree))
-        expressions.push_back(aggregate_function_node->as<FunctionNode &>().getArgumentsNode());
-
-    auto actions_dag = buildActions(expressions);
-
-    /// a key gets the name that the part stores as an alias, the DAG keeps one node for each expression
-    NamesWithAliases key_aliases;
+    /// a stored name is not an output: an output of the planner can have the same name
     for (size_t i = 0; i < aggregation_keys.size(); ++i)
-        if (planner_key_names[i] != aggregation_keys[i])
-            key_aliases.emplace_back(planner_key_names[i], aggregation_keys[i]);
-    actions_dag.addAliases(key_aliases);
+        stored_keys.push_back(&actions_dag.addAlias(actions_dag.findInOutputs(planner_key_names[i]), aggregation_keys[i]));
 
     return actions_dag;
 }
@@ -244,14 +247,19 @@ QueryPlan ProjectionPlanner::buildPlanForSource(Block source)
     plan.addInterpreterContext(planner_context->getQueryContext());
 
     const auto & query_node = query_tree->as<QueryNode &>();
-    /// the query reads a subcolumn as a column, and the block has only the column that contains it
-    for (const auto & column_name : collectReferencedColumnNames(query_tree, query_node.getJoinTreeNode()))
-        if (!source.has(column_name))
-            source.insert(source.getColumnOrSubcolumnByName(column_name));
+    /// the plan reads each column under its identifier, so a name of the source cannot be a name that the planner gives
+    const auto & source_columns = planner_context->getTableExpressionDataOrThrow(query_node.getJoinTreeNode());
+    Block columns;
+    for (const auto & column_name : source_columns.getColumnNames())
+    {
+        /// the query reads a subcolumn as a column, and the block has only the column that contains it
+        auto column = source.getColumnOrSubcolumnByName(column_name);
+        column.name = source_columns.getColumnIdentifierOrThrow(column_name);
+        columns.insert(std::move(column));
+    }
 
     /// TODO: read the block from StorageValues, then the plan reads it as a table
-    plan.addStep(std::make_unique<ReadFromPreparedSource>(
-        Pipe(std::make_shared<ProjectionDataSource>(std::make_shared<const Block>(std::move(source))))));
+    plan.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<ProjectionDataSource>(columns, source.rows()))));
 
     if (query_node.hasWhere())
     {
@@ -299,14 +307,21 @@ QueryPlan ProjectionPlanner::buildPlanForAggregateProjection(Block source)
 {
     auto plan = buildPlanForSource(std::move(source));
 
-    plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), buildBeforeAggregationActions()));
+    plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), buildKeysAndArgumentsActions()));
+
+    /// two keys of the projection can be one expression for the planner
+    Names keys;
+    NameSet unique_keys;
+    for (const auto & key : planner_key_names)
+        if (unique_keys.emplace(key).second)
+            keys.push_back(key);
 
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
     auto max_threads = getEffectiveMaxThreads(*query_context);
     plan.addStep(std::make_unique<AggregatingStep>(
         plan.getCurrentHeader(),
-        getAggregatorParams(query_context, aggregation_keys, aggregates),
+        getAggregatorParams(query_context, keys, aggregates),
         GroupingSetsParamsList{},
         /*final_=*/false,
         settings[Setting::max_block_size],
@@ -320,6 +335,17 @@ QueryPlan ProjectionPlanner::buildPlanForAggregateProjection(Block source)
         /*should_produce_results_in_order_of_bucket_number_=*/false,
         /*memory_bound_merging_of_aggregation_results_enabled_=*/false,
         /*explicit_sorting_required_for_aggregation_in_order_=*/false));
+
+    /// the keys get the names that the part stores only after the aggregation, where no other column has a name of the planner
+    NamesWithAliases stored_columns;
+    for (size_t i = 0; i < aggregation_keys.size(); ++i)
+        stored_columns.emplace_back(planner_key_names[i], aggregation_keys[i]);
+    for (const auto & aggregate : aggregates)
+        stored_columns.emplace_back(aggregate.column_name, String{});
+
+    ActionsDAG rename_dag(plan.getCurrentHeader()->getColumnsWithTypeAndName());
+    rename_dag.project(stored_columns);
+    plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(rename_dag)));
 
     addSubquerySetsStep(plan);
     return plan;

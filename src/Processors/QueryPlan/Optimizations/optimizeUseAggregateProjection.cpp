@@ -301,7 +301,8 @@ static DAGIndex buildDAGIndex(const ActionsDAG & dag)
 struct AggregateProjectionInfo
 {
     std::optional<ActionsDAG> before_aggregation;
-    Names keys;
+    /// the keys under the names of the columns of the projection part, they are not outputs of before_aggregation
+    ActionsDAG::NodeRawConstPtrs keys;
     AggregateDescriptions aggregates;
 
     /// A context copy from interpreter which was used for analysis.
@@ -326,8 +327,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
 
     AggregateProjectionInfo info;
     info.context = projection_planner.getContext();
-    info.before_aggregation = projection_planner.buildBeforeAggregationActions();
-    info.keys = projection_planner.getAggregationKeys();
+    info.before_aggregation = projection_planner.buildBeforeAggregationActions(info.keys);
     info.aggregates = projection_planner.getAggregates();
 
     /// Add part/partition virtual columns to projection aggregation keys.
@@ -336,7 +336,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     {
         const auto * input = &info.before_aggregation->addInput(virt_column.name, virt_column.type);
         info.before_aggregation->getOutputs().push_back(input);
-        info.keys.push_back(virt_column.name);
+        info.keys.push_back(input);
     }
 
     return info;
@@ -515,16 +515,11 @@ static std::optional<ActionsDAG> analyzeAggregateProjection(
     {
         /// Just, filling the set above.
 
-        for (const auto & key : info.keys)
+        for (const auto * key : info.keys)
         {
-            auto it = proj_index.find(key);
-            /// This should not happen ideally.
-            if (it == proj_index.end())
-                return {};
-
-            const auto * key_node = skipAliases(it->second);
+            const auto * key_node = skipAliases(key);
             proj_key_nodes.insert(key_node);
-            proj_key_outputs.emplace(key_node, it->second);
+            proj_key_outputs.emplace(key_node, key);
         }
 
         query_key_nodes.reserve(keys.size() + 1);
