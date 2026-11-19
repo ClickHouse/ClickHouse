@@ -10,10 +10,10 @@ namespace DB
 class ParserOnCluster : public IParserBase
 {
 public:
-    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
+    std::map<String, Documentation> getDocumentation() const override;
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "ON CLUSTER clause"; }
+    const char * getName() const override { return "ON CLUSTER clause"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

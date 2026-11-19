@@ -38,7 +38,7 @@ private:
         void arm(Key key, int64_t timeout_ms);
         void cancel(Key key);
 
-        [[nodiscard]] std::optional<Clock::time_point> nextDeadline() const;
+        std::optional<Clock::time_point> nextDeadline() const;
         std::optional<Key> popExpired();
 
     private:
@@ -57,7 +57,7 @@ private:
 
         /// Notifications do not contain a task; inspect them with `hasNotification`.
         explicit operator bool() const { return data; }
-        [[nodiscard]] bool hasNotification(Notification notification) const { return notifications & static_cast<uint8_t>(notification); }
+        bool hasNotification(Notification notification) const { return notifications & static_cast<uint8_t>(notification); }
     };
 
     TaskData getTask(std::unique_lock<std::mutex> & lock, int timeout);

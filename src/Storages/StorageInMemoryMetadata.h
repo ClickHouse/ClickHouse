@@ -15,9 +15,6 @@
 #include <Storages/TTLDescription.h>
 
 #include <Common/MultiVersion.h>
-#include <Common/SecretString.h>
-
-#include <optional>
 
 namespace DB
 {
@@ -65,10 +62,8 @@ struct StorageInMemoryMetadata
     TTLColumnsDescription column_ttls_by_name;
     /// TTL expressions for table (Move and Rows)
     TTLTableDescription table_ttl;
-    /// SETTINGS expression. Used by MergeTree, Buffer, Kafka, RabbitMQ.
-    /// SecretString instead of an AST, so that credentials in settings do not rest in core-dumpable memory.
-    std::optional<SecretString> settings_changes;
-    Names settings_changes_names;
+    /// SETTINGS expression. Supported for MergeTree, Buffer, Kafka, RabbitMQ.
+    ASTPtr settings_changes;
     /// SELECT QUERY. Supported for MaterializedView and View.
     SelectQueryDescription select;
     /// Materialized view REFRESH parameters.
@@ -318,7 +313,7 @@ struct StorageInMemoryMetadata
     /// Whether the table `SETTINGS` clause contains an explicit override of `setting_name`.
     /// Unlike `getSettingsChanges`, it does not clone the AST, so it is cheap enough for hot paths.
     bool hasSettingChange(const String & setting_name) const;
-    bool hasSettingsChanges() const { return settings_changes.has_value(); }
+    bool hasSettingsChanges() const { return settings_changes != nullptr; }
 
     /// Select query for *View storages.
     const SelectQueryDescription & getSelectQuery() const;
