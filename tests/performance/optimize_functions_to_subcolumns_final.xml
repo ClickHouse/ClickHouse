@@ -12,6 +12,7 @@
     <create_query>
         CREATE TABLE t_subcolumns_final (k UInt64, ver UInt64, a Array(UInt64), s Nullable(String), m Map(String, UInt64))
         ENGINE = ReplacingMergeTree(ver) ORDER BY k
+        SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets'
     </create_query>
 
     <!-- Several parts with disjoint key ranges so FINAL runs but nothing collapses (row count and read volume stay high). -->
