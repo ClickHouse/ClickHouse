@@ -42,6 +42,7 @@
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -769,8 +770,8 @@ void DatabaseReplicated::fillClusterAuthInfo(String collection_name)
     auto collection = NamedCollectionFactory::instance().get(collection_name);
 
     cluster_auth_info.cluster_username = collection->getOrDefault<String>("cluster_username", "");
-    cluster_auth_info.cluster_password = collection->getOrDefault<String>("cluster_password", "");
-    cluster_auth_info.cluster_secret = collection->getOrDefault<String>("cluster_secret", "");
+    cluster_auth_info.cluster_password = collection->getOrDefault<SecretString>("cluster_password");
+    cluster_auth_info.cluster_secret = collection->getOrDefault<SecretString>("cluster_secret");
     cluster_auth_info.cluster_secure_connection = collection->getOrDefault<bool>("cluster_secure_connection", false);
 }
 
@@ -1607,6 +1608,24 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
                     checkTableEngine(*create, *inner_table_engine, query_context);
             }
         }
+    }
+
+    if (auto * rename = query->as<ASTRenameQuery>(); rename && !rename->database)
+    {
+        for (const auto & elem : rename->getElements())
+        {
+            String from_database = elem.from.database ? elem.from.getDatabase() : query_context->getCurrentDatabase();
+            String to_database = elem.to.database ? elem.to.getDatabase() : query_context->getCurrentDatabase();
+            if (from_database != getDatabaseName())
+                throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed");
+            if (to_database != getDatabaseName())
+            {
+                DatabaseCatalog::instance().assertDatabaseExists(to_database);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases is not supported for Replicated engine");
+            }
+        }
+
+        rename->resetDatabases();
     }
 
     if (const auto * query_alter = query->as<ASTAlterQuery>())
