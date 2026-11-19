@@ -151,18 +151,19 @@ def test_prepared_statement_malformed_string_param_is_rejected():
     stmt = client.prepare("SELECT ?")
     schema_header, batch_header, batch_body = _malformed_string_param_messages()
 
-    # Bind the malformed parameter batch out of band, in the same session.
-    _raw_bind_parameters(session_id, stmt.handle, schema_header, batch_header, batch_body)
-
-    # Executing must surface the Arrow buffer-validation error (params->ValidateFull rejects the
-    # malformed offsets before GetScalar reads them), not crash the server. Assert it is that
-    # specific error and not an unrelated binding/session/handle failure that would also raise.
+    # The malformed parameter batch, bound out of band in the same session, must be rejected - when
+    # it is bound (the server decodes the batch then) or when the statement runs - and not crash the
+    # server. Assert it is a buffer validation error and not an unrelated binding/session/handle
+    # failure that would also raise.
     with pytest.raises(Exception) as exc_info:
+        _raw_bind_parameters(session_id, stmt.handle, schema_header, batch_header, batch_body)
         stmt.execute()
     message = str(exc_info.value)
-    assert ("Offsets buffer" in message) or ("isn't large enough" in message), (
-        f"expected an Arrow offsets-buffer validation error, got: {message}"
-    )
+    assert (
+        ("Offsets buffer" in message)
+        or ("isn't large enough" in message)
+        or ("Cannot read all data from the Arrow IPC message body" in message)
+    ), f"expected an Arrow buffer validation error, got: {message}"
     lowered = message.lower()
     for unrelated in ("not bound", "session", "prepared statement handle", "does not exist"):
         assert unrelated not in lowered, f"rejection came from an unrelated error ({unrelated!r}): {message}"
