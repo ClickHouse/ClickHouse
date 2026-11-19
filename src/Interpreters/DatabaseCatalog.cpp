@@ -492,6 +492,9 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
             }
         }
 
+        /// Collect what was written until loading and replication stopped.
+        drain_buffers(list_user_tables());
+
         /// Background writers stop before all tables are prepared, and what they wrote is drained while destinations still accept it.
         /// Every call lists the tables anew, so a writer that a stop creates or a drain loads is found by the next stop.
         while (stop_background_writes(list_user_tables()))
