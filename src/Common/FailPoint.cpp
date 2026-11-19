@@ -322,7 +322,7 @@ static struct InitFiu
     ONCE(disk_object_storage_fail_precommit_metadata_transaction) \
     ONCE(write_file_operation_fail_on_read) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
-    PAUSEABLE_ONCE(tcp_handler_pause_before_query_plan_deserialization) \
+    PAUSEABLE(tcp_handler_pause_before_query_plan_deserialization) \
     REGULAR(slowdown_system_parts_enumeration) \
     REGULAR(parallel_replicas_delay_announcement) \
     REGULAR(pulling_async_pipeline_executor_delay_first_pull) \
