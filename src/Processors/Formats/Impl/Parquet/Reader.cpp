@@ -56,6 +56,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <mutex>
 #include <numeric>
 #include <fmt/ranges.h>
@@ -3297,7 +3298,11 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
     /// subgroup that is a whole chunk is served the cached column itself, or written to the cache as
     /// decoded, without a copy. The chunk is read whole even if the block size settings ask for less,
     /// since the cache holds those rows anyway, and never together with another chunk.
-    const bool aligned_with_columns_cache = !row_group.cached_columns.empty() || !row_group.columns_cache_writes.empty();
+    /// The requested rows of lazy materialization, cached under their set (see `lookUpFilteredColumns`), are read in the
+    /// chunks as well, so that repeated reads of these rows cut them into the same subgroups.
+    const bool requested_rows_cached = rows_to_read && filtered_columns_cache_possible;
+    const bool aligned_with_columns_cache = !row_group.cached_columns.empty() || !row_group.columns_cache_writes.empty()
+        || requested_rows_cached;
     if (aligned_with_columns_cache)
     {
         /// Unless a whole chunk of the columns would take a large part of the memory the query may use, while the block
@@ -5178,14 +5183,27 @@ void Reader::initColumnsCache()
 
             if (columns_cache_writes_possible && cache.shouldAdmit())
             {
-                if (row_group.columns_cache_writes.empty())
-                    row_group.columns_cache_writes.resize(extended_sample_block.columns());
-                row_group.columns_cache_writes[idx].active = true;
-                for (size_t i = info.primitive_start; i < info.primitive_end; ++i)
+                /// A read of the requested rows of lazy materialization writes them under their set, not in whole chunks (see
+                /// `lookUpFilteredColumns`), so the estimate is charged with their share of each chunk.
+                if (format_filter_info->rows_to_read)
                 {
-                    ColumnChunk & column = row_group.columns[i];
-                    estimated_bytes_to_write += size_t(std::max<Int64>(0, column.meta->meta_data.total_uncompressed_size));
-                    column.decode_dictionary_early = decodedSizeIsUnknown(column, primitive_columns[i]);
+                    const double requested_share = double(row_group.requested_rows_slice.second - row_group.requested_rows_slice.first)
+                        / double(std::max<Int64>(1, row_group.meta->num_rows));
+                    for (size_t i = info.primitive_start; i < info.primitive_end; ++i)
+                        estimated_bytes_to_write += size_t(std::ceil(
+                            requested_share * double(std::max<Int64>(0, row_group.columns[i].meta->meta_data.total_uncompressed_size))));
+                }
+                else
+                {
+                    if (row_group.columns_cache_writes.empty())
+                        row_group.columns_cache_writes.resize(extended_sample_block.columns());
+                    row_group.columns_cache_writes[idx].active = true;
+                    for (size_t i = info.primitive_start; i < info.primitive_end; ++i)
+                    {
+                        ColumnChunk & column = row_group.columns[i];
+                        estimated_bytes_to_write += size_t(std::max<Int64>(0, column.meta->meta_data.total_uncompressed_size));
+                        column.decode_dictionary_early = decodedSizeIsUnknown(column, primitive_columns[i]);
+                    }
                 }
             }
         }
@@ -5384,9 +5402,16 @@ void Reader::withdrawColumnsCacheWrites()
 void Reader::initFilteredColumnsCache()
 {
     /// A top-K threshold moves while the query runs, so the rows that pass it differ between runs.
-    filtered_columns_cache_possible = !steps.empty() && !columns_cache_identities.empty()
+    filtered_columns_cache_possible = (!steps.empty() || format_filter_info->rows_to_read) && !columns_cache_identities.empty()
         && (options.columns_cache->enable_reads || columns_cache_writes_possible)
         && !(format_filter_info->top_k_filter && format_filter_info->top_k_filter->filter_rows);
+    if (!filtered_columns_cache_possible)
+        return;
+
+    bool any_column = false;
+    for (size_t i = 0; i < primitive_columns.size() && !any_column; ++i)
+        any_column = canCacheFilteredColumn(i);
+    filtered_columns_cache_possible = any_column;
 }
 
 bool Reader::canCacheFilteredColumn(size_t primitive_idx) const
@@ -5407,11 +5432,15 @@ bool Reader::canCacheFilteredColumn(size_t primitive_idx) const
 
 void Reader::lookUpFilteredColumns(const RowGroup & row_group, RowSubgroup & row_subgroup, size_t step_idx)
 {
-    /// The columns of the first step, and of a subgroup that passed in full, are cached in whole chunks.
+    /// The first step and a subgroup that passed in full are left to the whole-chunk entries, except in a read of the
+    /// requested rows of lazy materialization, which writes no whole chunks.
     const RowSet & filter = row_subgroup.filter;
-    if (!filtered_columns_cache_possible || step_idx == 1 || filter.rows_pass == 0 || filter.rows_pass == filter.rows_total)
+    if (!filtered_columns_cache_possible || filter.rows_pass == 0)
         return;
-    chassert(filter.filter.size() == filter.rows_total);
+    const bool all_rows_pass = filter.rows_pass == filter.rows_total;
+    if (!format_filter_info->rows_to_read && (step_idx == 1 || all_rows_pass))
+        return;
+    chassert(all_rows_pass || filter.filter.size() == filter.rows_total);
 
     const ColumnsCacheOptions & cache_options = *options.columns_cache;
     ColumnsCache & cache = *cache_options.cache;
@@ -5428,12 +5457,16 @@ void Reader::lookUpFilteredColumns(const RowGroup & row_group, RowSubgroup & row
             hash.update(row_subgroup.start_row_idx);
             hash.update(filter.rows_total);
             hash.update(filter.rows_pass);
-            const UInt8 * mask = filter.filter.data();
-            size_t i = 0;
-            for (; i + 64 <= filter.rows_total; i += 64)
-                hash.update(bytes64MaskToBits64Mask(mask + i));
-            for (; i < filter.rows_total; ++i)
-                hash.update(UInt8(mask[i] != 0));
+            /// When all rows pass, the mask may be absent; the counts above already say which rows these are.
+            if (!all_rows_pass)
+            {
+                const UInt8 * mask = filter.filter.data();
+                size_t i = 0;
+                for (; i + 64 <= filter.rows_total; i += 64)
+                    hash.update(bytes64MaskToBits64Mask(mask + i));
+                for (; i < filter.rows_total; ++i)
+                    hash.update(UInt8(mask[i] != 0));
+            }
             rows_hash = hash.get128();
         }
         return *rows_hash;

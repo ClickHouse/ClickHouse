@@ -690,7 +690,7 @@ struct Reader
     bool columns_cache_writes_possible = false;
     /// Captured once, before anything is read, see `ColumnsCache::getInvalidationGeneration`.
     UInt64 columns_cache_generation = 0;
-    /// Whether the columns decoded for only some rows of a subgroup use the columns cache, see `lookUpFilteredColumns`.
+    /// Whether the columns decoded for a set of rows of a subgroup use the columns cache, see `lookUpFilteredColumns`.
     bool filtered_columns_cache_possible = false;
 
     /// These methods are listed in the order in which they're used, matching ReadStage order.
