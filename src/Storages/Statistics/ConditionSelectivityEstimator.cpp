@@ -6,6 +6,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StringUtils.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -319,6 +320,51 @@ bool isAlwaysTrueEquality(const ActionsDAG::Node & node)
         || which.isStringOrFixedString() || which.isUUID() || which.isIPv4() || which.isIPv6();
 }
 
+/// `s LIKE 'abc'` is `s = 'abc'`, and `s LIKE '%'` or `startsWith(s, '')` holds for every non-NULL `s`: estimated as
+/// these conditions, from the statistics of the column.
+static bool tryExtractStringPatternAtom(
+    const StorageMetadataPtr & metadata, const RPNBuilderFunctionTreeNode & func, ConditionSelectivityEstimator::RPNElement & out)
+{
+    if (func.getArgumentsSize() != 2)
+        return false;
+
+    Field pattern;
+    DataTypePtr pattern_type;
+    if (!func.getArgumentAt(1).tryGetConstant(pattern, pattern_type) || !isString(pattern_type))
+        return false;
+
+    const auto haystack = func.getArgumentAt(0);
+    const String column_name = haystack.getColumnName();
+    if (metadata && !metadata->getColumns().tryGet(column_name))
+        return false;
+    if (!isString(removeLowCardinalityAndNullable(haystack.getDAGNode()->result_type)))
+        return false;
+
+    const String func_name = func.getFunctionName();
+    const String & pattern_value = pattern.safeGet<String>();
+    Range range = Range::createWholeUniverseWithoutNull();
+    if (func_name == "startsWith" || func_name == "endsWith")
+    {
+        if (!pattern_value.empty())
+            return false;
+    }
+    else
+    {
+        auto fixed_prefix = extractFixedPrefixFromLikePattern(pattern_value, /*requires_perfect_prefix*/ true);
+        if (fixed_prefix.is_exact && (func_name == "like" || func_name == "notLike"))
+            range = Range(fixed_prefix.prefix);
+        else if (!fixed_prefix.is_perfect || !fixed_prefix.prefix.empty())
+            return false;
+    }
+
+    out.function = ConditionSelectivityEstimator::RPNElement::FUNCTION_IN_RANGE;
+    if (func_name == "notLike" || func_name == "notILike")
+        out.column_not_ranges.emplace(column_name, range);
+    else
+        out.column_ranges.emplace(column_name, range);
+    return true;
+}
+
 bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
 {
     const auto * node_dag = node.getDAGNode();
@@ -370,12 +416,27 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
         auto atom_it = atom_map.find(func_name);
         if (atom_it == atom_map.end())
         {
-            /// LIKE/ILIKE cannot be represented as a range. Pre-set selectivity
-            /// so the estimator uses a tighter default than `default_unknown_cond_factor`.
+            const bool is_like = func_name == "like" || func_name == "ilike" || func_name == "notLike" || func_name == "notILike";
+            const bool is_affix = func_name == "startsWith" || func_name == "endsWith";
+            if ((is_like || is_affix) && tryExtractStringPatternAtom(metadata, func, out))
+                return true;
+
+            /// LIKE patterns the statistics cannot answer, and the `startsWith`/`endsWith` that `LIKE 'p%'`/`'%s'` are
+            /// rewritten to, get a tighter default than `default_unknown_cond_factor`.
             if (func_name == "like" || func_name == "ilike")
                 out.selectivity.true_sel = default_like_factor;
             else if (func_name == "notLike" || func_name == "notILike")
                 out.selectivity.true_sel = 1.0 - default_like_factor;
+            else if (is_affix)
+            {
+                /// Only the shape of a LIKE: the `Array` overload and a non-constant needle stay unknown.
+                Field needle;
+                DataTypePtr needle_type;
+                if (num_args != 2 || !func.getArgumentAt(1).tryGetConstant(needle, needle_type) || !isString(needle_type)
+                    || !isStringOrFixedString(removeLowCardinalityAndNullable(func.getArgumentAt(0).getDAGNode()->result_type)))
+                    return false;
+                out.selectivity.true_sel = default_like_factor;
+            }
             else if (func_name == "__applyFilter")
             {
                 /// Runtime join filter. Selectivity 1.0 keeps it last in prewhere ordering

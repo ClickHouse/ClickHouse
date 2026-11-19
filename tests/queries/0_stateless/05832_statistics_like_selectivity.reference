@@ -1,0 +1,7 @@
+exact LIKE	1
+LIKE %	1
+NOT LIKE %	1
+prefix LIKE	1
+suffix LIKE	1
+startsWith empty	1
+startsWith Array	0
