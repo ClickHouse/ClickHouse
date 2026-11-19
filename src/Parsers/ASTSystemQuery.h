@@ -296,10 +296,7 @@ public:
         return res;
     }
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
-    {
-        return removeOnCluster<ASTSystemQuery>(clone(), params.default_database);
-    }
+    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override;
 
     QueryKind getQueryKind() const override { return QueryKind::System; }
 

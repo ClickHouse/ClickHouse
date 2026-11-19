@@ -23,5 +23,12 @@ ${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE t_05618 FINAL"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_05618' AND active"
 on_cluster "SYSTEM PREWARM MARK CACHE ON CLUSTER test_shard_localhost t_05618"
 
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05618_async (x Int32) ENGINE = MergeTree ORDER BY x"
+${CLICKHOUSE_CLIENT} --async_insert 1 --wait_for_async_insert 0 --async_insert_use_adaptive_busy_timeout 0 --async_insert_busy_timeout_max_ms 600000 --query "INSERT INTO t_05618_async VALUES (1)"
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none --query "SYSTEM FLUSH ASYNC INSERT QUEUE ON CLUSTER test_shard_localhost t_05618_async"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t_05618_async"
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH ASYNC INSERT QUEUE t_05618_async"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05618_async"
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER $user"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05618"

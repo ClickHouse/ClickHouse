@@ -83,6 +83,16 @@ void ASTSystemQuery::setTable(const String & name)
         set(table, make_intrusive<ASTIdentifier>(name));
 }
 
+ASTPtr ASTSystemQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const
+{
+    auto query_ptr = removeOnCluster<ASTSystemQuery>(clone(), params.default_database);
+    if (type == Type::FLUSH_ASYNC_INSERT_QUEUE && !params.default_database.empty())
+        for (auto & entry : query_ptr->as<ASTSystemQuery &>().tables)
+            if (entry.first.empty())
+                entry.first = params.default_database;
+    return query_ptr;
+}
+
 void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     auto print_identifier = [&](const String & identifier) -> WriteBuffer &
