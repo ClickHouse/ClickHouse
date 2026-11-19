@@ -1839,6 +1839,8 @@ Separately, `ADD INDEX` only updates metadata: it does **not** immediately mater
 
 Re-compresses the existing data of a column with the column's current compression codec.
 
+This statement is experimental and requires the setting `allow_experimental_recompress_column = 1`. Otherwise it is rejected with the `SUPPORT_IS_DISABLED` error.
+
 Changing a column's codec with `ALTER TABLE ... MODIFY COLUMN col CODEC(...)` only updates the metadata: the new codec applies to newly written data, while data already stored in existing parts keeps its old codec until the parts are merged. `RECOMPRESS COLUMN` rewrites the data of `col` in existing parts so that it is compressed with the codec currently set in the table metadata.
 
 Because the compression codec does not change the serialized representation of the data, for `Wide` parts the recompression is performed by decompressing and re-compressing the raw data blocks, without deserializing the column values. `Compact` parts are re-serialized as a whole. A column that has no explicit `CODEC(...)` and inherits the table's `default_compression_codec` is also re-serialized as a whole, so that a later change of the default codec is applied correctly.
@@ -1880,6 +1882,7 @@ INSERT INTO tmp SELECT number, repeat('a', 100) FROM numbers(1000000);
 ALTER TABLE tmp MODIFY COLUMN s CODEC(ZSTD);
 
 -- Re-compress the existing data of `s` with ZSTD.
+SET allow_experimental_recompress_column = 1;
 ALTER TABLE tmp RECOMPRESS COLUMN s;
 ```
 
