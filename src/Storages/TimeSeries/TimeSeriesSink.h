@@ -89,8 +89,10 @@ private:
     Block tags_header_before_id;
 
     /// Source headers of the tags and time ranges pipelines, which are finished after each block and created again when needed.
+    /// So is the samples pipeline if there is a recent samples table.
     Block tags_header;
     Block time_ranges_header;
+    Block samples_header;
 
     /// Number of the blocks consumed so far.
     size_t input_block_number = 0;

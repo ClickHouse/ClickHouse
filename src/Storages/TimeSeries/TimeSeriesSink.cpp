@@ -808,7 +808,8 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
     pipeline->context->setCurrentQueryId(fmt::format("{}:{}", getContext()->getCurrentQueryId(), kind));
 
     /// These pipelines are created again for each block, so a deduplication token is made unique per block.
-    if ((kind == ViewTarget::Tags) || (kind == ViewTarget::TimeRanges))
+    if ((kind == ViewTarget::Tags) || (kind == ViewTarget::TimeRanges)
+        || ((kind == ViewTarget::Samples) && time_series_storage.hasTarget(ViewTarget::RecentSamples)))
     {
         const auto & token = getContext()->getSettingsRef()[Setting::insert_deduplication_token].value;
         if (!token.empty())
@@ -1024,7 +1025,6 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     }
 
     /// Build source header for samples block.
-    Block samples_header;
     samples_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
     if (settings.hasBucketedSamples())
     {
@@ -1255,9 +1255,16 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
             filter, *id_column, id_type, ts_timestamps, timestamp_type, ts_values, value_type, ts_offsets, total_samples,
             samples_bucket_step, recent_samples_bucket_step);
 
+        if (!samples_pipeline)
+            samples_pipeline = createTargetPipeline(ViewTarget::Samples, samples_header);
         samples_pipeline->push(std::move(samples_blocks.samples_block));
         if (samples_blocks.recent_samples_block)
+        {
+            /// The samples of a block are committed before its recent samples are pushed, like the tags above.
+            samples_pipeline->executor->finish();
+            samples_pipeline.reset();
             recent_samples_pipeline->push(std::move(*samples_blocks.recent_samples_block));
+        }
     }
 }
 
