@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryAliasesVisitor.h>
@@ -112,8 +113,6 @@ namespace Setting
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsBool enable_global_with_statement;
-    extern const SettingsBool implicit_transaction;
-    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
@@ -1635,16 +1634,8 @@ BlockIO InterpreterInsertQuery::execute()
             /// downgrade the query, and with the same contract as the inlined-data path in
             /// `executeQuery`, so `INSERT ... VALUES` and `INSERT ... SELECT` react to the same
             /// settings alike: throw, unless the user opted out of the exception.
-            else if (context->getCurrentTransaction() || settings[Setting::implicit_transaction])
-            {
-                if (settings[Setting::throw_on_unsupported_query_inside_transaction])
-                {
-                    if (settings[Setting::implicit_transaction])
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
-                }
+            else if (AsynchronousInsertQueue::checkInsideTransaction(context))
                 reason = "query runs inside a transaction";
-            }
             /// `StorageAlias::isMergeTree` delegates to its target, so the alias needs no unwrapping.
             else if (!table->isMergeTree())
                 reason = "destination table is not a MergeTree-family table";
