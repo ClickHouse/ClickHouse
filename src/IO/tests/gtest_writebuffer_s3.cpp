@@ -25,6 +25,8 @@
 
 #include <array>
 
+#include <Poco/Net/NetException.h>
+
 #include <IO/WriteBufferFromS3.h>
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
@@ -41,6 +43,8 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 
+#include <base/scope_guard.h>
+#include <Common/FailPoint.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Crypto/OpenSSLInitializer.h>
 #include <Core/Settings.h>
@@ -72,6 +76,11 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int S3_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char s3_client_throw_in_network_error_handler[];
 }
 
 }
@@ -748,6 +757,24 @@ struct PutObjectLostResponseThenPreconditionFailed : InjectionModel
     std::vector<BucketMemStore::Metadata> seen_metadata;
     std::vector<std::string> seen_if_none_match;
     std::vector<std::string> seen_if_match;
+};
+
+/// Stores a PutObject and then breaks its answer, as a connection reset while the SDK reads the response does.
+struct PutObjectStoredThenConnectionReset : InjectionModel
+{
+    explicit PutObjectStoredThenConnectionReset(std::shared_ptr<S3MemStrore> store_) : store(std::move(store_)) {}
+
+    std::optional<Aws::S3::Model::PutObjectOutcome> call(const Aws::S3::Model::PutObjectRequest & request) override
+    {
+        BucketMemStore::Metadata metadata;
+        for (const auto & [name, value] : request.GetMetadata())
+            metadata[name] = value;
+        const std::string data = readRequestBody(request.GetBody(), request.GetContentLength());
+        store->GetBucketStore(request.GetBucket()).PutObject(request.GetKey(), data, metadata);
+        throw Poco::Net::ConnectionResetException("connection reset after the answer (injected by the test)");
+    }
+
+    std::shared_ptr<S3MemStrore> store;
 };
 
 /// Every PutObject attempt fails with 412 -- a genuinely pre-existing object, written by somebody
@@ -1643,6 +1670,22 @@ TEST_P(SyncAsync, SinglepartConditionalPutRetryAfterLostResponse) {
 
 /// A 412 caused by an object this request did NOT write must still fail. The pre-existing object is
 /// byte-identical to the payload on purpose, so a byte or size comparison would wrongly accept it.
+/// The answer to a stored conditional PUT breaks, and the error handling of the client throws, as an allocation can. The
+/// attempt is recorded before that, so the outcome stays unknown.
+TEST_P(SyncAsync, StoredPutWithAFailedErrorHandlingIsUnknown) {
+    setInjectionModel(std::make_shared<MockS3::PutObjectStoredThenConnectionReset>(client->store));
+    FailPointInjection::enableFailPoint(FailPoints::s3_client_throw_in_network_error_handler);
+    SCOPE_EXIT(FailPointInjection::disableFailPoint(FailPoints::s3_client_throw_in_network_error_handler));
+
+    auto buffer = getWriteBuffer("stored_put_failed_error_handling", conditionalCreateWriteSettings());
+    EXPECT_ANY_THROW({
+        buffer->write('1');
+        getAsyncPolicy().setAutoExecute(true);
+        buffer->finalize();
+    });
+    EXPECT_EQ(buffer->getWriteOutcome(), WriteOutcome::Unknown);
+}
+
 TEST_P(SyncAsync, SinglepartConditionalPutDoesNotMaskForeignObject) {
     auto & bStore = client->store->GetBucketStore(bucket);
     bStore.PutObject("conditional_put_foreign", "1", {{"clickhouse-idempotency-id", "written-by-somebody-else"}});

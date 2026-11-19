@@ -11,6 +11,7 @@
 #include <Poco/URI.h>
 #include <aws/core/utils/crypto/Hash.h>
 #include <Poco/MD5Engine.h>
+#include <Common/FailPoint.h>
 #include <Common/FiberLocal.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
@@ -111,7 +112,13 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int TOO_MANY_REDIRECTS;
+}
+
+namespace FailPoints
+{
+    extern const char s3_client_throw_in_network_error_handler[];
 }
 
 namespace S3
@@ -1075,6 +1082,12 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 
         auto net_exception_handler = [&]() -> bool /// return true if we should retry
         {
+            /// First, and without allocating: the error handling below can throw, e.g. of memory, and the request may be
+            /// applied already.
+            recordAttemptThatMayHaveBeenApplied();
+            fiu_do_on(FailPoints::s3_client_throw_in_network_error_handler,
+                { throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Memory limit exceeded in the error handling (injected by failpoint)"); });
+
             incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors);
             if (isClientForDisk())
                 incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
