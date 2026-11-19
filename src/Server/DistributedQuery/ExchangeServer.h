@@ -3,23 +3,15 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Server/DistributedQuery/ExchangeConnections.h>
+#include <Server/DistributedQuery/ExchangeControlConnectionHandler.h>
 #include <Server/TCPServerConnectionFactory.h>
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Runnable.h>
 #include <Common/Logger.h>
 #include <Common/ThreadPool.h>
 
-#include <functional>
-
 namespace DB
 {
-
-/// Authenticates an incoming exchange connection from the auth token presented in
-/// SourceHello (empty when the peer sent none). Throws to reject the connection
-/// before it is registered. Empty (default, and the case when no authenticator is
-/// configured) means authentication is not enforced and the token is ignored; a
-/// caller can inject a closure that verifies the token.
-using ExchangeConnectionAuthenticator = std::function<void(const String & auth_token)>;
 
 /// Accepts connections for streaming exchanges used by distributed queries.
 //  Reads first packet from the connections that contains distributed query id and exchange stream id.
@@ -27,7 +19,9 @@ using ExchangeConnectionAuthenticator = std::function<void(const String & auth_t
 class ExchangeServer : public Poco::Runnable
 {
 public:
-    ExchangeServer(const String & listen_host, UInt16 port, UInt32 listen_backlog, ExchangeConnectionsPtr connections_, ExchangeConnectionAuthenticator authenticate_connection_ = {});
+    /// Without `control_handler_`, a connection that opens with a control packet gets an `Error` and is closed.
+    ExchangeServer(const String & listen_host, UInt16 port, UInt32 listen_backlog, ExchangeConnectionsPtr connections_,
+        ExchangeConnectionAuthenticator authenticate_connection_ = {}, ExchangeControlConnectionHandlerPtr control_handler_ = nullptr);
     ~ExchangeServer() override;
 
     void start();
@@ -41,12 +35,15 @@ public:
     /// resulting connection in `connections` on success. When `authenticate`
     /// is set, the SourceHello auth token is checked before registration and a failure
     /// throws without registering. Throws on protocol mismatch or transport
-    /// failure without registering. Exposed for tests.
-    static void handleConnection(Poco::Net::StreamSocket socket, ExchangeConnectionsPtr connections, LoggerPtr log, const ExchangeConnectionAuthenticator & authenticate);
+    /// failure without registering. A connection that opens with a control packet goes to
+    /// `control_handler`. Exposed for tests.
+    static void handleConnection(Poco::Net::StreamSocket socket, ExchangeConnectionsPtr connections, LoggerPtr log, const ExchangeConnectionAuthenticator & authenticate,
+        const ExchangeControlConnectionHandlerPtr & control_handler = nullptr);
 
 private:
     ExchangeConnectionsPtr connections;
     ExchangeConnectionAuthenticator authenticate_connection;
+    ExchangeControlConnectionHandlerPtr control_handler;
     Poco::Net::ServerSocket server_socket;
     Poco::Thread accept_thread;
     /// Handshakes run on this pool so a slow peer cannot stall the single accept thread and block

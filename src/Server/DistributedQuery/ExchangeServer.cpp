@@ -3,6 +3,7 @@
 #include <Server/DistributedQuery/ExchangeServer.h>
 #include <Server/DistributedQuery/ExchangeConnections.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
+#include <Server/StatelessWorker/StatelessWorkerControlProtocol.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/makeSocketAddress.h>
@@ -39,9 +40,11 @@ static constexpr size_t HANDSHAKE_POOL_MAX_THREADS = 64;
 static constexpr size_t HANDSHAKE_POOL_MAX_FREE_THREADS = 0;
 static constexpr size_t HANDSHAKE_POOL_QUEUE_SIZE = 10000;
 
-ExchangeServer::ExchangeServer(const String & listen_host, UInt16 port, UInt32 listen_backlog, ExchangeConnectionsPtr connections_, ExchangeConnectionAuthenticator authenticate_connection_)
+ExchangeServer::ExchangeServer(const String & listen_host, UInt16 port, UInt32 listen_backlog, ExchangeConnectionsPtr connections_,
+    ExchangeConnectionAuthenticator authenticate_connection_, ExchangeControlConnectionHandlerPtr control_handler_)
     : connections(std::move(connections_))
     , authenticate_connection(std::move(authenticate_connection_))
+    , control_handler(std::move(control_handler_))
     /// A consumer connects to all its producers at once; connections beyond the backlog are dropped and retried by TCP after 1 s.
     , server_socket(Poco::Net::ServerSocket(makeSocketAddress(listen_host, port, getLogger("ExchangeServer")), static_cast<int>(listen_backlog)))
     , accept_thread("ExchangeServer")
@@ -114,11 +117,11 @@ void ExchangeServer::run()
                 try
                 {
                     handshake_pool.scheduleOrThrowOnError(
-                        [accepted = socket, conns = connections, task_log = log, auth = authenticate_connection]()
+                        [accepted = socket, conns = connections, task_log = log, auth = authenticate_connection, control = control_handler]()
                         {
                             try
                             {
-                                handleConnection(accepted, conns, task_log, auth);
+                                handleConnection(accepted, conns, task_log, auth, control);
                             }
                             catch (...)
                             {
@@ -173,7 +176,8 @@ namespace
     }
 }
 
-void ExchangeServer::handleConnection(Poco::Net::StreamSocket socket, ExchangeConnectionsPtr connections, LoggerPtr log, const ExchangeConnectionAuthenticator & authenticate)
+void ExchangeServer::handleConnection(Poco::Net::StreamSocket socket, ExchangeConnectionsPtr connections, LoggerPtr log, const ExchangeConnectionAuthenticator & authenticate,
+    const ExchangeControlConnectionHandlerPtr & control_handler)
 {
     LOG_TRACE(log, "Connection from {}", socket.peerAddress().toString());
 
@@ -188,6 +192,27 @@ void ExchangeServer::handleConnection(Poco::Net::StreamSocket socket, ExchangeCo
 
     StreamingExchangeProtocol::PacketHeader header{};
     receiveAll(socket, &header, sizeof(header), "SourceHello header", handshake_watch);
+
+    if (StatelessWorkerControlProtocol::isControlPacketType(header.packet_type))
+    {
+        if (control_handler)
+        {
+            control_handler->handleControlConnection(socket, header, authenticate);
+            return;
+        }
+        const String peer = StreamingExchangeProtocol::describePeer(socket);
+        const String message = fmt::format(
+            "The streaming exchange server at {} serves no stateless worker control connections: `stateless_worker_server.enabled` is off",
+            socket.address().toString());
+        {
+            WriteBufferFromPocoSocket out(socket);
+            StatelessWorkerControlProtocol::writeFrame(
+                StatelessWorkerControlProtocol::Error{.request_id = 0, .code = ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, .message = message}, out);
+            out.finalize();
+        }
+        StatelessWorkerControlProtocol::lingeringClose(socket);
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Refused the control connection from {}: {}", peer, message);
+    }
 
     if (header.packet_type != StreamingExchangeProtocol::PacketType::SourceHello)
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,

@@ -13,6 +13,11 @@
 #include <string_view>
 #include <vector>
 
+namespace Poco::Net
+{
+class StreamSocket;
+}
+
 namespace DB
 {
 
@@ -85,6 +90,10 @@ void readBody(const PacketHeader & header, PacketType expected_type, ReadBuffer 
 void parseBody(const PacketHeader & header, PacketType expected_type, std::string_view body, const std::function<void(ReadBuffer &)> & read);
 /// Writes the header and the body; the caller flushes `out`.
 void writeFrame(PacketType type, std::string_view body, WriteBuffer & out);
+
+/// Closes `socket` after the worker's last frame: shuts down its sending side, then discards what the peer still sends for
+/// up to a second, so that unread input does not reset the connection before the peer reads that frame.
+void lingeringClose(Poco::Net::StreamSocket & socket);
 
 template <typename Message>
 void readBody(const PacketHeader & header, ReadBuffer & in, Message & message)

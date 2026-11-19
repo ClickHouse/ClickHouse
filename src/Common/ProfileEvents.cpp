@@ -2002,6 +2002,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(YTsaurusLookupThrottled, "Number of lookup requests to YTsaurus that were throttled", ValueType::Number) \
     \
+    M(StatelessWorkerControlReclaimedTasks, "Number of tasks a stateless worker cancelled and forgot because the control connection that started them closed before the initiator forgot them.", ValueType::Number) \
     M(StatelessWorkerRequested, "Number of stateless workers requested by queries for distributed query execution.", ValueType::Number) \
     M(StatelessWorkerProvided, "Number of stateless workers provided to queries for distributed query execution.", ValueType::Number) \
     M(StatelessWorkerProvisioningMicroseconds, "Total time queries spent waiting for stateless workers to be provisioned.", ValueType::Microseconds) \

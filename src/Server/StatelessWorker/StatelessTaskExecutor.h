@@ -241,4 +241,9 @@ private:
     std::vector<Polled> polled;
 };
 
+/// Fills the reply for one task; false when the executor returned a result that is no task status.
+bool makeTaskStatusReply(StatelessTaskExecutor::TaskStatus status, DistributedQueryTaskStatus & reply);
+/// Returns the entries of a `get_statuses` reply, `statuses` being those of `task_ids` in the same order.
+std::vector<DistributedQueryTaskStatusEntry> makeTaskStatusEntries(const Strings & task_ids, std::vector<StatelessTaskExecutor::TaskStatus> statuses);
+
 }

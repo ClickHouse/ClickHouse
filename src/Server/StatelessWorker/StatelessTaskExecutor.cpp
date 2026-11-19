@@ -603,6 +603,56 @@ void StatelessTaskExecutor::dropControllerIfIdleLocked(std::unordered_map<String
     query_controllers.erase(controller);
 }
 
+bool makeTaskStatusReply(StatelessTaskExecutor::TaskStatus status, DistributedQueryTaskStatus & reply)
+{
+    reply.progress = std::move(status.progress);
+    reply.logs = std::move(status.logs);
+    switch (status.result)
+    {
+        case StatelessTaskExecutor::TaskRunnig:
+            reply.status = "Running";
+            return true;
+        case StatelessTaskExecutor::TaskFailing:
+            reply.status = "Failing";
+            reply.error_message = status.message;
+            reply.error_code = status.error_code;
+            return true;
+        case StatelessTaskExecutor::TaskFinished:
+            reply.status = "Finished";
+            return true;
+        case StatelessTaskExecutor::TaskCancelled:
+            reply.status = "Cancelled";
+            return true;
+        case StatelessTaskExecutor::TaskFailed:
+            reply.status = "Failed";
+            reply.error_message = status.message;
+            reply.error_code = status.error_code;
+            return true;
+        case StatelessTaskExecutor::UnknownTaskId:
+            /// A gone task is a normal status answer, not a transport error: it has already finished and been reclaimed, or
+            /// was never started. The coordinator treats "Unknown task" as terminal.
+            reply.status = "Unknown task";
+            return true;
+        default:
+            reply.status = fmt::format("Unexpected task status: {}", static_cast<int>(status.result));
+            return false;
+    }
+}
+
+std::vector<DistributedQueryTaskStatusEntry> makeTaskStatusEntries(const Strings & task_ids, std::vector<StatelessTaskExecutor::TaskStatus> statuses)
+{
+    if (statuses.size() != task_ids.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} statuses for {} tasks", statuses.size(), task_ids.size());
+    std::vector<DistributedQueryTaskStatusEntry> entries(statuses.size());
+    for (size_t i = 0; i < statuses.size(); ++i)
+    {
+        entries[i].task_id = task_ids[i];
+        entries[i].collectors = statuses[i].collectors;
+        makeTaskStatusReply(std::move(statuses[i]), entries[i].status);
+    }
+    return entries;
+}
+
 void StatelessTaskExecutor::shutdown()
 {
     std::lock_guard lock(tasks_mutex);

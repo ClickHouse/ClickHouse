@@ -19,63 +19,16 @@ namespace FailPoints
     extern const char stateless_worker_pause_before_start_task[];
 }
 
-StatelessWorkerEndpoint::StatelessWorkerEndpoint(size_t max_queries)
+StatelessWorkerEndpoint::StatelessWorkerEndpoint(std::shared_ptr<StatelessTaskExecutor> task_runner_)
     : endpoint_name("stateless_worker/")
     , log(Poco::Logger::getShared("StatelessWorkerEndpoint"))
-    , task_runner(std::make_shared<StatelessTaskExecutor>(max_queries))
+    , task_runner(std::move(task_runner_))
 {
-}
-
-StatelessWorkerEndpoint::~StatelessWorkerEndpoint()
-{
-    shutdown();
 }
 
 std::string StatelessWorkerEndpoint::getId(const std::string & path) const
 {
     return endpoint_name + path;
-}
-
-namespace
-{
-
-/// The reply for one task; false when the executor returned a result that is no task status.
-bool makeTaskStatusReply(StatelessTaskExecutor::TaskStatus status, DistributedQueryTaskStatus & reply)
-{
-    reply.progress = std::move(status.progress);
-    reply.logs = std::move(status.logs);
-    switch (status.result)
-    {
-        case StatelessTaskExecutor::TaskRunnig:
-            reply.status = "Running";
-            return true;
-        case StatelessTaskExecutor::TaskFailing:
-            reply.status = "Failing";
-            reply.error_message = status.message;
-            reply.error_code = status.error_code;
-            return true;
-        case StatelessTaskExecutor::TaskFinished:
-            reply.status = "Finished";
-            return true;
-        case StatelessTaskExecutor::TaskCancelled:
-            reply.status = "Cancelled";
-            return true;
-        case StatelessTaskExecutor::TaskFailed:
-            reply.status = "Failed";
-            reply.error_message = status.message;
-            reply.error_code = status.error_code;
-            return true;
-        case StatelessTaskExecutor::UnknownTaskId:
-            /// A gone task is a normal status answer, not a transport error: it has already finished and been reclaimed, or
-            /// was never started. The coordinator treats "Unknown task" as terminal.
-            reply.status = "Unknown task";
-            return true;
-        default:
-            reply.status = fmt::format("Unexpected task status: {}", static_cast<int>(status.result));
-            return false;
-    }
-}
-
 }
 
 void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response)
@@ -102,15 +55,7 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
         UInt64 wait_milliseconds = 0;
         if (params.has("wait_for_ms"))
             wait_milliseconds = parse<UInt64>(params.get("wait_for_ms"));
-        auto statuses = task_runner->getStatuses(task_ids, wait_milliseconds);
-        std::vector<DistributedQueryTaskStatusEntry> entries(statuses.size());
-        for (size_t i = 0; i < statuses.size(); ++i)
-        {
-            entries[i].task_id = task_ids[i];
-            entries[i].collectors = statuses[i].collectors;
-            makeTaskStatusReply(std::move(statuses[i]), entries[i].status);
-        }
-        writeTaskStatuses(entries, out);
+        writeTaskStatuses(makeTaskStatusEntries(task_ids, task_runner->getStatuses(task_ids, wait_milliseconds)), out);
         return;
     }
 
@@ -239,11 +184,6 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
         response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
         writeString("Unknown operation type\n", out);
     }
-}
-
-void StatelessWorkerEndpoint::shutdown()
-{
-    task_runner->shutdown();
 }
 
 }

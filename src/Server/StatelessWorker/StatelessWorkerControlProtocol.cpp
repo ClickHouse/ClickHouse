@@ -4,6 +4,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
+#include <Poco/Net/StreamSocket.h>
+
+#include <chrono>
 
 namespace DB
 {
@@ -34,6 +37,8 @@ constexpr UInt64 MAX_REQUEST_ID_BODY_BYTES = 64;
 
 /// Longer messages are cut, so that a reply carrying one stays within its cap.
 constexpr size_t MAX_MESSAGE_BYTES = 16 * 1024;
+
+constexpr auto LINGER_TIMEOUT = std::chrono::seconds(1);
 
 Sender senderOf(PacketType type)
 {
@@ -205,6 +210,29 @@ void writeFrame(PacketType type, std::string_view body, WriteBuffer & out)
     const PacketHeader header = makeHeader(type, body.size());
     out.write(reinterpret_cast<const char *>(&header), sizeof(header));
     out.write(body.data(), body.size());
+}
+
+void lingeringClose(Poco::Net::StreamSocket & socket)
+{
+    try
+    {
+        socket.shutdownSend();
+        const auto deadline = std::chrono::steady_clock::now() + LINGER_TIMEOUT;
+        char discarded[4096];
+        while (true)
+        {
+            const auto left = std::chrono::duration_cast<std::chrono::microseconds>(deadline - std::chrono::steady_clock::now());
+            if (left.count() <= 0 || !socket.poll(Poco::Timespan(left.count()), Poco::Net::Socket::SELECT_READ))
+                break;
+            if (socket.receiveBytes(discarded, sizeof(discarded)) <= 0)
+                break;
+        }
+    }
+    catch (const Poco::Exception &) // NOLINT(bugprone-empty-catch)
+    {
+        /// The peer reset the connection, so there is nothing left to wait for.
+    }
+    socket.close();
 }
 
 void ControlHello::write(WriteBuffer & out) const

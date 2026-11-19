@@ -164,6 +164,7 @@ namespace DB
     M(SIGNAL_LISTENER, "SignalListnr") \
     M(SNAPSHOT_ASYNC, "SnapshotAsync") \
     M(SSH_HANDLER, "SSHHandler") \
+    M(STATELESS_WORKER_CONTROL_SESSION, "SWControlSess") \
     M(SUGGEST, "Suggest") \
     M(SYSTEM_LOG_FLUSH, "SystemLogFlush") \
     M(SYSTEM_REPLICAS, "SysReplicas") \

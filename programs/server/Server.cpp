@@ -148,6 +148,7 @@
 #include <Server/DistributedQuery/ExchangeServer.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
+#include <Server/StatelessWorker/StatelessWorkerControlServer.h>
 #include <Server/StatelessWorker/StatelessWorkerEndpoint.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
@@ -2280,6 +2281,7 @@ try
     LOG_DEBUG(log, "Initializing interserver credentials.");
     global_context->updateInterserverCredentials(config());
 
+    std::shared_ptr<StatelessWorkerControlServer> stateless_worker_control_server{nullptr};
     std::shared_ptr<StatelessWorkerEndpoint> stateless_worker_endpoint_ptr{nullptr};
     String stateless_worker_endpoint_name;
     if (config().getBool("stateless_worker_server.enabled", false))
@@ -2289,12 +2291,21 @@ try
         if (stateless_worker_max_queries == 0)
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
                 "`stateless_worker_server.max_queries` must be at least 1");
-        stateless_worker_endpoint_ptr = std::make_shared<StatelessWorkerEndpoint>(stateless_worker_max_queries);
+        size_t stateless_worker_max_control_sessions
+            = config().getUInt64("stateless_worker_server.max_control_sessions", 4 * stateless_worker_max_queries);
+        if (stateless_worker_max_control_sessions == 0)
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "`stateless_worker_server.max_control_sessions` must be at least 1");
+        stateless_worker_control_server = std::make_shared<StatelessWorkerControlServer>(
+            StatelessWorkerControlServer::Limits{.max_queries = stateless_worker_max_queries, .max_sessions = stateless_worker_max_control_sessions},
+            [] { return Context::getGlobalContextInstance()->getInterserverCredentials(); });
+        stateless_worker_endpoint_ptr = std::make_shared<StatelessWorkerEndpoint>(stateless_worker_control_server->getExecutor());
         stateless_worker_endpoint_name = stateless_worker_endpoint_ptr->getId(stateless_worker_endpoint);
         global_context->getInterserverIOHandler().addEndpoint(stateless_worker_endpoint_name, stateless_worker_endpoint_ptr);
         LOG_DEBUG(log, "Added stateless worker endpoint '{}'.", stateless_worker_endpoint_name);
     }
 
+    /// Runs after the exchange servers stop, as they hand connections to the control server.
     SCOPE_EXIT({
         if (stateless_worker_endpoint_ptr)
         {
@@ -2303,11 +2314,12 @@ try
             global_context->getInterserverIOHandler().removeEndpointIfExists(stateless_worker_endpoint_name);
 
             stateless_worker_endpoint_ptr->blocker.cancelForever();
-            stateless_worker_endpoint_ptr->shutdown();
+            stateless_worker_control_server->shutdown();
             /// Acquire the lock to wait for all in-flight requests to finish.
             std::lock_guard lock(stateless_worker_endpoint_ptr->rwlock);
         }
         stateless_worker_endpoint_ptr.reset();
+        stateless_worker_control_server.reset();
     });
 
     #if defined(OS_LINUX) || defined(OS_DARWIN)
@@ -2335,7 +2347,8 @@ try
                 try
                 {
                     exchange_servers.emplace_back(std::make_shared<ExchangeServer>(
-                        listen_host, streaming_exchange_port, server_settings[ServerSetting::listen_backlog], exchange_connections_ptr));
+                        listen_host, streaming_exchange_port, server_settings[ServerSetting::listen_backlog], exchange_connections_ptr,
+                        /*authenticate_connection_=*/ ExchangeConnectionAuthenticator{}, stateless_worker_control_server));
                     exchange_servers.back()->start();
                 }
                 catch (Poco::Exception & e)
@@ -2348,6 +2361,9 @@ try
                 throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to start ExchangeServer on port {}", streaming_exchange_port);
         }
     }
+    if (stateless_worker_control_server && exchange_servers.empty())
+        LOG_WARNING(log, "The stateless worker serves no control connections: they come to the streaming exchange server, which needs "
+            "`distributed_query.streaming_exchange_port` and `distributed_query.streaming_exchange_listen_host`");
 
     SCOPE_EXIT({
         for (auto & exchange_server_ptr : exchange_servers)

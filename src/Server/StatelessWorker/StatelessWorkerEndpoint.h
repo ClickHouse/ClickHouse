@@ -3,21 +3,22 @@
 #include <Interpreters/InterserverIOHandler.h>
 #include <boost/noncopyable.hpp>
 
+#include <memory>
+
 namespace DB
 {
 
 class StatelessTaskExecutor;
 
-/// Endpoint for serving merge requests.
+/// Serves the task control requests of stateless worker tasks over interserver HTTP.
 class StatelessWorkerEndpoint final : public InterserverIOEndpoint, private boost::noncopyable
 {
 public:
-    explicit StatelessWorkerEndpoint(size_t max_queries);
-    ~StatelessWorkerEndpoint() override;
+    /// The executor is shared with `StatelessWorkerControlServer`, which shuts it down.
+    explicit StatelessWorkerEndpoint(std::shared_ptr<StatelessTaskExecutor> task_runner_);
 
     std::string getId(const std::string & path) const override;
     void processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response) override;
-    void shutdown();
 
 private:
     const std::string endpoint_name;
