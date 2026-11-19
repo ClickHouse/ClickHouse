@@ -101,13 +101,11 @@ public:
         }
     }
 
-    /// The same as `insert` for each of `count` values, but from position `SKIP_AHEAD_FROM * sample_count` on
-    /// it draws the position of the next kept value instead of a random number for every value.
+    /// The same as `insert` for each value, but draws the position of the next kept value instead of a random number per value.
     void insertMany(const T * __restrict values, size_t count)
     {
         if constexpr (is_floating_point<T>)
         {
-            /// Not `std::any_of`: a loop without an early exit is vectorized.
             bool has_nan = false;
             for (size_t i = 0; i < count; ++i)
                 has_nan |= isNaN(values[i]);
@@ -121,7 +119,6 @@ public:
         insertManyImpl(count, [values](size_t i) -> const T & { return values[i]; });
     }
 
-    /// The same as `insert(v)` `count` times, see `insertMany`.
     void insertManySame(const T & v, size_t count)
     {
         if (isNaN(v))
@@ -129,7 +126,6 @@ public:
         insertManyImpl(count, [&v](size_t) -> const T & { return v; });
     }
 
-    /// The same as `insert` for each of `count` values where `(mask[i] != 0) == keep_nonzero`, see `insertMany`.
     template <bool keep_nonzero>
     void insertManyFiltered(const T * __restrict values, size_t count, const UInt8 * __restrict mask)
     {
@@ -163,7 +159,6 @@ public:
             if (next_selected <= total_values)
                 next_selected = drawNextSelected(total_values);
 
-            /// Count the values of a chunk without branches, and skip it if the next selected value is not there.
             const size_t end = std::min(count, i + CHUNK);
             size_t in_chunk = 0;
             for (size_t j = i; j < end; ++j)
@@ -444,8 +439,6 @@ private:
     /// We allocate a little memory on the stack - to avoid allocations when there are many objects with a small number of elements.
     using Array = DB::PODArrayWithStackMemory<T, 64>;
 
-    /// `insertMany` draws the position of the next kept value from position `SKIP_AHEAD_FROM * sample_count` on.
-    /// Before that many values are kept anyway, and the results are the same as with a random number for every value.
     static constexpr size_t SKIP_AHEAD_FROM = 16;
 
     size_t sample_count;
@@ -453,10 +446,8 @@ private:
     Array samples;
     pcg32_fast rng;
     bool sorted = false;
-    /// The position of the next value that `insertMany` keeps, or 0. Not serialized: it only depends on random draws
-    /// and on `total_values`. A position that `insert` has passed is drawn again, and one that it has not passed
-    /// is still valid, because the values at different positions are kept independently.
-    /// A bit field in the padding after `sorted`, so that the state does not grow.
+    /// The position of the next value that `insertMany` keeps, or 0 to draw it. A position that `insert` has not passed yet
+    /// stays valid, because Algorithm R keeps the values at different positions independently. Fits the padding after `sorted`.
     size_t next_selected : 56 = 0;
     static constexpr size_t MAX_NEXT_SELECTED = (size_t(1) << 56) - 1;
 
@@ -496,7 +487,6 @@ private:
             if (next_selected <= total_values)
                 next_selected = drawNextSelected(total_values);
 
-            /// The value at index `i` has position `total_values + 1`.
             if (next_selected - total_values > count - i)
             {
                 total_values += count - i;
@@ -509,7 +499,6 @@ private:
         }
     }
 
-    /// A uniform random number in [0, 1) with 53 random bits.
     double genUniform()
     {
         const UInt64 high = rng();
@@ -517,7 +506,6 @@ private:
         return static_cast<double>((high << 21) | (low >> 11)) * 0x1p-53;
     }
 
-    /// Keeps `v` at position `total_values` == `next_selected` and draws the next position.
     void insertSelected(const T & v)
     {
         sorted = false;
@@ -525,13 +513,9 @@ private:
         next_selected = drawNextSelected(total_values);
     }
 
-    /// Returns the position of the next value kept by Algorithm R after `seen` >= `sample_count` values,
-    /// or MAX_NEXT_SELECTED if it is beyond that. Algorithm R keeps the value at position i independently
-    /// with probability sample_count / i. Candidates are drawn from the geometric distribution with the
-    /// probability for position `seen + 1`, which is not less than for the later positions, and a candidate
-    /// at position i is accepted with probability (seen + 1) / i (thinning). The result has exactly the
-    /// distribution of drawing for each value, while a candidate is rejected with probability below
-    /// 1 / sample_count. This is the idea of J. S. Vitter, "Random sampling with a reservoir" (1985).
+    /// Returns the position of the next value kept by Algorithm R after `seen` >= `sample_count` values, or MAX_NEXT_SELECTED.
+    /// Algorithm R keeps position i independently with probability sample_count / i, so geometric candidates with the probability
+    /// for `seen + 1`, accepted with probability (seen + 1) / i, give exactly that law (Vitter, "Random sampling with a reservoir").
     size_t drawNextSelected(size_t seen)
     {
         static constexpr size_t max = MAX_NEXT_SELECTED;

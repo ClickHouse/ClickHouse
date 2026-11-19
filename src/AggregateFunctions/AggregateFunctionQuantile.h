@@ -311,7 +311,6 @@ public:
             Base::addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
     }
 
-    /// Used for the default values of a sparse column.
     void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const override
     {
         if constexpr (has_add_many_same)
