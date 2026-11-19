@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <bool_true_representation>yes</bool_true_representation>
-        </default>
-    </profiles>
-</clickhouse>

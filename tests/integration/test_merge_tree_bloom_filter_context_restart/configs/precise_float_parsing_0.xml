@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <precise_float_parsing>0</precise_float_parsing>
-        </default>
-    </profiles>
-</clickhouse>

@@ -77,11 +77,11 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context_,
         const Block & header_,
-        const ActionsDAG & indexed_expression_dag_,
         size_t hash_functions_,
         IsShadowingColumn is_column_shadowing_map_subcolumn_,
         JSONIndexArgumentTypes json_argument_types_,
-        IsShadowingJSONSubcolumn is_shadowing_json_subcolumn_ = {});
+        IsShadowingJSONSubcolumn is_shadowing_json_subcolumn_,
+        ActionsDAG::NodeRawConstPtrs index_nodes_);
 
     [[nodiscard]] bool alwaysUnknownOrTrue() const override;
 
@@ -105,19 +105,15 @@ private:
     /// By position in `header`.
     const ActionsDAG::NodeRawConstPtrs index_nodes;
     /// Names of `header`, with all but `JSONAllPaths` of a table column left empty.
-    Names json_index_columns;
+    const Names json_index_columns;
     const bool validate_enum_literals_in_operators;
     std::vector<RPNElement> rpn;
 
     bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const;
 
-    bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out, const ActionsDAG & indexed_expression_dag);
+    bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
 
-    bool traverseFunction(
-        const RPNBuilderTreeNode & node,
-        RPNElement & out,
-        const RPNBuilderTreeNode * parent,
-        const ActionsDAG & indexed_expression_dag);
+    bool traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent);
 
     bool traverseTreeIn(
         const String & function_name,
@@ -125,9 +121,7 @@ private:
         const ConstSetPtr & prepared_set,
         const DataTypePtr & type,
         const ColumnPtr & column,
-        RPNElement & out,
-        const ActionsDAG & indexed_expression_dag,
-        size_t & work_remaining);
+        RPNElement & out);
 
     bool traverseTreeEquals(
         const String & function_name,
