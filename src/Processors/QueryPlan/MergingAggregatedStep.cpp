@@ -380,6 +380,17 @@ static void checkMergedAggregatesLayout(
             "The input of a deserialized `MergingAggregated` step with grouping sets has {} `__grouping_set` columns instead of one",
             num_grouping_set_columns);
 
+    /// The per-set layouts below skip the keys of a set after its used keys, but the output header and the
+    /// reconstruction of the missing keys (`makeCreatingMissingKeysForGroupingSetDAG`) take every key from the
+    /// original input by name, i.e. from its first occurrence. So every key must occur at most once there.
+    NameSet seen_keys;
+    const NameSet all_keys(keys.begin(), keys.end());
+    for (const auto & column : header)
+        if (all_keys.contains(column.name) && !seen_keys.insert(column.name).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Key {} occurs more than once in the input of a deserialized `MergingAggregated` step with grouping sets",
+                column.name);
+
     for (const auto & grouping_set : grouping_sets_params)
     {
         NameSet keys_of_set(grouping_set.used_keys.begin(), grouping_set.used_keys.end());
@@ -454,6 +465,11 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
 
     SortDescription group_by_sort_description;
     deserializeSortDescription(group_by_sort_description, ctx.in, ctx.version, ctx.max_type_complexity);
+
+    /// The memory-bound merge is used with a non-empty sort description, and it does not support grouping sets.
+    if (memory_bound_merging_of_aggregation_results_enabled && !group_by_sort_description.empty() && !grouping_sets_params.empty())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The memory-bound merging of aggregated results with grouping sets in a serialized query plan");
 
     UInt64 stats_key = 0;
     if (has_stats_key)

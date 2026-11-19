@@ -173,6 +173,14 @@ forge("grouping set column is duplicated", GS, [[("__grouping_set", U64)] * 2 + 
 # The memory-efficient merge (on by default in the settings of the step) does not support grouping sets.
 forge("memory-efficient grouping sets merge", GS, [[("__grouping_set", U64)] + K_STATE], VERSION,
       [("__grouping_set", U64)] + K_A, "MergingAggregated")
+# The output header and the reconstruction of the missing keys take every key from the input by name.
+forge("grouping set key is repeated after the states", GS, [[("__grouping_set", U64)] + K_STATE + [("k", U64)]], VERSION,
+      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", "false")])
+# The memory-bound merge (with a non-empty sort description) does not support grouping sets either.
+MEMORY_BOUND = 32
+GS_SORTED = bytes([GS[0] | MEMORY_BOUND]) + GS[1:-2] + vu(1) + sb("k") + b"\x03" + vu(0)
+forge("memory-bound grouping sets merge", GS_SORTED, [[("__grouping_set", U64)] + K_STATE], VERSION,
+      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", "false")])
 forge("well-formed grouping sets merge", GS, [[("__grouping_set", U64)] + K_STATE], VERSION,
       [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", "false")])
 
