@@ -962,26 +962,48 @@ def main():
             results.append(selection_result)
         except (CIDBTimeoutError, GitHubUnavailableError) as ex:
             # CIDB is overloaded (typically while the coverage export inserts),
-            # or the GitHub API keeps failing.
-            # Skip rather than fail: an ERROR here would skip every job that
-            # waits for the core blocking jobs. Not cached, so a rerun or the
-            # next commit selects again.
+            # or the GitHub API keeps failing - only the *coverage* selection
+            # needs them. The PR's changed/new tests do not: they come from the
+            # changed-file list the Config Workflow already stored. Still run
+            # those, so a merge-queue entry never goes green without rerunning its
+            # changed tests against the merged state; only the coverage candidates
+            # are lost. Skip (not fail) only when there are no changed tests to
+            # fall back to - an ERROR would skip every job waiting on the core
+            # blocking jobs. Not cached, so a rerun or the next commit selects again.
             if isinstance(ex, CIDBTimeoutError):
                 cause = "test selection timed out in CIDB"
                 comment = "CIDB timeout in test selection, rerun to test"
             else:
                 cause = "the GitHub API failed during test selection"
                 comment = "GitHub API error in test selection, rerun to test"
-            message = f"Targeted tests were not run: {cause}: {ex}"
+            changed_files = info.get_changed_files()
+            tests = (
+                Targeting.tests_from_changed_files(changed_files)
+                if changed_files is not None
+                else None
+            )
+            message = (
+                f"Coverage test selection unavailable ({cause}: {ex}); "
+                f"running only the {len(tests) if tests else 0} changed/new tests."
+            )
             print(f"WARNING: {message}")
             info.add_workflow_warning(message)
-            skipped = Result.create_from(
-                status=Result.Status.SKIPPED,
-                info=f"{message}\n{traceback.format_exc()}",
-                results=results,
-            )
-            skipped.set_comment(comment)
-            skipped.complete_job(do_not_cache=True)
+            if not tests:
+                skipped = Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info=f"{message}\n{traceback.format_exc()}",
+                    results=results,
+                )
+                skipped.set_comment(comment)
+                skipped.complete_job(do_not_cache=True)
+            else:
+                results.append(
+                    Result(
+                        name="Fetch relevant tests",
+                        status=Result.Status.OK,
+                        info=message,
+                    )
+                )
         except Exception as ex:
             Result.create_from(
                 status=Result.Status.ERROR,
