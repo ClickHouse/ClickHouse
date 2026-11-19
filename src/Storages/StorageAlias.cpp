@@ -374,7 +374,7 @@ void StorageAlias::alter(
     AlterLockHolder & /*table_lock_holder*/,
     DDLGuardPtr & ddl_guard)
 {
-    auto target_storage = getTargetTable(TargetAccess{getDefinerContext(local_context), AccessType::ALTER});
+    auto target_storage = getTargetTable(TargetAccess{getDefinerContext(local_context), AccessType::ALTER_TABLE});
 
     /// Read under the alias guard: a concurrent RENAME of the alias can change it after the release.
     auto alias_database_name = getStorageID().database_name;
@@ -463,7 +463,7 @@ Pipe StorageAlias::alterPartition(
     const PartitionCommands & commands,
     ContextPtr local_context)
 {
-    auto target_storage = getTargetTable(TargetAccess{getDefinerContext(local_context), AccessType::ALTER});
+    auto target_storage = getTargetTable(TargetAccess{getDefinerContext(local_context), AccessType::ALTER_TABLE});
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
     return target_storage->alterPartition(target_metadata, commands, local_context);
 }
@@ -481,13 +481,13 @@ void StorageAlias::checkAlterPartitionIsPossible(
 
 void StorageAlias::mutate(const MutationCommands & commands, ContextPtr local_context)
 {
-    auto target_storage = getTargetTable(TargetAccess{getDefinerContext(local_context), AccessType::ALTER});
+    auto target_storage = getTargetTable(TargetAccess{getDefinerContext(local_context), AccessType::ALTER_TABLE});
     target_storage->mutate(commands, local_context);
 }
 
 QueryPipeline StorageAlias::updateLightweight(const MutationCommands & commands, ContextPtr local_context)
 {
-    auto target_storage = getTargetTable(TargetAccess{getDefinerContext(local_context), AccessType::ALTER});
+    auto target_storage = getTargetTable(TargetAccess{getDefinerContext(local_context), AccessType::ALTER_TABLE});
     auto lock = target_storage->lockForShare(
         local_context->getCurrentQueryId(),
         local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -665,60 +665,62 @@ QueryProcessingStage::Enum StorageAlias::getQueryProcessingStage(
     return target_storage->getQueryProcessingStage(security_context, to_stage, target_snapshot, query_info);
 }
 
+AccessFlags StorageAlias::getForwardedTargetAccess()
+{
+    return AccessFlags(AccessType::SELECT) | AccessType::INSERT | AccessType::ALTER_TABLE | AccessType::TRUNCATE
+        | AccessType::OPTIMIZE | AccessType::CHECK;
+}
+
+StorageID StorageAlias::resolveTargetFromEngineArgs(ASTs & engine_args, const String & default_database, const ContextPtr & context)
+{
+    // Supported syntaxes:
+    //  CREATE TABLE t2 ENGINE = Alias(t)
+    //  CREATE TABLE t2 ENGINE = Alias(db, t)
+    //  CREATE TABLE t2 ENGINE = Alias('t')
+    //  CREATE TABLE t2 ENGINE = Alias('db', 't')
+    //  CREATE TABLE t2 ENGINE = Alias('db.t')
+    if (engine_args.empty())
+    {
+        // Note: CREATE TABLE ... AS ... syntax is not supported
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Storage Alias requires target table name in ENGINE arguments. "
+            "Use: ENGINE = Alias('table_name') or ENGINE = Alias('database', 'table_name').");
+    }
+
+    if (engine_args.size() == 1)
+    {
+        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], context);
+        String table_arg = checkAndGetLiteralArgument<String>(engine_args[0], "table_name");
+
+        auto dot_pos = table_arg.find('.');
+        if (dot_pos != String::npos)
+            return StorageID(table_arg.substr(0, dot_pos), table_arg.substr(dot_pos + 1));
+        return StorageID(default_database, table_arg);
+    }
+
+    if (engine_args.size() == 2)
+    {
+        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], context);
+        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], context);
+        return StorageID(
+            checkAndGetLiteralArgument<String>(engine_args[0], "database_name"),
+            checkAndGetLiteralArgument<String>(engine_args[1], "table_name"));
+    }
+
+    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+        "Storage Alias requires at most 2 arguments: database name and table name");
+}
+
 void registerStorageAlias(StorageFactory & factory);
 void registerStorageAlias(StorageFactory & factory)
 {
     factory.registerStorage("Alias", [](const StorageFactory::Arguments & args)
     {
-        // Supported syntaxes:
-        //  CREATE TABLE t2 ENGINE = Alias(t)
-        //  CREATE TABLE t2 ENGINE = Alias(db, t)
-        //  CREATE TABLE t2 ENGINE = Alias('t')
-        //  CREATE TABLE t2 ENGINE = Alias('db', 't')
-
         auto local_context = args.getLocalContext();
 
-        String target_database;
-        String target_table;
-
-        if (args.engine_args.empty())
-        {
-            // Note: CREATE TABLE ... AS ... syntax is not supported
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Storage Alias requires target table name in ENGINE arguments. "
-                "Use: ENGINE = Alias('table_name') or ENGINE = Alias('database', 'table_name').");
-        }
-        else if (args.engine_args.size() == 1)
-        {
-            // Syntax: ENGINE = Alias(table_name) or ENGINE = Alias(db.table_name)
-            args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
-            String table_arg = checkAndGetLiteralArgument<String>(args.engine_args[0], "table_name");
-
-            auto dot_pos = table_arg.find('.');
-            if (dot_pos != String::npos)
-            {
-                target_database = table_arg.substr(0, dot_pos);
-                target_table = table_arg.substr(dot_pos + 1);
-            }
-            else
-            {
-                target_table = table_arg;
-                target_database = args.table_id.database_name;
-            }
-        }
-        else if (args.engine_args.size() == 2)
-        {
-            // Syntax: ENGINE = Alias(database_name, table_name)
-            args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
-            args.engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[1], local_context);
-            target_database = checkAndGetLiteralArgument<String>(args.engine_args[0], "database_name");
-            target_table = checkAndGetLiteralArgument<String>(args.engine_args[1], "table_name");
-        }
-        else
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Storage Alias requires at most 2 arguments: database name and table name");
-        }
+        auto target_id = StorageAlias::resolveTargetFromEngineArgs(args.engine_args, args.table_id.database_name, local_context);
+        const String & target_database = target_id.database_name;
+        const String & target_table = target_id.table_name;
 
         // Storage Alias does not support explicit column definitions
         // Columns are always dynamically fetched from the target table
@@ -729,16 +731,12 @@ void registerStorageAlias(StorageFactory & factory)
                 "Storage Alias does not support explicit column definitions");
         }
 
-        /// An alias runs with definer rights, so once created it forwards every operation to the target
-        /// without re-checking the target against the user who runs the query. The compensating control is
-        /// here: the creator (the definer) must already hold every privilege the alias can forward on the
-        /// target, so creating an alias can never grant its creator more than they already had. Skipped
-        /// when loading an already-accepted definition, which must stay loadable.
+        /// An alias runs with definer rights, so the creator must already hold every privilege it can forward
+        /// on the target. `InterpreterCreateQuery::getRequiredAccess` requires it on the initiator, which also covers
+        /// `ON CLUSTER` and `Replicated` databases, whose hosts build the table with full access; this repeats it for
+        /// the other callers. Skipped when loading an already-accepted definition, which must stay loadable.
         if (!(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
-            local_context->checkAccess(
-                AccessFlags(AccessType::SELECT) | AccessType::INSERT | AccessType::ALTER_TABLE
-                    | AccessType::TRUNCATE | AccessType::OPTIMIZE | AccessType::CHECK,
-                target_database, target_table);
+            local_context->checkAccess(StorageAlias::getForwardedTargetAccess(), target_database, target_table);
 
         /// The restrictions below read the catalog, so they may only judge freshly supplied input:
         /// an already accepted definition must stay loadable, because a rejection while loading

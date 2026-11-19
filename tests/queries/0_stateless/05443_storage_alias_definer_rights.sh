@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
-# no-replicated-database: a DDL on a replicated database runs with no user, so the creator-privilege
-#                         check asserted here is skipped and the deny path silently allows.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,6 +18,8 @@ ${CLICKHOUSE_CLIENT} -m --query "
 
     CREATE USER ${definer} NOT IDENTIFIED;
     GRANT CREATE TABLE ON def_alias TO ${definer};
+    GRANT CREATE TABLE ON def_alias_on_cluster TO ${definer};
+    GRANT CLUSTER ON *.* TO ${definer};
     GRANT TABLE ENGINE ON Alias TO ${definer};
 "
 
@@ -30,7 +29,14 @@ ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON def_target TO ${definer};"
 echo "Create with only SELECT on target"
 ${CLICKHOUSE_CLIENT} --user="${definer}" --query "CREATE TABLE def_alias ENGINE = Alias('def_target');" 2>&1 | grep -o "ACCESS_DENIED" | uniq
 
-${CLICKHOUSE_CLIENT} --query "GRANT INSERT, ALTER, TRUNCATE, OPTIMIZE, CHECK ON def_target TO ${definer};"
+# The hosts of `ON CLUSTER` build the table with full access, so the initiator must check the creator.
+echo "Create ON CLUSTER with only SELECT on target"
+${CLICKHOUSE_CLIENT} --user="${definer}" --query "
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.def_alias_on_cluster ON CLUSTER test_shard_localhost
+    ENGINE = Alias('${CLICKHOUSE_DATABASE}', 'def_target');" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'def_alias_on_cluster';"
+
+${CLICKHOUSE_CLIENT} --query "GRANT INSERT, ALTER TABLE, TRUNCATE, OPTIMIZE, CHECK ON def_target TO ${definer};"
 echo "Create with the full forwardable privilege set on target"
 ${CLICKHOUSE_CLIENT} --user="${definer}" --query "CREATE TABLE def_alias ENGINE = Alias('def_target');" 2>&1 | grep -o "ACCESS_DENIED" | uniq
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'def_alias';"
@@ -50,6 +56,13 @@ echo "Reader sees the alias columns in system.columns with no target grant"
 ${CLICKHOUSE_CLIENT} --user="${reader}" --query "SELECT count() FROM system.columns WHERE database = currentDatabase() AND table = 'def_alias';"
 echo "Reader SELECTs through the alias with no target grant"
 ${CLICKHOUSE_CLIENT} --user="${reader}" --query "SELECT count() FROM def_alias;"
+
+# The definer holds `ALTER TABLE` on the target (not the whole `ALTER`, which also covers views), and that is
+# what a forwarded `ALTER` requires.
+${CLICKHOUSE_CLIENT} --query "GRANT ALTER COMMENT COLUMN ON def_alias TO ${reader};"
+echo "Reader ALTERs through the alias with no target grant"
+${CLICKHOUSE_CLIENT} --user="${reader}" --query "ALTER TABLE def_alias COMMENT COLUMN value 'via alias';"
+${CLICKHOUSE_CLIENT} --query "SELECT comment FROM system.columns WHERE database = currentDatabase() AND table = 'def_target' AND name = 'value';"
 
 # The trivial-count shortcut (SELECT count()) returns a row count without going through the read path,
 # so it must authorize the definer exactly as a read does - whether or not the optimization is enabled.

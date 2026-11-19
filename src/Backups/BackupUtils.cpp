@@ -205,17 +205,22 @@ bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAS
         adjustCreateQueryForBackup(new_query, global_context);
         new_query->resetUUIDs();
         new_query->if_not_exists = false;
-        /// An `Alias` carries a `SQL SECURITY` clause only since definer rights were added; a definition
-        /// written by an older server has none. Ignore it for the comparison (but keep it in the backup
-        /// itself) so a definition from an older backup compares equal to one written now. Only for an
-        /// `Alias`, so that a view's definer is still compared.
-        if (new_query->isAliasEngine() && new_query->sql_security)
-            new_query->reset(new_query->sql_security);
         return new_query;
     };
 
     auto query1 = adjust_before_comparison(restored_table_create_query);
     auto query2 = adjust_before_comparison(create_query_from_backup);
+
+    /// An `Alias` carries a `SQL SECURITY` clause only since definer rights were added; a definition written by an
+    /// older server has none. When only one side has it, ignore it, so a definition from an older backup compares equal
+    /// to one written now. When both have it, the definers are compared: they decide whose rights the alias uses.
+    if (query1->isAliasEngine() && query2->isAliasEngine() && !query1->sql_security != !query2->sql_security)
+    {
+        if (query1->sql_security)
+            query1->reset(query1->sql_security);
+        if (query2->sql_security)
+            query2->reset(query2->sql_security);
+    }
     if (query1->formatWithSecretsOneLine() == query2->formatWithSecretsOneLine())
         return true;
 

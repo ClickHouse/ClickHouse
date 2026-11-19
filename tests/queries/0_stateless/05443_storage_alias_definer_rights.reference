@@ -1,5 +1,8 @@
 Create with only SELECT on target
 ACCESS_DENIED
+Create ON CLUSTER with only SELECT on target
+ACCESS_DENIED
+0
 Create with the full forwardable privilege set on target
 1
 SHOW CREATE carries the SQL SECURITY DEFINER clause
@@ -10,6 +13,8 @@ Reader sees the alias columns in system.columns with no target grant
 2
 Reader SELECTs through the alias with no target grant
 2
+Reader ALTERs through the alias with no target grant
+via alias
 Trivial count while the definer is authorized (optimization on, then off)
 2
 2

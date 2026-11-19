@@ -57,6 +57,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageDictionary.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/SubcolumnCodecs.h>
@@ -4227,6 +4228,20 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
         throwIfEngineIsUnknownAndNotGranted(
             create.storage->engine->name, /*is_database_engine=*/ !create.table, required_before, getContext());
         required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
+    }
+
+    /// An `Alias` forwards operations to its target with the definer's rights, so its creator must already hold all of
+    /// them on the target. Required here, not only where the table is built: `ON CLUSTER` and `Replicated` databases
+    /// build it with full access. A short `ATTACH` replays an already accepted definition.
+    if (create.isAliasEngine() && !create.attach_short_syntax)
+    {
+        ASTs engine_args;
+        if (create.storage->engine->arguments)
+            for (const auto & arg : create.storage->engine->arguments->children)
+                engine_args.push_back(arg->clone());
+        auto target_id = StorageAlias::resolveTargetFromEngineArgs(
+            engine_args, getContext()->resolveDatabase(create.getDatabase()), getContext());
+        required_access.emplace_back(StorageAlias::getForwardedTargetAccess(), target_id.database_name, target_id.table_name);
     }
 
     /// Required here, not where the table is built: `ON CLUSTER` and `Replicated` databases build it with full access.

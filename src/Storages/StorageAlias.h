@@ -10,6 +10,7 @@ namespace DB
 {
 
 class ASTSQLSecurity;
+class AccessFlags;
 
 class StorageAlias final : public IStorage, WithContext
 {
@@ -28,6 +29,12 @@ public:
         const ASTSQLSecurity * sql_security_ = nullptr);
 
     std::string getName() const override { return "Alias"; }
+
+    /// Privileges on the target that an alias forwards with its definer's rights. Its creator must hold all of them.
+    static AccessFlags getForwardedTargetAccess();
+
+    /// Resolves the target of `ENGINE = Alias(...)` from its arguments, evaluating them in place.
+    static StorageID resolveTargetFromEngineArgs(ASTs & engine_args, const String & default_database, const ContextPtr & context);
 
     bool isMergeTree() const override;
 
