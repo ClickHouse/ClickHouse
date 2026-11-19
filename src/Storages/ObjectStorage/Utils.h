@@ -6,6 +6,10 @@
 #include <Storages/NumberedFileName.h>
 #include <Storages/StorageFactory.h>
 #include <Parsers/IAST_fwd.h>
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
 
 namespace DB
 {

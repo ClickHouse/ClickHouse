@@ -6,6 +6,7 @@
 
 #include <base/types.h>
 #include <Common/Logger.h>
+#include <Common/SecretString.h>
 #include <Common/StringWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Poco/Net/StreamSocket.h>
@@ -144,7 +145,7 @@ private:
 struct ConnectionSettings
 {
     String user;
-    String password;
+    SecretString password;
     /// Use TLS with the client settings from the `openSSL.client` section of the server configuration.
     bool secure = false;
     Compression compression = Compression::None;

@@ -119,7 +119,7 @@ public:
     virtual void setRawPath(const Path & path) = 0;
 
     /// Raw URI, specified by a user. Used in permission check.
-    [[nodiscard]] virtual const String & getRawURI() const = 0;
+    [[nodiscard]] virtual std::string_view getRawURI() const = 0;
 
     /// The function returns the URI of the object at `write_path` in the form the source access check uses, so that a
     /// write to a path computed at write time is checked against the same filtered grants. It returns an empty string
