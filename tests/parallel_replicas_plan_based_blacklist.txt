@@ -50,6 +50,7 @@
 05175_time_series_table_functions_parallel_replicas
 
     The test greps EXPLAIN, and ReadFromParallelReplicas prints the whole shipped fragment in its description
+05137_join_fixed_string_zero_bytes_runtime_filter
 05141_hypothetical_projection_verdict_rules
 05175_hypothetical_projection_part_offset
 
