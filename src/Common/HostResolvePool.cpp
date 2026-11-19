@@ -377,7 +377,7 @@ void HostResolversPool::dropCache()
 
 HostResolver::Ptr HostResolversPool::getResolver(const String & host)
 {
-    UInt64 generation_before_resolve;
+    UInt64 generation_before_resolve = 0;
     {
         std::lock_guard lock(mutex);
 

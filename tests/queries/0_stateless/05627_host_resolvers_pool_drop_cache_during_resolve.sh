@@ -27,5 +27,5 @@ wait "$pid"
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS text_log"
 $CLICKHOUSE_CLIENT -q "
     SELECT count() > 0 FROM system.text_log
-    WHERE event_date >= yesterday() AND query_id = '$query_id'
+    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND query_id = '$query_id'
         AND message = 'Not caching the resolver for host ${host}, because the cache was dropped during the resolution'"
