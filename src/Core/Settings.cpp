@@ -11076,7 +11076,7 @@ Allows creation of tables with the [TimeSeries](/reference/engines/table-engines
 - 1 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is enabled.
 )", PRIVATE_PREVIEW, allow_experimental_time_series_table, \
         {"26.9", false, false, "The `TimeSeries` table engine and the `promql` dialect were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_table`."}, \
-        {"24.8", false, false, "Added new setting to allow the TimeSeries table engine."}) \
+        {"24.8", false, false, "Added new setting to allow the TimeSeries table engine.  At the time the setting was named `allow_experimental_time_series_table`, which is now an alias of it."}) \
     DECLARE(Bool, time_series_prefer_recent_samples_table, true, R"(
 Read from the recent samples table of a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table instead of the main samples table when the whole requested time range fits in the TTL window of the recent samples table (see the `recent_samples_ttl_seconds` setting of the TimeSeries table engine).
 )", PRIVATE_PREVIEW, \
@@ -11161,7 +11161,7 @@ Set to false to force the old full-mutation behavior.
     DECLARE_WITH_ALIAS(Bool, allow_shuffle_query, false, R"(
 Allow the experimental `SHUFFLE` clause in `SELECT` queries. `SHUFFLE` is used in place of `ORDER BY` and returns the rows in a uniformly random order.
 )", EXPERIMENTAL, allow_experimental_shuffle_query, \
-        {"26.11", false, false, "New setting to enable the experimental `SHUFFLE` clause in `SELECT` queries. At the time the setting was named `allow_experimental_shuffle_query`, which is now an alias of it."}) \
+        {"26.11", false, false, "New setting to enable the experimental `SHUFFLE` clause in `SELECT` queries."}) \
     DECLARE(Bool, enable_streaming_queries, false, R"(
 Allow `SELECT ... FROM t STREAM [CURSOR '{...}']` continuous queries.
 When off, any table expression using the `STREAM` modifier is rejected
@@ -11435,7 +11435,7 @@ until a later run. Does nothing for a table of the format version 1.
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
 )", EXPERIMENTAL, allow_experimental_iceberg_compaction, \
         {"26.11", false, false, "Added an alias for setting `allow_experimental_iceberg_compaction`."}, \
-        {"25.8", 0, 0, "New setting. At the time the setting was named `allow_experimental_iceberg_compaction`, which is now an alias of it."}) \
+        {"25.8", 0, 0, "New setting."}) \
     DECLARE(UInt64, iceberg_manifest_min_count_to_compact, 100, R"(
 Minimum number of manifest files required to trigger manifest-only compaction via OPTIMIZE TABLE ... MANIFEST.
 If the current number of manifest files is less than or equal to this threshold, compaction is skipped.
