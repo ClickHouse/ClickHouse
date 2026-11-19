@@ -821,7 +821,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     /// (for example, a default expression can contain dictGet() and that dictionary can access remote servers or
     /// require different users to authenticate).
     if (!default_expr_info.expr_list->children.empty()
-        && (default_expr_info.has_columns_with_default_without_type || isFreshDefinition(mode)))
+        && (default_expr_info.has_columns_with_default_without_type || (isFreshDefinition(mode) && !is_restore_from_backup)))
     {
         /// Ordinary views never evaluate column defaults over an insert block, so a default over a
         /// virtual column is inert there and must not be rejected.
