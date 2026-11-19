@@ -4,8 +4,10 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <base/range.h>
 
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
@@ -14,7 +16,9 @@
 #include <Common/ListWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <limits>
 #include <list>
+#include <optional>
 
 
 namespace DB
@@ -273,6 +277,44 @@ struct AggregateFunctionWindowFunnelStrictOnceData
     }
 };
 
+/** The fastest path to every funnel level, used by the `conversion_time` mode.
+  *
+  * For level i the fastest path is the sequence of events 1..i inside the window that minimizes the time between the
+  * first and the i-th event. If several paths take the same time, the one that finishes first is kept, and among
+  * those the one whose (i-1)-th event is the earliest possible.
+  * The conversion time of a step is the time between the (i-1)-th and the i-th event of that path.
+  */
+struct FastestPaths
+{
+    static constexpr UInt64 NOT_REACHED = std::numeric_limits<UInt64>::max();
+
+    /// Indexed by the 0-based level.
+    VectorWithMemoryTracking<UInt64> duration;
+    VectorWithMemoryTracking<UInt64> last_step_time;
+
+    explicit FastestPaths(size_t levels) : duration(levels, NOT_REACHED), last_step_time(levels, 0) {}
+
+    /// Paths are offered in the order of the timestamp of their last event, so on a tie the first offered path is kept.
+    void offer(size_t level, UInt64 path_duration, UInt64 step_time)
+    {
+        if (path_duration < duration[level])
+        {
+            duration[level] = path_duration;
+            last_step_time[level] = step_time;
+        }
+    }
+
+    /// Conversion times between consecutive steps, only for the steps up to `max_level`.
+    VectorWithMemoryTracking<UInt64> conversionTimes(size_t max_level) const
+    {
+        VectorWithMemoryTracking<UInt64> times(duration.size() - 1, 0);
+        for (size_t level = 1; level < max_level; ++level)
+            if (duration[level] != NOT_REACHED)
+                times[level - 1] = last_step_time[level];
+        return times;
+    }
+};
+
 /** Calculates the max event level in a sliding window.
   * The max size of events is 32, that's enough for funnel analytics
   *
@@ -298,6 +340,87 @@ private:
 
     // Allow re-entry/skipping of future steps
     bool allow_reentry;
+
+    /// When the 'conversion_time' is set, the function returns the tuple (max_level, time_1_to_2, time_2_to_3, ...)
+    /// where time_i_to_(i+1) is the time between the steps i and i+1 on the fastest path to the step i+1.
+    /// The times are 0 for the steps above the max level.
+    bool need_conversion_time;
+
+    /// Finds the fastest path to every level without strict_once. Does not change the max level.
+    ///
+    /// For every level it is enough to remember one chain: the one that starts the latest. Events are processed in
+    /// the order of timestamps, so a chain that starts later and completes the level now is always at least as fast
+    /// as any other chain completing it now. The chain that completed the previous level first among those with the
+    /// same start is kept, which is also the earliest possible event of the previous level.
+    void collectFastestPathsNonStrictOnce(const AggregateFunctionWindowFunnelData<T>::TimestampEvents & events_list, FastestPaths & paths) const
+    {
+        struct Chain
+        {
+            UInt64 start;
+            UInt64 last;
+        };
+
+        VectorWithMemoryTracking<std::optional<Chain>> latest(events_size);
+        /// With strict_increase a chain completed at the current timestamp can't be extended by the events with
+        /// the same timestamp, so such chains are kept aside until the timestamp changes.
+        VectorWithMemoryTracking<std::optional<Chain>> pending(events_size);
+
+        auto flush_pending = [&]
+        {
+            for (size_t level = 0; level < events_size; ++level)
+            {
+                if (pending[level] && (!latest[level] || pending[level]->start > latest[level]->start))
+                    latest[level] = pending[level];
+                pending[level].reset();
+            }
+        };
+
+        auto offer = [&](size_t level, Chain chain)
+        {
+            auto & target = strict_increase ? pending[level] : latest[level];
+            if (!target || chain.start > target->start)
+                target = chain;
+        };
+
+        bool first_event = false;
+        UInt64 group_timestamp = 0;
+        for (size_t i = 0; i < events_list.size(); ++i)
+        {
+            const UInt64 timestamp = static_cast<UInt64>(events_list[i].first);
+            const Int64 event_idx = static_cast<Int64>(events_list[i].second) - 1;
+
+            if (strict_increase && timestamp != group_timestamp)
+            {
+                flush_pending();
+                group_timestamp = timestamp;
+            }
+
+            if (strict_order && event_idx == -1)
+            {
+                if (first_event)
+                    break;
+                continue;
+            }
+
+            if (event_idx == 0)
+            {
+                offer(0, {timestamp, timestamp});
+                first_event = true;
+                continue;
+            }
+
+            const size_t level = static_cast<size_t>(event_idx);
+            if (strict_order && first_event && !latest[level - 1] && !pending[level - 1])
+                break;
+
+            const auto & previous = latest[level - 1];
+            if (!previous || timestamp - previous->start > window)
+                continue;
+
+            paths.offer(level, timestamp - previous->start, timestamp - previous->last);
+            offer(level, {previous->start, timestamp});
+        }
+    }
 
     /// Loop through the entire events_list, update the event timestamp value
     /// The level path must be 1---2---3---...---check_events_size, find the max event level that satisfied the path in the sliding window.
@@ -371,7 +494,10 @@ private:
         return 0;
     }
 
-    UInt8 getEventLevelStrictOnce(const AggregateFunctionWindowFunnelStrictOnceData<T>::TimestampEvents & events_list) const
+    /// If `fastest_paths` is set, the fastest path to every level is collected too. In that case the scan doesn't stop
+    /// at the first complete funnel, because a faster one may follow.
+    UInt8 getEventLevelStrictOnce(
+        const AggregateFunctionWindowFunnelStrictOnceData<T>::TimestampEvents & events_list, FastestPaths * fastest_paths = nullptr) const
     {
         /// Stores the timestamp of the first and last i-th level event happen within time window.
         /// `event_path` must be zero-initialized: the full array is copied by `auto prev_path = it->event_path`
@@ -469,12 +595,24 @@ private:
 
                     if (time_matched)
                     {
-                        prev_path[event_idx] = unique_id;
+                        /// Paths that fall out of the window are erased above, so every path has to be offered when it is created.
+                        if (fastest_paths)
+                            fastest_paths->offer(
+                                static_cast<size_t>(event_idx),
+                                static_cast<UInt64>(timestamp) - first_ts,
+                                static_cast<UInt64>(timestamp) - it->last_timestamp);
 
-                        auto & new_seq = event_sequences[event_idx].emplace_back(first_ts, static_cast<UInt64>(timestamp));
-                        new_seq.event_path = std::move(prev_path);
-                        if (event_idx + 1 == events_size)
-                            return events_size;
+                        /// Paths of the last level are never extended, so with `fastest_paths` one of them is enough to mark the level as reached.
+                        const bool is_last_level = event_idx + 1 == events_size;
+                        if (!fastest_paths || !is_last_level || event_sequences[event_idx].empty())
+                        {
+                            prev_path[event_idx] = unique_id;
+
+                            auto & new_seq = event_sequences[event_idx].emplace_back(first_ts, static_cast<UInt64>(timestamp));
+                            new_seq.event_path = std::move(prev_path);
+                            if (is_last_level && !fastest_paths)
+                                return events_size;
+                        }
                     }
                     ++it;
                 }
@@ -490,7 +628,8 @@ private:
     }
 
 
-    UInt8 getEventLevel(Data & data) const
+    /// If `fastest_paths` is set, it is filled with the fastest path to every level.
+    UInt8 getEventLevel(Data & data, FastestPaths * fastest_paths = nullptr) const
     {
         if (data.size() == 0)
             return 0;
@@ -500,9 +639,15 @@ private:
         data.sort();
 
         if constexpr (Data::strict_once_enabled)
-            return getEventLevelStrictOnce(data.events_list);
+        {
+            return getEventLevelStrictOnce(data.events_list, fastest_paths);
+        }
         else
+        {
+            if (fastest_paths)
+                collectFastestPathsNonStrictOnce(data.events_list, *fastest_paths);
             return getEventLevelNonStrictOnce(data.events_list);
+        }
     }
 
 public:
@@ -512,7 +657,7 @@ public:
     }
 
     AggregateFunctionWindowFunnel(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionWindowFunnel<T, Data>>(arguments, params, std::make_shared<DataTypeUInt8>())
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionWindowFunnel<T, Data>>(arguments, params, getReturnType(arguments, params))
     {
         events_size = static_cast<UInt8>(arguments.size() - 1);
         window = params.at(0).safeGet<UInt64>();
@@ -521,6 +666,7 @@ public:
         strict_order = false;
         strict_increase = false;
         allow_reentry = false;
+        need_conversion_time = false;
         for (size_t i = 1; i < params.size(); ++i)
         {
             String option = params.at(i).safeGet<String>();
@@ -535,6 +681,8 @@ public:
             else if (option == "strict_once")
                 /// Checked in factory
                 chassert(Data::strict_once_enabled);
+            else if (option == "conversion_time")
+                need_conversion_time = true;
             else if (option == "strict")
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "strict is replaced with strict_deduplication in Aggregate function {}", getName());
             else
@@ -546,6 +694,38 @@ public:
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "allow_reentry option requires strict_order to be enabled in Aggregate function {}", getName());
         }
+
+        if (need_conversion_time && (strict_deduplication || allow_reentry))
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "conversion_time option can't be combined with strict_deduplication or allow_reentry in Aggregate function {}",
+                getName());
+        }
+    }
+
+    /// With 'conversion_time' the result is Tuple(max_level UInt8, time_1_to_2 UInt64, ..., time_N-1_to_N UInt64), otherwise UInt8.
+    static DataTypePtr getReturnType(const DataTypes & arguments, const Array & params)
+    {
+        bool has_conversion_time = false;
+        for (size_t i = 1; i < params.size(); ++i)
+            if (params.at(i).getType() == Field::Types::String && params.at(i).safeGet<String>() == "conversion_time")
+                has_conversion_time = true;
+
+        if (!has_conversion_time)
+            return std::make_shared<DataTypeUInt8>();
+
+        DataTypes types{std::make_shared<DataTypeUInt8>()};
+        Strings names{"max_level"};
+
+        const size_t events = arguments.size() - 1;
+        for (size_t step = 1; step < events; ++step)
+        {
+            types.push_back(std::make_shared<DataTypeUInt64>());
+            names.push_back("time_" + toString(step) + "_to_" + toString(step + 1));
+        }
+
+        return std::make_shared<DataTypeTuple>(types, names);
     }
 
     [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
@@ -610,7 +790,21 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColumnUInt8 &>(to).getData().push_back(getEventLevel(this->data(place)));
+        if (!need_conversion_time)
+        {
+            assert_cast<ColumnUInt8 &>(to).getData().push_back(getEventLevel(this->data(place)));
+            return;
+        }
+
+        auto & tuple_column = assert_cast<ColumnTuple &>(to);
+
+        FastestPaths fastest_paths(events_size);
+        const UInt8 max_level = getEventLevel(this->data(place), &fastest_paths);
+        assert_cast<ColumnUInt8 &>(tuple_column.getColumn(0)).getData().push_back(max_level);
+
+        const auto conversion_times = fastest_paths.conversionTimes(max_level);
+        for (size_t step = 0; step + 1 < events_size; ++step)
+            assert_cast<ColumnUInt64 &>(tuple_column.getColumn(step + 1)).getData().push_back(conversion_times[step]);
     }
 };
 

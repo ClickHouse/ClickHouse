@@ -1,0 +1,58 @@
+type
+Tuple(max_level UInt8, time_1_to_2 UInt64, time_2_to_3 UInt64)
+conversion_time
+1	(3,2,8)
+2	(3,10,40)
+3	(2,10,0)
+4	(1,0,0)
+5	(2,50,0)
+6	(3,4,6)
+7	(3,2,8)
+8	(3,0,7)
+9	(3,10,10)
+10	(0,0,0)
+strict_increase
+1	(3,2,8)
+2	(3,10,40)
+3	(2,10,0)
+4	(1,0,0)
+5	(2,50,0)
+6	(3,4,6)
+7	(3,2,8)
+8	(1,0,0)
+9	(3,10,10)
+10	(0,0,0)
+strict_once
+1	(3,2,8)
+2	(3,10,40)
+3	(2,10,0)
+4	(1,0,0)
+5	(2,50,0)
+6	(3,4,6)
+7	(3,2,8)
+8	(3,0,7)
+9	(3,10,10)
+10	(0,0,0)
+strict_order
+2	(3,10,40)
+8	(3,0,7)
+9	(2,10,0)
+10	(0,0,0)
+one event matching two steps
+default	(3,5,0)
+strict_once	(2,5,0)
+strict_increase	(2,5,0)
+named elements
+1	3	2	8
+3	2	10	0
+max level is the same as without conversion_time
+11	11
+no rows
+(0,0,0)
+a single step
+1
+large DateTime
+(3,600,900)
+large UInt64
+(3,100,300)
+unsupported combinations
