@@ -59,7 +59,7 @@ public:
 
     uv_loop_t * getLoop() { return loop_ptr.get(); }
 
-    const uv_loop_t * getLoop() const { return loop_ptr.get(); }
+    [[nodiscard]] const uv_loop_t * getLoop() const { return loop_ptr.get(); }
 
 private:
     std::unique_ptr<uv_loop_t> loop_ptr;
