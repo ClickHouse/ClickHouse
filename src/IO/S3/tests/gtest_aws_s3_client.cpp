@@ -6,7 +6,9 @@
 
 #if USE_AWS_S3
 
+#include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -43,6 +45,7 @@
 
 #include <Common/Crypto/OpenSSLInitializer.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/Stopwatch.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
@@ -51,6 +54,7 @@
 #include <IO/S3/Client.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/S3Capabilities.h>
+#include <IO/S3/copyS3File.h>
 #include <IO/S3/deleteFileFromS3.h>
 #include <Common/Exception.h>
 #include <IO/S3/PocoHTTPClient.h>
@@ -66,6 +70,7 @@ namespace DB::S3RequestSetting
     extern const S3RequestSettingsUInt64 max_single_read_retries;
     extern const S3RequestSettingsUInt64 max_unexpected_write_error_retries;
     extern const S3RequestSettingsString delete_checksum_algorithm;
+    extern const S3RequestSettingsUInt64 max_single_operation_copy_size;
 }
 
 /*
@@ -197,7 +202,8 @@ static std::shared_ptr<DB::S3::Client> makeTestClient(
     const DB::S3::URI & uri,
     const String & server_side_encryption_customer_key_base64,
     const DB::S3::ServerSideEncryptionKMSConfig & sse_kms_config,
-    bool is_s3express_bucket)
+    bool is_s3express_bucket,
+    const std::function<void(DB::S3::PocoHTTPClientConfiguration &)> & configure = {})
 {
     /// The client keeps a reference to the filter, so it must outlive the returned client.
     /// `const` makes sure no test reconfigures the shared instance.
@@ -225,6 +231,8 @@ static std::shared_ptr<DB::S3::Client> makeTestClient(
         uri.uri.getScheme());
 
     client_configuration.endpointOverride = uri.endpoint;
+    if (configure)
+        configure(client_configuration);
 
     DB::NormalizedHTTPHeaderEntries headers;
     bool use_environment_credentials = false;
@@ -722,6 +730,206 @@ TEST(IOTestAwsS3Client, DeleteObjectsDefaultChecksum)
                "x-amz-date, ...\n");
 }
 
+namespace
+{
+
+/// A native-copy endpoint that, like S3, answers a server-side copy (`UploadPartCopy`, `CopyObject`) only after
+/// `copy_delay`, the time it takes to copy the data. Records the kind of every request it receives.
+class ServerSideCopyStubServer
+{
+public:
+    enum class Kind
+    {
+        CreateMultipartUpload,
+        UploadPartCopy,
+        CompleteMultipartUpload,
+        CopyObject,
+        Other,
+    };
+
+    explicit ServerSideCopyStubServer(std::chrono::milliseconds copy_delay_)
+        : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
+        , factory(new Factory(*this))
+        , server(std::make_unique<Poco::Net::HTTPServer>(factory, *server_socket, makeMockServerParams()))
+        , copy_delay(copy_delay_)
+    {
+        server->start();
+    }
+
+    ~ServerSideCopyStubServer() { server->stop(); }
+
+    String getUrl() const { return "http://" + server_socket->address().toString(); }
+
+    std::vector<Kind> getRequests() const
+    {
+        std::lock_guard lock(mutex);
+        return requests;
+    }
+
+    size_t getCopyRequestCount() const
+    {
+        std::lock_guard lock(mutex);
+        return static_cast<size_t>(
+            std::ranges::count_if(requests, [](Kind kind) { return kind == Kind::UploadPartCopy || kind == Kind::CopyObject; }));
+    }
+
+private:
+    static Kind classify(const Poco::Net::HTTPServerRequest & request)
+    {
+        const bool has_copy_source = request.has("x-amz-copy-source");
+        const auto query_parameters = Poco::URI(request.getURI()).getQueryParameters();
+        auto has_parameter = [&](const String & name)
+        {
+            return std::ranges::any_of(query_parameters, [&](const auto & parameter) { return parameter.first == name; });
+        };
+
+        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
+        {
+            if (has_parameter("uploads"))
+                return Kind::CreateMultipartUpload;
+            if (has_parameter("uploadId"))
+                return Kind::CompleteMultipartUpload;
+        }
+        else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT && has_copy_source)
+        {
+            if (has_parameter("partNumber") && has_parameter("uploadId"))
+                return Kind::UploadPartCopy;
+            if (query_parameters.empty())
+                return Kind::CopyObject;
+        }
+        return Kind::Other;
+    }
+
+    static String getResponseBody(Kind kind)
+    {
+        switch (kind)
+        {
+            case Kind::CreateMultipartUpload:
+                return R"(<?xml version="1.0" encoding="UTF-8"?><InitiateMultipartUploadResult><Bucket>bucket</Bucket>)"
+                       R"(<Key>dst</Key><UploadId>test-upload-id</UploadId></InitiateMultipartUploadResult>)";
+            case Kind::UploadPartCopy:
+                return R"(<?xml version="1.0" encoding="UTF-8"?><CopyPartResult>)"
+                       R"(<LastModified>2026-01-01T00:00:00.000Z</LastModified><ETag>"part-etag"</ETag></CopyPartResult>)";
+            case Kind::CompleteMultipartUpload:
+                return R"(<?xml version="1.0" encoding="UTF-8"?><CompleteMultipartUploadResult><Bucket>bucket</Bucket>)"
+                       R"(<Key>dst</Key><ETag>"final-etag"</ETag></CompleteMultipartUploadResult>)";
+            case Kind::CopyObject:
+                return R"(<?xml version="1.0" encoding="UTF-8"?><CopyObjectResult>)"
+                       R"(<LastModified>2026-01-01T00:00:00.000Z</LastModified><ETag>"copy-etag"</ETag></CopyObjectResult>)";
+            case Kind::Other:
+                break;
+        }
+        return "";
+    }
+
+    class Handler : public Poco::Net::HTTPRequestHandler
+    {
+    public:
+        explicit Handler(ServerSideCopyStubServer & stub_) : stub(stub_), copy_delay(stub_.copy_delay) {}
+
+        void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
+        {
+            const Kind kind = classify(request);
+            {
+                std::lock_guard lock(stub.mutex);
+                stub.requests.push_back(kind);
+            }
+
+            /// The stub is not touched after the delay: the client may have given up on this request already.
+            if (kind == Kind::UploadPartCopy || kind == Kind::CopyObject)
+                std::this_thread::sleep_for(copy_delay);
+
+            response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+            response.setContentType("application/xml");
+            response.send() << getResponseBody(kind);
+        }
+
+    private:
+        ServerSideCopyStubServer & stub;
+        const std::chrono::milliseconds copy_delay;
+    };
+
+    class Factory : public Poco::Net::HTTPRequestHandlerFactory
+    {
+    public:
+        explicit Factory(ServerSideCopyStubServer & stub_) : stub(stub_) {}
+
+        Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
+        {
+            return new Handler(stub);
+        }
+
+    private:
+        ServerSideCopyStubServer & stub;
+    };
+
+    std::unique_ptr<Poco::Net::ServerSocket> server_socket;
+    Poco::SharedPtr<Factory> factory;
+    std::unique_ptr<Poco::Net::HTTPServer> server;
+    const std::chrono::milliseconds copy_delay;
+
+    mutable std::mutex mutex;
+    std::vector<Kind> requests;
+};
+
+using RequestKind = ServerSideCopyStubServer::Kind;
+
+/// Longer than the 3 s first-attempt receive timeout of a `PUT`, far below the configured `requestTimeoutMs`.
+constexpr auto server_side_copy_delay = std::chrono::milliseconds(3500);
+
+std::shared_ptr<DB::S3::Client> makeServerSideCopyTestClient(const DB::S3::URI & uri)
+{
+    return makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false, [](DB::S3::PocoHTTPClientConfiguration & configuration)
+    {
+        configuration.s3_use_adaptive_timeouts = true;
+        /// The SDK default of 3 s would cut the copy by itself.
+        configuration.requestTimeoutMs = 30 * 1000;
+        /// A cut attempt is resent, so it shows up as a second copy request.
+        configuration.retry_strategy.max_retries = 1;
+    });
+}
+
+}
+
+TEST(IOTestAwsS3Client, UploadPartCopyIsNotRetriedAfterTheAdaptiveTimeout)
+{
+    ServerSideCopyStubServer server(server_side_copy_delay);
+    DB::S3::URI uri(server.getUrl() + "/bucket/src");
+    auto client = makeServerSideCopyTestClient(uri);
+
+    DB::S3::S3RequestSettings settings;
+    settings[DB::S3RequestSetting::max_single_operation_copy_size] = 1;
+
+    Stopwatch watch;
+    bool copied = DB::copyS3File(
+        client, uri.bucket, uri.key, /*src_size=*/ 1024, client, uri.bucket, "dst", settings, DB::ReadSettings{},
+        /*blob_storage_log=*/ nullptr, /*schedule=*/ {}, /*fallback_file_reader=*/ {});
+
+    EXPECT_TRUE(copied);
+    EXPECT_EQ(server.getCopyRequestCount(), 1u);
+    EXPECT_EQ(
+        server.getRequests(),
+        (std::vector<RequestKind>{RequestKind::CreateMultipartUpload, RequestKind::UploadPartCopy, RequestKind::CompleteMultipartUpload}));
+    EXPECT_GE(watch.elapsedMilliseconds(), static_cast<UInt64>(server_side_copy_delay.count()));
+}
+
+TEST(IOTestAwsS3Client, CopyObjectIsNotRetriedAfterTheAdaptiveTimeout)
+{
+    ServerSideCopyStubServer server(server_side_copy_delay);
+    DB::S3::URI uri(server.getUrl() + "/bucket/src");
+    auto client = makeServerSideCopyTestClient(uri);
+
+    Stopwatch watch;
+    bool copied = DB::copyS3File(
+        client, uri.bucket, uri.key, /*src_size=*/ 1024, client, uri.bucket, "dst", DB::S3::S3RequestSettings{}, DB::ReadSettings{},
+        /*blob_storage_log=*/ nullptr, /*schedule=*/ {}, /*fallback_file_reader=*/ {});
+
+    EXPECT_TRUE(copied);
+    EXPECT_EQ(server.getCopyRequestCount(), 1u);
+    EXPECT_EQ(server.getRequests(), (std::vector<RequestKind>{RequestKind::CopyObject}));
+    EXPECT_GE(watch.elapsedMilliseconds(), static_cast<UInt64>(server_side_copy_delay.count()));
+}
+
 TEST(IOTestAwsS3Client, DetectRegionFromS3ExpressEndpoint)
 {
     DB::RemoteHostFilter remote_host_filter;
@@ -1041,7 +1249,7 @@ TEST(IOTestAwsS3Client, AssumeRoleWithSessionPolicy)
     /// `ClientFactory::create` normally copies the region into the SDK configuration. This test bypasses it.
     client_configuration.region = region;
 
-    auto credentials_provider = std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(access_key_id, "SECRET_ACCESS_KEY");
+    auto credentials_provider = std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(Aws::String(access_key_id), "SECRET_ACCESS_KEY");
     auto client = DB::S3::AWSAssumeRoleClient::create(credentials_provider, client_configuration, sts_http.getUrl());
     ASSERT_TRUE(client);
 
@@ -1050,7 +1258,7 @@ TEST(IOTestAwsS3Client, AssumeRoleWithSessionPolicy)
     const std::string policy
         = R"({"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::bucket/table/*"}]})";
 
-    auto outcome = client->assumeRole(DB::S3::AssumeRoleRequest(role_arn, role_session_name, "", policy));
+    auto outcome = client->assumeRole(DB::S3::AssumeRoleRequest(Aws::String(role_arn), Aws::String(role_session_name), "", Aws::String(policy)));
     ASSERT_TRUE(outcome.IsSuccess()) << outcome.GetError().GetMessage();
 
     ASSERT_TRUE(sts_http.hasLastRequest());
@@ -1382,7 +1590,7 @@ public:
         server->start();
     }
     ~FixedETagServer() { server->stop(); }
-    std::string getUrl() const { return "http://" + server_socket->address().toString(); }
+    [[nodiscard]] std::string getUrl() const { return "http://" + server_socket->address().toString(); }
 private:
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
     std::unique_ptr<Poco::Net::HTTPServer> server;
@@ -1452,7 +1660,7 @@ public:
         server->start();
     }
     ~IfMatchAwareServer() { server->stop(); }
-    std::string getUrl() const { return "http://" + server_socket->address().toString(); }
+    [[nodiscard]] std::string getUrl() const { return "http://" + server_socket->address().toString(); }
 private:
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
     std::unique_ptr<Poco::Net::HTTPServer> server;
@@ -1738,7 +1946,7 @@ public:
         server->start();
     }
     ~FunctionHTTPServer() { server->stop(); }
-    std::string getUrl() const { return "http://" + server_socket->address().toString(); }
+    [[nodiscard]] std::string getUrl() const { return "http://" + server_socket->address().toString(); }
 
 private:
     static Poco::AutoPtr<Poco::Net::HTTPServerParams> makeServerParams(int max_threads)
@@ -1818,6 +2026,14 @@ void runFibersAndReleaseWhenReady(
 {
     std::vector<silk::FiberFuture> futures(fiber_count);
     size_t spawned = 0;
+    /// The started fibers use `task` and `futures`, so they are released and finish before the function returns,
+    /// also when a spawn throws.
+    SCOPE_EXIT({
+        release.set();
+        for (size_t i = 0; i < spawned; ++i)
+            EXPECT_EQ(futures[i].wait(), 0);
+    });
+
     while (spawned < fiber_count && Silk::spawn([&task, i = spawned]
         {
             task(i);
@@ -1828,10 +2044,6 @@ void runFibersAndReleaseWhenReady(
 
     /// Reported before the release: fibers that block their threads may never finish.
     EXPECT_TRUE(spawned == fiber_count && ready.tryWait(60'000)) << "The fibers did not get ready within 60 seconds";
-    /// The started fibers use `task`, so they are released and finish before the function returns.
-    release.set();
-    for (size_t i = 0; i < spawned; ++i)
-        EXPECT_EQ(futures[i].wait(), 0);
 }
 
 /// Sets `release` when all fibers have started `task`. A server that holds its answer until `release` lets all fibers
@@ -1851,8 +2063,8 @@ void runFibersAndReleaseWhenAllStarted(size_t fiber_count, Poco::Event & release
 
 }
 
-/// S3 requests from fibers use cooperative transport also outside of `AMBER`: more fibers than the threads that run them
-/// wait for their answers at once, which the server holds until a request of every fiber has arrived. With blocking
+/// S3 requests from fibers use fiber-aware transport also outside of `AMBER`: more fibers than the threads that run them
+/// wait for their answers at once, which the server holds until a request of every fiber has arrived. With fiber-unaware
 /// transport every waiting fiber holds its thread, so the requests of the other fibers are never sent.
 TEST(IOTestAwsS3Client, RequestsFromConcurrentFibersDoNotBlockSchedulerThreads)
 {

@@ -70,7 +70,7 @@ HTTPSessionPtr makeHTTPSession(
     const ConnectionTimeouts & timeouts,
     const ProxyConfiguration & proxy_config = {},
     UInt64 * connect_time = nullptr,
-    HTTPConnectionTransport transport = HTTPConnectionTransport::Blocking
+    HTTPConnectionTransport transport = HTTPConnectionTransport::FiberUnaware
 );
 
 bool isRedirect(Poco::Net::HTTPResponse::HTTPStatus status);
