@@ -434,7 +434,6 @@ void readStringUntilAmpersand(String & s, ReadBuffer & buf);
 void readStringUntilEquals(String & s, ReadBuffer & buf);
 void readStringUntilColon(String & s, ReadBuffer & buf);
 
-void readStringUntilWhitespaceDelimiter(String & s, ReadBuffer & buf);
 
 /** Read string in CSV format.
   * Parsing rules:
@@ -1018,6 +1017,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 
             return ReturnType(true);
         }
+        /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
         if constexpr (throw_exception)
             readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
         else if (!readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf))
@@ -1939,8 +1939,7 @@ void readBinary(V & x, ReadBuffer & buf)
     readVarUInt(size, buf);
 
     if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                        "Too large array size {} (maximum: {})", size, DEFAULT_MAX_STRING_SIZE);
+        throw Poco::Exception("Too large vector size.");
 
     x.resize(size);
     for (size_t i = 0; i < size; ++i)

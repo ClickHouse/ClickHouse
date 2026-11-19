@@ -50,11 +50,6 @@ bool DataLakeStorageSettings::hasBuiltin(std::string_view name)
     return DataLakeStorageSettingsImpl::hasBuiltin(name);
 }
 
-std::string_view DataLakeStorageSettings::resolveName(std::string_view name)
-{
-    return DataLakeStorageSettingsTraits::resolveName(name);
-}
-
 void DataLakeStorageSettings::loadFromSettingsChanges(const SettingsChanges & changes)
 {
     for (const auto & [name, value, _] : changes)

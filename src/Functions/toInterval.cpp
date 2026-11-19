@@ -1,3 +1,5 @@
+#include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <array>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
@@ -7,9 +9,6 @@
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <base/EnumReflection.h>
 
 namespace DB
 {
@@ -17,12 +16,15 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
 {
 
-using IntervalFunctionResolvers = std::array<FunctionOverloadResolverPtr, magic_enum::enum_count<IntervalKind::Kind>()>;
+constexpr size_t num_interval_kinds = static_cast<size_t>(IntervalKind::Kind::Year) + 1;
+using IntervalFunctionResolvers = std::array<FunctionOverloadResolverPtr, num_interval_kinds>;
 
 class FunctionToInterval final : public IFunction
 {
@@ -55,7 +57,7 @@ public:
         ColumnsWithTypeAndName temp_columns(1);
         temp_columns[0] = arguments[0];
 
-        const auto & to_interval_function = to_interval_functions[kind.toBinary()];
+        const auto & to_interval_function = to_interval_functions[static_cast<size_t>(kind.kind)];
         return to_interval_function->build(temp_columns)->execute(temp_columns, result_type, input_rows_count, /* dry run = */ false);
     }
 
@@ -72,10 +74,10 @@ public:
     explicit FunctionToIntervalOverloadResolver(ContextPtr context)
     {
         auto & factory = FunctionFactory::instance();
-        for (size_t i = 0; i < to_interval_functions.size(); ++i)
+        for (size_t i = 0; i < num_interval_kinds; ++i)
         {
-            const IntervalKind kind = magic_enum::enum_value<IntervalKind::Kind>(i);
-            to_interval_functions[i] = factory.get(kind.toNameOfFunctionToIntervalDataType(), context);
+            IntervalKind ik(static_cast<IntervalKind::Kind>(i));
+            to_interval_functions[i] = factory.get(ik.toNameOfFunctionToIntervalDataType(), context);
         }
     }
 
@@ -85,9 +87,25 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(Number | StringOrFixedString | Interval, const unit String) -> IntervalType(unit)";
+        if (arguments.size() != 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be 2 arguments", getName());
+
+        const ColumnConst * kind_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+        if (!kind_column)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be constant string: "
+                "unit of interval", getName());
+
+        String interval_kind = Poco::toLower(kind_column->getValue<String>());
+        if (interval_kind.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument (unit) for function {} cannot be empty", getName());
+
+        IntervalKind kind;
+        if (!IntervalKind::tryParseString(interval_kind, kind.kind))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like an interval unit in {}", interval_kind, getName());
+
+        return std::make_shared<DataTypeInterval>(kind);
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
@@ -106,7 +124,7 @@ public:
 
         String interval_kind = Poco::toLower(kind_column->getValue<String>());
         IntervalKind kind;
-        if (!IntervalKind::tryParseString(interval_kind, kind))
+        if (!IntervalKind::tryParseString(interval_kind, kind.kind))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like an interval unit in {}", interval_kind, getName());
 
         auto function = std::make_shared<FunctionToInterval>(to_interval_functions, kind);
@@ -152,7 +170,7 @@ SELECT
         )",
         R"(
 ┌─seconds─┬─days─┬─months─┐
-│       5 │    3 │      2 │
+│ 5       │ 3    │ 2      │
 └─────────┴──────┴────────┘
         )"},
         {"Use intervals in date arithmetic", R"(

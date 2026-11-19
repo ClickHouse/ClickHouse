@@ -6,13 +6,13 @@
     {
       "expandable": true,
       "expanded": true,
-      "group": "Справочник по SQL",
+      "group": "Справочник по ClickHouse SQL",
       "pages": [
         "ru/reference/syntax",
         {
           "expandable": true,
           "expanded": false,
-          "group": "Операторы SQL",
+          "group": "Команды",
           "pages": [
             "ru/reference/statements/index",
             {
@@ -108,7 +108,6 @@
                 },
                 "ru/reference/statements/create/masking-policy",
                 "ru/reference/statements/create/function",
-                "ru/reference/statements/create/handler",
                 "ru/reference/statements/create/named-collection",
                 "ru/reference/statements/create/quota",
                 "ru/reference/statements/create/role",
@@ -116,7 +115,7 @@
                 "ru/reference/statements/create/settings-profile",
                 {
                   "expanded": false,
-                  "group": "TABLE",
+                  "group": "ТАБЛИЦА",
                   "pages": [
                     "ru/reference/statements/create/table",
                     "ru/reference/statements/create/table/codec",
@@ -124,7 +123,6 @@
                     "ru/reference/statements/create/table/replace-table"
                   ]
                 },
-                "ru/reference/statements/create/token",
                 "ru/reference/statements/create/user",
                 "ru/reference/statements/create/view"
               ]
@@ -140,7 +138,6 @@
             "ru/reference/statements/explain",
             "ru/reference/statements/grant",
             "ru/reference/statements/hypothetical-index",
-            "ru/reference/statements/hypothetical-projection",
             "ru/reference/statements/in",
             "ru/reference/statements/insert-into",
             "ru/reference/statements/kill",
@@ -188,7 +185,8 @@
             "ru/reference/statements/truncate",
             "ru/reference/statements/undrop",
             "ru/reference/statements/update",
-            "ru/reference/statements/use"
+            "ru/reference/statements/use",
+            "ru/reference/statements/watch"
           ]
         },
         {
@@ -196,7 +194,9 @@
           "expanded": false,
           "group": "Операторы",
           "pages": [
-            "ru/reference/operators/index"
+            "ru/reference/operators/index",
+            "ru/reference/operators/exists",
+            "ru/reference/operators/distributed-ddl"
           ]
         }
       ]
@@ -266,7 +266,7 @@
         },
         {
           "expanded": false,
-          "group": "Типы с поддержкой NULL и необязательных значений",
+          "group": "Nullable и опциональные типы",
           "pages": [
             "ru/reference/data-types/nullable",
             "ru/reference/data-types/lowcardinality"
@@ -293,7 +293,7 @@
         },
         {
           "expanded": false,
-          "group": "Особые типы данных",
+          "group": "Специальные типы данных",
           "pages": [
             "ru/reference/data-types/special-data-types/index",
             "ru/reference/data-types/special-data-types/expression",
@@ -386,7 +386,7 @@
             },
             {
               "expanded": false,
-              "group": "Особые",
+              "group": "Специальные",
               "pages": [
                 "ru/reference/engines/table-engines/special/index",
                 "ru/reference/engines/table-engines/special/alias",
@@ -418,23 +418,14 @@
             "ru/reference/engines/database-engines/index",
             "ru/reference/engines/database-engines/atomic",
             "ru/reference/engines/database-engines/backup",
-            "ru/reference/engines/database-engines/cluster",
             "ru/reference/engines/database-engines/datalake",
-            "ru/reference/engines/database-engines/dictionary",
-            "ru/reference/engines/database-engines/filesystem",
-            "ru/reference/engines/database-engines/hdfs",
             "ru/reference/engines/database-engines/materialized-postgresql",
-            "ru/reference/engines/database-engines/memory",
             "ru/reference/engines/database-engines/mysql",
-            "ru/reference/engines/database-engines/ordinary",
-            "ru/reference/engines/database-engines/overlay",
             "ru/reference/engines/database-engines/postgresql",
             "ru/reference/engines/database-engines/remote",
             "ru/reference/engines/database-engines/replicated",
-            "ru/reference/engines/database-engines/s3",
             "ru/reference/engines/database-engines/shared",
-            "ru/reference/engines/database-engines/sqlite",
-            "ru/reference/engines/database-engines/url"
+            "ru/reference/engines/database-engines/sqlite"
           ]
         }
       ]
@@ -469,7 +460,7 @@
             "ru/reference/functions/regular-functions/functions-for-nulls",
             {
               "expanded": false,
-              "group": "Геоданные",
+              "group": "Geo",
               "pages": [
                 "ru/reference/functions/regular-functions/geo/index",
                 "ru/reference/functions/regular-functions/geo/coordinates",
@@ -566,7 +557,6 @@
                 "ru/reference/functions/aggregate-functions/exponentialTimeDecayedSum",
                 "ru/reference/functions/aggregate-functions/first_value",
                 "ru/reference/functions/aggregate-functions/flame_graph",
-                "ru/reference/functions/aggregate-functions/gini",
                 "ru/reference/functions/aggregate-functions/groupArray",
                 "ru/reference/functions/aggregate-functions/groupArrayArray",
                 "ru/reference/functions/aggregate-functions/groupArrayInsertAt",
@@ -598,7 +588,6 @@
                 "ru/reference/functions/aggregate-functions/maxIntersectionsPosition",
                 "ru/reference/functions/aggregate-functions/maxMap",
                 "ru/reference/functions/aggregate-functions/meanZTest",
-                "ru/reference/functions/aggregate-functions/mergedJSONPatch",
                 "ru/reference/functions/aggregate-functions/median",
                 "ru/reference/functions/aggregate-functions/min",
                 "ru/reference/functions/aggregate-functions/minMap",
@@ -640,15 +629,6 @@
                 "ru/reference/functions/aggregate-functions/quantileTimingWeighted",
                 "ru/reference/functions/aggregate-functions/quantilesTimingWeighted",
                 "ru/reference/functions/aggregate-functions/rankCorr",
-                "ru/reference/functions/aggregate-functions/regr_avgx",
-                "ru/reference/functions/aggregate-functions/regr_avgy",
-                "ru/reference/functions/aggregate-functions/regr_count",
-                "ru/reference/functions/aggregate-functions/regr_intercept",
-                "ru/reference/functions/aggregate-functions/regr_r2",
-                "ru/reference/functions/aggregate-functions/regr_slope",
-                "ru/reference/functions/aggregate-functions/regr_sxx",
-                "ru/reference/functions/aggregate-functions/regr_sxy",
-                "ru/reference/functions/aggregate-functions/regr_syy",
                 "ru/reference/functions/aggregate-functions/simpleLinearRegression",
                 "ru/reference/functions/aggregate-functions/singleValueOrNull",
                 "ru/reference/functions/aggregate-functions/skewPop",
@@ -669,38 +649,17 @@
                 "ru/reference/functions/aggregate-functions/sumMapWithOverflow",
                 "ru/reference/functions/aggregate-functions/sumWithOverflow",
                 "ru/reference/functions/aggregate-functions/theilsU",
-                "ru/reference/functions/aggregate-functions/timeSeriesAvgToGrid",
-                "ru/reference/functions/aggregate-functions/timeSeriesBottomKMasks",
                 "ru/reference/functions/aggregate-functions/timeSeriesChangesToGrid",
-                "ru/reference/functions/aggregate-functions/timeSeriesCountToGrid",
                 "ru/reference/functions/aggregate-functions/timeSeriesDeltaToGrid",
                 "ru/reference/functions/aggregate-functions/timeSeriesDerivToGrid",
-                "ru/reference/functions/aggregate-functions/timeSeriesFirstToGrid",
                 "ru/reference/functions/aggregate-functions/timeSeriesGroupArray",
-                "ru/reference/functions/aggregate-functions/timeSeriesIncreaseToGrid",
                 "ru/reference/functions/aggregate-functions/timeSeriesInstantDeltaToGrid",
                 "ru/reference/functions/aggregate-functions/timeSeriesInstantRateToGrid",
-                "ru/reference/functions/aggregate-functions/timeSeriesLastToGrid",
                 "ru/reference/functions/aggregate-functions/timeSeriesLastTwoSamples",
-                "ru/reference/functions/aggregate-functions/timeSeriesLimitKMasks",
-                "ru/reference/functions/aggregate-functions/timeSeriesLinearRegressionToGrid",
-                "ru/reference/functions/aggregate-functions/timeSeriesMadToGrid",
-                "ru/reference/functions/aggregate-functions/timeSeriesMaxToGrid",
-                "ru/reference/functions/aggregate-functions/timeSeriesMinToGrid",
                 "ru/reference/functions/aggregate-functions/timeSeriesPredictLinearToGrid",
-                "ru/reference/functions/aggregate-functions/timeSeriesPresentToGrid",
-                "ru/reference/functions/aggregate-functions/timeSeriesQuantileToGrid",
                 "ru/reference/functions/aggregate-functions/timeSeriesRateToGrid",
                 "ru/reference/functions/aggregate-functions/timeSeriesResampleToGridWithStaleness",
                 "ru/reference/functions/aggregate-functions/timeSeriesResetsToGrid",
-                "ru/reference/functions/aggregate-functions/timeSeriesStddevToGrid",
-                "ru/reference/functions/aggregate-functions/timeSeriesStdvarToGrid",
-                "ru/reference/functions/aggregate-functions/timeSeriesSumToGrid",
-                "ru/reference/functions/aggregate-functions/timeSeriesTimestampOfFirstToGrid",
-                "ru/reference/functions/aggregate-functions/timeSeriesTimestampOfLastToGrid",
-                "ru/reference/functions/aggregate-functions/timeSeriesTimestampOfMaxToGrid",
-                "ru/reference/functions/aggregate-functions/timeSeriesTimestampOfMinToGrid",
-                "ru/reference/functions/aggregate-functions/timeSeriesTopKMasks",
                 "ru/reference/functions/aggregate-functions/topK",
                 "ru/reference/functions/aggregate-functions/topKWeighted",
                 "ru/reference/functions/aggregate-functions/uniq",
@@ -773,7 +732,7 @@
             "ru/reference/functions/table-functions/s3Cluster",
             "ru/reference/functions/table-functions/sqlite",
             "ru/reference/functions/table-functions/timeSeriesData",
-            "ru/reference/functions/table-functions/timeSeriesMetricFamilies",
+            "ru/reference/functions/table-functions/timeSeriesMetrics",
             "ru/reference/functions/table-functions/timeSeriesSamples",
             "ru/reference/functions/table-functions/timeSeriesSelector",
             "ru/reference/functions/table-functions/timeSeriesTags",
@@ -976,7 +935,6 @@
           ]
         },
         "ru/reference/formats/SQLInsert",
-        "ru/reference/formats/SQLite",
         {
           "expanded": false,
           "group": "TabSeparated",
@@ -1001,6 +959,15 @@
         "ru/reference/formats/Values",
         "ru/reference/formats/Vertical",
         "ru/reference/formats/XML"
+      ]
+    },
+    {
+      "expandable": true,
+      "expanded": false,
+      "group": "Интерфейсы",
+      "pages": [
+        "ru/reference/interfaces/specs/NativeProtocol",
+        "ru/reference/interfaces/specs/NativeFormat"
       ]
     },
     {
@@ -1052,7 +1019,6 @@
         "ru/reference/system-tables/codecs",
         "ru/reference/system-tables/collations",
         "ru/reference/system-tables/columns",
-        "ru/reference/system-tables/columns_cache",
         "ru/reference/system-tables/completions",
         "ru/reference/system-tables/constraints",
         "ru/reference/system-tables/contributors",
@@ -1099,17 +1065,14 @@
         "ru/reference/system-tables/histogram_metric_log",
         "ru/reference/system-tables/histogram_metrics",
         "ru/reference/system-tables/hypothetical_indexes",
-        "ru/reference/system-tables/hypothetical_projections",
         "ru/reference/system-tables/iceberg_files",
         "ru/reference/system-tables/iceberg_history",
         "ru/reference/system-tables/iceberg_metadata_log",
         "ru/reference/system-tables/information_schema",
         "ru/reference/system-tables/instrumentation",
-        "ru/reference/system-tables/jemalloc_arena_bins",
         "ru/reference/system-tables/jemalloc_bins",
-        "ru/reference/system-tables/jemalloc_profile_text",
-        "ru/reference/system-tables/jemalloc_sampled_allocations",
         "ru/reference/system-tables/jemalloc_stats",
+        "ru/reference/system-tables/jemalloc_profile_text",
         "ru/reference/system-tables/kafka_consumers",
         "ru/reference/system-tables/keeper_changelogs",
         "ru/reference/system-tables/keeper_cluster",
@@ -1171,13 +1134,11 @@
         "ru/reference/system-tables/schema_inference_cache",
         "ru/reference/system-tables/server_settings",
         "ru/reference/system-tables/session_log",
-        "ru/reference/system-tables/session_query_ids",
         "ru/reference/system-tables/settings",
         "ru/reference/system-tables/settings_changes",
         "ru/reference/system-tables/settings_profile_elements",
         "ru/reference/system-tables/settings_profiles",
         "ru/reference/system-tables/stack_trace",
-        "ru/reference/system-tables/statements",
         "ru/reference/system-tables/stemmers",
         "ru/reference/system-tables/storage_policies",
         "ru/reference/system-tables/symbols",
@@ -1211,7 +1172,7 @@
       ]
     },
     {
-      "group": "Озера данных",
+      "group": "Озёра данных",
       "pages": [
         "ru/reference/datalakes"
       ]

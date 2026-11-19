@@ -1,23 +1,14 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 
-#include <algorithm>
-#include <optional>
-#include <unordered_set>
 #include <utility>
-#include <vector>
 
 namespace DB::ErrorCodes
 {
@@ -102,21 +93,6 @@ bool dagContainsNonReadySet(const ActionsDAG & dag)
     return false;
 }
 
-bool canHoistGatherThroughStep(const IQueryPlanStep & step)
-{
-    const ActionsDAG * dag = nullptr;
-    if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
-        dag = &expression->getExpression();
-    else if (const auto * filter = typeid_cast<const FilterStep *>(&step))
-        dag = &filter->getExpression();
-    else if (!typeid_cast<const BuildRuntimeFilterStep *>(&step))
-        return false;
-
-    /// Per-block functions (rowNumberInAllBlocks, blockNumber, nowInBlock, ...) depend on the whole block
-    /// stream; below a gather they would run per shard and produce different values.
-    return !(dag && dagContainsNonDeterministicFunction(*dag));
-}
-
 bool dagContainsNonDeterministicFunction(const ActionsDAG & dag)
 {
     /// We are interested in functions that are non-deterministic *within* a single query --
@@ -127,169 +103,39 @@ bool dagContainsNonDeterministicFunction(const ActionsDAG & dag)
     /// value for all rows in a single query (`isDeterministicInScopeOfQuery() == true`), so
     /// the optimizer can soundly use their plan-time value and they should NOT block the
     /// JOIN-conversion rewrite.
-    /// The walk also looks inside the lambdas of the DAG - a non-deterministic call that depends on a
-    /// lambda argument lives in the lambda's own `ActionsDAG`, not in this one - which is what
-    /// `allNodeFunctions` covers, including a lambda that constant folding turned into a `COLUMN` node.
     for (const auto & node : dag.getNodes())
-        if (!allNodeFunctions(node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); }))
-            return true;
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
+        {
+            if (!node.function_base->isDeterministicInScopeOfQuery())
+                return true;
+        }
+    }
     return false;
 }
 
 bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
 {
-    auto is_insensitive = [](const IFunctionBase & function)
-    {
-        return function.isDeterministicInScopeOfQuery() && !function.isStateful() && !function.hasObservableSideEffects();
-    };
-
-    /// A lambda without captures is constant-folded into a `COLUMN` node holding a `ColumnFunction`, which
-    /// hides the functions of its body from a plain scan over the function nodes; `allNodeFunctions`
-    /// descends into it.
+    /// `sleep` and `sleepEachRow` are the functions with observable side effects. A lambda hides the
+    /// functions of its body, so it counts as sensitive.
     for (const auto & node : dag.getNodes())
     {
-        if (!allNodeFunctions(node, is_insensitive))
+        if (node.result_type && WhichDataType(node.result_type).isFunction())
+            return true;
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base
+            && (!node.function_base->isDeterministicInScopeOfQuery() || node.function_base->isStateful()
+                || node.function_base->getName() == "sleep" || node.function_base->getName() == "sleepEachRow"))
             return true;
     }
 
     return false;
-}
-
-namespace
-{
-
-/// Names of the outputs of `dag` computed from an input that `is_marked_input` accepts.
-template <typename IsMarkedInput>
-NameSet outputsReadingMarkedInputs(const ActionsDAG & dag, IsMarkedInput && is_marked_input)
-{
-    std::unordered_map<const ActionsDAG::Node *, bool> marked;
-    std::vector<std::pair<const ActionsDAG::Node *, bool>> stack;
-    for (const auto * output : dag.getOutputs())
-        stack.emplace_back(output, false);
-
-    while (!stack.empty())
-    {
-        auto [node, expanded] = stack.back();
-        stack.pop_back();
-
-        if (marked.contains(node))
-            continue;
-
-        if (node->type == ActionsDAG::ActionType::INPUT)
-        {
-            marked.emplace(node, is_marked_input(*node));
-            continue;
-        }
-
-        if (!expanded)
-        {
-            stack.emplace_back(node, true);
-            for (const auto * child : node->children)
-                if (!marked.contains(child))
-                    stack.emplace_back(child, false);
-            continue;
-        }
-
-        marked.emplace(node, std::ranges::any_of(node->children, [&](const auto * child) { return marked.at(child); }));
-    }
-
-    NameSet result;
-    for (const auto * output : dag.getOutputs())
-        if (marked.at(output))
-            result.insert(output->result_name);
-    return result;
-}
-
-}
-
-ConstantColumns collectConstantColumns(const QueryPlan::Node & root)
-{
-    ConstantColumns result;
-    static const NameSet no_columns;
-    auto constant_columns_of = [&](const QueryPlan::Node * node) -> const NameSet &
-    {
-        auto it = result.find(node);
-        return it == result.end() ? no_columns : it->second;
-    };
-
-    std::unordered_set<const QueryPlan::Node *> visited;
-    std::vector<std::pair<const QueryPlan::Node *, bool>> stack{{&root, false}};
-    while (!stack.empty())
-    {
-        auto [node, expanded] = stack.back();
-        stack.pop_back();
-
-        if (!expanded)
-        {
-            if (!visited.insert(node).second)
-                continue;
-            stack.emplace_back(node, true);
-            for (const auto * child : node->children)
-                stack.emplace_back(child, false);
-            continue;
-        }
-
-        NameSet constants;
-        const auto * step = node->step.get();
-        if (step && step->hasOutputHeader())
-            for (const auto & column : *step->getOutputHeader())
-                if (column.column && isColumnConst(*column.column))
-                    constants.insert(column.name);
-
-        const ActionsDAG * dag = nullptr;
-        if (const auto * filter = typeid_cast<const FilterStep *>(step))
-            dag = &filter->getExpression();
-        else if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
-            dag = &expression->getExpression();
-
-        const auto * join = typeid_cast<const JoinStepLogical *>(step);
-        if (dag && node->children.size() == 1)
-        {
-            const auto & below = constant_columns_of(node->children.front());
-            constants.merge(outputsReadingMarkedInputs(*dag, [&](const auto & input) { return below.contains(input.result_name); }));
-
-            /// A name the DAG neither produces nor consumes is forwarded by `ActionsDAG::updateHeader`.
-            NameSet known_columns;
-            for (const auto * output : dag->getOutputs())
-                known_columns.insert(output->result_name);
-            for (const auto * input : dag->getInputs())
-                known_columns.insert(input->result_name);
-            for (const auto & name : below)
-                if (!known_columns.contains(name))
-                    constants.insert(name);
-        }
-        else if (join && node->children.size() == 2)
-        {
-            const auto & left = constant_columns_of(node->children[0]);
-            const auto & right = constant_columns_of(node->children[1]);
-            constants.merge(outputsReadingMarkedInputs(
-                join->getActionsDAG(),
-                [&](const auto & input)
-                {
-                    JoinActionRef ref(&input, join->getExpressionActions());
-                    return (ref.fromLeft() && left.contains(input.result_name)) || (ref.fromRight() && right.contains(input.result_name));
-                }));
-        }
-        else
-        {
-            for (const auto * child : node->children)
-            {
-                const auto & below = constant_columns_of(child);
-                constants.insert(below.begin(), below.end());
-            }
-        }
-
-        result[node] = std::move(constants);
-    }
-    return result;
 }
 
 FilterResult filterResultForNotMatchedRows(
     const ActionsDAG & filter_dag,
     const String & filter_column_name,
     const Block & input_stream_header,
-    bool allow_unknown_function_arguments,
-    const QueryPlan::Node * side_node
+    bool allow_unknown_function_arguments
 )
 {
     /// `ActionsDAG::evaluatePartialResult` (called below) routes every function node through
@@ -336,12 +182,7 @@ FilterResult filterResultForNotMatchedRows(
             continue;
         }
 
-        /// A not-matched row holds the column's own default (`Date32`: 1970-01-01, not `getDefault`'s
-        /// 1900-01-01), and where default insertion is not trivial no probe is guaranteed faithful.
-        if (!input->result_type->isDefaultInsertTrivial())
-            continue;
-
-        auto constant_column = createColumnConstWithDefaultValue(input->result_type->createColumn());
+        auto constant_column = input->result_type->createColumnConst(1, input->result_type->getDefault());
         auto constant_column_with_type_and_name = ColumnWithTypeAndName{std::move(constant_column), input->result_type, input->result_name};
         filter_input.emplace(input, std::move(constant_column_with_type_and_name));
     }
@@ -349,60 +190,6 @@ FilterResult filterResultForNotMatchedRows(
     const auto * filter_node = filter_dag.tryFindInOutputs(filter_column_name);
     if (!filter_node)
         return FilterResult::UNKNOWN;
-
-    /// Not-matched rows reach the filter as full columns, but a constant of this side may stay constant after the rewrite.
-    ActionsDAG::NodeRawConstPtrs readers;
-    auto full_input = filter_input;
-    std::optional<NameSet> side_constants;
-    for (const auto * input : ActionsDAG::getInputsReadByRepresentation(*filter_node, &readers))
-    {
-        const auto * column = input_stream_header.findByName(input->result_name);
-        if (!column)
-            continue;
-        if (column->column && isColumnConst(*column->column))
-            return FilterResult::UNKNOWN;
-        if (side_node)
-        {
-            if (!side_constants)
-            {
-                auto constant_columns = collectConstantColumns(*side_node);
-                auto it = constant_columns.find(side_node);
-                side_constants = it == constant_columns.end() ? NameSet{} : std::move(it->second);
-            }
-            if (side_constants->contains(input->result_name))
-                return FilterResult::UNKNOWN;
-        }
-        if (auto it = full_input.find(input); it != full_input.end())
-            it->second.column = it->second.column->convertToFullColumnIfConst();
-    }
-
-    /// The readers see the full column; above them only values matter, so their one-row results are constants.
-    if (!readers.empty())
-    {
-        ColumnsWithTypeAndName reader_results;
-        try
-        {
-            reader_results = ActionsDAG::evaluatePartialResult(
-                full_input,
-                readers,
-                /*input_rows_count=*/1,
-                { .skip_materialize = true, .allow_unknown_function_arguments = allow_unknown_function_arguments });
-        }
-        catch (const Exception &)
-        {
-            return FilterResult::UNKNOWN;
-        }
-
-        for (size_t i = 0; i < readers.size(); ++i)
-        {
-            auto & result = reader_results[i];
-            if (!result.column || result.column->size() != 1 || WhichDataType(result.type).isFunction())
-                result.column = nullptr;
-            else if (!isColumnConst(*result.column))
-                result.column = ColumnConst::create(result.column, 1);
-            filter_input[readers[i]] = std::move(result);
-        }
-    }
 
     ActionsDAG::NodeRawConstPtrs targets = {filter_node};
     auto conjunction_atoms = ActionsDAG::extractConjunctionAtoms(filter_node);
@@ -440,82 +227,5 @@ FilterResult filterResultForNotMatchedRows(
 
     return FilterResult::UNKNOWN;
 }
-
-const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node)
-{
-    while (node)
-    {
-        if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
-            return reading;
-        if (node->children.size() != 1)
-            return nullptr;
-        node = node->children.front();
-    }
-    return nullptr;
-}
-
-bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & description, size_t max_peel)
-{
-    for (size_t peeled = 0; peeled < max_peel; ++peeled)
-    {
-        const auto * expression_step = typeid_cast<const ExpressionStep *>(node->step.get());
-        if (!expression_step)
-            return true;
-        if (node->children.size() != 1)
-            return false;
-
-        /// a moved sort changes the rows this step sees, e.g. `rowNumberInAllBlocks` would give other values
-        const ActionsDAG & dag = expression_step->getExpression();
-        if (dag.hasArrayJoin() || isSensitiveToEvaluationCount(dag))
-            return false;
-
-        for (auto & sort_column : description)
-        {
-            const auto * out_node = dag.tryFindInOutputs(sort_column.column_name);
-            if (!out_node)
-                return false;
-
-            while (out_node->type == ActionsDAG::ActionType::ALIAS)
-                out_node = out_node->children.front();
-
-            if (out_node->type != ActionsDAG::ActionType::INPUT)
-                return false;
-
-            sort_column.column_name = out_node->result_name;
-        }
-
-        node = node->children.front();
-    }
-
-    return true;
-}
-
-bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
-{
-    /// A STREAM read selects its parts and ranges during execution, so the range set captured
-    /// here is not the one that will be read.
-    if (reading->getQueryInfo().isStream())
-        return false;
-
-    /// Allow FINAL only for ReplacingMergeTree.
-    if (reading->isQueryWithFinal()
-        && reading->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Replacing)
-        return false;
-
-    if (reading->isQueryWithSampling())
-        return false;
-
-    if (reading->getMutationsSnapshot()->hasPatchParts())
-        return false;
-
-    /// A row is addressed by the virtual columns `_part_starting_offset` and `_part_offset`, which a column of the table
-    /// with the same name takes the place of: the second read would fetch the rows that column's values point to.
-    const auto & columns = reading->getStorageMetadata()->getColumns();
-    if (columns.has("_part_offset") || columns.has("_part_starting_offset"))
-        return false;
-
-    return true;
-}
-
 }
 }
