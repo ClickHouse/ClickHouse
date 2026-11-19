@@ -1,9 +1,11 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
 #include <Core/Settings.h>
@@ -441,6 +443,17 @@ std::shared_ptr<const ActionsDAG> ReadFromFormatInfo::getFormatFilter(const std:
     return std::make_shared<const ActionsDAG>(std::move(*dag));
 }
 
+bool ReadFromFormatInfo::canSkipDataByStatisticsOf(const ColumnWithTypeAndName & column) const
+{
+    if (formatReadsHivePartitionColumns())
+        return false;
+    const auto * format_column = format_header.findByName(column.name);
+    if (!format_column || !format_column->type->equals(*column.type) || columns_description.hasDefault(column.name))
+        return false;
+    WhichDataType which(removeLowCardinalityAndNullable(column.type));
+    return which.isNativeInteger() || which.isDate() || which.isDate32() || which.isDecimal();
+}
+
 void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
     source_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
@@ -521,6 +534,11 @@ bool formatNeedsEagerKeyConditionSets(const String & format_name)
     return boost::iequals(format_name, "Parquet")
         || boost::iequals(format_name, "ORC")
         || boost::iequals(format_name, "Vortex");
+}
+
+bool formatSkipsDataByStatistics(const String & format_name, const FormatSettings & format_settings)
+{
+    return boost::iequals(format_name, "Parquet") && format_settings.parquet.filter_push_down;
 }
 
 void prepareEagerKeyConditionSets(
