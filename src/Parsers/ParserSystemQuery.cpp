@@ -576,7 +576,10 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             if (ParserKeyword{Keyword::INDEX}.ignore(pos, expected))
             {
-                if (!ParserIdentifier{}.parse(pos, res->index, expected))
+                ASTPtr index_ast;
+                if (!ParserIdentifier{}.parse(pos, index_ast, expected))
+                    return false;
+                if (!tryGetIdentifierNameInto(index_ast, res->target_function))
                     return false;
             }
             break;
@@ -1253,8 +1256,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         res->children.push_back(res->database);
     if (res->table)
         res->children.push_back(res->table);
-    if (res->index)
-        res->children.push_back(res->index);
     if (res->query_settings)
         res->children.push_back(res->query_settings);
 

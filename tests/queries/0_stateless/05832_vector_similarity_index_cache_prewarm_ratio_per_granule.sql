@@ -48,7 +48,7 @@ FROM numbers(
             SELECT
                 (SELECT toUInt64(value) FROM system.server_settings WHERE name = 'vector_similarity_index_cache_size') AS cache_size,
                 (SELECT toFloat64(value) FROM system.server_settings WHERE name = 'vector_similarity_index_cache_prewarm_ratio') AS ratio,
-                (SELECT max(size) FROM system.vector_similarity_index_cache WHERE database = currentDatabase() AND table = 'vs_prewarm_probe') AS granule_size
+                (SELECT assumeNotNull(max(size)) FROM system.vector_similarity_index_cache WHERE database = currentDatabase() AND table = 'vs_prewarm_probe') AS granule_size
         )
     )
 );

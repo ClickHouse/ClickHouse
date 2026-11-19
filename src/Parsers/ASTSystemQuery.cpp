@@ -69,13 +69,6 @@ String ASTSystemQuery::getTable() const
     return name;
 }
 
-String ASTSystemQuery::getIndex() const
-{
-    String name;
-    tryGetIdentifierNameInto(index, name);
-    return name;
-}
-
 void ASTSystemQuery::setDatabase(const String & name)
 {
     reset(database);
@@ -259,12 +252,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                 print_keyword("FOR TABLE");
                 ostr << ' ';
                 print_database_table();
-                if (index)
+                if (!target_function.empty())
                 {
                     ostr << ' ';
                     print_keyword("INDEX");
                     ostr << ' ';
-                    index->format(ostr, settings, state, frame);
+                    print_identifier(target_function);
                 }
             }
             break;
@@ -775,7 +768,6 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
     w.writeString("query_type", magic_enum::enum_name(type));
     w.writeChild("database", database);
     w.writeChild("table", table);
-    w.writeChild("index", index);
     if (if_exists)
         w.writeBool("if_exists", true);
     w.writeChild("query_settings", query_settings);
@@ -951,9 +943,6 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     table = r.readIdentifierChild("table");
     if (table)
         children.push_back(table);
-    index = r.readIdentifierChild("index");
-    if (index)
-        children.push_back(index);
     if_exists = r.getBool("if_exists");
     /// `query_settings` is parser-produced as an `ASTSetQuery`; `InterpreterSystemQuery` reads it as
     /// `query.query_settings->as<ASTSetQuery>()->changes`, so reject any other node type here.
