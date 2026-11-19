@@ -29,7 +29,7 @@ public:
         /// `block_size_bytes` replaces both `min_compress_block_size` and `max_compress_block_size`.
         Layout(DataTypePtr target_type_, ASTPtr codec_description_, std::optional<UInt64> block_size_bytes);
 
-        size_t granuleRows() const { return granule_rows; }
+        [[nodiscard]] size_t granuleRows() const { return granule_rows; }
 
     private:
         friend class CompressionEstimatePartWriter;
@@ -40,7 +40,7 @@ public:
             size_t block_size;
         };
 
-        Stream resolveStream(const ISerialization::SubstreamPath & path) const;
+        [[nodiscard]] Stream resolveStream(const ISerialization::SubstreamPath & path) const;
 
         DataTypePtr target_type;
         ASTPtr codec_description;

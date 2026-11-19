@@ -72,7 +72,7 @@ public:
     }
 
     /// Validates the target type at every call, since the rows of several queries can go into one part.
-    ColumnPtr convert(const ColumnPtr & rows) const
+    [[nodiscard]] ColumnPtr convert(const ColumnPtr & rows) const
     {
         if (validation_settings)
             validateDataType(target_type, *validation_settings);
