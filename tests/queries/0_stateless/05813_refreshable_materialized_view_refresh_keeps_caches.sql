@@ -23,7 +23,7 @@ SELECT count() FROM t WHERE a < 50 FORMAT Null SETTINGS log_comment = '05813_aft
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['MarkCacheHits'] > 0
 FROM system.query_log
-WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05813_%'
+WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05813_cold', '05813_warm', '05813_after_refresh')
 ORDER BY event_time_microseconds;
 
 DROP TABLE mv;
