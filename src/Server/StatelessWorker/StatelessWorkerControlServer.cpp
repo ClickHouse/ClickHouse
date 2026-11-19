@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <Core/Defines.h>
 #include <Core/ProtocolDefines.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrnoException.h>
@@ -65,7 +66,7 @@ namespace
 
 using Clock = std::chrono::steady_clock;
 
-constexpr size_t SESSION_BUFFER_BYTES = 64 * 1024;
+constexpr size_t SESSION_OUTPUT_BUFFER_BYTES = 64 * 1024;
 
 /// Returns the message of the in-flight exception without a stack trace, as a failed task reports it.
 String currentErrorMessage()
@@ -203,8 +204,9 @@ StatelessWorkerControlServer::Session::Session(StatelessWorkerControlServer & se
     , purpose(hello.purpose)
     , initiator(hello.initiator)
     , task_id_prefix(makeUniqueTaskId(unique_query_id, ""))
-    , in(socket, SESSION_BUFFER_BYTES)
-    , out(socket, SESSION_BUFFER_BYTES)
+    /// `StartTasks` bodies carry plans of tens of MiB, which a 64 KiB buffer reads 1.7 times slower.
+    , in(socket, DBMS_DEFAULT_BUFFER_SIZE)
+    , out(socket, SESSION_OUTPUT_BUFFER_BYTES)
     , log(server_.log)
 {
 }
