@@ -30,7 +30,7 @@ $CLICKHOUSE_CLIENT $SETTINGS -q "
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT $FP"
 
 # 1. RENAME starts, renames the first inner table and pauses (it holds the database locks).
-$CLICKHOUSE_CLIENT $SETTINGS --query_id "${CLICKHOUSE_DATABASE}_rename" -q "RENAME TABLE $SRC.ts TO $DST.ts" >/dev/null 2>&1 &
+$CLICKHOUSE_CLIENT $SETTINGS -q "RENAME TABLE $SRC.ts TO $DST.ts" >/dev/null 2>&1 &
 rename_pid=$!
 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT $FP PAUSE"
 
