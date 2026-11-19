@@ -1377,6 +1377,24 @@ static bool hasNestedCalendarDateInComparison(const DataTypePtr & left_type, con
     return needsCalendarDateInCast(left, right) || needsCalendarDateInCast(right, left);
 }
 
+static bool hasNestedCalendarDateInSetSource(const DataTypePtr & left_type, const DataTypePtr & source_type)
+{
+    if (hasNestedCalendarDateInComparison(left_type, source_type))
+        return true;
+
+    const auto source = removeNullable(removeLowCardinality(source_type));
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(source.get()))
+        return std::any_of(tuple->getElements().begin(), tuple->getElements().end(), [&](const auto & element)
+        {
+            return hasNestedCalendarDateInComparison(left_type, element);
+        });
+
+    if (const auto * array = typeid_cast<const DataTypeArray *>(source.get()))
+        return hasNestedCalendarDateInComparison(left_type, array->getNestedType());
+
+    return false;
+}
+
 static bool isIncompatibleNullableScalarForComplexIn(const DataTypePtr & source_type)
 {
     const auto bare_type = removeNullable(removeLowCardinality(source_type));
@@ -3380,7 +3398,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         {
             const auto left_bare = removeNullable(removeLowCardinality(in_first_argument->getResultType()));
             if ((isArray(left_bare) || isTuple(left_bare) || isMap(left_bare))
-                && hasNestedCalendarDateInComparison(in_first_argument->getResultType(), in_second_argument->getResultType()))
+                && hasNestedCalendarDateInSetSource(in_first_argument->getResultType(), in_second_argument->getResultType()))
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support nested calendar comparison between {} and {}",

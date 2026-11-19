@@ -676,7 +676,10 @@ public:
                     || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(key_type));
             check_numeric_probe_exactness = isNumber(left_type) && isNumber(key_type)
                 && !left_type->equals(*key_type);
-            if ((isNumber(left_type) || isBool(left_type)) && (isDynamic(key_type) || isVariant(key_type)))
+            /// A set containing only `NULL` has no numeric key whose type-sensitive hash
+            /// could miss a match. Leave it to the ordinary unknown-result handling.
+            const bool only_null_key = set->hasNull() && set->getTotalRowCount() == 1;
+            if ((isNumber(left_type) || isBool(left_type)) && (isDynamic(key_type) || isVariant(key_type)) && !only_null_key)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
