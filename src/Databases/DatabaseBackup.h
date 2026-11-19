@@ -10,7 +10,7 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseOrdinary.h>
 
-#include <Backups/BackupInfo.h>
+#include <Common/SecretString.h>
 
 namespace DB
 {
@@ -25,7 +25,7 @@ public:
     struct Configuration
     {
         std::string database_name;
-        BackupInfo backup_info;
+        SecretString backup_info;
         bool has_selectors = false;
         UInt64 shard_num_in_backup = 0;
         UInt64 replica_num_in_backup = 0;

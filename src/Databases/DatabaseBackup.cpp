@@ -44,6 +44,7 @@
 #include <Access/ContextAccess.h>
 
 #include <Backups/BackupFactory.h>
+#include <Backups/BackupInfo.h>
 #include <Backups/BackupMetadataFinder.h>
 #include <Core/SettingsFields.h>
 #include <IO/ReadBufferFromString.h>
@@ -110,7 +111,7 @@ public:
 /// identical on every open of the same database.
 String buildStoragePolicyName(const String & local_database_name, const DatabaseBackup::Configuration & config, const String & root)
 {
-    const auto backup_info_string = config.backup_info.toString();
+    const std::string_view backup_info_string = config.backup_info;
 
     SipHash hash;
     hash.update(local_database_name.size());
@@ -256,7 +257,7 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
     BackupFactory::CreateParams backup_open_params;
     backup_open_params.open_mode = IBackup::OpenMode::READ;
     backup_open_params.context = getContext();
-    backup_open_params.backup_info = config.backup_info;
+    backup_open_params.backup_info = BackupInfo::fromString(config.backup_info);
 
     try
     {
@@ -492,7 +493,7 @@ ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
     /// definition is what `ALTER DATABASE ... MODIFY COMMENT` writes back into the metadata file, and
     /// the load path parses the second argument with `BackupInfo::fromAST`, which takes a function.
     String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({}, {})",
-        backQuoteIfNeed(database_name), quoteString(config.database_name), config.backup_info.toString());
+        backQuoteIfNeed(database_name), quoteString(config.database_name), config.backup_info);
     if (config.has_selectors)
         query += fmt::format(" SETTINGS shard_num_in_backup = {}, replica_num_in_backup = {}", config.shard_num_in_backup, config.replica_num_in_backup);
 
@@ -553,7 +554,7 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr, bool 
     {
         if (const auto * locator = engine_args[1]->as<ASTLiteral>(); locator && locator->value.getType() == Field::Types::String)
         {
-            result.backup_info = BackupInfo::fromString(locator->value.safeGet<String>());
+            result.backup_info = locator->value.safeGet<String>();
             return result;
         }
     }
@@ -567,7 +568,7 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr, bool 
             "function it is, such as `File('backup')` or `S3(...)`. The text given is not shown, because a "
             "destination held in a string literal cannot be redacted and may carry credentials");
 
-    result.backup_info = BackupInfo::fromAST(*engine_args[1]);
+    result.backup_info = BackupInfo::fromAST(*engine_args[1]).toString();
 
     return result;
 }
@@ -590,7 +591,7 @@ void DatabaseBackup::parseAndAuthorizeLocator(const ASTs & engine_args, ContextP
       * not be echoed.
       */
     auto config = parseArguments(engine_args, query_context, /*allow_locator_in_string_literal=*/ false);
-    BackupFactory::instance().checkSourceAccess(config.backup_info, query_context, IBackup::OpenMode::READ);
+    BackupFactory::instance().checkSourceAccess(BackupInfo::fromString(config.backup_info), query_context, IBackup::OpenMode::READ);
 }
 
 namespace
@@ -717,9 +718,12 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
     /// the visibility rule below depends on the total, mirroring `BackupInfo::fromAST`, which collects
     /// positionals independently of named overrides.
     size_t total_positionals = 0;
+    bool has_headers = false;
     for (size_t i = 0; i < nested_args.size(); ++i)
     {
         const auto f = nested_args.at(i)->getFunction();
+        if (f && boost::iequals(f->name(), "headers"))
+            has_headers = true;
         if (f && (f->name() == "extra_credentials"
                   || (f->name() == "equals" && f->hasArguments() && f->arguments->size() == 2)))
             continue;
@@ -730,7 +734,8 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
     /// Explicit-url locator: valid signatures have one positional (the url) or three (url,
     /// access_key_id, secret_access_key) with the secret at slot 2; any other count is invalid and
     /// the intended slots are unknowable, so everything after the url is hidden (fail closed).
-    const size_t first_hidden_slot = (is_named_collection || total_positionals == 3) ? 2 : 1;
+    /// A `headers(...)` map makes it invalid as well: the engine accepts only `extra_credentials(...)`.
+    const size_t first_hidden_slot = (is_named_collection || (total_positionals == 3 && !has_headers)) ? 2 : 1;
 
     std::string replacement = "S3(";
     bool has_secret = false;
@@ -903,7 +908,7 @@ void registerDatabaseBackup(DatabaseFactory & factory)
         auto config = parseArguments(engine_args, args.context, /*allow_locator_in_string_literal=*/ from_existing_metadata);
         parseBackupSelection(engine_define, config);
         if (has_real_user && !from_existing_metadata)
-            BackupFactory::instance().checkSourceAccess(config.backup_info, args.context, IBackup::OpenMode::READ);
+            BackupFactory::instance().checkSourceAccess(BackupInfo::fromString(config.backup_info), args.context, IBackup::OpenMode::READ);
 
         if (args.mode == LoadingStrictnessLevel::ATTACH && !args.create_query.attach_short_syntax && !args.is_metadata_replay)
         {
