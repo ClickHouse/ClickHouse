@@ -141,3 +141,16 @@ def test_symlinked_user_files_path():
         == "1\n"
     )
     assert node_symlinked_root.query("SELECT count() FROM filesystem('a.file')") == "1\n"
+
+    # `EmbeddedRocksDB` keeps accepting an absolute physical `rocksdb_dir` beneath the symlink
+    # target, as it did before `user_files_policy`, including when an existing table is attached.
+    node_symlinked_root.query("DROP TABLE IF EXISTS rocksdb_physical_dir SYNC")
+    node_symlinked_root.query(
+        "CREATE TABLE rocksdb_physical_dir (k UInt64, v String) ENGINE = EmbeddedRocksDB(0, "
+        "'/var/lib/clickhouse/symlinked_user_files_target/rocksdb_physical_dir') PRIMARY KEY k"
+    )
+    node_symlinked_root.query("INSERT INTO rocksdb_physical_dir VALUES (1, 'a')")
+    node_symlinked_root.query("DETACH TABLE rocksdb_physical_dir")
+    node_symlinked_root.query("ATTACH TABLE rocksdb_physical_dir")
+    assert node_symlinked_root.query("SELECT v FROM rocksdb_physical_dir") == "a\n"
+    node_symlinked_root.query("DROP TABLE rocksdb_physical_dir SYNC")

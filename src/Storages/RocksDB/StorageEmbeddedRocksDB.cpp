@@ -144,6 +144,24 @@ static void checkUserFilesPolicyDiskIsPlainLocal(const ContextPtr & context)
     }
 }
 
+/// The root an explicit `rocksdb_dir` is resolved against and must stay inside. Without `user_files_policy`
+/// it is the canonical `user_files_path`, as it was before the policy was introduced: an existing table whose
+/// `rocksdb_dir` is a physical path beneath a symlinked `user_files_path` must keep attaching after an upgrade.
+static String getRocksDBUserFilesRoot(const ContextPtr & context)
+{
+    if (context->getUserFilesVolume())
+        return context->getUserFilesPath();
+    return fs::canonical(context->getUserFilesPath()).string();
+}
+
+static bool isRocksDBDirInsideUserFiles(const ContextPtr & context, const String & dir)
+{
+    if (context->getUserFilesVolume())
+        return context->isUserFilesPath(dir);
+    /// The configured spelling of `user_files_path` is accepted as well: it resolves to the same directory.
+    return fileOrSymlinkPathStartsWith(dir, getRocksDBUserFilesRoot(context)) || context->isUserFilesPath(dir);
+}
+
 static RocksDBOptions getOptionsFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & path)
 {
     RocksDBOptions options;
@@ -320,7 +338,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
 
         checkUserFilesPolicyDiskIsPlainLocal(context_);
 
-        const String user_files_path = is_local ? "" : getContext()->getUserFilesPath();
+        const String user_files_path = is_local ? "" : getRocksDBUserFilesRoot(getContext());
         if (fs::path(rocksdb_dir).is_relative())
             rocksdb_dir = fs::absolute(fs::path(user_files_path) / rocksdb_dir).lexically_normal().string();
         else
@@ -351,7 +369,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
             rocksdb_dir = resolved_dir.string();
         }
 
-        if (!is_local && !getContext()->isUserFilesPath(rocksdb_dir))
+        if (!is_local && !isRocksDBDirInsideUserFiles(getContext(), rocksdb_dir))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path must be inside user-files path");
     }
 
@@ -394,7 +412,7 @@ void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &
     /// have been retargeted since then. Check it again before deleting the directory recursively,
     /// so that an explicit path never removes anything outside the user files directory.
     if (!implicit_path && getContext()->getApplicationType() != Context::ApplicationType::LOCAL
-        && !getContext()->isUserFilesPath(rocksdb_dir))
+        && !isRocksDBDirInsideUserFiles(getContext(), rocksdb_dir))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path must be inside user-files path");
 
     /// rocksdb_ptr may already be null if a previous truncate() emptied the directory and
@@ -1474,10 +1492,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             /// Resolved exactly as the constructor resolves it. The `user_files` fence is enforced there
             /// and throws, so a path landing outside it is treated as creating: no existence of anything
             /// beyond the fence is probed, and the statement fails on the fence either way.
-            const fs::path user_files_path = local_context->getUserFilesPath();
+            const fs::path user_files_path = getRocksDBUserFilesRoot(local_context);
             fs::path resolved = fs::path(rocksdb_dir).is_relative() ? user_files_path / rocksdb_dir : fs::path(rocksdb_dir);
             resolved = fs::absolute(resolved).lexically_normal();
-            may_create_directory = !local_context->isUserFilesPath(resolved) || !fs::exists(resolved);
+            may_create_directory = !isRocksDBDirInsideUserFiles(local_context, resolved) || !fs::exists(resolved);
         }
 
         const AccessFlags required
