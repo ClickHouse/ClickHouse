@@ -1,13 +1,9 @@
--- Tags: no-fasttest
--- no-fasttest: uses Parquet format which is not available in fast test.
-
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/106833
 -- A query over a file()/Parquet source with both an explicit PREWHERE and a WHERE used to
 -- crash with "Logical error: updateFormatPrewhereInfo called more than once" when
 -- optimize_prewhere_after_pushdown = 1: the second PREWHERE promotion pass invoked
 -- updatePrewhereInfo() a second time on a format reader that can only accept one update.
 
-SET enable_analyzer = 1;
 SET engine_file_truncate_on_insert = 1;
 
 INSERT INTO FUNCTION file('04338_prewhere_after_pushdown_' || currentDatabase() || '.parquet', Parquet)

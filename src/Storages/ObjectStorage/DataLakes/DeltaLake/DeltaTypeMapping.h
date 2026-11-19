@@ -25,7 +25,7 @@ enum class DeltaPrimitiveType
 
 /// Map a ClickHouse leaf type to the Delta primitive that stores its values without loss; throws
 /// `NOT_IMPLEMENTED` for a type with no loss-free Delta representation. Kept parquet-independent (unlike the
-/// rest of `DeltaLakeMetadata`) so the create path can classify types even when built without Parquet.
+/// rest of `DeltaLakeMetadataDeltaKernel`) so the create path can classify types even when built without Parquet.
 DeltaPrimitiveType classifyDeltaPrimitive(const DataTypePtr & type);
 
 }

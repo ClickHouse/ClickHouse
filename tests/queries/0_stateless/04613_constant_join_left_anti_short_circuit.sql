@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 -- A swap would turn LEFT ANTI into RIGHT ANTI, which cannot short-circuit the left side.
 SET query_plan_join_swap_table = 0;
 

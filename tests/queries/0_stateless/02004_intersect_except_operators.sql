@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 -- { echo }
 select 1 intersect select 1;
