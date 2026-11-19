@@ -163,11 +163,7 @@ public:
 
     /// The URI of the function for permission checking. Can be an empty string if not applicable.
     /// For example, for url('https://foo.bar') the URI would be 'https://foo.bar'.
-    virtual const String & getFunctionURI() const
-    {
-        static const String empty;
-        return empty;
-    }
+    virtual std::string_view getFunctionURI() const { return {}; }
 
     /// Check the `TABLE ENGINE` grant, for engines that opt in via `requiresTableEngineGrant`.
     void checkEngineAccess(ContextPtr context) const;
@@ -191,6 +187,14 @@ protected:
     /// `cached_columns` come from the metadata of a table created `AS` this function, so `executeImpl` receives
     /// them only for such a table definition, including its replay, and never for a call in a query.
     static bool isTableDefinition(const ColumnsDescription & cached_columns) { return !cached_columns.empty(); }
+
+    /// Appends to `result` the indexes of the named arguments, whose keys name parameters of the table function
+    /// (e.g. the overrides of a named collection) and so must not resolve to a column or alias: the trailing run of
+    /// `key = value` arguments, and the `wrapper_names` arguments, such as `headers(...)`, at any position. A
+    /// wrapper is removed by the storage parser, so it does not end the run. An `identifier = value` followed by
+    /// a positional argument is an ordinary comparison and is still analyzed.
+    static void appendNamedArgumentIndexes(
+        const QueryTreeNodePtr & query_node_table_function, VectorWithMemoryTracking<size_t> & result, const Strings & wrapper_names = {});
 
     /// Set only for `INSERT INTO FUNCTION ... PARTITION BY`. Each partition's destination then comes from the data,
     /// so it needs its own write access check.

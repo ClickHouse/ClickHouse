@@ -9,6 +9,9 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/StorageSnapshot.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 
@@ -225,18 +228,6 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
 {
     const auto & ctx_settings = context->getSettingsRef();
     size_t sum_marks = lazy_materializing_rows->ranges_in_data_parts.getMarksCountAllParts();
-    size_t sum_rows = lazy_materializing_rows->ranges_in_data_parts.getRowsCountAllParts();
-
-    MergeTreeReadPoolBase::PoolSettings pool_settings{
-        .threads = max_threads,
-        .sum_marks = sum_marks,
-        .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
-        .preferred_block_size_bytes = ctx_settings[Setting::preferred_block_size_bytes],
-        .use_uncompressed_cache = ctx_settings[Setting::use_uncompressed_cache],
-        .use_columns_cache = ctx_settings[Setting::use_columns_cache],
-        .use_const_size_tasks_for_remote_reading = ctx_settings[Setting::merge_tree_use_const_size_tasks_for_remote_reading],
-        .total_query_nodes = 1,
-    };
 
     MergeTreeReadTask::BlockSizeParams block_size{
         .max_block_size_rows = max_block_size,
@@ -248,39 +239,90 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
     VirtualFields shared_virtual_fields;
     shared_virtual_fields.emplace("_sample_factor", 1.0);
 
-    /// Lazy materialization reads a precomputed set of rows — no filter is applied here,
-    /// so `sum_rows` is a hard upper bound. Treat it as a hard limit.
-    bool has_hard_limit_below_one_block = sum_rows < block_size.max_block_size_rows;
+    /// The parts of a projection, which the main read was served some of its parts from, are read with the snapshot of that
+    /// read, which has the metadata of the projection, so each such snapshot has a pool of its own, and the table has one. The
+    /// readers still follow the order of the parts, which is the order of the rows.
+    struct Group
+    {
+        StorageSnapshotPtr snapshot;
+        RangesInDataParts parts;
+        std::shared_ptr<MergeTreeReadPoolInOrder> pool;
+    };
+    VectorWithMemoryTracking<Group> groups;
+    UnorderedMapWithMemoryTracking<const StorageSnapshot *, size_t> group_of_snapshot;
+    VectorWithMemoryTracking<std::pair<size_t, size_t>> group_and_index_of_part;
+    for (auto & part : ranges_in_data_parts)
+    {
+        StorageSnapshotPtr part_snapshot = storage_snapshot;
+        if (part.data_part->isProjectionPart())
+        {
+            const auto it = lazy_materializing_rows->snapshots_of_projection_parts.find(part.part_index_in_query);
+            if (it == lazy_materializing_rows->snapshots_of_projection_parts.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The projection part {} of the part {} is read lazily without its snapshot",
+                    part.data_part->name, part.parent_part ? part.parent_part->name : "");
+            part_snapshot = it->second;
+        }
 
-    auto pool = std::make_shared<MergeTreeReadPoolInOrder>(
-        has_hard_limit_below_one_block,
-        /* has_soft_limit_below_one_block */ false,
-        MergeTreeReadType::InOrder,
-        ranges_in_data_parts,
-        mutations_snapshot,
-        shared_virtual_fields,
-        /*index_read_tasks*/ IndexReadTasks{},
-        storage_snapshot,
-        /* row_level_filter */ nullptr,
-        /* prewhere_info */ nullptr,
-        actions_settings,
-        reader_settings,
-        outputs.front().getHeader().getNames(),
-        pool_settings,
-        block_size,
-        context,
-        updater);
+        const auto [it, inserted] = group_of_snapshot.try_emplace(part_snapshot.get(), groups.size());
+        if (inserted)
+            groups.push_back({.snapshot = part_snapshot, .parts = {}, .pool = {}});
+
+        auto & group = groups[it->second];
+        group_and_index_of_part.emplace_back(it->second, group.parts.size());
+        group.parts.push_back(std::move(part));
+    }
+
+    for (auto & group : groups)
+    {
+        /// As the projection was read in the main branch, without the mutations of the table.
+        auto group_mutations_snapshot = group.snapshot == storage_snapshot ? mutations_snapshot : mutations_snapshot->cloneEmpty();
+
+        const size_t group_marks = group.parts.getMarksCountAllParts();
+        MergeTreeReadPoolBase::PoolSettings pool_settings{
+            .threads = max_threads,
+            .sum_marks = group_marks,
+            .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
+            .preferred_block_size_bytes = ctx_settings[Setting::preferred_block_size_bytes],
+            .use_uncompressed_cache = ctx_settings[Setting::use_uncompressed_cache],
+            .use_columns_cache = ctx_settings[Setting::use_columns_cache],
+            .use_const_size_tasks_for_remote_reading = ctx_settings[Setting::merge_tree_use_const_size_tasks_for_remote_reading],
+            .total_query_nodes = 1,
+        };
+
+        /// Lazy materialization reads a precomputed set of rows — no filter is applied here,
+        /// so the number of rows is a hard upper bound. Treat it as a hard limit.
+        const bool has_hard_limit_below_one_block = group.parts.getRowsCountAllParts() < block_size.max_block_size_rows;
+
+        group.pool = std::make_shared<MergeTreeReadPoolInOrder>(
+            has_hard_limit_below_one_block,
+            /* has_soft_limit_below_one_block */ false,
+            MergeTreeReadType::InOrder,
+            group.parts,
+            group_mutations_snapshot,
+            shared_virtual_fields,
+            /*index_read_tasks*/ IndexReadTasks{},
+            group.snapshot,
+            /* row_level_filter */ nullptr,
+            /* prewhere_info */ nullptr,
+            actions_settings,
+            reader_settings,
+            outputs.front().getHeader().getNames(),
+            pool_settings,
+            block_size,
+            context,
+            updater);
+    }
 
     Processors processors;
-    for (size_t i = 0; i < ranges_in_data_parts.size(); ++i)
+    for (const auto & [group_index, index_in_group] : group_and_index_of_part)
     {
-        const auto & part_with_ranges = ranges_in_data_parts[i];
-        UInt64 total_rows = part_with_ranges.getRowsCount();
+        const auto & group = groups[group_index];
+        UInt64 total_rows = group.parts[index_in_group].getRowsCount();
 
-        MergeTreeSelectAlgorithmPtr algorithm = std::make_unique<MergeTreeInOrderSelectAlgorithm>(i);
+        MergeTreeSelectAlgorithmPtr algorithm = std::make_unique<MergeTreeInOrderSelectAlgorithm>(index_in_group);
 
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
-            pool,
+            group.pool,
             std::move(algorithm),
             nullptr,
             nullptr,
