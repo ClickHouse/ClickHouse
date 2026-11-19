@@ -35,6 +35,24 @@
                     ip4 || <number (% 10), see http://lh3lh3.users.sourceforge.net/reb.shtml and https://github.com/mariomka/regex-benchmark -->
             </values>
         </substitution>
+        <substitution>
+            <name>needle_like_low_distinctness</name>
+            <values>
+                <!-- simple patterns, low distinctness (10 patterns) -->
+                <value>'%' || toString(number % 10) || '_'</value>
+                <!-- prefix patterns longer than the SSO buffer of `String`, low distinctness (10 patterns) -->
+                <value>'abcdefghijklmnopqrstuvwxyz' || toString(number % 10) || '%'</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>needle_match_low_distinctness</name>
+            <values>
+                <!-- simple patterns, low distinctness (10 patterns) -->
+                <value>'.*' || toString(number % 10) || '.'</value>
+                <!-- complex patterns, low distinctness -->
+                <value>'([a-zA-Z][a-zA-Z0-9]*)://([^ /]+)(/[^ ]*)?([^ @]+)@([^ @]+)([0-9][0-9]?)/([0-9][0-9]?)/([0-9][0-9]([0-9][0-9])?)(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9])' || toString(number % 10)</value>
+            </values>
+        </substitution>
     </substitutions>
 
     <!-- const needle (just for reference) -->
@@ -53,14 +71,43 @@
 
     <!-- non-const needle -->
 
-    <query>
+    <query disabled="1">
         select toString(number) as haystack, {needle_like} as needle, like(haystack, needle)
         from (select * from {numbers})
         format Null
     </query>
 
-    <query>
+    <query disabled="1">
         select toString(number) as haystack, {needle_match} as needle, match(haystack, needle)
+        from (select * from {numbers})
+        format Null
+    </query>
+
+    <!-- the disabled non-const needle queries: the low distinctness patterns as they are, the all-unique ones on every
+         4th number of the same range, in blocks 4 times smaller (the same number of blocks, one compilation per row) -->
+
+    <query>
+        select toString(number) as haystack, '%' || toString(number) || '_' as needle, like(haystack, needle)
+        from (select * from numbers_mt(0, 1500000, 4))
+        settings max_block_size = 16384
+        format Null
+    </query>
+
+    <query>
+        select toString(number) as haystack, {needle_like_low_distinctness} as needle, like(haystack, needle)
+        from (select * from {numbers})
+        format Null
+    </query>
+
+    <query>
+        select toString(number) as haystack, '.*' || toString(number) || '.' as needle, match(haystack, needle)
+        from (select * from numbers_mt(0, 1500000, 4))
+        settings max_block_size = 16384
+        format Null
+    </query>
+
+    <query>
+        select toString(number) as haystack, {needle_match_low_distinctness} as needle, match(haystack, needle)
         from (select * from {numbers})
         format Null
     </query>
