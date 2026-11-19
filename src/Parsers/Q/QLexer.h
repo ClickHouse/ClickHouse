@@ -48,7 +48,7 @@ enum class QTokenType : uint8_t
 
 struct QToken
 {
-    QTokenType type;
+    QTokenType type = QTokenType::End;
     /// The source text of the token.
     std::string_view text;
     /// The decoded value of a `String` token, or the name of a `Symbol` without the backtick.

@@ -163,13 +163,13 @@ private:
     int depth = 0;
     QTokens tokens;
 
-    bool atLineStart(size_t at) const
+    [[nodiscard]] bool atLineStart(size_t at) const
     {
         return at == 0 || text[at - 1] == '\n';
     }
 
     /// The text of the line starting at `at`, without the trailing whitespace.
-    std::string_view lineAt(size_t at) const
+    [[nodiscard]] std::string_view lineAt(size_t at) const
     {
         size_t end = text.find('\n', at);
         if (end == std::string_view::npos)
@@ -274,7 +274,7 @@ private:
         tokens.push_back(std::move(token));
     }
 
-    bool isNumberStart(bool space_before) const
+    [[nodiscard]] bool isNumberStart(bool space_before) const
     {
         char c = text[pos];
         auto is_digit_at = [&](size_t at) { return at < text.size() && isNumericASCII(text[at]); };

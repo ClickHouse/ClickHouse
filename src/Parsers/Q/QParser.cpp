@@ -98,9 +98,9 @@ bool parseDate(std::string_view text, Int64 & days)
 {
     if (text.size() != 10 || text[4] != '.' || text[7] != '.')
         return false;
-    Int64 year;
-    Int64 month;
-    Int64 day;
+    Int64 year = 0;
+    Int64 month = 0;
+    Int64 day = 0;
     if (!parseUnsigned(text.substr(0, 4), year) || !parseUnsigned(text.substr(5, 2), month) || !parseUnsigned(text.substr(8, 2), day))
         return false;
     if (month < 1 || month > 12 || day < 1 || day > 31)
@@ -316,8 +316,8 @@ DecodedNumber decodeNumber(std::string_view text)
             throwBadLiteral(text);
         if (body.size() == 8 && body[7] == 'm')
         {
-            Int64 year;
-            Int64 month;
+            Int64 year = 0;
+            Int64 month = 0;
             if (!parseUnsigned(body.substr(0, 4), year) || !parseUnsigned(body.substr(5, 2), month) || month < 1 || month > 12)
                 throwBadLiteral(text);
             result.type = QType::Month;
@@ -325,7 +325,7 @@ DecodedNumber decodeNumber(std::string_view text)
         }
         else
         {
-            Int64 days;
+            Int64 days = 0;
             if (body.size() < 10 || !parseDate(body.substr(0, 10), days))
                 throwBadLiteral(text);
             std::string_view rest = body.substr(10);
@@ -381,7 +381,7 @@ DecodedNumber decodeNumber(std::string_view text)
     }
 
     /// Times of day: 10:30 (minute), 10:30:00 (second), 10:30:00.000 (time), 10:30:00.000000000 (timespan).
-    if (body.find(':') != std::string_view::npos)
+    if (body.contains(':'))
     {
         std::string_view clock = body;
         QType suffix = QType::Mixed;
@@ -588,7 +588,7 @@ private:
         bool is_verb = false;
     };
 
-    const QToken & peek(size_t ahead = 0) const
+    [[nodiscard]] const QToken & peek(size_t ahead = 0) const
     {
         return tokens[std::min(pos + ahead, tokens.size() - 1)];
     }
@@ -617,7 +617,7 @@ private:
         return token.type == QTokenType::Name && token.text == keyword;
     }
 
-    bool isStop(const QToken & token, const Stop & stop) const
+    [[nodiscard]] bool isStop(const QToken & token, const Stop & stop) const
     {
         switch (token.type)
         {

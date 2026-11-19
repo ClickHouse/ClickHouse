@@ -207,11 +207,11 @@ String qTypeToClickHouseType(QType type)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The q type of general lists has no ClickHouse equivalent");
 }
 
-std::optional<QType> clickHouseTypeToQType(const DataTypePtr & type)
+std::optional<QType> dataTypeToQType(const DataTypePtr & type)
 {
     DataTypePtr inner = removeLowCardinalityAndNullable(type);
     if (const auto * array = typeid_cast<const DataTypeArray *>(inner.get()))
-        return clickHouseTypeToQType(array->getNestedType());
+        return dataTypeToQType(array->getNestedType());
 
     switch (inner->getTypeId())
     {
@@ -300,9 +300,9 @@ Int64 floorDiv(Int64 a, Int64 b)
 
 String formatDate(Int64 days_since_2000)
 {
-    Int64 year;
-    Int64 month;
-    Int64 day;
+    Int64 year = 0;
+    Int64 month = 0;
+    Int64 day = 0;
     civilFromDays(days_since_2000 + days_1970_to_2000, year, month, day);
     return fmt::format("{:04}-{:02}-{:02}", year, month, day);
 }
@@ -419,7 +419,7 @@ QValue columnValue(const NameAndTypePair & column)
     value.depth = arrayDepth(column.type, value.is_string);
     if (value.depth > 0)
         value.is_string = false;
-    value.qtype = clickHouseTypeToQType(column.type);
+    value.qtype = dataTypeToQType(column.type);
     return value;
 }
 
@@ -514,7 +514,7 @@ String deriveColumnName(const QNodePtr & node)
             if (function && function->kind == QNodeKind::Verb)
             {
                 /// A glyph names by its leftmost argument, except those whose left argument is a parameter.
-                bool names_right = function->name.size() == 1 && String("#_^$@.").find(function->name[0]) != String::npos;
+                bool names_right = function->name.size() == 1 && std::string_view("#_^$@.").contains(function->name[0]);
                 if (node->infix && names_right)
                     return deriveColumnName(node->children.back());
                 return deriveColumnName(node->children[1]);
@@ -594,7 +594,7 @@ QValue QCompiler::toScalar(const QValue & value, size_t offset)
         size_t depth = arrayDepth(column.type, is_string);
         QValue result = scalar(make_intrusive<ASTSubquery>(builder.build()), depth + 1);
         result.is_string = depth == 0 && is_string;
-        result.qtype = clickHouseTypeToQType(column.type);
+        result.qtype = dataTypeToQType(column.type);
         return result;
     }
     throwQError(ErrorCodes::TYPE_MISMATCH, offset, "A function cannot be used as a value here");

@@ -148,7 +148,7 @@ std::optional<Int64> constantInt(const QValue & value)
     const auto * literal = ast->as<ASTLiteral>();
     if (!literal)
         return std::nullopt;
-    Int64 result;
+    Int64 result = 0;
     if (literal->value.getType() == Field::Types::Int64)
         result = literal->value.safeGet<Int64>();
     else if (literal->value.getType() == Field::Types::UInt64)
@@ -438,7 +438,7 @@ QValue castValue(Call & call, const String & type_name, QValue value)
         std::function<ASTPtr(ASTPtr)> parse;
         auto q_date = [](ASTPtr x)
         {
-            return fn("replaceRegexpOne", std::move(x), lit(Field(String("^(\\d{4})\\.(\\d{2})\\.(\\d{2})[DT]?"))), lit(Field(String("\\1-\\2-\\3 "))));
+            return fn("replaceRegexpOne", std::move(x), lit(Field(String(R"(^(\d{4})\.(\d{2})\.(\d{2})[DT]?)"))), lit(Field(String(R"(\1-\2-\3 )"))));
         };
         switch (code)
         {
@@ -531,7 +531,7 @@ QValue takeRows(Call & call, const QValue & count, const QTable & table)
         return tableValue(call.compiler, result.build(), table.keys);
     }
 
-    QValue limit = count;
+    const QValue & limit = count;
     if (limit.depth == 1)
     {
         /// `select[10 20]` or `10 20#t`: the offset and the count.
@@ -712,7 +712,7 @@ QValue metaTable(Call & call, const QTable & table)
         names.push_back(lit(Field(column.name)));
         bool is_string = false;
         size_t depth = arrayDepth(column.type, is_string);
-        auto qtype = clickHouseTypeToQType(column.type);
+        auto qtype = dataTypeToQType(column.type);
         char code = qtype ? qTypeChar(*qtype) : ' ';
         if (is_string && depth == 0 && qtype == QType::Symbol)
             code = 's';
@@ -814,7 +814,7 @@ QValue joinValues(Call & call)
         return result;
     }
 
-    size_t depth = std::max<size_t>(1, std::max(a.depth, b.depth));
+    size_t depth = std::max<size_t>({1, a.depth, b.depth});
     auto lift = [&](QValue value)
     {
         while (value.depth + 1 < depth + (value.depth == 0 ? 0 : 1) && value.depth < depth)

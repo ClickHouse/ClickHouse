@@ -74,7 +74,7 @@ struct QValue
     /// Dictionary: the keys and the values.
     std::shared_ptr<const std::pair<QValue, QValue>> dictionary;
 
-    bool isList() const { return kind == QValueKind::Scalar && depth > 0; }
+    [[nodiscard]] bool isList() const { return kind == QValueKind::Scalar && depth > 0; }
 };
 
 using QValues = std::vector<QValue>;
@@ -177,7 +177,7 @@ public:
     String newName();
     String newLambdaParameter();
 
-    ContextPtr getContext() const { return context; }
+    [[nodiscard]] ContextPtr getContext() const { return context; }
 
     /// The maximum nesting of inlined lambdas.
     static constexpr size_t max_inline_depth = 64;
@@ -237,7 +237,7 @@ struct QSelectBuilder
     bool distinct = false;
 
     /// Returns an `ASTSelectWithUnionQuery`.
-    ASTPtr build() const;
+    [[nodiscard]] ASTPtr build() const;
 };
 
 /// An expression with an alias.
@@ -247,7 +247,7 @@ ASTPtr withAlias(ASTPtr ast, const String & alias);
 String qTypeToClickHouseType(QType type);
 
 /// The q type for a ClickHouse type, if it has a q equivalent.
-std::optional<QType> clickHouseTypeToQType(const DataTypePtr & type);
+std::optional<QType> dataTypeToQType(const DataTypePtr & type);
 
 /// The nesting depth of arrays in a type, and whether its innermost type is a string.
 size_t arrayDepth(const DataTypePtr & type, bool & is_string);
