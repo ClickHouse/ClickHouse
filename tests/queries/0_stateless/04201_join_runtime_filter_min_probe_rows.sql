@@ -96,6 +96,13 @@ FROM (EXPLAIN SELECT count() FROM (SELECT p.y AS py FROM key_path_p p JOIN key_p
 SELECT 'non-deterministic key' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
 FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON p.y + rand() = s.y);
 
+-- A filter on a key of a join below is pushed down to both of its inputs, with the key replaced by the equal key of the other input.
+SELECT 'key equal to a key of a larger input below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON b.x = s.y);
+
+SELECT 'key of a smaller input below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON b.z = s.z);
+
 DROP TABLE small_probe;
 DROP TABLE large_probe;
 DROP TABLE build_side;

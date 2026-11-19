@@ -12,3 +12,5 @@ multi-key LEFT ANTI, keys from one input	2
 computed key	2
 renamed key	2
 non-deterministic key	1
+key equal to a key of a larger input below	2
+key of a smaller input below	1

@@ -54,6 +54,70 @@ bool hasColumns(const QueryPlan::Node & node, const NameSet & columns)
     return std::ranges::all_of(columns, [&](const String & column) { return header.has(column); });
 }
 
+bool filterReachesInputAbove(const QueryPlan::Node * node, NameSet columns, UInt64 limit);
+
+/// Whether a filter that reads `columns` of the output of the join at `node`, pushed down into one of its inputs, reaches
+/// an input estimated above `limit` rows.
+bool filterReachesJoinInputAbove(const QueryPlan::Node & node, const JoinStepLogical & join, const NameSet & columns, UInt64 limit)
+{
+    const auto & join_operator = join.getJoinOperator();
+    if (node.children.size() != 2 || join_operator.kind != JoinKind::Inner)
+        return false;
+
+    const bool can_push_to_right = join_operator.strictness != JoinStrictness::Asof
+        && !typeid_cast<const JoinStepLogicalLookup *>(node.children[1]->step.get());
+
+    /// A filter on keys of the join is pushed down to both inputs, the keys of one input replaced by the equal keys of
+    /// the other, see `tryPushDownOverJoinStep`. Only keys that are columns of the same type are followed here.
+    NameToNameMap equal_keys;
+    if (can_push_to_right && join.typeChangingSides().empty())
+    {
+        for (const auto & condition : join_operator.expression)
+        {
+            auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
+            if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
+                continue;
+            if (!(lhs.fromLeft() && rhs.fromRight()) && !(lhs.fromRight() && rhs.fromLeft()))
+                continue;
+            if (lhs.getNode()->type != ActionsDAG::ActionType::INPUT || rhs.getNode()->type != ActionsDAG::ActionType::INPUT
+                || !lhs.getType()->equals(*rhs.getType()))
+                continue;
+            equal_keys.emplace(lhs.getColumnName(), rhs.getColumnName());
+            equal_keys.emplace(rhs.getColumnName(), lhs.getColumnName());
+        }
+    }
+    const bool reads_only_keys = std::ranges::all_of(columns, [&](const String & column) { return equal_keys.contains(column); });
+
+    for (const auto side : {JoinTableSide::Left, JoinTableSide::Right})
+    {
+        if (side == JoinTableSide::Right && !can_push_to_right)
+            continue;
+
+        const auto & input = *node.children[side == JoinTableSide::Left ? 0 : 1];
+        NameSet input_columns;
+        if (hasColumns(input, columns))
+        {
+            input_columns = columns;
+        }
+        else if (reads_only_keys)
+        {
+            const auto & header = *input.step->getOutputHeader();
+            for (const auto & column : columns)
+                input_columns.insert(header.has(column) ? column : equal_keys.at(column));
+        }
+        else
+        {
+            continue;
+        }
+
+        if (auto rows = join.getInputRowsEstimation(side); rows && *rows > limit)
+            return true;
+        if (filterReachesInputAbove(&input, std::move(input_columns), limit))
+            return true;
+    }
+    return false;
+}
+
 /// Whether a filter that reads `columns` of the output of `node`, pushed down into `node`, reaches a join input
 /// estimated above `limit` rows.
 bool filterReachesInputAbove(const QueryPlan::Node * node, NameSet columns, UInt64 limit)
@@ -64,23 +128,7 @@ bool filterReachesInputAbove(const QueryPlan::Node * node, NameSet columns, UInt
     while (node)
     {
         if (const auto * join = typeid_cast<const JoinStepLogical *>(node->step.get()))
-        {
-            const auto & join_operator = join->getJoinOperator();
-            if (node->children.size() != 2 || join_operator.kind != JoinKind::Inner)
-                return false;
-
-            const bool to_left = hasColumns(*node->children[0], columns);
-            if (!to_left
-                && !(hasColumns(*node->children[1], columns)
-                     && join_operator.strictness != JoinStrictness::Asof
-                     && !typeid_cast<const JoinStepLogicalLookup *>(node->children[1]->step.get())))
-                return false;
-
-            if (auto rows = join->getInputRowsEstimation(to_left ? JoinTableSide::Left : JoinTableSide::Right); rows && *rows > limit)
-                return true;
-            node = node->children[to_left ? 0 : 1];
-            continue;
-        }
+            return filterReachesJoinInputAbove(*node, *join, columns, limit);
 
         if (node->children.size() != 1)
             return false;
