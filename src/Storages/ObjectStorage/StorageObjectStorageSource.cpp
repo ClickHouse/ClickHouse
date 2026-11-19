@@ -820,7 +820,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     std::function<void(FileProgress)> file_progress_callback,
     bool ignore_archive_globs,
     bool skip_object_metadata,
-    bool with_tags)
+    bool with_tags,
+    const std::optional<FormatSettings> & format_settings)
 {
     const bool is_archive = configuration->isArchive();
     const bool match_web_paths_only = configuration->getType() == ObjectStorageType::Web;
@@ -895,7 +896,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                     paths,
                     VirtualColumnUtils::getFilterByPathAndFileIndexes(
                         filter_paths, actions, virtual_columns, hive_columns, local_context,
-                        /*format_settings=*/std::nullopt,
+                        format_settings,
                         is_explicit_archive_member ? &archive_member_names : nullptr));
             }
             else
@@ -908,7 +909,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, skip_object_metadata, with_tags,
             file_progress_callback, deferred_filter_actions, hive_columns, configuration->getNamespace(), local_context,
-            is_explicit_archive_member ? configuration->getPathInArchive() : String{});
+            is_explicit_archive_member ? configuration->getPathInArchive() : String{}, format_settings);
     }
     else if (reading_path.hasGlobs())
     {
@@ -919,7 +920,9 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         /// outer glob happens to match the full entry string). Archives keep `GlobIterator`, and the
         /// entry-level predicate is applied after `ArchiveIterator` has created entry object infos.
         std::optional<Strings> paths;
-        if (!match_web_paths_only && !is_archive && filter_actions_dag && local_context->getSettingsRef()[Setting::s3_path_filter_limit])
+        /// Not when a data column named `_path` shadows the virtual one.
+        if (!match_web_paths_only && !is_archive && filter_actions_dag && virtual_columns.contains("_path")
+            && local_context->getSettingsRef()[Setting::s3_path_filter_limit])
             paths = VirtualColumnUtils::extractPathValuesFromFilter(
                 filter_actions_dag, local_context, local_context->getSettingsRef()[Setting::s3_path_filter_limit]);
 
@@ -991,7 +994,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 query_settings.throw_on_zero_files_match,
                 shouldSkipHiddenFiles(query_settings, *configuration),
                 with_tags,
-                file_progress_callback);
+                file_progress_callback,
+                format_settings);
         else
         {
             /// The validated keys stand in for a listing: a listing never yields a key that does not exist,
@@ -1085,7 +1089,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                     keys,
                     VirtualColumnUtils::getFilterByPathAndFileIndexes(
                         paths, actions, virtual_columns, hive_columns, local_context,
-                        /*format_settings=*/std::nullopt,
+                        format_settings,
                         is_explicit_archive_member ? &archive_member_names : nullptr));
             }
             else
@@ -1107,7 +1111,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             keys, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, /*skip_object_metadata=*/false, with_tags,
             file_progress_callback, deferred_filter_actions, hive_columns, configuration->getNamespace(), local_context,
-            is_explicit_archive_member ? configuration->getPathInArchive() : String{});
+            is_explicit_archive_member ? configuration->getPathInArchive() : String{}, format_settings);
     }
 
     if (is_archive)
@@ -2001,6 +2005,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             ColumnMapperPtr column_mapper = format_filter_info->column_mapper;
             if (!column_mapper)
                 column_mapper = configuration->getColumnMapperForObject(object_info);
+            else if (std::any_of(
+                         identity_partition_columns.begin(),
+                         identity_partition_columns.end(),
+                         [&](const auto & column) { return column_mapper->getIcebergInitialDefault(column.first) != nullptr; }))
+            {
+                if (auto per_file_mapper = configuration->getColumnMapperForObject(object_info))
+                    column_mapper = per_file_mapper;
+            }
 
             if (!format_supports_prewhere)
             {
@@ -2208,7 +2220,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 object_format_settings,
                 parser_shared_resources,
                 filter_info,
-                true /* is_remote_fs */,
+                object_storage->isRemote(),
                 compression_method,
                 need_only_count,
                 std::nullopt /*min_block_size_bytes*/,
@@ -2226,7 +2238,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             object_format_settings,
             parser_shared_resources,
             filter_info,
-            true /* is_remote_fs */,
+            object_storage->isRemote(),
             compression_method,
             need_only_count);
         }
@@ -2766,12 +2778,14 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     bool throw_on_zero_files_match_,
     bool skip_hidden_files_,
     bool with_tags,
-    std::function<void(FileProgress)> file_progress_callback_)
+    std::function<void(FileProgress)> file_progress_callback_,
+    const std::optional<FormatSettings> & format_settings_)
     : WithContext(context_)
     , object_storage(object_storage_)
     , configuration(configuration_)
     , virtual_columns(virtual_columns_)
     , hive_columns(hive_columns_)
+    , format_settings(format_settings_)
     , throw_on_zero_files_match(throw_on_zero_files_match_)
     , skip_hidden_files(skip_hidden_files_)
     , log(getLogger("GlobIterator"))
@@ -2919,7 +2933,7 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
                     new_batch,
                     VirtualColumnUtils::getFilterByPathAndFileIndexes(
                         paths, filter_expr, virtual_columns, hive_columns, local_context,
-                        /*format_settings=*/std::nullopt,
+                        format_settings,
                         match_web_paths_only ? &file_names : nullptr));
             }
 
@@ -2987,7 +3001,8 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     NamesAndTypesList hive_columns_,
     String object_namespace_,
     ContextPtr context_,
-    String archive_member_path_)
+    String archive_member_path_,
+    std::optional<FormatSettings> format_settings_)
     : object_storage(object_storage_)
     , virtual_columns(virtual_columns_)
     , file_progress_callback(file_progress_callback_)
@@ -2997,6 +3012,7 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     , with_tags(with_tags_)
     , deferred_filter_actions(std::move(deferred_filter_actions_))
     , hive_columns(std::move(hive_columns_))
+    , format_settings(std::move(format_settings_))
     , object_namespace(std::move(object_namespace_))
     , context(std::move(context_))
     , archive_member_path(std::move(archive_member_path_))
@@ -3038,7 +3054,7 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
                 filtered_keys,
                 VirtualColumnUtils::getFilterByPathAndFileIndexes(
                     filter_paths, deferred_filter_actions, virtual_columns, hive_columns, context,
-                    /*format_settings=*/std::nullopt,
+                    format_settings,
                     archive_member_path.empty() ? nullptr : &archive_member_names));
             if (filtered_keys.empty())
             {
