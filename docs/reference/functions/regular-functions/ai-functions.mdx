@@ -71,6 +71,14 @@ GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
 GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
 ```
 
+`aiRelevance` is experimental and additionally requires the `allow_experimental_ai_relevance_function` setting. Without it, a call fails with `SUPPORT_IS_DISABLED` even when the user holds both privileges:
+
+```sql
+SET allow_experimental_ai_relevance_function = 1;
+GRANT aiRelevance ON *.* TO ai_search_role;
+GRANT NAMED COLLECTION ON ai_rerank_credentials TO ai_search_role;
+```
+
 AI functions are executed only in queries run by a user. They are rejected in mutations (`ALTER TABLE ... UPDATE`, `ALTER TABLE ... DELETE`) and in the keys, TTL, skip indexes and projections of a table, which are executed in the background, and `Buffer` flushes throw an exception when they evaluate an AI function. `DEFAULT` and `MATERIALIZED` columns are evaluated by the insert; when such a column is added with `ALTER TABLE`, the existing parts compute it in the background, where AI functions are not executed.
 
 To fill a column of existing rows, use a lightweight [`UPDATE`](/reference/statements/update), which is executed by the query and writes only the updated column:
@@ -110,7 +118,7 @@ A function resolves the named collection to use from, in order:
 2. otherwise the applicable default-credentials setting:
    - [`ai_function_text_default_credentials`](/reference/settings/session-settings/ai-function#ai_function_text_default_credentials) for the text functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`);
    - [`ai_function_embedding_default_credentials`](/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials) for the embedding functions (`aiEmbed`, `aiSimilarity`);
-   - [`ai_function_rerank_default_credentials`](/reference/settings/session-settings/ai-function#ai_function_rerank_default_credentials) for the reranking functions (`aiRelevance`).
+   - `ai_function_rerank_default_credentials` for the reranking functions (`aiRelevance`).
 
 If neither is set, the call fails. The text, embedding, and reranking functions use separate default settings because chat-completions, embeddings, and reranking endpoints differ from each other.
 
