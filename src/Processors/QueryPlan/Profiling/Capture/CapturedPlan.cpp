@@ -14,7 +14,6 @@
 #include <base/types.h>
 
 #include <memory>
-#include <vector>
 
 namespace DB
 {
@@ -61,7 +60,7 @@ String truncateCapturedText(std::string_view text, size_t max_bytes)
 
 /// The step's own account of itself, one string per line. Like: `Filter column: ...`,
 /// `Sort description: ...`, `Limit ...`.
-std::vector<String> stepDetails(
+VectorWithMemoryTracking<String> stepDetails(
     const IQueryPlanStep & step,
     const ExplainPlanOptions & options,
     size_t max_description_length,
@@ -92,7 +91,7 @@ std::vector<String> stepDetails(
     maskSensitiveData(text, masker);
 
     /// Split the resulting lines into a vector of strings, dropping the empty ones.
-    std::vector<String> details;
+    VectorWithMemoryTracking<String> details;
     splitInto<'\n'>(details, text, /*token_compress=*/ true);
 
     for (auto & line : details)
