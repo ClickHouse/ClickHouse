@@ -106,6 +106,11 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
         {"http://host/123://user:pw@other/x", "http://host/123://user:[HIDDEN]@other/x"},
         {"http://TOPSECRET|tail@localhost:11111/x", "http://[HIDDEN]@localhost:11111/x"},
         {"http://TOKEN1@one:80|http://TOKEN2@two/x", "http://[HIDDEN]@one:80|http://[HIDDEN]@two/x"},
+        {"http://TOKEN@[::1]|http://TOKEN2@two/x", "http://[HIDDEN]@[::1]|http://[HIDDEN]@two/x"},
+        {"http://TOKEN1@one/x|TOKEN2@two/x|http://three/x", "http://[HIDDEN]@one/x|[HIDDEN]@two/x|http://three/x"},
+        {"http://TOKEN1@one/x|anonymous/x|http://TOKEN2@two/x", "http://[HIDDEN]@one/x|anonymous/x|http://[HIDDEN]@two/x"},
+        {"http://TOKEN@localhost:+80/x", "http://[HIDDEN]@localhost:+80/x"},
+
 
     };
 

@@ -110,27 +110,30 @@ static constexpr bool isURIHostAndPort(std::string_view authority)
 /// Where RFC 3986, section 3.2, ends the authority of a URI. `Poco::URI` ends it there too.
 inline constexpr std::string_view URI_AUTHORITY_TERMINATORS = "/?#";
 
-/// The range `[begin, end)` of the password of the first URI in `text` that carries one, or `{npos, npos}`.
+/// The range `[begin, end)` of the password of the first URI in `text` that carries one, or `{npos, npos}` and an offset
+/// at which to search for another password range.
 /// RFC 3986: the authority ends at the first '/', '?' or '#', and the password is its userinfo after the first ':'.
 /// Input that breaks the grammar is masked more, never less:
 /// - a raw '@' in the password: the userinfo runs to the last '@' of the authority (`u:pw@1@host` hides `pw@1`);
 /// - an authority cut short by a raw '/', '?' or '#' in the password: it runs to the last '@' (`u:pa/ss@host`).
 /// `authority_terminators` are where the consumer of the URI ends its userinfo. By default only '/', as the MongoDB
 /// driver does, since the consumer of a text is not always known; pass `URI_AUTHORITY_TERMINATORS` for `Poco::URI`.
-static constexpr std::pair<size_t, size_t> findURIPasswordRange(const std::string & text, size_t offset = 0, std::string_view authority_terminators = "/")
+static constexpr std::tuple<size_t, size_t, size_t>
+findURIPasswordRange(const std::string & text, const size_t offset = 0, std::string_view authority_terminators = "/")
 {
     static constexpr std::string_view SEPARATOR = "//";
     size_t starting_offset = text.find(SEPARATOR, offset);
     starting_offset = starting_offset == std::string_view::npos && offset > 0 ? text.find('|', offset) : starting_offset;
     if (offset > 0 && starting_offset == std::string_view::npos)
-        return {std::string_view::npos, std::string_view::npos};
+        return {std::string_view::npos, std::string_view::npos, std::string_view::npos};
     const size_t first_at = text.find('@', offset);
     if (first_at == std::string_view::npos)
     {
-        return {std::string_view::npos, std::string_view::npos};
+        return {std::string_view::npos, std::string_view::npos, text.length()};
     }
+    const size_t last_at = first_at + std::string_view(text).substr(first_at).rfind('@');
     for (size_t separator = first_at > starting_offset ? starting_offset : offset; separator != std::string_view::npos;
-         separator = text.find(SEPARATOR, separator + SEPARATOR.length()))
+         separator = std::string_view(text).substr(0, last_at).find(SEPARATOR, separator + SEPARATOR.length()))
     {
         const size_t authority_begin = separator == 0 && text[0] != '/' ? 0 : separator + (text[separator] == '|' ? 1 : SEPARATOR.length());
         const size_t userinfo_bound = std::min(text.find_first_of(authority_terminators, authority_begin), text.length());
@@ -140,10 +143,19 @@ static constexpr std::pair<size_t, size_t> findURIPasswordRange(const std::strin
         {
             const size_t colon = bounded.find(':');
             if (colon < at_sign)
-                return {authority_begin + colon + 1, authority_begin + at_sign};
-            if ((colon == std::string::npos || colon > at_sign) &&
-                (userinfo_bound == text.length() || isURIHostAndPort(bounded.substr(at_sign + 1, std::min(bounded.find("|", at_sign + 1) - 1, bounded.length()) - at_sign - 1))))
-                return {authority_begin, authority_begin + at_sign};
+                return {authority_begin + colon + 1, authority_begin + at_sign, userinfo_bound};
+            if (colon == std::string::npos || colon > at_sign)
+            {
+                if (authority_begin + at_sign == last_at)
+                {
+                    return {authority_begin, authority_begin + at_sign, text.length()};
+                }
+                const size_t next_pipe = bounded.find("|", at_sign + 1);
+                if (const auto host_and_port
+                    = next_pipe == std::string::npos ? bounded.substr(at_sign + 1) : bounded.substr(at_sign + 1, next_pipe - at_sign - 1);
+                    isURIHostAndPort(host_and_port))
+                    return {authority_begin, authority_begin + at_sign, next_pipe == std::string::npos ? userinfo_bound : authority_begin + next_pipe};
+            }
             continue;
         }
 
@@ -156,11 +168,11 @@ static constexpr std::pair<size_t, size_t> findURIPasswordRange(const std::strin
             continue;
         }
 
-        if (size_t at_sign = text.rfind('@'); at_sign != std::string_view::npos && at_sign > authority_end)
-            return {authority_begin + colon + 1, at_sign};
+        if (last_at != std::string_view::npos && last_at > authority_end)
+            return {authority_begin + colon + 1, last_at, text.length()};
     }
 
-    return {std::string_view::npos, std::string_view::npos};
+    return {std::string_view::npos, std::string_view::npos, text.length()};
 }
 
 /// Replace the passwords `findURIPasswordRange` finds with `[HIDDEN]`. Returns whether anything was masked.
@@ -170,12 +182,12 @@ inline bool maskURIPassword(std::string & uri, std::string_view authority_termin
     size_t offset = 0;
     while (offset < uri.length())
     {
-        if (auto [password_begin, password_end] = findURIPasswordRange(uri, offset, authority_terminators);
+        if (auto [password_begin, password_end, next_offset] = findURIPasswordRange(uri, offset, authority_terminators);
             password_begin != std::string::npos)
         {
             uri.replace(password_begin, password_end - password_begin, HIDDEN_SECRET);
             result = true;
-            offset = password_begin + HIDDEN_SECRET.length() + 1;
+            offset = password_begin + HIDDEN_SECRET.length() + 1 + next_offset - password_end;
         } else
         {
             break;
@@ -247,7 +259,7 @@ inline bool maskMongoDBConnectionString(std::string & str)
         name_begin = value_end + 1;
     }
 
-    if (auto [password_begin, password_end] = findURIPasswordRange(str); password_begin != std::string::npos)
+    if (auto [password_begin, password_end, _] = findURIPasswordRange(str); password_begin != std::string::npos)
         hidden.emplace_back(password_begin, password_end);
 
     if (hidden.empty())
