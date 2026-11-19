@@ -12,6 +12,7 @@ from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.jobs.scripts import relocation_headroom
 from ci.praktika.info import Info
 from ci.praktika.result import Result
+from ci.praktika.s3 import S3
 from ci.praktika.settings import Settings
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
@@ -60,7 +61,8 @@ BUILD_TYPE_TO_CMAKE = {
 # The performance reference builds (MasterCI only) build master exactly like a
 # PR build of their release build type: the same cmake configuration, the PR
 # options of `flavor_cmake_options` and the same PGO/BOLT. They compile every
-# object, link only the server binary and are not packaged.
+# object, link what a PR build of their release type links, publish their
+# ThinLTO cache for those PR builds and are not packaged.
 PERFORMANCE_REFERENCE_TO_RELEASE = {
     BuildTypes.AMD_RELEASE_PERFORMANCE_REFERENCE: BuildTypes.AMD_RELEASE,
     BuildTypes.ARM_RELEASE_PERFORMANCE_REFERENCE: BuildTypes.ARM_RELEASE,
@@ -273,6 +275,97 @@ def setup_build_caches_env(info):
             os.environ["CTCACHE_S3_READ_ONLY"] = "true"
 
 
+THINLTO_CACHE_S3_PATH = f"{Settings.CACHE_S3_PATH}/thinlto_cache"
+THINLTO_CACHE_DIR = f"{temp_dir}/thinlto_cache"
+THINLTO_CACHE_MARKER = f"{temp_dir}/thinlto_cache.restored"
+
+
+def uses_thinlto_cache(info, cmake_cmd, release_type, official):
+    """Whether this build links with the ThinLTO cache shared through S3.
+
+    PR builds into master and the performance reference builds, which build master with the PR flags, share one cache per release type.
+    Official builds link without it: the "Build profile diff" check needs every function of their link in the trace.
+    """
+    if official or info.is_local_run or "-DENABLE_THINLTO=1" not in cmake_cmd:
+        return False
+    if release_type not in PERFORMANCE_REFERENCE_TO_RELEASE.values():
+        return False
+    branch = info.base_branch if info.pr_number > 0 else info.git_branch
+    return branch == Settings.MAIN_BRANCH
+
+
+def records_access_time(directory):
+    """Whether reading a file in `directory` updates its access time (false on a `noatime` mount)."""
+    probe = f"{directory}/atime-probe"
+    with open(probe, "w") as f:
+        f.write("probe")
+    written = os.stat(probe).st_mtime_ns
+    os.utime(probe, ns=(written - 60 * 10**9, written - 120 * 10**9))
+    with open(probe) as f:
+        f.read()
+    recorded = os.stat(probe).st_atime_ns >= written
+    os.remove(probe)
+    return recorded
+
+
+def restore_thinlto_cache(info, release_type):
+    os.makedirs(THINLTO_CACHE_DIR, exist_ok=True)
+    publishes = info.pr_number == 0
+    atime = records_access_time(THINLTO_CACHE_DIR)
+    print(
+        f"NOTE: the file system of the ThinLTO cache {'records' if atime else 'does not record'} access times"
+    )
+    if publishes and not atime:
+        # The build could not tell which restored entries it used, so it publishes only its own.
+        return
+    archive = f"{temp_dir}/thinlto_cache_{release_type}.tar.zst"
+    if not S3.copy_file_from_s3(
+        s3_path=f"{THINLTO_CACHE_S3_PATH}/{release_type}.tar.zst",
+        local_path=archive,
+        no_strict=True,
+    ):
+        print(f"NOTE: no ThinLTO cache for [{release_type}], the links optimize every module")
+        return
+    if not Shell.check(
+        f"set -o pipefail; zstd -d {archive} --stdout | tar -xf - -C {THINLTO_CACHE_DIR}",
+        verbose=True,
+    ):
+        # A partially extracted entry must not be used.
+        print("WARNING: failed to extract the ThinLTO cache, the links optimize every module")
+        Shell.check(f"rm -rf {THINLTO_CACHE_DIR} && mkdir -p {THINLTO_CACHE_DIR}")
+    Shell.check(f"rm -f {archive}")
+    print(f"ThinLTO cache: {len(os.listdir(THINLTO_CACHE_DIR))} entries restored")
+    if publishes:
+        # lld reads only the entries the links use, which updates their access time; see publish_thinlto_cache.
+        Shell.check(f"touch {THINLTO_CACHE_MARKER}")
+        restored = os.stat(THINLTO_CACHE_MARKER).st_mtime_ns - 60 * 10**9
+        for entry in os.scandir(THINLTO_CACHE_DIR):
+            if entry.is_file():
+                os.utime(entry.path, ns=(restored, entry.stat().st_mtime_ns))
+
+
+def publish_thinlto_cache(release_type):
+    if os.path.exists(THINLTO_CACHE_MARKER):
+        # Keep the entries this build's links read or wrote.
+        Shell.check(
+            f"find {THINLTO_CACHE_DIR} -type f ! -anewer {THINLTO_CACHE_MARKER} -delete",
+            verbose=True,
+        )
+    print(f"ThinLTO cache: {len(os.listdir(THINLTO_CACHE_DIR))} entries to publish")
+    archive = f"{temp_dir}/{release_type}.tar.zst"
+    if Shell.check(
+        f"set -o pipefail; tar -cf - -C {THINLTO_CACHE_DIR} . | zstd -T0 -1 -q -f -o {archive}",
+        verbose=True,
+    ):
+        S3.copy_file_to_s3(
+            s3_path=f"{THINLTO_CACHE_S3_PATH}/{release_type}.tar.zst",
+            local_path=archive,
+            no_strict=True,
+            tags={"retention": "default"},
+        )
+    Shell.check(f"rm -f {archive}")
+
+
 def main():
     args = parse_args()
 
@@ -321,9 +414,10 @@ def main():
     is_private = (
         "PRIVATE_BUILDS_TO_CMAKE" in vars() or "PRIVATE_BUILDS_TO_CMAKE" in globals()
     )
+    official = info.pr_number == 0 and not reference_build
     cmake_cmd += flavor_cmake_options(
         cmake_cmd,
-        official=info.pr_number == 0 and not reference_build,
+        official=official,
         is_private=is_private,
     )
 
@@ -333,6 +427,11 @@ def main():
     release_type = PERFORMANCE_REFERENCE_TO_RELEASE.get(build_type, build_type)
     use_pgo = release_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(pgo_profile)
     use_bolt = release_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(bolt_profile) and os.path.getsize(bolt_profile) > 0
+
+    thinlto_cache = uses_thinlto_cache(info, cmake_cmd, release_type, official)
+    if thinlto_cache:
+        restore_thinlto_cache(info, release_type)
+        cmake_cmd += f" -DTHINLTO_CACHE_DIR={THINLTO_CACHE_DIR}"
 
     # PGO is best-effort: keep a PGO-free command ready so we can retry without
     # profile-guided optimization if cmake/build fails with a stale/incompatible
@@ -534,6 +633,9 @@ def main():
             targets = "clickhouse"
         elif reference_build:
             targets = "clickhouse-self-extracting"
+            if thinlto_cache and args.build_examples:
+                # The published ThinLTO cache serves every link of the PR build.
+                targets += " clickhouse-examples"
         elif args.build_examples:
             targets = "clickhouse-bundle clickhouse-examples"
         elif build_type == BuildTypes.ARM_BINARY:
@@ -550,8 +652,9 @@ def main():
             # Warm sccache by compiling every object-file target ninja knows
             # about; ninja pulls in the generated headers each object depends
             # on. xargs batches the list to stay within the command-line length
-            # limit. Then link only the server binary, the reference of the PR
-            # performance comparison (ci/jobs/performance_tests.py).
+            # limit. Then link the server binary, the reference of the PR
+            # performance comparison (ci/jobs/performance_tests.py), and, with
+            # the ThinLTO cache, the other binaries a PR build links.
             build_command = (
                 "ninja -t targets all | cut -d: -f1 | grep -E '[.]o$' "
                 "| xargs --no-run-if-empty ninja"
@@ -626,6 +729,8 @@ def main():
         run_shell_with_output("Output programs", f"ls -l {build_dir}/programs/")
         Shell.check("pwd")
         res = results[-1].is_ok()
+        if res and thinlto_cache and info.pr_number == 0:
+            publish_thinlto_cache(release_type)
 
         # Apply BOLT post-link optimization if profiles are available
         if res and use_bolt:
