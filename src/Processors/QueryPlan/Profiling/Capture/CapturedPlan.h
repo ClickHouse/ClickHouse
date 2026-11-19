@@ -44,7 +44,7 @@ struct CapturedStep
     VectorWithMemoryTracking<String> children;
 
     /// Ids of the subqueries whose results this step reads.
-    std::vector<size_t> consumed_subquery_ids;
+    VectorWithMemoryTracking<size_t> consumed_subquery_ids;
 
     std::optional<AnalyzedStepData> statistics;
 
@@ -63,7 +63,7 @@ struct CapturedSubPlan
 
     /// Id of the root node
     String root_id;
-    std::vector<CapturedStep> nodes;
+    VectorWithMemoryTracking<CapturedStep> nodes;
 
     /// Totals for the sub-plan's own pipeline.
     std::optional<UInt64> execution_time_ns;
