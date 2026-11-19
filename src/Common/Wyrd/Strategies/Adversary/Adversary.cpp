@@ -98,9 +98,8 @@ std::exception_ptr Adversary::error()
     return first_error;
 }
 
-void Adversary::threadEnter()
+void Adversary::threadEnter() const
 {
-    thread_count.fetch_add(1);
     if (params.pin_to_single_core)
         pinThisThreadToSingleCore();
 }
@@ -132,11 +131,18 @@ bool Adversary::threadSpuriousFailure()
 void Adversary::threadEnterLockFreeScope()
 {
     ++lock_free_depth;
+    if (lock_free_depth == 1)
+        lock_free_count.fetch_add(1);
 }
 
 void Adversary::threadLeaveLockFreeScope()
 {
     --lock_free_depth;
+    if (lock_free_depth > 0)
+        return;
+
+    lock_free_count.fetch_sub(1);
+    resumeRandomThread();
 }
 
 void Adversary::threadProgress()
@@ -148,7 +154,6 @@ void Adversary::threadProgress()
 void Adversary::threadExit()
 {
     unpinThisThread();
-    thread_count.fetch_sub(1);
     resumeRandomThread();
 }
 
@@ -165,7 +170,7 @@ void Adversary::suspendThisThread()
         size_t suspended_now = suspended_count.load();
         if (suspended_now >= params.max_suspended_threads)
             return;
-        if (suspended_now + 1 >= thread_count.load())
+        if (suspended_now + 1 >= lock_free_count.load())
             return;
 
         suspended.push_back(self);

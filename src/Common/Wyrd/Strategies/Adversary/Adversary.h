@@ -36,7 +36,7 @@ public:
     AdversaryResult report() const;
     std::exception_ptr error();
 
-    void threadEnter();
+    void threadEnter() const;
     void threadFail(std::exception_ptr exception);
     void threadFault();
     bool threadSpuriousFailure();
@@ -48,7 +48,7 @@ public:
 private:
     const AdversaryParams params;
 
-    std::atomic<size_t> thread_count{0};
+    std::atomic<size_t> lock_free_count{0};
     std::atomic<size_t> suspended_count{0};
     std::atomic<size_t> suspend_total{0};
     std::atomic<size_t> yield_count{0};
