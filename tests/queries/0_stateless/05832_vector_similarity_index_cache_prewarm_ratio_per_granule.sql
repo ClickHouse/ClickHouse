@@ -42,13 +42,13 @@ INSERT INTO vs_prewarm_granules
 SELECT number, [toFloat32(number), 0.0]
 FROM numbers(
     (
-        SELECT intDiv(toUInt64(toFloat64(cache_size) * ratio), granule_size) + 3
+        SELECT assumeNotNull(intDiv(toUInt64(toFloat64(cache_size) * ratio), granule_size) + 3)
         FROM
         (
             SELECT
                 (SELECT toUInt64(value) FROM system.server_settings WHERE name = 'vector_similarity_index_cache_size') AS cache_size,
                 (SELECT toFloat64(value) FROM system.server_settings WHERE name = 'vector_similarity_index_cache_prewarm_ratio') AS ratio,
-                (SELECT assumeNotNull(max(size)) FROM system.vector_similarity_index_cache WHERE database = currentDatabase() AND table = 'vs_prewarm_probe') AS granule_size
+                (SELECT max(size) FROM system.vector_similarity_index_cache WHERE database = currentDatabase() AND table = 'vs_prewarm_probe') AS granule_size
         )
     )
 );
