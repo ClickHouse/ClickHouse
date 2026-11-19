@@ -1,12 +1,10 @@
 #pragma once
 
-#include <Common/Wyrd/Namespace.h>
-
 #include <functional>
 #include <source_location>
 #include <string>
 
-namespace WYRD_NAMESPACE(DB::Wyrd)
+namespace DB::Wyrd
 {
 
 void sync(const char * operation, std::source_location location = std::source_location::current());

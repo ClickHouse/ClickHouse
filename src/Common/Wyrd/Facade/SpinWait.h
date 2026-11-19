@@ -1,11 +1,9 @@
 #pragma once
 
-#include <Common/Wyrd/Namespace.h>
-
 #include <cstddef>
 #include <source_location>
 
-namespace WYRD_NAMESPACE(DB::Wyrd)
+namespace DB::Wyrd
 {
 
 class SpinWait

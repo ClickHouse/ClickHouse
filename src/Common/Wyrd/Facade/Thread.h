@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/Wyrd/Namespace.h>
 
 #include <functional>
 #include <source_location>
@@ -12,7 +11,7 @@
 #    include <Common/ThreadPool.h>
 #endif
 
-namespace WYRD_NAMESPACE(DB::Wyrd)
+namespace DB::Wyrd
 {
 
 #if defined(WYRD_SIMULATION)

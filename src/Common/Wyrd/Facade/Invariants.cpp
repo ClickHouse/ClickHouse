@@ -8,14 +8,17 @@
 #    include <Common/Exception.h>
 #endif
 
+namespace DB
+{
+
 #if !defined(WYRD_SIMULATION) && !defined(WYRD_ADVERSARY)
-namespace DB::ErrorCodes
+namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
 #endif
 
-namespace WYRD_NAMESPACE(DB::Wyrd)
+namespace Wyrd
 {
 
 void verify(bool condition, std::string message)
@@ -46,5 +49,7 @@ void abort(std::string message)
 }
 
 #endif
+
+}
 
 }

@@ -3,7 +3,7 @@
 
 #include <algorithm>
 
-namespace WYRD_NAMESPACE(DB::Wyrd)
+namespace DB::Wyrd
 {
 
 namespace

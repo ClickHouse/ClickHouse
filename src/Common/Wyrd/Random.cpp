@@ -8,7 +8,7 @@
 #include <random>
 #include <utility>
 
-namespace WYRD_NAMESPACE(DB::Wyrd)
+namespace DB::Wyrd
 {
 
 namespace

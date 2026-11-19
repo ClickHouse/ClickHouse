@@ -3,7 +3,7 @@
 
 #include <stdexcept>
 
-namespace WYRD_NAMESPACE(DB::Wyrd)
+namespace DB::Wyrd
 {
 
 void sync(const char * operation, std::source_location location)

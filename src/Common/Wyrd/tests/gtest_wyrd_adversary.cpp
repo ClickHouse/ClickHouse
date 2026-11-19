@@ -10,6 +10,10 @@
 #include <Common/Wyrd/Testing/Race.h>
 #include <base/types.h>
 
+#if defined(OS_LINUX)
+#    include <sched.h>
+#endif
+
 using namespace DB::Wyrd;
 
 WYRD_TEST(Wyrd, AdversaryYieldsAtEveryFaultPoint, .runs = 1, .adversary = {.pin_to_single_core = false, .yield_probability = 1.0, .suspend_probability = 0.0})
@@ -84,5 +88,25 @@ TEST(Wyrd, AdversaryNothingInstalledMeansNoFaults)
     EXPECT_TRUE(value.compare_exchange_weak(expected, 1));
     EXPECT_FALSE(spuriousFailure());
 }
+
+#if defined(OS_LINUX)
+
+TEST(Wyrd, AdversaryThreadExitRestoresAffinity)
+{
+    cpu_set_t before;
+    CPU_ZERO(&before);
+    ASSERT_EQ(sched_getaffinity(0, sizeof(before), &before), 0);
+
+    Adversary pinning(AdversaryParams{.pin_to_single_core = true});
+    pinning.threadEnter();
+    pinning.threadExit();
+
+    cpu_set_t after;
+    CPU_ZERO(&after);
+    ASSERT_EQ(sched_getaffinity(0, sizeof(after), &after), 0);
+    EXPECT_TRUE(CPU_EQUAL(&before, &after));
+}
+
+#endif
 
 #endif

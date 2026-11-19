@@ -1,11 +1,10 @@
 #pragma once
 
 #include <Common/Wyrd/Facade/Atomic.h>
-#include <Common/Wyrd/Namespace.h>
 
 #include <base/types.h>
 
-namespace WYRD_NAMESPACE(DB::Wyrd)
+namespace DB::Wyrd
 {
 
 class Gate

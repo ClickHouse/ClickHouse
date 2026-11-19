@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/Wyrd/Namespace.h>
 #include <Common/Wyrd/Strategies/Adversary/AdversaryParams.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/defines.h>
@@ -9,7 +8,7 @@
 #include <memory>
 #include <mutex>
 
-namespace WYRD_NAMESPACE(DB::Wyrd)
+namespace DB::Wyrd
 {
 
 struct AdversaryResult

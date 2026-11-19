@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/Wyrd/Namespace.h>
-
 #include <base/defines.h>
 
 #include <mutex>
@@ -16,7 +14,7 @@
 #    include <base/types.h>
 #endif
 
-namespace WYRD_NAMESPACE(DB::Wyrd)
+namespace DB::Wyrd
 {
 
 #if defined(WYRD_SIMULATION)

@@ -2,14 +2,13 @@
 
 #include <Common/Wyrd/Facade/Atomic.h>
 #include <Common/Wyrd/Facade/Thread.h>
-#include <Common/Wyrd/Namespace.h>
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
 #include <functional>
 
-namespace WYRD_NAMESPACE(DB::Wyrd)
+namespace DB::Wyrd
 {
 
 /// Threads released at one instant by run

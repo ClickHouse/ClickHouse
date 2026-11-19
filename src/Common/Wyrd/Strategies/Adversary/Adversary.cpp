@@ -9,7 +9,7 @@
 #    include <sched.h>
 #endif
 
-namespace WYRD_NAMESPACE(DB::Wyrd)
+namespace DB::Wyrd
 {
 
 namespace
@@ -18,6 +18,9 @@ namespace
 thread_local int lock_free_depth = 0;
 
 #if defined(OS_LINUX)
+
+thread_local cpu_set_t affinity_before_pin;
+thread_local bool pinned = false;
 
 int chooseCore()
 {
@@ -28,15 +31,31 @@ int chooseCore()
 void pinThisThreadToSingleCore()
 {
     static const int core = chooseCore();
+    if (sched_getaffinity(0, sizeof(affinity_before_pin), &affinity_before_pin) != 0)
+        return;
+
     cpu_set_t set{};
     CPU_ZERO(&set);
     CPU_SET(core, &set);
-    (void)sched_setaffinity(0, sizeof(set), &set);
+    pinned = sched_setaffinity(0, sizeof(set), &set) == 0;
+}
+
+void unpinThisThread()
+{
+    if (!pinned)
+        return;
+
+    (void)sched_setaffinity(0, sizeof(affinity_before_pin), &affinity_before_pin);
+    pinned = false;
 }
 
 #else
 
 void pinThisThreadToSingleCore()
+{
+}
+
+void unpinThisThread()
 {
 }
 
@@ -112,6 +131,7 @@ void Adversary::threadProgress()
 
 void Adversary::threadExit()
 {
+    unpinThisThread();
     thread_count.fetch_sub(1);
     resumeRandomThread();
 }

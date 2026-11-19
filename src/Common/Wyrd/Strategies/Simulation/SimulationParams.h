@@ -1,11 +1,9 @@
 #pragma once
 
-#include <Common/Wyrd/Namespace.h>
-
 #include <Common/CoroutineStack.h>
 #include <base/types.h>
 
-namespace WYRD_NAMESPACE(DB::Wyrd)
+namespace DB::Wyrd
 {
 
 struct SimulationParams

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/Wyrd/Facade/Atomic.h>
-#include <Common/Wyrd/Namespace.h>
 #include <base/types.h>
 
 #include <source_location>
@@ -10,7 +9,7 @@
 #    include <Common/futex.h>
 #endif
 
-namespace WYRD_NAMESPACE(DB::Wyrd)
+namespace DB::Wyrd
 {
 
 #if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)

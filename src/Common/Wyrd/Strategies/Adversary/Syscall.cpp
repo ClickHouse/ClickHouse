@@ -1,7 +1,7 @@
 #include <Common/Wyrd/Strategies/Adversary/Syscall.h>
 #include <Common/Wyrd/Strategies/Adversary/Access.h>
 
-namespace WYRD_NAMESPACE(DB::Wyrd)
+namespace DB::Wyrd
 {
 
 void enterThread()

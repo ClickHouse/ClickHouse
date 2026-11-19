@@ -4,7 +4,7 @@
 
 #include <fmt/format.h>
 
-namespace WYRD_NAMESPACE(DB::Wyrd)
+namespace DB::Wyrd
 {
 
 ExclusiveScope::Section::Section(ExclusiveScope & scope_, std::string section_name_)
