@@ -92,7 +92,7 @@ The `filters` parameter is a JSON array. Each entry sets the selection of one fi
 | Entry | Used for |
 | --- | --- |
 | `{"type":"variable","name":"<variableName>","values":["<value1>","<value2>"]}` | Filters that are variables: static values, SQL query values, PromQL label values, data source, and connection variables, and SQL expression values filters with **Available as variable** enabled. `name` is the filter's variable name. |
-| `{"type":"adhoc","name":"<uniqueName>","conditions":[{"key":"<key>","operator":"<operator>","value":"<value>"}]}` | [Ad hoc filters](/clickstack/observability/features/dashboards/overview#adhoc-filters). `name` is the filter's unique name, and `operator` is one of `=`, `!=`, `=~`, `!~`, `LIKE`, `NOT LIKE`, or `IN`. |
+| `{"type":"adhoc","name":"<uniqueName>","conditions":[{"key":"<key>","operator":"<operator>","value":"<value>"}]}` | [Ad hoc filters](/clickstack/observability/features/dashboards/overview#adhoc-filters). `name` is the filter's unique name, and `operator` is one of `=`, `!=`, `=~`, `!~`, `LIKE`, `NOT LIKE`, or `IN`. `LIKE` and `NOT LIKE` apply only to SQL sources — Prometheus ad hoc filters ignore conditions that use them. |
 | `{"type":"sql","condition":"<expression> IN ('<value1>', '<value2>')"}` | SQL expression values filters that aren't variables. The condition's expression must match the filter's **Filter expression**. |
 
 The following rules apply:

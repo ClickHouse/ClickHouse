@@ -603,7 +603,7 @@ Instead of offering a single dropdown, an ad hoc filter lets the viewer build a 
 - **Applies to sources** — the sources the conditions are broadcast to. Leave it empty to broadcast to every tile that uses one of the filter's data sources.
 - **Unique name** — identifies the filter's conditions in the [dashboard URL](/clickstack/url-parameters#dashboard-filter-values).
 
-Conditions support the following operators: `=`, `!=`, `=~` (regex), `!~` (regex), `LIKE`, `NOT LIKE`, `IN`.
+Conditions on SQL sources support the following operators: `=`, `!=`, `=~` (regex), `!~` (regex), `LIKE`, `NOT LIKE`, `IN`. Conditions on Prometheus sources support `=`, `!=`, `=~` (regex), `!~` (regex), and `IN` — `LIKE` and `NOT LIKE` are SQL-only.
 
 Viewers can also add a condition by clicking a value in a table, time series, or search tile on the dashboard.
 
