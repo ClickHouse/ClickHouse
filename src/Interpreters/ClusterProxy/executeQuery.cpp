@@ -1,4 +1,5 @@
 #include <Core/ProtocolDefines.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <memory>
 #include <optional>
 #include <Analyzer/QueryNode.h>
@@ -372,6 +373,9 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     if (is_remote_function)
     {
         const auto & address = cluster.getShardsAddresses().front().front();
+        /// The forwarded current roles are the roles of the initial user, so they cannot be passed on for another user.
+        if (new_client_info.initial_user != address.user)
+            new_client_info.current_roles.reset();
         new_client_info.initial_user = address.user;
     }
 
@@ -588,7 +592,7 @@ void executeQuery(
 
     const ClusterPtr & not_optimized_cluster = query_info.cluster;
 
-    std::vector<QueryPlanPtr> plans;
+    QueryPlanPtrs plans;
     SelectStreamFactory::Shards remote_shards;
 
     auto cluster = query_info.getCluster();
@@ -624,15 +628,20 @@ void executeQuery(
         }
     }
 
+    /// All shards share the query tree, so that the query is planned once, unless it is rewritten for the shard.
+    const auto query_for_all_shards = query_info.query_tree->clone();
+
     for (size_t i = 0, s = cluster->getShardsInfo().size(); i < s; ++i)
     {
         const auto & shard_info = cluster->getShardsInfo()[i];
 
-        auto query_for_shard = query_info.query_tree->clone();
+        auto query_for_shard = query_for_all_shards;
         if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1 &&
             /// TODO: support composite sharding key
             sharding_key_expr->getRequiredColumns().size() == 1)
         {
+            query_for_shard = query_for_shard->clone();
+
             OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
                 sharding_key_expr,
                 sharding_key_column_name,
@@ -963,7 +972,7 @@ std::vector<bool> getReplicasLiveness(const String & cluster_name, const Cluster
     return is_active;
 }
 
-static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
+static std::pair<VectorWithMemoryTracking<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -1076,7 +1085,7 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
         shuffled_pool = shard.pool->getShuffledPools(settings, priority_func);
     }
 
-    std::vector<ConnectionPoolPtr> pools_to_use;
+    VectorWithMemoryTracking<ConnectionPoolPtr> pools_to_use;
     pools_to_use.reserve(shuffled_pool.size());
     for (auto & pool : shuffled_pool)
     {
@@ -1089,7 +1098,7 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
     return {pools_to_use, max_replicas_to_use};
 }
 
-static size_t findLocalReplicaIndexAndUpdatePools(std::vector<ConnectionPoolPtr> & pools, size_t max_replicas_to_use, const ClusterPtr & cluster)
+static size_t findLocalReplicaIndexAndUpdatePools(VectorWithMemoryTracking<ConnectionPoolPtr> & pools, size_t max_replicas_to_use, const ClusterPtr & cluster)
 {
     const auto & shard = cluster->getShardsInfo().at(0);
 
@@ -1251,7 +1260,7 @@ void executeQueryWithParallelReplicas(
         input_headers.emplace_back(stub_local_plan->getCurrentHeader());
         input_headers.emplace_back(remote_plan->getCurrentHeader());
 
-        std::vector<QueryPlanPtr> plans;
+        QueryPlanPtrs plans;
         plans.emplace_back(std::move(stub_local_plan));
         plans.emplace_back(std::move(remote_plan));
 
@@ -1326,7 +1335,7 @@ QueryPlanPtr createParallelReplicasPlan(QueryPlanPtr plan_fragment, ContextPtr c
         input_headers.emplace_back(local_plan->getCurrentHeader());
         input_headers.emplace_back(remote_plan->getCurrentHeader());
 
-        std::vector<QueryPlanPtr> plans;
+        QueryPlanPtrs plans;
         plans.emplace_back(std::move(local_plan));
         plans.emplace_back(std::move(remote_plan));
 
@@ -1589,7 +1598,7 @@ bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const 
 /// find and remove ReadFromParallelRemoteReplicasStep in query plan,
 /// also returns the parallel replicas coordinator, connection pools and local replica index
 /// stored in ReadFromParallelRemoteReplicasStep, so the remote-pool pass can reuse them.
-LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan)
+std::optional<LocalPlanParallelReplicasInfo> dropReadFromRemoteInPlan(QueryPlan & query_plan)
 {
     struct Frame
     {
@@ -1612,6 +1621,10 @@ LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan)
             const auto * step = frame.node->step.get();
             if (const auto * read_from_remote = typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step))
             {
+                /// Without a local replica this step is the plan's only reading step.
+                if (!read_from_remote->getExcludePoolIndex())
+                    return {};
+
                 auto & children = frame.parent->children;
                 for (auto it = begin(children); it != end(children); ++it)
                 {
@@ -1673,7 +1686,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     const ContextPtr & context,
     std::optional<QueryPipeline> local_pipeline,
     std::optional<ParallelReplicasReadingCoordinatorPtr> coordinator,
-    std::vector<ConnectionPoolPtr> reused_connection_pools,
+    VectorWithMemoryTracking<ConnectionPoolPtr> reused_connection_pools,
     std::optional<size_t> reused_local_replica_index)
 {
     auto logger = getLogger("executeInsertSelectWithParallelReplicas");
@@ -1684,7 +1697,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
 
-    std::vector<ConnectionPoolPtr> connection_pools;
+    VectorWithMemoryTracking<ConnectionPoolPtr> connection_pools;
     size_t max_replicas_to_use = 0;
     std::optional<size_t> local_replica_index;
 

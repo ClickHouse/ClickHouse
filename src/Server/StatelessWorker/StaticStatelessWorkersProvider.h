@@ -38,10 +38,10 @@ public:
     /// Returns a per-query allocation over the workers snapshotted at construction.
     StatelessWorkerAllocationPtr allocate(size_t desired_workers, uint64_t provisioning_timeout_ms) override;
 
-    std::vector<StatelessWorkerState> getWorkersState() const override;
+    [[nodiscard]] std::vector<StatelessWorkerState> getWorkersState() const override;
 
     /// A static cluster serves its fixed snapshot regardless of the request, so plan for that many.
-    size_t getPlanningNodeCount(size_t /*requested_workers*/) const override { return addresses.size(); }
+    [[nodiscard]] size_t getPlanningNodeCount(size_t /*requested_workers*/) const override { return addresses.size(); }
 
     /// For `<cluster>`: a provider for the active replicas. A task sent to an inactive replica
     /// (shut down, removed, or not synced yet) would fail the whole query. The liveness can come from
@@ -49,7 +49,7 @@ public:
     /// When the task does not run, one query reads the liveness itself and the others wait for it.
     StatelessWorkersProviderPtr tryGetQuerySnapshot() override;
 
-    std::string getAuthToken() const override { return {}; }
+    [[nodiscard]] std::string getAuthToken() const override { return {}; }
 
     void start() override {}
     void shutdown() override;
@@ -62,7 +62,7 @@ public:
 private:
     /// A provider for the replicas of `cluster_name` that are active now. Null if there is no usable
     /// liveness; then all configured workers are used.
-    StatelessWorkersProviderPtr makeActiveWorkersProvider() const;
+    [[nodiscard]] StatelessWorkersProviderPtr makeActiveWorkersProvider() const;
     /// The body of `refresh_task`: updates `active_workers`, and stops when no query comes.
     void refreshActiveWorkers();
 

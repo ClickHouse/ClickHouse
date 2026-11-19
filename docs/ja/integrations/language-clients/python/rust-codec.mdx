@@ -21,7 +21,7 @@ pip install "clickhouse-connect[rust,numpy]"   # NumPy results
 pip install "clickhouse-connect[rust,pandas]"  # Pandas results and inserts
 ```
 
-Core の wheel は、Linux、macOS、Windows 上の CPython 3.10 から 3.14、およびフリースレッド版 CPython 3.14t 向けに公開されています。フリースレッド版 Python では、core 拡張機能をインポートしても GIL が再び有効になることはありません。
+Core の wheel は、Linux、macOS、Windows 上の CPython 3.10 から 3.15、およびフリースレッド版 CPython 3.14t と 3.15t 向けに公開されています。フリースレッド版 Python では、core 拡張機能をインポートしても GIL が再び有効になることはありません。
 
 Rust による通常の NumPy および Pandas 出力には、PyArrow やその他の Arrow パッケージは不要です。これには `query_np`、`query_df`、それらのストリーミング用バリアント、および `query(..., use_numpy=True)` が含まれます。NumPy のクエリに Pandas は不要です。非同期クライアントを使用する場合は、`async` extra を追加してください。
 
@@ -39,11 +39,11 @@ Time/Time64 の Array (ネストされた Array や Nullable なリーフを含�
 
 Nullable なスカラー DateTime64(9) については、`query_df` と `query_df_stream` は、SimpleAggregateFunction 別名を経由する場合も含め、小数点以下の桁数 9 桁をすべて保持します。Pandas 3 では、デフォルト出力の datetime カラムはマイクロ秒ではなくナノ秒単位を使用するようになりました。すべてが NULL の Block に対する既存の object dtype 推論は変わりません。名前付きタイムゾーンによって値が Pandas のナノ秒範囲外になる場合、そのカラムでは従来のオブジェクト変換と範囲の動作が維持されます。
 
-これらのカラムについて、`query_np` と `query_np_stream` のオブジェクトフィールドには、Python の `datetime` セルではなく `numpy.datetime64` セルが格納されるようになり、SQL の NULL には `None` が入ります。名前付きタイムゾーンの値は、Python codec と同様に、タイムゾーンのメタデータを持たない UTC ティックを使用します。これにより、Pandas がなくてもナノ秒が保持されます。タイムゾーン対応のタイムスタンプが必要な場合は `query_df` を使用してください。その他の Nullable な時間型の NumPy セルの型は変わりません。
+これらのカラムについて、`query_np` と `query_np_stream` のオブジェクトフィールドには、Python の `datetime` セルではなく `numpy.datetime64` セルが格納されるようになり、SQL の NULL には `None` が入ります。名前付きタイムゾーンの値は、Python コーデック と同様に、タイムゾーンのメタデータを持たない UTC ティックを使用します。これにより、Pandas がなくてもナノ秒が保持されます。タイムゾーン対応のタイムスタンプが必要な場合は `query_df` を使用してください。その他の Nullable な時間型の NumPy セルの型は変わりません。
 
 スカラー DateTime64 の NumPy および Pandas クエリでは、Nullable カラムや SimpleAggregateFunction 別名を含め、0、3、6、9 以外の精度は `ProgrammingError` で拒否されます。
 
-Rust codec が選択されているにもかかわらずコンパイル済みモジュールがインストールされていない場合、クライアントの作成時に、このインストールコマンドを示す `NotSupportedError` が送出されます。
+Rust コーデック が選択されているにもかかわらずコンパイル済みモジュールがインストールされていない場合、クライアントの作成時に、このインストールコマンドを示す `NotSupportedError` が送出されます。
 
 ## codec の有効化 {#enabling-the-codec}
 
@@ -83,23 +83,27 @@ PyArrow がない場合、Rust の文字列変換では、デコード済みの�
 
 ## フォールバックルール {#fallback-rules}
 
-フォールバックの判断はバイトの読み取りや送信が始まる前に行われるため、ストリームの途中でcodecが切り替わることはありません。クエリの場合、この選択はresponse bodyが消費される前に行われます。insertの場合、すべてのcolumn typeがサポートされているときにのみRustエンコーダーが選択され、そうでなければinsert全体がPython codecで実行されます。
+フォールバックの判断はバイトの読み取りや送信が始まる前に行われるため、ストリームの途中でコーデックが切り替わることはありません。クエリの場合、この選択はresponse bodyが消費される前に行われます。挿入処理の場合、すべてのカラム typeがサポートされているときにのみRustエンコーダーが選択され、そうでなければ挿入処理全体がPython コーデックで実行されます。
 
-`naive_datetime_insert="server"` が有効な場合、`rust` は `DateTime` または `DateTime64` のcolumnを含むinsertをPython codecへルーティングし、宣言されたcolumnのtimezoneまたはserver timezoneが適用されるようにします。`rust_strict` はこの組み合わせを拒否します。デフォルトの `naive_datetime_insert="local"` モードでは、引き続きRustエンコーダーが使用されます。
+`naive_datetime_insert="server"` が有効な場合、`rust` は `DateTime` または `DateTime64` のカラムを含む挿入処理をPython コーデックへルーティングし、宣言されたカラムのtimezoneまたはサーバーのタイムゾーンが適用されるようにします。`rust_strict` はこの組み合わせを拒否します。デフォルトの `naive_datetime_insert="local"` モードでは、引き続きRustエンコーダーが使用されます。
 
-SQLAlchemyのdialect reflection文を含むドライバー内部のメタデータクエリは、どのモードでも常に、通知なくPython codecを使用します。
+Pythonの行およびカラムのクエリ(`query`、`query_row_block_stream`、`query_column_block_stream`、`query_rows_stream`)のうち、タイムゾーン指定のない `DateTime` または `DateTime64` カラムがUTC以外の実行環境由来のタイムゾーン(サーバーのタイムゾーンまたはローカルタイムゾーン)でレンダリングされるものは、インストールされているコアが対応していればRust コーデックを使用します。その場合も、値はPython コーデックを使用した場合と同じになります。ローカルタイムゾーンが対象となるのは、IANA名に解決できる場合、つまり `TZ` が設定されているか `tzlocal` がインストールされている場合に限られます。それ以外の場合、ローカルタイムゾーンはIANA名を持たない固定オフセットとして扱われ、Python コーデックに振り分けられます。UTC以外の実行環境由来のタイムゾーンを伴うNumPyおよびPandasのクエリ(`query_np`、`query_df`、およびそれらのストリーミング版)や、`query_tz`、`column_tzs`、デフォルト以外の `tz_mode` を指定したクエリ、サーバーのタイムゾーンヘッダーを受け取るクエリは、引き続きPython コーデックに振り分けられます。`rust_strict` はこれらのケースを拒否します。
 
-Rust codecが検出した不正な形式のNativeペイロードは `DataError` を発生させます。
+SQLAlchemyのdialect reflection文を含むドライバー内部のメタデータクエリは、どのモードでも常に、通知なくPython コーデックを使用します。
+
+Rust コーデックが検出した不正な形式のNativeペイロードは `DataError` を発生させます。
 
 ## Versioning {#versioning}
 
-`clickhouse-connect-core` は `clickhouse-connect` とは独立してバージョン管理されます。`rust` extra には `clickhouse-connect-core>=0.2.1,<0.3` が必要です。Rust コーデック が選択されると、ドライバーはバインディング API のバージョンとカラムバッファ機能の両方を検証します。公開済みの core 0.2.0 の wheel はカラムバッファ機能を備えていません。インストールされている wheel に互換性がない場合、`rust` と `rust_strict` のどちらでも Client の作成時に `NotSupportedError` が送出され、次のアップグレード用のコマンドが示されます:
+`clickhouse-connect-core` は `clickhouse-connect` とは独立してバージョン管理されます。`rust` extra には `clickhouse-connect-core>=0.2.1,<0.3` が必要です。Rust codec が選択されると、ドライバーはバインディング API のバージョンとカラムバッファ機能の両方を検証します。公開済みの core 0.2.0 の wheel はカラムバッファ機能を備えていません。インストールされている wheel に互換性がない場合、`rust` と `rust_strict` のどちらでも Client の作成時に `NotSupportedError` が送出され、次のアップグレード用のコマンドが示されます:
 
 ```bash
 pip install --upgrade clickhouse-connect-core
 ```
 
 コンパイル済み コーデック の修正やパフォーマンス改善は `clickhouse-connect-core` のリリースとして提供されるため、互換性のある core wheel へのアップグレードで取り込めます。ドライバーの Rust インテグレーションに関する変更を取り込むには、`clickhouse-connect` のアップグレードが必要です。
+
+実行環境由来のタイムゾーンが UTC 以外の場合に Python の行クエリおよびカラムクエリを Rust でサポートするには、`clickhouse-connect>=1.11.0` と `clickhouse-connect-core>=0.2.3` が必要です。この機能を有効にするには、両方のパッケージをアップグレードしてください。互換性はあるもののそれより古い core では、従来どおり `rust` モードでは Python へのフォールバックが行われ、`rust_strict` モードでは拒否されます。
 
 ## 既知の動作の相違点 {#known-behavior-differences}
 

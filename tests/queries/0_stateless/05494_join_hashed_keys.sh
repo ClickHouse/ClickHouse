@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-msan
+# no-msan: its ~190 joins take minutes under MSan and seconds in release; ASan, UBSan and TSan still run it.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -218,10 +219,12 @@ $CLICKHOUSE_CLIENT -q "
     SELECT 'empty tuple and UInt64', count() FROM (SELECT tuple() AS e, number AS id FROM numbers(3)) AS a JOIN (SELECT tuple() AS e, number AS id FROM numbers(4)) AS b ON a.e = b.e AND a.id = b.id SETTINGS enable_join_runtime_filters = 0;
     SELECT 'correlated', count(), sum(cityHash64(id)) FROM l WHERE EXISTS (SELECT 1 FROM r WHERE r.ns = l.ns AND r.u3 = l.u3);
 
+    -- With parallel replicas, each replica inserts its part of the rows, and a Join table rejects two inserts of one query
+    -- at the same time with DEADLOCK_AVOIDED.
     CREATE TABLE j_s_u64 (s String, u1 UInt64, id UInt64) ENGINE = Join(ANY, LEFT, s, u1);
-    INSERT INTO j_s_u64 SELECT s, u1, id FROM r WHERE id <= 2400;
+    INSERT INTO j_s_u64 SELECT s, u1, id FROM r WHERE id <= 2400 SETTINGS enable_parallel_replicas = 0;
     CREATE TABLE j_tn (tn Tuple(Nullable(String), UInt64), id UInt64) ENGINE = Join(ANY, LEFT, tn);
-    INSERT INTO j_tn SELECT tn, min(id) FROM r GROUP BY tn;
+    INSERT INTO j_tn SELECT tn, min(id) FROM r GROUP BY tn SETTINGS enable_parallel_replicas = 0;
 "
 
 for step in before after
