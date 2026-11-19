@@ -162,7 +162,7 @@ Timeout in seconds for a single Arrow Flight request. It bounds the whole reques
 
 <SettingsInfoBlock type="UInt64" default_value="120000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "Retry S3 backup and restore requests after an expired token; 0 restores the previous behavior."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "120000"},{"label": "Retry S3 backup and restore requests after an expired token; 0 restores the previous behavior."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "120000"},{"label": "The change was backported to 26.8 and is recorded there."}]}]}/>
 
 Maximum time in milliseconds to retry an S3 request whose response identifies `ExpiredToken` during backup or restore. Retries also stop at `backup_restore_s3_retry_attempts`. Zero disables these retries. AWS S3 `HEAD` responses expose only a generic HTTP status, so this retry does not cover `HEAD` metadata requests.
 

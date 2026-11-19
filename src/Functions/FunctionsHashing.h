@@ -43,6 +43,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <Common/TargetSpecific.h>
 #include <base/IPv4andIPv6.h>
 #include <base/range.h>

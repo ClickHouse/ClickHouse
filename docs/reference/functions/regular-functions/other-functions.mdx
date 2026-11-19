@@ -26,6 +26,8 @@ See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogene
 Introduced in: v20.1.0
 
 Returns the fully qualified domain name of the ClickHouse server.
+If the function executes in the context of a distributed table, it generates a normal column with values relevant to each shard.
+Otherwise it produces a constant value.
     
 
 <Note>

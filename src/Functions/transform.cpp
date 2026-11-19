@@ -791,6 +791,17 @@ namespace
         const bool cast_checked_enum_membership = isEnum(removeNullable(from_type))
             && isStringOrFixedString(removeNullable(from_array_nested_type));
 
+        /// Conversions within the `String`/`FixedString` family only add (String -> FixedString) or trim
+        /// (FixedString -> String) trailing NULs, and the cast above already produces the value the lookup
+        /// needs. Such values compare equal under `String`/`FixedString` semantics but are not Field-accurate
+        /// equal, so the comparison below would wrongly drop the entry and the lookup would never match.
+        /// Overlong values throw during the cast for non-nullable targets; for a nullable target the cast
+        /// produces NULL instead of throwing, so only successful (non-NULL) conversions are exempted below.
+        /// A conversion that acquired NULL falls through to `accurateEquals`, which rejects it exactly as
+        /// before; a genuine NULL entry is still admitted by that same comparison.
+        const bool cast_is_string_family_conversion = isStringOrFixedString(removeNullable(from_type))
+            && isStringOrFixedString(removeNullable(from_array_nested_type));
+
         /// A cast between `UUID` and `UUID2` (also nested, e.g. `Tuple(UUID)` to `Tuple(UUID2)`) keeps the value but
         /// swaps the halves of its representation, so compare both entries with their `UUID` values in the same layout.
         /// A `Field` of a `Dynamic` value has its `UUID2` values in the `UUID` layout (see `ColumnDynamic::get`), so a
@@ -802,6 +813,8 @@ namespace
         const auto entry_converted_exactly = [&](size_t i)
         {
             if (cast_checked_enum_membership)
+                return true;
+            if (cast_is_string_family_conversion && !(*cache->from_column)[i].isNull())
                 return true;
             const Field original = (*from_column_uncast)[i];
             if (cast_between_uuid_types)

@@ -774,11 +774,26 @@ void SerializationDynamic::serializeBinary(const ColumnDynamic & dynamic_column,
         encodeDataType(std::make_shared<DataTypeNothing>(), ostr);
         return;
     }
-    /// Check if this value is in shared variant. In this case it's already
-    /// in desired binary format.
     if (global_discr == dynamic_column.getSharedVariantDiscriminator())
     {
+        /// Values in the shared variant are encoded with the default format settings. They differ from
+        /// the requested binary format only when a `JSON` inside has to be written as a string.
         auto value = dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row_num));
+        if (settings.binary.write_json_as_string)
+        {
+            ReadBufferFromMemory buf(value);
+            auto type = decodeDataType(buf);
+            if (type->hasDynamicStructure())
+            {
+                auto serialization = getDataTypesCache().getSerialization(type->getName(), type);
+                auto tmp_column = type->createColumn();
+                serialization->deserializeBinary(*tmp_column, buf, FormatSettings{});
+                encodeDataType(type, ostr);
+                serialization->serializeBinary(*tmp_column, 0, ostr, settings);
+                return;
+            }
+        }
+
         ostr.write(value.data(), value.size());
         return;
     }

@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeObject.h>
@@ -97,6 +98,14 @@ Field convertNumericTypeImpl(const Field & from, bool strict, bool convert_inexa
     /// type here too and takes the same lossy path when `convert_inexact_floats` is set (e.g.
     /// `values('x BFloat16', 0.1)` rounds to the nearest `BFloat16` like `CAST`, rather than being rejected).
     const bool exact = strict || !convert_inexact_floats || !is_floating_point<To>;
+
+    /// A `NaN` or infinity is not representable in an integer type, and `accurate::convertNumeric` would cast a
+    /// `NaN` before noticing (undefined behavior). The same guard as in the accurate `CAST` (`convertNumericGeneral`).
+    if constexpr (is_floating_point<From> && !is_floating_point<To>)
+    {
+        if (!isFinite(from.safeGet<From>()))
+            return {};
+    }
 
     const bool converted = exact
         ? accurate::convertNumeric<From, To, true>(from.safeGet<From>(), result)
@@ -1207,7 +1216,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         /// Bool is not represented in which_type, so we need to handle it separately.
         /// See the comment for `strict` in convertFieldToType.h for details.
-        if (isInt64OrUInt64orBoolFieldType(src.getType()) && type.getName() == "Bool")
+        if (isInt64OrUInt64orBoolFieldType(src.getType()) && (type.getName() == "Bool" || isSimpleAggregateFunctionOfBool(type)))
         {
             if (strict)
             {
