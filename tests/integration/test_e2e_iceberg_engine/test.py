@@ -209,7 +209,11 @@ def multi_manifest_partitioned_table(manager):
             )
         )
 
-    table_name, _ = manager.create_table_multi_snapshot(batches, partition_column="region")
+    table_name, _ = manager.create_table_multi_snapshot(
+        batches,
+        partition_column="region",
+        min_manifest_count=2,
+    )
     yield table_name
     manager.cleanup_table(table_name)
 
@@ -808,10 +812,9 @@ def test_engine_join_two_engine_tables(node, manager, sales_table, partitioned_t
 
 
 def test_engine_join_with_multi_manifest_iceberg_table(
-    node, manager, sales_table, types_table, multi_manifest_partitioned_table
+    node, manager, sales_table, multi_manifest_partitioned_table
 ):
     sales_eng = _create_engine_table(node, manager, sales_table)
-    types_eng = _create_engine_table(node, manager, types_table)
     partitioned_eng = _create_engine_table(node, manager, multi_manifest_partitioned_table)
 
     result = node.query(
@@ -821,8 +824,8 @@ def test_engine_join_with_multi_manifest_iceberg_table(
         f"SELECT id AS partitioned_id FROM {partitioned_eng} "
         f"WHERE region = 'US'"
         f") AS p ON s.sales_id = p.partitioned_id "
-        f"INNER JOIN (SELECT id AS types_id FROM {types_eng}) AS t "
-        f"ON t.types_id = s.sales_id FORMAT TSV",
+        f"INNER JOIN (SELECT id AS validation_id FROM {sales_eng}) AS v "
+        f"ON v.validation_id = s.sales_id FORMAT TSV",
         settings={
             "use_statistics": 1,
             "use_datalake_metadata_statistics": 1,
@@ -832,7 +835,7 @@ def test_engine_join_with_multi_manifest_iceberg_table(
         },
     ).strip()
 
-    assert int(result) == 1
+    assert int(result) == 8
 
 
 def test_engine_join_with_local_table(node, manager, sales_table):

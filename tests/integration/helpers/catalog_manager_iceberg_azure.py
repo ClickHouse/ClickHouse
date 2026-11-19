@@ -129,11 +129,18 @@ class IcebergAzureCatalogManager:
         batches: List[pa.Table],
         table_name: Optional[str] = None,
         partition_column: Optional[str] = None,
+        min_manifest_count: Optional[int] = None,
     ) -> Tuple[str, List[int]]:
         """Create a table with one snapshot per batch, optionally partitioned.
 
+        If min_manifest_count is provided, require at least that many manifests
+        in the latest snapshot.
+
         Returns (table_name, list_of_snapshot_ids).
         """
+        if min_manifest_count is not None and min_manifest_count < 1:
+            raise ValueError("min_manifest_count must be at least 1")
+
         if table_name is None:
             table_name = f"tbl_{uuid.uuid4().hex[:8]}"
 
@@ -176,10 +183,16 @@ class IcebergAzureCatalogManager:
             table = self._catalog.load_table(f"default.{table_name}")
             snapshot_ids.append(table.metadata.current_snapshot_id)
 
-        if partition_column is not None:
+        if min_manifest_count is not None:
             snapshot = table.current_snapshot()
-            if snapshot is None or len(snapshot.manifests(table.io)) < 2:
-                raise AssertionError("Expected multiple manifests in the latest snapshot")
+            manifest_count = (
+                len(snapshot.manifests(table.io)) if snapshot is not None else 0
+            )
+            if manifest_count < min_manifest_count:
+                raise AssertionError(
+                    f"Expected at least {min_manifest_count} manifests in the latest snapshot, "
+                    f"found {manifest_count}"
+                )
 
         self._upload_table(table_name)
         log.info(
