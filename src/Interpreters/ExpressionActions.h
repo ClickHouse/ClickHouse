@@ -186,7 +186,15 @@ public:
     static NameAndTypePair getCheapestColumnToRead(
         const NamesAndTypesList & columns, const std::unordered_map<std::string, ColumnSize> & column_sizes, bool skip_subcolumns = true);
 
-    [[nodiscard]] ExpressionActionsPtr clone() const;
+    /// Copy the instance, preserving its concrete kind: a plain instance is cloned into a plain one even if
+    /// its settings enable `enable_adaptive_short_circuit_lazy_execution` (a plain instance may be built
+    /// deliberately, e.g. for a table key, and its copies can be shared between threads), and an adaptive one
+    /// into a fresh adaptive instance with its own execution profile.
+    [[nodiscard]] virtual ExpressionActionsPtr clone() const;
+
+    /// Whether the instance is an `AdaptiveExpressionActions`, which is stateful and must not be shared
+    /// between threads.
+    [[nodiscard]] virtual bool isAdaptive() const { return false; }
 
 protected:
     ExpressionActions() = default;
@@ -256,6 +264,10 @@ class AdaptiveExpressionActions : public ExpressionActions
 public:
     explicit AdaptiveExpressionActions(
         ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
+
+    /// A fresh adaptive instance with the same expression and an empty execution profile.
+    [[nodiscard]] ExpressionActionsPtr clone() const override;
+    [[nodiscard]] bool isAdaptive() const override { return true; }
 
 protected:
     bool shouldExecuteLazily(size_t action_index) const override;

@@ -191,7 +191,7 @@ IEJoinAlgorithm::IEJoinAlgorithm(
     {
         /// `IEJoinAlgorithm` is instantiated per pipeline stream. Do not share adaptive
         /// profiling state with another algorithm instance created from the same plan step.
-        if (residual->actions->getSettings().enable_adaptive_short_circuit_lazy_execution)
+        if (residual->actions->isAdaptive())
             residual->actions = residual->actions->clone();
 
         set_spillables.add(residual->actions->getActionsDAG());

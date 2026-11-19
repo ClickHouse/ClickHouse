@@ -145,7 +145,7 @@ static MemorySourceFilterPtr cloneSourceFilterForStream(const MemorySourceFilter
 
     auto is_adaptive = [](const MemorySourceFilter::Step & step)
     {
-        return step.actions->getSettings().enable_adaptive_short_circuit_lazy_execution;
+        return step.actions->isAdaptive();
     };
     if (std::ranges::none_of(filter->steps, is_adaptive))
         return filter;

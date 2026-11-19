@@ -96,9 +96,6 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
 
 ExpressionActionsPtr ExpressionActions::clone() const
 {
-    if (settings.enable_adaptive_short_circuit_lazy_execution)
-        return ExpressionActions::create(actions_dag.clone(), settings, project_inputs);
-
     auto copy = std::make_shared<ExpressionActions>(ExpressionActions());
 
     ActionsDAG::NodeMapping copy_map;
@@ -1425,7 +1422,7 @@ ExpressionActionsPtr ExpressionActions::create(
 
 ExpressionActionsPool::ExpressionActionsPool(ExpressionActionsPtr prototype_)
     : prototype(std::move(prototype_))
-    , is_adaptive(prototype && prototype->getSettings().enable_adaptive_short_circuit_lazy_execution)
+    , is_adaptive(prototype && prototype->isAdaptive())
 {
 }
 
@@ -1492,6 +1489,11 @@ AdaptiveExpressionActions::AdaptiveExpressionActions(
         /// short circuit function itself is always "efficient" - it is never wrapped into a ColumnFunction.
         action_states[i].is_lazy_execution_efficient = action.is_lazy_executed || action_states[i].is_short_circuit_function;
     }
+}
+
+ExpressionActionsPtr AdaptiveExpressionActions::clone() const
+{
+    return std::make_shared<AdaptiveExpressionActions>(actions_dag.clone(), settings, project_inputs);
 }
 
 bool AdaptiveExpressionActions::shouldExecuteLazily(size_t action_index) const
