@@ -170,7 +170,7 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
     /// the snapshot exactly as it was.
     for (auto & [_, disk] : disks_map)
     {
-        if (disk->isReadOnly() || disk->isWriteOnce())
+        if (disk->isBroken() || disk->isReadOnly() || disk->isWriteOnce())
             continue;
 
         for (const auto & store_path : store_paths)
@@ -341,7 +341,7 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(
 
     for (const auto & disk : disks)
     {
-        if (!disk->existsDirectory(table_directory))
+        if (disk->isBroken() || !disk->existsDirectory(table_directory))
             continue;
 
         for (auto it = disk->iterateDirectory(table_directory); it->isValid(); it->next())
