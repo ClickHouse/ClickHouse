@@ -253,24 +253,12 @@ def test_remote_query_user_does_not_exist_locally(ldap_cluster):
     instance2.query("DROP TABLE IF EXISTS test_table SYNC", user="common_user", password="qwerty")
 
 
-def test_common_role_with_dot_in_name():
-    # The role `ldap.common.role` is defined in `users.xml` and assigned to all LDAP users on instance2
-    # with `<roles><ldap.common.role/></roles>`. Both names come from config keys with escaped dots,
-    # and both must be un-escaped to match.
-    assert instance2.query(
-        "SELECT role_name FROM system.current_roles", user="janedoe", password="qwerty"
-    ) == TSV([["ldap.common.role"]])
-
-
-def test_mapped_role_with_legacy_escaped_name(ldap_cluster):
-    # The role `ldap.mapped.role` is defined in `users.xml`. It used to be stored under the escaped name
-    # `ldap\.mapped\.role`, so an LDAP group can still map to that legacy spelling of the name.
-    group_cn = "clickhouse-ldap\\.mapped\\.role"
+def add_ldap_group_with_escaped_name(ldap_cluster, group_cn, member_cn):
     ldif = [
         "dn: cn=" + group_cn.replace("\\", "\\\\") + ",dc=example,dc=org",
         "objectClass: top",
         "objectClass: groupOfNames",
-        "member: cn=johndoe,ou=users,dc=example,dc=org",
+        f"member: cn={member_cn},ou=users,dc=example,dc=org",
     ]
     # Pass the LDIF lines as arguments to avoid any processing of the backslashes by the shell.
     code, (stdout, stderr) = ldap_cluster.ldap_container.exec_run(
@@ -290,6 +278,22 @@ def test_mapped_role_with_legacy_escaped_name(ldap_cluster):
     )
     logging.debug(f"ldapadd code:{code} stdout:{stdout}, stderr:{stderr}")
     assert code == 0
+
+
+def test_common_role_with_dot_in_name():
+    # The role `ldap.common.role` is defined in `users.xml` and assigned to all LDAP users on instance2
+    # with `<roles><ldap.common.role/></roles>`. Both names come from config keys with escaped dots,
+    # and both must be un-escaped to match.
+    assert instance2.query(
+        "SELECT role_name FROM system.current_roles", user="janedoe", password="qwerty"
+    ) == TSV([["ldap.common.role"]])
+
+
+def test_mapped_role_with_legacy_escaped_name(ldap_cluster):
+    # The role `ldap.mapped.role` is defined in `users.xml`. It used to be stored under the escaped name
+    # `ldap\.mapped\.role`, so an LDAP group can still map to that legacy spelling of the name.
+    group_cn = "clickhouse-ldap\\.mapped\\.role"
+    add_ldap_group_with_escaped_name(ldap_cluster, group_cn, member_cn="johndoe")
 
     users_xml = "/etc/clickhouse-server/users.d/users.xml"
     try:
@@ -327,29 +331,7 @@ def test_mapped_role_with_legacy_escaped_name_defined_after_login(ldap_cluster):
     # `ldap\.late\.role` mapped from LDAP cannot be resolved. When the role is added to `users.xml`
     # later, the notification about it carries the real name of the role, and the role must be granted.
     group_cn = "clickhouse-ldap\\.late\\.role"
-    ldif = [
-        "dn: cn=" + group_cn.replace("\\", "\\\\") + ",dc=example,dc=org",
-        "objectClass: top",
-        "objectClass: groupOfNames",
-        "member: cn=johndoe,ou=users,dc=example,dc=org",
-    ]
-    code, (stdout, stderr) = ldap_cluster.ldap_container.exec_run(
-        [
-            "sh",
-            "-c",
-            'printf "%s\\n" "$@" | ldapadd -H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}'.format(
-                host=ldap_cluster.ldap_host,
-                port=ldap_cluster.ldap_port,
-                admin_bind_dn=LDAP_ADMIN_BIND_DN,
-                admin_password=LDAP_ADMIN_PASSWORD,
-            ),
-            "sh",
-        ]
-        + ldif,
-        demux=True,
-    )
-    logging.debug(f"ldapadd code:{code} stdout:{stdout}, stderr:{stderr}")
-    assert code == 0
+    add_ldap_group_with_escaped_name(ldap_cluster, group_cn, member_cn="johndoe")
 
     users_xml = "/etc/clickhouse-server/users.d/users.xml"
     late_role = "<ldap.late.role><grants><query>GRANT SELECT ON system.one</query></grants></ldap.late.role>"
@@ -367,4 +349,34 @@ def test_mapped_role_with_legacy_escaped_name_defined_after_login(ldap_cluster):
     finally:
         instance1.replace_in_config(users_xml, "<ldap.mapped.role/>" + late_role, "<ldap.mapped.role/>")
         instance1.query("SYSTEM RELOAD USERS", user="common_user", password="qwerty")
+        delete_ldap_group(ldap_cluster, group_cn=group_cn.replace("\\", "\\\\"))
+
+
+def test_mapped_role_with_legacy_escaped_name_not_granted_after_recreation(ldap_cluster):
+    # The legacy escaped name `ldap\.recreated\.role` mapped from LDAP is resolved to the role `ldap.recreated.role`
+    # defined in `users.xml`. After that role is removed, a SQL role with the same real name must not be granted,
+    # because the mapped name `ldap\.recreated\.role` does not resolve to it.
+    group_cn = "clickhouse-ldap\\.recreated\\.role"
+    add_ldap_group_with_escaped_name(ldap_cluster, group_cn, member_cn="johndoe")
+
+    users_xml = "/etc/clickhouse-server/users.d/users.xml"
+    xml_role = "<ldap.recreated.role/>"
+    try:
+        instance1.replace_in_config(users_xml, "<ldap.mapped.role/>", "<ldap.mapped.role/>" + xml_role)
+        instance1.query("SYSTEM RELOAD USERS", user="common_user", password="qwerty")
+        assert instance1.query(
+            "SELECT role_name FROM system.current_roles", user="johndoe", password="qwertz"
+        ) == TSV([["ldap.recreated.role"]])
+
+        instance1.replace_in_config(users_xml, "<ldap.mapped.role/>" + xml_role, "<ldap.mapped.role/>")
+        instance1.query("SYSTEM RELOAD USERS", user="common_user", password="qwerty")
+        instance1.query("CREATE ROLE `ldap.recreated.role`", user="common_user", password="qwerty")
+
+        assert instance1.query(
+            "SELECT role_name FROM system.current_roles", user="johndoe", password="qwertz"
+        ) == ""
+    finally:
+        instance1.replace_in_config(users_xml, "<ldap.mapped.role/>" + xml_role, "<ldap.mapped.role/>")
+        instance1.query("SYSTEM RELOAD USERS", user="common_user", password="qwerty")
+        instance1.query("DROP ROLE IF EXISTS `ldap.recreated.role`", user="common_user", password="qwerty")
         delete_ldap_group(ldap_cluster, group_cn=group_cn.replace("\\", "\\\\"))
