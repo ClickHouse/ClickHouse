@@ -387,15 +387,13 @@ ManifestFileIterator::ManifestFileEntriesHandle ManifestFileIterator::getFilesWi
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get files from manifest file before it is fully initialized");
 
     SharedLockGuard lock{files_mutex};
-    return ManifestFileEntriesHandle
-    {
+    return ManifestFileEntriesHandle{
         data_files_without_deleted,
         position_deletes_files_without_deleted,
         equality_deletes_files_without_deleted,
         partition_specification_header,
         manifest_schema_id,
-        partition_key_description
-    };
+        partition_key_description};
 }
 
 

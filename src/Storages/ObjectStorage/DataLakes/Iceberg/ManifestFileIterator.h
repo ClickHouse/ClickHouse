@@ -75,10 +75,7 @@ public:
         /// nullptr if the partition spec has no usable field. Kept in the handle so files can be pruned after the iterator is gone.
         [[nodiscard]] const DB::KeyDescription * getPartitionKeyDescription() const { return partition_key.get(); }
 
-        [[nodiscard]] const std::shared_ptr<const DB::KeyDescription> & getSharedPartitionKeyDescription() const
-        {
-            return partition_key;
-        }
+        [[nodiscard]] const std::shared_ptr<const DB::KeyDescription> & getSharedPartitionKeyDescription() const { return partition_key; }
         [[nodiscard]] const String & getPartitionSpecificationHeader() const { return partition_specification_header; }
         [[nodiscard]] Int32 getManifestSchemaId() const { return manifest_schema_id; }
 

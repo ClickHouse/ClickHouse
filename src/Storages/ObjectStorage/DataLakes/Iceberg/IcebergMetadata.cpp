@@ -27,8 +27,8 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/tuple.h>
 #include <Processors/Formats/ISchemaReader.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
@@ -1847,8 +1847,10 @@ IcebergMetadata::estimateRead(
         const auto & manifest_data_files = files_handle.getFilesWithoutDeleted(FileContentType::DATA);
         auto manifest_pruners = file_pruners_by_manifest_identity.end();
         if (pruning_filter && !manifest_data_files.empty())
-            manifest_pruners = file_pruners_by_manifest_identity.try_emplace(
-                std::make_pair(files_handle.getPartitionSpecificationHeader(), files_handle.getManifestSchemaId())).first;
+            manifest_pruners
+                = file_pruners_by_manifest_identity
+                      .try_emplace(std::make_pair(files_handle.getPartitionSpecificationHeader(), files_handle.getManifestSchemaId()))
+                      .first;
         for (const auto & data_file : manifest_data_files)
         {
             if (pruning_filter)
@@ -1869,9 +1871,7 @@ IcebergMetadata::estimateRead(
                 }
 
                 const auto hyperrectangles = getDataFileHyperrectangles(
-                    *data_file,
-                    pruner_cache_entry.pruner->getMinMaxColumnTypes(),
-                    manifest_list_entry.manifest_file_path);
+                    *data_file, pruner_cache_entry.pruner->getMinMaxColumnTypes(), manifest_list_entry.manifest_file_path);
                 if (pruner_cache_entry.pruner->canBePruned(data_file, hyperrectangles) != PruningReturnStatus::NOT_PRUNED)
                 {
                     estimate.pruned_data_files = true;
