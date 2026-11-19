@@ -170,7 +170,7 @@ public:
 
     /// True when nothing but a `WHERE` has been collected, so a stage that produces the list of
     /// columns can be folded into the select being built.
-    bool onlyFiltered() const { return !select_list && !group_by && !having && !order_by && !limit && !offset; }
+    [[nodiscard]] bool onlyFiltered() const { return !select_list && !group_by && !having && !order_by && !limit && !offset; }
 
     void wrap()
     {
@@ -223,7 +223,7 @@ public:
         union_query.set_of_modes.insert(SelectUnionMode::UNION_ALL);
     }
 
-    ASTPtr build() const
+    [[nodiscard]] ASTPtr build() const
     {
         auto select = make_intrusive<ASTSelectQuery>();
 

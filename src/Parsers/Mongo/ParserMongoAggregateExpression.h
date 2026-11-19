@@ -51,7 +51,7 @@ struct MongoGroupOrder
       */
     bool keys_in_scope = true;
 
-    bool empty() const { return keys.empty(); }
+    [[nodiscard]] bool empty() const { return keys.empty(); }
 };
 
 /** Translates an accumulator of a `$group` stage: `{"$sum": 1}`, `{"$avg": "$ResolutionWidth"}`,

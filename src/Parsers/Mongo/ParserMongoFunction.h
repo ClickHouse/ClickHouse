@@ -20,7 +20,7 @@ protected:
     }
 
 public:
-    virtual std::string getFunctionName() const = 0;
+    [[nodiscard]] virtual std::string getFunctionName() const = 0;
 
     ~IMongoFunction() override = default;
 };
@@ -28,7 +28,7 @@ public:
 class MongoIdentityFunction : public IMongoFunction
 {
 public:
-    std::string getFunctionName() const override { return edge_name; }
+    [[nodiscard]] std::string getFunctionName() const override { return edge_name; }
 
     explicit MongoIdentityFunction(
         rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
@@ -42,7 +42,7 @@ public:
 class MongoLiteralFunction : public IMongoFunction
 {
 public:
-    std::string getFunctionName() const override { return edge_name; }
+    [[nodiscard]] std::string getFunctionName() const override { return edge_name; }
 
     explicit MongoLiteralFunction(
         rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
@@ -64,10 +64,10 @@ public:
     {
     }
 
-    virtual std::string getFunctionAlias() const = 0;
+    [[nodiscard]] virtual std::string getFunctionAlias() const = 0;
 
     /// `$nor` is `$or` with the result negated.
-    virtual bool isNegated() const { return false; }
+    [[nodiscard]] virtual bool isNegated() const { return false; }
 
     bool parseImpl(ASTPtr & node) override;
 };
@@ -75,9 +75,9 @@ public:
 class MongoOrFunction : public IMongoLogicalFunction
 {
 public:
-    std::string getFunctionName() const override { return "$or"; }
+    [[nodiscard]] std::string getFunctionName() const override { return "$or"; }
 
-    std::string getFunctionAlias() const override { return "or"; }
+    [[nodiscard]] std::string getFunctionAlias() const override { return "or"; }
 
     explicit MongoOrFunction(rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
         : IMongoLogicalFunction(std::move(array_elements_), metadata_, edge_name_)
@@ -88,9 +88,9 @@ public:
 class MongoAndFunction : public IMongoLogicalFunction
 {
 public:
-    std::string getFunctionName() const override { return "$and"; }
+    [[nodiscard]] std::string getFunctionName() const override { return "$and"; }
 
-    std::string getFunctionAlias() const override { return "and"; }
+    [[nodiscard]] std::string getFunctionAlias() const override { return "and"; }
 
     explicit MongoAndFunction(rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
         : IMongoLogicalFunction(std::move(array_elements_), metadata_, edge_name_)
@@ -104,7 +104,7 @@ public:
 class MongoExprFunction : public IMongoFunction
 {
 public:
-    std::string getFunctionName() const override { return "$expr"; }
+    [[nodiscard]] std::string getFunctionName() const override { return "$expr"; }
 
     explicit MongoExprFunction(rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
         : IMongoFunction(std::move(array_elements_), metadata_, edge_name_)
@@ -117,11 +117,11 @@ public:
 class MongoNorFunction : public IMongoLogicalFunction
 {
 public:
-    std::string getFunctionName() const override { return "$nor"; }
+    [[nodiscard]] std::string getFunctionName() const override { return "$nor"; }
 
-    std::string getFunctionAlias() const override { return "or"; }
+    [[nodiscard]] std::string getFunctionAlias() const override { return "or"; }
 
-    bool isNegated() const override { return true; }
+    [[nodiscard]] bool isNegated() const override { return true; }
 
     explicit MongoNorFunction(rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
         : IMongoLogicalFunction(std::move(array_elements_), metadata_, edge_name_)
@@ -139,7 +139,7 @@ public:
     {
     }
 
-    virtual std::string getFunctionAlias() const = 0;
+    [[nodiscard]] virtual std::string getFunctionAlias() const = 0;
 
     bool parseImpl(ASTPtr & node) override;
 };
@@ -147,9 +147,9 @@ public:
 class MongoSumFunction : public IMongoArithmeticFunction
 {
 public:
-    std::string getFunctionName() const override { return "$add"; }
+    [[nodiscard]] std::string getFunctionName() const override { return "$add"; }
 
-    std::string getFunctionAlias() const override { return "plus"; }
+    [[nodiscard]] std::string getFunctionAlias() const override { return "plus"; }
 
     explicit MongoSumFunction(rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
         : IMongoArithmeticFunction(std::move(array_elements_), metadata_, edge_name_)
@@ -160,9 +160,9 @@ public:
 class MongoMultiplyFunction : public IMongoArithmeticFunction
 {
 public:
-    std::string getFunctionName() const override { return "$mul"; }
+    [[nodiscard]] std::string getFunctionName() const override { return "$mul"; }
 
-    std::string getFunctionAlias() const override { return "multiply"; }
+    [[nodiscard]] std::string getFunctionAlias() const override { return "multiply"; }
 
     explicit MongoMultiplyFunction(
         rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
@@ -174,9 +174,9 @@ public:
 class MongoDivideFunction : public IMongoArithmeticFunction
 {
 public:
-    std::string getFunctionName() const override { return "$div"; }
+    [[nodiscard]] std::string getFunctionName() const override { return "$div"; }
 
-    std::string getFunctionAlias() const override { return "divide"; }
+    [[nodiscard]] std::string getFunctionAlias() const override { return "divide"; }
 
     explicit MongoDivideFunction(rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
         : IMongoArithmeticFunction(std::move(array_elements_), metadata_, edge_name_)
@@ -187,9 +187,9 @@ public:
 class MongoMinusFunction : public IMongoArithmeticFunction
 {
 public:
-    std::string getFunctionName() const override { return "$sub"; }
+    [[nodiscard]] std::string getFunctionName() const override { return "$sub"; }
 
-    std::string getFunctionAlias() const override { return "minus"; }
+    [[nodiscard]] std::string getFunctionAlias() const override { return "minus"; }
 
     explicit MongoMinusFunction(rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
         : IMongoArithmeticFunction(std::move(array_elements_), metadata_, edge_name_)
@@ -201,7 +201,7 @@ public:
 class MongoArithmeticFunctionElement : public IMongoFunction
 {
 public:
-    std::string getFunctionName() const override { return "$arithmetic_function_element"; }
+    [[nodiscard]] std::string getFunctionName() const override { return "$arithmetic_function_element"; }
 
     explicit MongoArithmeticFunctionElement(
         rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)

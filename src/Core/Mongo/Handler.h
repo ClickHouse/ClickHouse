@@ -101,7 +101,7 @@ struct CollectionRef
     String collection;
 
     /// A quoted `database`.`collection` identifier that is safe to embed into a query.
-    String getQualifiedName() const;
+    [[nodiscard]] String getQualifiedName() const;
 };
 
 /** Extracts the target of a command, e.g. for `{"find": "users", "$db": "app"}` and
@@ -196,7 +196,7 @@ void appendWriteError(bson_t * write_errors, size_t error_number, size_t stateme
 
 struct IHandler
 {
-    virtual std::vector<String> getIdentifiers() const = 0;
+    [[nodiscard]] virtual std::vector<String> getIdentifiers() const = 0;
     virtual std::vector<Document> handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor) = 0;
 
     virtual ~IHandler() = default;

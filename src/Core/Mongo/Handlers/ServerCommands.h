@@ -16,7 +16,7 @@ struct ServerCommandsHandler : IHandler
 {
     ServerCommandsHandler() = default;
 
-    std::vector<String> getIdentifiers() const override
+    [[nodiscard]] std::vector<String> getIdentifiers() const override
     {
         return {"ping", "buildInfo", "buildinfo", "connectionStatus", "endSessions", "killCursors", "getFreeMonitoringStatus"};
     }
@@ -28,7 +28,7 @@ struct DropDatabaseHandler : IHandler
 {
     DropDatabaseHandler() = default;
 
-    std::vector<String> getIdentifiers() const override { return {"dropDatabase"}; }
+    [[nodiscard]] std::vector<String> getIdentifiers() const override { return {"dropDatabase"}; }
 
     std::vector<Document> handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor) override;
 };

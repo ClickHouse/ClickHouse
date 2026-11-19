@@ -9,7 +9,7 @@ struct DeleteHandler : IHandler
 {
     DeleteHandler() = default;
 
-    std::vector<String> getIdentifiers() const override { return {"delete"}; }
+    [[nodiscard]] std::vector<String> getIdentifiers() const override { return {"delete"}; }
 
     std::vector<Document> handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor) override;
 };

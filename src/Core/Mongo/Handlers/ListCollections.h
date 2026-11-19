@@ -9,7 +9,7 @@ struct ListCollectionsHandler : IHandler
 {
     ListCollectionsHandler() = default;
 
-    std::vector<String> getIdentifiers() const override { return {"listCollections"}; }
+    [[nodiscard]] std::vector<String> getIdentifiers() const override { return {"listCollections"}; }
 
     std::vector<Document> handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor) override;
 };

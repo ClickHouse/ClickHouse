@@ -11,7 +11,7 @@ class UpdateHandler : public IHandler
 public:
     UpdateHandler() = default;
 
-    std::vector<String> getIdentifiers() const override { return {"update"}; }
+    [[nodiscard]] std::vector<String> getIdentifiers() const override { return {"update"}; }
 
     std::vector<Document> handle(const std::vector<OpMessageSection> & sections, std::shared_ptr<QueryExecutor> executor) override;
 };

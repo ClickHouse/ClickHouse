@@ -26,7 +26,7 @@ struct OpMessageSection : public FrontMessage, BackendMessage
 
     void serialize(WriteBuffer & out) const override;
 
-    Int32 size() const override;
+    [[nodiscard]] Int32 size() const override;
 };
 
 struct OpMessage : public virtual FrontMessage, BackendMessage
@@ -41,7 +41,7 @@ struct OpMessage : public virtual FrontMessage, BackendMessage
     void deserialize(ReadBuffer & in) override;
     void serialize(WriteBuffer & out) const override;
 
-    Int32 size() const override;
+    [[nodiscard]] Int32 size() const override;
 };
 
 }

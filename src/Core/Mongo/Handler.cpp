@@ -468,7 +468,7 @@ struct WideIntegerPreservingHandler
     }
 
     /// The type of the value that starts now, or nothing when it is not known.
-    DataTypePtr expectedType() const
+    [[nodiscard]] DataTypePtr expectedType() const
     {
         if (frames.empty())
             return nullptr;

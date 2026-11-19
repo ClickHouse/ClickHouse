@@ -66,7 +66,7 @@ public:
     virtual void serialize(WriteBuffer & out) const = 0;
 
     /** Size of the message in bytes including message length part (4 bytes) */
-    virtual Int32 size() const = 0;
+    [[nodiscard]] virtual Int32 size() const = 0;
 
     virtual ~ISerializable() = default;
 };
@@ -106,7 +106,7 @@ struct Header : public FrontMessage, BackendMessage
 
     void serialize(WriteBuffer & out) const override;
 
-    Int32 size() const override;
+    [[nodiscard]] Int32 size() const override;
 };
 
 class MessageTransport
@@ -192,14 +192,14 @@ public:
     /// Whether the connection has to be closed after the reply to the current message: an
     /// authentication that failed half-way - a session limit reached after the password was
     /// accepted - must not leave behind a session that later commands would run in.
-    bool shouldCloseConnection() const { return close_connection; }
+    [[nodiscard]] bool shouldCloseConnection() const { return close_connection; }
 
     /// The name of the user this connection has authenticated as, or an empty string before a
     /// successful `saslStart`.
-    String getAuthenticatedUserName() const;
+    [[nodiscard]] String getAuthenticatedUserName() const;
 
     /// The parser limits of the session, which the handlers parse the Mongo text under.
-    ParserLimits getParserLimits() const;
+    [[nodiscard]] ParserLimits getParserLimits() const;
 
 private:
     /// A query context with the query id and the output settings every reply-building query runs
