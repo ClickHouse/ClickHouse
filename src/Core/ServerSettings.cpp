@@ -1345,7 +1345,7 @@ The threshold ratio for purging jemalloc relative to the memory available to Cli
 Duration in milliseconds that memory pressure must persist before dynamically adjusting jemalloc's `dirty_decay_ms`. When memory usage remains above the purge threshold for this period, automatic dirty page decay is disabled (`dirty_decay_ms=0`) to aggressively reclaim memory. When usage stays below the threshold for this period, the default decay behavior is restored. Set to 0 to disable dynamic adjustment and use jemalloc's default decay settings.
 )", 0) \
     DECLARE(Bool, memory_worker_correct_memory_tracker, 0, R"(
-Whether background memory worker should correct internal memory tracker based on the information from external sources like jemalloc and cgroups
+Whether background memory worker should correct internal memory tracker based on the information from external sources like jemalloc and cgroups. The tracker is set to the maximum of this measurement and jemalloc's `stats.allocated`, so that memory which is allocated but not touched yet, and therefore not resident, stays accounted, and concurrent queries cannot be admitted past `max_server_memory_usage` before their pages are touched.
 )", 0) \
     DECLARE(Bool, memory_worker_use_cgroup, true, "Use current cgroup memory usage information to correct memory tracking.", 0) \
     DECLARE(Double, memory_worker_rss_speculative_reserve_ratio, getDefaultMemoryWorkerRssSpeculativeReserveRatio(), R"(

@@ -75,6 +75,18 @@ bool StorageAlias::isTargetTableGranted(ContextPtr query_context, AccessType acc
     return access->isGranted(access_type, target_database, target_table, column_name);
 }
 
+std::optional<IStorage::ColumnSizeByName> StorageAlias::tryGetColumnSizes(const ContextPtr & query_context) const
+{
+    auto target = tryGetTargetTable();
+    if (!target)
+        return std::nullopt;
+
+    auto sizes = target->tryGetColumnSizes(query_context);
+    if (sizes)
+        std::erase_if(*sizes, [&](const auto & column_size) { return !isTargetTableGranted(query_context, AccessType::SHOW_COLUMNS, column_size.first); });
+    return sizes;
+}
+
 /// AliasSink: Writes data to the target table using full INSERT pipeline
 /// which triggers materialized views on the target table.
 class AliasSink final : public SinkToStorage, WithContext
