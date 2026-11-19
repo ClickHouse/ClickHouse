@@ -54,7 +54,7 @@ public:
 
     /// Deserialized local builds are paired once. Locally built and already paired steps keep their keys
     /// when the plan is optimized again.
-    bool needsPairing() const { return needs_pairing; }
+    [[nodiscard]] bool needsPairing() const { return needs_pairing; }
     void finishPairing(bool keep_key)
     {
         needs_pairing = false;
