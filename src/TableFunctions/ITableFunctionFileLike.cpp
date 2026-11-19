@@ -97,27 +97,44 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
 
     /// Without a structure argument, the storage infers the columns of the data, and the stored columns of a table, given in
     /// `CREATE` or inferred then, are read from it by name (see `StorageTableFunctionProxy`), so `(c2 String, c1 Int64)` of a CSV
-    /// file reads its second and first columns, and a query reads a stored column only if the storage has it. If the storage has
-    /// none of the ordinary stored columns, such as `id` and `s` for `CREATE TABLE t (id UInt32, s String) AS file('data.csv',
+    /// file reads its second and first columns, and a query reads a stored column only if the storage has it. If a query can
+    /// reach none of the inferred columns, as for `id` and `s` of `CREATE TABLE t (id UInt32, s String) AS file('data.csv',
     /// 'CSV')`, the table could not be read at all, so its storage is created with the ordinary stored columns instead, as the
     /// object storage table functions do, except those that it has as virtual columns, such as `_file`, which stay virtual. The
-    /// storage does not support the other kinds of columns. A table with some of the inferred columns keeps reading them by name.
+    /// storage does not support the other kinds of columns. A table that can read some of the inferred columns keeps reading them
+    /// by name: a query names an ordinary or a `MATERIALIZED` stored column or a subcolumn of one, also a dynamic one, and the
+    /// storage has that name as a column or a subcolumn, such as `nested.value` of `nested Tuple(value UInt32)` or `j.a` of
+    /// `j JSON` for a `JSONEachRow` file with the key `nested.value` or `j.a`.
     if (columns.empty() && !cached_columns.empty())
     {
         const auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
+        const auto is_inferred = [&](const String & name)
+        {
+            return metadata->columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        };
+        const auto is_stored = [&](const String & name)
+        {
+            return cached_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        };
+
         bool has_inferred_column = false;
+        for (const auto & inferred_column : metadata->columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()))
+            has_inferred_column = has_inferred_column || is_stored(inferred_column.name);
+
         bool has_other_column = false;
         ColumnsDescription stored_columns;
         for (const auto & column : cached_columns)
         {
-            if (column.default_desc.kind != ColumnDefaultKind::Default)
+            const auto kind = column.default_desc.kind;
+            if (kind != ColumnDefaultKind::Default && kind != ColumnDefaultKind::Materialized)
                 continue;
-            if (metadata->columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name))
-                has_inferred_column = true;
-            else if (metadata->virtuals.has(column.name))
+
+            const bool inferred = is_inferred(column.name);
+            has_inferred_column = has_inferred_column || inferred;
+
+            if (kind != ColumnDefaultKind::Default || (!inferred && metadata->virtuals.has(column.name)))
                 continue;
-            else
-                has_other_column = true;
+            has_other_column = has_other_column || !inferred;
             stored_columns.add(column);
         }
 

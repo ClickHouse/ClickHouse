@@ -14,6 +14,13 @@ world	2
 --- inferred columns and another one
 1	hello
 2	world
+--- a materialized column among the inferred columns
+1
+2
+--- a subcolumn among the inferred columns
+42
+--- a dynamic subcolumn among the inferred columns
+7
 --- url
 1	a
 1	a
