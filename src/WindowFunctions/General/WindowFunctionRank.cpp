@@ -31,9 +31,9 @@ public:
     {
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.peers = true};
+        return WindowFunctionRequirements{.peers_start = true};
     }
 
     Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
