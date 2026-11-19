@@ -61,16 +61,11 @@ public:
     /// The text of `ids`, appended to `out`. Throws if an id is not in the vocabulary.
     void decode(std::span<const UInt32> ids, WriteBuffer & out) const;
 
-    size_t size() const { return by_rank.size(); }
-    BPEPretokenizer getPretokenizer() const { return pretokenizer; }
 
 private:
     /// The rank of a piece, or `no_rank` when the piece is not a token of the vocabulary.
     static constexpr UInt32 no_rank = std::numeric_limits<UInt32>::max();
 
-    /// Ranks are indices into `by_rank`, so a vocabulary with an absurd rank in it would ask for an
-    /// absurd allocation. The largest published vocabulary has two hundred thousand tokens.
-    static constexpr UInt32 max_rank = 100'000'000;
     UInt32 rankOf(std::string_view piece) const;
 
     /// Encodes one piece that is not a token of the vocabulary by merging.

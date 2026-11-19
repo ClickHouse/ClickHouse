@@ -22,13 +22,8 @@ namespace DB
   *         </cl100k_base>
   *     </bpe_vocabularies>
   *
-  * `vocabulary` holds the same content inline instead, for a vocabulary small enough to be written
-  * out in the configuration.
-  *
-  * A vocabulary is immutable and is shared by every query that names it. It is reloaded when the
-  * file it came from changes, which is what the modification time and size it was read at are for:
-  * a vocabulary of a hundred thousand tokens is not something to parse per query, and not something
-  * to pin in memory for the lifetime of the server either if the file behind it has moved on.
+  * `vocabulary` holds the same content inline instead. A loaded vocabulary is shared by the queries
+  * that name it, and is reloaded when its file or its inline content changes.
   */
 class BPEVocabularyFactory
 {

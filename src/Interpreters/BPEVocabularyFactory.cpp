@@ -58,7 +58,8 @@ BPEVocabularyPtr BPEVocabularyFactory::get(const String & name, const Poco::Util
                 "The BPE vocabulary '{}' is declared at {}, which is not a readable file", name, path);
 
         modification_time = static_cast<UInt64>(std::filesystem::last_write_time(path, error).time_since_epoch().count());
-        size = static_cast<UInt64>(std::filesystem::file_size(path, error));
+        if (!error)
+            size = static_cast<UInt64>(std::filesystem::file_size(path, error));
         if (error)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Cannot read the BPE vocabulary '{}' from {}: {}", name, path, error.message());
@@ -80,9 +81,8 @@ BPEVocabularyPtr BPEVocabularyFactory::get(const String & name, const Poco::Util
             return it->second.vocabulary;
     }
 
-    /// Parsing happens outside the lock: it takes a while for a large vocabulary, and a concurrent
-    /// query naming another one should not wait for it. Two queries naming the same one at the same
-    /// time parse it twice and the loser's copy is dropped, which is cheaper than holding the lock.
+    /// Parsing happens outside the lock, so that a query naming another vocabulary does not wait for it.
+    /// Two queries naming the same one at the same time may both parse it; the last copy is kept.
     if (has_path)
     {
         ReadBufferFromFile in(path);

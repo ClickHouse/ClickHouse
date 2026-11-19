@@ -33,6 +33,12 @@ SELECT tokenizeBPE('a', 'no_such_vocabulary'); -- { serverError BAD_ARGUMENTS }
 SELECT tokenizeBPE('a', materialize('example_vocabulary')); -- { serverError ILLEGAL_COLUMN }
 SELECT detokenizeBPE([999999], 'example_vocabulary'); -- { serverError BAD_ARGUMENTS }
 SELECT detokenizeBPE([toUInt64(4294967296)], 'example_vocabulary'); -- { serverError BAD_ARGUMENTS }
+SELECT detokenizeBPE([toUInt128(97)], 'example_vocabulary'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT detokenizeBPE([toUInt256(97)], 'example_vocabulary'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokenizeBPE('a'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT tokenizeBPE(1, 'example_vocabulary'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT detokenizeBPE('a', 'example_vocabulary'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- the vocabulary can be reloaded, so the functions are not deterministic';
+SELECT tokenizeBPE('a', 'example_vocabulary') SETTINGS use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
+SELECT detokenizeBPE([97], 'example_vocabulary') SETTINGS use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }

@@ -5,6 +5,8 @@
 #include <Common/UTF8Helpers.h>
 #include <IO/WriteBuffer.h>
 
+#include <Poco/Exception.h>
+
 #include <algorithm>
 #include <array>
 #include <charconv>
@@ -175,6 +177,10 @@ size_t contractionLength(std::string_view text, size_t pos, bool case_insensitiv
         return case_insensitive && c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
     };
 
+    /// `(?i:s)` also matches U+017F LATIN SMALL LETTER LONG S, whose case folding is `s`.
+    if (case_insensitive && text.substr(pos + 1, 2) == "\xC5\xBF")
+        return 3;
+
     switch (at(1))
     {
         case 's': case 'd': case 'm': case 't':
@@ -251,6 +257,31 @@ size_t nextPieceR50k(std::string_view text, size_t pos)
     return length; /// `\s`
 }
 
+/// `\p{N}{1,3}` at `pos`, which holds a number.
+size_t numberLength(std::string_view text, size_t pos)
+{
+    size_t end = pos;
+    for (size_t digit = 0; digit < 3 && end < text.size(); ++digit)
+    {
+        size_t length = 0;
+        if (!isNumber(codePointAt(text, end, length)))
+            break;
+        end += length;
+    }
+    return end - pos;
+}
+
+/// ` ?[^\s\p{L}\p{N}]+` followed by any number of characters `trailing` accepts, or zero.
+template <typename Predicate>
+size_t punctuationLength(std::string_view text, size_t pos, UInt32 first, Predicate && trailing)
+{
+    const size_t start = first == ' ' ? pos + 1 : pos;
+    size_t length = 0;
+    if (start >= text.size() || !isPunctuationish(codePointAt(text, start, length)))
+        return 0;
+    return scanWhile(text, scanWhile(text, start, isPunctuationish), trailing) - pos;
+}
+
 /// `'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}++|\p{N}{1,3}+| ?[^\s\p{L}\p{N}]++[\r\n]*+|\s++$|\s*[\r\n]|\s+(?!\S)|\s`
 size_t nextPieceCl100k(std::string_view text, size_t pos)
 {
@@ -274,31 +305,11 @@ size_t nextPieceCl100k(std::string_view text, size_t pos)
 
     /// `\p{N}{1,3}+`
     if (isNumber(first))
-    {
-        size_t end = pos;
-        for (size_t digit = 0; digit < 3 && end < text.size(); ++digit)
-        {
-            size_t length = 0;
-            if (!isNumber(codePointAt(text, end, length)))
-                break;
-            end += length;
-        }
-        return end - pos;
-    }
+        return numberLength(text, pos);
 
     /// ` ?[^\s\p{L}\p{N}]++[\r\n]*+`
-    {
-        const size_t start = first == ' ' ? pos + 1 : pos;
-        if (start < text.size())
-        {
-            size_t length = 0;
-            if (isPunctuationish(codePointAt(text, start, length)))
-            {
-                const size_t end = scanWhile(text, start, isPunctuationish);
-                return scanWhile(text, end, isNewline) - pos;
-            }
-        }
-    }
+    if (size_t length = punctuationLength(text, pos, first, isNewline))
+        return length;
 
     const WhitespaceRun run = scanWhitespace(text, pos);
     if (run.end == text.size())
@@ -379,32 +390,12 @@ size_t nextPieceO200k(std::string_view text, size_t pos)
 
     /// `\p{N}{1,3}`
     if (isNumber(first))
-    {
-        size_t end = pos;
-        for (size_t digit = 0; digit < 3 && end < text.size(); ++digit)
-        {
-            size_t length = 0;
-            if (!isNumber(codePointAt(text, end, length)))
-                break;
-            end += length;
-        }
-        return end - pos;
-    }
+        return numberLength(text, pos);
 
     /// ` ?[^\s\p{L}\p{N}]+[\r\n/]*`
-    {
-        const size_t start = first == ' ' ? pos + 1 : pos;
-        if (start < text.size())
-        {
-            size_t length = 0;
-            if (isPunctuationish(codePointAt(text, start, length)))
-            {
-                const size_t end = scanWhile(text, start, isPunctuationish);
-                const auto is_newline_or_slash = [](UInt32 code_point) { return isNewline(code_point) || code_point == '/'; };
-                return scanWhile(text, end, is_newline_or_slash) - pos;
-            }
-        }
-    }
+    const auto is_newline_or_slash = [](UInt32 code_point) { return isNewline(code_point) || code_point == '/'; };
+    if (size_t length = punctuationLength(text, pos, first, is_newline_or_slash))
+        return length;
 
     const WhitespaceRun run = scanWhitespace(text, pos);
     if (run.newline_end != 0)
@@ -446,7 +437,9 @@ std::shared_ptr<const BPEVocabulary> BPEVocabulary::parse(std::string_view conte
     vocabulary->pretokenizer = pretokenizer;
 
     size_t line_number = 0;
-    std::vector<bool> single_bytes(256, false);
+
+    /// Ranks index `by_rank`, so they are bounded by the size of the vocabulary rather than trusted.
+    const size_t max_rank = 2 * std::ranges::count(contents, '\n') + 256;
 
     for (size_t pos = 0; pos < contents.size();)
     {
@@ -481,7 +474,7 @@ std::shared_ptr<const BPEVocabulary> BPEVocabulary::parse(std::string_view conte
         {
             token = base64Decode(std::string(line.substr(0, separator)));
         }
-        catch (...)
+        catch (const Poco::DataFormatException &)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Line {} of a BPE vocabulary has a token that is not base64 encoded", line_number);
@@ -510,9 +503,6 @@ std::shared_ptr<const BPEVocabulary> BPEVocabulary::parse(std::string_view conte
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "A BPE vocabulary has rank {} twice, at line {}", rank, line_number);
         vocabulary->by_rank[rank] = stored;
-
-        if (token.size() == 1)
-            single_bytes[static_cast<UInt8>(token[0])] = true;
     }
 
     if (vocabulary->ranks.empty())
@@ -520,8 +510,8 @@ std::shared_ptr<const BPEVocabulary> BPEVocabulary::parse(std::string_view conte
 
     /// Encoding starts from the individual bytes of a piece, so every byte has to be a token of its
     /// own, and text that is not valid UTF-8 has to be encodable too.
-    for (size_t byte = 0; byte < single_bytes.size(); ++byte)
-        if (!single_bytes[byte])
+    for (size_t byte = 0; byte < 256; ++byte)
+        if (const char c = static_cast<char>(byte); vocabulary->rankOf({&c, 1}) == no_rank)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "A BPE vocabulary has no token for the single byte {}, so it cannot encode arbitrary text", byte);
 
@@ -620,7 +610,7 @@ void BPEVocabulary::encodePiece(std::string_view piece, PaddedPODArray<UInt32> &
     using Candidate = std::pair<UInt32, size_t>;
     std::priority_queue<Candidate, std::vector<Candidate>, std::greater<>> candidates;
 
-    /// The rank of the pair that starts at part `i`, where `end` bounds the part after it.
+    /// The rank of the pair of part `i` and the part after it.
     const auto pairRankAt = [&](size_t i) -> UInt32
     {
         const size_t after = next[i];

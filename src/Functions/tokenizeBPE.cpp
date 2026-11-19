@@ -12,6 +12,8 @@
 #include <Interpreters/BPEVocabularyFactory.h>
 #include <Interpreters/Context.h>
 
+#include <mutex>
+
 
 namespace DB
 {
@@ -25,19 +27,30 @@ namespace ErrorCodes
 namespace
 {
 
-/// The vocabulary a call names. It is a constant argument: a vocabulary is loaded once and shared,
-/// and picking a different one per row would mean loading one per row.
-BPEVocabularyPtr getVocabulary(const ColumnsWithTypeAndName & arguments, size_t argument, const String & function_name)
+/// The vocabulary named by the constant argument, resolved once per query,
+/// so that every block of the query is processed with the same vocabulary.
+class VocabularyArgument
 {
-    const ColumnConst * column = checkAndGetColumnConst<ColumnString>(arguments[argument].column.get());
-    if (!column)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "Argument {} of function {} must be a constant string naming a BPE vocabulary", argument + 1, function_name);
+public:
+    BPEVocabularyPtr get(const ColumnsWithTypeAndName & arguments, size_t argument, const String & function_name) const
+    {
+        std::call_once(resolved, [&]
+        {
+            const ColumnConst * column = checkAndGetColumnConst<ColumnString>(arguments[argument].column.get());
+            if (!column)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Argument {} of function {} must be a constant string naming a BPE vocabulary", argument + 1, function_name);
 
-    /// Vocabularies are declared server-wide rather than per query, so they are read from the
-    /// configuration of the global context and the function itself holds no context at all.
-    return BPEVocabularyFactory::instance().get(column->getValue<String>(), Context::getGlobalContextInstance()->getConfigRef());
-}
+            /// Vocabularies are declared in the server configuration.
+            vocabulary = BPEVocabularyFactory::instance().get(column->getValue<String>(), Context::getGlobalContextInstance()->getConfigRef());
+        });
+        return vocabulary;
+    }
+
+private:
+    mutable std::once_flag resolved;
+    mutable BPEVocabularyPtr vocabulary;
+};
 
 
 class FunctionTokenizeBPE : public IFunction
@@ -49,6 +62,8 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    /// The vocabulary is reloaded when its file or the configuration changes.
+    bool isDeterministic() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -64,7 +79,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const BPEVocabularyPtr vocabulary = getVocabulary(arguments, 1, getName());
+        const BPEVocabularyPtr vocabulary = vocabulary_argument.get(arguments, 1, getName());
 
         const ColumnPtr text_column = arguments[0].column->convertToFullColumnIfConst();
         const ColumnString * text = checkAndGetColumn<ColumnString>(text_column.get());
@@ -85,6 +100,9 @@ public:
 
         return ColumnArray::create(std::move(ids_column), std::move(offsets_column));
     }
+
+private:
+    VocabularyArgument vocabulary_argument;
 };
 
 
@@ -97,6 +115,8 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    /// The vocabulary is reloaded when its file or the configuration changes.
+    bool isDeterministic() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -105,11 +125,11 @@ public:
         {
             const auto * array = typeid_cast<const DataTypeArray *>(&type);
             /// `Array(Nothing)` is the type of the literal empty array, which decodes to an empty string.
-            return array && (isUInt(array->getNestedType()) || isNothing(array->getNestedType()));
+            return array && (isNativeUInt(array->getNestedType()) || isNothing(array->getNestedType()));
         };
 
         FunctionArgumentDescriptors args{
-            {"ids", static_cast<FunctionArgumentDescriptor::TypeValidator>(is_array_of_unsigned), nullptr, "Array of unsigned integers"},
+            {"ids", static_cast<FunctionArgumentDescriptor::TypeValidator>(is_array_of_unsigned), nullptr, "Array(UInt8/16/32/64)"},
             {"vocabulary", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"},
         };
         validateFunctionArguments(*this, arguments, args);
@@ -119,7 +139,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const BPEVocabularyPtr vocabulary = getVocabulary(arguments, 1, getName());
+        const BPEVocabularyPtr vocabulary = vocabulary_argument.get(arguments, 1, getName());
 
         const ColumnPtr ids_column = arguments[0].column->convertToFullColumnIfConst();
         const ColumnArray * ids_array = checkAndGetColumn<ColumnArray>(ids_column.get());
@@ -160,6 +180,9 @@ public:
 
         return result;
     }
+
+private:
+    VocabularyArgument vocabulary_argument;
 };
 
 }
@@ -201,7 +224,7 @@ single byte and a few merges, one of which is `banana`.
         {"Tokenize a string", "SELECT tokenizeBPE('a banana', 'example_vocabulary')", "[97,32,260]"},
         {"Count the tokens of a string", "SELECT length(tokenizeBPE('a banana', 'example_vocabulary'))", "3"},
     };
-    FunctionDocumentation::IntroducedIn introduced_in_tokenize = {26, 9};
+    FunctionDocumentation::IntroducedIn introduced_in_tokenize = {26, 11};
     FunctionDocumentation::Category category_tokenize = FunctionDocumentation::Category::StringSplitting;
     FunctionDocumentation documentation_tokenize = {description_tokenize, syntax_tokenize, arguments_tokenize, {}, returned_value_tokenize, examples_tokenize, introduced_in_tokenize, category_tokenize};
 
@@ -220,7 +243,7 @@ Turns the token ids of a byte pair encoding vocabulary back into text. It is the
     FunctionDocumentation::Examples examples_detokenize = {
         {"Round trip", "SELECT detokenizeBPE(tokenizeBPE('a banana', 'example_vocabulary'), 'example_vocabulary')", "a banana"},
     };
-    FunctionDocumentation::IntroducedIn introduced_in_detokenize = {26, 9};
+    FunctionDocumentation::IntroducedIn introduced_in_detokenize = {26, 11};
     FunctionDocumentation::Category category_detokenize = FunctionDocumentation::Category::StringSplitting;
     FunctionDocumentation documentation_detokenize = {description_detokenize, syntax_detokenize, arguments_detokenize, {}, returned_value_detokenize, examples_detokenize, introduced_in_detokenize, category_detokenize};
 
