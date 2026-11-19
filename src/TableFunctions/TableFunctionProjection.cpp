@@ -2,6 +2,7 @@
 #include <Storages/StorageProxy.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/IAST.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeProjection.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -14,6 +15,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 class TableFunctionMergeTreeProjection : public ITableFunction
@@ -97,6 +99,10 @@ StoragePtr TableFunctionMergeTreeProjection::executeImpl(
     auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
     auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
     ProjectionDescriptionRawPtr projection = &metadata_snapshot->getProjections().get(projection_name);
+
+    /// The metadata of an `Alias` is its target's, so the projection is found, but its parts are not the alias's.
+    if (!castStorage<MergeTreeData>(source_table, DeferredTable::Load))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function {} expected MergeTree table, got: {}", getName(), source_table->getName());
 
     StorageID storage_id(getDatabaseName(), table_name);
     auto res = std::make_shared<StorageFromMergeTreeProjection>(

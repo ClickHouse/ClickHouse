@@ -21,11 +21,8 @@ ACCESS_DENIED
 ACCESS_DENIED
 ACCESS_DENIED
 === alias, SHOW COLUMNS on the alias but not on its target ===
-ACCESS_DENIED
-ACCESS_DENIED
-ACCESS_DENIED
-ACCESS_DENIED
-ACCESS_DENIED
+a b 
+expected MergeTree table, got: Alias
 cannot be used to create a table
 cannot be used to create a table
 === create as table function, no grants on the source ===

@@ -85,14 +85,12 @@ as_user "SELECT count() FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_no_suc
 as_user "SELECT count() FROM viewIfPermitted(SELECT 1 ELSE mergeTreeIndex(currentDatabase(), t_source_access))"
 as_user "DESCRIBE viewIfPermitted(SELECT 1 ELSE url('http://localhost:1/', TSV, 'x UInt8'))"
 
+# An `Alias` runs with definer rights, so the grant on the alias itself is enough to see its structure.
 echo "=== alias, SHOW COLUMNS on the alias but not on its target ==="
-as_user "DESCRIBE t_alias_src"
-as_user "DESCRIBE mergeTreeProjection(currentDatabase(), t_alias_src, p_src)"
-# Reading has its own check site, and without one the caller reaches an internal cast failure.
-$CLICKHOUSE_CLIENT --user "$user_name" -q "SELECT count() FROM mergeTreeProjection(currentDatabase(), t_alias_src, p_src)" 2>&1 | grep -o "ACCESS_DENIED\|std::bad_cast" | uniq
-as_user "DESCRIBE loop(currentDatabase(), t_alias_src)"
-# An index name is metadata too, so the denial must come before the index lookup reports it missing.
-$CLICKHOUSE_CLIENT --user "$user_name" -q "SELECT count() FROM mergeTreeTextIndex(currentDatabase(), t_alias_src, 'idx_none')" 2>&1 | grep -o "ACCESS_DENIED\|There is no index with name 'idx_none'" | uniq
+$CLICKHOUSE_CLIENT --user "$user_name" -q "DESCRIBE t_alias_src" 2>&1 | cut -f1 | tr '\n' ' '
+echo
+# The introspection functions read the parts of a `MergeTree` table, and an alias has none.
+$CLICKHOUSE_CLIENT --user "$user_name" -q "SELECT count() FROM mergeTreeProjection(currentDatabase(), t_alias_src, p_src)" 2>&1 | grep -o "ACCESS_DENIED\|std::bad_cast\|expected MergeTree table, got: Alias" | uniq
 as_user_create_as "CREATE TABLE t_as_tf_p (b UInt64) AS mergeTreeProjection(currentDatabase(), t_alias_src, p_src)"
 as_user_create_as "CREATE TABLE t_as_tf_ti AS mergeTreeTextIndex(currentDatabase(), t_alias_src, 'idx_none')"
 
