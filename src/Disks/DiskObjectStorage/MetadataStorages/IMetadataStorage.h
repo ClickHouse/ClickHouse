@@ -333,7 +333,7 @@ public:
     /// Whether this process publishes a snapshot of the whole metadata of the disk to the object storage for the readers of
     /// the disk (see `metadata_snapshot_enabled` of `plain_rewritable`). The publication is not coordinated with other
     /// processes that write to the same disk.
-    virtual bool writesMetadataSnapshot() const { return false; }
+    [[nodiscard]] virtual bool writesMetadataSnapshot() const { return false; }
 
     /// Whether a hard link created by `createHardLink` really shares the blob between the two files,
     /// instead of copying it. The write-once (`plain`) metadata cannot represent hard links at all,

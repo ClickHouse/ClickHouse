@@ -475,8 +475,8 @@ public:
 
         /// Whether `undoPublishedRenames` or `abandonPublishedRenames` left some published parts in
         /// place. Valid until the transaction is cleared (by a rollback or commit).
-        bool hasAbandonedPublishedParts() const { return !abandoned_published_parts.empty(); }
-        const MutableDataPartsVector & getAbandonedPublishedParts() const { return abandoned_published_parts; }
+        [[nodiscard]] bool hasAbandonedPublishedParts() const { return !abandoned_published_parts.empty(); }
+        [[nodiscard]] const MutableDataPartsVector & getAbandonedPublishedParts() const { return abandoned_published_parts; }
 
         void addPart(MutableDataPartPtr & part, bool need_rename);
 
@@ -532,7 +532,7 @@ public:
         /// touching their directories.
         MutableDataPartsVector abandoned_published_parts;
 
-        bool isAbandonedPublishedPart(const MutableDataPartPtr & part) const;
+        [[nodiscard]] bool isAbandonedPublishedPart(const MutableDataPartPtr & part) const;
     };
 
     using TransactionUniquePtr = std::unique_ptr<Transaction>;
@@ -602,7 +602,7 @@ public:
         void removeFileIfExists(const DiskPtr & disk, const String & relative_path);
 
         /// How many permanent changes were recorded so far. Zero when the journal is disarmed.
-        size_t recordedChanges() const { return changes.size(); }
+        [[nodiscard]] size_t recordedChanges() const { return changes.size(); }
 
         /// The command succeeded: its changes to `detached/` are final.
         void commit() { changes.clear(); }
