@@ -825,6 +825,21 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
+        {
+            /// SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster] [FOR TABLE [db.]table]
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+
+            if (ParserKeyword{Keyword::FOR}.ignore(pos, expected))
+            {
+                if (!ParserKeyword{Keyword::TABLE}.ignore(pos, expected))
+                    return false;
+                if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
+                    return false;
+            }
+            break;
+        }
         case Type::CLEAR_FILESYSTEM_CACHE:
         {
             ParserLiteral path_parser;
@@ -1231,10 +1246,7 @@ std::map<String, Documentation> ParserSystemQuery::getDocumentation() const
 
     documentation["SYSTEM"] =
     {
-        .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-
+        .description = String(R"DOCS_MD(
 ## SYSTEM RELOAD EMBEDDED DICTIONARIES {#reload-embedded-dictionaries}
 
 Reload all [Internal dictionaries](/reference/statements/create/dictionary).
@@ -1388,7 +1400,15 @@ Clears the userspace page cache, ClickHouse's own in-memory cache of data read f
 
 ## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE {#drop-vector-similarity-index-cache}
 
-Clears the vector similarity index cache.
+Clears the cache of [vector similarity indexes](/reference/engines/table-engines/mergetree-family/annindexes), which holds the deserialized vector index granules in memory.
+
+```sql
+SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster_name] [FOR TABLE [db.]table]
+```
+
+With `FOR TABLE`, only the cache entries of the given `MergeTree` table are removed.
+
+Requires the `SYSTEM DROP VECTOR SIMILARITY INDEX CACHE` privilege for all or a single table.
 
 ## SYSTEM CLEAR|DROP CONNECTIONS CACHE {#drop-connections-cache}
 
@@ -1875,7 +1895,8 @@ However, if the server on the specified port and protocol was not stopped using 
 ```sql
 SYSTEM START LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
 ```
-
+)DOCS_MD") +
+R"DOCS_MD(
 ## Managing MergeTree Tables {#managing-mergetree-tables}
 
 ClickHouse can manage background processes in [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables.

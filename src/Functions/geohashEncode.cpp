@@ -105,11 +105,11 @@ REGISTER_FUNCTION(GeohashEncode)
     FunctionDocumentation::Description description = R"(
 Encodes longitude and latitude as a [geohash](https://en.wikipedia.org/wiki/Geohash)-string.
 
-:::
+<Note>
 All coordinate parameters must be of the same type: either `Float32` or `Float64`.
 
 For the `precision` parameter, any value less than `1` or greater than `12` is silently converted to `12`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "geohashEncode(longitude, latitude, [precision])";
     FunctionDocumentation::Arguments arguments = {

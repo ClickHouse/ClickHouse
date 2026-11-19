@@ -27,6 +27,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/IStorageCluster.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/SparsityFilter.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
@@ -132,6 +133,8 @@ namespace Setting
 {
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool apply_mutations_on_fly;
+    extern const SettingsBool apply_patch_parts;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool query_plan_cache_allow_scalar_subqueries;
     extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
@@ -560,9 +563,7 @@ bool hasTrivialCountIncompatibleModifiers(
 /// predicate is the only check that may block or touch storage metadata, so it is asked last
 /// and only once per query.
 QueryTreeNodePtr getTrivialCountAggregate(
-    const SelectQueryInfo & select_query_info,
-    const TableNode * table_node,
-    const TableFunctionNode * table_function_node,
+    const QueryTreeNodePtr & table_expression,
     const QueryTreeNodePtr & query_tree,
     const ContextPtr & query_context)
 {
@@ -573,21 +574,6 @@ QueryTreeNodePtr getTrivialCountAggregate(
     /// The rewrite produces a `ReadFromPreparedSource` leaf that the Cascades optimizer cannot
     /// clone; a distributed plan counts the rows with a distributed read instead.
     if (settings[Setting::make_distributed_plan] && settings[Setting::enable_cascades_optimizer])
-        return nullptr;
-
-    const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-
-    /// `totalRows` and the column stats describe the live table, not the snapshot pinned for this query.
-    if (query_context->getPinnedStorageSnapshot(storage->getStorageID().uuid))
-        return nullptr;
-
-    if (getEffectiveRowPolicyFilter(*storage, query_context))
-        return nullptr;
-
-    if (select_query_info.additional_filter_ast)
-        return nullptr;
-
-    if (hasTrivialCountIncompatibleModifiers(table_node, table_function_node))
         return nullptr;
 
     // TODO: It's possible to optimize count() given only partition predicates
@@ -607,8 +593,7 @@ QueryTreeNodePtr getTrivialCountAggregate(
     if (!typeid_cast<const AggregateFunctionCount *>(function_node.getAggregateFunction().get()))
         return nullptr;
 
-    if (!storage->supportsTrivialCountOptimization(
-            table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
+    if (!canAnswerWholeTableAggregateFromMetadata(table_expression, query_context, /*needs_stored_values=*/ false))
         return nullptr;
 
     return aggregates.front();
@@ -1850,6 +1835,59 @@ void disableParallelReplicasForSubqueries(const QueryTreeNodePtr & node)
 
 }
 
+bool canAnswerWholeTableAggregateFromMetadata(
+    const QueryTreeNodePtr & table_expression, const ContextPtr & context, bool needs_stored_values)
+{
+    const auto * table_node = table_expression->as<TableNode>();
+    const auto * table_function_node = table_expression->as<TableFunctionNode>();
+    if (!table_node && !table_function_node)
+        return false;
+
+    const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+    const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+
+    /// `totalRows` and the column stats describe the live table, not the snapshot pinned for this query.
+    if (context->getPinnedStorageSnapshot(storage->getStorageID().uuid))
+        return false;
+
+    if (getEffectiveRowPolicyFilter(*storage, context))
+        return false;
+
+    SelectQueryInfo additional_filter_query_info;
+    parseAdditionalFilterAstIfNeeded(storage, table_expression->getOriginalAlias(), additional_filter_query_info, context);
+    if (additional_filter_query_info.additional_filter_ast)
+        return false;
+
+    if (hasTrivialCountIncompatibleModifiers(table_node, table_function_node))
+        return false;
+
+    if (needs_stored_values)
+    {
+        if (&storage_snapshot->storage != storage.get() || typeid_cast<const StorageMerge *>(storage.get())
+            || storage_snapshot->metadata->hasUniqueKey())
+            return false;
+
+        if (const auto * data = typeid_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
+        {
+            /// Pending ALTERs are listed only when applied on the fly, but the read converts the column anyway.
+            const auto & settings = context->getSettingsRef();
+            if (!settings[Setting::apply_mutations_on_fly] && !settings[Setting::apply_patch_parts])
+                return false;
+
+            if (data->mutations_snapshot
+                && (data->mutations_snapshot->hasPatchParts()
+                    || (data->parts && MergeTreeDataSelectExecutor::hasPendingAlterOrMetadataMutations(*data->parts, data->mutations_snapshot))))
+                return false;
+
+            const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage);
+            if (!merge_tree || merge_tree->hasEnabledMaskingPolicies(context))
+                return false;
+        }
+    }
+
+    return storage->supportsTrivialCountOptimization(storage_snapshot, context);
+}
+
 void checkParallelReplicasImplementationOfSubqueries(const QueryTreeNodePtr & node, const ContextPtr & query_context)
 {
     /// Query-based and plan-based parallel replicas cannot be mixed in one query: the subtree planned for
@@ -2184,7 +2222,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         if (!select_query_options.only_analyze && !select_query_options.build_logical_plan && is_single_table_expression
             && (table_node || table_function_node) && select_query_info.has_aggregates)
             trivial_count_aggregate = getTrivialCountAggregate(
-                table_expression_query_info, table_node, table_function_node, select_query_info.query_tree, planner_context->getQueryContext());
+                table_expression, select_query_info.query_tree, planner_context->getQueryContext());
 
         is_trivial_count_applied = trivial_count_aggregate
             && (applyTrivialCountIfPossible(
