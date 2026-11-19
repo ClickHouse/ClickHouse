@@ -1352,8 +1352,9 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
                         || !table_expression_is_visible(array_join_node))
                         return inner;
 
-                    /// The readings of the outputs of one `ARRAY JOIN`: a readable one takes precedence over a blocking one.
-                    OuterReading array_join_reading = OuterReading::ABSENT;
+                    /// The first output that binds the identifier decides, as in `tryResolveIdentifierFromArrayJoin`.
+                    /// An output that binds the identifier by its whole name is a column of the `ARRAY JOIN` node,
+                    /// so it can be equal to, or equated with, a column of the other side of an enclosing `JOIN`.
                     for (const auto & array_join_expression : array_join_node->getJoinExpressions())
                     {
                         const auto * array_join_column = array_join_expression->as<ColumnNode>();
@@ -1371,20 +1372,19 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
                         if (!rest.empty())
                             type = type->tryGetSubcolumnType(rest.getFullName());
 
-                        OuterReading reading = outerReadingOfType(type, identifier_lookup);
-                        if (reading == OuterReading::READABLE || (reading == OuterReading::BLOCKS && array_join_reading == OuterReading::ABSENT))
-                            array_join_reading = reading;
+                        const IQueryTreeNode * source = rest.empty() ? node.get() : nullptr;
+                        switch (outerReadingOfType(type, identifier_lookup))
+                        {
+                            case OuterReading::READABLE:
+                                return {JoinTreeReading::READABLE, source};
+                            case OuterReading::BLOCKS:
+                                return {JoinTreeReading::BLOCKS, source};
+                            case OuterReading::ABSENT:
+                                break;
+                        }
                     }
 
-                    switch (array_join_reading)
-                    {
-                        case OuterReading::READABLE:
-                            return {JoinTreeReading::READABLE, nullptr};
-                        case OuterReading::BLOCKS:
-                            return {JoinTreeReading::BLOCKS, nullptr};
-                        case OuterReading::ABSENT:
-                            return inner;
-                    }
+                    return inner;
                 }
 
                 if (!table_expression_is_visible(node.get()))
