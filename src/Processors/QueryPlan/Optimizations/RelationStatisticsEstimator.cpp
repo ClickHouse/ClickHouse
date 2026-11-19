@@ -5,6 +5,7 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ActionsDAGTraversal.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -390,8 +391,13 @@ bool mayStopReadingEarly(const SelectQueryInfo & query_info)
 /// records its own row subset; it counts here only where the estimate of the read accounts for it.
 struct ReadCoverage
 {
-    /// The read may return only some of the rows: it filters or limits them, skips deleted rows, or may stop early.
+    /// The read may return only some of the rows for a reason that is not attributed to the columns it depends on: it
+    /// limits or samples them, skips deleted rows, may stop early, or filters them by a predicate whose columns are not
+    /// known.
     bool may_drop_rows = false;
+    /// The stored columns read by the predicates that may drop rows of the read, if each of them is attributed to the
+    /// columns it reads (see `getFilteredColumns`); unset without such predicates.
+    std::optional<NameSet> filtered_columns;
     /// The read may return values that the statistics did not measure.
     bool may_rewrite_values = false;
     /// The `n` of a top-K read (`ORDER BY ... LIMIT n`), see `mayDropRows`. The `__topKFilter` PREWHERE that a later
@@ -402,13 +408,34 @@ struct ReadCoverage
     /// Whether the read may return fewer rows than it selects. A top-K read keeps every row of the final top `n`:
     /// range analysis drops only granules and parts that cannot hold one, and a running boundary drops rows once `n`
     /// have been seen. So if nothing else drops rows, it keeps all `selected_rows` if there are at most `n`.
-    [[nodiscard]] bool mayDropRows(UInt64 selected_rows) const { return may_drop_rows || (top_k_limit && selected_rows > *top_k_limit); }
+    [[nodiscard]] bool mayDropRows(UInt64 selected_rows) const
+    {
+        return may_drop_rows || filtered_columns || (top_k_limit && selected_rows > *top_k_limit);
+    }
 
-    /// Records in the column statistics of `stats` what the read may drop or rewrite.
+    /// `filtered_columns` if the attributed predicates are the only possible cause of dropped rows. Whether a top-K read
+    /// drops rows depends on the estimated rows, which the predicates decide, so with a top-K limit they are not
+    /// attributed.
+    [[nodiscard]] const NameSet * attributedFilteredColumns() const
+    {
+        return filtered_columns && !may_drop_rows && !top_k_limit ? &*filtered_columns : nullptr;
+    }
+
+    /// Records in the column statistics of `stats` what the read may drop or rewrite. Rows dropped only by attributed
+    /// predicates leave `FilterOnOtherColumns` on the columns the predicates do not read, any other cause `RowSubset`
+    /// on every column.
     void recordIn(RelationStats & stats, UInt64 selected_rows) const
     {
         if (mayDropRows(selected_rows))
-            stats.addTransformation(RowSubset);
+        {
+            if (const auto * columns = attributedFilteredColumns())
+            {
+                for (auto & [column_name, column_stats] : stats.column_stats)
+                    column_stats.addTransformation(columns->contains(column_name) ? RowSubset : FilterOnOtherColumns);
+            }
+            else
+                stats.addTransformation(RowSubset);
+        }
         if (may_rewrite_values)
             stats.addTransformation(Unmodeled);
     }
@@ -464,13 +491,92 @@ bool hasOnTheFlyDataChanges(const ReadFromMergeTree & reading)
         && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts());
 }
 
-/// The coverage of a MergeTree read of `parts`. With `has_plan_time_filter`, the estimate accounts for a filter above
-/// the read, so it describes a subset of the rows as well.
-ReadCoverage analyzeReadCoverage(const ReadFromMergeTree & reading, const RangesInDataParts & parts, bool has_plan_time_filter)
+/// The predicate of the nearest `FilterStep` above a node, which the estimate of a read or of a sub-join accounts for.
+struct FilterAbove
+{
+    const ActionsDAG::Node * predicate = nullptr;
+    /// The `FilterStep` is the parent of the node, so the predicate reads the output columns of the node. A predicate of
+    /// a `FilterStep` further up reads the outputs of the steps in between, which can be computed from any columns.
+    bool is_parent = false;
+};
+
+/// The stored columns read by the predicates that may drop rows of a MergeTree read: `parent_predicate` of the
+/// `FilterStep` right above the read, the row-level filter, the PREWHERE and the filter pushed into the read (which
+/// is resolved to the columns of the read through the steps above it, see `optimizePrimaryKeyConditionAndLimit`).
+/// Unset if a predicate cannot be attributed to the stored columns it reads: it reads a column that is not a stored
+/// column of the table (a column computed by the read, a virtual column, a subcolumn, a correlated column), contains
+/// `arrayJoin`, or a function whose result is not determined by its arguments (e.g. `rowNumberInAllBlocks`, whose
+/// predicate selects rows by their position, or `rand`).
+std::optional<NameSet> getFilteredColumns(const ReadFromMergeTree & reading, const ActionsDAG::Node * parent_predicate)
+{
+    ActionsDAG::NodeRawConstPtrs predicates;
+    if (parent_predicate)
+        predicates.push_back(parent_predicate);
+
+    /// The row-level filter and the PREWHERE run inside the read and can compute columns under any name.
+    NameSet columns_computed_by_read;
+    auto add_read_predicate = [&](const ActionsDAG & actions, const String & column_name)
+    {
+        const auto * predicate = actions.tryFindInOutputs(column_name);
+        if (!predicate)
+            return false;
+        predicates.push_back(predicate);
+        for (const auto * output : actions.getOutputs())
+            if (output->type != ActionsDAG::ActionType::INPUT)
+                columns_computed_by_read.insert(output->result_name);
+        return true;
+    };
+    if (const auto & row_level_filter = reading.getRowLevelFilter();
+        row_level_filter && !add_read_predicate(row_level_filter->actions, row_level_filter->column_name))
+        return {};
+    if (const auto & prewhere_info = reading.getPrewhereInfo();
+        prewhere_info && !add_read_predicate(prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name))
+        return {};
+    if (const auto & filter_actions_dag = reading.getFilterActionsDAG())
+        predicates.insert(predicates.end(), filter_actions_dag->getOutputs().begin(), filter_actions_dag->getOutputs().end());
+
+    const auto & columns = reading.getStorageMetadata()->getColumns();
+    NameSet filtered_columns;
+    const bool is_attributed = visitReachableNodes(
+        predicates,
+        [&](const ActionsDAG::Node * node)
+        {
+            switch (node->type)
+            {
+                case ActionsDAG::ActionType::INPUT:
+                    if (!columns.hasPhysical(node->result_name) || columns_computed_by_read.contains(node->result_name))
+                        return VisitResult::Stop;
+                    filtered_columns.insert(node->result_name);
+                    return VisitResult::Continue;
+                case ActionsDAG::ActionType::FUNCTION:
+                    if (!node->function_base || node->function_base->isStateful() || !node->function_base->isDeterministicInScopeOfQuery())
+                        return VisitResult::Stop;
+                    return VisitResult::Continue;
+                case ActionsDAG::ActionType::COLUMN:
+                case ActionsDAG::ActionType::ALIAS: return VisitResult::Continue;
+                case ActionsDAG::ActionType::ARRAY_JOIN:
+                case ActionsDAG::ActionType::PLACEHOLDER: return VisitResult::Stop;
+            }
+            return VisitResult::Stop;
+        });
+    if (!is_attributed)
+        return {};
+    return filtered_columns;
+}
+
+/// The coverage of a MergeTree read of `parts`. The estimate accounts for `filter`, so it describes a subset of the rows
+/// as well. Only the predicate of a parent `FilterStep` and the predicates inside the read are attributed to the columns
+/// they read; a plan-time predicate further up drops rows of all columns.
+ReadCoverage analyzeReadCoverage(const ReadFromMergeTree & reading, const RangesInDataParts & parts, FilterAbove filter)
 {
     const auto & query_info = reading.getQueryInfo();
-    const bool has_predicates = has_plan_time_filter || reading.getPrewhereInfo() || reading.getRowLevelFilter()
-        || reading.getFilterActionsDAG() || reading.getDeferredPrewhereInfo() || reading.getDeferredRowLevelFilter();
+    const ActionsDAG::Node * parent_predicate = filter.is_parent ? filter.predicate : nullptr;
+    const bool has_attributable_predicates
+        = parent_predicate || reading.getPrewhereInfo() || reading.getRowLevelFilter() || reading.getFilterActionsDAG();
+    /// A predicate that prunes nothing at plan time is accounted for by the `FilterStep` further up. The filters deferred
+    /// after `FINAL` run only with `FINAL`, which drops rows of all columns anyway.
+    const bool has_unattributed_predicates = (filter.predicate && !filter.is_parent && !prunesNothingAtPlanTime(filter.predicate))
+        || reading.getDeferredPrewhereInfo() || reading.getDeferredRowLevelFilter();
     const bool has_row_selecting_modifiers = query_info.isFinal() || query_info.isStream() || query_info.trivial_limit
         || (query_info.table_expression_modifiers && query_info.table_expression_modifiers->hasSampleSizeRatio())
         || reading.getVectorSearchParameters().has_value();
@@ -478,9 +584,10 @@ ReadCoverage analyzeReadCoverage(const ReadFromMergeTree & reading, const Ranges
     const bool has_deleted_rows = hasLightweightDeletedRows(parts) || hasUniqueKeyDeletedRows(reading, parts);
     const bool has_on_the_fly_data_changes = hasOnTheFlyDataChanges(reading);
 
-    return ReadCoverage{
-        .may_drop_rows = has_predicates || has_row_selecting_modifiers || has_deleted_rows || has_on_the_fly_data_changes
+    ReadCoverage coverage{
+        .may_drop_rows = has_unattributed_predicates || has_row_selecting_modifiers || has_deleted_rows || has_on_the_fly_data_changes
             || mayStopReadingEarly(query_info),
+        .filtered_columns = {},
         /// `FINAL` can synthesize values in `SummingMergeTree`, `AggregatingMergeTree` and `GraphiteMergeTree`; every
         /// `FINAL` read counts, so that new merge modes fail closed.
         .may_rewrite_values = has_on_the_fly_data_changes || query_info.isFinal()
@@ -488,12 +595,20 @@ ReadCoverage analyzeReadCoverage(const ReadFromMergeTree & reading, const Ranges
         .top_k_limit
         = reading.isSelectedForTopKFilterOptimization() ? std::optional<UInt64>(reading.getTopKFilterInfo()->limit_n) : std::nullopt,
     };
+    if (has_attributable_predicates)
+    {
+        coverage.filtered_columns = getFilteredColumns(reading, parent_predicate);
+        if (!coverage.filtered_columns)
+            coverage.may_drop_rows = true;
+    }
+    return coverage;
 }
 
 /// Statistics of a node that is estimated without first estimating a child: a read step or an
-/// already optimized logical join. Returns `std::nullopt` for every other step.
+/// already optimized logical join. Returns `std::nullopt` for every other step. Sets `parent_filter_recorded` if the
+/// column statistics record the rows that the predicate of a parent `FilterStep` drops.
 std::optional<RelationStats>
-estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * filter, RelationStatsOptions options)
+estimateDirectRelationStats(QueryPlan::Node & node, FilterAbove filter, RelationStatsOptions options, bool & parent_filter_recorded)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
@@ -533,7 +648,7 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
         }
 
         /// A runtime filter prunes nothing at plan time, so it does not count as a filter for the estimate.
-        const ActionsDAG::Node * plan_time_filter = prunesNothingAtPlanTime(filter) ? nullptr : filter;
+        const ActionsDAG::Node * plan_time_filter = prunesNothingAtPlanTime(filter.predicate) ? nullptr : filter.predicate;
 
         /// A PREWHERE that prunes nothing at plan time is likewise not a plan-time filter.
         const PrewhereInfoPtr prewhere_info = reading->getPrewhereInfo();
@@ -582,15 +697,16 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
                 .source = RowEstimateSource::NoStatistics};
         }
 
-        const auto coverage = analyzeReadCoverage(
-            *reading, analyzed_result ? analyzed_result->parts_with_ranges : reading->getParts(), plan_time_filter != nullptr);
+        const auto coverage
+            = analyzeReadCoverage(*reading, analyzed_result ? analyzed_result->parts_with_ranges : reading->getParts(), filter);
 
         const bool use_statistics = reading->getContext()->getSettingsRef()[Setting::use_statistics];
         if (use_statistics)
         {
             if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames(), analyzed_result))
             {
-                auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), plan_time_filter, prewhere_node);
+                auto relation_profile = estimator->estimateRelationProfile(
+                    reading->getStorageMetadata(), plan_time_filter, prewhere_node, coverage.attributedFilteredColumns());
                 RelationStats stats{
                     .estimated_rows = relation_profile.rows,
                     .column_stats = relation_profile.column_stats,
@@ -598,6 +714,8 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
                     .rows_exact = !coverage.mayDropRows(relation_profile.rows),
                     .source = RowEstimateSource::Statistics};
                 coverage.recordIn(stats, relation_profile.rows);
+                /// The coverage counts the predicate of a parent `FilterStep` among the predicates of the read.
+                parent_filter_recorded = filter.is_parent && filter.predicate;
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpRelationStatsForLogs(stats));
                 return stats;
             }
@@ -647,13 +765,15 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
         const UInt64 rows = *estimate->rows;
 
         /// The manifest statistics describe every row of the remaining files, deleted rows included.
+        /// Its predicates are not attributed to the columns they read.
         const ReadCoverage coverage{
             .may_drop_rows = estimate->has_delete_files || reading->getFilterActionsDAG() || reading->getPrewhereInfo()
                 || reading->getRowLevelFilter() || mayStopReadingEarly(reading->getQueryInfo()),
+            .filtered_columns = {},
             .may_rewrite_values = false,
             .top_k_limit = std::nullopt};
 
-        const auto conditions = getConditionsToEstimate(*reading, filter);
+        const auto conditions = getConditionsToEstimate(*reading, filter.predicate);
         if (conditions.empty() || rows == 0)
         {
             stats.estimated_rows = rows;
@@ -720,7 +840,7 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
         /// to keep the parent from appending a second estimate to it.
         /// A plan-time filter above the join is not accounted for, so like a storage read with a filter
         /// it cannot use, the row count is then unknown. A runtime filter prunes nothing at plan time.
-        const bool has_plan_time_filter = filter && !prunesNothingAtPlanTime(filter);
+        const bool has_plan_time_filter = filter.predicate && !prunesNothingAtPlanTime(filter.predicate);
         auto stats = RelationStats{
             .estimated_rows = has_plan_time_filter ? std::nullopt : join_step->getResultRowsEstimation(),
             .column_stats = join_step->getResultColumnStats(),
@@ -737,14 +857,19 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
 
 /// The statistics of the subtree rooted at `node` under `filter`, the predicate of a `FilterStep` above it, which the
 /// estimate of a read or of a sub-join accounts for. The row estimate ignores a predicate that prunes nothing at plan
-/// time (see `prunesNothingAtPlanTime`). The `FilterStep` itself records the row subset in the column statistics.
-RelationStats estimateRelationStatsUnderFilter(QueryPlan::Node & node, const ActionsDAG::Node * filter, RelationStatsOptions options)
+/// time (see `prunesNothingAtPlanTime`). The `FilterStep` itself records the row subset in the column statistics,
+/// unless it is the parent of a read whose estimate records it (`parent_filter_recorded`).
+RelationStats
+estimateRelationStatsUnderFilter(QueryPlan::Node & node, FilterAbove filter, RelationStatsOptions options, bool & parent_filter_recorded)
 {
-    if (auto direct_stats = estimateDirectRelationStats(node, filter, options))
+    parent_filter_recorded = false;
+    if (auto direct_stats = estimateDirectRelationStats(node, filter, options, parent_filter_recorded))
         return std::move(*direct_stats);
 
+    /// The outputs of the reference are not those of the referenced subplan.
     if (const auto * reference = typeid_cast<const CommonSubplanReferenceStep *>(node.step.get()))
-        return estimateRelationStatsUnderFilter(*reference->getSubplanReferenceRoot(), filter, options);
+        return estimateRelationStatsUnderFilter(
+            *reference->getSubplanReferenceRoot(), {.predicate = filter.predicate, .is_parent = false}, options, parent_filter_recorded);
 
     const auto kind = classifyUnaryStepStats(*node.step);
     /// Unsupported steps must stop before their children are visited: the result is unknown anyway.
@@ -752,16 +877,30 @@ RelationStats estimateRelationStatsUnderFilter(QueryPlan::Node & node, const Act
         return {};
 
     /// A filter above an array join can read its output, which the statistics of the input do not describe.
-    const ActionsDAG::Node * child_filter = kind == UnaryStepStatsKind::ArrayJoin ? nullptr : filter;
-    if (const auto * filter_step = typeid_cast<const FilterStep *>(node.step.get()))
+    FilterAbove child_filter{.predicate = kind == UnaryStepStatsKind::ArrayJoin ? nullptr : filter.predicate, .is_parent = false};
+    const auto * filter_step = typeid_cast<const FilterStep *>(node.step.get());
+    if (filter_step)
     {
         const auto & dag = filter_step->getExpression();
-        child_filter = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
+        child_filter.predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
+        /// `arrayJoin` in the expression would repeat rows, which an estimate of the predicate alone does not record.
+        child_filter.is_parent = !dag.hasArrayJoin();
     }
 
-    auto input_stats = estimateRelationStatsUnderFilter(*node.children.front(), child_filter, options);
-    auto stats = estimateUnaryStepStats(*node.step, std::move(input_stats));
-    if (stats && kind == UnaryStepStatsKind::ArrayJoin && filter)
+    bool child_filter_recorded = false;
+    auto input_stats = estimateRelationStatsUnderFilter(*node.children.front(), child_filter, options, child_filter_recorded);
+    std::optional<RelationStats> stats;
+    if (filter_step && child_filter_recorded)
+    {
+        /// The column statistics of the read already record the rows this predicate drops (`FilterOnOtherColumns` on the
+        /// columns it does not read if it is attributed, `RowSubset` otherwise), see `ReadCoverage::recordIn`.
+        remapColumnStats(input_stats.column_stats, filter_step->getExpression());
+        input_stats.rows_exact = false;
+        stats = std::move(input_stats);
+    }
+    else
+        stats = estimateUnaryStepStats(*node.step, std::move(input_stats));
+    if (stats && kind == UnaryStepStatsKind::ArrayJoin && filter.predicate)
         forgetFilteredArrayJoinRows(*stats);
     return std::move(stats).value_or(RelationStats{});
 }
@@ -770,7 +909,8 @@ RelationStats estimateRelationStatsUnderFilter(QueryPlan::Node & node, const Act
 
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, RelationStatsOptions options)
 {
-    return estimateRelationStatsUnderFilter(node, /*filter=*/nullptr, options);
+    bool parent_filter_recorded = false;
+    return estimateRelationStatsUnderFilter(node, FilterAbove{}, options, parent_filter_recorded);
 }
 }
 }
