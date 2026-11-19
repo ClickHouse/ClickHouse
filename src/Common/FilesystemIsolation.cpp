@@ -1352,16 +1352,19 @@ std::string checkPidFile(const std::string & pid_file, const std::vector<Mount> 
     }
 
     const std::vector<MountInfo> mount_info = readMountInfo();
+    /// What is written to an overlay goes to its upper directory.
+    auto get_upper_location = [&](const FilesystemLocation & location) -> std::optional<FilesystemLocation>
+    {
+        const auto upper = location.mount.filesystem_type == "overlay" ? getOverlayUpperDirectory(location.mount.super_options) : std::nullopt;
+        if (!upper)
+            return {};
+        return getFilesystemLocation((fs::path(*upper) / fs::path(location.path).relative_path()).string(), mount_info);
+    };
     std::vector<std::pair<const Mount *, FilesystemLocation>> writable_locations;
     auto add_writable_location = [&](const Mount & mount, FilesystemLocation location)
     {
-        /// What is written to an overlay goes to its upper directory.
-        const auto upper = location.mount.filesystem_type == "overlay" ? getOverlayUpperDirectory(location.mount.super_options) : std::nullopt;
-        if (upper)
-        {
-            if (auto upper_location = getFilesystemLocation((fs::path(*upper) / fs::path(location.path).relative_path()).string(), mount_info))
-                writable_locations.emplace_back(&mount, std::move(*upper_location));
-        }
+        if (auto upper_location = get_upper_location(location))
+            writable_locations.emplace_back(&mount, std::move(*upper_location));
         writable_locations.emplace_back(&mount, std::move(location));
     };
     for (const auto & mount : mounts)
@@ -1387,9 +1390,11 @@ std::string checkPidFile(const std::string & pid_file, const std::vector<Mount> 
                 writable = &mount;
         }
         const auto location = writable ? std::nullopt : getFilesystemLocation(entry.string(), mount_info);
+        const auto upper_location = location ? get_upper_location(*location) : std::nullopt;
         for (const auto & [mount, writable_location] : writable_locations)
         {
-            if (location && location->isSameOrInside(writable_location))
+            if ((location && location->isSameOrInside(writable_location))
+                || (upper_location && upper_location->isSameOrInside(writable_location)))
                 writable = mount;
         }
         if (writable)

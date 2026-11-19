@@ -22,6 +22,7 @@ enforce, through a bind mount of path: refused
 enforce, in a mount inside path: refused
 enforce, pid file writable inside: refused
 enforce, through the upper directory of an overlay of path: refused
+enforce, in an overlay of path as its upper directory: refused
 enforce, through a link outside of path: refused
 enforce, through a link and .. outside of path: refused
 marker: unchanged"
@@ -144,6 +145,8 @@ function replace_directory_in_overlay() { mv "$DIR/merged/run" "$DIR/merged/run.
 RESULT=$(run enforce "$DIR/overlay/upper/run/server.pid" replace_directory_in_overlay "" "$DIR/merged")
 [ "$RESULT" = isolated ] && RESULT="$RESULT, then $(run enforce "$DIR/overlay/upper/run/server.pid" true "" "$DIR/merged")"
 echo "enforce, through the upper directory of an overlay of path: $RESULT"
+# The reverse: `path` is the upper directory, and the pid file is in the overlay, whose files are stored there.
+echo "enforce, in an overlay of path as its upper directory: $(run enforce "$DIR/merged/run/server.pid" true "" "$DIR/overlay/upper")"
 umount "$DIR/merged"
 umount "$DIR/overlay"
 
