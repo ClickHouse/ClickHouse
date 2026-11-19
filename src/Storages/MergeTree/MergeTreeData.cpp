@@ -6754,15 +6754,26 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// of one of them changes its values. A mutation cannot apply that to an existing part: the sort
     /// order and the partition id are fixed when the part is written, which is also why MATERIALIZE
     /// COLUMN refuses key columns. Such an ALTER is allowed only when the conversion preserves values.
+    /// The engine's sign/version columns fix merge semantics like a key and are likewise not recomputed
+    /// in an existing part. They can be subcolumns (`ReplacingMergeTree(m.v)`), so resolve them to the
+    /// column they are stored in to match a MATERIALIZED parent (`m`), as getKeyColumns does.
+    auto storage_column_of = [&](const String & name) -> String
+    {
+        if (name.empty())
+            return {};
+        auto resolved = old_metadata.getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+        return resolved ? resolved->getNameInStorage() : name;
+    };
+    const String sign_storage_column = storage_column_of(merging_params.sign_column);
+    const String version_storage_column = storage_column_of(merging_params.version_column);
+
     Names key_materialized_columns;
     for (const auto & column : old_metadata.getColumns())
     {
-        /// A key subcolumn of this column (`ORDER BY m.a`) via column_to_subcolumns_used_in_keys, and the
-        /// engine's sign/version columns, which fix merge semantics like a key and are likewise not
-        /// recomputed in an existing part (getKeyColumns excludes them from recomputation too).
+        /// column_to_subcolumns_used_in_keys catches a key that is a subcolumn of this column (`ORDER BY m.a`).
         if (column.default_desc.kind == ColumnDefaultKind::Materialized && column.default_desc.expression
             && (columns_in_keys.contains(column.name) || column_to_subcolumns_used_in_keys.contains(column.name)
-                || column.name == merging_params.sign_column || column.name == merging_params.version_column))
+                || column.name == sign_storage_column || column.name == version_storage_column))
             key_materialized_columns.push_back(column.name);
     }
 

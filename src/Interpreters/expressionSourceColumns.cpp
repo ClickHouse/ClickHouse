@@ -22,25 +22,26 @@ namespace
 /// `collectSetsAndSourceColumns` misses the columns it reads. Walk those source expressions so a decision
 /// spanning two schemas (is this expression affected by a type change?) still sees the real dependency.
 void collectColumnsThroughConstantSources(
-    const QueryTreeNodePtr & node, const ColumnsDescription & columns, NamesAndTypes & result, NameSet & seen)
+    const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_node, NamesAndTypes & result, NameSet & seen)
 {
     if (!node)
         return;
 
     if (const auto * column_node = node->as<ColumnNode>())
     {
-        /// An ALIAS column keeps its expression as a child, so the generic descent below expands it.
-        if (!column_node->hasExpression() && columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_node->getColumnName())
+        /// Only a column of the analyzed table, not e.g. a lambda argument that happens to share a name
+        /// with a table column. An ALIAS column keeps its expression as a child, expanded by the descent below.
+        if (!column_node->hasExpression() && column_node->getColumnSourceOrNull().get() == table_node.get()
             && seen.emplace(column_node->getColumnName()).second)
             result.emplace_back(column_node->getColumnName(), column_node->getColumnType());
     }
     else if (const auto * constant_node = node->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
     {
-        collectColumnsThroughConstantSources(constant_node->getSourceExpression(), columns, result, seen);
+        collectColumnsThroughConstantSources(constant_node->getSourceExpression(), table_node, result, seen);
     }
 
     for (const auto & child : node->getChildren())
-        collectColumnsThroughConstantSources(child, columns, result, seen);
+        collectColumnsThroughConstantSources(child, table_node, result, seen);
 }
 
 }
@@ -76,7 +77,7 @@ NamesAndTypes expressionSourceColumns(const ASTPtr & ast, const ColumnsDescripti
     }
 
     /// Add columns folded into constants (e.g. toTypeName(x)) that the read set above omits.
-    collectColumnsThroughConstantSources(expression, columns, result, seen);
+    collectColumnsThroughConstantSources(expression, table_node, result, seen);
 
     return result;
 }
