@@ -1711,8 +1711,12 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 {
                     const auto * left_array_type = typeid_cast<const DataTypeArray *>(removeNullable(left_argument_type).get());
                     const auto * right_array_type = typeid_cast<const DataTypeArray *>(removeNullable(right_argument_type).get());
+                    /// Keep a carrier array as an array source so the rewrite below can choose
+                    /// between a list of active array values and one scalar array value per row.
                     if (left_array_type && right_array_type
                         && left_array_type->getNumberOfDimensions() == right_array_type->getNumberOfDimensions()
+                        && !isDynamic(removeNullable(removeLowCardinality(right_array_type->getNestedType())))
+                        && !isVariant(removeNullable(removeLowCardinality(right_array_type->getNestedType())))
                         && !(canContainNull(*right_array_type->getNestedType())
                             && !isArray(removeNullable(right_array_type->getNestedType()))
                             && !isMap(removeNullable(right_array_type->getNestedType()))
