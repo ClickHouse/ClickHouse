@@ -13,6 +13,9 @@
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 
+#include <set>
+#include <vector>
+
 
 namespace DB
 {
@@ -26,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int UNFINISHED;
 }
 
 InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_)
@@ -73,6 +77,30 @@ BlockIO InterpreterRenameQuery::execute()
     }
 
     auto & database_catalog = DatabaseCatalog::instance();
+
+    /// DROP DATABASE holds this lock exclusively while it prepares its tables for shutdown and drops them.
+    /// A RENAME or EXCHANGE must not change the set of tables of a database in the meantime: a table moved
+    /// to another database would still be shut down by the drop and stay read-only there, and an exchange
+    /// would make the drop remove the wrong table. So refuse the rename while a drop runs, and make the drop
+    /// wait for renames in progress. The lock is only tried, so this cannot deadlock with the drop.
+    std::vector<std::shared_lock<SharedMutex>> drop_database_locks;
+    if (!rename.database)
+    {
+        std::set<String> involved_databases;
+        for (const auto & description : descriptions)
+        {
+            involved_databases.insert(description.from_database_name);
+            involved_databases.insert(description.to_database_name);
+        }
+
+        for (const auto & database_name : involved_databases)
+        {
+            auto lock = database_catalog.tryGetLockForRestartReplica(database_name);
+            if (!lock)
+                throw Exception(ErrorCodes::UNFINISHED, "Cannot rename or exchange tables: database {} is being dropped", backQuoteIfNeed(database_name));
+            drop_database_locks.push_back(std::move(*lock));
+        }
+    }
 
     /// Must do it in consistent order.
     for (auto & table_guard : table_guards)
