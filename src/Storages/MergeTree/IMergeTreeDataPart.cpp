@@ -755,7 +755,7 @@ void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache *
     vector_similarity_index_cache->removeEntriesFromCache(getPathForCacheKey());
 }
 
-void IMergeTreeDataPart::loadVectorSimilarityIndexToCache(const MergeTreeIndexPtr & index, VectorSimilarityIndexCache & cache) const
+void IMergeTreeDataPart::loadVectorSimilarityIndexToCache(const MergeTreeIndexPtr & skip_index, VectorSimilarityIndexCache & cache) const
 {
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadVectorSimilarityIndexToCache");
     /// The prewarm thread pool exists only while this runs. Pausing here keeps
@@ -775,10 +775,10 @@ void IMergeTreeDataPart::loadVectorSimilarityIndexToCache(const MergeTreeIndexPt
 
     auto alter_conversions = std::make_shared<AlterConversions>();
     auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
-    if (!index->getDeserializedFormat(*part_info, index->getFileName()))
+    if (!skip_index->getDeserializedFormat(*part_info, skip_index->getFileName()))
         return;
 
-    const auto skip_index_granularity = index->getGranularity();
+    const auto skip_index_granularity = skip_index->getGranularity();
     const size_t skip_marks = index_granularity->getMarksCountForSkipIndex(skip_index_granularity);
     if (skip_marks == 0)
         return;
@@ -786,7 +786,7 @@ void IMergeTreeDataPart::loadVectorSimilarityIndexToCache(const MergeTreeIndexPt
     MarkRanges ranges{MarkRange(0, skip_marks)};
     auto reader_settings = MergeTreeReaderSettings::createFromContext(context);
     MergeTreeIndexReader reader(
-        index,
+        skip_index,
         part_info,
         skip_marks,
         ranges,
@@ -801,7 +801,7 @@ void IMergeTreeDataPart::loadVectorSimilarityIndexToCache(const MergeTreeIndexPt
 
     for (size_t mark = 0; mark < skip_marks; ++mark)
     {
-        VectorSimilarityIndexCacheKey key{path_to_data_part, index->getFileName(), mark};
+        VectorSimilarityIndexCacheKey key{path_to_data_part, skip_index->getFileName(), mark};
         if (cache.contains(key))
             continue;
 
@@ -816,7 +816,7 @@ void IMergeTreeDataPart::loadVectorSimilarityIndexToCache(const MergeTreeIndexPt
             continue;
 
         auto cell = std::make_shared<VectorSimilarityIndexCacheCell>(
-            std::move(granule), table_uuid, name, index->index.name);
+            std::move(granule), table_uuid, name, skip_index->index.name);
         /// `cache.set` evicts down to the configured limit. A granule larger than the room under the
         /// ratio can be evicted back below it, which would make the next `enough_space` check succeed
         /// and keep the loop reading. Stop once this insert itself reaches the ratio.

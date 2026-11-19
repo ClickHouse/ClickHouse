@@ -535,7 +535,7 @@ public:
 
     void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
 
-    void loadVectorSimilarityIndexToCache(const MergeTreeIndexPtr & index, VectorSimilarityIndexCache & cache) const;
+    void loadVectorSimilarityIndexToCache(const MergeTreeIndexPtr & skip_index, VectorSimilarityIndexCache & cache) const;
 
     /// The path that identifies the part in the caches shared between tables.
     String getPathForCacheKey() const;
