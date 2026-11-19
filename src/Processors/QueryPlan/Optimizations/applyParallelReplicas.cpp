@@ -607,8 +607,8 @@ public:
 
             /// The heap the aggregation would get under `ORDER BY ... LIMIT`, before the fragment is serialized, so that the
             /// replicas run it too.
-            if (stack.size() >= 3)
-                applyOrderedGroupByTopKToSplit(limitAbove(stack.size() - 3), parent_node, *partial_aggregation_step, extra_settings);
+            if (auto * limit_node = stack.size() >= 3 ? limitAbove(stack.size() - 3) : nullptr)
+                applyOrderedGroupByTopKToSplit(limit_node, parent_node, *partial_aggregation_step, nodes, extra_settings);
 
             /// Add gather
             auto & new_split_node = nodes.emplace_back();

@@ -274,6 +274,7 @@ void applyOrderedGroupByTopKToSplit(
     QueryPlan::Node * limit_node,
     QueryPlan::Node * aggregating_node,
     AggregatingStep & partial_aggregating_step,
+    QueryPlan::Nodes & nodes,
     const Optimization::ExtraSettings & settings);
 
 /// Let an aggregation's output conversion skip the keys of the groups a HAVING count() bound above it rejects

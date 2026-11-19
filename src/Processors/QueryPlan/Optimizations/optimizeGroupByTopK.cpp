@@ -30,7 +30,7 @@ namespace DB::QueryPlanOptimizations
 {
 
 /// Returns the AggregatingStep if it is eligible for the top-K heap optimization.
-static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node, bool final = true)
+static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node, bool final)
 {
     auto * aggregating_step = typeid_cast<AggregatingStep *>(node->step.get());
     if (!aggregating_step)
@@ -334,61 +334,6 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     return threshold_tracker;
 }
 
-/// The hash table statistics expect few enough groups that the heap would not pay off.
-static bool fewGroupsExpected(const AggregatingStep & aggregating_step, size_t limit, const Optimization::ExtraSettings & settings)
-{
-    const auto & params = aggregating_step.getParams();
-    if (settings.is_explain || !params.stats_collecting_params.isCollectionAndUseEnabled())
-        return false;
-
-    const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);
-    return hint && static_cast<Float64>(hint->sum_of_sizes) <= static_cast<Float64>(limit) * 1.5;
-}
-
-/// The heap of `ORDER BY` over a prefix of the grouping keys, or nothing if the sort is not one.
-static std::optional<Aggregator::Params::TopKParams> topKOfSort(
-    const SortDescription & sort_description,
-    const Names & keys,
-    const ExpressionStep * expression_step,
-    size_t limit,
-    const Optimization::ExtraSettings & settings)
-{
-    if (sort_description.empty())
-        return {};
-
-    const size_t num_key_columns = std::min(sort_description.size(), keys.size());
-
-    std::vector<int> directions;
-    std::vector<int> nulls_directions;
-    directions.reserve(num_key_columns);
-    nulls_directions.reserve(num_key_columns);
-
-    for (size_t i = 0; i < num_key_columns; ++i)
-    {
-        if (sort_description[i].column_name != keys[i])
-            return {};
-
-        if (expression_step && !isSortKeyPassThrough(expression_step->getExpression(), keys[i]))
-            return {};
-
-        if (sort_description[i].collator)
-            return {};
-
-        directions.push_back(sort_description[i].direction);
-        nulls_directions.push_back(sort_description[i].nulls_direction);
-    }
-
-    return Aggregator::Params::TopKParams{
-        .k = limit,
-        .directions = std::move(directions),
-        .nulls_directions = std::move(nulls_directions),
-        .key_columns = num_key_columns,
-        .observation_rows = settings.top_k_optimization_observation_rows,
-        .shared_boundary = settings.top_k_optimization_shared_boundary,
-        .threshold_tracker = nullptr,
-    };
-}
-
 static void applyTopK(
     QueryPlan::Node * aggregating_node,
     AggregatingStep & aggregating_step,
@@ -456,15 +401,15 @@ static void tryOptimizeGroupByTopKOverRemoteMerge(
         return;
 
     QueryPlan::Node * input_node = merging_node->children.front();
-    std::vector<QueryPlan::Node *> sources;
+    VectorWithMemoryTracking<QueryPlan::Node *> sources;
     if (typeid_cast<const UnionStep *>(input_node->step.get()))
         sources = input_node->children;
     else
         sources = {input_node};
 
-    std::vector<ReadFromParallelRemoteReplicasStep *> parallel_replicas_reads;
-    std::vector<ReadFromParallelReplicasStep *> plan_fragment_reads;
-    std::vector<QueryPlan::Node *> local_aggregating_nodes;
+    VectorWithMemoryTracking<ReadFromParallelRemoteReplicasStep *> parallel_replicas_reads;
+    VectorWithMemoryTracking<ReadFromParallelReplicasStep *> plan_fragment_reads;
+    VectorWithMemoryTracking<QueryPlan::Node *> local_aggregating_nodes;
     /// Any other source keeps all its groups, which the sort handles as well.
     for (auto * source : sources)
     {
@@ -518,83 +463,17 @@ static void tryOptimizeGroupByTopKOverRemoteMerge(
 namespace
 {
 
-/// `Limit - [Sorting] - [Expression] - <aggregation>`, the shape of `GROUP BY ... [ORDER BY ...] LIMIT n`.
-struct LimitedAggregation
+/// The aggregation that plan-based parallel replicas split, and its partial half that gets the heap instead.
+struct SplitAggregation
 {
-    size_t limit = 0;
-    const SortingStep * sorting_step = nullptr;
-    const ExpressionStep * expression_step = nullptr;
-    QueryPlan::Node * node_above_aggregation = nullptr;
-    QueryPlan::Node * aggregation_node = nullptr;
+    QueryPlan::Node * aggregating_node;
+    AggregatingStep & partial_aggregating_step;
 };
 
 }
 
-static std::optional<LimitedAggregation> matchLimitedAggregation(QueryPlan::Node * limit_node, const Optimization::ExtraSettings & settings)
-{
-    const auto * limit_step = typeid_cast<const LimitStep *>(limit_node->step.get());
-    if (!limit_step)
-        return {};
-
-    if (limit_step->withTies())
-        return {};
-
-    if (limit_step->alwaysReadTillEnd())
-        return {};
-
-    size_t limit = limit_step->getLimitForSorting();
-    if (limit < 1)
-        return {};
-
-    if (settings.max_limit_for_top_k_optimization != 0 && limit > settings.max_limit_for_top_k_optimization)
-        return {};
-
-    if (limit > Aggregator::Params::TopKParams::max_k)
-    {
-        LOG_DEBUG(
-            getLogger("optimizeGroupByTopK"),
-            "Skipping GROUP BY top-K optimization: the requested heap size {} is larger than the maximum {}",
-            limit, Aggregator::Params::TopKParams::max_k);
-        return {};
-    }
-
-    if (limit_node->children.size() != 1)
-        return {};
-
-    auto * next_node = limit_node->children.front();
-
-    const auto * sorting_step = typeid_cast<const SortingStep *>(next_node->step.get());
-    if (sorting_step)
-    {
-        if (sorting_step->getType() != SortingStep::Type::Full)
-            return {};
-        if (next_node->children.size() != 1)
-            return {};
-        next_node = next_node->children.front();
-    }
-
-    QueryPlan::Node * node_above_aggregation = limit_node;
-    const ExpressionStep * expression_step = typeid_cast<const ExpressionStep *>(next_node->step.get());
-    if (expression_step)
-    {
-        if (next_node->children.size() != 1)
-            return {};
-
-        /// An arrayJoin between the aggregation and the limit changes row
-        /// multiplicity: it can produce zero rows for a group, so the smallest
-        /// N groups no longer guarantee N output rows and pruning loses groups
-        /// the limit still needs.
-        if (expression_step->getExpression().hasArrayJoin())
-            return {};
-
-        node_above_aggregation = next_node;
-        next_node = next_node->children.front();
-    }
-
-    return LimitedAggregation{limit, sorting_step, expression_step, node_above_aggregation, next_node};
-}
-
-size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
+static size_t tryOptimizeGroupByTopKImpl(
+    QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings, const SplitAggregation * split)
 {
     if (!settings.enable_group_by_top_k_optimization)
         return 0;
@@ -629,15 +508,68 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
         return 0;
     }
 
-    auto shape = matchLimitedAggregation(parent_node, settings);
-    if (!shape)
+    auto * limit_step = typeid_cast<LimitStep *>(parent_node->step.get());
+    if (!limit_step)
         return 0;
 
-    const size_t limit = shape->limit;
-    const SortingStep * sorting_step = shape->sorting_step;
-    const ExpressionStep * expression_step = shape->expression_step;
-    QueryPlan::Node * node_above_aggregation = shape->node_above_aggregation;
-    QueryPlan::Node * next_node = shape->aggregation_node;
+    if (limit_step->withTies())
+        return 0;
+
+    if (limit_step->alwaysReadTillEnd())
+        return 0;
+
+    size_t limit = limit_step->getLimitForSorting();
+    if (limit < 1)
+        return 0;
+
+    if (settings.max_limit_for_top_k_optimization != 0 && limit > settings.max_limit_for_top_k_optimization)
+        return 0;
+
+    if (limit > Aggregator::Params::TopKParams::max_k)
+    {
+        LOG_DEBUG(
+            getLogger("optimizeGroupByTopK"),
+            "Skipping GROUP BY top-K optimization: the requested heap size {} is larger than the maximum {}",
+            limit, Aggregator::Params::TopKParams::max_k);
+        return 0;
+    }
+
+    if (parent_node->children.size() != 1)
+        return 0;
+
+    auto * next_node = parent_node->children.front();
+
+    auto * sorting_step = typeid_cast<SortingStep *>(next_node->step.get());
+    if (sorting_step)
+    {
+        if (sorting_step->getType() != SortingStep::Type::Full)
+            return 0;
+        if (next_node->children.size() != 1)
+            return 0;
+        next_node = next_node->children.front();
+    }
+
+    QueryPlan::Node * node_above_aggregation = parent_node;
+    const ExpressionStep * expression_step = typeid_cast<const ExpressionStep *>(next_node->step.get());
+    if (expression_step)
+    {
+        if (next_node->children.size() != 1)
+            return 0;
+
+        /// An arrayJoin between the aggregation and the limit changes row
+        /// multiplicity: it can produce zero rows for a group, so the smallest
+        /// N groups no longer guarantee N output rows and pruning loses groups
+        /// the limit still needs.
+        if (expression_step->getExpression().hasArrayJoin())
+            return 0;
+
+        node_above_aggregation = next_node;
+        next_node = next_node->children.front();
+    }
+
+    /// A split aggregation keeps all its groups without a real `ORDER BY`: the merge has no sort above it to select them.
+    if (split && (next_node != split->aggregating_node || !sorting_step))
+        return 0;
 
     if (typeid_cast<const MergingAggregatedStep *>(next_node->step.get()))
     {
@@ -646,30 +578,58 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
         return 0;
     }
 
-    auto * aggregating_step = validateAggregatingStep(next_node);
+    auto * aggregating_step = validateAggregatingStep(next_node, /*final=*/ true);
     if (!aggregating_step)
         return 0;
 
     QueryPlan::Node * aggregating_node = next_node;
     const auto & params = aggregating_step->getParams();
 
-    if (fewGroupsExpected(*aggregating_step, limit, settings))
-        return 0;
+    if (!settings.is_explain && params.stats_collecting_params.isCollectionAndUseEnabled())
+    {
+        const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);
+        if (hint && static_cast<Float64>(hint->sum_of_sizes) <= static_cast<Float64>(limit) * 1.5)
+            return 0;
+    }
 
-    std::optional<Aggregator::Params::TopKParams> top_k_params;
+    std::vector<int> directions;
+    std::vector<int> nulls_directions;
+    size_t num_key_columns = 0;
 
     if (sorting_step)
     {
-        top_k_params = topKOfSort(sorting_step->getSortDescription(), params.keys, expression_step, limit, settings);
-        if (!top_k_params)
+        const auto & sort_description = sorting_step->getSortDescription();
+        if (sort_description.empty())
             return 0;
+
+        num_key_columns = std::min(sort_description.size(), params.keys.size());
+
+        directions.reserve(num_key_columns);
+        nulls_directions.reserve(num_key_columns);
+
+        for (size_t i = 0; i < num_key_columns; ++i)
+        {
+            if (sort_description[i].column_name != params.keys[i])
+                return 0;
+
+            if (expression_step && !isSortKeyPassThrough(expression_step->getExpression(), params.keys[i]))
+                return 0;
+
+            if (sort_description[i].collator)
+                return 0;
+
+            directions.push_back(sort_description[i].direction);
+            nulls_directions.push_back(sort_description[i].nulls_direction);
+        }
     }
     else
     {
-        top_k_params = topKByAllKeys(params.keys.size(), limit, settings);
+        num_key_columns = params.keys.size();
+        directions.assign(num_key_columns, 1);
+        nulls_directions.assign(num_key_columns, 1);
 
         SortDescription sort_description;
-        sort_description.reserve(params.keys.size());
+        sort_description.reserve(num_key_columns);
 
         for (const auto & key : params.keys)
             sort_description.emplace_back(key, /*direction=*/ 1, /*nulls_direction=*/ 1);
@@ -693,9 +653,53 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
             *sort_node.step->getOutputHeader(), *aggregating_node->step->getOutputHeader()));
     }
 
-    applyTopK(aggregating_node, *aggregating_step, std::move(*top_k_params), settings, nodes);
+    const bool synthetic_sort = sorting_step == nullptr;
+
+    Aggregator::Params::TopKParams top_k_params{
+        .k = limit,
+        .directions = std::move(directions),
+        .nulls_directions = std::move(nulls_directions),
+        .key_columns = num_key_columns,
+        .observation_rows = synthetic_sort ? 0 : settings.top_k_optimization_observation_rows,
+        .shared_boundary = settings.top_k_optimization_shared_boundary,
+        .threshold_tracker = nullptr,
+    };
+
+    if (split)
+    {
+        split->partial_aggregating_step.applyTopKOptimization(std::move(top_k_params));
+        return 0;
+    }
+
+    top_k_params.threshold_tracker = tryAttachDynamicFilter(
+        aggregating_node,
+        *aggregating_step,
+        limit,
+        num_key_columns,
+        top_k_params.directions,
+        top_k_params.nulls_directions,
+        settings,
+        nodes);
+
+    aggregating_step->applyTopKOptimization(std::move(top_k_params));
 
     return 0;
+}
+
+size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
+{
+    return tryOptimizeGroupByTopKImpl(parent_node, nodes, settings, /*split=*/ nullptr);
+}
+
+void applyOrderedGroupByTopKToSplit(
+    QueryPlan::Node * limit_node,
+    QueryPlan::Node * aggregating_node,
+    AggregatingStep & partial_aggregating_step,
+    QueryPlan::Nodes & nodes,
+    const Optimization::ExtraSettings & settings)
+{
+    SplitAggregation split{aggregating_node, partial_aggregating_step};
+    tryOptimizeGroupByTopKImpl(limit_node, nodes, settings, &split);
 }
 
 void applyGroupByTopKOfInitiator(
@@ -713,29 +717,6 @@ void applyGroupByTopKOfInitiator(
 
     if (auto * aggregating_step = validateAggregatingStep(node, /*final=*/ false))
         applyTopK(node, *aggregating_step, topKByAllKeys(aggregating_step->getParams().keys.size(), limit, settings), settings, nodes);
-}
-
-void applyOrderedGroupByTopKToSplit(
-    QueryPlan::Node * limit_node,
-    QueryPlan::Node * aggregating_node,
-    AggregatingStep & partial_aggregating_step,
-    const Optimization::ExtraSettings & settings)
-{
-    if (!limit_node || !settings.enable_group_by_top_k_optimization || settings.make_distributed_plan)
-        return;
-
-    auto shape = matchLimitedAggregation(limit_node, settings);
-    if (!shape || !shape->sorting_step || shape->aggregation_node != aggregating_node)
-        return;
-
-    auto * aggregating_step = validateAggregatingStep(aggregating_node);
-    if (!aggregating_step || fewGroupsExpected(*aggregating_step, shape->limit, settings))
-        return;
-
-    auto top_k_params = topKOfSort(
-        shape->sorting_step->getSortDescription(), aggregating_step->getParams().keys, shape->expression_step, shape->limit, settings);
-    if (top_k_params)
-        partial_aggregating_step.applyTopKOptimization(std::move(*top_k_params));
 }
 
 }

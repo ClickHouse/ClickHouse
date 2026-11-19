@@ -57,6 +57,12 @@ FROM (EXPLAIN actions = 1 SELECT k, count() FROM t_05368 GROUP BY k LIMIT 3
         max_rows_to_group_by = 1000000)
 WHERE explain LIKE '%Top-K%' OR explain LIKE '%Sorting (%';
 
+-- Above `query_plan_max_limit_for_top_k_optimization` no aggregation takes the heap, so neither is the sort added.
+SELECT count()
+FROM (EXPLAIN actions = 1 SELECT k, count() FROM t_05368 GROUP BY k LIMIT 1001
+    SETTINGS enable_parallel_replicas = 1, parallel_replicas_plan_based = 0, parallel_replicas_local_plan = 1)
+WHERE explain LIKE '%Top-K%' OR explain LIKE '%Sorting (%';
+
 -- Aggregation in order takes no heap, and the sort would stop the in-order merge from ending early.
 DROP TABLE IF EXISTS t_05368_in_order;
 CREATE TABLE t_05368_in_order (k UInt64) ENGINE = MergeTree ORDER BY k;

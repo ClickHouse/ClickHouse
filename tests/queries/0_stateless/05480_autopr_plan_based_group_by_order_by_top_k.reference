@@ -15,4 +15,6 @@ q05480_remote_desc	1
 q05480_match_asc	0	1
 q05480_match_asc_dynamic_filtering	0	1
 q05480_match_desc	0	1
-1
+q05480_match_no_order_by	0	1
+q05480_priced_no_order_by	1
+q05480_priced_order_by	1

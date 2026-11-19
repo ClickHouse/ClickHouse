@@ -1,7 +1,8 @@
 -- A plan-based parallel replicas plan splits the aggregation into the partial one and the merge, and ships the partial
 -- one to the replicas. Both the local and the shipped partial aggregation must get the `GROUP BY` top-K heap of the
 -- single-node aggregation: automatic parallel replicas matches the two plans, and prices the output of each replica by
--- the output of the single-node aggregation.
+-- the output of the single-node aggregation. Every replica keeps its own `n` groups, so the cost model must not divide
+-- that output between the replicas, the same as for `LIMIT n`. The same for `GROUP BY ... LIMIT` without `ORDER BY`.
 
 DROP TABLE IF EXISTS t_05480;
 CREATE TABLE t_05480 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY v;
@@ -44,11 +45,15 @@ FORMAT Null SETTINGS automatic_parallel_replicas_mode = 2, enable_group_by_top_k
 SELECT k, count() FROM t_05480 GROUP BY k ORDER BY k LIMIT 10
 FORMAT Null SETTINGS automatic_parallel_replicas_mode = 2, enable_group_by_top_k_dynamic_filtering = 1,
     log_comment = 'q05480_match_asc_dynamic_filtering';
+SELECT k, count() FROM t_05480 GROUP BY k LIMIT 10
+FORMAT Null SETTINGS automatic_parallel_replicas_mode = 2, log_comment = 'q05480_match_no_order_by';
 
--- Mode 1 prices the query with the statistics that mode 2 collected above.
+-- Mode 1 prices the queries with the statistics that mode 2 collected above.
 SELECT k, count() FROM t_05480 GROUP BY k ORDER BY k LIMIT 10
 FORMAT Null SETTINGS automatic_parallel_replicas_mode = 1, enable_group_by_top_k_dynamic_filtering = 1,
-    log_comment = 'q05480_priced';
+    log_comment = 'q05480_priced_order_by';
+SELECT k, count() FROM t_05480 GROUP BY k LIMIT 10
+FORMAT Null SETTINGS automatic_parallel_replicas_mode = 1, log_comment = 'q05480_priced_no_order_by';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
@@ -78,18 +83,20 @@ WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTE
     AND (type = 'QueryFinish') AND is_initial_query
 ORDER BY log_comment;
 
-SELECT count()
+-- The divisor of the output bytes in `The applied formula: in / threads ? (in / threads + out / divisor)`.
+SELECT q.log_comment, extract(t.message, '\\+ \\d+ / (\\d+)\\)') AS output_divisor
 FROM system.text_log AS t
 INNER JOIN
 (
-    SELECT query_id
+    SELECT query_id, log_comment
     FROM system.query_log
     WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES')
-        AND (current_database = currentDatabase()) AND (log_comment = 'q05480_priced') AND (type = 'QueryFinish')
+        AND (current_database = currentDatabase()) AND startsWith(log_comment, 'q05480_priced_') AND (type = 'QueryFinish')
         AND is_initial_query
 ) AS q ON t.query_id = q.query_id
 WHERE (t.event_date >= yesterday()) AND (t.event_time >= NOW() - INTERVAL '15 MINUTES')
     AND (t.logger_name = 'AutoParallelReplicas') AND (t.message LIKE 'The applied formula%')
+ORDER BY q.log_comment
 SETTINGS max_rows_to_read = 0; -- system.text_log can be really big
 
 DROP TABLE t_05480;
