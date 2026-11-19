@@ -377,8 +377,12 @@ static bool tryToExtractStructureFromCreateQuery(ReadBuffer & in, NamesAndTypesL
     if (!create_query)
         return false;
 
+    /// `CREATE TABLE ... LIKE` has no column list, and a column list with only indexes or constraints has no columns.
+    if (!create_query->columns_list)
+        return false;
+
     const auto * create_defines = create_query->columns_list->as<MySQLParser::ASTCreateDefines>();
-    if (!create_defines)
+    if (!create_defines || !create_defines->columns)
         return false;
 
     structure = getColumnsList(create_defines->columns);
@@ -431,9 +435,10 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name
     if (type == MySQLQueryType::CREATE)
     {
         /// If we have CREATE query, we can extract columns names and types from it.
+        /// `tryToExtractStructureFromCreateQuery` reads the CREATE query up to and including its `;`,
+        /// so the next query must not be skipped: it can be the first INSERT query.
         if (tryToExtractStructureFromCreateQuery(in, structure_from_create))
             column_names = structure_from_create.getNames();
-        skipQuery(in);
         insert_query_present = skipToInsertQuery(table_name, in);
     }
 
@@ -587,9 +592,9 @@ ClickHouse supports reading MySQL [dumps](https://dev.mysql.com/doc/refman/8.0/e
 It reads all the data from `INSERT` queries belonging to a single table in the dump. 
 If there is more than one table, by default it reads data from the first one.
 
-<Note>
+:::note
 This format supports schema inference: if the dump contains a `CREATE` query for the specified table, the structure is inferred from it, otherwise the schema is inferred from the data of `INSERT` queries.
-</Note>
+:::
 
 ## Example usage {#example-usage}
 

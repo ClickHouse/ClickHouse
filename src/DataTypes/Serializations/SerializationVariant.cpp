@@ -72,13 +72,13 @@ struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBin
     ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> variant_states;
 
-    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateVariant>();
-        new_state->discriminators_state = discriminators_state ? discriminators_state->clone(context) : nullptr;
+        new_state->discriminators_state = discriminators_state ? discriminators_state->clone() : nullptr;
         new_state->variant_states.reserve(variant_states.size());
         for (const auto & variant_state : variant_states)
-            new_state->variant_states.push_back(variant_state ? variant_state->clone(context) : nullptr);
+            new_state->variant_states.push_back(variant_state ? variant_state->clone() : nullptr);
         return new_state;
     }
 };
@@ -91,11 +91,6 @@ SerializationPtr SerializationVariant::create(const DataTypes & variant_types_, 
             return std::shared_ptr<ISerialization>(new SerializationVariant(variant_types_, variant_serializations_, variant_names_, variant_name_));
     }
     return ISerialization::pooled(getHash(variant_serializations_, variant_name_), [&] { return new SerializationVariant(variant_types_, variant_serializations_, variant_names_, variant_name_); });
-}
-
-bool SerializationVariant::isElementSubcolumn(const SubstreamPath & path, const String & element_name)
-{
-    return !path.empty() && path.back().type == Substream::VariantElement && path.back().variant_element_name == element_name;
 }
 
 SerializationVariant::SerializationVariant(
@@ -1086,7 +1081,7 @@ bool SerializationVariant::tryDeserializeTextEscapedOrRawImpl(
     /// We don't have enough data in buffer to check if it's a null.
     /// Use PeekableReadBuffer to make a checkpoint before checking null
     /// representation and rollback if check was failed.
-    PeekableReadBuffer peekable_buf(istr);
+    PeekableReadBuffer peekable_buf(istr, true);
     peekable_buf.setCheckpoint();
     if (checkString(null_representation, peekable_buf)
         && (peekable_buf.eof() || *peekable_buf.position() == '\t' || *peekable_buf.position() == '\n'

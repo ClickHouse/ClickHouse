@@ -4,7 +4,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <array>
-#include <expected>
 #include <unordered_map>
 
 class SipHash;
@@ -13,10 +12,6 @@ namespace DB
 {
 
 class JoinStepLogical;
-class ReadFromMergeTree;
-
-class FutureSetFromSubquery;
-using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 
 namespace QueryPlanOptimizations
 {
@@ -49,7 +44,7 @@ struct Optimization
         VectorSearchFilterStrategy vector_search_filter_strategy{};
 
         /// Other settings
-        FutureSetSettings set_settings;
+        size_t use_index_for_in_with_subqueries_max_values{};
         SizeLimits network_transfer_limits;
         bool optimize_prewhere{};
         bool remove_unused_columns{};
@@ -71,12 +66,12 @@ struct Optimization
 
         bool enable_group_by_top_k_optimization{};
         UInt64 top_k_optimization_observation_rows{};
-        bool top_k_optimization_shared_boundary{};
-        bool enable_group_by_top_k_dynamic_filtering{};
-        bool use_query_condition_cache_for_top_k{};
         bool is_explain{};
 
         size_t max_block_size{};
+
+        // parallel replicas
+        bool parallel_replicas_filter_pushdown = false;
 
         /// Mirrors `QueryPlanOptimizationSettings::push_down_volume_reducing_functions`.
         /// `tryExecuteFunctionsAfterSorting` consults it to avoid pinging volume-reducing
@@ -90,16 +85,6 @@ struct Optimization
         /// optimization when the plan is going to be distributed or serialized.
         bool make_distributed_plan = false;
         bool serialize_query_plan = false;
-        /// Plan-based parallel replicas also ships plan fragments to the replicas, so the same
-        /// optimizations have to be suppressed as for the two settings above.
-        bool enable_parallel_replicas = false;
-        /// When short-circuit is off, a FilterStep still masks a throwing atom by splitting the AND into
-        /// sequential filters. fuseFilterIntoArrayJoin can't reproduce that, so it won't fuse a multi-atom
-        /// AND in this mode.
-        bool short_circuit_function_evaluation_disabled = false;
-        bool lower_array_join_function = false;
-        bool legacy_array_join_function_nondeterministic_evaluation = false;
-        bool enable_lazy_columns_replication = false;
         bool filter_push_down_below_limit_by = true;
     };
 
@@ -111,9 +96,6 @@ struct Optimization
 
 /// Move ARRAY JOIN up if possible
 size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
-
-/// Lower an `arrayJoin` function inside an Expression/Filter into a real ArrayJoinStep.
-size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
 /// Move LimitStep down if possible
 size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
@@ -129,9 +111,6 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
 /// Replace chain `FilterStep -> ExpressionStep` to single FilterStep
 size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
-/// replace a dropped always-true filter with an expression
-size_t tryReplaceAlwaysTrueFilter(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
-
 /// Replace chain `FilterStep -> FilterStep` to single FilterStep
 /// Note: this breaks short-circuit logic, so it is disabled for now.
 size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
@@ -140,9 +119,6 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
 /// May split FilterStep and push down only part of it.
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
-/// Fuse a FilterStep directly above an ArrayJoinStep: element-only conjuncts become the ArrayJoinStep's
-/// element filter, applied before expansion so filtered elements are never expanded or replicated.
-size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 /// Move volume-reducing functions down if possible.
 size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
@@ -189,6 +165,10 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
 /// May split ExpressionStep and lift up only a part of it.
 size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
+/// Utilize storage sorting when sorting for window functions.
+/// Update information about prefix sort description in SortingStep.
+size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
+
 /// Remove redundant sorting
 void tryRemoveRedundantSorting(QueryPlan::Node * root);
 
@@ -211,33 +191,23 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
 /// Removes unused columns from the query plan. Unused columns can appear after other optimizations, such as filter
 /// push down over JOINs. If a column is only used for filtering after a JOIN, and the filter is pushed down into
 /// the JOIN condition, then the column may become unused in the plan.
-/// One walk over the plan: going down, each step that supports it (canRemoveUnusedColumns) is asked what it does
-/// not need of its children once its parent does not need some of its columns; coming back up, it removes those,
-/// its children already pruned. A column a child keeps beyond what it was asked for is consumed by the step above
-/// it. A step that does not support it needs everything of its children. `root` keeps all its outputs.
-enum class RemoveUnusedColumnsMode : uint8_t
-{
-    /// Walks the whole subtree.
-    Global,
-    /// Walks down only while a step leaves something of a child unneeded, and not at all if `root` cannot prune.
-    /// For a local optimization: it finds the columns that a change of `root` left unread.
-    Local,
-};
-
-/// Returns the number of layers below `root` that changed, counting `root` as the first, or 0 when nothing did.
-size_t removeUnusedColumns(QueryPlan::Node & root, RemoveUnusedColumnsMode mode);
-
-/// The local mode as a local optimization. Not in `getOptimizations`: it runs only after the global mode, which
-/// finds the unused columns of the whole plan at once.
-size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
+/// This optimization traverses the query plan and attempts to remove such unused columns from the steps if they
+/// support the optimization (canRemoveUnusedColumns method).
+/// It might happen that a child step supports removing unused columns, but it cannot remove any more columns
+/// (canRemoveColumnsFromOutput method returns false, e.g. JoinStepLogical always needs to keep at least one column for
+/// its output). In this case or when the children step doesn't support the optimization at all, then the inputs of the
+/// optimized step doesn't change.
+/// If the children support the optimization but cannot produce the expected output (e.g. JoinStepLogical can remove
+/// arbitrary number of columns as long as at least one column remains in the output), then the optimization adds an
+/// expression step to convert between the child's new output and the input of the parent node.
+size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
 /// Build BloomFilter from right side of JOIN and add condition that looks up into this BloomFilter to the left side of the JOIN.
 /// This condition can potentially be pushed down all the way to the storage and filter unmatched rows very early.
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
-/// For an equi-join, copy filter conjuncts from one side onto the other via equi-key substitution
-/// so that index pruning (MergeTree primary key) on the other side picks them up
-size_t tryPropagatePredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+/// Try to prune LHS table granules using JoinRuntimeFilter & index analysis
+void registerLeftSideIndexAnalysisSecondPass(QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings);
 
 /// Optimize ORDER BY ... LIMIT n query by using skip index or Prewhere threshold filtering
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
@@ -245,45 +215,33 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 /// Push LIMIT into GROUP BY via bounded heap when GROUP BY matches or is a prefix of ORDER BY keys
 size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
-/// Let an aggregation's output conversion skip the keys of the groups a HAVING count() bound above it rejects
-size_t tryPushHavingPrefilterIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
-
 /// Push ORDER BY ... LIMIT n down through a Join when the sort key only references
 /// columns from the side preserved by the join (LEFT/RIGHT). Restricts how many rows
 /// the preserved-side input must produce before joining.
 size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
-/// Let a format source answer key-less, unfiltered `min` / `max` of its columns from format statistics.
-size_t tryMinMaxFromFormatStatistics(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
-
-/// Whether the plan-based parallel replicas may make this `MergeTree` read part of a shipped fragment.
-bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read);
-
 inline const auto & getOptimizations()
 {
-    /// Deduce the size from the initializer: a hard-coded one silently value-initializes the
-    /// entries an edit leaves over, and `is_enabled` is then a null pointer-to-member that
-    /// `optimizeTreeFirstPass` dereferences for every query.
-    static const auto optimizations = std::to_array<Optimization>({
+    static const std::array<Optimization, 21> optimizations = {{
         /// Run first, before splitFilter/pushDownFilter/mergeFilterIntoJoinCondition, so the
         /// constant-false ON condition is still intact on the JoinStepLogical (those passes would
         /// otherwise lower it into a CROSS + Filter on one input and hide it from this optimization).
         {tryShortCircuitConstantFalseJoin,
          "shortCircuitConstantFalseJoin",
          &QueryPlanOptimizationSettings::short_circuit_constant_false_join},
-        {tryLowerArrayJoinFunction, "lowerArrayJoinFunction", &QueryPlanOptimizationSettings::lower_array_join_function},
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
         {tryPushBucketTopKIntoAggregation, "aggregationBucketTopK", &QueryPlanOptimizationSettings::aggregation_bucket_top_k},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
         {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::merge_expressions},
-        {tryReplaceAlwaysTrueFilter, "replaceAlwaysTrueFilter", &QueryPlanOptimizationSettings::replace_always_true_filter},
         {tryMergeFilters, "mergeFilters", &QueryPlanOptimizationSettings::merge_filters},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
-        {tryFuseFilterIntoArrayJoin, "fuseFilterIntoArrayJoin", &QueryPlanOptimizationSettings::fuse_filter_into_array_join},
         {tryConvertOuterJoinToInnerJoin, "convertOuterJoinToInnerJoin", &QueryPlanOptimizationSettings::convert_outer_join_to_inner_join},
         {tryPushDownVolumeReducingFunction, "pushDownVolumeReducingFunction", &QueryPlanOptimizationSettings::push_down_volume_reducing_functions},
         {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::execute_functions_after_sorting},
+        {tryReuseStorageOrderingForWindowFunctions,
+         "reuseStorageOrderingForWindowFunctions",
+         &QueryPlanOptimizationSettings::reuse_storage_ordering_for_window_functions},
         {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::lift_up_union},
         {tryRemoveRedundantDistinct, "removeRedundantDistinct", &QueryPlanOptimizationSettings::remove_redundant_distinct},
         {tryUseVectorSearchWithVectorIndexFirstPass, "useVectorSearch", &QueryPlanOptimizationSettings::try_use_vector_search},
@@ -292,10 +250,10 @@ inline const auto & getOptimizations()
         {tryConvertAnyJoinToSemiOrAntiJoin,
          "convertAnyJoinToSemiOrAntiJoin",
          &QueryPlanOptimizationSettings::convert_any_join_to_semi_or_anti_join},
+        {tryRemoveUnusedColumns, "removeUnusedColumns", &QueryPlanOptimizationSettings::remove_unused_columns},
         {tryOptimizeTopK, "tryOptimizeTopK", &QueryPlanOptimizationSettings::try_use_top_k_optimization},
         {tryTopKThroughJoin, "topKThroughJoin", &QueryPlanOptimizationSettings::top_k_through_join},
-        {tryMinMaxFromFormatStatistics, "minMaxFromFormatStatistics", &QueryPlanOptimizationSettings::min_max_from_files},
-    });
+    }};
 
     return optimizations;
 }
@@ -310,28 +268,14 @@ using Stack = std::vector<Frame>;
 
 /// Second pass optimizations
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
-/// Register the applied `__applyFilter` conjuncts on the reading step at the top of the stack.
-void collectAppliedJoinRuntimeFilters(const Stack & stack);
-void processAndOptimizeTextIndexFunctions(
-    const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings);
+void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns, bool suppress_for_vector_search = true);
-void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization);
-
-/// Lazy materialization over joins, decided on one merged `ActionsDAG` for the whole subtree below the
-/// `LIMIT` rather than by splitting each step's expressions on its own. Enabled by
-/// `query_plan_lazy_materialization_for_join`. Runs while the joins are still `JoinStepLogical`, after
-/// PREWHERE optimization. Returns false for a plan it does not handle.
-bool optimizeLazyMaterialization3(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings);
 void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeJoinByShards(QueryPlan::Node & root);
-/// Mark hash joins with a probe-side MergeTree read prunable by the join's runtime filter:
-/// the reading is then gated on the build completion seal which delivers the filter for
-/// primary key range pruning (see SealGatedReadTransform).
-void markSealGatedReading(QueryPlan::Node & root);
 void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_shards);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeLimitForAggregationInOrder(QueryPlan::Node & root);
@@ -343,15 +287,9 @@ void optimizeDistinctPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, co
 void optimizeWindowPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeCreatingSetPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
-void disableTopKQueryConditionCacheUnderNonDeterministicFilters(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 bool optimizeVectorSearchWithQuantizedCodes(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings, size_t max_limit_for_lazy_materialization);
-/// Replaces a `CommonSubplanReferenceStep` with a clone of the subplan it references. The subplan's
-/// IN-subquery sets are appended to `extracted_sets` and removed from the plan, because a
-/// `FutureSetFromSubquery` source can be claimed only once; the caller attaches one builder for them
-/// above a node that dominates every copy.
-void materializeQueryPlanReferences(
-    QueryPlan::Node & node, QueryPlan::Nodes & nodes, std::vector<FutureSetFromSubqueryPtr> & extracted_sets);
+void materializeQueryPlanReferences(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeUnusedCommonSubplans(QueryPlan::Node & node);
 void useMemoryBufferForCommonSubplanResult(QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings);
 void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
@@ -385,12 +323,6 @@ bool convertLogicalJoinToPhysical(
 
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 
-/// Convert an OUTER join whose null-extended rows cannot survive above it, when the proof comes from
-/// arbitrarily higher in the plan (a filter, or the conditions of an enclosing INNER/SEMI join).
-/// This pass is complementary to `tryConvertOuterJoinToInnerJoin`, which only sees the filter directly
-/// above but handles all filter shapes where this one matches a subset.
-void convertOuterJoinToInnerJoinTransitively(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
-
 /// A separate tree traverse to apply sorting properties after *InOrder optimizations.
 void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
@@ -398,18 +330,13 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
 /// carry the same key value).
 void applyStreamDisjointness(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
-struct UseProjectionsResult
-{
-    std::optional<String> applied_projection;
-    std::unordered_map<String, String> projection_reject_reasons;
-};
-
-UseProjectionsResult optimizeUseAggregateProjections(
+/// Returns the name of used projection or nullopt if no projection is used.
+std::optional<String> optimizeUseAggregateProjections(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
     const QueryPlanOptimizationSettings & optimization_settings);
 
-UseProjectionsResult optimizeUseNormalProjections(
+std::optional<String> optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
     const QueryPlanOptimizationSettings & optimization_settings);

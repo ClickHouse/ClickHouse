@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 struct NameStartsWith
@@ -29,28 +30,24 @@ struct NameStartsWith
     static constexpr auto name = "startsWith";
     static constexpr auto is_utf8 = false;
     static constexpr auto is_case_insensitive = false;
-    static constexpr auto is_starts_with = true;
 };
 struct NameStartsWithCaseInsensitive
 {
     static constexpr auto name = "startsWithCaseInsensitive";
     static constexpr auto is_utf8 = false;
     static constexpr auto is_case_insensitive = true;
-    static constexpr auto is_starts_with = true;
 };
 struct NameEndsWith
 {
     static constexpr auto name = "endsWith";
     static constexpr auto is_utf8 = false;
     static constexpr auto is_case_insensitive = false;
-    static constexpr auto is_starts_with = false;
 };
 struct NameEndsWithCaseInsensitive
 {
     static constexpr auto name = "endsWithCaseInsensitive";
     static constexpr auto is_utf8 = false;
     static constexpr auto is_case_insensitive = true;
-    static constexpr auto is_starts_with = false;
 };
 
 struct NameStartsWithUTF8
@@ -58,14 +55,12 @@ struct NameStartsWithUTF8
     static constexpr auto name = "startsWithUTF8";
     static constexpr auto is_utf8 = true;
     static constexpr auto is_case_insensitive = false;
-    static constexpr auto is_starts_with = true;
 };
 struct NameStartsWithCaseInsensitiveUTF8
 {
     static constexpr auto name = "startsWithCaseInsensitiveUTF8";
     static constexpr auto is_utf8 = true;
     static constexpr auto is_case_insensitive = true;
-    static constexpr auto is_starts_with = true;
 };
 
 struct NameEndsWithUTF8
@@ -73,14 +68,12 @@ struct NameEndsWithUTF8
     static constexpr auto name = "endsWithUTF8";
     static constexpr auto is_utf8 = true;
     static constexpr auto is_case_insensitive = false;
-    static constexpr auto is_starts_with = false;
 };
 struct NameEndsWithCaseInsensitiveUTF8
 {
     static constexpr auto name = "endsWithCaseInsensitiveUTF8";
     static constexpr auto is_utf8 = true;
     static constexpr auto is_case_insensitive = true;
-    static constexpr auto is_starts_with = false;
 };
 
 template <typename Name>
@@ -113,16 +106,18 @@ public:
         return true;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if constexpr (is_utf8)
-            return
-                "(String, String) -> UInt8"
-                " OR (Array, Array) -> UInt8";
-        else
-            return
-                "(StringOrFixedString, StringOrFixedString) -> UInt8"
-                " OR (Array, Array) -> UInt8";
+        if ((!is_utf8 && isStringOrFixedString(arguments[0]) && isStringOrFixedString(arguments[1]))
+            || (isString(arguments[0]) && isString(arguments[1])))
+            return std::make_shared<DataTypeUInt8>();
+
+        if (isArray(arguments[0]) && isArray(arguments[1]))
+            return std::make_shared<DataTypeUInt8>();
+
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal types {} {} of arguments of function {}. Both must be String or Array",
+            arguments[0]->getName(), arguments[1]->getName(), getName());
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -173,7 +168,7 @@ private:
         auto result_column = ColumnUInt8::create(input_rows_count);
         auto * result_column_ptr = typeid_cast<ColumnUInt8 *>(result_column.get());
 
-        if constexpr (Name::is_starts_with)
+        if constexpr (std::is_same_v<Name, NameStartsWith>)
             GatherUtils::sliceHas(*sources[0], *sources[1], GatherUtils::ArraySearchType::StartsWith, *result_column_ptr);
         else
             GatherUtils::sliceHas(*sources[0], *sources[1], GatherUtils::ArraySearchType::EndsWith, *result_column_ptr);

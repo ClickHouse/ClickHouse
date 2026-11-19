@@ -86,13 +86,6 @@ Shaping is offered only for the statements those settings shape, i.e. `SELECT` a
 
 A shape applies to the result of a single statement, so it is not offered for a "Run all" multi-statement run, whose statements are separate queries with separate columns.
 
-It is not offered for a result of at most one row on its first page either: any order of a single row is the same order, and a filter on it can only keep it or drop it, so the controls could do nothing but re-run the query for the same rows — and an empty result has not even a row to drop. It is the same reason the [color coding](/concepts/features/interfaces/web-ui-color-coding) toggles are hidden there: with no more than one row there is nothing to compare.
-
-Two single-row results keep their controls, because there the controls are the only way back:
-
-- one that is already sorted or filtered, whose sort must stay reversible and whose filter must stay clearable — a filter matching a single row is exactly how a long result becomes a short one, and taking the controls away with it would strand the user with it on;
-- one cut off at the display limit, which is the first page of a longer result: the page size is capped by the number of cells the table can show at once, so a very wide result can be cut to a single row, and the rows past it are precisely what sorting and paging are there to reach.
-
 A shape belongs to the statement it was made on. Running a different statement — after editing the query, or moving the cursor to another statement of a multi-statement editor — drops it, rather than applying an `ORDER BY` or a `WHERE` on a column the new statement may not have.
 
 It belongs to the context that statement was run in as well: the selected database, the server and user it was sent to, and the values of its query parameters. The same text names different columns after any of those change — `SELECT * FROM events` after switching databases, or `SELECT * FROM {tbl:Identifier}` after editing the parameter — so the shape is dropped there too, and the next run returns the unshaped result.
@@ -103,11 +96,11 @@ Download re-runs the producing query with the same shape, so the exported file h
 
 ## Persistence {#persistence}
 
-The shape is remembered in the page URL (`sort_columns`, `filters`, `page` and `page_size`), in the browser history, and in the result snapshot of the cell it belongs to, so reloading the page, sharing the link, or navigating back and forward preserves it. Because the shape decides the rows and not only their presentation, a shared link that auto-runs its query (`run=1`) re-runs it with the same shape, and so reproduces the result itself. Only an active shape is stored — an unshaped result adds nothing to the URL or history state — to keep them compact.
+The shape is remembered in the page URL (`sort_columns`, `filters`, `page` and `page_size`), in the browser history, and in the per-tab result snapshot, so reloading the page, sharing the link, or navigating back and forward preserves it. Because the shape decides the rows and not only their presentation, a shared link that auto-runs its query (`run=1`) re-runs it with the same shape, and so reproduces the result itself. Only an active shape is stored — an unshaped result adds nothing to the URL or history state — to keep them compact.
 
 A restored result keeps its shape bound to the context that produced it, as described above: the snapshot records the database, the connection and the parameter values its rows were produced with, so re-running the statement after changing any of those drops the shape rather than applying it to a different result.
 
-Like the [color coding modes](/concepts/features/interfaces/web-ui-color-coding) and the [pinned columns](/concepts/features/interfaces/web-ui-pinned-columns), the shape belongs to the result it shapes: to the query tab, and within a tab that is a [notebook](/concepts/features/interfaces/web-ui-notebook) to the individual cell. Sorting or filtering one result therefore neither changes nor re-runs another tab's or another cell's result — shaping a cell's result re-runs that cell.
+Like the [color coding modes](/concepts/features/interfaces/web-ui-color-coding) and the [pinned columns](/concepts/features/interfaces/web-ui-pinned-columns), the shape is kept per query tab, so sorting or filtering a result in one tab does not re-run another tab's result.
 
 ## Limitations {#limitations}
 

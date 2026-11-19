@@ -16,7 +16,6 @@ namespace ProfileEvents
     extern const Event HTTPServerConnectionsExpired;
     extern const Event HTTPServerConnectionsClosed;
     extern const Event HTTPServerConnectionsReset;
-    extern const Event HTTPServerConnectionsErrors;
 }
 
 
@@ -162,14 +161,11 @@ void HTTPServerConnection::run()
         }
         catch (const Poco::Net::MessageException & e)
         {
-            ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsErrors);
             LOG_DEBUG(LogFrequencyLimiter(getLogger("HTTPServerConnection"), 10), "HTTP request failed: {}: {}", HTTPResponse::HTTP_REASON_BAD_REQUEST, e.displayText());
             sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, e.message());
         }
         catch (const Poco::Net::NetException & e)
         {
-            ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsErrors);
-
             /// Do not spam logs with messages related to connection reset by peer.
             if (e.code() == POCO_ENOTCONN)
             {
@@ -184,8 +180,6 @@ void HTTPServerConnection::run()
         }
         catch (const Poco::Exception &)
         {
-            ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsErrors);
-
             if (session.networkException())
             {
                 session.networkException()->rethrow();

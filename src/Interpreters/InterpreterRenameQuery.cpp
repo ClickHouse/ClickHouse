@@ -45,8 +45,7 @@ BlockIO InterpreterRenameQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
-    if (!skip_access_check)
-        getContext()->checkAccess(getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable));
+    getContext()->checkAccess(getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable));
 
     String current_database = getContext()->getCurrentDatabase();
 
@@ -168,8 +167,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
             bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
             std::tie(from_ref_dependencies, from_loading_dependencies, from_mv_dependencies) = database_catalog.removeDependencies(from_table_id, check_ref_deps, check_loading_deps, false, /*is_mv*/ true);
-            if (!keep_source_view_dependencies)
-                from_dependent_views = database_catalog.takeSourceViewDependencies(from_table_id);
+            from_dependent_views = database_catalog.takeSourceViewDependencies(from_table_id);
         }
         try
         {
@@ -250,14 +248,6 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
 
     if (db)
     {
-        /// The database-level `DDLGuard` taken above only serializes this query against other
-        /// database-level DDL (`CREATE`, `DROP`, `RENAME DATABASE`). Table-level DDL takes the shared
-        /// side of `database_ddl_mutex`, so the exclusive side is what excludes a concurrent
-        /// `CREATE TABLE` / `ATTACH TABLE`: the rename re-keys every table of the database, and
-        /// `renameDatabase` validates and rewrites the exact set of tables it sees under this lock.
-        /// The same lock is held by `CREATE DATABASE` and `DROP DATABASE`.
-        auto db_guard = catalog.getExclusiveDDLGuardForDatabase(old_name);
-
         catalog.assertDatabaseDoesntExist(new_name);
         db->renameDatabase(getContext(), new_name);
     }

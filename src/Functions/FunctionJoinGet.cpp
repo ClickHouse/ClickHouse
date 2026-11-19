@@ -86,12 +86,6 @@ public:
 
     String getName() const override { return function_name; }
 
-    /// A `Join` table is local to the server that holds it and is not kept in sync with anything, so
-    /// the same call answers differently on another node. The overload resolver says so already, but
-    /// whoever asks the built function - a predicate on its way to a shard, an index analysis - asks
-    /// this one, and `IFunctionBase` answers `true` by default. `dictGet` overrides it here as well.
-    bool isDeterministic() const override { return false; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
@@ -125,15 +119,6 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override;
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return {}; } // Not used
-
-    /// Documentation-only — `joinGet[OrNull](join_table, attribute_name, key, ...)`
-    /// returns the value of the named attribute from the JOIN table for the
-    /// given key. The result type is read from the JOIN table's column type
-    /// (wrapped in `Nullable` for the OrNull variant).
-    String getSignatureString() const override
-    {
-        return "(const String, const String, Any, ...) -> Any";
-    }
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
@@ -197,8 +182,6 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
     auto storage_join = castStorage<StorageJoin>(table, DeferredTable::Load);
     if (!storage_join)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Table {} should have engine StorageJoin", join_name);
-    /// Resolved on the executing server: a `make_distributed_plan` worker would look it up in its own catalog.
-    context->addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::JoinTable, storage_id.getFullTableName());
 
     String attr_name;
     if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
@@ -245,9 +228,9 @@ REGISTER_FUNCTION(JoinGet)
 Allows you to extract data from a table the same way as from a dictionary.
 Gets data from Join tables using the specified join key.
 
-<Note>
+:::note
 Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [statement](/reference/engines/table-engines/special/join).
-</Note>
+:::
 )";
     FunctionDocumentation::Syntax syntax_joinGet = "joinGet(join_storage_table_name, value_column, join_keys)";
     FunctionDocumentation::Arguments arguments_joinGet = {
@@ -260,26 +243,27 @@ Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [s
     {
         "Usage example",
         R"(
-CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
-INSERT INTO id_val VALUES (1,11)(2,12)(4,13);
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13);
 
-SELECT joinGet(id_val, 'val', toUInt32(1));
+SELECT joinGet(db_test.id_val, 'val', toUInt32(1));
         )",
         R"(
-┌─joinGet('id_val', 'val', toUInt32(1))─┐
-│                                    11 │
-└───────────────────────────────────────┘
+┌─joinGet(db_test.id_val, 'val', toUInt32(1))─┐
+│                                          11 │
+└─────────────────────────────────────────────┘
         )"
     },
     {
         "Usage with table from current database",
         R"(
+USE db_test;
 SELECT joinGet(id_val, 'val', toUInt32(2));
         )",
         R"(
-┌─joinGet('id_val', 'val', toUInt32(2))─┐
-│                                    12 │
-└───────────────────────────────────────┘
+┌─joinGet(id_val, 'val', toUInt32(2))─┐
+│                                  12 │
+└─────────────────────────────────────┘
         )"
     },
     {
@@ -288,12 +272,12 @@ SELECT joinGet(id_val, 'val', toUInt32(2));
 CREATE TABLE some_table (id1 UInt32, id2 UInt32, name String) ENGINE = Join(ANY, LEFT, id1, id2);
 INSERT INTO some_table VALUES (1, 11, 'a') (2, 12, 'b') (3, 13, 'c');
 
-SELECT joinGet(some_table, 'name', toUInt32(1), toUInt32(11));
+SELECT joinGet(some_table, 'name', 1, 11);
         )",
         R"(
-┌─joinGet('some_table', 'name', toUInt32(1), toUInt32(11))─┐
-│ a                                                        │
-└──────────────────────────────────────────────────────────┘
+┌─joinGet(some_table, 'name', 1, 11)─┐
+│ a                                  │
+└────────────────────────────────────┘
         )"
     }
     };
@@ -306,9 +290,9 @@ Allows you to extract data from a table the same way as from a dictionary.
 Gets data from Join tables using the specified join key.
 Unlike [`joinGet`](#joinGet) it returns `NULL` when the key is missing.
 
-<Note>
+:::note
 Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [statement](/reference/engines/table-engines/special/join).
-</Note>
+:::
 )";
     FunctionDocumentation::Syntax syntax_joinGetOrNull = "joinGetOrNull(join_storage_table_name, value_column, join_keys)";
     FunctionDocumentation::Arguments arguments_joinGetOrNull = {
@@ -321,15 +305,15 @@ Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [s
     {
         "Usage example",
         R"(
-CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
-INSERT INTO id_val VALUES (1,11)(2,12)(4,13);
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13);
 
-SELECT joinGetOrNull(id_val, 'val', toUInt32(1)), joinGetOrNull(id_val, 'val', toUInt32(999));
+SELECT joinGetOrNull(db_test.id_val, 'val', toUInt32(1)), joinGetOrNull(db_test.id_val, 'val', toUInt32(999));
         )",
         R"(
-┌─joinGetOrNull('id_val', 'val', toUInt32(1))─┬─joinGetOrNull('id_val', 'val', toUInt32(999))─┐
-│                                          11 │                                          ᴺᵁᴸᴸ │
-└─────────────────────────────────────────────┴───────────────────────────────────────────────┘
+┌─joinGetOrNull(db_test.id_val, 'val', toUInt32(1))─┬─joinGetOrNull(db_test.id_val, 'val', toUInt32(999))─┐
+│                                                11 │                                                ᴺᵁᴸᴸ │
+└───────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
         )"
     }
     };
