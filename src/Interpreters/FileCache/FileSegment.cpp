@@ -844,8 +844,10 @@ bool FileSegment::reserve(
     /// This (resizable file segments) is allowed only for single threaded use of file segment.
     /// Currently it is used only for temporary files through cache.
     if (is_unbound && is_file_segment_size_exceeded)
-        /// Note: segment_range.right is inclusive.
-        segment_range.right = range().left + current_downloaded_size + size_to_reserve - 1;
+        /// The range must cover the whole reservation, not just the data written so far plus this request: a
+        /// reserve-ahead leaves reserved space unwritten, and `size_to_reserve` was reduced by it above, so growing
+        /// the range only by the data would leave `range().size() < reserved_size`. Note: `right` is inclusive.
+        segment_range.right = range().left + reserved_size + size_to_reserve - 1;
 
     /// if reserve_stat is not passed then use dummy stat and discard the result.
     FileCacheReserveStat dummy_stat;
@@ -1448,7 +1450,8 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
         {
             chassert(getDownloaderUnlocked(lock).empty());
             chassert(!fs::exists(getPath()));
-            chassert(!queue_iterator);
+            /// A temporary file may hold a reservation before its first write; its holder keeps it from eviction.
+            chassert(!queue_iterator || segment_kind == FileSegmentKind::Ephemeral);
             break;
         }
         case State::DOWNLOADED:

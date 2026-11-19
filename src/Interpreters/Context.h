@@ -966,6 +966,14 @@ public:
     TemporaryDataOnDiskScopePtr getSharedTempDataOnDisk() const;
     void setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_);
 
+    /// The temporary-data scope under which every part write creates the scope of its serialization spills: a child of
+    /// the root scope whose limit is the server's limit of all those spills together, or the root scope when that limit
+    /// was not set.
+    TemporaryDataOnDiskScopePtr getSerializationSpillsParentScope() const;
+    /// Creates that scope with the limit: `max_size` bytes, or when they are 0 `max_size_ratio` of the total size of the
+    /// temporary storage. Called once, after the temporary storage is set.
+    void setSerializationSpillsLimit(size_t max_size, double max_size_ratio);
+
     void setFilesystemCachesPath(const String & path);
     void setFilesystemCacheUser(const String & user) const;
 

@@ -1,0 +1,16 @@
+parts	1
+granule sizes vary	1
+-- one path or subcolumn per query
+json.a	1
+json.a.null	1
+json.b.size0	1
+json.h.k1	1
+json.h.k2.:Int64	1
+json.n.q	1
+json.n.r	1
+-- the whole column, cut granules, filters, PREWHERE
+everything	1
+max_block_size = 5	1
+WHERE x	1
+PREWHERE	1
+1

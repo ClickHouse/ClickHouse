@@ -138,6 +138,14 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         try_adaptive_codec);
 
     writer_settings.stream_base_manifest = std::move(stream_base_manifest);
+    writer_settings.temporary_data_scope = data_part->storage.getContext()->getSerializationSpillsParentScope();
+    if (auto disk = data_part->storage.getStoragePolicy()->tryGetDiskByName(data_part_storage->getDiskName()))
+    {
+        writer_settings.create_part_disk_temporary_data_scope = [&storage = data_part->storage, disk](const TemporaryDataOnDiskSettings & settings)
+        {
+            return storage.createPartDiskTemporaryDataScope(disk, settings);
+        };
+    }
 
     data_part_storage->createDirectories();
 

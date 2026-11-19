@@ -50,6 +50,9 @@ public:
 
     void setReadUntilEnd() override { setReadUntilPosition(getFileSize()); }
 
+    /// Its prefetches stay below the read-until position, so within the bounds.
+    void setReadBounds(size_t left, size_t right) override { impl->setReadBounds(left, right); }
+
     size_t getFileOffsetOfBufferEnd() const override  { return file_offset_of_buffer_end; }
 
     off_t getPosition() override { return file_offset_of_buffer_end - available() + bytes_to_ignore; }

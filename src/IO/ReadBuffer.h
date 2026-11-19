@@ -245,6 +245,11 @@ public:
     /// Without a map, the caller may read the whole file. Advisory: it may bound read-ahead, never refuse a read.
     virtual void setRequestMap(ByteRangeSet ranges);
 
+    /// The byte range [left, right) that the caller's reads never leave, for the lifetime of the buffer, unlike the
+    /// request map, which changes with the reads. A cache may keep its downloads within it rather than aligning them
+    /// past its edges. Advisory: it never refuses a read.
+    virtual void setReadBounds(size_t /* left */, size_t /* right */) {}
+
 protected:
     template <PaddedBufferStorage Storage>
     void setPaddedStorage(const Storage & storage, size_t storage_offset, size_t size)

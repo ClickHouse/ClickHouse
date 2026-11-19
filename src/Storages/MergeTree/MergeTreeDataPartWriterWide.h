@@ -2,7 +2,10 @@
 
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Formats/MarkInCompressedFile.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <DataTypes/Serializations/ISerialization.h>
+
+#include <map>
 
 
 namespace DB
@@ -126,6 +129,10 @@ private:
     void completeGranuleWithoutRows();
 
     [[nodiscard]] ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
+    /// A scope of temporary data for a serialization, shared by the requests with the same tag, or null when the write
+    /// cannot place temporary data as requested.
+    TemporaryDataOnDiskScopePtr getTemporaryDataScope(const TemporaryDataScopeRequest & request);
+    TemporaryDataOnDiskScopePtr createTemporaryDataScope(const TemporaryDataScopeRequest & request) const;
     /// Settings with the getters and callbacks bound to the streams of the column.
     [[nodiscard]] ISerialization::SerializeBinaryBulkSettings getSerializationSettingsForColumn(
         const NameAndTypePair & name_and_type, const WrittenOffsetSubstreams & offset_substreams) const;
@@ -154,6 +161,23 @@ private:
     using SerializationStates = std::unordered_map<String, SerializationState>;
 
     SerializationStates serialization_states;
+
+    /// The scopes of temporary data of tagged requests, used from the writer's thread and held only by their users: a
+    /// scope on the part's disk is then removed with its directory when the last of them is done, before the part is
+    /// committed.
+    struct TaggedTemporaryDataScope
+    {
+        std::weak_ptr<TemporaryDataOnDiskScope> scope;
+        size_t max_size = 0;
+        TemporaryDataBackends allowed_backends;
+        std::optional<ProfileEvents::Event> bytes_compressed;
+        std::optional<ProfileEvents::Event> bytes_uncompressed;
+    };
+    std::map<std::pair<TemporaryDataPlacement, String>, TaggedTemporaryDataScope> temporary_data_scopes;
+    /// Calls `getTemporaryDataScope`; built in the constructor, so that the const `getSerializationSettings` passes it on.
+    GetTemporaryDataScope get_temporary_data_scope;
+    /// The memory the columns of the part buffer together, against `serialization_spill_max_bytes_to_buffer`.
+    std::shared_ptr<size_t> serialization_spill_buffered_bytes = std::make_shared<size_t>(0);
 
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;

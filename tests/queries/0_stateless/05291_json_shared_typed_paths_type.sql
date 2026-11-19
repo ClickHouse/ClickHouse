@@ -51,8 +51,8 @@ SELECT toTypeName(CAST('{}', 'JSON(SHARED a UInt64, a String)')); -- { serverErr
 SELECT toTypeName(CAST('{}', 'JSON(SHARED a UInt64, SHARED a UInt64)')); -- { serverError BAD_ARGUMENTS }
 SELECT toTypeName(CAST('{}', 'JSON(SHARED a.b UInt64, SKIP a)')); -- { serverError BAD_ARGUMENTS }
 SELECT toTypeName(CAST('{}', 'JSON(SHARED a.b UInt64, SKIP REGEXP ''a\\..*'')')); -- { serverError BAD_ARGUMENTS }
-CREATE TABLE t_bad (x UInt64, json JSON(SHARED a UInt64)) ENGINE = MergeTree ORDER BY x SETTINGS object_typed_shared_data_serialization_version = 'v2'; -- { serverError BAD_ARGUMENTS }
-ALTER TABLE t_shared MODIFY SETTING object_typed_shared_data_serialization_version = 'v2'; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_bad (x UInt64, json JSON(SHARED a UInt64)) ENGINE = MergeTree ORDER BY x SETTINGS object_typed_shared_data_serialization_version = 'v3'; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_shared MODIFY SETTING object_typed_shared_data_serialization_version = 'v3'; -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- parser: a path named shared or SHARED, keyword case, single- and multi-word types';
 SELECT toTypeName(CAST('{}', 'JSON(shared DOUBLE PRECISION)'));

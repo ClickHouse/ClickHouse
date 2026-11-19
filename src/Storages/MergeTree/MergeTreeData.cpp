@@ -87,6 +87,7 @@
 #include <Interpreters/TransactionManager.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Planner/TableExpressionData.h>
 #include <Storages/StorageDummy.h>
 #include <Interpreters/convertFieldToType.h>
@@ -4931,6 +4932,58 @@ scope_guard MergeTreeData::claimTemporaryPartDirectory(const DiskPtr & disk, con
         reclaimStaleTemporaryPartDirectory(disk, part_dir_name);
 
     return temporary_directory_lock;
+}
+
+namespace
+{
+
+class PartDiskTemporaryDataScope final : public TemporaryDataOnDiskScope
+{
+public:
+    PartDiskTemporaryDataScope(
+        const TemporaryDataOnDiskSettings & settings_, const DiskPtr & disk_, const String & directory_, scope_guard claim_, LoggerPtr log_)
+        : TemporaryDataOnDiskScope(settings_, std::make_shared<SingleDiskVolume>("volume_" + directory_, disk_), directory_)
+        , disk(disk_)
+        , directory(directory_)
+        , claim(std::move(claim_))
+        , log(std::move(log_))
+    {
+    }
+
+    ~PartDiskTemporaryDataScope()
+    {
+        /// The claim is released after the removal, so the cleanup of old temporary directories does not race with it.
+        try
+        {
+            if (disk->existsDirectory(directory))
+                disk->removeRecursive(directory);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("While removing temporary data directory {}", directory));
+        }
+    }
+
+private:
+    const DiskPtr disk;
+    const String directory;
+    const scope_guard claim;
+    const LoggerPtr log;
+};
+
+}
+
+TemporaryDataOnDiskScopePtr MergeTreeData::createPartDiskTemporaryDataScope(const DiskPtr & disk, const TemporaryDataOnDiskSettings & settings) const
+{
+    /// The `tmp_` prefix lets the cleanup of old temporary directories remove the directory left by a crash, and the
+    /// postfix keeps the replicas sharing the table's directory apart.
+    String postfix = getPostfixForTempInsertName();
+    String name = "tmp_data_" + (postfix.empty() ? "" : postfix + "_") + toString(UUIDHelpers::generateV4());
+    auto claim = claimTemporaryPartDirectory(disk, name, /*may_have_leftover=*/ false);
+
+    String directory = fs::path(relative_data_path) / name;
+    disk->createDirectories(directory);
+    return std::make_shared<PartDiskTemporaryDataScope>(settings, disk, directory, std::move(claim), log.load());
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::asMutableDeletingPart(const DataPartPtr & part)

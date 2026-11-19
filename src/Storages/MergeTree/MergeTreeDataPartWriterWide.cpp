@@ -4,6 +4,7 @@
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
@@ -21,6 +22,11 @@
 #include <Common/MemoryTracker.h>
 #include <Common/FailPoint.h>
 #include <IO/NullWriteBuffer.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesForSerializationSpills;
+}
 
 namespace DB
 {
@@ -159,6 +165,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
             indices_to_recalc_, marks_file_extension_,
             default_codec_, settings_, std::move(index_granularity_),
             written_offset_substreams_)
+    , get_temporary_data_scope([this](const TemporaryDataScopeRequest & request) { return getTemporaryDataScope(request); })
 {
     if (settings.save_marks_in_cache)
     {
@@ -174,6 +181,7 @@ ISerialization::EnumerateStreamsSettings MergeTreeDataPartWriterWide::getEnumera
     enumerate_settings.object_shared_data_serialization_version = settings_.object_shared_data_serialization_version;
     enumerate_settings.object_shared_data_buckets = settings_.object_shared_data_buckets;
     enumerate_settings.object_shared_data_target_chunk_rows = settings_.object_shared_data_target_chunk_rows;
+    enumerate_settings.object_typed_shared_data_serialization_version = settings_.object_typed_shared_data_serialization_version;
     enumerate_settings.max_buckets_in_map = settings_.max_buckets_in_map;
     enumerate_settings.map_buckets_strategy = settings_.map_buckets_strategy;
     enumerate_settings.map_buckets_coefficient = settings_.map_buckets_coefficient;
@@ -599,6 +607,11 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterWide::getSeri
     serialize_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
     serialize_settings.object_shared_data_target_chunk_rows = settings.object_shared_data_target_chunk_rows;
     serialize_settings.object_typed_shared_data_serialization_version = settings.object_typed_shared_data_serialization_version;
+    serialize_settings.serialization_spill_max_bytes_to_buffer = settings.serialization_spill_max_bytes_to_buffer;
+    serialize_settings.serialization_spill_buffered_bytes = serialization_spill_buffered_bytes;
+    serialize_settings.serialization_spill_max_temporary_data_size = settings.serialization_spill_max_temporary_data_size;
+    serialize_settings.serialization_spill_to_part_disk_only = settings.serialization_spill_to_part_disk_only;
+    serialize_settings.serialization_spill_error_mode = settings.serialization_spill_error_mode;
     serialize_settings.max_buckets_in_map = settings.max_buckets_in_map;
     serialize_settings.map_buckets_strategy = settings.map_buckets_strategy;
     serialize_settings.map_buckets_coefficient = settings.map_buckets_coefficient;
@@ -607,7 +620,60 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterWide::getSeri
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part;
     serialize_settings.write_statistics = ISerialization::SerializeBinaryBulkSettings::StatisticsMode::SUFFIX;
     serialize_settings.min_compress_block_size = settings.min_compress_block_size;
+    serialize_settings.get_temporary_data_scope = get_temporary_data_scope;
     return serialize_settings;
+}
+
+TemporaryDataOnDiskScopePtr MergeTreeDataPartWriterWide::getTemporaryDataScope(const TemporaryDataScopeRequest & request)
+{
+    auto [it, inserted] = temporary_data_scopes.try_emplace({request.placement, request.tag});
+    auto & tagged = it->second;
+    if (!inserted)
+    {
+        if (tagged.max_size != request.max_size || tagged.allowed_backends != request.allowed_backends
+            || tagged.bytes_compressed != request.bytes_compressed || tagged.bytes_uncompressed != request.bytes_uncompressed)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The scope of temporary data with tag {} is requested with different limits", request.tag);
+        if (auto scope = tagged.scope.lock())
+            return scope;
+    }
+
+    auto scope = createTemporaryDataScope(request);
+    tagged = {
+        .scope = scope,
+        .max_size = request.max_size,
+        .allowed_backends = request.allowed_backends,
+        .bytes_compressed = request.bytes_compressed,
+        .bytes_uncompressed = request.bytes_uncompressed};
+    return scope;
+}
+
+TemporaryDataOnDiskScopePtr MergeTreeDataPartWriterWide::createTemporaryDataScope(const TemporaryDataScopeRequest & request) const
+{
+    TemporaryDataMetrics metrics;
+    metrics.current_metric = CurrentMetrics::TemporaryFilesForSerializationSpills;
+    metrics.bytes_compressed = request.bytes_compressed;
+    metrics.bytes_uncompressed = request.bytes_uncompressed;
+
+    if (request.placement == TemporaryDataPlacement::PartDisk)
+    {
+        if (!settings.create_part_disk_temporary_data_scope)
+            return nullptr;
+
+        TemporaryDataOnDiskSettings scope_settings;
+        scope_settings.max_size_on_disk = request.max_size;
+        scope_settings.metrics = metrics;
+        return settings.create_part_disk_temporary_data_scope(scope_settings);
+    }
+
+    if (!settings.temporary_data_scope
+        || !request.allowed_backends.test(static_cast<size_t>(settings.temporary_data_scope->getBackend())))
+        return nullptr;
+
+    /// Built with the constructor, not `childScope`, which would copy the parent's limit.
+    auto scope_settings = settings.temporary_data_scope->getSettings();
+    scope_settings.max_size_on_disk = request.max_size;
+    scope_settings.metrics = metrics;
+    return std::make_shared<TemporaryDataOnDiskScope>(settings.temporary_data_scope, std::move(scope_settings));
 }
 
 ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterWide::getSerializationSettingsForColumn(

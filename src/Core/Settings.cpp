@@ -2056,6 +2056,10 @@ DECLARE(Bool, merge_tree_prefetch_json_shared_data_substreams, true, R"(
 Enables prefetching of JSON shared data substreams in Wide parts that are read by seeking to a mark, the data substream of the `SHARED` typed paths included. Such a prefetch reads from the beginning of the granule, which is usually not the position the substream is read from, so it can be wasted. Disable to skip these prefetches.
 )", 0, \
         {"26.8", true, true, "New setting to control prefetching of JSON shared data substreams that are read by seeking to a mark in Wide parts."}) \
+    DECLARE(UInt64, object_shared_data_max_sub_object_paths_to_read_separately, 32, R"(
+The maximum number of `SHARED` typed paths under one sub-object of a JSON column that are read each from its own region of a Wide part written with `object_typed_shared_data_serialization_version = 'v2'`. A sub-object with more paths is read from the granule-major layout instead.
+)", 0, \
+        {"26.11", 32, 32, "New setting."}) \
     DECLARE(Bool, do_not_merge_across_partitions_select_final, false, R"(
 Improve FINAL queries by avoiding merges across different partitions.
 

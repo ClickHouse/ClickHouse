@@ -1,0 +1,36 @@
+parts	t_advanced	1
+parts	t_chunked	1
+parts	t_spilled	1
+-- one path or subcolumn per query, advanced
+json.h.k1	1
+json.h.k1.:String	1
+json.h.k2	1
+json.h.k3	1
+json.a.k1	1
+json.a.k2	1
+json.v.JSON.k1	1
+json.n.p	1
+json.n.q.size0	1
+json.n.r	1
+-- one path or subcolumn per query, advanced_chunked
+json.h.k1	1
+json.h.k1.:String	1
+json.h.k3	1
+json.a.k2	1
+json.v.JSON.k1	1
+-- several readers of a path, the whole column
+advanced	1
+advanced_chunked	1
+spilled	1
+-- chunks cut across reads, filters, PREWHERE
+max_block_size = 5, advanced	1
+max_block_size = 5, advanced_chunked	1
+WHERE x	1
+PREWHERE	1
+-- a mutation reads the whole part without marks
+update	1
+-- layouts read
+05483_region	1	0
+1
+1
+1

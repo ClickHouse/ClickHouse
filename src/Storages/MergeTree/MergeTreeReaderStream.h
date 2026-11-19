@@ -20,6 +20,15 @@ class CachedCompressedReadBuffer;
 class MergeTreeReaderStream
 {
 public:
+    /// A stream living in the byte range [begin, end) of a file shared with other streams, read through a file view.
+    struct FileView
+    {
+        size_t begin = 0;
+        size_t end = 0;
+        /// Tells the stream apart from the other streams of the file, the same in every part.
+        String key;
+    };
+
     MergeTreeReaderStream(
         DataPartStoragePtr data_part_storage_,
         const String & path_prefix_,
@@ -31,7 +40,8 @@ public:
         size_t file_size_,
         MergeTreeMarksLoaderPtr marks_loader_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
-        clockid_t clock_type_);
+        clockid_t clock_type_,
+        std::optional<FileView> file_view_ = std::nullopt);
 
     virtual ~MergeTreeReaderStream();
 
@@ -101,6 +111,8 @@ protected:
     const MergeTreeReaderSettings settings;
     const size_t marks_count;
     const size_t file_size;
+
+    const std::optional<FileView> file_view;
 
     const MergeTreeMarksLoaderPtr marks_loader;
     MergeTreeMarksGetterPtr marks_getter;

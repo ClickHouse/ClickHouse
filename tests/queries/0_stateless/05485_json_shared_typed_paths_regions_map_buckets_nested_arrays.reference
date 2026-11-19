@@ -1,0 +1,17 @@
+parts	1
+-- one path or subcolumn per query
+json.m	1
+json.m.keys	1
+json.m.values	1
+json.m.size0	1
+json.m[k3]	1
+json.aa	1
+json.aa.size0	1
+json.aa.size1	1
+json.at.s	1
+json.at.l.size1	1
+-- together, cut granules, filters
+everything	1
+max_block_size = 5	1
+WHERE x	1
+1

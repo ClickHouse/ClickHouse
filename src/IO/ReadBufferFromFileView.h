@@ -26,6 +26,7 @@ public:
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
     void setRequestMap(ByteRangeSet ranges) override;
+    void setReadBounds(size_t left, size_t right) override;
 
     bool nextImpl() override;
     off_t seek(off_t off, int whence) override;

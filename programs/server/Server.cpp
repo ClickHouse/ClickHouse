@@ -395,6 +395,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_table_num_to_warn;
     extern const ServerSettingsUInt64 max_table_size_to_drop;
     extern const ServerSettingsUInt64 max_temporary_data_on_disk_size;
+    extern const ServerSettingsUInt64 max_temporary_data_on_disk_size_for_serialization_spills;
+    extern const ServerSettingsDouble max_temporary_data_on_disk_ratio_for_serialization_spills;
     extern const ServerSettingsUInt64 max_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_thread_pool_size;
     extern const ServerSettingsUInt64 max_unexpected_parts_loading_thread_pool_size;
@@ -3512,6 +3514,10 @@ try
             ? getCanonicalPath(String(tmp_path_setting.value), path_str) : String(path / "tmp/");
         global_context->setTemporaryStoragePath(temporary_path, server_settings[ServerSetting::max_temporary_data_on_disk_size]);
     }
+
+    global_context->setSerializationSpillsLimit(
+        server_settings[ServerSetting::max_temporary_data_on_disk_size_for_serialization_spills],
+        server_settings[ServerSetting::max_temporary_data_on_disk_ratio_for_serialization_spills]);
 
     /// Initialize access storages.
     auto & access_control = global_context->getAccessControl();

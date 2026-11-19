@@ -63,6 +63,8 @@ public:
 
     void setReadUntilEnd() override;
 
+    void setReadBounds(size_t left, size_t right) override;
+
     void setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling) override;
 
     String getFileName() const override { return info.source_file_path; }
@@ -130,6 +132,8 @@ public:
 
         /// Non-included range end offset.
         size_t read_until_position = 0;
+        /// The range the reads never leave (setReadBounds): the file segments created for them do not reach past it.
+        std::optional<FileSegment::Range> read_bounds;
         /// List of file segments which we need to read
         /// given initial [start_offset, read_until_position).
         FileSegmentsHolderPtr file_segments;

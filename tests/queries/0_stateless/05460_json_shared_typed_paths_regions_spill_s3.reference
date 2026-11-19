@@ -1,0 +1,15 @@
+-- the part disk only
+spilled	1	1
+parts	1
+1
+json	1
+json.c	1
+-- the cap: the temporary storage and the part disk
+spilled	1	1
+parts	1
+1
+json	1
+json.a	1
+spill files left	0
+05460_cap_region_read	1
+05460_part_disk_region_read	1

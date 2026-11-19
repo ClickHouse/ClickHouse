@@ -530,7 +530,14 @@ IMPLEMENT_SETTING_ENUM(
 IMPLEMENT_SETTING_ENUM(
     MergeTreeObjectTypedSharedDataSerializationVersion,
     ErrorCodes::BAD_ARGUMENTS,
-    {{"v1", MergeTreeObjectTypedSharedDataSerializationVersion::V1}})
+    {{"v1", MergeTreeObjectTypedSharedDataSerializationVersion::V1},
+     {"v2", MergeTreeObjectTypedSharedDataSerializationVersion::V2}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeSerializationSpillErrorMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", MergeTreeSerializationSpillErrorMode::THROW},
+     {"skip", MergeTreeSerializationSpillErrorMode::SKIP}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreePatchPartsVersion,

@@ -270,7 +270,8 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
             create_settings,
             info.cache_settings.segments_batch_size,
             origin,
-            info.cache_settings.boundary_alignment);
+            info.cache_settings.boundary_alignment,
+            info.read_bounds);
         info.file_segments->setIOSchedulingSettings(info.io_scheduling);
     }
 
@@ -493,10 +494,19 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::CachedReadBufferCreateBufferMicroseconds);
 
+    /// The source may be another cache, whose segments must stay within the same bounds. A reused reader gets the bounds
+    /// of the current read.
+    auto set_read_bounds = [&](ReadBufferFromFileBase & reader)
+    {
+        if (info.read_bounds)
+            reader.setReadBounds(info.read_bounds->left, info.read_bounds->right + 1);
+    };
+
     auto create_remote_read_buffer = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
     {
         auto impl = info.implementation_buffer_creator();
         impl->setIOSchedulingSettings(info.io_scheduling);
+        set_read_bounds(*impl);
         if (impl->supportsRightBoundedReads())
             return impl;
         return std::make_unique<BoundedReadBuffer>(std::move(impl));
@@ -532,6 +542,7 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
             else
             {
                 chassert(remote_fs_segment_reader->getFileOffsetOfBufferEnd() == file_segment.getCurrentWriteOffset());
+                set_read_bounds(*remote_fs_segment_reader);
             }
 
             return remote_fs_segment_reader;
@@ -539,7 +550,10 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
         case ReadType::REMOTE_FS_READ_BYPASS_CACHE:
         {
             if (info.remote_file_reader && offset == info.remote_file_reader->getFileOffsetOfBufferEnd())
+            {
+                set_read_bounds(*info.remote_file_reader);
                 return info.remote_file_reader;
+            }
 
             /// Result buffer is owned only by current buffer -- not shareable like in the case above.
             /// We cannot directly check info.remote_file_reader because of a possible race with background downloader.
@@ -547,6 +561,7 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
             if (reader && offset == reader->getFileOffsetOfBufferEnd())
             {
                 info.remote_file_reader = reader;
+                set_read_bounds(*reader);
             }
             else
             {
@@ -2136,6 +2151,12 @@ void CachedOnDiskReadBufferFromFile::setReadUntilPosition(size_t position)
 void CachedOnDiskReadBufferFromFile::setReadUntilEnd()
 {
     setReadUntilPosition(getFileSize());
+}
+
+void CachedOnDiskReadBufferFromFile::setReadBounds(size_t left, size_t right)
+{
+    if (left < right)
+        info.read_bounds.emplace(left, right - 1);
 }
 
 void CachedOnDiskReadBufferFromFile::setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling)

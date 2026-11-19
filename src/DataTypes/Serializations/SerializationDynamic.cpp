@@ -359,15 +359,6 @@ void SerializationDynamic::deserializeBinaryBulkStatePrefix(
     dynamic_state->variant_serialization = structure_state_typed->variant_type->getSerialization(serialization_info_settings);
 
     settings.path.push_back(Substream::DynamicData);
-
-    /// Call callback for newly discovered dynamic subcolumns if needed.
-    if (settings.dynamic_subcolumns_callback)
-    {
-        EnumerateStreamsSettings enumerate_settings;
-        enumerate_settings.path = settings.path;
-        dynamic_state->variant_serialization->enumerateStreams(enumerate_settings, settings.dynamic_subcolumns_callback, SubstreamData(dynamic_state->variant_serialization));
-    }
-
     dynamic_state->variant_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_state->variant_state, cache);
     settings.path.pop_back();
 

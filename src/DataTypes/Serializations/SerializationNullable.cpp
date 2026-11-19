@@ -69,10 +69,12 @@ void SerializationNullable::enumerateStreams(
         settings.path.back().creator = std::make_shared<NullableSubcolumnCreator>(column_null_map);
     settings.path.back().data = data;
 
+    /// The prefix of the nested serialization is the prefix of this one, so it shares the deserialize state.
     auto next_data = SubstreamData(nested)
                          .withType(type_nullable ? type_nullable->getNestedType() : nullptr)
                          .withColumn(column_nullable ? column_nullable->getNestedColumnPtr() : nullptr)
-                         .withSerializationInfo(data.serialization_info);
+                         .withSerializationInfo(data.serialization_info)
+                         .withDeserializeState(data.deserialize_state);
 
     nested->enumerateStreams(settings, callback, next_data);
     settings.path.pop_back();

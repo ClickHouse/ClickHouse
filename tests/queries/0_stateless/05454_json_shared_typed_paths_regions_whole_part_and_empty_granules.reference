@@ -1,0 +1,11 @@
+-- mutations
+update	30	30
+delete	20	20	0
+-- granules without rows
+arr.a	1
+arr.b	1
+arr.a from granule 2	1
+arr.a from granule 3	1
+arr.a mbs=3	1
+arr.a mbs=8	1
+arr	1

@@ -35,6 +35,12 @@ class IDataType;
 
 class ReadBuffer;
 class WriteBuffer;
+class TemporaryDataOnDiskScope;
+using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
+struct TemporaryDataScopeRequest;
+/// Returns a scope of temporary data of a write for the request, or null when the write cannot place temporary data
+/// as requested.
+using GetTemporaryDataScope = std::function<TemporaryDataOnDiskScopePtr(const TemporaryDataScopeRequest &)>;
 class ProtobufReader;
 class ProtobufWriter;
 
@@ -251,6 +257,9 @@ public:
         size_t object_shared_data_buckets = 1;
         /// Target number of rows per chunk in ADVANCED_CHUNKED Object shared data serialization.
         size_t object_shared_data_target_chunk_rows = 8192;
+        /// Serialization version of the typed shared data (SHARED typed paths) of an Object column.
+        MergeTreeObjectTypedSharedDataSerializationVersion object_typed_shared_data_serialization_version
+            = MergeTreeObjectTypedSharedDataSerializationVersion::V1;
         /// The maximum number of buckets that can be used for Map type with "with_buckets" serialization.
         size_t max_buckets_in_map = 1;
         /// Strategy for choosing the number of buckets in Map type with "with_buckets" serialization.
@@ -326,6 +335,20 @@ public:
         size_t object_shared_data_buckets = 1;
         /// Target number of rows per chunk in ADVANCED_CHUNKED Object shared data serialization.
         size_t object_shared_data_target_chunk_rows = 8192;
+        /// The memory a part write uses to buffer serialized data of all its columns before spilling it to temporary
+        /// files. 0 means no limit.
+        size_t serialization_spill_max_bytes_to_buffer = 0;
+        /// The memory buffered by all columns of a part write; a column without it counts its own alone.
+        std::shared_ptr<size_t> serialization_spill_buffered_bytes;
+        /// The most compressed bytes of serialized data of all columns of a part write spilled to the server's temporary
+        /// storage. 0 means no limit of its own.
+        size_t serialization_spill_max_temporary_data_size = 0;
+        /// Spill serialized data to the part's disk only.
+        bool serialization_spill_to_part_disk_only = false;
+        /// What an error that loses data spilled to the server's temporary storage does.
+        MergeTreeSerializationSpillErrorMode serialization_spill_error_mode = MergeTreeSerializationSpillErrorMode::THROW;
+        /// Not set when the write provides no temporary data.
+        GetTemporaryDataScope get_temporary_data_scope;
         /// The maximum number of buckets that can be used for Map type with "with_buckets" serialization.
         size_t max_buckets_in_map = 1;
         /// Strategy for choosing the number of buckets in Map type with "with_buckets" serialization.
@@ -350,6 +373,9 @@ public:
         /// Callback to get current mark of the specific stream.
         /// Used only in MergeTree for Object shared data serialization.
         StreamMarkGetter stream_mark_getter;
+        /// The marks of stream_mark_getter are positions in the written files. False when the streams are buffers whose
+        /// marks are {granule index, uncompressed offset from the granule's start}, which tell nothing of sizes.
+        bool stream_marks_are_file_positions = true;
 
         /// Minimum compressed block size. Some serializations use it to decide when to start a new
         /// compressed block at a stream boundary. Used only in MergeTree; 0 - start a new block at every boundary.
@@ -372,6 +398,11 @@ public:
         InputStreamGetter getter;
         SubstreamPath path;
 
+        /// Sub-objects of a JSON column with at most this many SHARED typed paths read each path from its own regions
+        /// in a v2 part; a wider sub-object makes every reader of its paths read them from the plain layout. Used at the
+        /// prefix.
+        size_t object_shared_data_max_sub_object_paths_to_read_separately = 32;
+
         /// True if continue reading from previous positions in file. False if made fseek to the start of new granule.
         bool continuous_reading = true;
 
@@ -383,8 +414,6 @@ public:
         /// Whether the stream contains statistics for `Dynamic`, `JSON`, and `Map`.
         bool read_statistics = false;
 
-        /// Callback that should be called when new dynamic subcolumns are discovered during prefix deserialization.
-        StreamCallback dynamic_subcolumns_callback;
         /// Callback to start prefetches for specific substreams during prefixes deserialization.
         StreamCallback prefixes_prefetch_callback;
         /// ThreadPool that can be used to read prefixes of subcolumns in parallel.
@@ -404,6 +433,9 @@ public:
         /// Callback to seek specific stream to a specific mark.
         /// Used only in MergeTree for Object shared data deserialization.
         std::function<void(const SubstreamPath &, const MarkInCompressedFile &)> seek_stream_to_mark_callback;
+        /// Callback to seek a stream to the mark of a granule of the part, returning the stream's buffer. Used only in
+        /// Wide parts of MergeTree, for the marks inside the streams read through views, which refer to granules.
+        std::function<ReadBuffer *(const SubstreamPath &, size_t granule)> seek_stream_to_granule_callback;
         /// Callback to seek specific stream to a current mark that we read from.
         /// Used only in MergeTree and Compact part for Object shared data deserialization.
         std::function<void(const SubstreamPath &)> seek_stream_to_current_mark_callback;
@@ -652,6 +684,15 @@ public:
 
     static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
     static bool isMetadataStream(const SubstreamPath & path);
+
+    /// Returns true if the stream is a shared file read only through views of the streams living in it, never opened
+    /// whole.
+    static bool isStreamReadThroughViews(const SubstreamPath & path);
+
+    /// The view the stream with this path is read through, if any.
+    static std::shared_ptr<const Substream::StreamView> getStreamView(const SubstreamPath & path);
+    /// The path of the shared file `file` of the stream's view: the elements before the view's element, then `file`.
+    static SubstreamPath getStreamViewFilePath(const SubstreamPath & path, Substream::Type file);
 
     /// Returns true if the stream holds a single value for the whole part, which every granule reads
     /// (the product quantization codebook). Such a value is written once, after the data of all granules,

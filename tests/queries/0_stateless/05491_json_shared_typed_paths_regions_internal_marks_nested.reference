@@ -1,0 +1,29 @@
+parts	t_buckets	1
+parts	t_chunked_spilled	1
+-- advanced_chunked, spilled
+json.h.o.k	1
+json.h.o.m.z	1
+json.h.w	1
+json.h.^o	1
+json.h.o.^m	1
+json.g.i.b	1
+json.g.i.d.e	1
+json.g.i.^d	1
+json.g.i	1
+-- advanced, buckets
+json.h.o.k	1
+json.h.o.m.z	1
+json.h.^o	1
+json.h.o.^m	1
+json.g.i.d.e	1
+json.g.i.^d	1
+-- several readers, cut granules, filters
+together, advanced_chunked	1
+together, buckets	1
+max_block_size = 5	1
+WHERE x	1
+PREWHERE	1
+-- layouts read
+05491_regions	1	0
+1
+1

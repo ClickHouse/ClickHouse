@@ -36,6 +36,9 @@ class SerializationInfoByName;
 class AlterConversions;
 using AlterConversionsPtr = std::shared_ptr<const AlterConversions>;
 
+struct SubcolumnStreams;
+using SubcolumnStreamsPtr = std::shared_ptr<const SubcolumnStreams>;
+
 using Index = Columns;
 using IndexPtr = std::shared_ptr<const Index>;
 
@@ -109,6 +112,8 @@ public:
     /// The codec the part was written with, before any per-column `CODEC` override.
     [[nodiscard]] virtual CompressionCodecPtr getDefaultCompressionCodec() const = 0;
     [[nodiscard]] virtual ColumnSize getSubcolumnSize(const String & subcolumn_name) const = 0;
+    /// The streams of a subcolumn if the part has them cached; never lists them.
+    [[nodiscard]] virtual SubcolumnStreamsPtr tryGetCachedSubcolumnStreams(const String & /*subcolumn_name*/) const { return nullptr; }
 
     /// MergeTree settings governing how the part is read.
     [[nodiscard]] virtual MergeTreeSettingsPtr getStorageSettings() const = 0;
@@ -120,6 +125,9 @@ public:
     [[nodiscard]] virtual std::shared_ptr<const IMergeTreeDataPart> getDataPart() const = 0;
 
     [[nodiscard]] virtual const MergeTreeDataPartChecksums & getChecksums() const = 0;
+
+    /// See IMergeTreeDataPart::registerMarkCacheKey.
+    virtual void registerMarkCacheKey(UInt128 key) const = 0;
 
     [[nodiscard]] virtual const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes() const = 0;
 

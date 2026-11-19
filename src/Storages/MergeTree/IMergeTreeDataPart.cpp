@@ -1082,6 +1082,27 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
     }
 }
 
+void IMergeTreeDataPart::registerMarkCacheKey(UInt128 key) const
+{
+    std::lock_guard lock(registered_mark_cache_keys_mutex);
+    if (!registered_mark_cache_keys)
+        registered_mark_cache_keys = std::make_unique<std::unordered_set<UInt128, UInt128TrivialHash>>();
+    registered_mark_cache_keys->insert(key);
+}
+
+void IMergeTreeDataPart::removeRegisteredMarksFromCache(MarkCache * mark_cache) const
+{
+    if (!mark_cache)
+        return;
+
+    std::lock_guard lock(registered_mark_cache_keys_mutex);
+    if (!registered_mark_cache_keys)
+        return;
+    for (const auto & key : *registered_mark_cache_keys)
+        mark_cache->remove(key);
+    registered_mark_cache_keys->clear();
+}
+
 void IMergeTreeDataPart::clearCaches()
 {
     if (cleared_data_in_caches.exchange(true) || is_duplicate)
@@ -3830,23 +3851,40 @@ IMergeTreeDataPart::ColumnSizeByNameConstPtr IMergeTreeDataPart::getColumnSizes(
 
 ColumnSize IMergeTreeDataPart::getSubcolumnSize(const String & subcolumn_name) const
 {
-    /// First, check if we already calculated the size of this subcolumn and have it in cache.
-    if (auto size = subcolumns_sizes_cache.get(subcolumn_name))
-        return *size;
+    /// First, check if we already listed the streams of this subcolumn and have them in cache.
+    if (auto streams = tryGetCachedSubcolumnStreams(subcolumn_name))
+        return streams->size;
 
-    /// If not, calculate the size of the subcolumn on disk and put it to cache.
-    auto size = calculateSubcolumnSizes(NamesAndTypesList{getColumn(subcolumn_name)}).front();
-    subcolumns_sizes_cache.add(subcolumn_name, size);
-    return size;
+    /// If not, list the streams of the subcolumn on disk and put them to cache.
+    auto streams = calculateSubcolumnStreams(NamesAndTypesList{getColumn(subcolumn_name)}).front();
+    subcolumns_streams_cache.add(subcolumn_name, streams);
+    return streams->size;
 }
 
 std::vector<ColumnSize> IMergeTreeDataPart::getSubcolumnSizes(const NamesAndTypesList & subcolumns) const
 {
-    auto sizes = calculateSubcolumnSizes(subcolumns);
+    auto streams = calculateSubcolumnStreams(subcolumns);
+    std::vector<ColumnSize> sizes;
+    sizes.reserve(streams.size());
     size_t i = 0;
     for (const auto & subcolumn : subcolumns)
-        subcolumns_sizes_cache.add(subcolumn.name, sizes[i++]);
+    {
+        sizes.push_back(streams[i]->size);
+        subcolumns_streams_cache.add(subcolumn.name, streams[i++]);
+    }
     return sizes;
+}
+
+SubcolumnStreamsPtr IMergeTreeDataPart::tryGetCachedSubcolumnStreams(const String & subcolumn_name) const
+{
+    if (auto streams = subcolumns_streams_cache.get(subcolumn_name))
+        return *streams;
+    return nullptr;
+}
+
+std::vector<SubcolumnStreamsPtr> IMergeTreeDataPart::calculateSubcolumnStreams(const NamesAndTypesList & subcolumns) const
+{
+    return std::vector<SubcolumnStreamsPtr>(subcolumns.size(), std::make_shared<SubcolumnStreams>());
 }
 
 ColumnSize IMergeTreeDataPart::getTotalColumnsSize() const

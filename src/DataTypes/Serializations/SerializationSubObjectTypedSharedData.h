@@ -12,8 +12,9 @@ namespace ErrorCodes
 }
 
 /// Serialization of the SHARED typed paths under a sub-object prefix, read from the typed shared data. It requests its
-/// paths on the structure state of the column and decodes them in one call straight into its columns; when another
-/// reader of the column decoded the call first, it copies them from the substreams cache.
+/// paths on the shared state of the column and reads each over the regions of its substreams or, in one decode, from
+/// the plain layout straight into its columns; when another reader of the column decoded the plain layout in the call
+/// first, it copies the paths from the substreams cache.
 class SerializationSubObjectTypedSharedData final : public SimpleTextSerialization
 {
 public:

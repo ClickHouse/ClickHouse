@@ -429,8 +429,29 @@ Serialization version of the typed shared data inside JSON data type: the struct
 
 Possible values:
 - `v1` - for each granule the data of every `SHARED` path in path order, with the start of every path's data recorded in a marks stream, so that a read of some paths decodes only them.
+- `v2` - `v1`, and in Wide parts also the regions: the data of each substream of every `SHARED` path stored apart for the whole part, with its own marks, so that a read of some paths reads only their bytes. The regions are written at the end of the part write; the data is buffered until then in memory up to `serialization_spill_max_bytes_to_buffer` and spilled to temporary files beyond it. Compact parts are written as `v1`.
 )", 0, \
         {"26.11", "v1", "v1", "New setting"}) \
+    DECLARE(UInt64, serialization_spill_max_bytes_to_buffer, 134217728, R"(
+The memory a part write uses to buffer serialized data of all its columns together before spilling it to temporary files. The data a part write buffers is the regions of the `SHARED` typed paths of JSON columns written with `object_typed_shared_data_serialization_version = 'v2'`. 0 means no limit (everything is buffered in memory).
+)", 0, \
+        {"26.11", "134217728", "134217728", "New setting"}) \
+    DECLARE(UInt64, serialization_spill_max_temporary_data_size, 0, R"(
+The maximum compressed bytes of serialized data that a part write spills to the server's temporary storage. Data that does not fit is spilled to the part's disk. 0 means no limit of its own. The limit is within the server's limit for all part writes together (`max_temporary_data_on_disk_size_for_serialization_spills`, or `max_temporary_data_on_disk_ratio_for_serialization_spills` of the temporary storage) and within `max_temporary_data_on_disk_size`.
+)", 0, \
+        {"26.11", "0", "0", "New setting"}) \
+    DECLARE(MergeTreeSerializationSpillErrorMode, serialization_spill_error_mode, "throw", R"(
+What a part write does when an error loses serialized data already spilled to the server's temporary storage.
+
+Possible values:
+- `throw` - the part write fails.
+- `skip` - the part is written without what the serialization built from the spilled data: for JSON columns, without the regions of the `SHARED` typed paths, which are then read from the plain layout.
+)", 0, \
+        {"26.11", "throw", "throw", "New setting"}) \
+    DECLARE(Bool, serialization_spill_to_part_disk_only, false, R"(
+Spill serialized data of a part write to the part's disk from the start, into a temporary directory of the table, without using the server's temporary storage. It is done regardless of this setting when the server's temporary storage is the distributed cache.
+)", 0, \
+        {"26.11", "false", "false", "New setting"}) \
     DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v3", R"(
 Serialization version for Dynamic data type. Required for compatibility.
 

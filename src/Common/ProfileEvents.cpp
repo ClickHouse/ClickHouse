@@ -511,6 +511,14 @@
     M(ExternalProcessingCompressedBytesTotal, "Number of compressed bytes written by external processing (sorting/aggregating/joining)", ValueType::Bytes) \
     M(ExternalProcessingUncompressedBytesTotal, "Amount of data (uncompressed, before compression) written by external processing (sorting/aggregating/joining)", ValueType::Bytes) \
     M(ExternalProcessingFilesTotal, "Number of files used by external processing (sorting/aggregating/joining)", ValueType::Number) \
+    M(SerializationSpilledSegments, "Number of segments of serialized data spilled to temporary files by part writes over their memory budget.", ValueType::Number) \
+    M(SerializationSpilledBytes, "Compressed bytes of serialized data written to spill files by part writes.", ValueType::Bytes) \
+    M(SerializationSpilledUncompressedBytes, "Uncompressed bytes of serialized data written to spill files by part writes.", ValueType::Bytes) \
+    M(SerializationSpillFiles, "Number of temporary files created to spill serialized data by part writes.", ValueType::Number) \
+    M(SerializationSpilledToPartDisk, "Number of segments of serialized data spilled to the part's disk instead of the server's temporary storage.", ValueType::Number) \
+    M(SerializationSpillErrors, "Number of errors that lost serialized data spilled to the server's temporary storage and were reported to the serialization instead of failing the part write.", ValueType::Number) \
+    M(ObjectTypedSharedDataRegionReads, "Number of reads of a SHARED typed path of JSON over the regions of its substreams in a part, one per path and read call.", ValueType::Number) \
+    M(ObjectTypedSharedDataPlainLayoutReads, "Number of decodes of the SHARED typed paths of JSON from the granule-major layout of a part, one per read call that decodes them.", ValueType::Number) \
     M(ExternalSortWritePart, "Number of times a temporary file was written to disk for sorting in external memory.", ValueType::Number) \
     M(ExternalSortMerge, "Number of times temporary files were merged for sorting in external memory.", ValueType::Number) \
     M(ExternalSortCompressedBytes, "Number of compressed bytes written for sorting in external memory.", ValueType::Bytes) \

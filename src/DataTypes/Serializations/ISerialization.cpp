@@ -9,6 +9,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationObjectPool.h>
+#include <DataTypes/Serializations/SubstreamView.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ParseError.h>
 #include <IO/Operators.h>
@@ -429,6 +430,10 @@ String getNameForSubstreamPath(
             stream_name += ".paths_data";
         else if (it->type == SubstreamType::ObjectTypedSharedDataPathsMarks)
             stream_name += ".paths_marks";
+        else if (it->type == SubstreamType::ObjectTypedSharedDataPathsRegionData)
+            stream_name += ".paths_region_data";
+        else if (it->type == SubstreamType::ObjectTypedSharedDataPathsRegionMarks)
+            stream_name += ".paths_region_marks";
         else if (it->type == SubstreamType::ObjectTypedSharedDataPath)
         {
             /// The path shares its files with every other SHARED path, so the element exists in cache keys only.
@@ -477,6 +482,9 @@ static bool isPossibleOffsetsOfNested(const ISerialization::SubstreamPath & path
 
 String ISerialization::getFileNameForStream(const String & name_in_storage, const SubstreamPath & path, const StreamFileNameSettings & settings)
 {
+    if (auto view = getStreamView(path))
+        return getFileNameForStream(name_in_storage, getStreamViewFilePath(path, view->data_stream), settings);
+
     String stream_name;
     if (settings.share_nested_offsets)
     {
@@ -792,8 +800,41 @@ bool ISerialization::isPrefetchNeededForSubstream(const DB::ISerialization::Subs
     /// The data substreams of the JSON shared data and of the typed shared data are not read from the start of the
     /// granule: a path's data is located via a mark in another stream and read by seeking to it. With many JSON paths
     /// the granule is large, so prefetching from the start can fetch data we never read.
-    auto last = path[prefix_len - 1].type;
-    return last != Substream::ObjectSharedDataData && last != Substream::ObjectTypedSharedDataPathsData;
+    const auto & last = path[prefix_len - 1];
+    /// The region streams are read only through views of their substreams, never whole.
+    if (last.type == Substream::ObjectTypedSharedDataPathsRegionData || last.type == Substream::ObjectTypedSharedDataPathsRegionMarks)
+        return false;
+    return last.type != Substream::ObjectSharedDataData && last.type != Substream::ObjectTypedSharedDataPathsData;
+}
+
+bool ISerialization::isStreamReadThroughViews(const SubstreamPath & path)
+{
+    if (path.empty())
+        return false;
+    auto last = path.back().type;
+    return last == Substream::ObjectTypedSharedDataPathsRegionData || last == Substream::ObjectTypedSharedDataPathsRegionMarks;
+}
+
+std::shared_ptr<const ISerialization::Substream::StreamView> ISerialization::getStreamView(const SubstreamPath & path)
+{
+    for (const auto & element : path)
+    {
+        if (element.view)
+            return element.view;
+    }
+    return nullptr;
+}
+
+ISerialization::SubstreamPath ISerialization::getStreamViewFilePath(const SubstreamPath & path, Substream::Type file)
+{
+    auto view_element = std::ranges::find_if(path, [](const auto & element) { return element.view != nullptr; });
+    if (view_element == path.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Substream path has no view");
+
+    SubstreamPath file_path;
+    file_path.insert(file_path.end(), path.begin(), view_element);
+    file_path.emplace_back(file);
+    return file_path;
 }
 
 bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)

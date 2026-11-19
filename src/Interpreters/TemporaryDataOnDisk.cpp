@@ -3,6 +3,7 @@
 #include <memory>
 #include <DataTypes/DataTypeArray.h>
 #include <mutex>
+#include <city.h>
 
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/QueryExecutionCounters.h>
@@ -69,16 +70,16 @@ namespace ErrorCodes
     extern const int TOO_MANY_ROWS_OR_BYTES;
 }
 
-namespace
+CompressionCodecPtr TemporaryDataOnDiskScope::createCodec(const TemporaryDataOnDiskSettings & scope_settings)
 {
-
-inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings)
-{
-    if (settings.compression_codec.empty())
+    if (scope_settings.compression_codec.empty())
         return CompressionCodecFactory::instance().get("LZ4");
 
-    return CompressionCodecFactory::instance().get(settings.compression_codec);
+    return CompressionCodecFactory::instance().get(scope_settings.compression_codec);
 }
+
+namespace
+{
 
 [[noreturn]] void throwNotEnoughSpace(size_t reserve_size, const Disks & disks)
 {
@@ -144,6 +145,27 @@ public:
     [[nodiscard]] std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
     {
         return std::make_unique<ReadBufferFromFile>(segment_holder->front().getPath(), /* buf_size = */ buffer_size_);
+    }
+
+    /// The segment keeps what the writes do not use until it is removed: a temporary segment is never shrunk. A temporary
+    /// segment is unbound, so a reservation grows its range.
+    TemporaryDataReserveResult tryReserveMore(size_t bytes) override
+    {
+        if (bytes == 0)
+            return TemporaryDataReserveResult::Reserved;
+
+        /// The cache reserves the free space beyond the written bytes, so the reservation not used yet is counted in.
+        auto & segment = segment_holder->front();
+        const size_t unused = segment.getReservedSize() - segment.getDownloadedSize();
+
+        FileCacheReserveStat reserve_stat;
+        std::string failure_reason;
+        if (WriteBufferToFileSegment::reserveAhead(segment, unused + bytes, reserve_stat, failure_reason))
+            return TemporaryDataReserveResult::Reserved;
+
+        LOG_TRACE(getLogger("TemporaryFileInLocalCache"), "Cannot reserve {} bytes for temporary file {}: {}",
+            bytes, describeFilePath(), failure_reason);
+        return reserve_stat.not_enough_space ? TemporaryDataReserveResult::NotEnoughSpace : TemporaryDataReserveResult::Transient;
     }
 
     [[nodiscard]] String describeFilePath() const override
@@ -276,9 +298,9 @@ private:
 class TemporaryFileOnLocalDisk : public TemporaryFileHolder
 {
 public:
-    explicit TemporaryFileOnLocalDisk(VolumePtr volume, size_t reserve_size = 0, const TemporaryDataOnDiskSettings & settings = {})
+    explicit TemporaryFileOnLocalDisk(VolumePtr volume, const String & base_directory, size_t reserve_size = 0, const TemporaryDataOnDiskSettings & settings = {})
         : TemporaryFileHolder(settings.metrics)
-        , path_to_file("tmp" + toString(UUIDHelpers::generateV4()))
+        , path_to_file((base_directory.empty() ? "" : base_directory + "/") + "tmp" + toString(UUIDHelpers::generateV4()))
         , buffer_size(settings.buffer_size)
     {
         LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Creating temporary file '{}'", path_to_file);
@@ -307,9 +329,26 @@ public:
         settings.local_fs_settings.buffer_size = buffer_size_;
         settings.remote_fs_settings.buffer_size = buffer_size_;
         settings.remote_fs_settings.large_buffer_size = buffer_size_;
+        /// A temporary file is read once and removed, so a cache of a remote disk (a part's disk, for the serialization
+        /// spills of a part write) would only evict other data for it.
+        settings.enable_filesystem_cache = false;
 
         return disk->readFile(path_to_file, settings);
     }
+
+    /// Reserves on the file's own disk: a reservation of the volume may pick another one. The constructor's reservation,
+    /// which only picks the disk, is released by then, so the space is not counted twice.
+    TemporaryDataReserveResult tryReserveMore(size_t bytes) override
+    {
+        auto reservation = disk->reserve(bytes);
+        if (!reservation)
+            return TemporaryDataReserveResult::NotEnoughSpace;
+        reservations.push_back(std::move(reservation));
+        return TemporaryDataReserveResult::Reserved;
+    }
+
+    /// The written bytes already count in the disk's free space, so the reservations go whole.
+    void releaseUnusedReservation() override { reservations.clear(); }
 
     [[nodiscard]] String describeFilePath() const override
     {
@@ -345,15 +384,16 @@ private:
     DiskPtr disk;
     String path_to_file;
     size_t buffer_size;
+    std::vector<ReservationPtr> reservations;
 };
 
-TemporaryFileProvider createTemporaryFileProvider(VolumePtr volume)
+TemporaryFileProvider createTemporaryFileProvider(VolumePtr volume, const String & base_directory)
 {
     if (!volume)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Volume is not initialized");
-    return [volume](const TemporaryDataOnDiskSettings & settings, size_t max_size) -> std::unique_ptr<TemporaryFileHolder>
+    return [volume, base_directory](const TemporaryDataOnDiskSettings & settings, size_t max_size) -> std::unique_ptr<TemporaryFileHolder>
     {
-        return std::make_unique<TemporaryFileOnLocalDisk>(volume, max_size, settings);
+        return std::make_unique<TemporaryFileOnLocalDisk>(volume, base_directory, max_size, settings);
     };
 }
 
@@ -388,6 +428,16 @@ TemporaryFileProvider createTemporaryFileProvider(DistributedCacheTag)
 }
 #endif
 
+size_t getTemporaryDataLimit(size_t max_size, double max_size_ratio, std::optional<UInt64> total_size)
+{
+    if (max_size)
+        return max_size;
+    if (max_size_ratio <= 0 || !total_size)
+        return 0;
+    /// At least one byte, since 0 means no limit.
+    return std::max<size_t>(1, static_cast<size_t>(max_size_ratio * static_cast<double>(*total_size)));
+}
+
 TemporaryDataOnDiskScopePtr TemporaryDataOnDiskScope::childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_, String compression_codec_)
 {
     TemporaryDataOnDiskSettings child_settings = settings;
@@ -399,11 +449,63 @@ TemporaryDataOnDiskScopePtr TemporaryDataOnDiskScope::childScope(TemporaryDataMe
     return std::make_shared<TemporaryDataOnDiskScope>(shared_from_this(), child_settings);
 }
 
+std::optional<size_t> TemporaryDataOnDiskScope::getRemainingSize() const
+{
+    std::optional<size_t> remaining;
+    for (const auto * scope = this; scope; scope = scope->parent.get())
+    {
+        const size_t limit = scope->settings.max_size_on_disk;
+        if (!limit)
+            continue;
+        /// A charge never crosses the limit, so it is within it.
+        const size_t current = scope->currentCompressedSize();
+        chassert(current <= limit);
+        const size_t scope_remaining = limit - std::min(current, limit);
+        remaining = remaining ? std::min(*remaining, scope_remaining) : scope_remaining;
+    }
+    return remaining;
+}
+
+size_t TemporaryDataOnDiskScope::getCompressedBound(size_t bytes) const
+{
+    const size_t block_size = settings.buffer_size;
+    auto block_bound = [&](size_t block_bytes)
+    {
+        return sizeof(CityHash_v1_0_2::uint128) + codec->getCompressedReserveSize(static_cast<UInt32>(block_bytes));
+    };
+
+    size_t bound = (bytes / block_size) * block_bound(block_size);
+    if (size_t last_block_bytes = bytes % block_size)
+        bound += block_bound(last_block_bytes);
+    return bound;
+}
+
 TemporaryDataReadBuffer::TemporaryDataReadBuffer(std::unique_ptr<ReadBuffer> in_)
     : ReadBuffer(nullptr, 0)
     , compressed_buf(std::move(in_))
 {
     setWorkingBuffer(compressed_buf->buffer(), compressed_buf->offset());
+}
+
+TemporaryDataReadBuffer::TemporaryDataReadBuffer(std::unique_ptr<SeekableReadBuffer> in_)
+    : ReadBuffer(nullptr, 0)
+    , compressed_buf(std::unique_ptr<ReadBuffer>(std::move(in_)))
+{
+    /// The holder is the reader passed in, a `SeekableReadBuffer`.
+    seekable_in = static_cast<SeekableReadBuffer *>(compressed_buf.getHolder());
+    BufferBase::set(compressed_buf->buffer().begin(), compressed_buf->buffer().size(), compressed_buf->offset());
+}
+
+void TemporaryDataReadBuffer::seekToBlock(size_t position)
+{
+    if (!seekable_in)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data read buffer is not seekable");
+
+    /// The decompressed block of the previous position is dropped with its reader, and a new one starts at `position`.
+    auto in = compressed_buf.releaseHolder();
+    seekable_in->seek(position, SEEK_SET);
+    compressed_buf = WrapperGuard<CompressedReadBuffer, ReadBuffer>(std::move(in));
+    BufferBase::set(compressed_buf->buffer().begin(), compressed_buf->buffer().size(), compressed_buf->offset());
 }
 
 bool TemporaryDataReadBuffer::nextImpl()
@@ -419,13 +521,103 @@ bool TemporaryDataReadBuffer::nextImpl()
 }
 
 TemporaryDataBuffer::TemporaryDataBuffer(std::shared_ptr<TemporaryDataOnDiskScope> parent_, size_t reserve_size)
+    : TemporaryDataBuffer(parent_, parent_->file_provider(parent_->getSettings(), reserve_size), /*reserved_=*/0)
+{
+}
+
+TemporaryDataBuffer::TemporaryDataBuffer(
+    std::shared_ptr<TemporaryDataOnDiskScope> parent_, std::unique_ptr<TemporaryFileHolder> file_holder_, size_t reserved_)
     : WriteBuffer(nullptr, 0)
-    , parent(parent_)
-    , file_holder(parent->file_provider(parent->getSettings(), reserve_size))
-    , out_compressed_buf(file_holder->write(), getCodec(parent->getSettings()), parent->getSettings().buffer_size)
+    , parent(std::move(parent_))
+    , file_holder(std::move(file_holder_))
+    , out_compressed_buf(file_holder->write(), parent->codec, parent->getSettings().buffer_size)
+    , reserved(reserved_)
     , metrics(parent->getSettings().metrics)
 {
     WriteBuffer::set(out_compressed_buf->buffer().begin(), out_compressed_buf->buffer().size());
+}
+
+ReservedTemporaryDataBuffer TemporaryDataBuffer::tryCreateWithReservation(std::shared_ptr<TemporaryDataOnDiskScope> parent_, size_t reserve_bytes)
+{
+    if (parent_->tryAddCompressedSize(reserve_bytes))
+        return {.buffer = nullptr, .result = TemporaryDataReserveResult::NotEnoughSpace};
+
+    try
+    {
+        /// The size makes a volume of several disks pick one with room for it; the holder reserves on that disk below.
+        std::unique_ptr<TemporaryFileHolder> holder;
+        try
+        {
+            holder = parent_->file_provider(parent_->getSettings(), reserve_bytes);
+        }
+        catch (const Exception & e)
+        {
+            /// No disk of the volume has room: a refusal like that of the reservation itself.
+            if (e.code() != ErrorCodes::NOT_ENOUGH_SPACE)
+                throw;
+            parent_->subtractCompressedSize(reserve_bytes);
+            return {.buffer = nullptr, .result = TemporaryDataReserveResult::NotEnoughSpace};
+        }
+
+        /// The holder is reserved before the buffer exists: a refusal may leave the file unwritable (the local cache
+        /// marks its segment failed), so a refused holder is dropped with nothing written.
+        auto result = holder->tryReserveMore(reserve_bytes);
+        if (result != TemporaryDataReserveResult::Reserved)
+        {
+            parent_->subtractCompressedSize(reserve_bytes);
+            return {.buffer = nullptr, .result = result};
+        }
+
+        TemporaryDataBufferPtr buffer(new TemporaryDataBuffer(parent_, std::move(holder), reserve_bytes));
+        return {.buffer = std::move(buffer), .result = TemporaryDataReserveResult::Reserved};
+    }
+    catch (...)
+    {
+        parent_->subtractCompressedSize(reserve_bytes);
+        throw;
+    }
+}
+
+void TemporaryDataBuffer::flushToFile()
+{
+    if (!out_compressed_buf)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary file buffer writing has been finished");
+
+    next();
+    out_compressed_buf.getHolder()->next();
+}
+
+TemporaryDataReserveResult TemporaryDataBuffer::tryReserveMore(size_t num_bytes)
+{
+    if (!out_compressed_buf)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary file buffer writing has been finished");
+    /// A refusal of the backend may make the file unwritable, so no byte may be left above it.
+    chassert(offset() == 0 && out_compressed_buf.getHolder()->offset() == 0);
+
+    if (parent->tryAddCompressedSize(num_bytes))
+        return TemporaryDataReserveResult::NotEnoughSpace;
+
+    auto result = [&]
+    {
+        try
+        {
+            return file_holder->tryReserveMore(num_bytes);
+        }
+        catch (...)
+        {
+            parent->subtractCompressedSize(num_bytes);
+            throw;
+        }
+    }();
+
+    if (result != TemporaryDataReserveResult::Reserved)
+    {
+        parent->subtractCompressedSize(num_bytes);
+        return result;
+    }
+
+    reserved += num_bytes;
+    return TemporaryDataReserveResult::Reserved;
 }
 
 void TemporaryDataBuffer::nextImpl()
@@ -469,6 +661,7 @@ void TemporaryDataBuffer::finalizeImpl()
     out_compressed_buf.getHolder()->finalize();
 
     updateAllocAndCheck();
+    releaseReservation();
     file_holder->releaseWriteBuffer(out_compressed_buf.releaseHolder());
     out_compressed_buf.reset();
 }
@@ -525,9 +718,24 @@ std::unique_ptr<ReadBuffer> TemporaryDataBuffer::readFromPosition(size_t positio
     return std::make_unique<TemporaryDataReadBuffer>(std::move(in));
 }
 
+std::unique_ptr<TemporaryDataReadBuffer> TemporaryDataBuffer::readSeekable()
+{
+    return std::make_unique<TemporaryDataReadBuffer>(readRaw());
+}
+
 CompressedWriteBuffer & TemporaryDataBuffer::getCompressedWriteBuffer()
 {
     return *out_compressed_buf;
+}
+
+void TemporaryDataBuffer::releaseReservation()
+{
+    if (reserved)
+    {
+        parent->subtractCompressedSize(reserved);
+        reserved = 0;
+    }
+    file_holder->releaseUnusedReservation();
 }
 
 void TemporaryDataBuffer::updateAllocAndCheck()
@@ -557,7 +765,11 @@ void TemporaryDataBuffer::updateAllocAndCheck()
         reported_spilled_to_disk = true;
     }
 
-    parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
+    /// The bytes covered by the reservation are charged to the scopes already.
+    size_t from_reservation = std::min(static_cast<size_t>(compressed_delta), reserved);
+    parent->deltaAllocAndCheck(
+        compressed_delta - static_cast<ssize_t>(from_reservation), uncompressed_delta, static_cast<size_t>(compressed_delta));
+    reserved -= from_reservation;
     stat.compressed_size = new_compressed_size;
     stat.uncompressed_size = new_uncompressed_size;
 
@@ -573,32 +785,75 @@ void TemporaryDataBuffer::updateAllocAndCheck()
 void TemporaryDataBuffer::freeAlloc()
 {
     if (parent)
-        parent->deltaAllocAndCheck(-stat.compressed_size, -stat.uncompressed_size);
+    {
+        releaseReservation();
+        parent->deltaAllocAndCheck(
+            -static_cast<ssize_t>(stat.compressed_size), -static_cast<ssize_t>(stat.uncompressed_size), /*written_compressed=*/0);
+    }
     stat.compressed_size = 0;
     stat.uncompressed_size = 0;
 }
 
-void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta)
+const TemporaryDataOnDiskScope * TemporaryDataOnDiskScope::tryAddCompressedSize(size_t bytes)
 {
-    if (parent)
-        parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
-
-    /// check that we don't go negative
-    if ((compressed_delta < 0 && stat.compressed_size < -static_cast<size_t>(compressed_delta)) ||
-        (uncompressed_delta < 0 && stat.uncompressed_size < -static_cast<size_t>(uncompressed_delta)))
+    /// Each scope is charged with a compare-and-add, so that concurrent writers cannot both pass a check and both add.
+    for (auto * scope = this; scope; scope = scope->parent.get())
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Negative temporary data size");
+        const size_t limit = scope->settings.max_size_on_disk;
+        size_t current = scope->stat.compressed_size.load(std::memory_order_relaxed);
+        do
+        {
+            if (limit && current + bytes > limit)
+            {
+                for (auto * charged = this; charged != scope; charged = charged->parent.get())
+                    charged->stat.compressed_size.fetch_sub(bytes, std::memory_order_relaxed);
+                return scope;
+            }
+        } while (!scope->stat.compressed_size.compare_exchange_weak(current, current + bytes, std::memory_order_relaxed));
+    }
+    return nullptr;
+}
+
+void TemporaryDataOnDiskScope::subtractCompressedSize(size_t bytes)
+{
+    for (auto * scope = this; scope; scope = scope->parent.get())
+    {
+        if (scope->stat.compressed_size.fetch_sub(bytes, std::memory_order_relaxed) < bytes)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Negative temporary data size");
+    }
+}
+
+void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta, size_t written_compressed)
+{
+    if (compressed_delta > 0)
+    {
+        const size_t bytes = static_cast<size_t>(compressed_delta);
+        if (const auto * refused = tryAddCompressedSize(bytes))
+            throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
+                "Limit for temporary files size exceeded (would consume {} / {} bytes)",
+                refused->currentCompressedSize() + bytes, refused->settings.max_size_on_disk);
+    }
+    else if (compressed_delta < 0)
+    {
+        subtractCompressedSize(static_cast<size_t>(-compressed_delta));
     }
 
-    size_t new_consumption = stat.compressed_size + compressed_delta;
-    if (compressed_delta > 0 && settings.max_size_on_disk && new_consumption > settings.max_size_on_disk)
-        throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
-            "Limit for temporary files size exceeded (would consume {} / {} bytes)", new_consumption, settings.max_size_on_disk);
+    for (auto * scope = this; scope; scope = scope->parent.get())
+    {
+        if (uncompressed_delta < 0)
+        {
+            const size_t bytes = static_cast<size_t>(-uncompressed_delta);
+            if (scope->stat.uncompressed_size.fetch_sub(bytes, std::memory_order_relaxed) < bytes)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Negative temporary data size");
+        }
+        else
+        {
+            scope->stat.uncompressed_size.fetch_add(static_cast<size_t>(uncompressed_delta), std::memory_order_relaxed);
+        }
 
-    stat.compressed_size += compressed_delta;
-    stat.uncompressed_size += uncompressed_delta;
-    if (compressed_delta > 0)
-        spilled_bytes.fetch_add(compressed_delta, std::memory_order_relaxed);
+        if (written_compressed)
+            scope->spilled_bytes.fetch_add(written_compressed, std::memory_order_relaxed);
+    }
 }
 
 void TemporaryAppendSpaceCheck::beforeAppend(const TemporaryDataBuffer & buffer, size_t reserve_size)

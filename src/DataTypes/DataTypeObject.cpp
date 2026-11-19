@@ -2055,7 +2055,7 @@ ALTER TABLE test MODIFY COLUMN json JSON(SHARED a UInt32, SHARED b.c Array(Strin
 
 With [Lazy Type Hints](#lazy-type-hints) enabled this is a metadata-only change, and existing parts keep their layout until they are merged; otherwise the parts are rewritten. Parts of both layouts are read together.
 
-The on-disk format of the typed shared data is versioned by the MergeTree setting `object_typed_shared_data_serialization_version`; `v1` is the only version so far.
+The on-disk format of the typed shared data is versioned by the MergeTree setting `object_typed_shared_data_serialization_version`. `v1` stores the data of all `SHARED` paths of each granule together; `v2` additionally stores, in Wide parts, the data of each `SHARED` path separately for the whole part, so that reading a few paths reads only their bytes, at the cost of buffering the data while a part is written.
 
 ## Controlling the number of dynamic paths inside JSON in MergeTree parts {#controlling-the-number-of-dynamic-paths}
 

@@ -707,6 +707,11 @@ struct ContextSharedPart : boost::noncopyable
     /// Child scopes for more fine-grained accounting are created per user/query/etc.
     /// Initialized once during server startup.
     TemporaryDataOnDiskScopePtr root_temp_data_on_disk TSA_GUARDED_BY(mutex);
+    /// The total size of the temporary storage, when its backend tells it.
+    std::optional<UInt64> temporary_storage_total_size TSA_GUARDED_BY(mutex);
+    /// The temporary-data scope under which every part write creates the scope of its serialization spills; its limit is
+    /// the server's limit of all those spills together. A child of `root_temp_data_on_disk`.
+    TemporaryDataOnDiskScopePtr serialization_spills_parent_scope TSA_GUARDED_BY(mutex);
     /// TODO: remove, use only root_temp_data_on_disk
     VolumePtr temporary_volume_legacy;
 
@@ -2161,6 +2166,37 @@ TemporaryDataOnDiskScopePtr Context::getSharedTempDataOnDisk() const
     return shared->root_temp_data_on_disk;
 }
 
+TemporaryDataOnDiskScopePtr Context::getSerializationSpillsParentScope() const
+{
+    SharedLockGuard lock(shared->mutex);
+    if (shared->serialization_spills_parent_scope)
+        return shared->serialization_spills_parent_scope;
+    return shared->root_temp_data_on_disk;
+}
+
+void Context::setSerializationSpillsLimit(size_t max_size, double max_size_ratio)
+{
+    if (max_size_ratio < 0 || max_size_ratio > 1)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "The ratio of the temporary storage for serialization spills must be in [0, 1], got {}", max_size_ratio);
+
+    std::lock_guard lock(shared->mutex);
+    if (!shared->root_temp_data_on_disk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is not set");
+    if (shared->serialization_spills_parent_scope)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The limit of the temporary data of serialization spills is already set");
+
+    if (!max_size && max_size_ratio > 0 && !shared->temporary_storage_total_size)
+        LOG_WARNING(shared->log, "The total size of the temporary storage is unknown, so the serialization spills of part writes have no limit of their own");
+
+    auto settings = shared->root_temp_data_on_disk->getSettings();
+    settings.max_size_on_disk = getTemporaryDataLimit(max_size, max_size_ratio, shared->temporary_storage_total_size);
+    if (settings.max_size_on_disk)
+        LOG_DEBUG(shared->log, "The serialization spills of part writes are limited to {} of the temporary storage",
+            ReadableSize(settings.max_size_on_disk));
+    shared->serialization_spills_parent_scope = std::make_shared<TemporaryDataOnDiskScope>(shared->root_temp_data_on_disk, std::move(settings));
+}
+
 void Context::setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_)
 {
     /// It's set from `ProcessList::insert` in `executeQueryImpl` before query execution
@@ -2244,6 +2280,25 @@ static VolumePtr createLocalSingleDiskVolume(const std::string & path, const Poc
     return volume;
 }
 
+namespace
+{
+
+/// The total space of the disks of a volume; unknown when any disk does not tell.
+std::optional<UInt64> getVolumeTotalSpace(const VolumePtr & volume)
+{
+    UInt64 total = 0;
+    for (const auto & disk : volume->getDisks())
+    {
+        auto space = disk->getTotalSpace();
+        if (!space)
+            return std::nullopt;
+        total += *space;
+    }
+    return total;
+}
+
+}
+
 void Context::setTemporaryStoragePath(const String & path, size_t max_size)
 {
     std::lock_guard lock(shared->mutex);
@@ -2263,6 +2318,7 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
     shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), volume);
+    shared->temporary_storage_total_size = getVolumeTotalSpace(volume);
     shared->temporary_volume_legacy = volume;
 }
 
@@ -2303,6 +2359,7 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
     shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), volume);
+    shared->temporary_storage_total_size = getVolumeTotalSpace(volume);
     shared->temporary_volume_legacy = volume;
 }
 
@@ -2341,6 +2398,7 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
     shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), file_cache.get());
+    shared->temporary_storage_total_size = file_cache->getMaxCacheSize();
     shared->temporary_volume_legacy = volume;
 }
 

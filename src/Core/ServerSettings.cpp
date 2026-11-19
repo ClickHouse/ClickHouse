@@ -397,6 +397,22 @@ See also:
 - [`max_temporary_data_on_disk_size_for_user`](/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_user)
 - [`max_temporary_data_on_disk_size_for_query`](/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_query)
 )", 0) \
+    DECLARE(UInt64, max_temporary_data_on_disk_size_for_serialization_spills, 0, R"(
+The maximum compressed bytes of serialized data that all part writes together spill to the temporary storage when they buffer more than `serialization_spill_max_bytes_to_buffer` (the regions of the `SHARED` typed paths of JSON columns written with `object_typed_shared_data_serialization_version = 'v2'`). Data that does not fit is spilled to the part's disk instead.
+
+<Note>
+A value of `0` means that `max_temporary_data_on_disk_ratio_for_serialization_spills` defines the limit.
+</Note>
+
+The limit is within `max_temporary_data_on_disk_size`. The MergeTree setting `serialization_spill_max_temporary_data_size` can lower it for the part writes of a table.
+)", 0) \
+    DECLARE(Double, max_temporary_data_on_disk_ratio_for_serialization_spills, 0.3, R"(
+The limit of `max_temporary_data_on_disk_size_for_serialization_spills`, when it is `0`, as a ratio of the total size of the temporary storage: of the disks of `tmp_path` or `tmp_policy` (a local disk counts its whole filesystem), or of the cache of `temporary_data_in_cache`. The size is taken at the server's start.
+
+<Note>
+A value of `0` means no limit of its own; `max_temporary_data_on_disk_size` still applies.
+</Note>
+)", 0) \
     DECLARE(String, temporary_data_in_cache, "", R"(
 With this option, temporary data will be stored in the cache for the particular disk.
 In this section, you should specify the disk name with the type `cache`.
