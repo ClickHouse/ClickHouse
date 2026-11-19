@@ -47,6 +47,7 @@
 #include <Storages/PartitionCommands.h>
 #include <Storages/ExecuteCommands.h>
 #include <Storages/StorageKeeperMap.h>
+#include <Storages/StorageMemory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageProxy.h>
@@ -487,7 +488,11 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             DDLGuardPtr ddl_guard;
             if (!no_ddl_lock)
                 ddl_guard = DatabaseCatalog::instance().getDDLGuardForStorage(table, settings[Setting::lock_acquire_timeout]);
-            auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+            /// Memory evaluates stored-column defaults before taking its short publication lock.
+            /// In particular, a default may read this same table through a dictionary.
+            TableLockHolder share_lock;
+            if (!castStorage<StorageMemory>(table, DeferredTable::Load))
+                share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
             auto alter_lock = table->lockForAlter(settings[Setting::lock_acquire_timeout]);
             /// Drop the query-scoped metadata cache, which may hold a snapshot pinned before this
             /// lock. The reads below (validate/prepare/checkAlterIsPossible and the storage's alter)

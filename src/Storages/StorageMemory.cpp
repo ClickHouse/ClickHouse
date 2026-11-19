@@ -1,6 +1,5 @@
 #include <algorithm>
-#include <deque>
-#include <unordered_map>
+#include <functional>
 
 #include <Common/CurrentThread.h>
 #include <Formats/FormatSettings.h>
@@ -74,6 +73,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool flatten_nested;
+    extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_temporary_table_memory_usage;
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
@@ -129,15 +130,11 @@ public:
     MemorySink(
         StorageMemory & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        ContextPtr context_)
+        ContextPtr context)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
-        , schema_generation(metadata_snapshot_->memory_schema_generation)
         , storage(storage_)
-        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context_))
-        , context(std::move(context_))
+        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context))
     {
-        std::lock_guard lock(storage.mutex);
-
         if (storage.is_temporary_table)
             max_temporary_table_memory_usage = context->getSettingsRef()[Setting::max_temporary_table_memory_usage];
     }
@@ -175,22 +172,6 @@ public:
     {
         FailPointInjection::pauseFailPoint(FailPoints::memory_sink_pause_before_commit);
 
-        std::unique_lock lock(storage.mutex);
-        storage.data_commit_cv.wait(lock, [&] { return !storage.block_data_commits; });
-
-        if (!new_blocks.empty())
-        {
-            const bool compress = (*storage.getMemorySettings())[MemorySetting::compress];
-            for (const auto & rewrite : storage.identity_rewrites)
-            {
-                if (rewrite.schema_generation <= schema_generation)
-                    continue;
-
-                for (auto & block : new_blocks)
-                    applyStoredColumnIdentity(block, rewrite.commands, rewrite.metadata, context, compress);
-            }
-        }
-
         size_t inserted_bytes = 0;
         size_t inserted_rows = 0;
 
@@ -199,6 +180,8 @@ public:
             inserted_bytes += block.allocatedBytes();
             inserted_rows += block.rows();
         }
+
+        std::lock_guard lock(storage.mutex);
 
         auto new_data = std::make_unique<StorageMemory::BlocksWithCounts>(*(storage.data.get()));
         new_data->rows += inserted_rows;
@@ -243,11 +226,8 @@ private:
     Blocks new_blocks;
     UInt64 new_blocks_bytes = 0;
     UInt64 max_temporary_table_memory_usage = 0;
-    /// Generation of the metadata snapshot this `INSERT` opened with.
-    UInt64 schema_generation = 0;
     StorageMemory & storage;
     StorageSnapshotPtr storage_snapshot;
-    ContextPtr context;
 };
 
 
@@ -366,8 +346,7 @@ void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*
 
 void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context)
 {
-    std::unique_lock lock(mutex);
-    data_commit_cv.wait(lock, [&] { return !block_data_commits; });
+    std::lock_guard lock(mutex);
 
     /// Filter mutation commands that have no per-row data effect on a `Memory` engine.
     /// `Memory` keeps raw column blocks in RAM and has no on-storage analog of skip
@@ -601,101 +580,6 @@ static ColumnPtr arrayWithSiblingOffsets(const ColumnWithTypeAndName & sibling, 
     return ColumnArray::create(elements, offsets);
 }
 
-/// Columns this statement materializes, parents before a default that reads them or their subcolumns.
-static NamesAndTypesList materializationOrder(const NamesAndTypesList & materialized, const ColumnsDescription & columns)
-{
-    NameSet materialized_names;
-    for (const auto & column : materialized)
-        materialized_names.insert(column.name);
-
-    std::unordered_map<String, std::vector<String>> dependents;
-    std::unordered_map<String, size_t> pending;
-    for (const auto & column : materialized)
-        pending.emplace(column.name, 0);
-
-    auto parentInStatement = [&](const String & required) -> String
-    {
-        if (materialized_names.contains(required))
-            return required;
-
-        if (auto subcolumn = columns.tryGetSubcolumn(required))
-        {
-            const auto parent = subcolumn->getNameInStorage();
-            if (materialized_names.contains(parent))
-                return parent;
-        }
-
-        if (!required.contains('.'))
-            return {};
-
-        for (const auto & [parent_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(required))
-        {
-            const String parent(parent_name);
-            if (!materialized_names.contains(parent))
-                continue;
-
-            const auto parent_column = columns.tryGetColumn(GetColumnsOptions::All, parent);
-            if (parent_column && parent_column->type->tryGetSubcolumnType(subcolumn_name))
-                return parent;
-        }
-
-        return {};
-    };
-
-    NameSet edges;
-    for (const auto & column : materialized)
-    {
-        const auto def = columns.getDefault(column.name);
-        if (!def || !def->expression)
-            continue;
-
-        RequiredSourceColumnsVisitor::Data data;
-        auto expression = def->expression->clone();
-        RequiredSourceColumnsVisitor(data).visit(expression);
-        for (const auto & required_name : data.requiredColumns())
-        {
-            const auto parent = parentInStatement(required_name);
-            if (parent.empty() || parent == column.name)
-                continue;
-
-            if (!edges.insert(parent + '\n' + column.name).second)
-                continue;
-
-            dependents[parent].push_back(column.name);
-            ++pending[column.name];
-        }
-    }
-
-    std::deque<String> ready;
-    for (const auto & column : materialized)
-    {
-        if (pending[column.name] == 0)
-            ready.push_back(column.name);
-    }
-
-    std::unordered_map<String, NameAndTypePair> by_name;
-    for (const auto & column : materialized)
-        by_name.emplace(column.name, column);
-
-    NamesAndTypesList ordered;
-    while (!ready.empty())
-    {
-        const auto name = ready.front();
-        ready.pop_front();
-        ordered.push_back(by_name.at(name));
-        for (const auto & dependent : dependents[name])
-        {
-            if (--pending[dependent] == 0)
-                ready.push_back(dependent);
-        }
-    }
-
-    if (ordered.size() != materialized.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cyclic defaults among columns materialized by one ALTER");
-
-    return ordered;
-}
-
 /// Inputs of the defaults this statement materializes.
 /// A physical column that the block does not store is filled the way a read of `Memory` fills it:
 /// the type default, or, for a `Nested` member, the type default at a retained sibling's array sizes.
@@ -715,7 +599,6 @@ static Block logicalDefaultInputs(
         const Block & stored;
         const NameSet & materialized_names;
         NameSet inputs;
-        NameSet alias_parents;
         NameSet subcolumns;
         NameSet expanded;
 
@@ -739,8 +622,6 @@ static Block logicalDefaultInputs(
         {
             /// `a.v` has to be a column of the block before the default that names it is analyzed.
             subcolumns.insert(name);
-            if (!columns.tryGetPhysical(parent) && columns.hasDefault(parent))
-                alias_parents.insert(parent);
             consider(parent);
         }
 
@@ -796,7 +677,7 @@ static Block logicalDefaultInputs(
     for (const auto & column : materialized)
         materialized_names.insert(column.name);
 
-    DependencyWalker walker{columns, stored, materialized_names, {}, {}, {}, {}};
+    DependencyWalker walker{columns, stored, materialized_names, {}, {}, {}};
     for (const auto & column : materialized)
         walker.consider(column.name);
 
@@ -858,26 +739,6 @@ static Block logicalDefaultInputs(
 
     if (!to_convert.empty())
         performRequiredConversions(logical, to_convert, context, columns.getDefaults());
-
-    /// `a.v` needs the tuple `a` in the block. An `ALIAS` parent is not stored; evaluate it before extraction.
-    if (!walker.alias_parents.empty() && rows > 0)
-    {
-        NamesAndTypesList alias_required;
-        for (const auto & column : logical)
-            alias_required.emplace_back(column.name, column.type);
-        for (const auto & parent : walker.alias_parents)
-        {
-            if (logical.has(parent))
-                continue;
-            const auto & parent_column = columns.get(parent);
-            alias_required.emplace_back(parent, parent_column.type);
-        }
-
-        auto alias_dag = addMissingDefaults(logical, alias_required, columns, context);
-        auto alias_actions = std::make_shared<ExpressionActions>(
-            std::move(alias_dag), ExpressionActionsSettings(context->getSettingsRef()));
-        alias_actions->execute(logical);
-    }
 
     /// Extract a subcolumn only once its parent is already in the block. A parent this statement
     /// is still materializing is extracted later, after that parent has a row for every stored row.
@@ -963,10 +824,15 @@ static void applyStoredColumnIdentity(
         }
         else if (command.type == AlterCommand::ADD_COLUMN)
         {
-            Block added_block;
-            added_block.insert({command.data_type->createColumn(), command.data_type, command.column_name});
-            for (const auto & column : Nested::flattenNested(added_block))
-                added.insert(column.name);
+            if (context->getSettingsRef()[Setting::flatten_nested])
+            {
+                Block added_block;
+                added_block.insert({command.data_type->createColumn(), command.data_type, command.column_name});
+                for (const auto & column : Nested::flattenNested(added_block))
+                    added.insert(column.name);
+            }
+            else
+                added.insert(command.column_name);
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
@@ -1039,7 +905,7 @@ static void applyStoredColumnIdentity(
             auto value = column.type->createColumnConstWithDefaultValue(rows)->convertToFullColumnIfConst();
             if (compress)
                 value = value->compress(true);
-            block.insert({std::move(value), column.type, column.name});
+            block.insert({value, column.type, column.name});
         }
     }
 
@@ -1049,17 +915,54 @@ static void applyStoredColumnIdentity(
     /// Evaluate on a copy. Stored columns keep the bytes the read path already converts.
     Block logical = logicalDefaultInputs(block, metadata.columns, materialized, rows, context);
 
-    /// One column at a time, so a default can read a subcolumn of a column this same statement recreates.
-    /// A single actions DAG extracts that subcolumn before the parent exists and stores zero rows.
-    for (const auto & column : materializationOrder(materialized, metadata.columns))
+    auto defaultParent = [&](const String & name) -> String
     {
-        if (logical.has(column.name))
-            continue;
+        if (metadata.columns.tryGetPhysical(name))
+            return name;
+
+        if (auto subcolumn = metadata.columns.tryGetSubcolumn(name))
+            return subcolumn->getNameInStorage();
+
+        if (name.contains('.'))
+        {
+            for (const auto & [parent_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+            {
+                const auto parent = metadata.columns.tryGetColumn(GetColumnsOptions::All, String(parent_name));
+                if (parent && parent->type->tryGetSubcolumnType(subcolumn_name))
+                    return String(parent_name);
+            }
+        }
+        return name;
+    };
+
+    NameSet evaluating;
+    std::function<void(const String &)> evaluate = [&](const String & name)
+    {
+        if (logical.has(name))
+            return;
+        if (!evaluating.insert(name).second)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cyclic defaults among columns materialized by one ALTER");
+
+        const auto def = metadata.columns.getDefault(name);
+        if (def && def->expression)
+        {
+            RequiredSourceColumnsVisitor::Data data;
+            auto expression = def->expression->clone();
+            RequiredSourceColumnsVisitor(data).visit(expression);
+            for (const auto & required_name : data.requiredColumns())
+            {
+                const auto dependency = defaultParent(required_name);
+                if (!logical.has(dependency)
+                    && (materialized_names.contains(dependency)
+                        || (!metadata.columns.tryGetPhysical(dependency) && metadata.columns.hasDefault(dependency))))
+                    evaluate(dependency);
+            }
+        }
 
         NamesAndTypesList required;
         for (const auto & existing : logical)
             required.emplace_back(existing.name, existing.type);
-        required.emplace_back(column.name, column.type);
+        required.emplace_back(name, metadata.columns.get(name).type);
 
         auto dag = addMissingDefaults(logical, required, metadata.columns, context);
         /// `a.v` is an input of the default actions, not a stored column. Extract it from `a`.
@@ -1068,15 +971,20 @@ static void applyStoredColumnIdentity(
             ActionsDAG::merge(std::move(extracting), std::move(dag)),
             ExpressionActionsSettings(context->getSettingsRef()));
         actions->execute(logical);
+        evaluating.erase(name);
 
-        if (!logical.has(column.name) || logical.getByName(column.name).column->size() != rows)
+        if (!logical.has(name) || logical.getByName(name).column->size() != rows)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "ALTER of Memory materialized column {} with {} rows, expected {}",
-                backQuote(column.name),
-                logical.has(column.name) ? logical.getByName(column.name).column->size() : 0,
+                backQuote(name),
+                logical.has(name) ? logical.getByName(name).column->size() : 0,
                 rows);
-    }
+    };
+
+    /// Evaluate physical replacements and any aliases they use through one dependency walk.
+    for (const auto & column : materialized)
+        evaluate(column.name);
 
     for (const auto & column : materialized)
     {
@@ -1099,7 +1007,11 @@ static bool changesStoredColumns(const AlterCommands & commands)
     return false;
 }
 
-void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr context, DB::IStorage::AlterLockHolder & /*alter_lock_holder*/, DB::DDLGuardPtr & /*ddl_guard*/)
+void StorageMemory::alter(
+    const DB::AlterCommands & params,
+    DB::ContextPtr context,
+    DB::IStorage::AlterLockHolder & /*alter_lock_holder*/,
+    DB::DDLGuardPtr & /*ddl_guard*/)
 {
     auto table_id = getStorageID();
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
@@ -1111,160 +1023,128 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
 
     const bool rewrite_blocks = changesStoredColumns(params);
 
-    /// If `alterTable` throws, drop the barrier. Nothing has been published, so an `INSERT` cannot be discarded.
-    struct CommitBarrier
-    {
-        StorageMemory & storage;
-        bool active = false;
-
-        explicit CommitBarrier(StorageMemory & storage_)
-            : storage(storage_)
-        {
-        }
-
-        ~CommitBarrier()
-        {
-            if (!active)
-                return;
-
-            std::lock_guard lock(storage.mutex);
-            storage.block_data_commits = false;
-            storage.data_commit_cv.notify_all();
-        }
-
-        void disarm()
-        {
-            active = false;
-        }
-    };
-
-    CommitBarrier commit_barrier(*this);
     std::unique_ptr<BlocksWithCounts> pending_data;
     std::unique_ptr<MemorySettings> pending_settings;
+    TableExclusiveLockHolder publication_lock;
 
     if (params.isSettingsAlter() || rewrite_blocks)
     {
-        std::unique_ptr<MemorySettings> changed_settings_ptr;
-        bool shrink_limits = false;
-        if (params.isSettingsAlter())
+        while (true)
         {
-            const auto settings_changes_ast = new_metadata.getSettingsChanges();
-            auto & settings_changes = settings_changes_ast->as<ASTSetQuery &>();
-            const auto current_settings_snapshot = memory_settings.get();
-            const auto & current_settings = *current_settings_snapshot;
-            changed_settings_ptr = std::make_unique<MemorySettings>(current_settings);
-            auto & changed_settings = *changed_settings_ptr;
-            changed_settings.applyChanges(settings_changes.changes);
-            changed_settings.sanityCheck();
-
-            shrink_limits = !current_settings[MemorySetting::max_bytes_to_keep]
-                || current_settings[MemorySetting::max_bytes_to_keep] > changed_settings[MemorySetting::max_bytes_to_keep]
-                || !current_settings[MemorySetting::max_rows_to_keep]
-                || current_settings[MemorySetting::max_rows_to_keep] > changed_settings[MemorySetting::max_rows_to_keep];
-        }
-
-        /// Stage under `mutex`. Commits wait until metadata persistence succeeds.
-        std::lock_guard lock(mutex);
-
-        if (shrink_limits)
-        {
-            pending_data = std::make_unique<BlocksWithCounts>(*(data.get()));
-            const auto & changed_settings = *changed_settings_ptr;
-            while (!pending_data->blocks.empty()
-                   && ((changed_settings[MemorySetting::max_bytes_to_keep] && pending_data->bytes > changed_settings[MemorySetting::max_bytes_to_keep])
-                       || (changed_settings[MemorySetting::max_rows_to_keep] && pending_data->rows > changed_settings[MemorySetting::max_rows_to_keep])))
+            std::unique_ptr<MemorySettings> changed_settings_ptr;
+            bool shrink_limits = false;
+            if (params.isSettingsAlter())
             {
-                Block oldest_block = pending_data->blocks.front();
-                UInt64 rows_to_remove = oldest_block.rows();
-                UInt64 bytes_to_remove = oldest_block.allocatedBytes();
-                if (pending_data->bytes - bytes_to_remove < changed_settings[MemorySetting::min_bytes_to_keep]
-                    || pending_data->rows - rows_to_remove < changed_settings[MemorySetting::min_rows_to_keep])
+                const auto settings_changes_ast = new_metadata.getSettingsChanges();
+                auto & settings_changes = settings_changes_ast->as<ASTSetQuery &>();
+                const auto current_settings_snapshot = memory_settings.get();
+                const auto & current_settings = *current_settings_snapshot;
+                changed_settings_ptr = std::make_unique<MemorySettings>(current_settings);
+                auto & changed_settings = *changed_settings_ptr;
+                changed_settings.applyChanges(settings_changes.changes);
+                changed_settings.sanityCheck();
+
+                shrink_limits = !current_settings[MemorySetting::max_bytes_to_keep]
+                    || current_settings[MemorySetting::max_bytes_to_keep] > changed_settings[MemorySetting::max_bytes_to_keep]
+                    || !current_settings[MemorySetting::max_rows_to_keep]
+                    || current_settings[MemorySetting::max_rows_to_keep] > changed_settings[MemorySetting::max_rows_to_keep];
+            }
+
+            std::shared_ptr<const BlocksWithCounts> source_data;
+            {
+                std::lock_guard lock(mutex);
+                source_data = data.get();
+
+                if (shrink_limits)
                 {
-                    break;
+                    pending_data = std::make_unique<BlocksWithCounts>(*source_data);
+                    const auto & changed_settings = *changed_settings_ptr;
+                    while (!pending_data->blocks.empty()
+                           && ((changed_settings[MemorySetting::max_bytes_to_keep]
+                                && pending_data->bytes > changed_settings[MemorySetting::max_bytes_to_keep])
+                               || (changed_settings[MemorySetting::max_rows_to_keep]
+                                   && pending_data->rows > changed_settings[MemorySetting::max_rows_to_keep])))
+                    {
+                        Block oldest_block = pending_data->blocks.front();
+                        UInt64 rows_to_remove = oldest_block.rows();
+                        UInt64 bytes_to_remove = oldest_block.allocatedBytes();
+                        if (pending_data->bytes - bytes_to_remove < changed_settings[MemorySetting::min_bytes_to_keep]
+                            || pending_data->rows - rows_to_remove < changed_settings[MemorySetting::min_rows_to_keep])
+                        {
+                            break;
+                        }
+
+                        pending_data->rows -= rows_to_remove;
+                        pending_data->bytes -= bytes_to_remove;
+                        pending_data->blocks.erase(pending_data->blocks.begin());
+                        ++pending_data->first_block_number;
+                    }
                 }
 
-                pending_data->rows -= rows_to_remove;
-                pending_data->bytes -= bytes_to_remove;
-                pending_data->blocks.erase(pending_data->blocks.begin());
-                ++pending_data->first_block_number;
+                if (rewrite_blocks)
+                {
+                    if (!pending_data)
+                    {
+                        pending_data = std::make_unique<BlocksWithCounts>();
+                        pending_data->blocks = source_data->blocks;
+                        pending_data->rows = source_data->rows;
+                    }
+                }
             }
-        }
 
-        if (rewrite_blocks)
-        {
-            if (!pending_data)
+            if (rewrite_blocks)
             {
-                pending_data = std::make_unique<BlocksWithCounts>();
-                pending_data->blocks = data.get()->blocks;
-                pending_data->rows = data.get()->rows;
+                const bool compress = changed_settings_ptr ? (*changed_settings_ptr)[MemorySetting::compress]
+                                                           : (*memory_settings.get())[MemorySetting::compress];
+                for (auto & block : pending_data->blocks)
+                    applyStoredColumnIdentity(block, params, new_metadata, context, compress);
+
+                pending_data->rows = 0;
+                pending_data->bytes = 0;
+                for (const auto & block : pending_data->blocks)
+                {
+                    pending_data->rows += block.rows();
+                    pending_data->bytes += block.allocatedBytes();
+                }
+
+                /// Check the temporary-table limit before commits start waiting.
+                if (is_temporary_table)
+                    checkTemporaryTableMemoryUsage(
+                        pending_data->bytes, context->getSettingsRef()[Setting::max_temporary_table_memory_usage]);
             }
 
-            const bool compress = changed_settings_ptr
-                ? (*changed_settings_ptr)[MemorySetting::compress]
-                : (*memory_settings.get())[MemorySetting::compress];
-            for (auto & block : pending_data->blocks)
-                applyStoredColumnIdentity(block, params, new_metadata, context, compress);
-
-            pending_data->rows = 0;
-            pending_data->bytes = 0;
-            for (const auto & block : pending_data->blocks)
+            /// Default expressions may read this table, so evaluate them before taking the exclusive lock.
+            /// Inserts that committed meanwhile change the data version; discard the staged copy and retry.
+            publication_lock = lockExclusively(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+            if (pending_data && data.get() != source_data)
             {
-                pending_data->rows += block.rows();
-                pending_data->bytes += block.allocatedBytes();
+                publication_lock.release();
+                pending_data.reset();
+                continue;
             }
 
-            /// Check the temporary-table limit before commits start waiting.
-            if (is_temporary_table)
-                checkTemporaryTableMemoryUsage(pending_data->bytes, context->getSettingsRef()[Setting::max_temporary_table_memory_usage]);
-        }
-
-        pending_settings = std::move(changed_settings_ptr);
-        if (pending_data || pending_settings)
-        {
-            block_data_commits = true;
-            commit_barrier.active = true;
+            pending_settings = std::move(changed_settings_ptr);
+            break;
         }
     }
 
-    if (commit_barrier.active)
-        FailPointInjection::pauseFailPoint(FailPoints::memory_alter_pause_before_metadata_commit);
+    if (!params.isSettingsAlter() && !rewrite_blocks)
+        publication_lock = lockExclusively(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
+    FailPointInjection::pauseFailPoint(FailPoints::memory_alter_pause_before_metadata_commit);
+
+    DatabaseCatalog::instance()
+        .getDatabase(table_id.database_name)
+        ->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
     {
         std::lock_guard lock(mutex);
-        if (rewrite_blocks)
-        {
-            IdentityRewrite rewrite;
-            rewrite.schema_generation = schema_generation + 1;
-            rewrite.commands = params;
-            rewrite.metadata = new_metadata;
-            rewrite.metadata.memory_schema_generation = rewrite.schema_generation;
-            identity_rewrites.push_back(std::move(rewrite));
-            ++schema_generation;
-            new_metadata.memory_schema_generation = schema_generation;
-        }
-        else
-        {
-            /// `ADD COLUMN` does not rewrite blocks, but it still changes the schema an in-flight sink was created with.
-            ++schema_generation;
-            new_metadata.memory_schema_generation = schema_generation;
-        }
-
         if (pending_data)
             setData(std::move(pending_data));
         if (pending_settings)
             memory_settings.set(std::move(pending_settings));
-
-        if (commit_barrier.active)
-        {
-            block_data_commits = false;
-            data_commit_cv.notify_all();
-            commit_barrier.disarm();
-        }
     }
 
-    /// The generation is part of the snapshot. A sink built earlier keeps the older one.
     setInMemoryMetadata(new_metadata);
 }
 

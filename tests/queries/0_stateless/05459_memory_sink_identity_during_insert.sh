@@ -11,27 +11,48 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE t_memory_race (id UInt64, x UInt64) ENGINE =
 
 trap '$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT memory_sink_pause_before_commit" >/dev/null 2>&1 || true' EXIT
 
+wait_for_alter()
+{
+    expected=${1:-1}
+    for _ in $(seq 1 100); do
+        running=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database = currentDatabase() AND query LIKE 'ALTER TABLE t_memory_race%'")
+        [ "$running" = "$expected" ] && return
+        sleep 0.1
+    done
+    echo "ALTER did not remain blocked by the in-flight INSERT"
+    exit 1
+}
+
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT memory_sink_pause_before_commit"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_memory_race SELECT number, number FROM numbers(100)" &
 insert_pid=$!
 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT memory_sink_pause_before_commit PAUSE"
-$CLICKHOUSE_CLIENT -q "ALTER TABLE t_memory_race RENAME COLUMN x TO x_old, ADD COLUMN IF NOT EXISTS x UInt64 DEFAULT 999"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE t_memory_race RENAME COLUMN x TO x_old, ADD COLUMN IF NOT EXISTS x UInt64 DEFAULT 999" &
+alter_pid=$!
+wait_for_alter
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT memory_sink_pause_before_commit"
 wait "$insert_pid"
+wait "$alter_pid"
 
 $CLICKHOUSE_CLIENT -q "SELECT count(), countIf(x = 999), countIf(x_old = id) FROM t_memory_race"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_memory_race"
 
-# An ADD between the paused INSERT and the rename must not hide the old sink from the rewrite.
+# Multiple ALTERs wait for the same INSERT, including one that only adds a column.
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_memory_race (id UInt64, x UInt64) ENGINE = Memory"
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT memory_sink_pause_before_commit"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_memory_race SELECT number, number FROM numbers(100)" &
 insert_pid=$!
 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT memory_sink_pause_before_commit PAUSE"
-$CLICKHOUSE_CLIENT -q "ALTER TABLE t_memory_race ADD COLUMN y UInt64"
-$CLICKHOUSE_CLIENT -q "ALTER TABLE t_memory_race RENAME COLUMN x TO x_old, ADD COLUMN IF NOT EXISTS x UInt64 DEFAULT 999"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE t_memory_race ADD COLUMN y UInt64" &
+add_pid=$!
+wait_for_alter
+$CLICKHOUSE_CLIENT -q "ALTER TABLE t_memory_race RENAME COLUMN x TO x_old, ADD COLUMN IF NOT EXISTS x UInt64 DEFAULT 999" &
+alter_pid=$!
+wait_for_alter 2
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT memory_sink_pause_before_commit"
 wait "$insert_pid"
+wait "$add_pid"
+wait "$alter_pid"
 
 $CLICKHOUSE_CLIENT -q "SELECT count(), countIf(x = 999), countIf(x_old = id) FROM t_memory_race"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_memory_race"
