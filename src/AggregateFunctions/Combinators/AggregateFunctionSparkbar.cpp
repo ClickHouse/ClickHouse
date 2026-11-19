@@ -145,13 +145,28 @@ public:
         const DataTypePtr key_type = removeNullable(arguments[0]);
         WhichDataType which{key_type};
 
-        /// Non-negative literals are stored as `UInt64`, so a bare `NULL` key with two such bounds takes the
-        /// unsigned path: otherwise a valid `UInt64` upper bound above the `Int64` range would be rejected.
+        /// A bare `NULL` key whose two bounds are non-negative integers takes the unsigned path, whatever the
+        /// kind of the fields (`UInt64` for literals, `Int64` for `toInt64(0)`): otherwise a valid `UInt64` upper
+        /// bound above the `Int64` range would be rejected.
+        const auto is_non_negative_integer = [](const Field & field)
+        {
+            return field.getType() == Field::Types::UInt64
+                || (field.getType() == Field::Types::Int64 && field.safeGet<Int64>() >= 0);
+        };
         const bool nothing_with_unsigned_bounds = which.isNothing()
-            && params[n - 2].getType() == Field::Types::UInt64
-            && params[n - 1].getType() == Field::Types::UInt64;
+            && is_non_negative_integer(params[n - 2])
+            && is_non_negative_integer(params[n - 1]);
 
-        if (which.isNativeUInt() || which.isDate() || which.isDateTime() || nothing_with_unsigned_bounds)
+        if (nothing_with_unsigned_bounds)
+        {
+            const UInt64 begin_x = getSignedBound<UInt64>(params[n - 2], "begin_x", *key_type, getName());
+            const UInt64 end_x   = getSignedBound<UInt64>(params[n - 1], "end_x", *key_type, getName());
+
+            return std::make_shared<AggregateFunctionSparkbar<UInt64>>(
+                nested_function, width, begin_x, end_x, /*key_multiplier=*/1, arguments, params);
+        }
+
+        if (which.isNativeUInt() || which.isDate() || which.isDateTime())
         {
             const UInt64 begin_x = params[n - 2].safeGet<UInt64>();
             const UInt64 end_x   = params[n - 1].safeGet<UInt64>();
