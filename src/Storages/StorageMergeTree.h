@@ -205,6 +205,7 @@ private:
 
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
+      * The merge runs on this thread for the query of `query_thread_group`, which gets the counters of the merge.
       * Returns true if merge is finished successfully.
       */
     bool merge(
@@ -214,6 +215,7 @@ private:
             const Names & deduplicate_by_columns,
             bool cleanup,
             const MergeTreeTransactionPtr & txn,
+            const ThreadGroupPtr & query_thread_group,
             PreformattedMessage & out_disable_reason,
             bool optimize_skip_merged_partitions = false);
 
