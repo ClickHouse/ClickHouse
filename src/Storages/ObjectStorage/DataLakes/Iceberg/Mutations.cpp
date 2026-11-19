@@ -946,9 +946,14 @@ void alter(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter the Iceberg table, its new schema would be invalid: {}", *violation);
         }
 
-        std::string json_representation = stringifyJSON(metadata, 4);
-
         auto metadata_info = filename_generator.generateMetadataPathWithInfo();
+        appendToMetadataLog(
+            metadata,
+            metadata_info.path.serialize(),
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),
+            context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]);
+
+        std::string json_representation = stringifyJSON(metadata, 4);
 
         auto hint_path = filename_generator.generateVersionHint();
 

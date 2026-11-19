@@ -41,12 +41,20 @@ SELECT 'limit 3', * FROM latest_metadata_log;
 INSERT INTO t VALUES (7);
 SELECT 'limit 3', * FROM latest_metadata_log;
 
+-- A limit of one keeps the previous metadata file.
 SET iceberg_metadata_previous_versions_max = 1;
 DELETE FROM t WHERE id = 1;
 SELECT 'limit 1', * FROM latest_metadata_log;
 
 SELECT groupArray(id) FROM (SELECT id FROM t ORDER BY id);
 SELECT count() FROM system.iceberg_history WHERE database = currentDatabase() AND table = 't';
+
+-- Commits without a new snapshot honor the limit too.
+ALTER TABLE t ADD COLUMN extra Nullable(Int64);
+SELECT 'alter', * FROM latest_metadata_log;
+
+ALTER TABLE t EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1) SETTINGS allow_expire_snapshots = 1 FORMAT Null;
+SELECT 'expire_snapshots', * FROM latest_metadata_log;
 
 DROP VIEW latest_metadata_log;
 SET iceberg_delete_data_on_drop = 1;

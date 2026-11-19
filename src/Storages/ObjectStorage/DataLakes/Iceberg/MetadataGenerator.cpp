@@ -121,16 +121,20 @@ bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var n
     return Iceberg::IcebergSchemaProcessor::allowPrimitiveTypeConversion(old_type.extract<String>(), new_type.extract<String>());
 }
 
-/// `metadata-log` is a queue: the new entry goes to the back, and the oldest entries are dropped from the front.
+}
+
 void appendToMetadataLog(Poco::JSON::Object::Ptr metadata_object, const String & metadata_file, Int64 timestamp, std::optional<UInt64> previous_versions_max)
 {
+    if (!metadata_object->has(Iceberg::f_metadata_log))
+        metadata_object->set(Iceberg::f_metadata_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+    auto metadata_log = metadata_object->getArray(Iceberg::f_metadata_log);
+
     Poco::JSON::Object::Ptr new_metadata_item = new Poco::JSON::Object;
     new_metadata_item->set(Iceberg::f_metadata_file, metadata_file);
     new_metadata_item->set(Iceberg::f_timestamp_ms, timestamp);
-    auto metadata_log = metadata_object->getArray(Iceberg::f_metadata_log);
     metadata_log->add(new_metadata_item);
 
-    /// Like the Java implementation, the table property keeps at least one entry.
+    /// Like the Java implementation, the table property keeps at least one previous version.
     if (metadata_object->has(Iceberg::f_properties))
     {
         auto properties = metadata_object->getObject(Iceberg::f_properties);
@@ -138,15 +142,25 @@ void appendToMetadataLog(Poco::JSON::Object::Ptr metadata_object, const String &
             previous_versions_max = std::max<Int64>(1, parse<Int64>(properties->getValue<String>(Iceberg::f_metadata_previous_versions_max)));
     }
 
-    if (!previous_versions_max || metadata_log->size() <= *previous_versions_max)
+    if (!previous_versions_max)
         return;
 
-    Poco::JSON::Array::Ptr trimmed_metadata_log = new Poco::JSON::Array;
-    for (size_t i = metadata_log->size() - *previous_versions_max; i < metadata_log->size(); ++i)
-        trimmed_metadata_log->add(metadata_log->get(static_cast<UInt32>(i)));
-    metadata_object->set(Iceberg::f_metadata_log, trimmed_metadata_log);
-}
+    /// The log also holds the entry of the metadata file being written, so it keeps one entry more than the number of previous versions.
+    const size_t max_entries = *previous_versions_max + 1;
+    if (metadata_log->size() <= max_entries)
+        return;
 
+    const size_t excess = metadata_log->size() - max_entries;
+    if (excess == 1)
+    {
+        metadata_log->remove(0);
+        return;
+    }
+
+    Poco::JSON::Array::Ptr trimmed_metadata_log = new Poco::JSON::Array;
+    for (auto it = metadata_log->begin() + excess; it != metadata_log->end(); ++it)
+        trimmed_metadata_log->add(*it);
+    metadata_object->set(Iceberg::f_metadata_log, trimmed_metadata_log);
 }
 
 /// `last-column-id` written by some writers does not count nested field ids, so the ids of all schemas are taken into account too.
