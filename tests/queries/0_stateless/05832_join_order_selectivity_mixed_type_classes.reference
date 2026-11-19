@@ -1,0 +1,10 @@
+cross	1000
+cross	dpsub	0
+cross	greedy	0
+cross	dpsize	0
+cross	dphyp	0
+range	0
+range	dpsub	0
+range	greedy	0
+range	dpsize	0
+range	dphyp	0

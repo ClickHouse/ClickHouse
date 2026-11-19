@@ -436,7 +436,8 @@ private:
             UInt64 ndv_upper_bound = 0;
         };
         VectorWithMemoryTracking<VectorWithMemoryTracking<EquivMember>> equiv_classes; /// members of each distinct equivalence class
-        VectorWithMemoryTracking<VectorWithMemoryTracking<TUInt>> rel_to_classes; /// relation id -> indices into equiv_classes
+        /// relation id -> indices into equiv_classes of the classes of one type, the only ones that give a join its selectivity
+        VectorWithMemoryTracking<VectorWithMemoryTracking<TUInt>> rel_to_classes;
         VectorWithMemoryTracking<TUInt> class_relations;             /// per equivalence class: relations of its members
         VectorWithMemoryTracking<TUInt> connecting_class_relations;  /// per class of one type (see `isClassOfOneType`): relations of its members
 
@@ -650,6 +651,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     dpsub_data.class_members.clear();
     dpsub_data.rel_to_classes.assign(num_relations, {});
     UnorderedMapWithMemoryTracking<const EquivClass *, UInt32> class_index;
+    VectorWithMemoryTracking<char> class_of_one_type;
     for (const auto & [member, class_ptr] : query_graph.column_equivalences.getMemberToClassMap())
     {
         if (!class_ptr)
@@ -675,10 +677,12 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
                 relations |= members.back().relation_bit;
                 columns.push_back(equiv_member);
             }
-            if (isClassOfOneType(*class_ptr))
+            class_of_one_type.push_back(isClassOfOneType(*class_ptr));
+            if (class_of_one_type.back())
                 dpsub_data.connecting_class_relations.push_back(relations);
         }
-        dpsub_data.rel_to_classes[*rel].push_back(it->second);
+        if (class_of_one_type[it->second])
+            dpsub_data.rel_to_classes[*rel].push_back(it->second);
     }
     dpsub_data.class_visited.assign(dpsub_data.equiv_classes.size(), 0);
     dpsub_data.equiv_generation = 0;
