@@ -5,7 +5,6 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnReplicated.h>
 #include <Common/assert_cast.h>
-#include <Core/Defines.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -16,7 +15,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace
@@ -82,9 +80,9 @@ ISerialization::KindStack SerializationReplicated::getKindStack() const
     return kind_stack;
 }
 
-MutableColumnPtr SerializationReplicated::wrapColumnForDeserialization(MutableColumnPtr column) const
+MutableColumnPtr SerializationReplicated::createColumnForDeserialization(const IDataType & type) const
 {
-    return ColumnReplicated::create(nested->wrapColumnForDeserialization(std::move(column)), ColumnUInt8::create());
+    return ColumnReplicated::create(nested->createColumnForDeserialization(type), ColumnUInt8::create());
 }
 
 SerializationPtr SerializationReplicated::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
@@ -287,12 +285,6 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
 
     size_t num_elements = 0;
     readVarUInt(num_elements, *elements_stream);
-    /// The nested reader allocates for num_elements before reading it.
-    if (num_elements > DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-            "Suspiciously many elements in ColumnReplicated in Native format: {} (maximum: {})",
-            num_elements, DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS);
 
     checkDeserializedIndexes(*indexes, size_of_indexes_type, num_elements);
     column_replicated.getIndexes().attachIndexes(std::move(indexes));

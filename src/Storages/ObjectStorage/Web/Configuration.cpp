@@ -234,7 +234,7 @@ void StorageWebConfiguration::initializeFromParsedArguments(WebStorageParsedArgu
     headers_from_ast = std::move(parsed_arguments.headers_from_ast);
 
     setNamespaceFromURL(context);
-    setPaths({path});
+    paths = {path};
     setPathForRead(path);
 }
 

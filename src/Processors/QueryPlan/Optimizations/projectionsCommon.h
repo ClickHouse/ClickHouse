@@ -43,9 +43,6 @@ struct QueryDAG
 {
     std::optional<ActionsDAG> dag;
     const ActionsDAG::Node * filter_node = nullptr;
-    /// The combined value of `optimize_constant_columns_after_filter` of the collected filters,
-    /// to be set on a `FilterStep` that replaces them.
-    std::optional<bool> optimize_constant_columns_after_filter;
 
     bool build(QueryPlan::Node & node);
 
@@ -80,25 +77,7 @@ struct ProjectionCandidate
 
     /// Parent parts that need to be read due to missing this projection
     std::unordered_set<const IMergeTreeDataPart *> parent_parts;
-    /// Rows of the parent parts that need to be read due to missing this projection
-    size_t parent_rows = 0;
 };
-
-struct UseProjectionsResult;
-
-/// the candidate of the projection, or nullptr if the optimizer did not analyze it
-template <typename Candidates>
-const ProjectionCandidate * findCandidate(const Candidates & candidates, const ProjectionDescription * projection)
-{
-    for (const auto & candidate : candidates)
-        if (candidate.projection == projection)
-            return &candidate;
-    return nullptr;
-}
-
-/// fills the outcome of the hypothetical projection from its candidate, or only the reject reason with no candidate
-void recordHypotheticalOutcome(
-    HypotheticalProjection & hypothetical, const UseProjectionsResult & result, const ProjectionCandidate * candidate, bool chosen);
 
 /// Removes parts not in valid_parts from reading_select_result and updates related counters.
 /// Returns the number of parts removed.
@@ -112,6 +91,8 @@ size_t filterPartsByProjection(
 /// `top_k_filter_info` is the TopK stamp of the read the projection would replace (if any), so
 /// that the query condition cache consult inside the candidate analysis observes the same TopK
 /// gating and key salting as the read itself.
+/// `lazily_read_column_names` are the columns a lazy read reads from the projection parts the candidate serves, which
+/// each of those parts must have as well as `required_column_names`; a part without them is read from its parent part.
 bool analyzeProjectionCandidate(
     ProjectionCandidate & candidate,
     const MergeTreeDataSelectExecutor & reader,
@@ -125,7 +106,8 @@ bool analyzeProjectionCandidate(
     bool allow_query_condition_cache,
     bool allow_top_k_prewhere_query_condition_cache,
     const ContextPtr & context,
-    const HypotheticalProjection * hypothetical_projection = nullptr);
+    const HypotheticalProjection * hypothetical_projection = nullptr,
+    const Names & lazily_read_column_names = {});
 
 /// Performs part-level filtering using projection to skip irrelevant data parts.
 /// Also collects projections to build filters that will be applied during MergeTree reading for fine-grained row-level filtering.

@@ -70,7 +70,7 @@ namespace Setting
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsBool insert_distributed_one_random_shard;
     extern const SettingsUInt64 insert_shard_id;
-    extern const SettingsNonZeroUInt64 max_distributed_connections;
+    extern const SettingsUInt64 max_distributed_connections;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsUInt64 max_network_bandwidth;
     extern const SettingsUInt64 max_network_bytes;
@@ -496,8 +496,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     /// The RemoteSink constructor sends the query to the shard and reads its header,
                     /// so a missing table or any other "before processing" exception surfaces here.
                     job.pipeline = QueryPipeline(std::make_shared<RemoteSink>(
-                        *job.connection_entry, timeouts, query_string, settings, context->getClientInfo(),
-                        context->getProcessListElementSafe()));
+                        *job.connection_entry, timeouts, query_string, settings, context->getClientInfo()));
                     job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
                     job.executor->start();
                 }

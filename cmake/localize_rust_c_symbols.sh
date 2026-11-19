@@ -125,15 +125,12 @@ if [ -s "$LOCALIZE_FILE" ]; then
     # Some Rust archives contain non-ELF members (e.g. debug metadata objects)
     # that cause llvm-objcopy to fail.  In that case, fall back to extracting
     # individual members, processing only valid ELF objects, and repacking.
-    # Also drop .llvm_addrsig: objcopy leaves its sh_link at 0, and lld --icf=safe then warns that it ignores it
-    # (an error with --fatal-warnings). Without the table lld treats these objects conservatively, as it does
-    # when it ignores the table. See strip_rust_symbols.sh.
-    if ! "$OBJCOPY" --localize-symbols="$LOCALIZE_FILE" --remove-section=.llvm_addrsig "$LIB_PATH" 2>/dev/null; then
+    if ! "$OBJCOPY" --localize-symbols="$LOCALIZE_FILE" "$LIB_PATH" 2>/dev/null; then
         WORK_DIR=$(mktemp -d)
 
         (cd "$WORK_DIR" && "$AR" x "$LIB_PATH")
         for obj in "$WORK_DIR"/*.o; do
-            "$OBJCOPY" --localize-symbols="$LOCALIZE_FILE" --remove-section=.llvm_addrsig "$obj" 2>/dev/null || true
+            "$OBJCOPY" --localize-symbols="$LOCALIZE_FILE" "$obj" 2>/dev/null || true
         done
         "$AR" rcs "$LIB_PATH" "$WORK_DIR"/*.o
     fi

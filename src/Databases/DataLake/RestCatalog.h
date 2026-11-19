@@ -36,8 +36,7 @@ public:
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
         bool flat_namespaces_,
-        DB::ContextPtr context_,
-        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
+        DB::ContextPtr context_);
 
     ~RestCatalog() override = default;
 
@@ -111,9 +110,6 @@ public:
         /// Base location is location of data in storage
         /// (in filesystem or object storage).
         std::string default_base_location;
-        /// `snapshot-loading-mode` from `defaults` and from `overrides`, empty if absent.
-        std::string default_snapshot_loading_mode;
-        std::string override_snapshot_loading_mode;
 
         std::string toString() const;
     };
@@ -157,8 +153,7 @@ protected:
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
         bool flat_namespaces_,
-        DB::ContextPtr context_,
-        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
+        DB::ContextPtr context_);
 
     void createNamespaceIfNotExists(const String & namespace_name) const override;
 
@@ -175,7 +170,6 @@ protected:
     std::string oauth_server_uri;
     bool oauth_server_use_request_body;
     bool flat_namespaces = false;
-    const DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode;
     mutable MultiVersion<AccessToken> access_token;
 
     Poco::Net::HTTPBasicCredentials credentials{};
@@ -192,9 +186,6 @@ protected:
         const std::optional<DB::HTTPHeaderEntries> & auth_headers) const;
 
     Poco::URI::QueryParameters createParentNamespaceParams(const std::string & base_namespace) const;
-
-    /// ClickHouse reads snapshots from the metadata file, so the load-table response needs only the referenced ones.
-    Poco::URI::QueryParameters getLoadTableParams(const Config & config) const;
 
     using StopCondition = std::function<bool(const std::string & namespace_name)>;
     using ExecuteFunc = std::function<void(const std::string & namespace_name)>;
@@ -235,8 +226,7 @@ protected:
     virtual DB::HTTPHeaderEntries getAuthHeaders(const CatalogState & catalog_state, bool update_token) const;
 
     void validateAuthHeaders(const DB::HTTPHeaderEntry & header) const;
-    static void parseCatalogConfigurationSettings(
-        const Poco::JSON::Object::Ptr & object, Config & result, std::string & snapshot_loading_mode);
+    static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
 
     /// Returns the body of the response, empty with `ignore_result`.
     virtual String sendRequest(
@@ -299,8 +289,7 @@ public:
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
         bool flat_namespaces_,
-        DB::ContextPtr context_,
-        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
+        DB::ContextPtr context_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
@@ -351,8 +340,7 @@ public:
         const std::string & google_adc_refresh_token_,
         const std::string & google_adc_quota_project_id_,
         DB::ContextPtr context_,
-        bool allow_server_credentials_in_user_queries_,
-        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
+        bool allow_server_credentials_in_user_queries_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
@@ -420,8 +408,7 @@ public:
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
         bool flat_namespaces_,
-        DB::ContextPtr context_,
-        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
+        DB::ContextPtr context_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {

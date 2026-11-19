@@ -27,6 +27,15 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
 }
 
+namespace
+{
+
+bool isStringOrNull(const IDataType & type)
+{
+    return isString(type) || type.onlyNull();
+}
+
+}
 
 /// A function to read file as a string.
 class FunctionFile final : public IFunction
@@ -48,9 +57,21 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(String, NULL) -> Nullable(String) OR (String, [const String]) -> String";
+        FunctionArgumentDescriptors mandatory_args{
+            {"path", &isString, nullptr, "String"}
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"default", &isStringOrNull, nullptr, "String or Null"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        auto ret = std::make_shared<DataTypeString>();
+        if (arguments.size() == 2 && arguments[1].type->onlyNull())
+            return makeNullable(ret);
+        return ret;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

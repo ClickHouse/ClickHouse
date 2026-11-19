@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-darwin
+# Tag no-darwin: on Darwin symbols keep runtime addresses
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

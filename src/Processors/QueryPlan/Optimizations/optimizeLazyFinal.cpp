@@ -233,6 +233,8 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
         false);
 
     non_final_reading->disableQueryConditionCache();
+    /// The parts keep their numbering, so the lazy read of the columns the read leaves out reads these rows as well.
+    non_final_reading->shareLazyReadOf(*reading_step);
 
     /// The synthetic step inherits the filter rewritten to `__text_index_*` virtual columns, but not the read tasks that produce them
     /// from the index.
@@ -387,10 +389,6 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         return;
 
     if (!reading_step->isQueryWithFinal())
-        return;
-
-    /// The reads built below do not keep the bucket ranges of a distributed read, so every bucket would return all rows.
-    if (reading_step->getDistributedReadBucketCount() > 0)
         return;
 
     /// Only ReplacingMergeTree is supported.
