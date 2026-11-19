@@ -232,6 +232,10 @@ public:
     [[nodiscard]] std::optional<JoinAlgorithm> getPlannedAlgorithm() const { return planned_algorithm; }
     void setPlannedAlgorithm(JoinAlgorithm algorithm) { planned_algorithm = algorithm; }
 
+    /// Both inputs are stored sorted by one of the equality keys.
+    [[nodiscard]] bool inputsSortedByKey() const { return inputs_sorted_by_key; }
+    void setInputsSortedByKey(bool value) { inputs_sorted_by_key = value; }
+
     /// Swap left and right sides
     void swapInputs();
 
@@ -335,6 +339,7 @@ private:
 
     bool disjunctions_optimization_applied = false;
     std::optional<JoinAlgorithm> planned_algorithm;
+    bool inputs_sorted_by_key = false;
 };
 
 

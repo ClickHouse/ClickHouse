@@ -1737,6 +1737,46 @@ static bool joinGraphHasOverlappingColumnNames(
     return false;
 }
 
+void markJoinInputsSortedByKey(QueryPlan::Node & node)
+{
+    auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
+    if (!join_step || node.children.size() != 2)
+        return;
+
+    /// Whether the input can be read in the order of its column: the sorting key of its table starts with it, possibly after
+    /// columns that a filter fixes.
+    auto is_sorted_by = [&](QueryPlan::Node & input, const String & column)
+    {
+        auto * reading_node = findReadingStepForReadInOrder(input, /*read_in_order_through_join=*/ false);
+        auto * reading = reading_node ? typeid_cast<ReadFromMergeTree *>(reading_node->step.get()) : nullptr;
+        if (!reading)
+            return false;
+        SortDescription sort_description;
+        sort_description.emplace_back(column);
+        SortingStep sorting(input.step->getOutputHeader(), std::move(sort_description), 0, join_step->getSortingSettings());
+        auto order = getInputOrderIfReadInOrderIsUseful(sorting, reading->getStorageMetadata()->getSortingKey(), input);
+        return order && order->direction == 1 && !order->sort_description_for_merging.empty();
+    };
+
+    for (const auto & condition : join_step->getJoinOperator().expression)
+    {
+        auto [op, lhs, rhs] = condition.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals)
+            continue;
+        if (lhs.fromRight())
+            std::swap(lhs, rhs);
+        lhs = lhs.resolveAliases();
+        rhs = rhs.resolveAliases();
+        if (lhs.fromLeft() && rhs.fromRight() && lhs.getNode()->type == ActionsDAG::ActionType::INPUT
+            && rhs.getNode()->type == ActionsDAG::ActionType::INPUT
+            && is_sorted_by(*node.children[0], lhs.getColumnName()) && is_sorted_by(*node.children[1], rhs.getColumnName()))
+        {
+            join_step->setInputsSortedByKey(true);
+            return;
+        }
+    }
+}
+
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
