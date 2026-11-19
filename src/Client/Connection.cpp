@@ -21,7 +21,6 @@
 #include <Client/ClientApplicationBase.h>
 #include <Client/Connection.h>
 #include <Core/Streaming/CursorTree.h>
-#include <IO/ReadHelpers.h>
 #include <Formats/FormatSettings.h>
 #include <Client/ConnectionParameters.h>
 #include <Client/sanitizeUntrustedServerString.h>
