@@ -306,13 +306,6 @@ void FutureSetFromSubquery::replaceSetAndKey(SetAndKeyPtr set)
     set_and_key = std::move(set);
 }
 
-SetAndKeyPtr FutureSetFromSubquery::detachSetAndKey()
-{
-    SetAndKeyPtr ret;
-    std::swap(ret, set_and_key);
-    return ret;
-}
-
 SetPtr FutureSetFromSubquery::get() const
 {
     if (set_and_key->set != nullptr && set_and_key->set->isCreated())
@@ -898,7 +891,46 @@ PreparedSets::Subqueries PreparedSets::getSubqueries() const
     return res;
 }
 
+PreparedSetsCache::PreparedSetsCache(std::shared_ptr<PreparedSetsCache> shared_cache_)
+    : shared_cache(std::move(shared_cache_))
+{
+    chassert(shared_cache);
+}
+
+static bool isReady(const SharedSet & future)
+{
+    return future.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+}
+
 std::variant<std::promise<SetPtr>, SharedSet> PreparedSetsCache::findOrPromiseToBuild(const String & key)
+{
+    if (!shared_cache)
+    {
+        SharedSet promised_future;
+        return findOrPromiseToBuildImpl(key, promised_future);
+    }
+
+    SharedSet promised_future;
+    auto from_cache = shared_cache->findOrPromiseToBuildImpl(key, promised_future);
+
+    std::lock_guard lock(cache_mutex);
+    if (from_cache.index() == 0)
+    {
+        own_builds.push_back(std::move(promised_future));
+        return from_cache;
+    }
+
+    if (isReady(std::get<1>(from_cache)))
+        return from_cache;
+
+    std::erase_if(own_builds, isReady);
+    if (!own_builds.empty())
+        return std::promise<SetPtr>{};
+
+    return from_cache;
+}
+
+std::variant<std::promise<SetPtr>, SharedSet> PreparedSetsCache::findOrPromiseToBuildImpl(const String & key, SharedSet & promised_future)
 {
     std::lock_guard lock(cache_mutex);
 
@@ -926,6 +958,7 @@ std::variant<std::promise<SetPtr>, SharedSet> PreparedSetsCache::findOrPromiseTo
     std::promise<SetPtr> promise_to_fill_set;
     Entry & entry = cache[key];
     entry.future = promise_to_fill_set.get_future();
+    promised_future = entry.future;
     return promise_to_fill_set;
 }
 

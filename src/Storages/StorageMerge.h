@@ -9,6 +9,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Databases/IDatabase.h>
 
 
 namespace DB
@@ -251,6 +252,7 @@ public:
     void setDefaultExpressionsSets(DefaultExpressionsSetsPtr sets) override { default_expressions_sets = std::move(sets); }
 
     QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
+    QueryPlanRawPtrs getBuiltChildPlans() override;
 
     /// Returns child plans aligned 1:1 with `getSelectedTables()`. Entries for uninitialized
     /// plans are returned as `nullptr` so that callers can pair tables with their plans.

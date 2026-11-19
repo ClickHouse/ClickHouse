@@ -65,7 +65,8 @@ public:
     /// Adds a data file with a non-negative `record_count`.
     void addFile(const ProcessedManifestFileEntry & entry, const IcebergPathFromMetadata & path_to_manifest_file);
 
-    /// Removes deleted rows from the row count; the column statistics keep them. Called after the last file.
+    /// Removes deleted rows from the row count; the column statistics keep them, and their coverage is still checked
+    /// against the rows before deletes. Called after the last file.
     void subtractDeletedRows(UInt64 rows);
 
     /// Sets the rows of `estimate` and its estimator: the merged statistics of the requested columns with their numbers of
@@ -148,8 +149,10 @@ private:
     std::vector<DistinctValuesInputs> distinct_values_inputs;
     /// By the schema id with which a file was written, so the files written with one schema share the lookups.
     std::unordered_map<Int32, SchemaTypes> schema_types;
-    /// Sum of `record_count` over the added files, less the subtracted deleted rows.
+    /// Sum of `record_count` over the added files, deleted rows included.
     UInt64 total_rows = 0;
+    /// The subtracted deleted rows, at most `total_rows`.
+    UInt64 deleted_rows = 0;
     /// Merges the per-file `Basic` statistics of each target, as those of MergeTree parts.
     ConditionSelectivityEstimatorBuilder statistics_builder;
 };
