@@ -27,6 +27,7 @@
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/StorageValues.h>
 #include <Storages/IStorage.h>
 #include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
@@ -699,11 +700,15 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
         return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name, .source = RowEstimateSource::Statistics};
     }
 
-    /// A storage read as a whole, e.g. the block inserted into the source table of a materialized view.
+    /// The block of a `StorageValues`, e.g. the block inserted into the source table of a materialized view.
     /// The step applies no filter itself, so with a filter above it the row count is an upper bound.
     if (const auto * reading = typeid_cast<const ReadFromStorageStep *>(step))
     {
-        const auto & storage = reading->getStorage();
+        /// `totalRows` of another storage can lock what the pipe of this step has locked already, as `StorageJoin` does.
+        const auto * storage = typeid_cast<const StorageValues *>(reading->getStorage().get());
+        if (!storage)
+            return {};
+
         if (auto total_rows = storage->totalRows(reading->getContext()))
             return RelationStats{
                 .estimated_rows = *total_rows,
