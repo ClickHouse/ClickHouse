@@ -234,6 +234,8 @@ public:
     /// True when a subcolumn read under FINAL equals the function computed on the merged column.
     /// Safe for engines whose FINAL merge selects whole rows (Replacing/Collapsing/VersionedCollapsing);
     /// unsafe for value-combining engines (Summing/Graphite/Coalescing) that recompute column values.
+    /// Wrappers that may declare other column types than the table they read (`Merge`, `Buffer`, materialized views)
+    /// keep the default: the subcolumn would be read with the underlying type, bypassing the conversion.
     virtual bool supportsSubcolumnOptimizationWithFinal() const { return false; }
 
     /// Returns true if the storage writes `Map` columns with the bucketed serialization, where a single key

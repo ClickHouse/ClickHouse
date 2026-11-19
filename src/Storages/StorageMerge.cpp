@@ -472,11 +472,6 @@ bool StorageMerge::supportsOptimizationToTupleElementSubcolumns() const
     return traverseTablesUntil([](const auto & table) { return !table->supportsOptimizationToTupleElementSubcolumns(); }) == nullptr;
 }
 
-bool StorageMerge::supportsSubcolumnOptimizationWithFinal() const
-{
-    return traverseTablesUntil([](const auto & table) { return !table->supportsSubcolumnOptimizationWithFinal(); }) == nullptr;
-}
-
 bool StorageMerge::hasBucketedMapSerialization() const
 {
     /// The rewritten query is sent to every underlying table, so all of them must benefit from it.

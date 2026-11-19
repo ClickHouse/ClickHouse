@@ -1162,13 +1162,6 @@ bool StorageBuffer::supportsOptimizationToTupleElementSubcolumns() const
     return false;
 }
 
-bool StorageBuffer::supportsSubcolumnOptimizationWithFinal() const
-{
-    if (auto destination = getDestinationTable())
-        return destination->supportsSubcolumnOptimizationWithFinal();
-    return false;
-}
-
 bool StorageBuffer::hasBucketedMapSerialization() const
 {
     if (auto destination = getDestinationTable())

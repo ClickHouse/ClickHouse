@@ -137,7 +137,6 @@ public:
     /// Distributed). Fails closed like supportsPrewhere(): no destination means no rewrite.
     bool supportsOptimizationToSubcolumns() const override;
     bool supportsOptimizationToTupleElementSubcolumns() const override;
-    bool supportsSubcolumnOptimizationWithFinal() const override;
     bool hasBucketedMapSerialization() const override;
     bool supportsFinal() const override { return true; }
 
