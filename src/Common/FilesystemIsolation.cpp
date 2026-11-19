@@ -1,6 +1,7 @@
 #include <Common/FilesystemIsolation.h>
 #include <Common/FilesystemIsolationSupervisor.h>
 #include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/SeccompFilter.h>
 #include <Common/hasLinuxCapability.h>
 
@@ -1353,9 +1354,7 @@ std::string checkPidFile(const std::string & pid_file, const std::vector<Mount> 
         {
             /// Only root can replace a link owned by root in a directory owned by root that nobody else can write.
             struct stat directory{};
-            std::error_code error;
-            const fs::path target = fs::read_symlink(entry, error);
-            if (remaining.empty() || error || ++links > max_links || st.st_uid != 0 || ::lstat(current.c_str(), &directory) != 0
+            if (remaining.empty() || ++links > max_links || st.st_uid != 0 || ::lstat(current.c_str(), &directory) != 0
                 || directory.st_uid != 0 || (directory.st_mode & (S_IWGRP | S_IWOTH)))
                 return fmt::format(
                     "the pid file {} has the symbolic link {} on its way, which code inside could change if the directory "
@@ -1364,6 +1363,7 @@ std::string checkPidFile(const std::string & pid_file, const std::vector<Mount> 
                     "if the link and its directory are owned by root and the directory is not writable by the group or by "
                     "others",
                     pid_file, entry.string());
+            const fs::path target = FS::readSymlink(entry);
             if (target.is_absolute())
                 current = "/";
             const fs::path target_components = target.relative_path();
