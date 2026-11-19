@@ -42,40 +42,97 @@ std::optional<Strings> tryGetLiteralAlternatives(std::string_view regex)
     return terms;
 }
 
-String toFullMatchRegex(std::string_view regex)
+String anchorRegex(const String & regex)
 {
-    String res(regex);
-    bool has_pipe = false;
-    bool has_flags = false;
+    size_t depth = 0;
+    bool in_class = false;
+    bool in_quote = false;
+    bool top_level_alternation = false;
+    bool top_level_multiline = false;
     bool ends_with_anchor = false;
     for (size_t pos = 0; pos < regex.size(); ++pos)
     {
+        char c = regex[pos];
         ends_with_anchor = false;
-        if (regex.substr(pos).starts_with("\\Q"))
+        if (in_quote)
         {
-            /// Everything up to `\E` or the end of the regex is literal, so close the quote before adding the anchors.
-            size_t quote_end = regex.find("\\E", pos + 2);
-            if (quote_end == std::string_view::npos)
+            /// Everything after `\Q` is literal up to `\E` or the end of the regex.
+            if (c == '\\' && pos + 1 < regex.size() && regex[pos + 1] == 'E')
             {
-                res += "\\E";
-                break;
+                in_quote = false;
+                ++pos;
             }
-            pos = quote_end + 1;
         }
-        else if (regex[pos] == '\\')
+        else if (c == '\\')
+        {
+            if (pos + 1 < regex.size() && regex[pos + 1] == 'Q')
+                in_quote = true;
             ++pos;
-        else if (regex[pos] == '|')
-            has_pipe = true;
-        else if (regex.substr(pos).starts_with("(?"))
-            has_flags = true;
-        else if (regex[pos] == '$')
+        }
+        else if (in_class)
+        {
+            if (c == ']')
+                in_class = false;
+            else if (c == '[' && pos + 1 < regex.size() && regex[pos + 1] == ':')
+            {
+                /// A POSIX named class such as `[:alpha:]` is a part of the enclosing class, its `]` does not close it.
+                /// RE2 treats `[:` without a following `:]` as literal characters.
+                if (size_t end_of_named_class = regex.find(":]", pos + 2); end_of_named_class != String::npos)
+                    pos = end_of_named_class + 1;
+            }
+        }
+        else if (c == '[')
+        {
+            in_class = true;
+            /// A `]` right after `[` or `[^` is literal.
+            if (pos + 1 < regex.size() && regex[pos + 1] == '^')
+                ++pos;
+            if (pos + 1 < regex.size() && regex[pos + 1] == ']')
+                ++pos;
+        }
+        else if (c == '(')
+        {
+            /// An inline flag group like `(?m)` at the top level would also apply to the `$` appended after the regex,
+            /// and in the multiline mode `$` matches before every newline, so the regex must be wrapped into a group.
+            if (depth == 0 && pos + 1 < regex.size() && regex[pos + 1] == '?')
+            {
+                bool negated = false;
+                bool multiline = false;
+                size_t flag_pos = pos + 2;
+                for (; flag_pos < regex.size(); ++flag_pos)
+                {
+                    char flag = regex[flag_pos];
+                    if (flag == '-')
+                        negated = true;
+                    else if (flag == 'm')
+                        multiline = !negated;
+                    else if (flag != 'i' && flag != 's' && flag != 'U')
+                        break;
+                }
+                if (multiline && flag_pos < regex.size() && regex[flag_pos] == ')')
+                    top_level_multiline = true;
+            }
+            ++depth;
+        }
+        else if (c == ')')
+        {
+            if (depth > 0)
+                --depth;
+        }
+        else if (c == '|' && depth == 0)
+            top_level_alternation = true;
+        else if (c == '$')
             ends_with_anchor = true;
     }
 
-    /// `a|b` becomes `^(a|b)$` and not `^a|b$`, and flags like `(?m)` stay inside the group so they do not change the anchors.
-    /// Other regexes keep the simple form, which the primary key can use.
-    if (has_pipe || has_flags)
-        return "^(" + res + ")$";
+    String res = regex;
+    /// A quote can extend to the end of the regex, and it must not swallow the anchor or the group added after it.
+    if (in_quote)
+        res += "\\E";
+
+    if (top_level_alternation || top_level_multiline)
+        return "^(?:" + res + ")$";
+
     if (!res.starts_with('^'))
         res = '^' + res;
     if (!ends_with_anchor)
