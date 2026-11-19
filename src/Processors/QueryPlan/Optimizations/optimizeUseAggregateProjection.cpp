@@ -800,8 +800,7 @@ static bool canMinMaxCountProjectionMatchAggregates(const AggregateDescriptions 
     return true;
 }
 
-/// Whether `required_columns` of the implicit `minmax_count` projection include a partition value or the min/max of
-/// the first primary key column whose expression the query session computes differently from the stored values.
+/// Whether `required_columns` include a column of the implicit `minmax_count` projection that the session computes differently.
 static bool minMaxCountProjectionReadsSessionDependentValues(
     const Names & required_columns, const StorageMetadataPtr & metadata, const ContextPtr & context)
 {
