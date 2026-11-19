@@ -251,6 +251,10 @@ public:
     /// A nested `Merge` read hands the sets of an outer one on to its own children.
     void setDefaultExpressionsSets(DefaultExpressionsSetsPtr sets) override { default_expressions_sets = std::move(sets); }
 
+    /// A nested `Merge` read uses the sets of the `ALIAS` columns of an outer one, and the outer one builds them.
+    /// Must be called before the child plans are created. See `alias_sets`.
+    void shareAliasSets(std::shared_ptr<PreparedSets> sets);
+
     QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
     QueryPlanRawPtrs getBuiltChildPlans() override;
 
@@ -381,7 +385,11 @@ private:
     /// A set is registered here by the first child that uses it and shared by the following ones, and it is
     /// built once for the whole read in front of the united pipeline of the children (`initializePipeline`),
     /// the same as a set of the outer query, instead of once per child table.
-    PreparedSets alias_sets;
+    /// A nested `Merge` read shares the registry of the outer one (`shareAliasSets`), which builds the sets in front of
+    /// the pipelines of all its children, the nested reads included, so that a set is built once for the whole read.
+    std::shared_ptr<PreparedSets> alias_sets = std::make_shared<PreparedSets>();
+    /// False if `alias_sets` is shared from an outer `Merge` read, which builds them.
+    bool owns_alias_sets = true;
     /// The plans which `addCreatingAliasSets` built the pipelines of `alias_sets` from.
     std::vector<std::unique_ptr<QueryPlan>> alias_set_plans;
     /// Sets for `IN` in the `DEFAULT` expressions of the columns missing in the parts of the children, such as

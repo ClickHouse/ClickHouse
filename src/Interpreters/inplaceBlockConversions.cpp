@@ -314,6 +314,11 @@ public:
         return true;
     }
 
+    static bool haveSameIdentity(const ContextPtr & lhs, const ContextPtr & rhs)
+    {
+        return getIdentity(lhs) == getIdentity(rhs);
+    }
+
 private:
     /// The readers sharing the sets may read on behalf of different users, for example the children of a `Merge`
     /// table that are views with different `SQL SECURITY DEFINER`. The contents of a set depend on the privileges and
@@ -368,6 +373,11 @@ private:
 DefaultExpressionsSetsPtr createDefaultExpressionsSets()
 {
     return std::make_shared<DefaultExpressionsSets>();
+}
+
+bool canShareSetsOfExpressions(const ContextPtr & lhs, const ContextPtr & rhs)
+{
+    return DefaultExpressionsSets::haveSameIdentity(lhs, rhs);
 }
 
 namespace

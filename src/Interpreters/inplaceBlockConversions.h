@@ -31,6 +31,11 @@ class DefaultExpressionsSets;
 using DefaultExpressionsSetsPtr = std::shared_ptr<DefaultExpressionsSets>;
 DefaultExpressionsSetsPtr createDefaultExpressionsSets();
 
+/// Whether the sets of the expressions that read a table (`x IN table`) evaluated with one context can be reused
+/// with the other one: they read on behalf of the same user, with the same settings constraints, and with the same
+/// settings, except the ones that only limit the parallelism of the reading. See `DefaultExpressionsSets`.
+bool canShareSetsOfExpressions(const ContextPtr & lhs, const ContextPtr & rhs);
+
 /// The default expressions the reader has to evaluate for the `required_columns` that `header` does not provide (the
 /// defaults of the columns a default reads included), resolved by the analyzer against a table of `header`'s columns,
 /// exactly as `evaluateMissingDefaults` resolves them before building its actions. Every object a default refers to

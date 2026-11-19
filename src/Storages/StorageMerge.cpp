@@ -1203,9 +1203,35 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     pipeline.addResources(resources);
 }
 
+void ReadFromMerge::shareAliasSets(std::shared_ptr<PreparedSets> sets)
+{
+    if (child_plans)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The sets of the ALIAS columns are shared after the child plans of a Merge read are created");
+
+    alias_sets = std::move(sets);
+    owns_alias_sets = false;
+}
+
+/// Make the nested `Merge` reads of a child plan share the sets of the `ALIAS` columns of the outer one (`alias_sets`),
+/// so that each set is built once for the whole read, and every child sees the same snapshot of the table, as with
+/// the direct spelling `x IN table`. A nested read with other access or settings, for example under a view with
+/// `SQL SECURITY DEFINER`, keeps its own sets, as the contents of a set depend on them.
+static void shareAliasSetsWithNestedReads(QueryPlan::Node * node, const std::shared_ptr<PreparedSets> & sets, const ContextPtr & context)
+{
+    if (auto * read_from_merge = typeid_cast<ReadFromMerge *>(node->step.get()))
+    {
+        if (!read_from_merge->hasChildPlans() && canShareSetsOfExpressions(read_from_merge->getContext(), context))
+            read_from_merge->shareAliasSets(sets);
+        return;
+    }
+    for (auto * child : node->children)
+        shareAliasSetsWithNestedReads(child, sets, context);
+}
+
 void ReadFromMerge::addCreatingAliasSets(QueryPipelineBuilder & pipeline)
 {
-    if (!alias_sets.hasSubqueries())
+    /// The outer `Merge` read builds the shared sets.
+    if (!owns_alias_sets || !alias_sets->hasSubqueries())
         return;
 
     const auto & settings = context->getSettingsRef();
@@ -1213,7 +1239,7 @@ void ReadFromMerge::addCreatingAliasSets(QueryPipelineBuilder & pipeline)
         settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
 
     QueryPipelineBuilders set_pipelines;
-    for (const auto & subquery : alias_sets.getSubqueries())
+    for (const auto & subquery : alias_sets->getSubqueries())
     {
         /// A set built in place by the index analysis of a child has nothing left to build.
         auto set_plan = subquery->build(network_transfer_limits, context->getPreparedSetsCache(), /*recoverable_build=*/ false);
@@ -1243,7 +1269,7 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
         return;
 
     selected_tables = getSelectedTables(context);
-    child_plans = createChildrenPlans(query_info, alias_sets);
+    child_plans = createChildrenPlans(query_info, *alias_sets);
 
     /// A `'break'`-mode deadline stops that loop early, so drop the tables left unplanned to keep
     /// `selected_tables` aligned 1:1 with `child_plans` for every reader.
@@ -1622,6 +1648,9 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 current_streams);
 
             child.plan.addInterpreterContext(modified_context);
+
+            if (child.plan.isInitialized())
+                shareAliasSetsWithNestedReads(child.plan.getRootNode(), alias_sets, context);
 
             /// Bucket numbers depend on the aggregation key types, and the merging step merges the children's buckets as they are.
             if (child.plan.isInitialized() && common_processed_stage == QueryProcessingStage::WithMergeableState && query_info.need_aggregate)
@@ -3194,7 +3223,9 @@ void ReadFromMerge::resetChildPlans()
 {
     chassert(!order_info);
     child_plans.reset();
-    alias_sets = {};
+    /// The shared sets belong to the outer read, and the child plans created again find the sets they use there.
+    if (owns_alias_sets)
+        alias_sets = std::make_shared<PreparedSets>();
     selected_tables.clear();
     expandable_reads.reset();
 }
