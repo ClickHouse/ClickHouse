@@ -99,9 +99,9 @@ public:
         }
     }
 
-    size_t size() const { return total_values; }
+    [[nodiscard]] size_t size() const { return total_values; }
 
-    bool empty() const { return samples.empty(); }
+    [[nodiscard]] bool empty() const { return samples.empty(); }
 
     T quantileNearest(double level)
     {
@@ -378,7 +378,7 @@ private:
     }
 
     template <typename ResultType>
-    ResultType onEmpty() const
+    [[nodiscard]] ResultType onEmpty() const
     {
         if (OnEmpty == ReservoirSamplerOnEmpty::THROW)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Quantile of empty ReservoirSampler");

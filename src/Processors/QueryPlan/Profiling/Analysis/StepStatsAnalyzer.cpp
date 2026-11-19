@@ -83,17 +83,17 @@ MetricGroup makeConcurrencyReport(const StepStatsContext & context)
 AnalyzedStages buildAnalyzedStages(const StepStatsContext & context)
 {
     AnalyzedStages stages;
-    for (size_t group : context.step->getStepGroups())
+    for (const auto & group : context.groups)
     {
-        const auto group_it = context.group_stats.find(group);
+        const auto group_it = context.group_stats.find(group.id);
         if (group_it == context.group_stats.end())
             continue;
 
         const StepGroupStats & timing = group_it->second;
 
         AnalyzedStage stage;
-        stage.group_id = group;
-        stage.name = context.step->getStepGroupName(group);
+        stage.group_id = group.id;
+        stage.name = group.name;
         stage.wall_clock_time_ns = timing.wall_clock_time_ns;
         stage.total_num_processors = timing.total_num_processors;
         stage.share_of_query_time = context.execution_query_time_ns != 0
@@ -132,14 +132,6 @@ AnalyzedStepData buildAnalyzedStepData(const StepStatsContext & context, StepAna
 AnalyzedStepData analyzeDefaultStep(const StepStatsContext & context, StepAnalysisReport report)
 {
     return buildAnalyzedStepData(context, std::move(report));
-}
-
-StepStatsAnalyzer getStepStatsAnalyzer(const IQueryPlanStep * step)
-{
-    if (typeid_cast<const JoinStep *>(step) || typeid_cast<const FilledJoinStep *>(step)
-        || typeid_cast<const BlockNestedLoopJoinStep *>(step))
-        return &analyzeJoinStep;
-    return &analyzeDefaultStep;
 }
 
 }
