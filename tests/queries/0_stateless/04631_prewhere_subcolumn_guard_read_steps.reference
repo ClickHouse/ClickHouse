@@ -6,3 +6,11 @@ nested grouped steps	1
 nested split steps	1
 top-k where steps	1
 top-k prewhere steps	1
+startsWith grouped steps	1
+like grouped steps	1
+like column pattern split steps	1
+like invalid pattern split steps	1
+startsWith lower split steps	1
+enum key split steps	1
+sibling cannot throw reordered	1
+sibling throwing guarded	1

@@ -1328,10 +1328,7 @@ bool FileCache::tryReserve(
         return false;
     }
 
-    cache_reserve_active_threads.fetch_add(1, std::memory_order_relaxed);
-    SCOPE_EXIT({
-        cache_reserve_active_threads.fetch_sub(1, std::memory_order_relaxed);
-    });
+    IFileCachePriority::SharedEvictionCursor::ActiveEvictor reserve_evictor(reserve_cursor);
 
     LOG_TEST(log, "Trying to reserve space ({} bytes) for {}:{}", size, file_segment.key(), file_segment.offset());
 
@@ -1531,22 +1528,12 @@ bool FileCache::doEviction(
                 CurrentMetrics::get(CurrentMetrics::FilesystemCacheDownloadQueueElements));
         };
 
-        /// Under sustained concurrency the `Reserve` eviction cursor is never reset, so eviction
-        /// degrades from strict LRU order to a clock-like sweep. This is a deliberate trade-off:
-        /// resuming from the cursor is cheaper than rescanning the queue head on every reservation.
-        const bool resume_reserve_cursor = cache_reserve_active_threads.load(std::memory_order_relaxed) > 1;
-        const auto eviction_cursor = resume_reserve_cursor
-            ? IFileCachePriority::EvictionCursor::Reserve
-            : IFileCachePriority::EvictionCursor::FromHead;
-        if (!resume_reserve_cursor)
-            main_priority->resetEvictionPos(IFileCachePriority::EvictionCursor::Reserve);
-
         if (!main_priority->collectCandidatesForEviction(
                 main_eviction_info,
                 reserve_stat,
                 eviction_candidates,
                 main_priority_iterator,
-                eviction_cursor,
+                reserve_cursor.getCursor(*main_priority),
                 /* max_candidates_size */0,
                 /* is_total_space_cleanup */false,
                 origin_info,

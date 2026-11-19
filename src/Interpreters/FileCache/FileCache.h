@@ -364,7 +364,7 @@ private:
     /// `dynamic_resize_lock` gate on every reservation and priority increase.
     bool supports_dynamic_resize = false;
 
-    std::atomic<size_t> cache_reserve_active_threads = 0;
+    IFileCachePriority::SharedEvictionCursor reserve_cursor{IFileCachePriority::EvictionCursor::Reserve};
 
     std::mutex apply_settings_mutex;
 
