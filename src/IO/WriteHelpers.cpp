@@ -7,6 +7,8 @@
 
 #include <zmij.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -92,6 +94,7 @@ void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trac
 
 
 /// The same, but quotes apply only if there are characters that do not match the identifier without quotes
+/// Names inside data type names do not use this list, see `writeProbablyBackQuotedStringInTypeName`.
 template <typename F>
 static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer & buf, F && write_quoted_string)
 {
@@ -162,6 +165,29 @@ static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer
 void writeProbablyBackQuotedString(std::string_view s, WriteBuffer & buf)
 {
     writeProbablyQuotedStringImpl(s, buf, [](std::string_view s_, WriteBuffer & buf_) { writeBackQuotedString(s_, buf_); });
+}
+
+void writeProbablyBackQuotedStringInTypeName(std::string_view s, WriteBuffer & buf)
+{
+    /// Data type names are persisted: `Variant` orders its alternatives by their names and names
+    /// their streams in data parts after them, and `Dynamic` writes the names of its types to the
+    /// data. Quoting one more name here renames the type and breaks reading data written before, so
+    /// unlike the list in `writeProbablyQuotedStringImpl` used to format queries, this list is frozen
+    /// at the names quoted by 26.10.
+    static constexpr std::string_view quoted_names[] = {
+        "inf", "infinity", "nan", "true", "false", "distinct", "all", "some",
+        "table", "select", "cube", "rollup", "recursive", "from", "top", "values"};
+
+    auto is_quoted_name = [&](std::string_view name)
+    {
+        return s.size() == name.size()
+            && 0 == strncasecmp(s.data(), name.data(), s.size()); // NOLINT(bugprone-suspicious-stringview-data-usage)
+    };
+
+    if (isValidIdentifier(s) && std::ranges::none_of(quoted_names, is_quoted_name))
+        writeString(s, buf);
+    else
+        writeBackQuotedString(s, buf);
 }
 
 void writeProbablyDoubleQuotedString(std::string_view s, WriteBuffer & buf)

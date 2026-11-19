@@ -45,6 +45,21 @@ def test_variant_escaping_merge_tree_compatibility(started_cluster):
     """
     )
 
+    # Names of variants are persisted in parts: they order the discriminators and name the streams.
+    # `interval` and `strict` are quoted when formatting queries, but not in type names.
+    node.query("""
+        DROP TABLE IF EXISTS test_named_compact;
+        DROP TABLE IF EXISTS test_named_wide;
+        DROP TABLE IF EXISTS test_named_order;
+        DROP TABLE IF EXISTS test_named_dynamic;
+        CREATE TABLE test_named_compact (v Variant(String, Tuple(interval UInt64))) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part='10G' AS SELECT CAST(tuple(42), 'Tuple(interval UInt64)')::Variant(String, Tuple(interval UInt64));
+        CREATE TABLE test_named_wide (v Variant(String, Tuple(interval UInt64))) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part=1, min_rows_for_wide_part=1 AS SELECT CAST(tuple(42), 'Tuple(interval UInt64)')::Variant(String, Tuple(interval UInt64));
+        CREATE TABLE test_named_order (id UInt64, v Variant(String, Tuple(a String), Tuple(interval UInt32))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part=1, min_rows_for_wide_part=1;
+        INSERT INTO test_named_order VALUES (1, 'str'), (2, CAST(tuple(10), 'Tuple(interval UInt32)')), (3, CAST(tuple('x'), 'Tuple(a String)'));
+        CREATE TABLE test_named_dynamic (d Dynamic) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part=1, min_rows_for_wide_part=1 AS SELECT CAST(tuple(7), 'Tuple(strict UInt64)')::Dynamic;
+    """
+    )
+
     node.restart_with_latest_version()
 
     result = node.query("SELECT v FROM test_compact")
@@ -58,3 +73,18 @@ def test_variant_escaping_merge_tree_compatibility(started_cluster):
 
     result = node.query("SELECT v.`Tuple(UInt64, String)` FROM test_wide")
     assert result == "(42,'str')\n"
+
+    for table in ["test_named_compact", "test_named_wide"]:
+        assert node.query(f"SELECT v FROM {table}") == "(42)\n"
+        assert node.query(f"SELECT v.`Tuple(interval UInt64)` FROM {table}") == "(42)\n"
+
+    order_query = "SELECT id, v, variantType(v), v.`Tuple(a String)`.a FROM test_named_order ORDER BY id"
+    order_result = "1\tstr\tString\t\\N\n2\t(10)\tTuple(interval UInt32)\t\\N\n3\t('x')\tTuple(a String)\tx\n"
+    assert node.query(order_query) == order_result
+    node.query("OPTIMIZE TABLE test_named_order FINAL")
+    assert node.query(order_query) == order_result
+
+    assert (
+        node.query("SELECT d, dynamicType(d) FROM test_named_dynamic")
+        == "(7)\tTuple(strict UInt64)\n"
+    )

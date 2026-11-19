@@ -37,6 +37,9 @@ String backQuote(std::string_view x);
 /// Quote the identifier with backquotes, if required.
 String backQuoteIfNeed(std::string_view x);
 
+/// Quote a name inside a data type name with backquotes, if required. See `writeProbablyBackQuotedStringInTypeName`.
+String backQuoteIfNeedInTypeName(std::string_view x);
+
 /// Quote the identifier with backquotes, for use in MySQL queries.
 String backQuoteMySQL(std::string_view x);
 
