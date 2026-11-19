@@ -7,7 +7,7 @@
 SET optimize_multiif_to_if = 1, optimize_if_chain_to_multiif = 0, optimize_group_by_function_keys = 1,
     optimize_injective_functions_in_group_by = 1, optimize_functions_to_subcolumns = 1,
     optimize_if_transform_strings_to_enum = 0;
-SET allow_correlated_subqueries = 1;
+SET enable_analyzer = 1, allow_experimental_correlated_subqueries = 1;
 
 DROP DICTIONARY IF EXISTS d05385;
 CREATE DICTIONARY d05385 (id UInt64, v String) PRIMARY KEY id SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0);

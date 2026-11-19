@@ -2,6 +2,8 @@
 -- LIMIT BY, GROUPING SETS) must return the same rows with `enable_identifier_resolve_cache` on and off.
 -- https://github.com/ClickHouse/ClickHouse/issues/122404
 
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS u2;
 DROP TABLE IF EXISTS u3;
 DROP TABLE IF EXISTS t;
