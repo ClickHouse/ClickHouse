@@ -1,0 +1,8 @@
+expanded UDF
+1
+JSON dialect
+2
+external max_query_size enforced
+worker parse limit enforced
+parse exception query log
+1
