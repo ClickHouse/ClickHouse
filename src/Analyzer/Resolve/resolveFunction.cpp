@@ -1338,7 +1338,8 @@ static bool needsExactInCastCheck(const DataTypePtr & source_type, const DataTyp
     const auto source = removeNullable(removeLowCardinality(source_type));
     const auto target = removeNullable(removeLowCardinality(target_type));
     return !isStringOrFixedString(source)
-        && (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(target) || isBool(target));
+        && (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(target) || isBool(target)
+            || (isNumber(target) && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(source)));
 }
 
 static bool needsCalendarDateInCast(const DataTypePtr & source_type, const DataTypePtr & target_type)
@@ -1659,7 +1660,7 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
                 && target_type->canBeInsideNullable()
                 && !both_numeric
                 && (calendar_cast_required
-                    || (exact_cast_required && isBool(target_type))
+                    || exact_cast_required
                     || !tryGetLeastSupertype(DataTypes{element_arg->getResultType(), source_element_type})))
             {
                 const String lambda_argument_name = "__in_array_element_to_cast";
@@ -3752,6 +3753,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// so that conversion would otherwise turn the `NULL` into a default value.
                     const auto source_elements = getArrayElementsForInTupleArguments(
                         tuple_args, in_first_argument, scope, expand_single_tuple_value);
+                    const auto left_compound_type = removeNullable(removeLowCardinality(in_first_argument->getResultType()));
+                    if (use_standard_null_semantics
+                        && (isArray(left_compound_type) || isTuple(left_compound_type) || isMap(left_compound_type)))
+                    {
+                        for (const auto & source_element : source_elements)
+                            if (hasNestedCalendarDateInComparison(in_first_argument->getResultType(), source_element->getResultType()))
+                                throw Exception(
+                                    ErrorCodes::NOT_IMPLEMENTED,
+                                    "Setting 'in_null_as_unknown' does not yet support nested calendar comparison between {} and {}",
+                                    in_first_argument->getResultType()->getName(), source_element->getResultType()->getName());
+                    }
                     if (left_is_null && use_standard_null_semantics)
                     {
                         /// Every value of a `Nullable(Nothing)` operand is `NULL`. Its
@@ -3770,6 +3782,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// converting a fractional float to an integer could invent a match.
                     const auto left_value_type = removeNullable(removeLowCardinality(in_first_argument->getResultType()));
                     const bool numeric_left = isNumber(left_value_type) || isBool(left_value_type);
+                    const bool temporal_left = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_value_type);
+                    const bool identifier_left = isUUID(left_value_type) || isIPv4(left_value_type) || isIPv6(left_value_type);
                     const bool has_numeric_source = std::any_of(source_elements.begin(), source_elements.end(), [](const auto & element)
                     {
                         return isNumber(removeNullable(removeLowCardinality(element->getResultType())));
@@ -3779,10 +3793,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         const auto type = removeNullable(removeLowCardinality(element->getResultType()));
                         return isDynamic(type) || isVariant(type);
                     });
-                    if (use_standard_null_semantics && numeric_left
-                        && (has_numeric_carrier || (has_numeric_source
-                            && (isBool(left_value_type)
-                                || !getLeastSupertypeForInArrayElements(source_elements, in_first_argument, false)))))
+                    const bool identifier_sources = identifier_left && std::all_of(source_elements.begin(), source_elements.end(), [](const auto & element)
+                    {
+                        const auto type = removeNullable(removeLowCardinality(element->getResultType()));
+                        return element->getResultType()->onlyNull() || isStringOrFixedString(type) || isDynamic(type) || isVariant(type);
+                    });
+                    if (use_standard_null_semantics
+                        && ((numeric_left && (has_numeric_carrier || (has_numeric_source
+                                && (isBool(left_value_type)
+                                    || !getLeastSupertypeForInArrayElements(source_elements, in_first_argument, false)))))
+                            || (temporal_left && has_numeric_carrier) || identifier_sources))
                     {
                         auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
                         QueryTreeNodes arrays;
@@ -3824,7 +3844,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                 if (!numeric_element)
                                 {
                                     auto cast_type = makeNullableOrLowCardinalityNullableSafe(in_first_argument->getResultType());
-                                    auto cast = std::make_shared<FunctionNode>("CAST");
+                                    auto cast = std::make_shared<FunctionNode>(identifier_left ? "accurateCastOrNull" : "CAST");
                                     cast->getArguments().getNodes() = {
                                         std::move(right_argument),
                                         std::make_shared<ConstantNode>(cast_type->getName(), std::make_shared<DataTypeString>())};
@@ -4121,7 +4141,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             ErrorCodes::NOT_IMPLEMENTED,
                             "Setting 'in_null_as_unknown' does not yet support nested calendar comparison between {} and {}",
                             left_type->getName(), non_const_set_candidate->getResultType()->getName());
-                    if (use_standard_null_semantics && isStringOrFixedString(left_bare_type)
+                    if (use_standard_null_semantics
+                        && (isNumber(left_bare_type) || isBool(left_bare_type) || isStringOrFixedString(left_bare_type)
+                            || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_bare_type)
+                            || isUUID(left_bare_type) || isIPv4(left_bare_type) || isIPv6(left_bare_type))
                         && (isDynamic(right_bare_type) || isVariant(right_bare_type)))
                     {
                         auto match = std::make_shared<FunctionNode>("__scalarCarrierValueEqualsForIn");

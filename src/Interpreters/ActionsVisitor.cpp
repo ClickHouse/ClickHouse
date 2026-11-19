@@ -508,6 +508,15 @@ ASTPtr makeNumericNonConstantInReplacement(
             auto exact = makeASTFunction("equals", candidate->clone(), std::move(round_trip));
             candidate = makeASTFunction("if", std::move(exact), std::move(cast_value), make_intrusive<ASTLiteral>(Field{}));
         }
+        else if (isNumber(left_bare_type) && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(element_bare_type))
+        {
+            auto cast_value = makeASTFunction(
+                "accurateCastOrNull", candidate->clone(), make_intrusive<ASTLiteral>(left_bare_type->getName()));
+            auto round_trip = makeASTFunction(
+                "accurateCastOrNull", cast_value->clone(), make_intrusive<ASTLiteral>(element_bare_type->getName()));
+            auto exact = makeASTFunction("equals", candidate->clone(), std::move(round_trip));
+            candidate = makeASTFunction("if", std::move(exact), std::move(cast_value), make_intrusive<ASTLiteral>(Field{}));
+        }
         else if (isStringOrFixedString(element_bare_type) || isDynamic(element_bare_type) || isVariant(element_bare_type)
             || (isStringOrFixedString(left_bare_type) && isNumber(element_bare_type)))
             candidate = makeASTFunction(
@@ -1801,31 +1810,39 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     const bool left_is_temporal = left_argument_type
                         && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(
                             removeNullable(removeLowCardinality(left_argument_type)));
+                    const bool left_is_numeric = left_argument_type
+                        && isNumber(removeNullable(removeLowCardinality(left_argument_type)));
                     const bool compare_numeric_sources = use_standard_null_semantics
                         && left_argument_type
                         && (isNumber(removeNullable(removeLowCardinality(left_argument_type)))
                             || isBool(removeNullable(removeLowCardinality(left_argument_type)))
                             || isStringOrFixedString(removeNullable(removeLowCardinality(left_argument_type)))
+                            || isUUID(removeNullable(removeLowCardinality(left_argument_type)))
+                            || isIPv4(removeNullable(removeLowCardinality(left_argument_type)))
+                            || isIPv6(removeNullable(removeLowCardinality(left_argument_type)))
                             || left_is_temporal)
                         && element_types_known
                         && !element_types.empty()
-                        && std::all_of(element_types.begin(), element_types.end(), [left_is_temporal](const auto & type)
+                        && std::all_of(element_types.begin(), element_types.end(), [left_is_temporal, left_is_numeric](const auto & type)
                         {
                             const auto bare_type = removeNullable(removeLowCardinality(type));
                             return type->onlyNull() || isNumber(bare_type) || isStringOrFixedString(bare_type)
                                 || isDynamic(bare_type) || isVariant(bare_type)
-                                || (left_is_temporal && (isDateTime(bare_type) || isDateTime64(bare_type)));
+                                || (left_is_temporal && (isDateTime(bare_type) || isDateTime64(bare_type)))
+                                || (left_is_numeric && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(bare_type));
                         });
                     const bool compare_numeric_array_sources = use_standard_null_semantics && right_argument_is_array
                         && left_bare_type && (isNumber(left_bare_type) || isBool(left_bare_type)
-                            || isStringOrFixedString(left_bare_type) || left_is_temporal) && right_array_type
+                            || isStringOrFixedString(left_bare_type) || isUUID(left_bare_type)
+                            || isIPv4(left_bare_type) || isIPv6(left_bare_type) || left_is_temporal) && right_array_type
                         && [&]
                         {
                             const auto & element_type = right_array_type->getNestedType();
                             const auto bare_type = removeNullable(removeLowCardinality(element_type));
                             return element_type->onlyNull() || isNumber(bare_type) || isStringOrFixedString(bare_type)
                                 || isDynamic(bare_type) || isVariant(bare_type)
-                                || (left_is_temporal && (isDateTime(bare_type) || isDateTime64(bare_type)));
+                                || (left_is_temporal && (isDateTime(bare_type) || isDateTime64(bare_type)))
+                                || (left_is_numeric && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(bare_type));
                         }();
                     auto needs_complex_candidate_rewrite = [](const DataTypePtr & type)
                     {

@@ -160,9 +160,11 @@ public:
     [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto left_type = removeNullable(removeLowCardinality(arguments[0]));
-        if (!isNumber(left_type) && !isBool(left_type) && !isStringOrFixedString(left_type))
+        if (!isNumber(left_type) && !isBool(left_type) && !isStringOrFixedString(left_type)
+            && !isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_type)
+            && !isUUID(left_type) && !isIPv4(left_type) && !isIPv6(left_type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be numeric, Bool or String", getName());
+                "First argument for function {} must be numeric, Bool, String, temporal, UUID or IP", getName());
         const auto source_type = removeNullable(removeLowCardinality(arguments[1]));
         if (!isDynamic(source_type) && !isVariant(source_type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -217,7 +219,15 @@ public:
             {
                 auto extracted = tryConvertColumnToTypeOrNull(
                     *source_row, source_type, active_type, {}, /*strict=*/true);
-                values[row] = extracted && accurateEquals((*left)[row], (*extracted)[0]);
+                values[row] = extracted && accurateEqualsCompoundFields((*left)[row], (*extracted)[0], left_type, active_type);
+                continue;
+            }
+            if (active_type && (isDate(left_type) || isDate32(left_type))
+                && (isDateTime(active_type) || isDateTime64(active_type)))
+            {
+                auto converted_date = tryConvertColumnToTypeOrNull(
+                    *source_row, source_type, left_type, {}, /*strict=*/false);
+                values[row] = converted_date && left->compareAt(row, 0, *converted_date, 1) == 0;
                 continue;
             }
             auto converted = tryConvertColumnToTypeOrNull(
@@ -263,6 +273,10 @@ public:
         const auto map_type = removeNullable(removeLowCardinality(arguments[0].type));
         auto maps = arguments[0].column->convertToFullColumnIfConst();
         auto sources = arguments[1].column->convertToFullColumnIfConst();
+        const auto source_type = removeNullable(removeLowCardinality(arguments[1].type));
+        const IColumn * carrier = sources.get();
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(carrier))
+            carrier = &nullable->getNestedColumn();
         auto result = ColumnUInt8::create(input_rows_count, UInt8{0});
         auto null_map = ColumnUInt8::create(input_rows_count, UInt8{0});
         auto & values = result->getData();
@@ -277,6 +291,24 @@ public:
             /// The source column retains the active `Dynamic`/`Variant` alternative and
             /// nested `Bool` tags that extracting a `Field` would discard.
             auto source_row = sources->cut(row, 1);
+            DataTypePtr active_type;
+            if (const auto * dynamic = checkAndGetColumn<ColumnDynamic>(carrier))
+                active_type = dynamic->getTypeAt(row);
+            else if (const auto * variant = checkAndGetColumn<ColumnVariant>(carrier))
+            {
+                const auto discriminator = variant->globalDiscriminatorAt(row);
+                const auto & variant_type = assert_cast<const DataTypeVariant &>(*source_type);
+                if (discriminator < variant_type.getVariants().size())
+                    active_type = variant_type.getVariant(discriminator);
+            }
+            if (active_type && isMap(active_type) && hasCompoundDecimalFloatPair(map_type, active_type))
+            {
+                auto active_row = carrier->cut(row, 1);
+                auto extracted = tryConvertColumnToTypeOrNull(
+                    *active_row, source_type, active_type, {}, /*strict=*/true);
+                values[row] = extracted && accurateEqualsCompoundFields((*maps)[row], (*extracted)[0], map_type, active_type);
+                continue;
+            }
             auto converted = tryConvertColumnToTypeOrNull(
                 *source_row, arguments[1].type, map_type, {}, /*strict=*/true);
             if (!converted)
@@ -643,6 +675,11 @@ public:
                     || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(key_type));
             check_numeric_probe_exactness = isNumber(left_type) && isNumber(key_type)
                 && !left_type->equals(*key_type);
+            if ((isNumber(left_type) || isBool(left_type)) && (isDynamic(key_type) || isVariant(key_type)))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
+                    left_arg.type->getName(), set_types[0]->getName(), getName());
             if (mixed_temporal_types)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
