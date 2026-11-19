@@ -201,30 +201,33 @@ struct EntityChange
     ASTPtr before; /// Entity before change (CREATE if not set)
     ASTPtr after; /// Entity after change (DROP if not set)
 
+    /// True if the change drops the entity and creates a new one of another type
+    [[nodiscard]] bool changesType() const
+    {
+        return before && after && getEntityType(before) != getEntityType(after);
+    }
+
+    /// True if the change replaces a workload by a resource of the same name
+    [[nodiscard]] bool replacesWorkloadByResource() const
+    {
+        return changesType() && getEntityType(after) == WorkloadEntityType::Resource;
+    }
+
     [[nodiscard]] std::vector<IWorkloadEntityStorage::Event> toEvents() const
     {
         if (!after)
             return {{getEntityType(before), name, {}}};
-        else if (!before)
-            return {{getEntityType(after), name, after}};
-        else
-        {
-            auto type_before = getEntityType(before);
-            auto type_after = getEntityType(after);
-            // If type changed, we have to remove an old entity and add a new one
-            if (type_before != type_after)
-                return {{type_before, name, {}}, {type_after, name, after}};
-            else
-                return {{type_after, name, after}};
-        }
+        if (changesType())
+            return {{getEntityType(before), name, {}}, {getEntityType(after), name, after}};
+        return {{getEntityType(after), name, after}};
     }
 };
 
-/// Returns `changes` ordered for execution.
+/// Returns `changes` ordered for execution. `new_entities` are all entities after the changes.
 /// Every intemediate state during execution will be consistent (i.e. all references will be valid)
 /// NOTE: It does not validate changes, any problem will be detected during execution.
 /// NOTE: There will be no error if valid order does not exist.
-std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityChange> & changes)
+std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityChange> & changes, const std::unordered_map<String, ASTPtr> & new_entities)
 {
     // Construct map from entity name into entity change
     std::unordered_map<String, const EntityChange *> change_by_name;
@@ -254,9 +257,43 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
         }
     }
 
-    // There are consistency rules that regulate order in which changes must be applied (see below).
-    // Construct DAG of dependencies between changes.
-    std::unordered_map<String, std::unordered_set<String>> dependencies; // Key is entity name. Value is set of names of entity that should be changed first.
+    // Returns the nearest changed workload above `name` in `new_entities`, skipping unchanged workloads. The result is
+    // memoized for the unchanged workloads of the walk, so every workload is walked over once.
+    std::unordered_map<String, std::optional<String>> nearest_changed_above;
+    auto nearest_changed_ancestor = [&](const String & name)
+    {
+        std::vector<String> unchanged_path;
+        std::optional<String> result;
+        String current = name;
+        while (true)
+        {
+            auto it = new_entities.find(current);
+            if (it == new_entities.end())
+                break;
+            auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(it->second.get());
+            if (!workload || !workload->hasParent())
+                break;
+            String parent = workload->getWorkloadParent();
+            if (change_by_name.contains(parent))
+            {
+                result = parent;
+                break;
+            }
+            if (auto memo = nearest_changed_above.find(parent); memo != nearest_changed_above.end())
+            {
+                result = memo->second;
+                break;
+            }
+            unchanged_path.push_back(parent);
+            current = parent;
+        }
+        for (const auto & unchanged : unchanged_path)
+            nearest_changed_above[unchanged] = result;
+        return result;
+    };
+
+    // Construct DAG of dependencies between changes. Key is entity name. Value is set of names of entities that should be changed first.
+    std::unordered_map<String, std::unordered_set<String>> dependencies;
     for (const auto & change : changes)
     {
         dependencies.emplace(change.name, std::unordered_set<String>{}); // Make sure we create nodes that have no dependencies
@@ -264,27 +301,33 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
         {
             if (!event.entity) // DROP
             {
-                // Rule 1: Entity can only be removed after all existing references to it are removed as well.
-                for (const String & source : old_sources[event.name])
+                // Rule 1: Entity can only be removed after all existing references to it are removed as well. A resource
+                // replaced by a workload is exempt: the workload must exist before its new children are attached (rules 2
+                // and 3), while a `FOR` clause that names a missing resource is harmless until its workload is updated.
+                if (change.changesType() && !change.replacesWorkloadByResource())
+                    continue;
+                for (const String & source : old_sources[change.name])
                 {
                     if (change_by_name.contains(source))
-                        dependencies[event.name].insert(source);
+                        dependencies[change.name].insert(source);
                 }
             }
             else // CREATE || CREATE OR REPLACE
             {
-                // Rule 2: Entity can only be created after all entities it references are created as well.
-                for (const String & target : new_targets[event.name])
+                // Rule 2: Entity can only be created or updated after all changed entities it references. A dropped target or
+                // a workload replaced by a resource is not waited for: its drop waits for its old children (rule 1), so the
+                // rules form no cycle.
+                for (const String & target : new_targets[change.name])
                 {
-                    if (auto it = change_by_name.find(target); it != change_by_name.end())
-                    {
-                        const EntityChange & target_change = *it->second;
-                        // If target is creating, it should be created first.
-                        // (But if target is updating, there is no dependency).
-                        if (!target_change.before)
-                            dependencies[event.name].insert(target);
-                    }
+                    if (auto it = change_by_name.find(target);
+                        it != change_by_name.end() && it->second->after && !it->second->replacesWorkloadByResource())
+                        dependencies[change.name].insert(target);
                 }
+
+                // Rule 3: A workload is changed after its nearest changed ancestor in the new hierarchy, so all its new
+                // ancestors already have their new parents when it is attached, and the hierarchy stays acyclic
+                if (auto ancestor = nearest_changed_ancestor(change.name))
+                    dependencies[change.name].insert(*ancestor);
             }
         }
     }
@@ -293,7 +336,6 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
     std::vector<EntityChange> result;
     for (const String & name : topologicallySortedDependencies(dependencies))
         result.push_back(*change_by_name[name]);
-
     return result;
 }
 
@@ -562,7 +604,7 @@ bool WorkloadEntityStorageBase::removeEntity(
     {
         std::unique_lock lock(mutex);
         auto it = entities.find(entity_name);
-        if (it == entities.end())
+        if (it == entities.end() || getEntityType(it->second) != entity_type)
         {
             if (throw_if_not_exists)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' doesn't exist", entity_name);
@@ -799,7 +841,7 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
 
     // Sort `changes` to respect consistency of references and apply them one by one.
     std::vector<Event> tx;
-    for (const auto & change : topologicallySortedChanges(changes))
+    for (const auto & change : topologicallySortedChanges(changes, merged_new_entities))
     {
         for (const auto & event : change.toEvents())
         {
