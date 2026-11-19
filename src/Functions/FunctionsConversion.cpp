@@ -2558,6 +2558,11 @@ bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const 
     if (isFixedString(*to_inner))
         return isStringOrFixedString(*from);
 
+    /// Bool is UInt8, but a CAST normalizes any nonzero to 1 while the parser builds it through UInt8
+    /// (0 and 1 only), so only a Bool source matches; a number goes through the parser.
+    if (isBool(to_inner))
+        return isBool(from);
+
     auto all_values_convert_exactly = [&]
     {
         auto probe = castColumnAccurateOrNull({column, from, ""}, makeNullable(to_inner));
