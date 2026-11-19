@@ -206,7 +206,7 @@ public:
 
     /// True when the planner builds a logical plan for the query plan cache (see
     /// `SelectQueryOptions::cacheable_logical_plan`).
-    bool isBuildingCacheableLogicalPlan() const { return is_building_cacheable_logical_plan; }
+    [[nodiscard]] bool isBuildingCacheableLogicalPlan() const { return is_building_cacheable_logical_plan; }
 
     /// True when this plan, or a fragment of it, may be serialized and shipped to another node: a
     /// logical plan built for a shard under `serialize_query_plan`, or a local plan from which
