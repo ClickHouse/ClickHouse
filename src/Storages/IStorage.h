@@ -592,6 +592,9 @@ public:
       */
     virtual void prepareForDrop(ContextPtr /* query_context */) {}
 
+    /// Whether `prepareForDrop` decided that `drop` deletes the data of the table.
+    virtual bool deletesDataOnDrop() const { return false; }
+
     virtual void dropInnerTableIfAny(bool /* sync */, ContextPtr /* context */) {}
 
     /// Return true if the storage supports TRUNCATE operation.

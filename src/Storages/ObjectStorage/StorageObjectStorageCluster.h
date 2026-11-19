@@ -84,6 +84,8 @@ public:
 
     void prepareForDrop(ContextPtr query_context) override;
 
+    bool deletesDataOnDrop() const override { return delete_data_on_drop.load().value_or(false); }
+
     RemoteQueryExecutor::Extension getTaskIteratorExtension(
         const ActionsDAG::Node * predicate,
         const ActionsDAG * filter,

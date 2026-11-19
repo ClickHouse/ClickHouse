@@ -122,6 +122,8 @@ public:
 
     void prepareForDrop(ContextPtr query_context) override;
 
+    bool deletesDataOnDrop() const override { return delete_data_on_drop.load().value_or(false); }
+
     /// Shared `prepareForDrop` implementation: returns whether `drop` has to delete the data.
     static bool prepareForDropImpl(
         const ObjectStoragePtr & object_storage,

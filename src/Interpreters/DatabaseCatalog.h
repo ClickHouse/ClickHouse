@@ -244,6 +244,9 @@ public:
     DatabaseAndTable tryGetByUUID(const UUID & uuid) const;
 
     String getPathForDroppedMetadata(const StorageID & table_id) const;
+    /// Path of the file that marks the dropped table at `dropped_metadata_path` whose `drop` deletes its data
+    /// (see `IStorage::deletesDataOnDrop`).
+    static String getPathForDroppedTableDeleteDataMarker(const String & dropped_metadata_path);
     String getPathForMetadata(const StorageID & table_id) const;
     void enqueueDroppedTableCleanup(
         StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay = false);

@@ -93,6 +93,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool data_lake_delete_data_on_drop;
     extern const SettingsBool fsync_metadata;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
     extern const SettingsBool show_remote_databases_in_system_tables;
@@ -1541,6 +1542,14 @@ String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) co
                toString(table_id.uuid));
 }
 
+String DatabaseCatalog::getPathForDroppedTableDeleteDataMarker(const String & dropped_metadata_path)
+{
+    /// The extension has the length of `.sql`, so the name fits the table name length limit (see `computeMaxTableNameLength`).
+    /// Loading of dropped tables ignores files that do not end with `.sql`.
+    chassert(dropped_metadata_path.ends_with(".sql"));
+    return dropped_metadata_path.substr(0, dropped_metadata_path.size() - strlen(".sql")) + ".del";
+}
+
 String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
 {
     auto database = getDatabase(table_id.getDatabaseName());
@@ -1599,6 +1608,24 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
                                             ". Parsed query: " + create->formatForLogging() +
                                             ". Will remove metadata and " + data_path +
                                             ". Garbage may be left in ZooKeeper.");
+            }
+
+            if (table && db_disk->existsFile(getPathForDroppedTableDeleteDataMarker(dropped_metadata_path)))
+            {
+                /// The `DROP TABLE` query requested to delete the data: restore that decision.
+                auto drop_context = Context::createCopy(getContext());
+                Settings drop_settings = drop_context->getSettingsCopy();
+                drop_settings[Setting::data_lake_delete_data_on_drop] = true;
+                drop_context->setSettings(drop_settings);
+                try
+                {
+                    table->prepareForDrop(drop_context);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Cannot prepare the data of partially dropped table " + table_id.getNameForLogs() +
+                                                " for deletion, keeping it");
+                }
             }
         }
         else
@@ -1694,6 +1721,7 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
         /// if and only if its metadata file was moved to a database.
         /// This maybe throw exception.
         db_disk->moveFile(latest_metadata_dropped_path, table_metadata_path);
+        db_disk->removeFileIfExists(getPathForDroppedTableDeleteDataMarker(latest_metadata_dropped_path));
 
         if (first_async_drop_in_queue == it_dropped_table)
             ++first_async_drop_in_queue;
@@ -1946,6 +1974,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     }
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
+    db_disk->removeFileIfExists(getPathForDroppedTableDeleteDataMarker(table.metadata_path));
     db_disk->removeFileIfExists(fs::path(table.metadata_path));
 
     removeUUIDMappingFinally(table.table_id.uuid);

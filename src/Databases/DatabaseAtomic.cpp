@@ -226,6 +226,14 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
 
         db_disk->createDirectories(fs::path(table_metadata_path_drop).parent_path());
 
+        /// If the server restarts before the data is removed, `DatabaseCatalog::enqueueDroppedTableCleanup` restores
+        /// the decision of `prepareForDrop` from this marker. Removal clears a marker left by an incomplete drop.
+        const String delete_data_marker_path = DatabaseCatalog::getPathForDroppedTableDeleteDataMarker(table_metadata_path_drop);
+        if (table->deletesDataOnDrop())
+            writeMetadataFile(db_disk, delete_data_marker_path, "", local_context->getSettingsRef()[Setting::fsync_metadata]);
+        else
+            db_disk->removeFileIfExists(delete_data_marker_path);
+
         auto txn = local_context->getZooKeeperMetadataTransaction();
         if (txn && !local_context->isInternalSubquery())
             txn->commit();      /// Commit point (a sort of) for Replicated database

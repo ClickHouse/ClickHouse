@@ -193,6 +193,12 @@ public:
 
     void prepareForDrop(ContextPtr query_context) override;
 
+    bool deletesDataOnDrop() const override
+    {
+        auto storage = nestedIfResolved();
+        return storage && storage->deletesDataOnDrop();
+    }
+
     /// File-like table functions rebuild the nested storage from the current external schema and
     /// ignore the columns cached at DDL time, while `read()` below hands PREWHERE to the nested
     /// storage and only converts types afterwards. `StorageProxy`'s forward is by name, so it

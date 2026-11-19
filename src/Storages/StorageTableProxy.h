@@ -141,6 +141,12 @@ public:
             nested->prepareForDrop(query_context);
     }
 
+    bool deletesDataOnDrop() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested && nested->deletesDataOnDrop();
+    }
+
     void drop() override
     {
         std::lock_guard lock{nested_mutex};
