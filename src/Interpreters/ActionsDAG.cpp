@@ -527,43 +527,6 @@ UInt64 ActionsDAG::getOutputIdentity(const std::string & name, const Block * inp
     return hash.get64();
 }
 
-UInt64 ActionsDAG::getComputedOutputsHash(const Block & input_header) const
-{
-    std::unordered_map<const Node *, UInt64> node_hashes;
-    computeForNodes(outputs, node_hashes, [&](const Node * node) -> UInt64
-    {
-        if (node->type == ActionType::ALIAS)
-        {
-            chassert(node->children.size() == 1);
-            return node_hashes.at(node->children.front());
-        }
-        else if (node->type == ActionType::INPUT)
-        {
-            SipHash hash;
-            hash.update(node->type);
-            char window[64];
-            SipHashingWriteBuffer out(hash, sizeof(window), window);
-            writeCacheKeyColumnName(node->result_name, &input_header, out);
-            out.finalize();
-            return hash.get64();
-        }
-        else
-        {
-            SipHash hash;
-            node->updateOwnHash(hash, /*build_independent=*/true, &input_header, /*with_variable_size_constant_values=*/false);
-            for (const auto * child : node->children)
-                hash.update(node_hashes.at(child));
-            return hash.get64();
-        }
-    });
-
-    SipHash hash;
-    hash.update(outputs.size());
-    for (const auto * output : outputs)
-        hash.update(node_hashes.at(output));
-    return hash.get64();
-}
-
 UInt64 ActionsDAG::getHash() const
 {
     SipHash hash;
