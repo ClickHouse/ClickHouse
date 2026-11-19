@@ -1534,7 +1534,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// are added only above by `normalizeTimeSeriesDefinition` and are not persisted in the definition of the
     /// view, so a restore from a backup would regenerate them with the original keys and attach parts sorted
     /// by the reversed keys. Such inner tables keep the original keys.
+    /// Definitions re-derived from stored metadata (e.g. `SYSTEM DROP DATABASE REPLICA ... FROM ZKPATH ... WITH TABLES`
+    /// or the recovery of a lost replica of a `Replicated` database) are skipped as well: they describe tables
+    /// which already exist elsewhere and must match the metadata stored in Keeper.
     if (!internal && !create.is_clone_as && !is_restore_from_backup
+        && !getContext()->isRecoveryFromStoredMetadata()
         && mode <= LoadingStrictnessLevel::CREATE
         && getContext()->getSettingsRef()[Setting::force_primary_key_reverse_order])
     {
