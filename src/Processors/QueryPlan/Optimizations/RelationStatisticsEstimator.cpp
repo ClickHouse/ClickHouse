@@ -2,6 +2,7 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <algorithm>
+#include <limits>
 
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
@@ -712,7 +713,27 @@ estimateDirectRelationStats(QueryPlan::Node & node, FilterAbove filter, Relation
             }
         }
         if (auto stats_hint = parseTableStatsHint(reading->getContext(), table_display_name); !stats_hint.table_name.empty())
+        {
+            /// Hints stand in for the measured statistics of the table, so the coverage of the read is recorded in them as
+            /// in those. The attribution knows which stored columns the predicates read, and measured statistics exist only
+            /// for stored columns. A hint can name any column, e.g. a subcolumn of a column that a predicate reads, so such
+            /// a column counts as read by the predicates.
+            auto hint_coverage = coverage;
+            if (hint_coverage.filtered_columns)
+            {
+                const auto & columns = reading->getStorageMetadata()->getColumns();
+                for (const auto & [column_name, _] : stats_hint.column_stats)
+                    if (!columns.hasPhysical(column_name))
+                        hint_coverage.filtered_columns->insert(column_name);
+            }
+            /// The hinted cardinality stands for the rows that the read selects; without one, a top-K read may drop rows.
+            const UInt64 hinted_rows = stats_hint.estimated_rows.value_or(std::numeric_limits<UInt64>::max());
+            stats_hint.rows_exact = stats_hint.estimated_rows && !hint_coverage.mayDropRows(hinted_rows);
+            hint_coverage.recordIn(stats_hint, hinted_rows);
+            /// The coverage counts the predicate of a parent `FilterStep` among the predicates of the read.
+            parent_filter_recorded = filter.is_parent && filter.predicate;
             return stats_hint;
+        }
 
         if (!analyzed_result)
             return RelationStats{
