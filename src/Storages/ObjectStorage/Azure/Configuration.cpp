@@ -1,5 +1,6 @@
 #include "config.h"
 #include <Poco/URI.h>
+#include <Disks/IDisk.h>
 
 
 #if USE_AZURE_BLOB_STORAGE
@@ -209,7 +210,8 @@ void AzureStorageParsedArguments::fillBlobsFromURLCommon(String & connection_url
 
     /// Added for Unity Catalog on top of AzureBlobStorage
     // Sample abfss url : abfss://mycontainer@mydatalakestorage.dfs.core.windows.net/subdirectory/file.txt
-    if (connection_url.starts_with("abfss"))
+    /// `abfs` and `abfss` name the same ADLS Gen2 storage; both carry `://` so a near-prefix scheme like `abfsx://` is not matched.
+    if (connection_url.starts_with("abfss://") || connection_url.starts_with("abfs://"))
     {
         auto pos_slash = connection_url.find("://");
         auto pos_at = connection_url.find('@');
@@ -219,7 +221,7 @@ void AzureStorageParsedArguments::fillBlobsFromURLCommon(String & connection_url
         if (pos_slash == std::string::npos || pos_at == std::string::npos|| pos_dot == std::string::npos || pos_net == std::string::npos
             || pos_at <= pos_slash + 3 || pos_dot <= pos_at + 1)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect url format for a abfss url {}", connection_url);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect url format for an abfs/abfss url {}", connection_url);
         }
         auto container_name_abfss = connection_url.substr(pos_slash+3, pos_at-pos_slash-3);
         auto name = connection_url.substr(pos_at+1, pos_dot-pos_at-1);
@@ -1049,7 +1051,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
             parsed_arguments.connection_params.auth_method = std::make_shared<Azure::Identity::ClientSecretCredential>(
                 onelake_tenant_id,
                 onelake_client_id,
-                onelake_client_secret
+                std::string(onelake_client_secret)
             );
         }
     }

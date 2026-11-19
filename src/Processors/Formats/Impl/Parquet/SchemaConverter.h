@@ -3,6 +3,7 @@
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -93,17 +94,19 @@ private:
         std::optional<String> parquet_name;
         DataTypePtr type_hint;
         bool requested = false;
+        /// The element or one of its ancestors is not in the data lake schema (see useColumnMapperIfNeeded).
+        bool not_in_datalake_schema = false;
 
         /// These are assigned by the callee.
         const parq::SchemaElement * element = nullptr;
         std::optional<size_t> output_idx; // index in output_columns
 
-        const String & getParquetName() const
+        [[nodiscard]] const String & getParquetName() const
         {
             return parquet_name.has_value() ? *parquet_name : name;
         }
 
-        String getNameForLogging() const
+        [[nodiscard]] String getNameForLogging() const
         {
             if (parquet_name.has_value() && *parquet_name != name)
                 return fmt::format("{} (mapped to {})", *parquet_name, name);
@@ -136,6 +139,27 @@ private:
         }
     };
 
+    /// Every leaf under an array, in schema order, so the leaves of a subtree are a contiguous range.
+    struct LeafInArray
+    {
+        size_t schema_idx = 0;
+        size_t column_idx = 0;
+        VectorWithMemoryTracking<LevelInfo> levels;
+    };
+    VectorWithMemoryTracking<LeafInArray> leaves_in_arrays;
+
+    /// A tuple inside an array that is not requested as a whole. A requested subcolumn of an element
+    /// it does not have (`arr.missing`) takes the array sizes from it.
+    struct TupleInArray
+    {
+        String name;
+        size_t schema_idx = 0;
+        size_t leaves_start = 0;
+        size_t leaves_end = 0;
+        VectorWithMemoryTracking<LevelInfo> levels;
+    };
+    VectorWithMemoryTracking<TupleInArray> tuples_in_arrays;
+
     void checkHasColumns();
 
     void processSubtree(TraversalNode & node);
@@ -150,6 +174,15 @@ private:
     void processSubtreeTuple(TraversalNode & node);
     bool processSubtreeDynamic(TraversalNode & node);
 
+    /// The sizes of an array are stored only in the leaves under it. Adds a primitive column with
+    /// PrimitiveColumnInfo::levels_only_arrays = `arrays` and no output, for one of the leaves
+    /// leaves_in_arrays[leaves_start, leaves_end). Returns its index in primitive_columns, or nullopt if no leaf is read.
+    std::optional<size_t> addLevelsOnlyPrimitive(size_t leaves_start, size_t leaves_end, UInt8 arrays, const String & name);
+
+    /// If the requested column at `pos` is `arr.missing`, where `arr` is in tuples_in_arrays and has
+    /// no element `missing`, outputs it as arrays of defaults sized like `arr` and returns true.
+    bool addMissingElementOfTupleInArray(size_t pos);
+
     void processPrimitiveColumn(
         const parq::SchemaElement & element, DataTypePtr type_hint, bool time_as_stored_integer,
         PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
@@ -159,7 +192,7 @@ private:
     /// all its column chunks list the same single 2D geometry type, returns that type. If any of
     /// them lists a geometry type with Z and/or M coordinates (which cannot be parsed), returns
     /// `std::nullopt`. Otherwise returns `GeoType::Mixed`.
-    std::optional<GeoType> getGeoTypeFromGeospatialStatistics(size_t column_idx) const;
+    [[nodiscard]] std::optional<GeoType> getGeoTypeFromGeospatialStatistics(size_t column_idx) const;
 
     /// Returns element.name or a corresponding name from ColumnMapper.
     /// For nested tuple elements, returns just the element name like `x`, not the whole path like `t.x`.
@@ -167,6 +200,18 @@ private:
     /// column names with dots (e.g. `integer.col` in Iceberg).
     std::string_view useColumnMapperIfNeeded(
         const parq::SchemaElement & element, const String & current_path, bool & out_not_in_schema) const;
+
+    /// Whether the file proves the field at `path` of the ColumnMapper absent: all fields at its level of the file schema
+    /// have field ids and none of them is its id.
+    [[nodiscard]] bool isAbsentFromFile(const String & path) const;
+    /// The `initial-default` of the column or subcolumn `path` of the field `field` of the ColumnMapper as a value of `type`,
+    /// if the field is absent.
+    [[nodiscard]] std::optional<Field> getAbsentFieldDefault(const String & field, const String & path, const DataTypePtr & type) const;
+
+    /// The field ids of the top-level fields of the file, and of the fields of each of its structs by the path of the
+    /// struct; nullopt if one of them has no field id.
+    std::optional<UnorderedSetWithMemoryTracking<Int64>> top_level_field_ids;
+    UnorderedMapWithMemoryTracking<String, std::optional<UnorderedSetWithMemoryTracking<Int64>>> struct_field_ids;
 };
 
 }

@@ -531,6 +531,34 @@ def test_nats_insert(nats_cluster):
     nats_helpers.check_result(result, True)
 
 
+def test_nats_insert_materialized_column(nats_cluster):
+    instance.query(
+        """
+        CREATE TABLE test.nats (a UInt64, m UInt64 MATERIALIZED a * 10, b UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'insert_materialized',
+                     nats_format = 'TSV',
+                     nats_row_delimiter = '\\n';
+    """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
+
+    async def insert_and_receive():
+        nc = await nats_connect_ssl(nats_cluster)
+        sub = await nc.subscribe("insert_materialized")
+        await nc.flush()
+        await asyncio.to_thread(
+            instance.query_with_retry, "INSERT INTO test.nats (a, b) VALUES (1, 2), (3, 4)"
+        )
+        messages = [(await sub.next_msg(60)).data.decode() for _ in range(2)]
+        await nc.drain()
+        return messages
+
+    # The MATERIALIZED column sits between the ordinary ones and is not written to the messages.
+    assert asyncio.run(insert_and_receive()) == ["1\t2\n", "3\t4\n"]
+
+
 def test_fetching_messages_without_mv(nats_cluster):
     instance.query(
         """
@@ -1420,6 +1448,22 @@ def test_max_rows_per_message(nats_cluster):
 
     result = instance.query("SELECT * FROM test.view ORDER BY key")
     assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
+
+
+def test_max_rows_per_message_zero(nats_cluster):
+    instance.query(
+        """
+        CREATE TABLE test.nats (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'zero_rows',
+                     nats_format = 'JSONEachRow',
+                     nats_max_rows_per_message = 0;
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
+
+    assert "BAD_ARGUMENTS" in instance.query_and_get_error("INSERT INTO test.nats VALUES (1, 2)", timeout=60)
 
 
 def test_row_based_formats(nats_cluster):
