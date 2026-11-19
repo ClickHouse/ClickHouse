@@ -1215,6 +1215,13 @@ static bool writeMetadataFiles(
         snapshot_id_to_snapshot[history_record.snapshot_id] = new_snapshot.snapshot;
     }
 
+    /// `main` keeps its retention policy, only its snapshot id is rebuilt.
+    if (const auto refs = plan.initial_metadata_object->getObject(Iceberg::f_refs); refs && refs->has(Iceberg::f_main))
+        if (const auto new_refs = metadata_object->getObject(Iceberg::f_refs); new_refs && new_refs->has(Iceberg::f_main))
+            for (const auto & [key, value] : *refs->getObject(Iceberg::f_main))
+                if (key != Iceberg::f_metadata_snapshot_id)
+                    new_refs->getObject(Iceberg::f_main)->set(key, value);
+
     Poco::JSON::Object::Ptr initial_metadata_object = plan.initial_metadata_object;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Iceberg::IcebergPathFromMetadata> manifest_file_renamings;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Int64> manifest_file_sizes;

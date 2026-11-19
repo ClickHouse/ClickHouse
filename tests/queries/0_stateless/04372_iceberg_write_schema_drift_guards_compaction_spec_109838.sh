@@ -186,6 +186,18 @@ m['snapshot-log'].append({'snapshot-id': chain[1], 'timestamp-ms': m['last-updat
 PY
 optimize_then_show_refs_and_rows
 
+# --- OPTIMIZE keeps the retention policy of `main` (`expire_snapshots` reads it) -------------
+reset
+three_inserts_edit_then_delete 2 <<'PY'
+m['refs']['main'].update({'min-snapshots-to-keep': 10, 'max-snapshot-age-ms': 86400000})
+PY
+${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${TABLE}"
+python3 -c "
+import json, sys
+m = json.load(open(sys.argv[1]))
+print([s['summary']['operation'] for s in m['snapshots']], sorted((k, v) for k, v in m['refs']['main'].items() if k != 'snapshot-id'))
+" "$(ls -v "${TABLE_PATH}"/metadata/v*.metadata.json | tail -1)"
+
 # The server must still be alive after all scenarios (no abort).
 ${CLICKHOUSE_CLIENT} --query "SELECT 1"
 
