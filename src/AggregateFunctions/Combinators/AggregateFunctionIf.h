@@ -333,7 +333,7 @@ public:
         return result;
     }
 
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNullThroughCombinators() const override
+    [[nodiscard]] UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNullThroughCombinators() const override
     {
         return nested_func->getArgumentsThatCanBeOnlyNullThroughCombinators();
     }

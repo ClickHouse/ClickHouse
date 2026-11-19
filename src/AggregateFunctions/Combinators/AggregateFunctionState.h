@@ -216,7 +216,7 @@ public:
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 
     /// The arguments are passed to the nested function as is, so the nested function decides which of them may be a bare `NULL`.
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNullThroughCombinators() const override
+    [[nodiscard]] UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNullThroughCombinators() const override
     {
         return nested_func->getArgumentsThatCanBeOnlyNullThroughCombinators();
     }

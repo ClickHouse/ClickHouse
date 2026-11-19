@@ -378,7 +378,7 @@ public:
     /// The arguments are passed to the nested function at the same positions, so the nested function decides
     /// which of them may be a bare `NULL`. This matters when the adapter is wrapped into another combinator
     /// (`-If`, `-State`, ...) that the `Null` combinator is applied to once more.
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNullThroughCombinators() const override
+    [[nodiscard]] UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNullThroughCombinators() const override
     {
         return nested_function->getArgumentsThatCanBeOnlyNullThroughCombinators();
     }

@@ -223,33 +223,33 @@ public:
                 getName());
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return nested_function->getName() + "Sparkbar";
     }
 
-    bool isState() const override { return nested_function->isState(); }
+    [[nodiscard]] bool isState() const override { return nested_function->isState(); }
 
     /// Keep the explicit state version of the nested function (e.g. `uniq`, `quantileDeterministic`),
     /// otherwise fresh states would be serialized with the unversioned (old) layout.
-    DataTypePtr getStateType() const override { return this->getStateTypeWithVersionOf(*nested_function); }
+    [[nodiscard]] DataTypePtr getStateType() const override { return this->getStateTypeWithVersionOf(*nested_function); }
 
-    bool isVersioned() const override { return nested_function->isVersioned(); }
+    [[nodiscard]] bool isVersioned() const override { return nested_function->isVersioned(); }
 
-    size_t getVersionFromRevision(size_t revision) const override
+    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
     {
         return nested_function->getVersionFromRevision(revision);
     }
 
-    size_t getDefaultVersion() const override { return nested_function->getDefaultVersion(); }
+    [[nodiscard]] size_t getDefaultVersion() const override { return nested_function->getDefaultVersion(); }
 
-    bool allocatesMemoryInArena() const override { return nested_function->allocatesMemoryInArena(); }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return nested_function->allocatesMemoryInArena(); }
 
-    bool hasTrivialDestructor() const override { return nested_function->hasTrivialDestructor(); }
+    [[nodiscard]] bool hasTrivialDestructor() const override { return nested_function->hasTrivialDestructor(); }
 
-    size_t sizeOfData() const override { return width * size_of_data + width; }
+    [[nodiscard]] size_t sizeOfData() const override { return width * size_of_data + width; }
 
-    size_t alignOfData() const override { return align_of_data; }
+    [[nodiscard]] size_t alignOfData() const override { return align_of_data; }
 
     void create(AggregateDataPtr __restrict place) const override
     {
@@ -344,7 +344,7 @@ public:
         }
     }
 
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
     {
         if (!this->haveSameDefinition(rhs))
             return false;
@@ -465,7 +465,7 @@ public:
     /// so the result is the empty sparkbar. Without this, the generic `Null` combinator would
     /// replace the whole function with `nothingNull` / `nothingUInt64` and return `NULL` or `0`
     /// instead of a `String`. The same holds when `-Sparkbar` is wrapped into outer combinators (`avgSparkbarIf`).
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNullThroughCombinators() const override
+    [[nodiscard]] UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNullThroughCombinators() const override
     {
         const size_t num_arguments = this->argument_types.size();
         UnorderedSetWithMemoryTracking<size_t> result;
@@ -475,7 +475,7 @@ public:
         return result;
     }
 
-    AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
+    [[nodiscard]] AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 };
 
 }
