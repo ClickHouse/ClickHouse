@@ -24,6 +24,7 @@
 #include <cstring>
 #include <limits>
 #include <base/sanitizer_defs.h>
+#include <Common/Exception.h>
 
 namespace DB
 {

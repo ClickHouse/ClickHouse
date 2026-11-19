@@ -4,6 +4,7 @@
 #include <Core/AccurateComparison.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/NaNUtils.h>
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -799,6 +800,18 @@ struct Processor
     template <typename FromDataType,
         typename FromColumnType = typename FromDataType::ColumnType,
         typename ToColumnType>
+    void vectorConstant(const FromColumnType & col_from, ToColumnType & col_to, const IColumn & delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
+    {
+        castTypeToEither<
+            ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
+            ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
+            ColumnFloat32, ColumnFloat64>(
+            &delta, [&](const auto & column){ vectorConstant<FromDataType>(col_from, col_to, checkOverflow(column.getData()[0]), time_zone, scale, input_rows_count); return true; });
+    }
+
+    template <typename FromDataType,
+        typename FromColumnType = typename FromDataType::ColumnType,
+        typename ToColumnType>
     void NO_INLINE vectorConstant(const FromColumnType & col_from, ToColumnType & col_to, Int64 delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
     {
         static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
@@ -881,6 +894,10 @@ private:
     template <typename Value>
     static Int64 checkOverflow(Value val)
     {
+        if constexpr (is_floating_point<Value>)
+            if (isNaN(val))
+                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+
         Int64 result = 0;
         if (accurate::convertNumeric<Value, Int64, false>(val, result))
             return result;
@@ -999,7 +1016,7 @@ private:
         if (const auto * sources = checkAndGetColumn<FromColumnType>(&source_column))
         {
             if (const auto * delta_const_column = typeid_cast<const ColumnConst *>(&delta_column))
-                processor.template vectorConstant<FromDataType>(*sources, *col_to, delta_const_column->getInt(0), time_zone, scale, input_rows_count);
+                processor.template vectorConstant<FromDataType>(*sources, *col_to, delta_const_column->getDataColumn(), time_zone, scale, input_rows_count);
             else
                 processor.template vectorVector<FromDataType>(*sources, *col_to, delta_column, time_zone, scale, input_rows_count);
         }

@@ -3,6 +3,8 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <IO/VarInt.h>
+#include <IO/ReadBuffer.h>
 
 namespace DB
 {

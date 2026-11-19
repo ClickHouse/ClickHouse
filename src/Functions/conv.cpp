@@ -2,6 +2,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -17,6 +18,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
+#include <cmath>
+#include <limits>
 
 namespace DB
 {
@@ -24,6 +28,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_COLUMN;
+extern const int LOGICAL_ERROR;
 }
 
 class FunctionConv final : public IFunction
@@ -35,6 +40,8 @@ public:
     [[nodiscard]] String getName() const override { return name; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// Neither an empty number nor a zero base is valid.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     [[nodiscard]] String getSignatureString() const override
@@ -45,9 +52,17 @@ public:
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr number_column = arguments[0].column;
-        if (!isString(arguments[0].type))
+        if (WhichDataType(arguments[0].type).isNativeFloat())
         {
-            ColumnWithTypeAndName string_arg = {number_column, arguments[0].type, arguments[0].name};
+            number_column = floatsToIntegerDigits(*number_column->convertToFullColumnIfConst());
+        }
+        else if (!isString(arguments[0].type))
+        {
+            /// Bool storage (Bool, SimpleAggregateFunction over Bool) prints as 'true'/'false'; convert the stored value.
+            DataTypePtr number_type = arguments[0].type;
+            if (isUInt8(number_type) && number_type->getCustomSerialization())
+                number_type = std::make_shared<DataTypeUInt8>();
+            ColumnWithTypeAndName string_arg = {number_column, number_type, arguments[0].name};
             number_column = castColumn(string_arg, std::make_shared<DataTypeString>());
         }
         const auto * number_col = checkAndGetColumn<ColumnString>(number_column.get());
@@ -78,6 +93,36 @@ public:
     }
 
 private:
+    /// A float prints in exponent form ('1e21', '1e-07') or as 'nan'/'inf', whose letters are digits in the higher bases.
+    /// Take the digits of its integer part instead, so that it converts as the same number written as a string.
+    static ColumnPtr floatsToIntegerDigits(const IColumn & column)
+    {
+        auto result = ColumnString::create();
+        auto convert = [&](const auto & floats)
+        {
+            /// The integer part of the largest Float64 has 309 digits.
+            char buf[std::numeric_limits<Float64>::max_exponent10 + 8];
+            for (const auto value : floats.getData())
+            {
+                const auto x = static_cast<Float64>(value);
+                if (!std::isfinite(x))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function conv cannot convert a non-finite number: {}", x);
+                const auto [end, error] = std::to_chars(buf, buf + sizeof(buf), std::trunc(x), std::chars_format::fixed, 0);
+                if (error != std::errc())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot format the integer part of {} in function conv", x);
+                result->insertData(buf, end - buf);
+            }
+        };
+
+        if (const auto * floats64 = checkAndGetColumn<ColumnFloat64>(&column))
+            convert(*floats64);
+        else if (const auto * floats32 = checkAndGetColumn<ColumnFloat32>(&column))
+            convert(*floats32);
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function conv", column.getName());
+        return result;
+    }
+
     NO_SANITIZE_UNSIGNED_OVERFLOW
     static std::string convertNumber(const std::string & number, const Int64 from_base, const Int64 to_base)
     {

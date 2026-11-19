@@ -216,6 +216,8 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
     {
         StatisticsUtils::updateMin(min, other->min);
         StatisticsUtils::updateMax(max, other->max);
+        /// The merged bounds miss whatever the bounds of either side miss.
+        min_max_covers_all_values = min_max_covers_all_values && other->min_max_covers_all_values;
     }
     if (tracks_string)
         string_total_bytes += other->string_total_bytes;
@@ -224,6 +226,8 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
     {
         default_count += other->default_count;
     }
+    /// The merged NULL count misses whatever the NULL count of either side misses.
+    null_count_covers_all_rows = null_count_covers_all_rows && other->null_count_covers_all_rows;
 
     if (sum && other->sum)
         sum->function.function->merge(sum->state, other->sum->state, nullptr);
@@ -233,25 +237,36 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
     row_count += other->row_count;
 }
 
-void StatisticsBasic::build(UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count)
+void StatisticsBasic::build(UInt64 rows, const Field & min_value, const Field & max_value, std::optional<UInt64> null_count)
 {
     row_count = rows;
     if (tracks_numeric)
     {
         min = min_value;
         max = max_value;
+        /// Unlike a bound built from a column, a NULL bound of a summary is unknown: it misses the values of the rows
+        /// unless all of them are NULL. A column whose default is not NULL has a value in every row.
+        min_max_covers_all_values = (!min.isNull() && !max.isNull()) || (is_nullable && null_count && *null_count >= rows);
     }
     /// A summary has no byte lengths.
     tracks_string = false;
-    /// For any other type the default count would count zeros, which a summary does not give.
+    /// For any other type the default count would count zeros, which a summary does not give. A summary without a NULL
+    /// count keeps the structure of one, so that it merges with the summaries that have it, but counts none of its NULLs.
     has_default_count = is_nullable;
-    default_count = is_nullable ? null_count : 0;
+    default_count = is_nullable ? null_count.value_or(0) : 0;
+    null_count_covers_all_rows = !is_nullable || null_count.has_value();
     /// Nor the sum.
     sum.reset();
 }
 
 void StatisticsBasic::serialize(WriteBuffer & buf)
 {
+    /// Bounds and NULL counts read back would be taken to cover every row.
+    if (!min_max_covers_all_values)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize Basic statistics whose min/max miss some values");
+    if (!null_count_covers_all_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize Basic statistics whose NULL count misses some rows");
+
     writeIntBinary(row_count, buf);
 
     UInt8 mask = 0;

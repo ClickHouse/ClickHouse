@@ -34,6 +34,8 @@ public:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// A zero position or occurrence is not valid.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 5}; }
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }

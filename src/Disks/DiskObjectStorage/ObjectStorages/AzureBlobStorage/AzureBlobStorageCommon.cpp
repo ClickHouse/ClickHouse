@@ -14,6 +14,7 @@
 #include <IO/AzureBlobStorage/PocoHTTPClient.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StringUtils.h>
 #include <Common/formatReadable.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/re2.h>
@@ -308,7 +309,7 @@ String ConnectionParams::getConnectionURLWithoutQuery() const
         }
     }
 
-    return endpoint.storage_account_url.substr(0, endpoint.storage_account_url.find_first_of("?#"));
+    return String(stripQueryAndFragment(endpoint.storage_account_url));
 }
 
 std::unique_ptr<ServiceClient> ConnectionParams::createForService() const

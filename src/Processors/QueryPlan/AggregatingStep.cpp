@@ -79,6 +79,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool adaptive_aggregator_disable_thaw;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
+    extern const QueryPlanSerializationSettingsBool enable_fixed_and_packed_string_keys_in_aggregation;
     extern const QueryPlanSerializationSettingsBool use_aggregation_memory_tracker;
 }
 
@@ -118,7 +119,10 @@ static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_
     };
 }
 
-static bool keysCanUsePackedStringMethod(const Block & header, const Names & keys)
+/// Whether `AggregatedDataVariants::chooseMethod` picks a method that `is_method` accepts for `keys`.
+/// A key that is not in `header` counts as a match: its type, and with it the method, is unknown.
+template <typename IsMethod>
+static bool keysCanChooseMethod(const Block & header, const Names & keys, IsMethod && is_method)
 {
     for (const auto & key : keys)
     {
@@ -127,22 +131,39 @@ static bool keysCanUsePackedStringMethod(const Block & header, const Names & key
     }
 
     Sizes key_sizes;
-    return AggregatedDataVariants::chooseMethod(header, keys, key_sizes) == AggregatedDataVariants::Type::key_packed_string;
+    return is_method(AggregatedDataVariants::chooseMethod(header, keys, key_sizes));
 }
 
-bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params)
+template <typename IsMethod>
+static bool aggregationCanChooseMethod(
+    const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params, IsMethod && is_method)
 {
     if (grouping_sets_params.empty())
-        return keysCanUsePackedStringMethod(header, keys);
+        return keysCanChooseMethod(header, keys, is_method);
 
     /// Every grouping set gets its own `Aggregator` over its own subset of the keys, so the method is chosen per set.
     for (const auto & grouping_set : grouping_sets_params)
     {
-        if (keysCanUsePackedStringMethod(header, grouping_set.used_keys))
+        if (keysCanChooseMethod(header, grouping_set.used_keys, is_method))
             return true;
     }
 
     return false;
+}
+
+bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params)
+{
+    return aggregationCanChooseMethod(
+        header,
+        keys,
+        grouping_sets_params,
+        [](AggregatedDataVariants::Type type) { return type == AggregatedDataVariants::Type::key_packed_string; });
+}
+
+bool aggregationCanUseFixedAndPackedStringKeys(
+    const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params)
+{
+    return aggregationCanChooseMethod(header, keys, grouping_sets_params, AggregatedDataVariants::isKeysAndPackedString);
 }
 
 bool isSortKeyPassThrough(const ActionsDAG & dag, const String & name)
@@ -486,37 +507,17 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
             return "a prior run measured the staged streams as repeat-dominated";
     }
 
-    /// TODO (nihalzp): Support LowCardinality keys and the single-key Nullable methods.
-    bool has_nullable_key = false;
+    /// TODO (nihalzp): Support LowCardinality keys.
     for (const auto & key : params.keys)
     {
-        const auto & type = pipeline.getHeader().getByName(key).type;
-        if (type->lowCardinality())
+        if (pipeline.getHeader().getByName(key).type->lowCardinality())
             return "a key is LowCardinality";
-        has_nullable_key |= type->isNullable();
     }
 
     Sizes key_sizes;
     const auto method = AggregatedDataVariants::chooseMethod(pipeline.getHeader(), params.keys, key_sizes);
     if (!AggregatedDataVariants::isConvertibleToTwoLevel(method))
         return "the aggregation method has no two-level form";
-
-    /// A missed row is staged with the key its method builds. These methods pack the null map into that key; the single-key
-    /// Nullable methods keep NULL in a separate cell of the table instead, which the staging bypasses.
-    if (has_nullable_key)
-    {
-        using Type = AggregatedDataVariants::Type;
-        switch (method)
-        {
-            case Type::nullable_keys128:
-            case Type::nullable_keys256:
-            case Type::nullable_serialized:
-            case Type::nullable_prealloc_serialized:
-                break;
-            default:
-                return "a Nullable key is kept in a separate null-key cell";
-        }
-    }
 
     return nullptr;
 }
@@ -1420,6 +1421,24 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
             || ((params.group_by_two_level_threshold != 0 || params.group_by_two_level_threshold_bytes != 0)
                 && aggregationCanUsePackedStringKeys(*input_headers.front(), params.keys, grouping_sets_params))))
         settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = false;
+
+    /// The plan default of `enable_fixed_and_packed_string_keys_in_aggregation` is `false`: the
+    /// serialized method, which an initiator predating the setting uses for these keys. So a peer that
+    /// knows the name receives `true` whenever this step can choose the method, and aggregates as the
+    /// initiator does.
+    ///
+    /// A peer that predates the name always uses the serialized method for these keys, and its two-level
+    /// bucket numbering differs, so it must reject the plan instead of corrupting the distributed merge. A
+    /// peer below the setting's version throws on any unknown name. As with the packed-string-keys setting
+    /// above, it gets the name only when the plan can go two-level: with both thresholds at `0`, its
+    /// single-level blocks merge as a plain union by key, so the name stays off the wire. A peer at the
+    /// setting's version that does not know the name yet gets it whenever this step can choose the method,
+    /// and throws too, because the setting is `IMPORTANT`.
+    if (params.enable_fixed_and_packed_string_keys
+        && (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FIXED_AND_PACKED_STRING_KEYS_SETTING
+            || params.group_by_two_level_threshold != 0 || params.group_by_two_level_threshold_bytes != 0)
+        && aggregationCanUseFixedAndPackedStringKeys(*input_headers.front(), params.keys, grouping_sets_params))
+        settings[QueryPlanSerializationSetting::enable_fixed_and_packed_string_keys_in_aggregation] = true;
 }
 
 void AggregatingStep::serialize(Serialization & ctx) const
@@ -1679,6 +1698,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge],
         ctx.settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge_by_index],
         ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation],
+        ctx.settings[QueryPlanSerializationSetting::enable_fixed_and_packed_string_keys_in_aggregation],
         ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes],

@@ -505,7 +505,13 @@ TruthValue checkInBloomFilter(PredicateDataType type, const Literal & literal, c
         switch (type)
         {
             case PredicateDataType::LONG: found = bf.testLong(literal.getLong()); break;
-            case PredicateDataType::FLOAT: found = bf.testDouble(literal.getFloat()); break;
+            case PredicateDataType::FLOAT:
+            {
+                /// The writers hash the bits, so the equal `0.0` and `-0.0` have different hashes.
+                const double value = literal.getFloat();
+                found = bf.testDouble(value) || (value == 0 && bf.testDouble(-value));
+                break;
+            }
             case PredicateDataType::STRING: found = bf.testBytes(literal.getString().data(), literal.getString().size()); break;
             case PredicateDataType::DECIMAL:
             {
