@@ -138,6 +138,8 @@ public:
     const char * insert_data = nullptr;
     const char * insert_data_end = nullptr;
 
+    /// Data from buffer to insert after inlined one - may be nullptr.
+    mutable ReadBufferPtr insert_tail = nullptr;
     /// Optional bool (3 states)
     std::optional<bool> attach_as_replicated = std::nullopt;
 

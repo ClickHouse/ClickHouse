@@ -541,7 +541,7 @@ void ASTCreateQuery::writeJSON(WriteBuffer & out) const
 {
     /// Inline data (`AS INSERT VALUES (1)`, `AS INSERT FORMAT ... <payload>`) is a non-owning view into the
     /// original query buffer that `formatImpl` does not print. Rather than emit lossy JSON, reject such queries.
-    if (insert_data)
+    if (insert_data || insert_tail)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`CREATE ... AS/AND INSERT` with inline data is not supported by parseQueryToJSON during AST JSON deserialization");
 
     JSONObjectWriter w(out, "CreateQuery");

@@ -1258,6 +1258,13 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->set(query->storage, storage);
     query->set(query->as_table_function, as_table_function);
 
+    /// A table created from a table function has no storage definition of its own, the same rule
+    /// that rejects an explicit `ENGINE` above, so the one synthesized below is formatted after the
+    /// table function, where the grammar has no production for it and metadata cannot be read back.
+    if (query->as_table_function && query->columns_list &&
+        (query->columns_list->primary_key || query->columns_list->primary_key_from_columns))
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "PRIMARY KEY is not allowed in the column list of a table created from a table function");
+
     if (comment)
         query->set(query->comment, comment);
 

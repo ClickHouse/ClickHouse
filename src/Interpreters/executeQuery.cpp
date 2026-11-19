@@ -3177,7 +3177,19 @@ static BlockIO executeQueryImpl(
             }
 
             if (auto * insert_query = out_ast->as<ASTInsertQuery>())
+            {
                 insert_query->tail = std::move(istr);
+            }
+            else if (auto * create_query = out_ast->as<ASTCreateQuery>();
+                    create_query && (create_query->has_and_insert || create_query->has_as_insert))
+            {
+                ASTPtr input_function;
+                if (create_query->insert_select)
+                    create_query->tryFindInputFunction(input_function);
+
+                if (!create_query->insert_select || input_function)
+                    create_query->insert_tail = std::move(istr);
+            }
 
             if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
             {
@@ -3284,8 +3296,8 @@ static BlockIO executeQueryImpl(
 
             insert_query->tail.reset();
         }
-        else if (const auto * create_query = out_ast ? out_ast->as<ASTCreateQuery>() : nullptr;
-                create_query && create_query->insert_select && create_query->insert_data)
+        else if (auto * create_query = out_ast ? out_ast->as<ASTCreateQuery>() : nullptr;
+                create_query && create_query->insert_select && (create_query->insert_data || create_query->insert_tail))
         {
             ASTPtr input_function;
 
@@ -3298,6 +3310,8 @@ static BlockIO executeQueryImpl(
             synthetic_insert->tryFindInputFunction(input_function);
             if (input_function)
             {
+                synthetic_insert->tail = std::move(create_query->insert_tail);
+
                 const ASTSelectQuery * select_query_hint = synthetic_insert->select->as<ASTSelectQuery>();
                 if (!select_query_hint)
                 {
@@ -3305,6 +3319,7 @@ static BlockIO executeQueryImpl(
                         union_query && union_query->list_of_selects->children.size() == 1)
                         select_query_hint = union_query->list_of_selects->children.front()->as<ASTSelectQuery>();
                 }
+
                 StoragePtr storage = context->executeTableFunction(input_function, select_query_hint);
                 auto & input_storage = dynamic_cast<StorageInput &>(*storage);
                 auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr(context, false);
@@ -3312,6 +3327,8 @@ static BlockIO executeQueryImpl(
                     synthetic_insert, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
 
                 input_storage.setPipe(std::move(pipe));
+                create_query->insert_data = nullptr;
+                create_query->insert_data_end = nullptr;
             }
         }
         else if (!insert_query || !insert_query->returning)

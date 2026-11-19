@@ -380,7 +380,13 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
     query.replace_view = false;
     query.replace_table = false;
     query.create_or_replace = false;
-
+    query.has_and_insert = false;
+    query.has_as_insert = false;
+    query.reset(query.insert_select);
+    query.insert_format.clear();
+    query.insert_data = nullptr;
+    query.insert_data_end = nullptr;
+    query.insert_tail.reset();
     /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
     if (!query.isView())
         query.reset(query.select);

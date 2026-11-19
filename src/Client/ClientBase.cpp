@@ -3298,7 +3298,7 @@ void ClientBase::processParsedSingleQuery(
         const auto * create_with_insert = [&]() -> const ASTCreateQuery *
         {
             if (const auto * c = parsed_query->as<ASTCreateQuery>())
-                if (c->insert_data && (c->has_as_insert || c->has_and_insert) && !c->insert_format.empty() && !c->insert_select)
+                if ((c->has_as_insert || c->has_and_insert) && !c->insert_format.empty() && !c->insert_select)
                     return c;
             return nullptr;
         }();

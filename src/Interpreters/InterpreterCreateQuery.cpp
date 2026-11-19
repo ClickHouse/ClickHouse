@@ -2591,13 +2591,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// `clickhouse-client` strip it from the query text and stream it afterwards over the native protocol,
     /// exactly like a plain `INSERT`, so the interpreter never sees it.
     bool insert_fill_available_synchronously = (create.select != nullptr || create.insert_select != nullptr)
-        || (create.insert_data && create.insert_data_end && create.insert_data <= create.insert_data_end);
+        || (create.insert_data && create.insert_data_end && create.insert_data <= create.insert_data_end)
+        || create.insert_tail;
 
-    bool and_insert_into_existing_table = create.has_and_insert && database
-        && database->isTableExist(create.getTable(), getContext());
     if (create.isCreateQueryWithImmediateInsertSelect()
         && insert_fill_available_synchronously
-        && !and_insert_into_existing_table
+        && !create.has_and_insert
         && !create.is_materialized_view
         && database && database->getUUID() != UUIDHelpers::Nil)
     {
@@ -3707,26 +3706,22 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
         {
             insert->select = create.insert_select->clone();
             insert->format = create.insert_format;
-            if (create.insert_data && create.insert_data_end && create.insert_data <= create.insert_data_end)
-            {
-                insert->data = create.insert_data;
-                insert->end = create.insert_data_end;
-            }
         }
         else if (!create.insert_format.empty())
         {
             insert->format = create.insert_format;
-            if (create.insert_data && create.insert_data_end && create.insert_data <= create.insert_data_end)
-            {
-                insert->data = create.insert_data;
-                insert->end = create.insert_data_end;
-            }
         }
         else if (create.select)
         {
             insert->select = create.select->clone();
         }
 
+        if (create.insert_data && create.insert_data_end && create.insert_data <= create.insert_data_end)
+        {
+            insert->data = create.insert_data;
+            insert->end = create.insert_data_end;
+        }
+        insert->tail = std::move(create.insert_tail);
         ContextMutablePtr insert_context = getContext();
         /// Every replica of a `Replicated` database executes this entry and fills its own copy of the table, so the population
         /// must neither read through parallel replicas nor be sent to other servers as a distributed `INSERT`.
@@ -3741,7 +3736,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
 
         /// Unlike a top-level `INSERT ... SELECT FROM input(...)`, this synthetic query never goes
         /// through `executeQueryImpl`, so the `StorageInput` pipe backing `input()` must be wired here.
-        if (insert->select && insert->data)
+        if (insert->select && insert->hasInlinedData())
         {
             ASTPtr input_function;
             insert->tryFindInputFunction(input_function);
