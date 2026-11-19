@@ -152,6 +152,7 @@ def trace(executable, args, env=None, cwd=None, on_started=None):
 
     order = []
     restored = set()
+    exit_status = None
     libc.ptrace(PTRACE_CONT, pid, None, 0)
     while True:
         try:
@@ -159,6 +160,8 @@ def trace(executable, args, env=None, cwd=None, on_started=None):
         except ChildProcessError:
             break
         if not os.WIFSTOPPED(status):
+            if tid == pid:
+                exit_status = status
             continue
         sig = os.WSTOPSIG(status)
         if sig == signal.SIGTRAP and status >> 16:
@@ -186,6 +189,13 @@ def trace(executable, args, env=None, cwd=None, on_started=None):
             continue
         libc.ptrace(PTRACE_CONT, tid, None, sig)
     os.close(memory)
+    # A failed workload executes a different (error) path: its order must not be accepted.
+    if exit_status is None:
+        raise RuntimeError(f"{executable}: the exit status of the process is unknown")
+    if os.WIFSIGNALED(exit_status):
+        raise RuntimeError(f"{executable} was terminated by signal {os.WTERMSIG(exit_status)}")
+    if os.WEXITSTATUS(exit_status) != 0:
+        raise RuntimeError(f"{executable} exited with code {os.WEXITSTATUS(exit_status)}")
     return order
 
 
