@@ -81,6 +81,9 @@ public:
         /// if the action is lazy executed.
         std::optional<size_t> short_circuit_eager_argument = {};
 
+        /// Lazily executed and used by several consumers: its result is reused within one `ColumnFunction` tree.
+        bool is_shared_lazy_executed = false;
+
         [[nodiscard]] std::string toString() const;
         [[nodiscard]] JSONBuilder::ItemPtr toTree() const;
     };
@@ -107,7 +110,12 @@ protected:
     ExpressionActionsSettings settings;
 
 public:
-    explicit ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
+    /// `uncompiled_actions_dag`, if set, receives the DAG as built when JIT replaces a node, and stays empty otherwise.
+    explicit ExpressionActions(
+        ActionsDAG actions_dag_,
+        const ExpressionActionsSettings & settings_ = {},
+        bool project_inputs_ = false,
+        std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag = nullptr);
     ExpressionActions(ExpressionActions &&) = default;
     ExpressionActions & operator=(ExpressionActions &&) = default;
     virtual ~ExpressionActions() = default;
@@ -115,7 +123,11 @@ public:
     /// Create either a plain or an adaptive instance, depending on the settings.
     /// Note that an adaptive instance is stateful and not thread safe, so it must not be shared between
     /// pipeline streams: create one per stream.
-    static ExpressionActionsPtr create(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
+    static ExpressionActionsPtr create(
+        ActionsDAG actions_dag_,
+        const ExpressionActionsSettings & settings_ = {},
+        bool project_inputs_ = false,
+        std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag = nullptr);
 
     [[nodiscard]] const Actions & getActions() const { return actions; }
     [[nodiscard]] const ActionsDAG::Nodes & getNodes() const { return actions_dag.getNodes(); }
@@ -263,7 +275,10 @@ class AdaptiveExpressionActions : public ExpressionActions
 {
 public:
     explicit AdaptiveExpressionActions(
-        ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
+        ActionsDAG actions_dag_,
+        const ExpressionActionsSettings & settings_ = {},
+        bool project_inputs_ = false,
+        std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag = nullptr);
 
     /// A fresh adaptive instance with the same expression and an empty execution profile.
     [[nodiscard]] ExpressionActionsPtr clone() const override;

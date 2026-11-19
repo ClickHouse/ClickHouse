@@ -2479,9 +2479,15 @@ ActionsDAG ActionsDAG::clone(UnorderedMapWithMemoryTracking<const Node *, const 
 }
 
 #if USE_EMBEDDED_COMPILER
-void ActionsDAG::compileExpressions(size_t min_count_to_compile_expression, const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes)
+void ActionsDAG::compileExpressions(
+    size_t min_count_to_compile_expression,
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes,
+    std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag)
 {
-    compileFunctions(min_count_to_compile_expression, lazy_executed_nodes);
+    if (uncompiled_actions_dag)
+        uncompiled_actions_dag->reset();
+
+    compileFunctions(min_count_to_compile_expression, lazy_executed_nodes, uncompiled_actions_dag);
     removeUnusedActions(/*allow_remove_inputs = */ false);
 }
 #endif
@@ -5215,11 +5221,11 @@ static ColumnConst::Ptr deserializeConstant(
 
         /// The constant is shared by every pipeline stream, and the pool gives each execution its own
         /// instance if `enable_adaptive_short_circuit_lazy_execution` makes the lambda body stateful.
+        auto capture_ptr = std::make_shared<LambdaCapture>(std::move(capture));
+        auto expression_actions = createLambdaExpressionActions(
+            std::move(capture_dag), ExpressionActionsSettings(context, CompileExpressions::yes), *capture_ptr);
         auto function_expression = std::make_shared<FunctionExpression>(
-            std::make_shared<LambdaCapture>(std::move(capture)),
-            std::make_shared<ExpressionActionsPool>(ExpressionActions::create(
-                std::move(capture_dag),
-                ExpressionActionsSettings(context, CompileExpressions::yes))));
+            std::move(capture_ptr), std::make_shared<ExpressionActionsPool>(std::move(expression_actions)));
 
         return ColumnConst::create(ColumnFunction::create(1, std::move(function_expression), std::move(captured_columns)), 0);
     }
@@ -5319,8 +5325,18 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
         /// runtime-filter id carrier, a volatile per-plan-build rendezvous key whose `result_name` is its
         /// stable identity. This output is hash-only and never deserialized; the transmission path
         /// (`for_cache_key == false`) always writes the value.
-        if (has_column && !(registry.for_cache_key && (node.is_runtime_filter_id || !isConstantValueInCacheKey(node))))
-            serializeConstant(*node.result_type, *node.column, out, registry, input_header);
+        ///
+        /// A set is the exception: `isConstantValueInCacheKey` leaves it out, but what `serializeConstant`
+        /// writes for it is only the set's hash, and a cache key writes no names, so without it nothing would tell
+        /// `x IN (SELECT a FROM t1)` from `x IN (SELECT a FROM t2)` - see `Node::updateHash`, which keeps
+        /// it for the same reason.
+        if (has_column)
+        {
+            const bool serialize_constant
+                = !node.is_runtime_filter_id && (isConstantValueInCacheKey(node) || WhichDataType(node.result_type).isSet());
+            if (!registry.for_cache_key || serialize_constant)
+                serializeConstant(*node.result_type, *node.column, out, registry, input_header);
+        }
 
         if (node.type == ActionType::INPUT)
         {
@@ -5488,13 +5504,11 @@ ActionsDAG ActionsDAG::deserialize(
                 deserializeCapture(capture, in, max_type_complexity);
                 auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity, nesting_depth + 1);
 
+                auto capture_ptr = std::make_shared<LambdaCapture>(std::move(capture));
+                auto expression_actions = createLambdaExpressionActions(
+                    std::move(capture_dag), ExpressionActionsSettings(context, CompileExpressions::yes), *capture_ptr);
                 node.function_base = std::make_shared<FunctionCapture>(
-                    std::make_shared<ExpressionActions>(
-                        std::move(capture_dag),
-                        ExpressionActionsSettings(context, CompileExpressions::yes)),
-                    std::make_shared<LambdaCapture>(std::move(capture)),
-                    node.result_type,
-                    function_name);
+                    std::move(expression_actions), std::move(capture_ptr), node.result_type, function_name);
 
                 node.function = node.function_base->prepare(arguments);
                 node.is_function_compiled = false;

@@ -35,7 +35,8 @@ private:
         bool recursively_convert_result_to_full_column_if_low_cardinality_ = false,
         bool allow_lazy_replicated_captures_ = false,
         ShortCircuitArgumentStatisticsPtr short_circuit_argument_statistics_ = nullptr,
-        std::optional<size_t> short_circuit_eager_argument_ = {});
+        std::optional<size_t> short_circuit_eager_argument_ = {},
+        const void * shared_node_ = nullptr);
 
 public:
     const char * getFamilyName() const override { return "Function"; }
@@ -240,10 +241,28 @@ private:
     /// see `processShortCircuitFunctions` in ExpressionActions.cpp.
     std::optional<size_t> short_circuit_eager_argument;
 
-    void appendArgument(const ColumnWithTypeAndName & column);
+    /// The lazily executed node this column computes, if the node has several consumers.
+    /// The copies of a node inside one tree contain the same rows, so they have the same result.
+    const void * shared_node = nullptr;
 
+    /// The results of the shared nodes already reduced on the rows of the tree that is being reduced.
+    struct ReducedColumns;
+    /// The lazy executed columns already visited by one `getReplacements` call, mapped to their replacement (nullptr if unchanged).
+    struct ReplacedColumns;
+    /// The positions of the replaced columns, with the new columns.
+    using Replacements = VectorWithMemoryTracking<std::pair<size_t, ColumnWithTypeAndName>>;
+
+    /// `profile` is used only if `with_profile`.
     template <bool with_profile>
-    ColumnWithTypeAndName reduceImpl(bool dry_run, FunctionExecutionProfile * profile) const;
+    ColumnWithTypeAndName reduceImpl(bool dry_run, ReducedColumns & reduced, FunctionExecutionProfile * profile) const;
+    /// Returns the replacements of the arguments of `function` that are already reduced, and of those inside its lazy executed arguments.
+    /// A lazy executed argument of a short-circuit function stays lazy, because the function executes it only on some rows. One of
+    /// `and`/`or` is not replaced: they execute the arguments that are not lazy first, so the lazy ones before it would get fewer rows.
+    static Replacements getReplacements(
+        const ColumnsWithTypeAndName & columns, const IFunctionBase & function, const ReducedColumns & reduced, ReplacedColumns & replaced);
+    static void applyReplacements(ColumnsWithTypeAndName & columns, Replacements && replacements);
+
+    void appendArgument(const ColumnWithTypeAndName & column);
 };
 
 const ColumnFunction * checkAndGetShortCircuitArgument(const ColumnPtr & column);

@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <Columns/ColumnConst.h>
+#include <Interpreters/ActionsDAGTraversal.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 
@@ -41,13 +42,12 @@ struct NodeInfo
 
 /// Returns the argument types of a function node, as expected by
 /// IFunctionBase::isSuitableForShortCircuitArgumentsExecution.
-/// Mirrors getDataTypesWithConstInfoFromNodes in ExpressionActions.cpp, which is file local there.
 DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawConstPtrs & nodes)
 {
     DataTypesWithConstInfo types;
     types.reserve(nodes.size());
     for (const auto & child : nodes)
-        types.push_back({child->result_type, child->column != nullptr});
+        types.push_back({child->result_type, child->column != nullptr, child->column.get()});
     return types;
 }
 
@@ -103,8 +103,7 @@ void fillRequiredColumns(
     /// delegates to it as well, through FunctionToExecutableFunctionAdaptor. It is imprecise in
     /// both directions: it reports true for merely expensive functions, and false for some
     /// functions that do throw while parsing row values (for example addDays(String, ...) via
-    /// FunctionDateOrDateTimeAddInterval). There is no sound can-throw oracle in the tree yet,
-    /// see the TODO on canThrow in IFunctionAdaptors.h.
+    /// FunctionDateOrDateTimeAddInterval). Step 4 of `tryBuildPrewhereSteps` clears the flag with `prewhereConditionCannotThrow`.
     if (!node_info.may_throw && node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
         && (node->function_base->isSuitableForShortCircuitArgumentsExecution(getArgumentTypesWithConstInfo(node->children))
             || node->function_base->isExpensive()))
@@ -265,6 +264,22 @@ bool isDynamicRuntimePrewhereFilter(const ActionsDAG::Node * node)
     return false;
 }
 
+bool prewhereConditionCannotThrow(const ActionsDAG::Node * condition)
+{
+    return allReachableNodes({condition}, [](const ActionsDAG::Node * node)
+    {
+        if (node->type == ActionsDAG::ActionType::ARRAY_JOIN || node->type == ActionsDAG::ActionType::PLACEHOLDER)
+            return false;
+
+        /// A function with a known constant result is not executed.
+        if (node->type != ActionsDAG::ActionType::FUNCTION || node->column)
+            return true;
+
+        return node->function_base && !node->function_base->isExpensive()
+            && !node->function_base->canThrow(getArgumentTypesWithConstInfo(node->children));
+    });
+}
+
 bool prewhereIsEntirelyQueryPredicate(const ActionsDAG & prewhere_actions, const String & filter_column_name)
 {
     ActionsDAG::NodeRawConstPtrs atoms;
@@ -395,13 +410,15 @@ bool tryBuildPrewhereSteps(
         const bool crosses_dynamic_filter_boundary = !condition_groups.empty()
             && isDynamicRuntimePrewhereFilter(node) != isDynamicRuntimePrewhereFilter(condition_groups.back().front());
 
-        if (same_columns && !node_info.may_throw && !is_first_unattributed && !crosses_dynamic_filter_boundary)
+        const bool may_throw = node_info.may_throw && !prewhereConditionCannotThrow(node);
+
+        if (same_columns && !may_throw && !is_first_unattributed && !crosses_dynamic_filter_boundary)
         {
             condition_groups.back().push_back(node);
             continue;
         }
 
-        if (!condition_groups.empty() && node_info.may_throw)
+        if (!condition_groups.empty() && may_throw)
             groups_requiring_filtered_input.insert(condition_groups.size());
 
         group_read_step.push_back(same_columns && read_ahead_columns ? group_read_step.back() : condition_groups.size());
