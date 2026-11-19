@@ -484,12 +484,16 @@ bool ColumnsChangedOnFlyByPart::changesProjectionColumns(const MergeTreeData::Da
     const auto & table_columns = reading.getStorageMetadata()->getColumns();
 
     /// A column counts as changed if it is updated, if it is MATERIALIZED and computed from an updated column,
-    /// or if the part does not store it.
+    /// or if the part does not store it. A subcolumn (`tup.x`) is checked by the column that stores it (`tup`).
     auto is_changed = [&](const String & name)
     {
-        return updated_columns.contains(name)
-            || !materialized_column_dependencies->findColumnsToRecalculate(name, updated_columns).empty()
-            || (updates_data_columns && table_columns.hasPhysical(name) && !part->tryGetColumn(name));
+        String name_in_storage = name;
+        if (auto column = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+            name_in_storage = column->getNameInStorage();
+
+        return updated_columns.contains(name_in_storage)
+            || !materialized_column_dependencies->findColumnsToRecalculate(name_in_storage, updated_columns).empty()
+            || (updates_data_columns && table_columns.hasPhysical(name_in_storage) && !part->tryGetColumn(name_in_storage));
     };
 
     return std::ranges::any_of(projection.required_columns, is_changed)

@@ -107,3 +107,9 @@ Description: Projection has been analyzed and will be applied during reading
 407	7	11
 19	309
 19	309
+-- patch of a tuple whose subcolumn is in the projection WHERE
+5	5	(1,0)
+5	5	(1,0)
+-- patch of the source of a MATERIALIZED tuple whose subcolumn is in the projection WHERE
+5	5	(1,0)
+5	5	(1,0)
