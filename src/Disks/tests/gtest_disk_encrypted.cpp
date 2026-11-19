@@ -185,11 +185,25 @@ TEST_F(DiskEncryptedTest, Truncate)
     EXPECT_EQ(getFileContents("a.txt"), "Some text");
     checkBinaryRepresentation(getDirectory() + "a.txt", kHeaderSize + 9);
 
-    /// Truncating to a non-zero size would keep the initialization vector for the next append, so it is refused.
-    EXPECT_THROW(encrypted_disk->truncateFile("a.txt", 4), Exception);
+    /// Truncate the file to a non-zero size: the retained prefix is rewritten with a new initialization vector,
+    /// so the next append does not reuse the keystream of the data that was cut off.
+    UInt128 iv_before = encrypted_disk->getEncryptedFileIV("a.txt");
+    encrypted_disk->truncateFile("a.txt", 4);
 
-    EXPECT_EQ(encrypted_disk->getFileSize("a.txt"), 9);
-    EXPECT_EQ(getFileContents("a.txt"), "Some text");
+    EXPECT_EQ(encrypted_disk->getFileSize("a.txt"), 4);
+    EXPECT_EQ(getFileContents("a.txt"), "Some");
+    checkBinaryRepresentation(getDirectory() + "a.txt", kHeaderSize + 4);
+    EXPECT_NE(encrypted_disk->getEncryptedFileIV("a.txt"), iv_before);
+    EXPECT_FALSE(encrypted_disk->existsFile("a.txt.truncate.tmp"));
+
+    /// Append after the truncation.
+    {
+        auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
+        writeString(std::string_view{" more"}, *buf);
+        buf->finalize();
+    }
+
+    EXPECT_EQ(getFileContents("a.txt"), "Some more");
     checkBinaryRepresentation(getDirectory() + "a.txt", kHeaderSize + 9);
 
     /// Truncate the file to zero size.

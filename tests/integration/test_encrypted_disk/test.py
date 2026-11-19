@@ -480,6 +480,42 @@ def test_append_to_file_without_payload():
     node.query("DROP TABLE plain_test SYNC")
 
 
+@pytest.mark.parametrize("engine", ["Log", "TinyLog", "StripeLog"])
+def test_log_family_rollback(engine):
+    # A failed insert into a Log family table is rolled back by `FileChecker::repair`, which truncates the
+    # files to the recorded sizes. On an encrypted disk the truncation rewrites the retained prefix with a
+    # fresh initialization vector instead of cutting the file in place, because the next append would
+    # otherwise reuse the keystream of the data that was cut off. The rollback must keep working: the rows
+    # of the failed insert must never become visible, neither after the next insert nor after a reload.
+    node.query("DROP TABLE IF EXISTS encrypted_test SYNC")
+    node.query(
+        f"CREATE TABLE encrypted_test (a UInt64, arr Array(Array(Int64))) ENGINE = {engine} "
+        "SETTINGS storage_policy = 'encrypted_policy'"
+    )
+    node.query("INSERT INTO encrypted_test SELECT number, [[number, number + 1], [number + 2]] FROM numbers(100)")
+
+    # The failpoint fails the commit of the recorded file sizes after the data files are written.
+    node.query("SYSTEM ENABLE FAILPOINT file_checker_update_and_save_fail_persisting")
+    try:
+        with pytest.raises(QueryRuntimeException, match="FAULT_INJECTED"):
+            node.query("INSERT INTO encrypted_test SELECT number, [[number]] FROM numbers(500, 60)")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT file_checker_update_and_save_fail_persisting")
+
+    node.query("INSERT INTO encrypted_test SELECT number, [[number]] FROM numbers(9000, 40)")
+
+    expected = "140\t365730\t0\n"
+    check_query = "SELECT count(), sum(a), countIf(a >= 500 AND a < 560) FROM encrypted_test"
+    assert node.query(check_query) == expected
+    assert node.query(
+        "SELECT count() FROM (SELECT a, arr FROM encrypted_test ORDER BY a DESC LIMIT 10) WHERE length(arr) > 0"
+    ) == "10\n"
+
+    node.query("DETACH TABLE encrypted_test")
+    node.query("ATTACH TABLE encrypted_test")
+    assert node.query(check_query) == expected
+
+
 @pytest.mark.parametrize(
     "old_version",
     ["version_1le", "version_1be", "version_2"],
