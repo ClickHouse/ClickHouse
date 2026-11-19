@@ -175,8 +175,9 @@ void stripDatabaseSetting(Settings & settings)
 
 void stripInitiatorOnlySettings(Settings & settings)
 {
-    /// Set by the initiator for its own remote reading (`enableGroupByTopK`) after this strip: the servers it queries
-    /// further have no sort of the initiator above them.
+    /// Not propagated to the next layer of distribution: it applies only to the servers the initiator queries directly,
+    /// which have the initiator's sort above them. The initiator sets it for those reads (`enableGroupByTopK`) after
+    /// this strip.
     if (settings[Setting::distributed_group_by_top_k].changed || settings[Setting::distributed_group_by_top_k] != 0)
     {
         settings[Setting::distributed_group_by_top_k] = 0;

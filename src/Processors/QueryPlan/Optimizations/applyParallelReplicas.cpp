@@ -709,7 +709,7 @@ public:
 private:
     /// The `Limit` of `GROUP BY ... ORDER BY ... LIMIT`: the node of the frame `index`, or of one of the two frames above it,
     /// with the sort and the expression in between.
-    QueryPlan::Node * limitAbove(size_t index) const
+    [[nodiscard]] QueryPlan::Node * limitAbove(size_t index) const
     {
         for (size_t i = 0; i < 3 && i <= index; ++i)
             if (auto * node = stack[index - i].node; typeid_cast<const LimitStep *>(node->step.get()))
