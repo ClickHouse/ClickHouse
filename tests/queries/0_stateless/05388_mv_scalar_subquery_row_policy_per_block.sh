@@ -17,11 +17,11 @@ ARRAY_SCALARS=$(printf '(SELECT groupArray(x) FROM ppar), %.0s' $(seq 31))'(SELE
 
 $CLICKHOUSE_CLIENT -m -q "
 DROP TABLE IF EXISTS mv_policy_in, mv_policy_udf, mv_policy_udf_ref, mv_merge_policy, mv_nested_policy, mv_atf, mv_nested_settings, mv_merge_atf, mv_merge_array_policy, mv_merge_variant_policy, mv_merge_nested_scalar, mv_parallel_array;
-DROP TABLE IF EXISTS mv_alias_merge, mv_buffer_merge, mv_mv_merge, mv_tf_merge, mv_loop_merge_policy, mpol_mv;
-DROP ROW POLICY IF EXISTS policy_05388 ON pin, pudf, pudfr, pmerge, pml, pn1, pn2, parr, pnsc, ppar, pvt, pvar;
+DROP TABLE IF EXISTS mv_alias_merge, mv_buffer_merge, mv_mv_merge, mv_tf_merge, mv_loop_merge_policy, mv_loop_policy, mv_loop_atf, mv_loop_arf, mpol_mv;
+DROP ROW POLICY IF EXISTS policy_05388 ON pin, pudf, pudfr, pmerge, pml, plp, pn1, pn2, parr, pnsc, ppar, pvt, pvar;
 DROP TABLE IF EXISTS mpol_alias, mpol_buffer, mpol_tf, mpol, mpl;
 DROP TABLE IF EXISTS pin, pudf, pudfr, pmerge, pn1, pn2, pns, patf, src_atf, pmatf, parr, pnsc, pvt, pvar, src_par, ppar, dst_par;
-DROP TABLE IF EXISTS mpol_other, pml, dst_eq;
+DROP TABLE IF EXISTS mpol_other, pml, plp, plf, dst_eq;
 DROP FUNCTION IF EXISTS ${UDF};
 DROP TABLE IF EXISTS dst;
 DROP TABLE IF EXISTS dist;
@@ -47,11 +47,13 @@ CREATE TABLE pns ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM nu
 CREATE TABLE parr ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM numbers(3);
 CREATE TABLE pnsc ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM numbers(3);
 CREATE TABLE pml ENGINE = MergeTree ORDER BY x AS SELECT arrayJoin([1, 2, 3, 105]) AS x;
+CREATE TABLE plp ENGINE = MergeTree ORDER BY x AS SELECT arrayJoin([1, 2, 3, 105]) AS x;
+CREATE TABLE plf ENGINE = MergeTree ORDER BY x AS SELECT arrayJoin([1, 2, 3, 105]) AS x;
 CREATE TABLE pvt (x UInt64, v Variant(String, UInt64), d Dynamic) ENGINE = MergeTree ORDER BY x
     AS SELECT number + 1, number + 1, number + 1 FROM numbers(3);
 CREATE TABLE pvar ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM numbers(3);
 CREATE FUNCTION ${UDF} AS (v) -> v IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src);
-CREATE ROW POLICY policy_05388 ON pin, pmerge, pml, pn2, pvt USING x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src) TO ALL;
+CREATE ROW POLICY policy_05388 ON pin, pmerge, pml, plp, pn2, pvt USING x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src) TO ALL;
 CREATE ROW POLICY policy_05388 ON pudf USING ${UDF}(x) TO ALL;
 CREATE ROW POLICY policy_05388 ON pudfr USING arrayExists(${UDF}, [x]) TO ALL;
 CREATE ROW POLICY policy_05388 ON pn1 USING x <= (SELECT max(x) FROM ${CLICKHOUSE_DATABASE}.pn2) TO ALL;
@@ -111,6 +113,24 @@ CREATE MATERIALIZED VIEW mv_loop_merge_policy TO dst_eq AS
     SELECT 'loop merge policy' AS name, (SELECT max(x) FROM (SELECT x FROM loop(${CLICKHOUSE_DATABASE}, mpl) LIMIT 4)) AS scalar_value,
         j.value AS join_value
     FROM src CROSS JOIN (SELECT max(x) AS value FROM (SELECT x FROM loop(${CLICKHOUSE_DATABASE}, mpl) LIMIT 4)) AS j;
+-- The query 'loop' runs over a plain table applies its row policy and 'additional_table_filters' entry, and the
+-- 'additional_result_filter'.
+CREATE MATERIALIZED VIEW mv_loop_policy TO dst_eq AS
+    SELECT 'loop policy' AS name, (SELECT max(x) FROM (SELECT x FROM loop(${CLICKHOUSE_DATABASE}, plp) LIMIT 4)) AS scalar_value,
+        j.value AS join_value
+    FROM src CROSS JOIN (SELECT max(x) AS value FROM (SELECT x FROM loop(${CLICKHOUSE_DATABASE}, plp) LIMIT 4)) AS j;
+CREATE MATERIALIZED VIEW mv_loop_atf TO dst_eq AS
+    SELECT 'loop table filters' AS name, (SELECT max(x) FROM (SELECT x FROM loop(${CLICKHOUSE_DATABASE}, plf) LIMIT 4
+        SETTINGS additional_table_filters = {'${CLICKHOUSE_DATABASE}.plf': 'x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src)'})) AS scalar_value,
+        j.value AS join_value
+    FROM src CROSS JOIN (SELECT max(x) AS value FROM (SELECT x FROM loop(${CLICKHOUSE_DATABASE}, plf) LIMIT 4
+        SETTINGS additional_table_filters = {'${CLICKHOUSE_DATABASE}.plf': 'x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src)'})) AS j;
+CREATE MATERIALIZED VIEW mv_loop_arf TO dst_eq AS
+    SELECT 'loop result filter' AS name, (SELECT max(x) FROM (SELECT x FROM loop(${CLICKHOUSE_DATABASE}, plf) LIMIT 4
+        SETTINGS additional_result_filter = 'x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src)')) AS scalar_value,
+        j.value AS join_value
+    FROM src CROSS JOIN (SELECT max(x) AS value FROM (SELECT x FROM loop(${CLICKHOUSE_DATABASE}, plf) LIMIT 4
+        SETTINGS additional_result_filter = 'x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src)')) AS j;
 
 -- The row policy of the 'Merge' child 'pn1' is analyzed as a standalone expression.
 CREATE MATERIALIZED VIEW mv_nested_policy TO dst AS
@@ -158,11 +178,11 @@ SELECT 'parallel array policy', count(), countIf(NOT arrayAll(a -> a = [x], arrs
 SELECT 'merge variant policy without a view', count() FROM merge(${CLICKHOUSE_DATABASE}, '^pvar\$');
 
 DROP TABLE mv_policy_in, mv_policy_udf, mv_policy_udf_ref, mv_merge_policy, mv_nested_policy, mv_atf, mv_nested_settings, mv_merge_atf, mv_merge_array_policy, mv_merge_variant_policy, mv_merge_nested_scalar, mv_parallel_array;
-DROP TABLE mv_alias_merge, mv_buffer_merge, mv_mv_merge, mv_tf_merge, mv_loop_merge_policy, mpol_mv;
-DROP ROW POLICY policy_05388 ON pin, pudf, pudfr, pmerge, pml, pn1, pn2, parr, pnsc, ppar, pvt, pvar;
+DROP TABLE mv_alias_merge, mv_buffer_merge, mv_mv_merge, mv_tf_merge, mv_loop_merge_policy, mv_loop_policy, mv_loop_atf, mv_loop_arf, mpol_mv;
+DROP ROW POLICY policy_05388 ON pin, pudf, pudfr, pmerge, pml, plp, pn1, pn2, parr, pnsc, ppar, pvt, pvar;
 DROP TABLE mpol_alias, mpol_buffer, mpol_tf, mpol, mpl;
 DROP TABLE pin, pudf, pudfr, pmerge, pn1, pn2, pns, patf, src_atf, pmatf, parr, pnsc, pvt, pvar, src_par, ppar, dst_par;
-DROP TABLE mpol_other, pml, dst_eq;
+DROP TABLE mpol_other, pml, plp, plf, dst_eq;
 DROP FUNCTION ${UDF};
 DROP TABLE dst;
 DROP TABLE dist;

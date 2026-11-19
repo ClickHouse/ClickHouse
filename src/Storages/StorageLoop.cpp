@@ -1,6 +1,7 @@
 #include <Storages/StorageLoop.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
+#include <Planner/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLoopStep.h>
 #include <Common/CurrentThread.h>
@@ -41,7 +42,11 @@ namespace DB
         if (view_source && view_source->getStorageID().getFullNameNotQuoted() == inner_storage->getStorageID().getFullNameNotQuoted())
             return true;
 
-        return inner_storage->mayReadViewSource(query_context);
+        /// The inner query is planned as a top-level query in the caller's context, so it applies the inner table's
+        /// row policy and `additional_table_filters` entry, and the `additional_result_filter`.
+        return inner_storage->mayReadViewSource(query_context)
+            || hiddenFilterMayReadTable(*inner_storage, "", query_context)
+            || astContainsSubquery(parseAdditionalResultFilter(query_context->getSettingsRef()));
     }
 
     void StorageLoop::read(
