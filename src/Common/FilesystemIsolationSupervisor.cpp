@@ -240,6 +240,10 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender, i
     const ssize_t size = ::recvmsg(fd, &msg, MSG_DONTWAIT | MSG_CMSG_CLOEXEC);
     if (size < 0)
         return (errno == EAGAIN || errno == EINTR) ? 0 : -1;
+    /// The `CMSG_NXTHDR` of musl casts and compares in ways that `-Weverything` refuses.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wcast-align"
+#pragma clang diagnostic ignored "-Wsign-compare"
     for (cmsghdr * cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg, cmsg))
     {
         if (cmsg->cmsg_level != SOL_SOCKET)
@@ -253,6 +257,7 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender, i
         else if (cmsg->cmsg_type == SCM_RIGHTS && cmsg->cmsg_len == CMSG_LEN(sizeof(int)))
             std::memcpy(&passed_fd, CMSG_DATA(cmsg), sizeof(int));
     }
+#pragma clang diagnostic pop
     /// The space is for one descriptor: with more, the kernel sets `MSG_CTRUNC` and closes the others.
     if (msg.msg_flags & (MSG_TRUNC | MSG_CTRUNC))
     {
