@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Columns/ColumnConst.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -21,29 +20,29 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return Derived::name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "() -> " + ColumnT{}.getName();
+        return std::make_shared<ColumnT>();
     }
 
-    [[nodiscard]] bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override { return false; }
 
     /// Some functions may return different values on different shards/replicas, so it's not constant for distributed query
-    [[nodiscard]] bool isSuitableForConstantFolding() const override { return !is_distributed; }
+    bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return result_type->createColumnConst(input_rows_count, constant_value);
     }

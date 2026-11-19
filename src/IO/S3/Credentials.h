@@ -1,10 +1,10 @@
 #pragma once
 
 #include "config.h"
-#include <base/types.h>
-#include <IO/S3/getAvailabilityZone.h>
 
 #if USE_AWS_S3
+
+#    include <base/types.h>
 
 #    include <aws/core/auth/AWSCredentials.h>
 #    include <aws/core/utils/threading/ReaderWriterLock.h>
@@ -21,13 +21,10 @@
 #    include <aws/core/internal/AWSHttpResourceClient.h>
 #    include <aws/core/config/AWSProfileConfigLoader.h>
 #    include <aws/core/auth/AWSCredentialsProviderChain.h>
-#    include <aws/core/auth/GeneralHTTPCredentialsProvider.h>
 #    include <aws/core/auth/bearer-token-provider/SSOBearerTokenProvider.h>
 
 #    include <IO/S3/PocoHTTPClient.h>
 #    include <IO/S3Defines.h>
-
-#    include <Common/Silk/FiberMutex.h>
 
 class SipHash;
 namespace DB::S3
@@ -36,20 +33,22 @@ namespace DB::S3
 /// In GCP metadata service can be accessed via DNS regardless of IPv4 or IPv6.
 static inline constexpr char GCP_METADATA_SERVICE_ENDPOINT[] = "http://metadata.google.internal";
 
+/// getRunningAvailabilityZone returns the availability zone of the underlying compute resources where the current process runs.
+std::string getRunningAvailabilityZone();
+std::string tryGetRunningAvailabilityZone();
 
 void setCredentialsProviderCacheMaxSize(size_t cache_size);
 
 class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
 {
-public:
     static constexpr char EC2_SECURITY_CREDENTIALS_RESOURCE[] = "/latest/meta-data/iam/security-credentials";
     static constexpr char EC2_AVAILABILITY_ZONE_RESOURCE[] = "/latest/meta-data/placement/availability-zone";
-    static constexpr char EC2_AVAILABILITY_ZONE_ID_RESOURCE[] = "/latest/meta-data/placement/availability-zone-id";
     static constexpr char EC2_IMDS_TOKEN_RESOURCE[] = "/latest/api/token";
     static constexpr char EC2_IMDS_TOKEN_HEADER[] = "x-aws-ec2-metadata-token";
     static constexpr char EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE[] = "21600";
     static constexpr char EC2_IMDS_TOKEN_TTL_HEADER[] = "x-aws-ec2-metadata-token-ttl-seconds";
 
+public:
     /// See EC2MetadataClient.
 
     explicit AWSEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration, const char * endpoint_);
@@ -72,14 +71,11 @@ public:
 
     virtual Aws::String getCurrentRegion() const;
 
-    friend String getRunningAvailabilityZone(AZFacilities az_facility);
+    friend String getRunningAvailabilityZone();
 
 private:
-    std::pair<Aws::String, Aws::Http::HttpResponseCode> getEC2MetadataToken(const Aws::String & user_agent_string) const;
-    // static String getAvailabilityZoneOrException(bool is_zone_id = false);
-    static String getAWSZoneID();
-    static String getAWSZoneName();
-
+    std::pair<Aws::String, Aws::Http::HttpResponseCode> getEC2MetadataToken(const std::string & user_agent_string) const;
+    static String getAvailabilityZoneOrException();
 
     const Aws::String endpoint;
     mutable std::recursive_mutex token_mutex;
@@ -145,11 +141,7 @@ class AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider : public Aws::Auth::AWS
 
 public:
     static std::shared_ptr<Aws::Auth::AWSCredentialsProvider>
-    create(DB::S3::PocoHTTPClientConfiguration & aws_client_configuration, uint64_t expiration_window_seconds_, std::string_view role_arn_ = {});
-
-    /// True when a role ARN or `web_identity_token_file` is set (environment, profile, or non-empty `role_arn_` override).
-    /// Used to decide whether to add web identity to the credentials chain so partial misconfiguration still surfaces `create` warnings.
-    static bool isWebIdentityConfigured(std::string_view role_arn_ = {});
+    create(DB::S3::PocoHTTPClientConfiguration & aws_client_configuration, uint64_t expiration_window_seconds_, String role_arn_ = "");
 
     explicit AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider(
         DB::S3::PocoHTTPClientConfiguration & aws_client_configuration,
@@ -157,10 +149,9 @@ public:
         Aws::String role_arn_,
         Aws::String token_file_,
         Aws::String session_name_,
-        Aws::String tmp_region);
+        String tmp_region);
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override;
-    void SetNeedRefresh() override;
 
     struct CacheKey
     {
@@ -174,8 +165,6 @@ public:
     };
 
 protected:
-    bool IsTimeToRefresh(long reload_frequency) override; // NOLINT(google-runtime-int)
-    bool IsSetNeedRefresh() override;
     void Reload() override;
 
 private:
@@ -187,8 +176,6 @@ private:
     Aws::String token;
     LoggerPtr logger;
     uint64_t expiration_window_seconds;
-    std::atomic<Int64> last_loaded_ms{0};
-    Silk::FiberMutex get_aws_credentials_mutex;
 };
 
 class SSOCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
@@ -235,24 +222,6 @@ struct CredentialsConfiguration
     std::string external_id{};
     std::string sts_endpoint_override{};
     std::string kms_role_arn{};
-
-    /// When true, no server-managed credential source is resolved (environment/IMDS/IRSA/instance-profile/
-    /// AWS-config providers and role_arn-based STS); only explicit credentials are honored. Defaults to true
-    /// (fail closed): server-internal callers that legitimately use the server's credentials opt out explicitly.
-    bool forbid_implicit_credentials = true;
-
-    /// With `forbid_implicit_credentials`, build an anonymous client instead of throwing when a request would
-    /// be refused. Set only when loading a persistent table from existing metadata (so it becomes inaccessible
-    /// rather than aborting startup); never for user-issued queries, which must still be rejected.
-    bool anonymous_fallback_for_server_credentials = false;
-};
-
-class GeneralHTTPCredentialsProvider : public Aws::Auth::GeneralHTTPCredentialsProvider
-{
-public:
-    using Aws::Auth::GeneralHTTPCredentialsProvider::GeneralHTTPCredentialsProvider;
-
-    Aws::Auth::AWSCredentials GetAWSCredentials() override;
 };
 
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
@@ -262,52 +231,44 @@ public:
         const DB::S3::PocoHTTPClientConfiguration & configuration,
         const Aws::Auth::AWSCredentials & credentials,
         const CredentialsConfiguration & credentials_configuration);
-
-    Aws::Auth::AWSCredentials GetAWSCredentials() override;
-    void SetNeedRefresh() override;
-
-private:
-    Silk::FiberMutex mutex;
-    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> cached_provider;
 };
 
 class AssumeRoleRequest : public Aws::AmazonSerializableWebServiceRequest
 {
 public:
-    AssumeRoleRequest(Aws::String role_arn_, Aws::String role_session_name_, Aws::String external_id_, Aws::String policy_);
+    AssumeRoleRequest(std::string role_arn_, std::string role_session_name_, std::string external_id_);
 
     Aws::Http::HeaderValueCollection GetHeaders() const override;
 
     const char * GetServiceRequestName() const override { return "AssumeRole"; }
 
-    /// The parameters go into a form-encoded POST body, as the AWS SDK does. A session policy is too long for a URL.
-    Aws::String SerializePayload() const override;
+    Aws::String SerializePayload() const override { return {}; }
+
+    void AddQueryStringParameters(Aws::Http::URI & uri) const override;
 
 private:
-    Aws::String role_arn;
-    Aws::String role_session_name;
-    Aws::String external_id;
-    Aws::String policy;
+    std::string role_arn;
+    std::string role_session_name;
+    std::string external_id;
 };
-
 class AssumeRoleResult
 {
 public:
     /// NOLINTNEXTLINE
     AssumeRoleResult(Aws::AmazonWebServiceResult<Aws::Utils::Xml::XmlDocument> result);
 
-    [[nodiscard]] const Aws::String & getAccessKeyID() const { return access_key_id; }
+    const std::string & getAccessKeyID() const { return access_key_id; }
 
-    [[nodiscard]] const Aws::String & getSecretAccessKey() const { return secret_access_key; }
+    const std::string & getSecretAccessKey() const { return secret_access_key; }
 
-    [[nodiscard]] const Aws::String & getSessionToken() const { return session_token; }
+    const std::string & getSessionToken() const { return session_token; }
 
-    [[nodiscard]] const Aws::Utils::DateTime & getExpiration() const { return expiration; }
+    const Aws::Utils::DateTime & getExpiration() const { return expiration; }
 
 private:
-    Aws::String access_key_id;
-    Aws::String secret_access_key;
-    Aws::String session_token;
+    std::string access_key_id;
+    std::string secret_access_key;
+    std::string session_token;
     Aws::Utils::DateTime expiration;
 
     LoggerPtr log{getLogger("AssumeRoleResult")};
@@ -318,16 +279,10 @@ using AssumeRoleOutcome = Aws::Utils::Outcome<AssumeRoleResult, Aws::S3::S3Error
 class AWSAssumeRoleClient : public Aws::Client::AWSXMLClient
 {
 public:
-    /// Builds a client with bounded retries and timeouts for the credential request.
-    static std::shared_ptr<AWSAssumeRoleClient> create(
-        const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
-        const DB::S3::PocoHTTPClientConfiguration & client_configuration,
-        std::string_view sts_endpoint_override = "");
-
     AWSAssumeRoleClient(
         const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
         const Aws::Client::ClientConfiguration & client_configuration,
-        std::string_view sts_endpoint_override = "");
+        const std::string & sts_endpoint_override = "");
 
     AssumeRoleOutcome assumeRole(const AssumeRoleRequest & request) const;
 
@@ -341,18 +296,18 @@ class AwsAuthSTSAssumeRoleCredentialsProvider : public Aws::Auth::AWSCredentials
 {
 public:
     static std::shared_ptr<Aws::Auth::AWSCredentialsProvider> create(
-            std::string_view role_arn_,
-            std::string_view session_name_,
-            std::string_view external_id_,
+            std::string role_arn_,
+            std::string session_name_,
+            std::string external_id_,
             uint64_t expiration_window_seconds_,
             std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider,
             const DB::S3::PocoHTTPClientConfiguration & client_configuration,
-            std::string_view sts_endpoint_override = {});
+            const std::string & sts_endpoint_override = "");
 
     AwsAuthSTSAssumeRoleCredentialsProvider(
-            Aws::String role_arn_,
-            Aws::String session_name_,
-            Aws::String external_id_,
+            std::string role_arn_,
+            std::string session_name_,
+            std::string external_id_,
             uint64_t expiration_window_seconds_,
             std::shared_ptr<AWSAssumeRoleClient> client_);
 
@@ -360,10 +315,10 @@ public:
 
     struct CacheKey
     {
-        Aws::String role_arn;
-        Aws::String session_name;
-        Aws::String external_id;
-        Aws::String endpoint;
+        std::string role_arn;
+        std::string session_name;
+        std::string external_id;
+        std::string endpoint;
         Aws::Auth::AWSCredentials credentials;
 
         bool operator==(const CacheKey & rhs) const = default;
@@ -374,9 +329,9 @@ public:
 protected:
     void Reload() override;
 private:
-    Aws::String role_arn;
-    Aws::String session_name;
-    Aws::String external_id;
+    std::string role_arn;
+    std::string session_name;
+    std::string external_id;
     uint64_t expiration_window_seconds;
     std::shared_ptr<AWSAssumeRoleClient> client;
     Aws::Auth::AWSCredentials credentials;
@@ -389,4 +344,18 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
     const CredentialsConfiguration & credentials_configuration);
 }
 
+#else
+
+#    include <string>
+
+namespace DB
+{
+
+namespace S3
+{
+std::string getRunningAvailabilityZone();
+std::string tryGetRunningAvailabilityZone();
+}
+
+}
 #endif

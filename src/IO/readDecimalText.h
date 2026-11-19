@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/FieldVisitorToString.h>
+#include <IO/ReadHelpers.h>
 #include <Common/intExp.h>
 #include <base/arithmeticOverflow.h>
 

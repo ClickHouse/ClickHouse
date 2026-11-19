@@ -51,14 +51,8 @@ protected:
         bool prepared_successfully;
         bool need_to_check_missing_part_in_fetch;
         PartLogWriter part_log_writer;
-        /// Set it when the entry is intentionally not executed now because we are waiting for another
-        /// replica to produce the part, and no exception will be thrown. Without an exception the queue
-        /// cannot apply its exponential backoff (it is armed by `updateLastExeption`), so ask the
-        /// background assignee to postpone the next attempt instead of triggering it immediately.
-        bool postpone_next_attempt = false;
     };
 
-    virtual ContextMutablePtr createTaskContext() const = 0;
     virtual PrepareResult prepare() = 0;
     virtual bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) = 0;
 
@@ -79,17 +73,14 @@ protected:
     ReplicatedMergeTreeLogEntry & entry;
     MergeList::EntryPtr merge_mutate_entry{nullptr};
     LoggerPtr log;
-    /// Collects the counters and the memory of all threads of the task, from its first step.
-    ThreadGroupPtr thread_group;
+    /// ProfileEvents for current part will be stored here
+    ProfileEvents::Counters profile_counters;
     ContextMutablePtr task_context;
 
 private:
     enum class CheckExistingPartResult : uint8_t
     {
         PART_EXISTS,
-        /// The part is active locally, but its node under `replicas/<r>/parts/` is missing. It has
-        /// been enqueued for check; the entry has to wait for the part check thread to reconcile it.
-        PART_MISSING_IN_ZOOKEEPER,
         OK
     };
 
@@ -107,7 +98,6 @@ private:
 
     PartLogWriter part_log_writer{};
     State state{State::NEED_PREPARE};
-    bool postpone_next_attempt = false;
     IExecutableTask::TaskResultCallback task_result_callback;
     bool print_exception = true;
     pcg64 rng;

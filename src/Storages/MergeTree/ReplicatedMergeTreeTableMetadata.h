@@ -22,9 +22,9 @@ struct ReplicatedMergeTreeTableMetadata
 
     String date_column;
     String sampling_expression;
-    UInt64 index_granularity{};
+    UInt64 index_granularity;
     /// Merging related params
-    int merging_params_mode{};
+    int merging_params_mode;
     int merge_params_version = REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS;
     String sign_column;
     String version_column;
@@ -39,7 +39,7 @@ struct ReplicatedMergeTreeTableMetadata
     String projections;
     String constraints;
     String ttl_table;
-    UInt64 index_granularity_bytes{};
+    UInt64 index_granularity_bytes;
 
     ReplicatedMergeTreeTableMetadata() = default;
     explicit ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot);
@@ -59,7 +59,7 @@ struct ReplicatedMergeTreeTableMetadata
         ContextPtr context);
 
     void write(WriteBuffer & out) const;
-    [[nodiscard]] String toString() const;
+    String toString() const;
 
     struct Diff
     {
@@ -81,38 +81,36 @@ struct ReplicatedMergeTreeTableMetadata
         bool ttl_table_changed = false;
         String new_ttl_table;
 
-        [[nodiscard]] bool empty() const
+        bool empty() const
         {
             return !sorting_key_changed && !sampling_expression_changed && !skip_indices_changed && !projections_changed
                 && !ttl_table_changed && !constraints_changed;
         }
 
-        [[nodiscard]] StorageInMemoryMetadata getNewMetadata(const ColumnsDescription & new_columns, const VirtualColumnsDescription & virtuals, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const;
+        StorageInMemoryMetadata getNewMetadata(const ColumnsDescription & new_columns, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const;
     };
 
-    [[nodiscard]] bool checkEquals(
+    bool checkEquals(
         const ReplicatedMergeTreeTableMetadata & from_zk,
         const ColumnsDescription & columns,
-        const VirtualColumnsDescription & virtuals,
         const std::string & table_name_for_error_message,
         ContextPtr context,
         bool check_index_granularity = true,
         bool strict_check = true,
         LoggerPtr logger = nullptr) const;
 
-    [[nodiscard]] Diff checkAndFindDiff(
+    Diff checkAndFindDiff(
         const ReplicatedMergeTreeTableMetadata & from_zk,
         const ColumnsDescription & columns,
-        const VirtualColumnsDescription & virtuals,
         const std::string & table_name_for_error_message,
         ContextPtr context,
         bool check_index_granularity = true) const;
 
 private:
+
     void checkImmutableFieldsEquals(
         const ReplicatedMergeTreeTableMetadata & from_zk,
         const ColumnsDescription & columns,
-        const VirtualColumnsDescription & virtuals,
         const std::string & table_name_for_error_message,
         ContextPtr context,
         bool check_index_granularity = true) const;

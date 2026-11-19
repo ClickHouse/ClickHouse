@@ -8,7 +8,7 @@ namespace DB
   */
 namespace
 {
-class FunctionColorSRGBToOKLCH final : public ColorConversionFromSRGBBase<FunctionColorSRGBToOKLCH>
+class FunctionColorSRGBToOKLCH : public ColorConversionFromSRGBBase<FunctionColorSRGBToOKLCH>
 {
 public:
     static constexpr auto name = "colorSRGBToOKLCH";
@@ -18,10 +18,10 @@ public:
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionColorSRGBToOKLCH>(context_); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
     /// sRGB -> OKLCH conversion. Follows the step-by-step pipeline described in Ottosson's article. See ColorConversion.h
-    [[nodiscard]] ColorConversion::Color convertFromSrgb(const ColorConversion::Color & rgb, Float64 gamma) const
+    ColorConversion::Color convertFromSrgb(const ColorConversion::Color & rgb, Float64 gamma) const
     {
         /// Step 1-3: sRGB to OKLab (handled by ColorConversion namespace helper)
         auto oklab = ColorConversion::srgbToOklab(rgb, gamma);
@@ -52,22 +52,22 @@ public:
 REGISTER_FUNCTION(ColorSRGBToOKLCH)
 {
     FunctionDocumentation::Description description = R"(
-Converts a colour encoded in the **sRGB** colour space to the perceptually uniform **OKLCH** colour space.
+        Converts a colour encoded in the **sRGB** colour space to the perceptually uniform **OKLCH** colour space.
 
-If any input channel is outside `[0...255]` or the gamma value is non-positive, the behaviour is implementation-defined.
+        If any input channel is outside `[0...255]` or the gamma value is non-positive, the behaviour is implementation-defined.
 
-<Note>
-**OKLCH** is a cylindrical version of the OKLab colour space.
-It's three coordinates are `L` (the lightness in the range `[0...1]`), `C` (chroma `>= 0`) and `H` (the hue in degrees from `[0...360]`).
-OKLab/OKLCH is designed to be perceptually uniform while remaining cheap to compute.
-</Note>
+        :::note
+        **OKLCH** is a cylindrical version of the OKLab colour space.
+        It's three coordinates are `L` (the lightness in the range `[0...1]`), `C` (chroma `>= 0`) and `H` (the hue in degrees from `[0...360]`).
+        OKLab/OKLCH is designed to be perceptually uniform while remaining cheap to compute.
+        :::
 
-The conversion consists of three stages:
-1) sRGB to Linear sRGB
-2) Linear sRGB to OKLab
-3) OKLab to OKLCH.
+        The conversion consists of three stages:
+        1) sRGB to Linear sRGB
+        2) Linear sRGB to OKLab
+        3) OKLab to OKLCH.
 
-For references of colors in the OKLCH space, and how they correspond to sRGB colors, please see [https://OKLCH.com/](https://OKLCH.com/).
+        For references of colors in the OKLCH space, and how they correspond to sRGB colors, please see [https://OKLCH.com/](https://OKLCH.com/).
     )";
     FunctionDocumentation::Syntax syntax = "colorSRGBToOKLCH(tuple[, gamma])";
     FunctionDocumentation::Arguments arguments = {

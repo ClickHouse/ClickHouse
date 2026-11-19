@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesRemoveAllTagsExcept(group, ['tag_name_1', 'tag_name_2', ...])
 /// removes all tags from a tags group except specified ones, and returns the new tags group.
-class FunctionTimeSeriesRemoveAllTagsExcept final : public IFunction
+class FunctionTimeSeriesRemoveAllTagsExcept : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesRemoveAllTagsExcept";
@@ -24,29 +24,18 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesRemoveAllTagsExcept>(context); }
     explicit FunctionTimeSeriesRemoveAllTagsExcept(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    size_t getNumberOfArguments() const override { return 2; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     /// Function timeSeriesRemoveAllTagsExcept uses information stored in the query context, it's deterministic in the scope of the current query.
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return true; }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
 
-    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
-    [[nodiscard]] bool isStateful() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
-    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
-
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(UInt64, const Array(String | IsNothing)) -> UInt64";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
         return std::make_shared<DataTypeUInt64>();
@@ -64,7 +53,7 @@ public:
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForConstTagNames(name, arguments, 1);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         auto old_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0);
         auto tags_to_keep = TimeSeriesTagsFunctionHelpers::extractConstTagNamesFromArgument(name, arguments, 1);
@@ -84,8 +73,8 @@ REGISTER_FUNCTION(TimeSeriesRemoveAllTagsExcept)
 {
     FunctionDocumentation::Description description = R"(
 Removes all tags except specified ones from a group of tags.
-See also function [timeSeriesRemoveTag()](/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTag),
-[timeSeriesRemoveTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags).
+See also function [timeSeriesRemoveTag()](/sql-reference/functions/time-series-functions#timeSeriesRemoveTag),
+[timeSeriesRemoveTags()](/sql-reference/functions/time-series-functions#timeSeriesRemoveTags).
 )";
     FunctionDocumentation::Syntax syntax = "timeSeriesRemoveAllTagsExcept(group, tags_to_keep)";
     FunctionDocumentation::Arguments arguments = {

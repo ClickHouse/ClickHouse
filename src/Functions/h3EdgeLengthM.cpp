@@ -31,30 +31,33 @@ namespace
 // used by `H3kRing` function. For small enough search area simple flat approximation can be used,
 // i.e. the smallest `k` that satisfies relation `3 k^2 - 3 k + 1 >= (radius / e)^2` should be
 // chosen
-class FunctionH3EdgeLengthM final : public IFunction
+class FunctionH3EdgeLengthM : public IFunction
 {
 public:
     static constexpr auto name = "h3EdgeLengthM";
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3EdgeLengthM>(); }
 
-    [[nodiscard]] std::string getName() const override { return name; }
+    std::string getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(UInt8) -> Float64";
+        FunctionArgumentDescriptors mandatory_args{{"resolution", &isUInt8, nullptr, "UInt8"}};
+        validateFunctionArguments(*this, arguments, mandatory_args);
+
+        return std::make_shared<DataTypeFloat64>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeFloat64>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)
@@ -84,8 +87,7 @@ public:
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
                     toString(resolution), getName(), MAX_H3_RES);
 
-            double res = 0;
-            getHexagonEdgeLengthAvgM(resolution, &res);
+            Float64 res = getHexagonEdgeLengthAvgM(resolution);
 
             dst_data[row] = res;
         }
@@ -115,7 +117,7 @@ Calculates the average length of an [H3](https://h3geo.org/docs/core-library/h3I
             "SELECT h3EdgeLengthM(15) AS edgeLengthM",
             R"(
 ┌─edgeLengthM─┐
-│  0.58416863 │
+│ 0.509713273 │
 └─────────────┘
             )"
         }

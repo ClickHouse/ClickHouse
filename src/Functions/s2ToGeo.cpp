@@ -19,6 +19,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
 }
@@ -29,7 +30,7 @@ namespace
 /**
  *  Returns a point (longitude, latitude) in degrees
  */
-class FunctionS2ToGeo final : public IFunction
+class FunctionS2ToGeo : public IFunction
 {
 public:
     static constexpr auto name = "s2ToGeo";
@@ -39,26 +40,33 @@ public:
         return std::make_shared<FunctionS2ToGeo>();
     }
 
-    [[nodiscard]] std::string getName() const override
+    std::string getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    /// Throws on an invalid S2 cell id, such as `0`.
-    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
-    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(UInt64) -> Tuple(Float64, Float64)";
+        const auto * arg = arguments[0].get();
+
+        if (!WhichDataType(arg).isUInt64())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arg->getName(), 1, getName());
+
+        DataTypePtr element = std::make_shared<DataTypeFloat64>();
+
+        return std::make_shared<DataTypeTuple>(DataTypes{element, element});
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)
@@ -108,7 +116,7 @@ public:
 REGISTER_FUNCTION(S2ToGeo)
 {
     FunctionDocumentation::Description description = R"(
-Returns coordinates (longitude, latitude) corresponding to the provided S2 point index. This is the inverse of [`geoToS2`](/reference/functions/regular-functions/geo/s2#geotos2).
+Returns coordinates (longitude, latitude) corresponding to the provided S2 point index. This is the inverse of [`geoToS2`](/sql-reference/functions/geo/s2#geotos2).
     )";
     FunctionDocumentation::Syntax syntax = "s2ToGeo(s2index)";
     FunctionDocumentation::Arguments arguments = {

@@ -1,13 +1,10 @@
 #include <Dictionaries/HTTPDictionarySource.h>
-#include <Common/maskSensitiveQueryParameters.h>
-#include <Common/maskURIPassword.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Core/ServerSettings.h>
-#include <Core/Settings.h>
 #include <Formats/formatBlock.h>
-#include <IO/CompressionMethod.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -22,65 +19,18 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSnappyMode snappy_mode;
-}
-
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
 }
 
-namespace Setting
-{
-    extern const SettingsUInt64 max_http_get_redirects;
-}
-
 static const UInt64 max_block_size = 8192;
-
-/// Hides the credentials a url can carry: the `user:password@` userinfo and sensitive query parameters
-/// (`access_token`, `sig`, ...). Returns whether anything was masked.
-static bool maskURLCredentials(String & url)
-{
-    bool masked = maskURIPassword(&url, URI_AUTHORITY_TERMINATORS);
-    String without_parameters = maskSensitiveQueryParametersInURI(url);
-    masked |= without_parameters != url;
-    url = std::move(without_parameters);
-    return masked;
-}
-
-/// The same for a url given as an SQL string literal in a dictionary `SOURCE`, keeping its quotes.
-static bool maskQuotedURLCredentials(String & literal)
-{
-    if (literal.size() < 2 || literal.front() != '\'' || literal.back() != '\'')
-        return maskURLCredentials(literal);
-    String url = literal.substr(1, literal.size() - 2);
-    if (!maskURLCredentials(url))
-        return false;
-    literal = "'" + url + "'";
-    return true;
-}
-
-static const std::unordered_set<std::string_view> optional_configuration_keys = { // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    "url",
-    "endpoint",
-    "user",
-    "credentials.user",
-    "password",
-    "credentials.password",
-    "format",
-    "compression_method",
-    "structure",
-    "name",
-    "headers.header.name",
-    "headers.header.value",
-};
 
 
 HTTPDictionarySource::HTTPDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Configuration & configuration_,
+    const Poco::Net::HTTPBasicCredentials & credentials_,
     Block & sample_block_,
     ContextPtr context_)
     : log(getLogger("HTTPDictionarySource"))
@@ -91,6 +41,8 @@ HTTPDictionarySource::HTTPDictionarySource(
     , context(context_)
     , timeouts(ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
 {
+    credentials.setUsername(credentials_.getUsername());
+    credentials.setPassword(credentials_.getPassword());
 }
 
 HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
@@ -102,34 +54,16 @@ HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
     , context(Context::createCopy(other.context))
     , timeouts(ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
 {
+    credentials.setUsername(other.credentials.getUsername());
+    credentials.setPassword(other.credentials.getPassword());
 }
 
 QueryPipeline HTTPDictionarySource::createWrappedBuffer(std::unique_ptr<ReadWriteBufferFromHTTP> http_buffer_ptr)
 {
-    /// The buffer is created with delayed initialization disabled, so all redirects have already been
-    /// followed and `getCurrentURI` returns the URI of the final response. Detect the compression method
-    /// from it rather than from `configuration.url`: a redirect may point to an object with a different
-    /// extension (e.g. `/redirect` -> `/data.csv.gz`) and no `Content-Encoding` header.
-    String path = http_buffer_ptr->getCurrentURI().getPath();
+    Poco::URI uri(configuration.url);
     String http_request_compression_method_str = http_buffer_ptr->getCompressionMethod();
-    auto compression_method = chooseCompressionMethod(path, http_request_compression_method_str);
-    /// The inverse redirect pattern must keep working too: a source URL with a compression suffix
-    /// (e.g. `/data.csv.gz`) may redirect to an opaque signed URL (e.g. `/signed-token`) that serves
-    /// the same compressed object without `Content-Encoding`. In that case the final URI does not
-    /// imply any compression method, so fall back to the suffix of the original source URL.
-    if (compression_method == CompressionMethod::None && http_request_compression_method_str.empty())
-        compression_method = chooseCompressionMethod(Poco::URI(configuration.url).getPath(), "");
-    /// When the compression method came from the response's `Content-Encoding` header,
-    /// `Content-Encoding: snappy` follows the HTTP standard wire format (snappy framing),
-    /// independent of the user-tunable `snappy_mode`. When the method is instead inferred
-    /// from the URL path (for example `http://.../data.snappy`), respect the user's
-    /// `snappy_mode` setting like `StorageURL` does, so dictionary sources stay consistent
-    /// with generic file/url reads.
-    SnappyMode snappy_mode = !http_request_compression_method_str.empty()
-        ? SnappyMode::Framed
-        : context->getSettingsRef()[Setting::snappy_mode];
     auto in_ptr_wrapped
-        = wrapReadBufferWithCompressionMethod(std::move(http_buffer_ptr), compression_method, /*zstd_window_log_max=*/0, snappy_mode);
+        = wrapReadBufferWithCompressionMethod(std::move(http_buffer_ptr), chooseCompressionMethod(uri.getPath(), http_request_compression_method_str));
     auto source = context->getInputFormat(configuration.format, *in_ptr_wrapped, sample_block, max_block_size);
     source->addBuffer(std::move(in_ptr_wrapped));
     return QueryPipeline(std::move(source));
@@ -156,11 +90,7 @@ void HTTPDictionarySource::checkCredentials() const
 {
     /// Per request: a loaded source is kept and cloned across updates, and <http_forbid_headers> can change meanwhile.
     if (configuration.created_from_ddl)
-    {
-        Poco::Net::HTTPBasicCredentials credentials;
-        credentials.setUsername(configuration.user);
         context->getHTTPHeaderFilter().checkBasicCredentials(credentials);
-    }
 }
 
 BlockIO HTTPDictionarySource::loadAll()
@@ -174,11 +104,9 @@ BlockIO HTTPDictionarySource::loadAll()
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                    .withSettings(context->getReadSettings())
                    .withTimeouts(timeouts)
-                   .withHostFilter(configuration.created_from_ddl ? &context->getRemoteHostFilter() : nullptr)
-                   .withRedirects(context->getSettingsRef()[Setting::max_http_get_redirects])
                    .withHeaders(configuration.header_entries)
                    .withDelayInit(false)
-                   .createWithBasicCredentials(configuration.user, configuration.password);
+                   .create(credentials);
     BlockIO io;
     io.pipeline = createWrappedBuffer(std::move(buf));
     return io;
@@ -189,19 +117,15 @@ BlockIO HTTPDictionarySource::loadUpdatedAll()
     checkCredentials();
     Poco::URI uri(configuration.url);
     getUpdateFieldAndDate(uri);
-    String masked_uri = uri.toString();
-    maskURLCredentials(masked_uri);
-    LOG_TRACE(log, "loadUpdatedAll {}", masked_uri);
+    LOG_TRACE(log, "loadUpdatedAll {}", uri.toString());
 
     auto buf = BuilderRWBufferFromHTTP(uri)
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                    .withSettings(context->getReadSettings())
                    .withTimeouts(timeouts)
-                   .withHostFilter(configuration.created_from_ddl ? &context->getRemoteHostFilter() : nullptr)
-                   .withRedirects(context->getSettingsRef()[Setting::max_http_get_redirects])
                    .withHeaders(configuration.header_entries)
                    .withDelayInit(false)
-                   .createWithBasicCredentials(configuration.user, configuration.password);
+                   .create(credentials);
 
     BlockIO io;
     io.pipeline = createWrappedBuffer(std::move(buf));
@@ -215,10 +139,12 @@ BlockIO HTTPDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & i
 
     auto block = blockForIds(dict_struct, ids);
 
-    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](WriteBuffer & out)
+    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
     {
-        auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out, block.cloneEmpty());
+        WriteBufferFromOStream out_buffer(ostr);
+        auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out_buffer, block.cloneEmpty());
         formatBlock(output_format, block);
+        out_buffer.finalize();
     };
 
     Poco::URI uri(configuration.url);
@@ -228,12 +154,10 @@ BlockIO HTTPDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & i
                    .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                    .withSettings(context->getReadSettings())
                    .withTimeouts(timeouts)
-                   .withHostFilter(configuration.created_from_ddl ? &context->getRemoteHostFilter() : nullptr)
-                   .withRedirects(context->getSettingsRef()[Setting::max_http_get_redirects])
                    .withHeaders(configuration.header_entries)
                    .withOutCallback(std::move(out_stream_callback))
                    .withDelayInit(false)
-                   .createWithBasicCredentials(configuration.user, configuration.password);
+                   .create(credentials);
 
     BlockIO io;
     io.pipeline = createWrappedBuffer(std::move(buf));
@@ -247,10 +171,12 @@ BlockIO HTTPDictionarySource::loadKeys(const Columns & key_columns, const Vector
 
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
 
-    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](WriteBuffer & out)
+    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
     {
-        auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out, block.cloneEmpty());
+        WriteBufferFromOStream out_buffer(ostr);
+        auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out_buffer, block.cloneEmpty());
         formatBlock(output_format, block);
+        out_buffer.finalize();
     };
 
     Poco::URI uri(configuration.url);
@@ -260,12 +186,10 @@ BlockIO HTTPDictionarySource::loadKeys(const Columns & key_columns, const Vector
                    .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                    .withSettings(context->getReadSettings())
                    .withTimeouts(timeouts)
-                   .withHostFilter(configuration.created_from_ddl ? &context->getRemoteHostFilter() : nullptr)
-                   .withRedirects(context->getSettingsRef()[Setting::max_http_get_redirects])
                    .withHeaders(configuration.header_entries)
                    .withOutCallback(std::move(out_stream_callback))
                    .withDelayInit(false)
-                   .createWithBasicCredentials(configuration.user, configuration.password);
+                   .create(credentials);
 
     BlockIO io;
     io.pipeline = createWrappedBuffer(std::move(buf));
@@ -294,13 +218,10 @@ DictionarySourcePtr HTTPDictionarySource::clone() const
 
 std::string HTTPDictionarySource::toString() const
 {
-    /// Shown in `system.dictionaries` and in the logs.
-    String uri = Poco::URI(configuration.url).toString();
-    maskURLCredentials(uri);
-    return uri;
+    Poco::URI uri(configuration.url);
+    return uri.toString();
 }
 
-void registerDictionarySourceHTTP(DictionarySourceFactory & factory);
 void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,
@@ -315,8 +236,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `http` does not support attribute expressions");
 
         auto settings_config_prefix = config_prefix + ".http";
-        String user;
-        SecretString password;
+        Poco::Net::HTTPBasicCredentials credentials;
         HTTPHeaderEntries header_entries;
         String url;
         String endpoint;
@@ -325,26 +245,18 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
         auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, global_context) : nullptr;
         if (named_collection)
         {
-            /// Headers in config file will have structure "headers.header.name" and "headers.header.value".
-            /// But Poco::AbstractConfiguration converts them into "header", "header[1]", "header[2]".
-            static const std::vector<std::shared_ptr<re2::RE2>> optional_regex_keys // STYLE_CHECK_ALLOW_STD_CONTAINERS
-            {
-                std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].name)"),
-                std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].value)"),
-            };
-
             validateNamedCollection(
                 *named_collection,
-                /* required_keys */ {},
-                /* optional_keys */ optional_configuration_keys,
-                optional_regex_keys);
+                /* required_keys */{},
+                /* optional_keys */ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>{
+                "url", "endpoint", "user", "credentials.user", "password", "credentials.password", "format", "compression_method", "structure", "name"});
 
             url = named_collection->getOrDefault<String>("url", "");
             endpoint = named_collection->getOrDefault<String>("endpoint", "");
             format = named_collection->getOrDefault<String>("format", "");
 
-            user = named_collection->getAnyOrDefault<String>({"user", "credentials.user"}, "");
-            password = named_collection->getAnyOrDefault<SecretString>({"password", "credentials.password"}, {});
+            credentials.setUsername(named_collection->getAnyOrDefault<String>({"user", "credentials.user"}, ""));
+            credentials.setPassword(named_collection->getAnyOrDefault<String>({"password", "credentials.password"}, ""));
 
             header_entries = getHeadersFromNamedCollection(*named_collection);
         }
@@ -354,8 +266,8 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 
             if (config.has(credentials_prefix))
             {
-                user = config.getString(credentials_prefix + ".user", "");
-                password = config.getString(credentials_prefix + ".password", "");
+                credentials.setUsername(config.getString(credentials_prefix + ".user", ""));
+                credentials.setPassword(config.getString(credentials_prefix + ".password", ""));
             }
 
             const auto & headers_prefix = settings_config_prefix + ".headers";
@@ -394,7 +306,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
         if (created_from_ddl)
         {
             context->getRemoteHostFilter().checkURL(Poco::URI(uri));
-            context->getHTTPHeaderFilter().checkHeaders(header_entries);
+            context->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_entries);
         }
 
         auto configuration = HTTPDictionarySource::Configuration
@@ -403,93 +315,13 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
             .format = format,
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-            .user = user,
-            .password = password,
             .header_entries = std::move(header_entries),
             .created_from_ddl = created_from_ddl
         };
 
-        return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, sample_block, context);
+        return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context);
     };
-    /// The `url` and `endpoint` can carry credentials in the userinfo and in the query parameters.
-    factory.registerSource(
-        "http",
-        create_table_source,
-        SecretArgumentsSpec{
-            .secret_keys = {"headers", "header"},
-            .partial = {
-                {"url", maskQuotedURLCredentials},
-                {"endpoint", maskQuotedURLCredentials},
-            },
-        },
-        Documentation{
-        .description = R"DOCS_MD(
-# HTTP(S) dictionary source
-
-Working with an HTTP(S) server depends on [how the dictionary is stored in memory](/reference/statements/create/dictionary/layouts/overview). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
-
-Example of settings:
-
-<Tabs>
-<Tab title="DDL">
-
-```sql
-SOURCE(HTTP(
-    url 'http://[::1]/os.tsv'
-    format 'TabSeparated'
-    credentials(user 'user' password 'password')
-    headers(header(name 'API-KEY' value 'key'))
-))
-```
-
-</Tab>
-<Tab title="Configuration file">
-
-```xml
-<source>
-    <http>
-        <url>http://[::1]/os.tsv</url>
-        <format>TabSeparated</format>
-        <credentials>
-            <user>user</user>
-            <password>password</password>
-        </credentials>
-        <headers>
-            <header>
-                <name>API-KEY</name>
-                <value>key</value>
-            </header>
-        </headers>
-    </http>
-</source>
-```
-
-</Tab>
-</Tabs>
-<br/>
-
-In order for ClickHouse to access an HTTPS resource, you must [configure openSSL](/reference/settings/server-settings/settings/other#openssl) in the server configuration.
-
-Setting fields:
-
-| Setting | Description |
-|---------|-------------|
-| `url` | The source URL. |
-| `format` | The file format. All the formats described in [Formats](/reference/formats/index) are supported. |
-| `credentials` | Basic HTTP authentication. Optional. |
-| `user` | Username required for the authentication. |
-| `password` | Password required for the authentication. |
-| `headers` | All custom HTTP headers entries used for the HTTP request. Optional. |
-| `header` | Single HTTP header entry. |
-| `name` | Identifier name used for the header send on the request. |
-| `value` | Value set for a specific identifier name. |
-
-When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries are checked against the contents of `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server.
-
-The headers, including their names, are shown as `HEADERS ('[HIDDEN]')` in the output of `SHOW CREATE DICTIONARY`, in `system.tables` and in the query logs, the same way as the password. As with the password, a query that cannot be parsed is logged as is, with only [`query_masking_rules`](/reference/settings/server-settings/settings/query#query_masking_rules) applied. To display the headers in `SHOW CREATE DICTIONARY` and `system.tables`, enable the server setting [`display_secrets_in_show_and_select`](/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select) and the format setting [`format_display_secrets_in_show_and_select`](/reference/settings/formats/format#format_display_secrets_in_show_and_select); the user also needs the `displaySecretsInShowAndSelect` privilege. These settings do not affect the query logs.
-)DOCS_MD",
-        .syntax = "SOURCE(HTTP(url 'https://host/path' format 'CSV'))",
-        .related = {"file"}});
+    factory.registerSource("http", create_table_source);
 }
 
 }

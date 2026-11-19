@@ -17,38 +17,43 @@ namespace
 {
 
 /* Generate random string of specified length with fully random bytes (including zero). */
-class FunctionRandomString : public IFunction
+template <typename RandImpl>
+class FunctionRandomStringImpl : public IFunction
 {
 public:
     static constexpr auto name = "randomString";
 
-    static FunctionPtr create(ContextPtr)
+    String getName() const override { return name; }
+
+    bool isVariadic() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    size_t getNumberOfArguments() const override { return 0; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return std::make_shared<FunctionRandomString>();
+        FunctionArgumentDescriptors mandatory_args{
+            {"length", &isNumber, nullptr, "(U)Int*"}
+        };
+
+        FunctionArgumentDescriptors optional_args{
+            {"x", nullptr, nullptr, "Any"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] String getName() const override { return name; }
-
-    [[nodiscard]] bool isVariadic() const override { return true; }
-
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(Number, [Any]) -> String";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_to = ColumnString::create();
         ColumnString::Chars & data_to = col_to->getChars();
@@ -79,6 +84,34 @@ public:
     }
 };
 
+class FunctionRandomString : public FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>
+{
+public:
+    explicit FunctionRandomString(ContextPtr context) : selector(context)
+    {
+        selector.registerImplementation<TargetArch::Default,
+            FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>>();
+
+    #if USE_MULTITARGET_CODE
+        selector.registerImplementation<TargetArch::x86_64_v3,
+            FunctionRandomStringImpl<TargetSpecific::x86_64_v3::RandImpl>>();
+    #endif
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+    }
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionRandomString>(context);
+    }
+
+private:
+    ImplementationSelector<IFunction> selector;
+};
+
 }
 
 REGISTER_FUNCTION(RandomString)
@@ -90,7 +123,7 @@ The returned characters are not necessarily ASCII characters, i.e. they may not 
     FunctionDocumentation::Syntax syntax = "randomString(length[, x])";
     FunctionDocumentation::Arguments arguments = {
         {"length", "Length of the string in bytes.", {"(U)Int*"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string filled with random bytes.", {"String"}};
     FunctionDocumentation::Examples examples = {
