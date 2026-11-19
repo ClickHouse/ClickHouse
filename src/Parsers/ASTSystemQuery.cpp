@@ -252,12 +252,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                 print_keyword("FOR TABLE");
                 ostr << ' ';
                 print_database_table();
-                if (!target_function.empty())
+                if (!index.empty())
                 {
                     ostr << ' ';
                     print_keyword("INDEX");
                     ostr << ' ';
-                    print_identifier(target_function);
+                    print_identifier(index);
                 }
             }
             break;
@@ -771,6 +771,8 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
     if (if_exists)
         w.writeBool("if_exists", true);
     w.writeChild("query_settings", query_settings);
+    if (!index.empty())
+        w.writeString("index", index);
     if (!target_function.empty())
         w.writeString("target_function", target_function);
     if (!replica.empty())
@@ -949,6 +951,7 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     query_settings = r.readChildOfType<ASTSetQuery>("query_settings");
     if (query_settings)
         children.push_back(query_settings);
+    index = r.getString("index");
     target_function = r.getString("target_function");
     replica = r.getString("replica");
     shard = r.getString("shard");

@@ -3097,8 +3097,8 @@ void InterpreterSystemQuery::prewarmVectorSimilarityIndexCache()
 
     const auto & query = query_ptr->as<const ASTSystemQuery &>();
     std::optional<String> index_name;
-    if (!query.target_function.empty())
-        index_name = query.target_function;
+    if (!query.index.empty())
+        index_name = query.index;
 
     getContext()->onQueryExecutionStarted();
     ThreadPool pool(

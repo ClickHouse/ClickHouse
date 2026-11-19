@@ -190,8 +190,9 @@ public:
     void setDatabase(const String & name);
     void setTable(const String & name);
 
-    /// Target of `SYSTEM RELOAD FUNCTION`, and the optional `INDEX` name of
-    /// `SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE` (the two query types are disjoint).
+    /// Optional `INDEX name` for `SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE FOR TABLE`.
+    String index;
+
     String target_function;
     String replica;
     String shard;

@@ -579,7 +579,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 ASTPtr index_ast;
                 if (!ParserIdentifier{}.parse(pos, index_ast, expected))
                     return false;
-                if (!tryGetIdentifierNameInto(index_ast, res->target_function))
+                if (!tryGetIdentifierNameInto(index_ast, res->index))
                     return false;
             }
             break;
