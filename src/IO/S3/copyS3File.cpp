@@ -187,19 +187,19 @@ namespace
                 return;
             const auto & headers = *copy_settings.source_headers;
             if (!headers.content_type.empty())
-                request.SetContentType(headers.content_type);
+                request.SetContentType(Aws::String(headers.content_type));
             if (!headers.content_encoding.empty())
-                request.SetContentEncoding(headers.content_encoding);
+                request.SetContentEncoding(Aws::String(headers.content_encoding));
             if (!headers.content_language.empty())
-                request.SetContentLanguage(headers.content_language);
+                request.SetContentLanguage(Aws::String(headers.content_language));
             if (!headers.content_disposition.empty())
-                request.SetContentDisposition(headers.content_disposition);
+                request.SetContentDisposition(Aws::String(headers.content_disposition));
             if (!headers.cache_control.empty())
-                request.SetCacheControl(headers.cache_control);
+                request.SetCacheControl(Aws::String(headers.cache_control));
             if (headers.expires.Millis() > 0)
                 request.SetExpires(headers.expires);
             if (!headers.website_redirect_location.empty())
-                request.SetWebsiteRedirectLocation(headers.website_redirect_location);
+                request.SetWebsiteRedirectLocation(Aws::String(headers.website_redirect_location));
         }
 
         /// Restate tags that `CopyObject` would preserve.

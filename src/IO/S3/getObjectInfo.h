@@ -37,7 +37,7 @@ struct ObjectInfo
 };
 
 /// Empty for `null`, the version id that every upload made while versioning is off or suspended shares.
-inline String pinnableVersionId(const String & version_id) { return version_id == "null" ? String{} : version_id; }
+inline String pinnableVersionId(std::string_view version_id) { return version_id == "null" ? String{} : String(version_id); }
 
 /// Ignore if object does not exist
 ObjectInfo getObjectInfoIfExists(

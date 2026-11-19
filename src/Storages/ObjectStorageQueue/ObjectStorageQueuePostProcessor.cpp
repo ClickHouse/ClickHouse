@@ -883,8 +883,8 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                 s3_settings->request_settings[S3RequestSetting::allow_native_copy] = false;
             /// It also signs the write with the source keys, so it is allowed only when the move keys are the same.
             const auto src_credentials = src_client->getCredentials();
-            if (src_credentials.GetAWSAccessKeyId() != move_access_key_id
-                || src_credentials.GetAWSSecretKey() != move_secret_access_key
+            if (std::string_view(src_credentials.GetAWSAccessKeyId()) != std::string_view(move_access_key_id)
+                || std::string_view(src_credentials.GetAWSSecretKey()) != std::string_view(move_secret_access_key)
                 || !src_credentials.GetSessionToken().empty())
                 s3_settings->request_settings[S3RequestSetting::allow_native_copy] = false;
             auto read_settings = getReadSettings();

@@ -771,7 +771,7 @@ TEST_F(ReadBufferFromS3Test, ReadBigAtReportsResponseVersion)
             "test response stream", std::make_unique<FakeResponseBody>(body, std::make_shared<CountedSession>()), body.size()));
         Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(
             std::move(response_stream),
-            Aws::Http::HeaderValueCollection{{"content-length", std::to_string(body.size())}, {"x-amz-version-id", "version-1"}});
+            Aws::Http::HeaderValueCollection{{"content-length", Aws::Utils::StringUtils::to_string(body.size())}, {"x-amz-version-id", "version-1"}});
         return DB::S3::Model::GetObjectOutcome(DB::S3::Model::GetObjectResult(std::move(aws_result)));
     };
 
@@ -796,7 +796,7 @@ TEST_F(ReadBufferFromS3Test, ReadBigAtReportsNoVersionForNull)
             "test response stream", std::make_unique<FakeResponseBody>(body, std::make_shared<CountedSession>()), body.size()));
         Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(
             std::move(response_stream),
-            Aws::Http::HeaderValueCollection{{"content-length", std::to_string(body.size())}, {"x-amz-version-id", "null"}});
+            Aws::Http::HeaderValueCollection{{"content-length", Aws::Utils::StringUtils::to_string(body.size())}, {"x-amz-version-id", "null"}});
         return DB::S3::Model::GetObjectOutcome(DB::S3::Model::GetObjectResult(std::move(aws_result)));
     };
 

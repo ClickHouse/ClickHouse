@@ -227,7 +227,7 @@ template <typename BaseRequest>
 class CopyRequest : public ExtendedRequest<BaseRequest>
 {
 public:
-    void setCopySourceVersionId(const Aws::String & version_id) { copy_source_version_id = version_id; }
+    void setCopySourceVersionId(std::string_view version_id) { copy_source_version_id = Aws::String(version_id); }
 
     [[nodiscard]] Aws::Http::HeaderValueCollection GetRequestSpecificHeaders() const override
     {
