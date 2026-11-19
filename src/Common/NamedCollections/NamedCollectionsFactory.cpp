@@ -726,7 +726,8 @@ void NamedCollectionFactory::markDependenciesOfFailedCreateDetached(const Storag
     }
 }
 
-void NamedCollectionFactory::renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id, bool exchange)
+void NamedCollectionFactory::renameDependencies(
+    const StorageID & from_table_id, const StorageID & to_table_id, bool exchange, bool from_table_has_uuid, bool to_table_has_uuid)
 {
     std::lock_guard lock(mutex);
 
@@ -757,20 +758,31 @@ void NamedCollectionFactory::renameDependencies(const StorageID & from_table_id,
 
     /// A single table can depend on several named collections, so all the entries of the name are
     /// re-inserted with the new one.
+    ///
+    /// An entry without a UUID under the name of a table with a UUID is not the table's own: it is the
+    /// registration of a dictionary defined in the configuration files whose `<database>` and name happen
+    /// to match. The loader keeps identifying that dictionary by the name from its definition, and
+    /// `DROP NAMED COLLECTION` validates the entry against that definition only under that name, so the
+    /// entry must not follow the rename of an unrelated table.
     std::vector<std::pair<String, StorageID>> moved;
-    auto take_entries = [&](const StorageID & old_name, const StorageID & new_name)
+    auto take_entries = [&](const StorageID & old_name, const StorageID & new_name, bool table_has_uuid)
     {
         auto range = name_idx.equal_range(std::make_tuple(old_name.database_name, old_name.table_name));
         for (auto it = range.first; it != range.second;)
         {
+            if (table_has_uuid && !it->table_id.hasUUID())
+            {
+                ++it;
+                continue;
+            }
             moved.emplace_back(it->collection_name, StorageID{new_name.database_name, new_name.table_name, it->table_id.uuid});
             it = name_idx.erase(it);
         }
     };
 
-    take_entries(from_table_id, to_table_id);
+    take_entries(from_table_id, to_table_id, from_table_has_uuid);
     if (exchange)
-        take_entries(to_table_id, from_table_id);
+        take_entries(to_table_id, from_table_id, to_table_has_uuid);
 
     for (auto & [collection_name, table_id] : moved)
         dependencies.emplace(collection_name, std::move(table_id));

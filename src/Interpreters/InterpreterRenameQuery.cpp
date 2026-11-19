@@ -149,6 +149,11 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(ddl_guards[from]));
         }
 
+        /// Whether the tables are identified by UUIDs, taken before the rename: see `NamedCollectionFactory::renameDependencies`.
+        const bool from_table_has_uuid = database->tryGetTableUUID(elem.from_table_name) != UUIDHelpers::Nil;
+        const bool to_table_has_uuid = exchange_tables
+            && database_catalog.getDatabase(elem.to_database_name)->tryGetTableUUID(elem.to_table_name) != UUIDHelpers::Nil;
+
         StorageID from_table_id{elem.from_database_name, elem.from_table_name};
         StorageID to_table_id{elem.to_database_name, elem.to_table_name};
         std::vector<StorageID> from_ref_dependencies;
@@ -214,7 +219,8 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 DatabaseCatalog::instance().addSourceViewDependencies(to_table_id, from_dependent_views);
             }
 
-            NamedCollectionFactory::instance().renameDependencies(from_table_id, to_table_id, exchange_tables);
+            NamedCollectionFactory::instance().renameDependencies(
+                from_table_id, to_table_id, exchange_tables, from_table_has_uuid, to_table_has_uuid);
 
             /// The name -> storage mapping just changed. Drop the affected names from this query's
             /// per-query storage cache so the query's own subsequent lookups resolve to the current

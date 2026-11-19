@@ -1525,54 +1525,68 @@ def test_drop_collection_recreated_under_lazily_loaded_bare_remote_table(cluster
     its first access, so a collection that is missing at load time (here, after a drop with
     `check_named_collection_dependencies = 0`) and recreated before the first read is what the table
     will use. The dependency must therefore be registered regardless of whether the collection exists
-    at load time."""
+    at load time. The same holds when the identifier is followed by functions, including a table
+    function (`Remote(x, numbers(1))`): the resolver of a collection accepts them as ignored
+    overrides, and it runs before the positional signatures are considered."""
     node = cluster.instances["node"]
 
+    collections = {
+        "r": "lazy_bare_remote_collection",
+        "r_tf": "lazy_tf_remote_collection",
+    }
+    engines = {
+        "r": "Remote(lazy_bare_remote_collection)",
+        "r_tf": "Remote(lazy_tf_remote_collection, numbers(1))",
+    }
+
     node.query("DROP DATABASE IF EXISTS lazy_bare_remote_db")
-    node.query("DROP NAMED COLLECTION IF EXISTS lazy_bare_remote_collection")
+    for collection in collections.values():
+        node.query(f"DROP NAMED COLLECTION IF EXISTS {collection}")
 
     node.query(
         "CREATE DATABASE lazy_bare_remote_db ENGINE = Atomic SETTINGS lazy_load_tables = 1"
     )
-    node.query(
-        "CREATE NAMED COLLECTION lazy_bare_remote_collection AS "
-        "host = 'localhost', database = 'system', table = 'one'"
-    )
-    node.query(
-        "CREATE TABLE lazy_bare_remote_db.r (dummy UInt8) "
-        "ENGINE = Remote(lazy_bare_remote_collection)"
-    )
+    for table, collection in collections.items():
+        node.query(
+            f"CREATE NAMED COLLECTION {collection} AS "
+            "host = 'localhost', database = 'system', table = 'one'"
+        )
+        node.query(
+            f"CREATE TABLE lazy_bare_remote_db.{table} (dummy UInt8) ENGINE = {engines[table]}"
+        )
 
-    # An unchecked drop removes the collection while the table still references it.
-    node.query(
-        "DROP NAMED COLLECTION lazy_bare_remote_collection",
-        settings={"check_named_collection_dependencies": 0},
-    )
+        # An unchecked drop removes the collection while the table still references it.
+        node.query(
+            f"DROP NAMED COLLECTION {collection}",
+            settings={"check_named_collection_dependencies": 0},
+        )
 
-    # The table is brought back as a proxy while the collection does not exist.
+    # The tables are brought back as proxies while the collections do not exist.
     node.restart_clickhouse()
 
-    assert (
+    for table, collection in collections.items():
+        assert (
+            node.query(
+                f"SELECT engine FROM system.tables WHERE database = 'lazy_bare_remote_db' AND name = '{table}'"
+            ).strip()
+            == "TableProxy"
+        )
+
         node.query(
-            "SELECT engine FROM system.tables WHERE database = 'lazy_bare_remote_db' AND name = 'r'"
-        ).strip()
-        == "TableProxy"
-    )
+            f"CREATE NAMED COLLECTION {collection} AS "
+            "host = 'localhost', database = 'system', table = 'one'"
+        )
+        assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+            f"DROP NAMED COLLECTION {collection}"
+        )
 
-    node.query(
-        "CREATE NAMED COLLECTION lazy_bare_remote_collection AS "
-        "host = 'localhost', database = 'system', table = 'one'"
-    )
-    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
-        "DROP NAMED COLLECTION lazy_bare_remote_collection"
-    )
+        # The first access resolves the definition through the recreated collection.
+        assert node.query(f"SELECT dummy FROM lazy_bare_remote_db.{table}").strip() == "0"
 
-    # The first access resolves the definition through the recreated collection.
-    assert node.query("SELECT dummy FROM lazy_bare_remote_db.r").strip() == "0"
+        # The collection is released once the table is gone.
+        node.query(f"DROP TABLE lazy_bare_remote_db.{table}")
+        node.query(f"DROP NAMED COLLECTION {collection}")
 
-    # The collection is released once the table is gone.
-    node.query("DROP TABLE lazy_bare_remote_db.r")
-    node.query("DROP NAMED COLLECTION lazy_bare_remote_collection")
     node.query("DROP DATABASE lazy_bare_remote_db")
 
 
@@ -1757,11 +1771,14 @@ def test_drop_collection_replaced_in_config_dictionary_source(cluster):
 
 
 
-def test_drop_collection_replaced_in_database_qualified_config_dictionary_source(cluster):
+@pytest.mark.parametrize("rename_table", [False, True])
+def test_drop_collection_replaced_in_database_qualified_config_dictionary_source(cluster, rename_table):
     """Like `test_drop_collection_replaced_in_config_dictionary_source`, but for the dictionary
     `config_dict_db.config_dict_in_database`, whose definition sets a `<database>`, while an unrelated
     table of an `Atomic` database has the same qualified name. The table neither registered the entry
-    of the old collection nor references it, so it must not keep the collection from being dropped."""
+    of the old collection nor references it, so it must not keep the collection from being dropped -
+    also after the table is renamed: the entry of the dictionary must not follow the rename, because
+    the loader keeps identifying the dictionary by the name from its definition."""
     node = cluster.instances["node"]
     dictionary_config = "/etc/clickhouse-server/dictionaries/config_dict_in_database.xml"
     uri = "uri = 'mongodb://mongo-is-not-running:27017/db?serverSelectionTimeoutMS=1000&connectTimeoutMS=1000', collection = 'c'"
@@ -1782,6 +1799,15 @@ def test_drop_collection_replaced_in_database_qualified_config_dictionary_source
     assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
         "DROP NAMED COLLECTION config_dict_db_collection"
     )
+
+    if rename_table:
+        node.query(
+            "RENAME TABLE config_dict_db.config_dict_in_database TO config_dict_db.unrelated"
+        )
+        # The dictionary still uses the collection.
+        assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+            "DROP NAMED COLLECTION config_dict_db_collection"
+        )
 
     def replace_in_dictionary_config(old, new):
         # See `test_drop_collection_replaced_in_config_dictionary_source` for the modification time.

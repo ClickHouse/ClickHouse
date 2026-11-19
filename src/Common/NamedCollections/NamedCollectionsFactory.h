@@ -154,7 +154,13 @@ public:
     void markDependenciesOfFailedCreateDetached(const StorageID & table_id);
     /// Follows a `RENAME TABLE`: moves the entries recorded under the exact old name to the new one.
     /// An `EXCHANGE` calls this once with `exchange = true`, which swaps the entries of the two names.
-    void renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id, bool exchange);
+    /// `from_table_has_uuid` and `to_table_has_uuid` tell whether the table under the old name (and, for an
+    /// `EXCHANGE`, under the new one) was identified by a UUID before the rename. Such a table records its
+    /// entries with that UUID, so an entry without a UUID under its name is not its own - it is the
+    /// registration of a dictionary defined in the configuration files with the same qualified name,
+    /// which the loader keeps under that name - and it stays where it is.
+    void renameDependencies(
+        const StorageID & from_table_id, const StorageID & to_table_id, bool exchange, bool from_table_has_uuid, bool to_table_has_uuid);
     /// A `RENAME TABLE` that moves a table between an `Ordinary` and an `Atomic` database changes the
     /// identity the dependency is keyed by: the move into `Atomic` assigns a fresh UUID to the table and
     /// the move out of it drops the UUID, while the rename interpreter only knows the names. Re-key the
