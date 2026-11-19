@@ -79,6 +79,18 @@ if (ENABLE_TESTS OR ENABLE_BENCHMARKS)
     endfunction ()
 endif ()
 
+if (ENABLE_TESTS)
+    function (clickhouse_add_wyrd_tests)
+        foreach (pattern ${ARGN})
+            file (GLOB sources CONFIGURE_DEPENDS ${pattern})
+            if (NOT sources)
+                message (FATAL_ERROR "clickhouse_add_wyrd_tests: no file matches ${pattern}")
+            endif ()
+            set_property (GLOBAL APPEND PROPERTY CLICKHOUSE_WYRD_TESTS ${sources})
+        endforeach ()
+    endfunction ()
+endif ()
+
 add_subdirectory (Access)
 add_subdirectory (Backups)
 add_subdirectory (Columns)
@@ -1099,6 +1111,7 @@ if (ENABLE_TESTS)
         clickhouse_aggregate_functions
         clickhouse_parsers
         clickhouse_storages_system
+        clickhouse_wyrd
         dbms
         clickhouse_common_zookeeper_base
         clickhouse_common_config
@@ -1160,6 +1173,12 @@ if (ENABLE_TESTS)
     if (TARGET ch_contrib::silk_fibers)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::silk_fibers)
     endif()
+
+    get_property (wyrd_tests GLOBAL PROPERTY CLICKHOUSE_WYRD_TESTS)
+    foreach (strategy adversary simulation)
+        clickhouse_add_executable (unit_tests_wyrd_${strategy} ${wyrd_tests})
+        target_link_libraries (unit_tests_wyrd_${strategy} PRIVATE clickhouse_wyrd_${strategy} dbms)
+    endforeach ()
 endif ()
 
 if (TARGET ch_contrib::jwt-cpp)
