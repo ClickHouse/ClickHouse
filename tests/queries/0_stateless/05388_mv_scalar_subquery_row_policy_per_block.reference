@@ -34,6 +34,9 @@ policy in	1	3
 policy udf	1	1
 policy udf	1	2
 policy udf	1	3
+policy udf reference	1	1
+policy udf reference	1	2
+policy udf reference	1	3
 table function merge policy	1	1
 table function merge policy	1	2
 table function merge policy	1	3

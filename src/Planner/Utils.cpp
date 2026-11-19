@@ -893,6 +893,7 @@ bool astContainsSubqueryImpl(const ASTPtr & ast, UnorderedSetWithMemoryTracking<
     if (ast->as<ASTSubquery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>())
         return true;
 
+    const String * udf_name = nullptr;
     if (const auto * function = ast->as<ASTFunction>())
     {
         /// The analyzer reads the table named by a bare `IN some_table` / `IN some_table_function(...)` the way it reads a subquery.
@@ -907,8 +908,16 @@ bool astContainsSubqueryImpl(const ASTPtr & ast, UnorderedSetWithMemoryTracking<
                 return true;
         }
 
-        auto udf_body = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
-        if (udf_body && visited_udfs.insert(function->name).second && astContainsSubqueryImpl(udf_body, visited_udfs))
+        udf_name = &function->name;
+    }
+    /// The analyzer turns a function named by a higher-order function argument or a `|` operand into a call of it.
+    else if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && identifier->isShort())
+        udf_name = &identifier->name();
+
+    if (udf_name)
+    {
+        auto udf_body = UserDefinedSQLFunctionFactory::instance().tryGet(*udf_name);
+        if (udf_body && visited_udfs.insert(*udf_name).second && astContainsSubqueryImpl(udf_body, visited_udfs))
             return true;
     }
 
@@ -924,6 +933,8 @@ bool astContainsSubqueryImpl(const ASTPtr & ast, UnorderedSetWithMemoryTracking<
 
 bool astContainsSubquery(const ASTPtr & ast)
 {
+    /// Looking a name up here is not a use of the function by the query.
+    Context::SuppressQueryFactoriesInfoScope suppress_factory_info;
     UnorderedSetWithMemoryTracking<String> visited_udfs;
     return astContainsSubqueryImpl(ast, visited_udfs);
 }
