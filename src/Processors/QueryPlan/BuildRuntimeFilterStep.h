@@ -52,11 +52,9 @@ public:
     void setEstimatedBuildRows(std::optional<UInt64> estimated_build_rows_) { estimated_build_rows = estimated_build_rows_; }
     [[nodiscard]] std::optional<UInt64> getEstimatedBuildRows() const { return estimated_build_rows; }
 
-    /// Whether the step was read with its key and `pairJoinRuntimeFilters` has not checked it yet. A step
-    /// built here, or one already checked, keeps its key when the plan is optimized again: its join may be
-    /// a physical step by then, which `pairJoinRuntimeFilters` cannot pair.
+    /// Deserialized local builds are paired once. Locally built and already paired steps keep their keys
+    /// when the plan is optimized again.
     bool needsPairing() const { return needs_pairing; }
-    /// Done with pairing: keep the key, or make the step inert.
     void finishPairing(bool keep_key)
     {
         needs_pairing = false;
@@ -101,11 +99,8 @@ private:
     /// Stable structural id (`_runtime_filter_<hash>`), shown in EXPLAIN and serialized, so the build
     /// step and its matching `__applyFilter` carry the same visible id.
     String filter_name;
-    /// Random per-plan-build key the built filter is registered under in the `IRuntimeFilterLookup`;
-    /// the matching `__applyFilter` looks it up by the same key. Serialized, but not shown and left out of
-    /// a cache key, so it never enters a plan-step hash. Empty for an inert step.
+    /// Random per-plan-build rendezvous key, excluded from EXPLAIN and cache keys. Empty for an inert step.
     String filter_key;
-    /// See `needsPairing`. Not serialized: set by `deserialize` for the local builds of a plan taken over the wire.
     bool needs_pairing = false;
 
     RuntimeFilterBuildOptions build_options;

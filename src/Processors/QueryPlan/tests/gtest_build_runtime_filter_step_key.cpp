@@ -32,8 +32,7 @@ void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
 
 using namespace DB;
 
-/// Pins the rendezvous key carried by `BuildRuntimeFilter` step version 2, and the decisions
-/// `pairJoinRuntimeFilters` takes on the steps of a plan taken over the wire.
+/// Covers local rendezvous-key transport and receiver-side pairing.
 
 namespace
 {
@@ -43,8 +42,7 @@ constexpr UInt64 current_version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
 constexpr UInt64 pre_key_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES - 1;
 constexpr UInt64 pre_local_key_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LOCAL_RUNTIME_FILTER_KEY - 1;
 
-/// A registry holding just the step under test, registered the way `registerPlanSteps` registers it.
-/// Not the process-wide instance: other tests in this binary populate that one.
+/// Isolate the registry from other tests in this binary.
 QueryPlanStepRegistry & stepRegistry()
 {
     static QueryPlanStepRegistry registry;
@@ -79,7 +77,7 @@ std::unique_ptr<BuildRuntimeFilterStep> makeBuildStep(const String & key)
             .distinct_keys_hint_matches_filter_key = false});
 }
 
-/// Serialize the step the way `QueryPlan::serialize` does: the step version comes from the registry.
+/// Use the registry-selected step version, as `QueryPlan::serialize` does.
 String serializeStep(const IQueryPlanStep & step, UInt64 version, bool for_cache_key = false)
 {
     WriteBufferFromOwnString out;
@@ -112,14 +110,11 @@ std::unique_ptr<BuildRuntimeFilterStep> deserializeStep(const String & bytes, UI
     return std::unique_ptr<BuildRuntimeFilterStep>(typeid_cast<BuildRuntimeFilterStep *>(step.release()));
 }
 
-/// A build step as a worker gets it: written by the initiator and read back, so it needs pairing.
 std::unique_ptr<BuildRuntimeFilterStep> makeShippedBuildStep(const String & key)
 {
     return deserializeStep(serializeStep(*makeBuildStep(key), current_version), current_version);
 }
 
-/// The probe side of a join: `__applyFilter(<label carrying key>, l)` over the left column, the shape
-/// `createRuntimeFilterCondition` builds.
 std::unique_ptr<ExpressionStep> makeProbeStep(const String & key)
 {
     ActionsDAG dag;
@@ -129,8 +124,7 @@ std::unique_ptr<ExpressionStep> makeProbeStep(const String & key)
         string_type->createColumnConst(0, key), string_type, "_runtime_filter_1",
         /*is_deterministic_constant=*/false, /*is_masked_secret=*/false, /*is_runtime_filter_id=*/true);
     dag.addFunction(FunctionFactory::instance().get("__applyFilter", nullptr), {&label, &input}, {});
-    /// Not an output: computing the step's header would run `__applyFilter`, which needs a query context.
-    /// `pairJoinRuntimeFilters` scans all the nodes of the DAG, so it still finds the label.
+    /// Keep the filter out of outputs so header computation does not require a query context.
     dag.getOutputs() = {&input};
     return std::make_unique<ExpressionStep>(makeHeader("l"), std::move(dag));
 }
@@ -165,7 +159,6 @@ struct JoinWithFilter
     BuildRuntimeFilterStep * build_step = nullptr;
 };
 
-/// `JOIN(Expression(__applyFilter(probe_key)) <- ReadNothing, BuildRuntimeFilter(build_step) <- ReadNothing)`.
 JoinWithFilter addJoin(
     QueryPlan::Nodes & nodes, const String & probe_key, std::unique_ptr<BuildRuntimeFilterStep> build_step, bool optimized = true)
 {
@@ -180,7 +173,7 @@ JoinWithFilter addJoin(
     return {join, build_step_ptr};
 }
 
-QueryPlan::Node * addUnion(QueryPlan::Nodes & nodes, std::vector<QueryPlan::Node *> children)
+QueryPlan::Node * addUnion(QueryPlan::Nodes & nodes, VectorWithMemoryTracking<QueryPlan::Node *> children)
 {
     SharedHeaders headers;
     for (const auto * child : children)
@@ -188,7 +181,7 @@ QueryPlan::Node * addUnion(QueryPlan::Nodes & nodes, std::vector<QueryPlan::Node
     return &nodes.emplace_back(QueryPlan::Node{.step = std::make_unique<UnionStep>(std::move(headers)), .children = std::move(children)});
 }
 
-const std::vector<SharedRuntimeFilterDescriptor> & sharedDescriptors(const QueryPlan::Node & join)
+const VectorWithMemoryTracking<SharedRuntimeFilterDescriptor> & sharedDescriptors(const QueryPlan::Node & join)
 {
     return typeid_cast<const JoinStepLogical &>(*join.step).getJoinOperator().shared_runtime_filter_descriptors;
 }
@@ -197,8 +190,6 @@ const std::vector<SharedRuntimeFilterDescriptor> & sharedDescriptors(const Query
 
 TEST(BuildRuntimeFilterStepKey, KeyRoundTripsAtCurrentVersion)
 {
-    tryRegisterFunctions();
-
     auto step = makeBuildStep("key-a");
     const String bytes = serializeStep(*step, current_version);
 
@@ -211,12 +202,9 @@ TEST(BuildRuntimeFilterStepKey, KeyRoundTripsAtCurrentVersion)
     EXPECT_EQ(bytes, serializeStep(*restored, current_version));
 }
 
-/// A peer below the local key version gets step version 0 or 1 without the key of a local build (a peer
-/// at step version 1 refuses a local build with a key): its build step stays inert.
+/// Older peers receive inert local builds without keys.
 TEST(BuildRuntimeFilterStepKey, OlderPeerGetsInertStep)
 {
-    tryRegisterFunctions();
-
     ASSERT_EQ(stepRegistry().versionToWrite(step_name, pre_key_version), 0);
     ASSERT_EQ(stepRegistry().versionToWrite(step_name, pre_local_key_version), 1);
     for (const UInt64 version : {pre_key_version, pre_local_key_version})
@@ -234,8 +222,6 @@ TEST(BuildRuntimeFilterStepKey, OlderPeerGetsInertStep)
 /// The key is random per plan build, so two builds of one plan must hash alike.
 TEST(BuildRuntimeFilterStepKey, CacheKeyLeavesKeyOut)
 {
-    tryRegisterFunctions();
-
     EXPECT_EQ(
         serializeStep(*makeBuildStep("key-a"), current_version, /*for_cache_key=*/true),
         serializeStep(*makeBuildStep("key-b"), current_version, /*for_cache_key=*/true));
@@ -252,7 +238,7 @@ TEST(PairJoinRuntimeFilters, KeepsKeyOfPairedStep)
     EXPECT_EQ(build_step->getFilterKey(), "key-a");
     EXPECT_FALSE(build_step->needsPairing());
 
-    /// The shared `FixedHashMap` descriptor is not serialized, so pairing gives it back.
+    /// Pairing restores the non-serialized shared `FixedHashMap` descriptor.
     ASSERT_EQ(sharedDescriptors(*join).size(), 1u);
     EXPECT_EQ(sharedDescriptors(*join).front().filter_key, "key-a");
     EXPECT_EQ(sharedDescriptors(*join).front().build_key_name, "r");
@@ -263,7 +249,6 @@ TEST(PairJoinRuntimeFilters, KeepsKeyOfPairedStep)
     EXPECT_EQ(sharedDescriptors(*join).size(), 1u);
 }
 
-/// The consumer of the filter was cut into another fragment.
 TEST(PairJoinRuntimeFilters, MakesStepWithoutConsumerInert)
 {
     tryRegisterFunctions();
@@ -276,8 +261,6 @@ TEST(PairJoinRuntimeFilters, MakesStepWithoutConsumerInert)
     EXPECT_TRUE(sharedDescriptors(*join).empty());
 }
 
-/// A cloned subplan put two build steps with one key into the plan, whose filters would be merged in
-/// one lookup. Each has its own consumer, so only the duplicate key makes them inert.
 TEST(PairJoinRuntimeFilters, MakesStepsWithDuplicateKeyInert)
 {
     tryRegisterFunctions();
@@ -296,7 +279,6 @@ TEST(PairJoinRuntimeFilters, MakesStepsWithDuplicateKeyInert)
     EXPECT_TRUE(sharedDescriptors(*second.join).empty());
 }
 
-/// A join that is not optimized yet may still be reordered or swapped by `optimizeJoinLogical`.
 TEST(PairJoinRuntimeFilters, MakesStepOfUnoptimizedJoinInert)
 {
     tryRegisterFunctions();
@@ -309,7 +291,6 @@ TEST(PairJoinRuntimeFilters, MakesStepOfUnoptimizedJoinInert)
     EXPECT_TRUE(sharedDescriptors(*join).empty());
 }
 
-/// Without join runtime filters on the receiver the shipped ones must not be built either.
 TEST(PairJoinRuntimeFilters, MakesAllStepsInertWithoutPairing)
 {
     tryRegisterFunctions();

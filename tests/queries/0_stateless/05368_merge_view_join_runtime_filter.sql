@@ -1,11 +1,7 @@
--- A `Merge` table optimizes the plan of its child, a view with a join, once when it creates the plan and
--- once more when it builds the pipeline. The join is a physical step by then, and the second optimization
--- must not make its runtime filter inert: the filter cuts the rows of the probe-side read.
+-- Regression: a second optimization of a `Merge` view must preserve its join runtime filter.
 
 SET enable_join_runtime_filters = 1;
--- A random join order may put `rf_probe` on the build side.
 SET query_plan_optimize_join_order_randomize = 0;
--- The assertion below counts the rows the filter in PREWHERE lets through.
 SET optimize_move_to_prewhere = 1;
 
 DROP TABLE IF EXISTS rf_merge;
@@ -26,7 +22,7 @@ SELECT count(), sum(v) FROM rf_merge SETTINGS enable_join_runtime_filters = 0;
 
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
 
--- The read of `rf_probe` outputs the 50 matching of its 200000 rows plus a few bloom filter false positives.
+-- The probe read allows only matches and bloom-filter false positives.
 SELECT q.ProfileEvents['RuntimeFiltersCreated'], sum(p.output_rows) BETWEEN 50 AND 1000
 FROM system.query_log AS q
 INNER JOIN system.processors_profile_log AS p ON p.query_id = q.query_id
