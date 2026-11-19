@@ -1181,6 +1181,57 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPSlowBodyLeavesLessTimeForRespo
     ASSERT_LT(std::chrono::steady_clock::now() - body_written, std::chrono::milliseconds(1000));
 }
 
+TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPNoBackoffAfterSlowRetryCleanup)
+{
+    /// A server that sends the headers of a chunked response and then nothing.
+    Poco::Net::ServerSocket server(Poco::Net::SocketAddress("127.0.0.1", 0));
+    std::atomic<bool> stop = false;
+    std::thread responder([&]
+    {
+        std::vector<Poco::Net::StreamSocket> open;
+        while (!stop)
+        {
+            if (!server.poll(Poco::Timespan(10'000), Poco::Net::Socket::SELECT_READ))
+                continue;
+            auto socket = server.acceptConnection();
+            char request[4096];
+            socket.receiveBytes(request, sizeof(request));
+            const std::string headers = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
+            socket.sendBytes(headers.data(), static_cast<int>(headers.size()));
+            open.push_back(socket);
+        }
+    });
+    SCOPE_EXIT({
+        stop = true;
+        responder.join();
+    });
+
+    /// Reading the first chunk header times out at 500 ms, and a 1000 ms backoff would still end before the 1600 ms
+    /// deadline. But dropping the response reads the chunk header once more, until 1000 ms, and then the backoff no
+    /// longer fits.
+    DB::ReadSettings settings;
+    settings.http_settings.retry_initial_backoff_ms = 1000;
+    settings.http_settings.retry_max_backoff_ms = 2000;
+    Poco::Net::HTTPBasicCredentials empty_creds;
+    const auto start = std::chrono::steady_clock::now();
+    try
+    {
+        DB::BuilderRWBufferFromHTTP(Poco::URI("http://" + server.address().toString() + "/"))
+            .withBypassProxy(true)
+            .withSettings(settings)
+            .withTimeouts(timeouts.withReceiveTimeout(Poco::Timespan(500'000)))
+            .withDeadline(start + std::chrono::milliseconds(1600))
+            .withDelayInit(false)
+            .create(empty_creds);
+        FAIL() << "the request succeeded";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, e.code());
+    }
+    ASSERT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(1600));
+}
+
 TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPPastDeadlineOpensNoConnection)
 {
     auto metrics = getPool()->getMetrics();
