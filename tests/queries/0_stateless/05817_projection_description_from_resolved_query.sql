@@ -79,6 +79,20 @@ ORDER BY column_position;
 
 SELECT k, c FROM (SELECT `has(_CAST([1, 100], 'Array(Int32)'), a)` AS k, finalizeAggregation(`count()`) AS c FROM mergeTreeProjection(currentDatabase(), t_projection_resolved_array, p)) ORDER BY k;
 
+-- a scalar subquery inside a subquery of IN also has its value
+DROP TABLE IF EXISTS t_projection_resolved_nested;
+CREATE TABLE t_projection_resolved_nested
+(
+    a Int32,
+    PROJECTION p (SELECT a IN (SELECT x FROM t_projection_resolved_limit WHERE x > (SELECT avg(x) FROM t_projection_resolved_limit)) AS k, count() GROUP BY k)
+)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS materialize_projections_on_insert = 1;
+INSERT INTO t_projection_resolved_nested VALUES (1), (100), (300);
+
+SELECT * EXCEPT (`count()`), finalizeAggregation(`count()`) FROM mergeTreeProjection(currentDatabase(), t_projection_resolved_nested, p) ORDER BY ALL;
+
+DROP TABLE t_projection_resolved_nested;
 DROP TABLE t_projection_resolved_array;
 DROP TABLE t_projection_resolved_scalar;
 DROP TABLE t_projection_resolved_limit;

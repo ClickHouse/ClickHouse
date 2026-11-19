@@ -32,4 +32,6 @@ p	has(_CAST([1, 100], \'Array(Int32)\'), a)
 p	count()
 0	1
 1	2
+0	2
+1	1
 20
