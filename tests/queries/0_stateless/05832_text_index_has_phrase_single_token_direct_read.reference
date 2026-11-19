@@ -1,0 +1,30 @@
+-- results match with and without the index
+c++	[1]
+c++	[1]
+a	[3,4]
+a	[3,4]
+a a	[3]
+a a	[3]
+senior c#	[2]
+senior c#	[2]
+[c++]	[1]
+[c++]	[1]
+[a, a]	[3]
+[a, a]	[3]
+c++ or c#	[1,2]
+c++ or c#	[1,2]
+-- one token: only the text index virtual column; several tokens: the row-level hasPhrase stays
+c++	1	0
+a	1	0
+a a	1	1
+senior c#	1	1
+[c++]	1	0
+[a, a]	1	1
+c++ or c#	1	0
+-- the token count is taken after the preprocessor
+C++	[1,2]
+C++	[1,2]
+C++ LEAD	[1]
+C++ LEAD	[1]
+C++	1	0
+C++ LEAD	1	1
