@@ -2063,41 +2063,47 @@ public:
                     break;
                 }
 
-                /// Try existing Date/DateTime/DateTime64 variants before falling back to String.
-                if (auto it = variant_info.variant_name_to_discriminator.find("Date"); it != variant_info.variant_name_to_discriminator.end())
+                /// Reusing an existing temporal or String variant is only valid when existing variants may be
+                /// tried first. When that is disabled (e.g. heterogeneous array elements in shared data),
+                /// each element must be inferred independently, so fall through to inference below.
+                if (insert_settings.try_existing_variants_in_dynamic_first)
                 {
-                    DayNum date;
-                    if (tryInferDateFromString(data, date))
+                    /// Try existing Date/DateTime/DateTime64 variants before falling back to String.
+                    if (auto it = variant_info.variant_name_to_discriminator.find("Date"); it != variant_info.variant_name_to_discriminator.end())
                     {
-                        insertValueIntoDynamicVariant<ColumnDate, DayNum>(variant_info, variant_column, date, "Date");
+                        DayNum date;
+                        if (tryInferDateFromString(data, date))
+                        {
+                            insertValueIntoDynamicVariant<ColumnDate, DayNum>(variant_info, variant_column, date, "Date");
+                            return true;
+                        }
+                    }
+
+                    if (auto it = variant_info.variant_name_to_discriminator.find("DateTime"); it != variant_info.variant_name_to_discriminator.end())
+                    {
+                        time_t value = 0;
+                        if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
+                        {
+                            insertValueIntoDynamicVariant<ColumnDateTime, UInt32>(variant_info, variant_column, static_cast<UInt32>(value), "DateTime");
+                            return true;
+                        }
+                    }
+
+                    if (auto it = variant_info.variant_name_to_discriminator.find("DateTime64(9)"); it != variant_info.variant_name_to_discriminator.end())
+                    {
+                        DateTime64 value;
+                        if (tryInferDateTime64FromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
+                        {
+                            insertValueIntoDynamicVariant<ColumnDateTime64, DateTime64>(variant_info, variant_column, value, "DateTime64(9)");
+                            return true;
+                        }
+                    }
+
+                    if (auto it = variant_info.variant_name_to_discriminator.find("String"); it != variant_info.variant_name_to_discriminator.end())
+                    {
+                        insertStringIntoDynamicVariant(variant_column, data, it->second);
                         return true;
                     }
-                }
-
-                if (auto it = variant_info.variant_name_to_discriminator.find("DateTime"); it != variant_info.variant_name_to_discriminator.end())
-                {
-                    time_t value = 0;
-                    if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
-                    {
-                        insertValueIntoDynamicVariant<ColumnDateTime, UInt32>(variant_info, variant_column, static_cast<UInt32>(value), "DateTime");
-                        return true;
-                    }
-                }
-
-                if (auto it = variant_info.variant_name_to_discriminator.find("DateTime64(9)"); it != variant_info.variant_name_to_discriminator.end())
-                {
-                    DateTime64 value;
-                    if (tryInferDateTime64FromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
-                    {
-                        insertValueIntoDynamicVariant<ColumnDateTime64, DateTime64>(variant_info, variant_column, value, "DateTime64(9)");
-                        return true;
-                    }
-                }
-
-                if (auto it = variant_info.variant_name_to_discriminator.find("String"); it != variant_info.variant_name_to_discriminator.end())
-                {
-                    insertStringIntoDynamicVariant(variant_column, data, it->second);
-                    return true;
                 }
 
                 break;

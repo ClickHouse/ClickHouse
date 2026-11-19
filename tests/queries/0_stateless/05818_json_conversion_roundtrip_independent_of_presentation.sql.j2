@@ -9,12 +9,12 @@ SET session_timezone = 'UTC';
 DROP TABLE IF EXISTS rt_results;
 CREATE TABLE rt_results (optimized UInt8, name String, result String) ENGINE = Memory;
 
-{% macro check(name, src, dst, json, expr, settings) -%}
+{% macro check(name, src, dst, json, expr, settings='') -%}
 {% for optimized in [1, 0] -%}
 INSERT INTO rt_results
 SELECT {{ optimized }}, '{{ name }}', toString(({{ expr }}))
 FROM (SELECT CAST(CAST('{{ json }}' AS {{ src }}) AS {{ dst }}) AS j)
-SETTINGS {{ settings }}, json_use_optimized_type_conversion = {{ optimized }};
+SETTINGS {{ (settings ~ ', ') if settings }}json_use_optimized_type_conversion = {{ optimized }};
 {% endfor -%}
 {%- endmacro %}
 
@@ -38,6 +38,17 @@ SETTINGS {{ settings }}, json_use_optimized_type_conversion = {{ optimized }};
 {{ check('float bits skip', 'JSON', 'JSON(a Float64)', '{"a": 0.123456}', 'reinterpretAsUInt64(j.a)', float_prec_skip) }}
 {{ check('float to String dynamic', 'JSON', 'JSON(a String)', '{"a": 0.123456}', 'j.a', float_prec) }}
 {{ check('float to String changed path', 'JSON(a Float64)', 'JSON(a String)', '{"a": 0.123456}', 'j.a', float_prec) }}
+
+-- A negative zero survives the direct cast but its JSON text round trip collapses it to +0.0 (or "0"), so
+-- every route must agree. reinterpretAsUInt64 exposes the stored bits (9223372036854775808 for -0.0).
+{{ check('negative zero bits dynamic', 'JSON', 'JSON(a Float64)', '{"a": -0.0}', 'reinterpretAsUInt64(j.a)') }}
+{{ check('negative zero bits shared', 'JSON(max_dynamic_paths = 0)', 'JSON(max_dynamic_paths = 0, a Float64)', '{"a": -0.0}', 'reinterpretAsUInt64(j.a)') }}
+{{ check('negative zero bits variant', 'JSON(max_dynamic_types = 0)', 'JSON(max_dynamic_types = 0, a Float64)', '{"a": -0.0}', 'reinterpretAsUInt64(j.a)') }}
+{{ check('negative zero bits unchanged path with new path', 'JSON(a Float64)', 'JSON(a Float64, b Int8)', '{"a": -0.0}', 'reinterpretAsUInt64(j.a)') }}
+{{ check('negative zero bits changed to Float32', 'JSON(a Float64)', 'JSON(a Float32)', '{"a": -0.0}', 'reinterpretAsUInt32(j.a)') }}
+{{ check('negative zero bits in array', 'JSON', 'JSON(a Array(Float64))', '{"a": [-0.0, 1.5]}', 'arrayMap(x -> reinterpretAsUInt64(x), j.a)') }}
+{{ check('negative zero bits skip', 'JSON', 'JSON(a Float64)', '{"a": -0.0}', 'reinterpretAsUInt64(j.a)', 'type_json_skip_invalid_typed_paths = 1') }}
+{{ check('negative zero to String', 'JSON', 'JSON(a String)', '{"a": -0.0}', 'j.a') }}
 
 SELECT name, optimized, result FROM rt_results
 WHERE name IN (SELECT name FROM rt_results GROUP BY name HAVING uniqExact(result) > 1)

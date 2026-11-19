@@ -5,6 +5,8 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/iota.h>
 #include <Common/re2.h>
+#include <cmath>
+
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <Interpreters/castColumn.h>
@@ -2536,6 +2538,42 @@ bool isLosslessNumericWidening(const IDataType & from, const IDataType & to)
 /// the two agree only on values that convert exactly; checking that per value keeps ordinary numbers on the
 /// CAST, and a DateTime outside the destination range goes to the parser, which saturates it. A number or a
 /// date parsed from the text of a date and time or an address, or an array from a non-array, never matches.
+/// A negative zero copies through the direct cast unchanged, but the JSON round trip writes it as "-0",
+/// which reads back as +0.0 (a bare integer, no sign). A float column that holds one must therefore go
+/// through the parser so the direct route matches format+parse and the shared-data route.
+bool floatColumnHasNegativeZero(const IColumn & column)
+{
+    if (const auto * col = typeid_cast<const ColumnFloat64 *>(&column))
+    {
+        for (Float64 value : col->getData())
+            if (value == 0.0 && std::signbit(value))
+                return true;
+        return false;
+    }
+    if (const auto * col32 = typeid_cast<const ColumnFloat32 *>(&column))
+    {
+        for (Float32 value : col32->getData())
+            if (value == 0.0F && std::signbit(value))
+                return true;
+        return false;
+    }
+    if (const auto * col_nullable = typeid_cast<const ColumnNullable *>(&column))
+        return floatColumnHasNegativeZero(col_nullable->getNestedColumn());
+    if (const auto * col_array = typeid_cast<const ColumnArray *>(&column))
+        return floatColumnHasNegativeZero(col_array->getData());
+    if (const auto * col_map = typeid_cast<const ColumnMap *>(&column))
+        return floatColumnHasNegativeZero(col_map->getNestedColumn());
+    if (const auto * col_lc = typeid_cast<const ColumnLowCardinality *>(&column))
+        return floatColumnHasNegativeZero(*col_lc->getDictionary().getNestedColumn());
+    if (const auto * col_tuple = typeid_cast<const ColumnTuple *>(&column))
+    {
+        for (size_t i = 0; i < col_tuple->tupleSize(); ++i)
+            if (floatColumnHasNegativeZero(col_tuple->getColumn(i)))
+                return true;
+    }
+    return false;
+}
+
 bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const DataTypePtr & to)
 {
     if (const auto * from_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(from.get()))
@@ -2582,6 +2620,11 @@ bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const 
             return true;
         return isDateTimeOrDateTime64(*to_inner) && all_values_convert_exactly();
     }
+
+    /// A negative zero in the source survives the direct cast (as -0.0, or "-0" to String), but the JSON
+    /// round trip collapses it (to +0.0, or "0"), so route such a column through the parser.
+    if (isFloat(*from) && floatColumnHasNegativeZero(*column))
+        return false;
 
     /// A CAST reads the date out of a longer date-time string, while the parser requires the whole string
     /// to be a date, so a String source to Date/Date32 goes through the parser.
@@ -2685,42 +2728,6 @@ struct ObjectConversionPlan
     }
 };
 
-/// IDataType::equals treats Bool, UInt8 and SimpleAggregateFunction(any, Bool) as the same type, but they
-/// serialize and normalize differently (a CAST maps any nonzero to 1, the parser truncates). For two
-/// already-equal types, returns false if they disagree on Boolean-ness anywhere in the tree. Expects the
-/// two types to be structurally equal, so the parallel descent is sound.
-bool haveSameBoolSemantics(const DataTypePtr & lhs, const DataTypePtr & rhs)
-{
-    auto is_logical_bool = [](const DataTypePtr & t) { return isBool(t) || isSimpleAggregateFunctionOfBool(*t); };
-    if (is_logical_bool(lhs) != is_logical_bool(rhs))
-        return false;
-
-    if (const auto * lhs_nullable = typeid_cast<const DataTypeNullable *>(lhs.get()))
-        return haveSameBoolSemantics(lhs_nullable->getNestedType(), assert_cast<const DataTypeNullable &>(*rhs).getNestedType());
-    if (const auto * lhs_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(lhs.get()))
-        return haveSameBoolSemantics(lhs_low_cardinality->getDictionaryType(), assert_cast<const DataTypeLowCardinality &>(*rhs).getDictionaryType());
-    if (const auto * lhs_array = typeid_cast<const DataTypeArray *>(lhs.get()))
-        return haveSameBoolSemantics(lhs_array->getNestedType(), assert_cast<const DataTypeArray &>(*rhs).getNestedType());
-    if (const auto * lhs_map = typeid_cast<const DataTypeMap *>(lhs.get()))
-    {
-        const auto & rhs_map = assert_cast<const DataTypeMap &>(*rhs);
-        return haveSameBoolSemantics(lhs_map->getKeyType(), rhs_map.getKeyType())
-            && haveSameBoolSemantics(lhs_map->getValueType(), rhs_map.getValueType());
-    }
-    if (const auto * lhs_tuple = typeid_cast<const DataTypeTuple *>(lhs.get()))
-    {
-        const auto & lhs_elements = lhs_tuple->getElements();
-        const auto & rhs_elements = assert_cast<const DataTypeTuple &>(*rhs).getElements();
-        if (lhs_elements.size() != rhs_elements.size())
-            return false;
-        for (size_t i = 0; i < lhs_elements.size(); ++i)
-            if (!haveSameBoolSemantics(lhs_elements[i], rhs_elements[i]))
-                return false;
-        return true;
-    }
-    return true;
-}
-
 ObjectConversionPlan buildObjectConversionPlan(
     const DataTypeObject & src_type,
     const DataTypeObject & dst_type)
@@ -2747,13 +2754,15 @@ ObjectConversionPlan buildObjectConversionPlan(
         else
         {
             const bool equal = it->second->equals(*dst_path_type);
-            /// A path whose Boolean-ness changes is a real conversion even when equals reports no change
-            /// (equals ignores the Bool wrapper). Force the format+parse fallback so the values normalize.
-            const bool bool_mismatch = equal && !haveSameBoolSemantics(it->second, dst_path_type);
-            if (!equal || bool_mismatch)
+            /// equals treats types that serialize differently as the same (Bool vs UInt8, including the
+            /// SimpleAggregateFunction(any, Bool) wrapper and these nested in any carrier). Reuse the column
+            /// unchanged only when the types are also textually identical; otherwise force the format+parse
+            /// fallback so the stored values are normalized rather than reused as raw bytes.
+            const bool reuse_unsafe = equal && it->second->getName() != dst_path_type->getName();
+            if (!equal || reuse_unsafe)
             {
                 plan.changed_typed_paths[path] = {it->second, dst_path_type};
-                if (isStructuralTypeForJSON(it->second) || isStructuralTypeForJSON(dst_path_type) || bool_mismatch)
+                if (isStructuralTypeForJSON(it->second) || isStructuralTypeForJSON(dst_path_type) || reuse_unsafe)
                     plan.has_structural_type_change = true;
             }
             else
@@ -3356,7 +3365,14 @@ ColumnPtr convertObjectColumns(
         else
         {
             auto it = src_typed_paths.find(path);
-            dst_typed_columns[path] = it->second;
+            const auto & type = dst_typed_path_types.at(path);
+            /// Reusing the column is valid only when format+parse gives the same bytes. A negative zero
+            /// survives the reuse, but its text round trip collapses it to +0.0, so normalize that path.
+            if (anyInTypeTree(*type, [](const IDataType & t) { return isFloat(t); })
+                && floatColumnHasNegativeZero(*it->second))
+                dst_typed_columns[path] = convertTypedColumnToTyped(it->second, type, type, rows, format_settings, /*skip_on_failure=*/false);
+            else
+                dst_typed_columns[path] = it->second;
         }
     }
 
