@@ -32,8 +32,8 @@ public:
     /// Updates TTL metadata of the data_part.
     virtual void finalize(const MutableDataPartPtr & data_part) const = 0;
 
-    bool isMinTTLExpired() const { return force || isTTLExpired(old_ttl_info.min); }
-    bool isMaxTTLExpired() const { return isTTLExpired(old_ttl_info.max); }
+    [[nodiscard]] bool isMinTTLExpired() const { return force || isTTLExpired(old_ttl_info.min); }
+    [[nodiscard]] bool isMaxTTLExpired() const { return isTTLExpired(old_ttl_info.max); }
 
     /// Resolve the column type once and fill `timestamps` for the whole block. Every TTL algorithm
     /// and `TTLDeleteFilterTransform` map a TTL result column to Unix timestamps through here.
@@ -49,7 +49,7 @@ public:
         const ExpressionActionsPtr & expression, const Block & block, const String & result_column);
 
 protected:
-    bool isTTLExpired(time_t ttl) const;
+    [[nodiscard]] bool isTTLExpired(time_t ttl) const;
 
     /// Fill `timestamps` from `column` using this algorithm's time zone. Call it once per block,
     /// then index `timestamps` in the row loop. The buffer stays owned by the caller: the transforms
