@@ -5,6 +5,7 @@ SET query_plan_join_swap_table = 'auto';
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_randomize = 0;
 SET enable_parallel_replicas = 0;
+SET use_hash_table_stats_for_join_reordering = 1;
 
 DROP TABLE IF EXISTS mv;
 DROP TABLE IF EXISTS src;
@@ -27,12 +28,15 @@ INSERT INTO src SELECT number * 100 FROM numbers(20) SETTINGS log_comment = 'blo
 
 SELECT count(), countIf(name = '') FROM dst;
 
+-- A larger block after a smaller one: the hash table size of the smaller block is not reused.
+INSERT INTO src SELECT number FROM numbers(5000) SETTINGS log_comment = 'block_larger_than_dim_again';
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT DISTINCT log_comment, ProfileEvents['JoinBuildTableRowCount']
 FROM system.query_log
 WHERE current_database = currentDatabase() AND event_date >= yesterday()
-    AND type = 'QueryFinish' AND query_kind = 'Insert' AND log_comment LIKE 'block_%_than_dim'
+    AND type = 'QueryFinish' AND query_kind = 'Insert' AND log_comment LIKE 'block_%_than_dim%'
 ORDER BY log_comment;
 
 DROP TABLE mv;
