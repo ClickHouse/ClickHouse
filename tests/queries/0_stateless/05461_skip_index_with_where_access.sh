@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Tags: no-random-settings, no-parallel
 
-# The condition of a partial index is analysed with the privileges of the server, so it must be authorized first as the user
-# who defines the index: a user must not probe tables and columns that they can't see, even with the feature disabled.
+# The condition and the indexed expression of a partial index are analysed with the privileges of the server, so they must be
+# authorized first as the user who defines the index: a user must not probe tables and columns that they can't see, even with
+# the feature disabled.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -46,11 +47,22 @@ do
             run_as_user "CREATE TABLE ${CLICKHOUSE_DATABASE}.probe (p UInt8, INDEX i p TYPE minmax WHERE $predicate) ENGINE = MergeTree ORDER BY tuple()" $enabled
             run_as_user "ALTER TABLE ${CLICKHOUSE_DATABASE}.scratch ADD INDEX j p TYPE minmax WHERE $predicate" $enabled
             run_as_user "CREATE INDEX j ON ${CLICKHOUSE_DATABASE}.scratch (p) TYPE minmax WHERE $predicate" $enabled
+            expression="p + intDiv(1, hasColumnInTable('$CLICKHOUSE_DATABASE', '$table', '$column'))"
+            run_as_user "CREATE TABLE ${CLICKHOUSE_DATABASE}.probe (p UInt8, INDEX i $expression TYPE minmax WHERE p > 0) ENGINE = MergeTree ORDER BY tuple()" $enabled
+            run_as_user "ALTER TABLE ${CLICKHOUSE_DATABASE}.scratch ADD INDEX j $expression TYPE minmax WHERE p > 0" $enabled
+            run_as_user "CREATE INDEX j ON ${CLICKHOUSE_DATABASE}.scratch ($expression) TYPE minmax WHERE p > 0" $enabled
         done
     done
     run_as_user "CREATE TABLE ${CLICKHOUSE_DATABASE}.probe (p UInt8, INDEX i p TYPE minmax WHERE p = intDiv(1, $udf('secret', 'sensitive'))) ENGINE = MergeTree ORDER BY tuple()" $enabled
     run_as_user "ALTER TABLE ${CLICKHOUSE_DATABASE}.scratch ADD INDEX j p TYPE minmax WHERE p = intDiv(1, $udf('secret', 'sensitive'))" $enabled
+    run_as_user "CREATE TABLE ${CLICKHOUSE_DATABASE}.probe (p UInt8, INDEX i p + intDiv(1, $udf('secret', 'sensitive')) TYPE minmax WHERE p > 0) ENGINE = MergeTree ORDER BY tuple()" $enabled
+    run_as_user "ALTER TABLE ${CLICKHOUSE_DATABASE}.scratch ADD INDEX j p + intDiv(1, $udf('secret', 'sensitive')) TYPE minmax WHERE p > 0" $enabled
 done
+
+echo "introspection function in the indexed expression"
+output=$($CLICKHOUSE_CLIENT --user "$user" --allow_experimental_partial_skip_indexes=1 --allow_introspection_functions=1 \
+    -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.probe (p UInt8, INDEX i demangle(toString(p)) TYPE minmax WHERE p > 0) ENGINE = MergeTree ORDER BY tuple()" 2>&1)
+echo "$output" | grep -o -m1 "ACCESS_DENIED" || echo "no error"
 
 echo "copied from another table"
 $CLICKHOUSE_CLIENT --allow_experimental_partial_skip_indexes=1 --allow_introspection_functions=1 -q "

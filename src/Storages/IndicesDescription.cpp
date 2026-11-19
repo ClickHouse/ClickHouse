@@ -152,6 +152,9 @@ void checkPartialIndexConditionAsUser(const ASTPtr & definition_ast, const Colum
     if (!index_definition || !index_definition->getWhere())
         return;
 
+    /// `getIndexFromAST` analyses the indexed expression of a partial index with the global context too.
+    IndexDescription().initExpressionInfo(index_definition->getExpression()->clone(), columns, context);
+
     ASTPtr where_ast = index_definition->getWhere()->clone();
     if (auto * where_with_alias = dynamic_cast<ASTWithAlias *>(where_ast.get()))
         where_with_alias->setAlias("");
