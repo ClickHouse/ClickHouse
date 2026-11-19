@@ -1,5 +1,5 @@
--- On windows not longer than the step, timeSeriesQuantileToGrid and timeSeriesMadToGrid select the order statistics from
--- unsorted values. The results must be the same as on overlapping windows, whose values are kept sorted.
+-- On windows not longer than the step, `timeSeriesQuantileToGrid` and `timeSeriesMadToGrid` select the order statistics
+-- from unsorted values. The results must be the same as on overlapping windows, whose values are kept sorted.
 
 SET enable_time_series_aggregate_functions = 1;
 
@@ -8,13 +8,13 @@ CREATE TABLE ts (timestamp DateTime, value Float64) ENGINE = MergeTree ORDER BY 
 INSERT INTO ts SELECT number + 1, multiIf(number % 401 = 3, nan, number % 233 = 5, inf, number % 307 = 7, -inf, ((number * 7919) % 101 - 50) / 4) FROM numbers(3000);
 
 -- The `*_sorted` grids have a window of 300 (301) seconds ending at every second, the others a window equal to the step.
--- Each array lists the grid points where the two differ.
+-- Each array lists the grid points where the two differ, a missing result included.
 SELECT
-    arrayFilter(j -> toString(q[j]) != toString(q_sorted[300 * j - 299]), range(1, length(q) + 1)),
-    arrayFilter(j -> toString(q_odd[j]) != toString(q_odd_sorted[301 * j - 300]), range(1, length(q_odd) + 1)),
-    arrayFilter(j -> toString(mad[j]) != toString(mad_sorted[300 * j - 299]), range(1, length(mad) + 1)),
-    arrayFilter(j -> toString(mad_odd[j]) != toString(mad_odd_sorted[301 * j - 300]), range(1, length(mad_odd) + 1)),
-    arrayFilter(j -> toString(mad_f32[j]) != toString(mad_f32_sorted[300 * j - 299]), range(1, length(mad_f32) + 1))
+    arrayFilter(j -> ifNull(toString(q[j]), 'NULL') != ifNull(toString(q_sorted[300 * j - 299]), 'NULL'), range(1, length(q) + 1)),
+    arrayFilter(j -> ifNull(toString(q_odd[j]), 'NULL') != ifNull(toString(q_odd_sorted[301 * j - 300]), 'NULL'), range(1, length(q_odd) + 1)),
+    arrayFilter(j -> ifNull(toString(mad[j]), 'NULL') != ifNull(toString(mad_sorted[300 * j - 299]), 'NULL'), range(1, length(mad) + 1)),
+    arrayFilter(j -> ifNull(toString(mad_odd[j]), 'NULL') != ifNull(toString(mad_odd_sorted[301 * j - 300]), 'NULL'), range(1, length(mad_odd) + 1)),
+    arrayFilter(j -> ifNull(toString(mad_f32[j]), 'NULL') != ifNull(toString(mad_f32_sorted[300 * j - 299]), 'NULL'), range(1, length(mad_f32) + 1))
 FROM
 (
     SELECT
