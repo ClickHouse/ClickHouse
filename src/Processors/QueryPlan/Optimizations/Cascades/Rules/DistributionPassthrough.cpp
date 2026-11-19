@@ -114,6 +114,8 @@ protected:
 
                     sorted_input_props.distribution = input_dist;
                     sorted_input_props.sorting = input_sorting;
+                    /// The sort delegated to the input is still the sort of the window above.
+                    sorted_input_props.sorting_for_window = required_properties.sorting_for_window;
                     /// Translation renames columns, so the canonical set order must be rebuilt.
                     if (input_layout == StreamLayout::Disjoint)
                     {
@@ -127,6 +129,7 @@ protected:
 
                     sorted_impl->properties.distribution = output_dist;
                     sorted_impl->properties.sorting = required_properties.sorting;
+                    sorted_impl->properties.sorting_for_window = required_properties.sorting_for_window;
                     sorted_impl->properties.stream_layout = required_properties.stream_layout;
                     sorted_impl->properties.stream_disjoint_columns = required_properties.stream_disjoint_columns;
 

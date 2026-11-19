@@ -1195,6 +1195,22 @@ private:
         bool bypass_local_probe,
         const StageMisses & stage_misses) const;
 
+    /// The probe/staging loop of a block whose records carry aggregate arguments, the counterpart of `collectCombinedMisses`.
+    /// With `record_places` it stores the place of every row in `places_data`, null for a miss. A NULL key goes to its slot
+    /// (`emplace_null_key`) without a lookup and needs a place, so without `record_places` the block has no such rows.
+    template <bool record_places, typename RecordKey, typename LocalMethod, typename State, typename EmplaceNullKey, typename StageMisses>
+    AdaptiveLocalProbes collectArgumentMisses(
+        LocalMethod & local_method,
+        State & local_find_state,
+        size_t row_begin,
+        size_t row_end,
+        Arena & scratch_pool,
+        AdaptiveAggregationProducer & adaptive,
+        bool bypass_local_probe,
+        AggregateDataPtr * places_data,
+        const EmplaceNullKey & emplace_null_key,
+        const StageMisses & stage_misses) const;
+
     /// Appends the producer's batch of misses to its partitions in the format that `visitStagedRecordFormat` selects
     /// for `Method`, the two-level twin of the producer's table. Each record carries a key and either a multiplicity
     /// (an aggregation by a lone `count`), no payload (no aggregates), or the row's aggregate arguments laid out by

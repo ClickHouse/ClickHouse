@@ -241,6 +241,14 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
                 sorting_step->convertToFinishSorting(common_prefix, /*use_buffering*/ false, false);
         }
 
+        /// A partitioned `FinishSorting` scatters its merged stream into the window partitions and streams the
+        /// rows out of every shard as soon as their prefix group is complete (see `SortingStep::transformPipeline`).
+        /// A `MergingSortedTransform` above it would pull from the shards selectively, while the scatter has to
+        /// push to all of them, which can deadlock. So do not advertise this order: the sorting above stays a full
+        /// sort, which consumes every shard independently.
+        if (sorting_step->hasPartitions() && sorting_step->getType() == SortingStep::Type::FinishSorting)
+            return {};
+
         auto scope = sorting_step->hasPartitions() ? SortingProperty::SortScope::Stream : SortingProperty::SortScope::Global;
         return {sorting_step->getSortDescription(), scope};
     }
