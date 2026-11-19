@@ -969,7 +969,8 @@ String serializeBatch(const DistributedQueryTaskBatch & batch)
 /// Each stage's plan is written once, and every field of every task comes back.
 TEST(DistributedTaskSerialization, TaskBatchRoundTrip)
 {
-    const String bytes = serializeBatch(makeBatch());
+    const DistributedQueryTaskBatch batch = makeBatch();
+    const String bytes = serializeBatch(batch);
 
     ReadBufferFromString in(bytes);
     DistributedQueryTaskBatch restored;
@@ -989,6 +990,25 @@ TEST(DistributedTaskSerialization, TaskBatchRoundTrip)
     for (size_t pos = bytes.find("plan of stage_1"); pos != String::npos; pos = bytes.find("plan of stage_1", pos + 1))
         ++plan_occurrences;
     EXPECT_EQ(plan_occurrences, 1u);
+
+    /// The plan writer gets each stage's own plan once, where its bytes belong.
+    WriteBufferFromOwnString without_plans;
+    std::vector<std::pair<size_t, SerializedQueryPlanPtr>> plans;
+    serializeTaskBatch(batch, without_plans,
+        [&](const SerializedQueryPlanPtr & plan) { plans.emplace_back(without_plans.count(), plan); });
+    without_plans.finalize();
+    ASSERT_EQ(plans.size(), batch.stages.size());
+    String assembled;
+    size_t written = 0;
+    for (size_t i = 0; i < plans.size(); ++i)
+    {
+        EXPECT_EQ(plans[i].second, batch.stages[i].serialized_query_plan);
+        assembled += without_plans.str().substr(written, plans[i].first - written);
+        assembled += *plans[i].second;
+        written = plans[i].first;
+    }
+    assembled += without_plans.str().substr(written);
+    EXPECT_EQ(assembled, bytes);
 }
 
 /// `deserializeTaskBatch` rejects batches that a correct initiator never sends.

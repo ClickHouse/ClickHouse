@@ -14,6 +14,7 @@
 #include <Common/QueryScope.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
@@ -35,6 +36,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
 }
 
@@ -198,6 +200,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     auto task_state = std::make_shared<TaskState>();
     task_state->completion_future = task_promise->get_future();
     task_state->collectors = collectors;
+    task_state->changes = status_changes;
 
     {
         std::lock_guard lock(tasks_mutex);
@@ -209,13 +212,47 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     return Result::Ok;
 }
 
-bool StatelessTaskExecutor::startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors)
+bool StatelessTaskExecutor::admitQuery(const String & unique_query_id)
+{
+    std::lock_guard lock(tasks_mutex);
+    auto controller = query_controllers.find(unique_query_id);
+    if (controller == query_controllers.end())
+    {
+        if (query_controllers.size() >= max_queries)
+        {
+            LOG_INFO(getLogger("StatelessTaskExecutor"), "Refusing the tasks of {}: {} queries run already", unique_query_id, max_queries);
+            return false;
+        }
+        controller = query_controllers.emplace(unique_query_id, std::make_shared<WorkerQueryController>(unique_query_id)).first;
+        LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Created the query controller of {}", unique_query_id);
+    }
+    controller->second->admit();
+    return true;
+}
+
+void StatelessTaskExecutor::releaseQuery(const String & unique_query_id)
+{
+    std::lock_guard lock(tasks_mutex);
+    auto controller = query_controllers.find(unique_query_id);
+    if (controller == query_controllers.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Releasing the query {}, which has no admission", unique_query_id);
+    controller->second->release();
+    dropControllerIfIdleLocked(controller);
+}
+
+bool StatelessTaskExecutor::startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors,
+    const StatusChangeNotifierPtr & changes)
 {
     const OpenTelemetry::TracingContext & trace_context = OpenTelemetry::CurrentContext();
     size_t task_count = 0;
     for (const auto & stage : batch.stages)
         task_count += stage.tasks.size();
     LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Starting a batch of {} tasks of {}", task_count, unique_query_id);
+
+    if (!admitQuery(unique_query_id))
+        return false;
+    /// The query keeps its slot after the batch only through the tasks registered here.
+    SCOPE_EXIT(releaseQuery(unique_query_id));
 
     for (auto & stage : batch.stages)
     {
@@ -236,24 +273,14 @@ bool StatelessTaskExecutor::startTasks(const String & unique_query_id, Distribut
             task_state->completion_future = task_promise->get_future();
             task_state->collectors = collectors;
             task_state->unique_query_id = unique_query_id;
+            task_state->changes = changes ? changes : status_changes;
 
             {
                 std::lock_guard lock(tasks_mutex);
-                auto controller = query_controllers.find(unique_query_id);
-                /// A query without a controller has no task registered here yet, so refusing it leaves nothing behind.
-                if (controller == query_controllers.end() && query_controllers.size() >= max_queries)
-                {
-                    LOG_INFO(getLogger("StatelessTaskExecutor"), "Refusing the tasks of {}: {} queries run already", unique_query_id, max_queries);
-                    return false;
-                }
                 if (!tryRegisterTaskLocked(unique_task_id, task_state))
                     continue;
-                if (controller == query_controllers.end())
-                {
-                    controller = query_controllers.emplace(unique_query_id, std::make_shared<WorkerQueryController>(unique_query_id)).first;
-                    LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Created the query controller of {}", unique_query_id);
-                }
-                controller->second->addTask(unique_task_id);
+                /// The admission keeps the controller.
+                query_controllers.at(unique_query_id)->addTask(unique_task_id);
             }
 
             scheduleTask(unique_task_id, std::move(task_state), std::move(task_promise), std::move(task_description), unique_temp_file_path, trace_context);
@@ -271,7 +298,7 @@ void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStat
     };
 
     /// The coordinator learns the cause without waiting until the task frees its resources.
-    auto report_failure = [failure_slot = task_state->failure, changes = status_changes]
+    auto report_failure = [failure_slot = task_state->failure, changes = task_state->changes]
     {
         auto failure = currentTaskFailure();
         fiu_do_on(FailPoints::distributed_plan_delay_root_cause_report,
@@ -285,7 +312,7 @@ void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStat
 
     auto task_function = [unique_task_id, task_description = std::move(task_description_), distributed_query_id = unique_temp_file_path,
         collectors = task_state->collectors, trace_context = std::move(trace_context_), logs_queue_slot = task_state->logs_queue,
-        cancellation = task_state->cancellation, changes = status_changes, task_promise, update_progress, report_failure] mutable
+        cancellation = task_state->cancellation, changes = task_state->changes, task_promise, update_progress, report_failure] mutable
     {
         /// The promise must be fulfilled strictly after the last log line of this task:
         /// `getStatus` treats a ready future as a terminal state
@@ -430,47 +457,41 @@ StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String 
     return currentStatus(*task_state, completion_future);
 }
 
-std::vector<StatelessTaskExecutor::TaskStatus> StatelessTaskExecutor::getStatuses(const Strings & task_ids, UInt64 wait_milliseconds)
+StatelessTaskExecutor::StatusWait StatelessTaskExecutor::beginStatusWait(const Strings & task_ids)
 {
-    struct Polled
-    {
-        TaskStatePtr state;
-        std::shared_future<std::optional<TaskFailure>> completion_future;
-        /// Its failure was reported before this request, so an earlier reply carried it.
-        bool failing_before = false;
-    };
-    std::vector<Polled> polled(task_ids.size());
+    StatusWait wait;
+    wait.polled.resize(task_ids.size());
     {
         std::lock_guard lock(tasks_mutex);
         for (size_t i = 0; i < task_ids.size(); ++i)
         {
             if (auto it = tasks.find(task_ids[i]); it != tasks.end())
             {
-                polled[i].state = it->second;
-                polled[i].completion_future = it->second->completion_future;
+                wait.polled[i].state = it->second;
+                wait.polled[i].completion_future = it->second->completion_future;
             }
         }
     }
-    for (auto & task : polled)
+    for (auto & task : wait.polled)
         task.failing_before = task.state && task.state->failure->get().has_value();
+    return wait;
+}
 
-    auto changed = [&polled]
+bool StatelessTaskExecutor::StatusWait::changed() const
+{
+    for (const auto & task : polled)
     {
-        for (const auto & task : polled)
-        {
-            if (!task.state || !task.completion_future.valid()
-                || task.completion_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
-                return true;
-            if (!task.failing_before && task.state->failure->get())
-                return true;
-        }
-        return false;
-    };
-    {
-        std::unique_lock lock(status_changes->mutex);
-        status_changes->changed.wait_for(lock, std::chrono::milliseconds(wait_milliseconds), changed);
+        if (!task.state || !task.completion_future.valid()
+            || task.completion_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+            return true;
+        if (!task.failing_before && task.state->failure->get())
+            return true;
     }
+    return false;
+}
 
+std::vector<StatelessTaskExecutor::TaskStatus> StatelessTaskExecutor::StatusWait::collect() const
+{
     std::vector<TaskStatus> statuses;
     statuses.reserve(polled.size());
     for (const auto & task : polled)
@@ -481,6 +502,16 @@ std::vector<StatelessTaskExecutor::TaskStatus> StatelessTaskExecutor::getStatuse
             statuses.push_back(TaskStatus{Result::UnknownTaskId, "", {}, 0, std::nullopt, {}});
     }
     return statuses;
+}
+
+std::vector<StatelessTaskExecutor::TaskStatus> StatelessTaskExecutor::getStatuses(const Strings & task_ids, UInt64 wait_milliseconds)
+{
+    const StatusWait wait = beginStatusWait(task_ids);
+    {
+        std::unique_lock lock(status_changes->mutex);
+        status_changes->changed.wait_for(lock, std::chrono::milliseconds(wait_milliseconds), [&wait] { return wait.changed(); });
+    }
+    return wait.collect();
 }
 
 StatelessTaskExecutor::Result StatelessTaskExecutor::cancelTask(const String & task_id)
@@ -554,14 +585,22 @@ bool StatelessTaskExecutor::eraseTaskLocked(const String & unique_task_id)
     if (!unique_query_id.empty())
     {
         auto controller = query_controllers.find(unique_query_id);
-        if (controller != query_controllers.end() && controller->second->removeTask(unique_task_id))
+        if (controller != query_controllers.end())
         {
-            LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Dropped the query controller of {}", unique_query_id);
-            query_controllers.erase(controller);
+            controller->second->removeTask(unique_task_id);
+            dropControllerIfIdleLocked(controller);
         }
     }
     tasks.erase(it);
     return true;
+}
+
+void StatelessTaskExecutor::dropControllerIfIdleLocked(std::unordered_map<String, WorkerQueryControllerPtr>::iterator controller)
+{
+    if (!controller->second->isIdle())
+        return;
+    LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Dropped the query controller of {}", controller->first);
+    query_controllers.erase(controller);
 }
 
 void StatelessTaskExecutor::shutdown()

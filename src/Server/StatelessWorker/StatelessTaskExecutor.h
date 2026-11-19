@@ -72,16 +72,37 @@ public:
         UInt64 count TSA_GUARDED_BY(mutex) = 0;
     };
 
+    /// Woken when a task it was given at the start ends or reports its failure. Shared with the tasks, which can end after
+    /// `shutdown`.
+    class StatusChangeNotifier
+    {
+    public:
+        virtual ~StatusChangeNotifier() = default;
+        virtual void notify() = 0;
+    };
+    using StatusChangeNotifierPtr = std::shared_ptr<StatusChangeNotifier>;
+
+    /// The tasks of one status request, taken when it arrives.
+    class StatusWait;
+
+    /// Takes a `max_queries` slot for the query, or shares the one it holds; false when it holds none and none is free.
+    /// Every admission is ended by `releaseQuery`.
+    bool admitQuery(const String & unique_query_id);
+    /// Ends an admission; the query keeps its slot while its tasks are registered here.
+    void releaseQuery(const String & unique_query_id);
+
     /// Ignores a task cancelled before its start arrived.
     Result startTask(const String & unique_task_id, DistributedQueryTaskDescription task, const String & unique_temp_file_path, const TaskCollectors & collectors);
     /// Starts the tasks of a `start_tasks` batch of the query `unique_query_id`, skipping those cancelled before their start or
     /// already started. A task that cannot be scheduled fails the call; the tasks scheduled before it keep running.
-    /// Returns false, having started nothing, for a query new on this worker when `max_queries` queries run already.
-    bool startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors);
+    /// Returns false, having started nothing, when `admitQuery` refuses the query. The tasks wake `changes`, or the
+    /// notifier `getStatuses` waits on when it is null.
+    bool startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors,
+        const StatusChangeNotifierPtr & changes = nullptr);
     TaskStatus getStatus(const String & task_id, UInt64 wait_milliseconds);
-    /// Waits up to `wait_milliseconds` until one of the tasks ends or reports a failure that an earlier reply did not carry,
-    /// then returns the status of each, in order.
+    /// Waits up to `wait_milliseconds` until `beginStatusWait(task_ids).changed()`, then returns the statuses.
     std::vector<TaskStatus> getStatuses(const Strings & task_ids, UInt64 wait_milliseconds);
+    StatusWait beginStatusWait(const Strings & task_ids);
     /// Remembers an unknown id: the coordinator sends the starts of a stage concurrently, so a cancel can overtake a start.
     Result cancelTask(const String & task_id);
     void cancelTasks(const Strings & task_ids);
@@ -150,6 +171,7 @@ private:
         std::shared_ptr<ForwardedLogsCounter> forwarded_logs = std::make_shared<ForwardedLogsCounter>();
         /// The query of a task started by `startTasks`, which keys its `WorkerQueryController`; empty for `startTask`.
         String unique_query_id;
+        StatusChangeNotifierPtr changes;
     };
 
     using TaskStatePtr = std::shared_ptr<TaskState>;
@@ -157,13 +179,13 @@ private:
     /// The status of a task now; `completion_future` is the caller's copy, since one future object is not shared by threads.
     static TaskStatus currentStatus(const TaskState & task_state, const std::shared_future<std::optional<TaskFailure>> & completion_future);
 
-    /// Wakes `getStatuses` when a task reports its failure or ends. Shared with the tasks, which can end after `shutdown`.
-    struct StatusChanges
+    /// The notifier `getStatuses` waits on.
+    struct StatusChanges final : StatusChangeNotifier
     {
         std::mutex mutex;
         std::condition_variable changed;
 
-        void notify();
+        void notify() override;
     };
 
     /// The query context and the rest of what a task needs besides its description.
@@ -176,6 +198,7 @@ private:
     bool tryRegisterTaskLocked(const String & unique_task_id, const TaskStatePtr & task_state) TSA_REQUIRES(tasks_mutex);
     /// Removes a task from `tasks`; false for an unknown one.
     bool eraseTaskLocked(const String & unique_task_id) TSA_REQUIRES(tasks_mutex);
+    void dropControllerIfIdleLocked(std::unordered_map<String, WorkerQueryControllerPtr>::iterator controller) TSA_REQUIRES(tasks_mutex);
 
     /// Schedules a registered task in `thread_pool`; `trace_context_` is the dispatch request's.
     void scheduleTask(const String & unique_task_id, TaskStatePtr task_state, TaskPromisePtr task_promise,
@@ -194,6 +217,28 @@ private:
     std::unordered_map<String, WorkerQueryControllerPtr> query_controllers TSA_GUARDED_BY(tasks_mutex);
     std::shared_ptr<StatusChanges> status_changes = std::make_shared<StatusChanges>();
     std::mutex tasks_mutex;
+};
+
+class StatelessTaskExecutor::StatusWait
+{
+public:
+    /// Returns true once a task has ended or is unknown, or has reported a failure it had not reported when the wait began.
+    [[nodiscard]] bool changed() const;
+    /// Returns the status of each task, in the order of the request, and drains their logs and progress.
+    [[nodiscard]] std::vector<TaskStatus> collect() const;
+
+private:
+    friend class StatelessTaskExecutor;
+
+    struct Polled
+    {
+        /// Null for an unknown task.
+        TaskStatePtr state;
+        std::shared_future<std::optional<TaskFailure>> completion_future;
+        /// Its failure was reported before the wait began, so an earlier reply carried it.
+        bool failing_before = false;
+    };
+    std::vector<Polled> polled;
 };
 
 }
