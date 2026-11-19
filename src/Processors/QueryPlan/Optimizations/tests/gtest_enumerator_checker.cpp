@@ -63,12 +63,17 @@ struct TestOptimizer
     {
         return 1;
     }
-    [[nodiscard]] double mergeJoinCost(MergeJoinInput left, UInt32, MergeJoinInput, UInt32, Int32, const SelectivityEstimate &) const
+    [[nodiscard]] UInt64 joinKeyClasses(const VectorWithMemoryTracking<JoinActionRef *> &, UInt32, UInt32) const
+    {
+        return 1;
+    }
+    [[nodiscard]] double mergeJoinCost(
+        MergeJoinInput left, UInt32, MergeJoinInput, UInt32, Int32, UInt64, const SelectivityEstimate &) const
     {
         return left.rows == 10 ? 0 : 100;
     }
     [[nodiscard]] bool isInterestingOrder(Int32, UInt32) const { return true; }
-    [[nodiscard]] bool isShardedMerge(const MergeJoinInput &, UInt32, const MergeJoinInput &, UInt32) const { return false; }
+    [[nodiscard]] bool isShardedMerge(const MergeJoinInput &, UInt32, const MergeJoinInput &, UInt32, UInt64) const { return false; }
     [[nodiscard]] std::optional<UInt64> estimateCardinality(
         std::optional<UInt64> left_rows, std::optional<UInt64> right_rows,
         const SelectivityEstimate & selectivity, JoinKind kind, JoinStrictness strictness) const
