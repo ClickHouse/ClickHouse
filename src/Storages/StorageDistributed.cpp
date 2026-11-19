@@ -1,5 +1,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Storages/StorageDistributed.h>
+#include <Interpreters/getTableExpressions.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
@@ -1716,7 +1718,12 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
 
             JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
 
-            if (joined_tables.tablesCount() == 1)
+            /// A streaming read of a `Distributed` table needs the cursor of each shard extracted from its cursor,
+            /// which the regular execution of the `SELECT` (`ClusterProxy::executeQuery`) does.
+            const auto * src_table_expression = getTableExpression(*select_query, 0);
+            const bool is_stream = src_table_expression && src_table_expression->stream_settings;
+
+            if (joined_tables.tablesCount() == 1 && !is_stream)
             {
                 src_storage = joined_tables.getLeftTableStorage();
                 src_is_table_function = joined_tables.isLeftTableFunction();
