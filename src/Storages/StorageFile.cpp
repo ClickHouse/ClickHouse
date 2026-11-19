@@ -157,6 +157,7 @@ namespace ErrorCodes
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int READONLY;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;
@@ -2943,6 +2944,23 @@ std::unique_ptr<LazilyReadFromFile> ReadFromFile::keepOnlyRequiredColumnsAndCrea
     return lazy_step;
 }
 
+void StorageFile::checkAccessForRenamingFiles(const ContextPtr & context)
+{
+    const auto access = context->getAccess();
+    access->checkAccessWithFilter(AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+
+    /// The readonly gate does not refuse `WRITE` on a source, which also authorizes `BACKUP` destinations.
+    const auto & params = access->getParams();
+    if (!params.readonly || params.full_access)
+        return;
+    if (params.interface == ClientInfo::Interface::HTTP && params.http_method == ClientInfo::HTTPMethod::GET)
+        throw Exception(ErrorCodes::READONLY,
+            "{}: Cannot execute query in readonly mode. "
+            "For queries over HTTP, method GET implies readonly. "
+            "You should use method POST for modifying queries", access->getUserName());
+    throw Exception(ErrorCodes::READONLY, "{}: Cannot execute query in readonly mode", access->getUserName());
+}
+
 void StorageFile::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -2957,8 +2975,7 @@ void StorageFile::read(
     /// (`StorageFileSource::beforeDestroy`), so reading it needs `WRITE` on the source besides `READ`.
     /// This context is the reading query's, not that of the query which built the storage.
     if (!file_renamer.isEmpty())
-        context->getAccess()->checkAccessWithFilter(
-            AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+        checkAccessForRenamingFiles(context);
 
     if (distributed_processing && context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = clampClusterFunctionNumStreams(

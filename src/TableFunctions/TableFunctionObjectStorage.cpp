@@ -158,17 +158,11 @@ template <typename Definition, typename Configuration, bool is_data_lake>
 VectorWithMemoryTracking<size_t> TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::skipAnalysisForArguments(
     const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
-    auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
-    auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
-    size_t table_function_arguments_size = table_function_arguments_nodes.size();
-
+    /// `headers(...)` and `extra_credentials(...)` are wrappers that the storage parser removes before it classifies
+    /// positional and named arguments (see `S3SecretArguments` and the S3/Azure `Configuration` parsers), so their
+    /// nested `key = value` arguments (e.g. `role_arn = ...`) are skipped with them.
     VectorWithMemoryTracking<size_t> result;
-    for (size_t i = 0; i < table_function_arguments_size; ++i)
-    {
-        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
-        if (function_node && function_node->getFunctionName() == "headers")
-            result.push_back(i);
-    }
+    appendNamedArgumentIndexes(query_node_table_function, result, {"headers", "extra_credentials"});
     return result;
 }
 

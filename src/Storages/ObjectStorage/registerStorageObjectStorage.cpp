@@ -25,6 +25,11 @@
 
 #include <algorithm>
 
+#include "config.h"
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedSystemDatabase.h>
+#endif
+
 namespace DB
 {
 
@@ -126,14 +131,12 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     /// `{_partition_id}` tables as wildcard (see `initPartitionStrategy`).
     configuration->is_create_query = args.mode == LoadingStrictnessLevel::CREATE;
 
-    /// Server-internal log-pipeline object storage tables live in the `system` database and are named
-    /// `<log>_s3` (the plain S3 engine sink) or `<log>_s3queue`. Users cannot create tables there, so this is a
-    /// safe internal marker. These tables must never abort server startup when server-managed credentials are
-    /// restricted: force the anonymous-load fallback in `getClient` even if the operator disabled
-    /// `s3_load_table_anonymously_if_credentials_restricted`. Their bootstrap re-credentials the client afterwards.
-    if (args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE
-        && (args.table_id.table_name.ends_with("_s3") || args.table_id.table_name.ends_with("_s3queue")))
+#if CLICKHOUSE_CLOUD
+    /// The tables of the system log pipeline must never abort the startup when server-managed credentials are
+    /// restricted. The catalog builds the current ones with the server credentials.
+    if (SharedSystemDatabase::isPipelineTable(args.table_id))
         configuration->force_anonymous_load_fallback = true;
+#endif
 
     auto storage = std::make_shared<StorageObjectStorage>(
         configuration,
@@ -158,7 +161,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     {
         auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
         auto metadata = *metadata_snapshot;
-        metadata.settings_changes = args.storage_def->settings->ptr();
+        metadata.setSettingsChanges(args.storage_def->settings->ptr());
         storage->setInMemoryMetadata(metadata);
     }
 
@@ -1613,7 +1616,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 The settings which are stored only in the table definition, and not in the Iceberg metadata, can be changed for an existing table with `ALTER TABLE ... MODIFY SETTING` and `ALTER TABLE ... RESET SETTING`:
 
 - the lookup of the metadata file: `iceberg_use_version_hint`, `iceberg_recent_metadata_file_by_last_updated_ms_field` and `iceberg_metadata_async_prefetch_period_ms`;
-- the background compaction and the cleanup after it: `allow_experimental_iceberg_compaction`, `enable_cleanup_old_data_files_compaction` (or its alias `allow_experimental_cleanup_old_data_files_compaction`), `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_compaction_max_rows_in_data_file`, `iceberg_compaction_max_bytes_in_data_file`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction` and `iceberg_data_file_size_upper_threshold_compaction`.
+- the background compaction and the cleanup after it: `allow_experimental_iceberg_compaction`, `enable_cleanup_old_data_files_compaction` (or its alias `allow_experimental_cleanup_old_data_files_compaction`), `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction`, `iceberg_compaction_max_bytes_to_merge` and `iceberg_compaction_max_rows_to_merge`.
 
 The new values take effect for subsequent queries and are stored in the table definition. The background jobs of the table are stopped while the settings are changed and started again with the new settings, so switching `allow_experimental_iceberg_compaction` off stops the background compaction of the table, and switching it on starts it. Other settings cannot be modified, and a settings change cannot be combined with other `ALTER` commands in one query. Tables of a `DataLakeCatalog` database do not support modifying settings.
 

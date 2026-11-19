@@ -1450,6 +1450,22 @@ def test_max_rows_per_message(nats_cluster):
     assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
 
 
+def test_max_rows_per_message_zero(nats_cluster):
+    instance.query(
+        """
+        CREATE TABLE test.nats (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'zero_rows',
+                     nats_format = 'JSONEachRow',
+                     nats_max_rows_per_message = 0;
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
+
+    assert "BAD_ARGUMENTS" in instance.query_and_get_error("INSERT INTO test.nats VALUES (1, 2)", timeout=60)
+
+
 def test_row_based_formats(nats_cluster):
     num_rows = 10
 
