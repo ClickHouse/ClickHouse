@@ -89,6 +89,11 @@ public:
     /// are limited to the intersection with these elements (the GRANTS clause).
     [[nodiscard]] const AccessRightsElements & getGrants() const { return grants; }
     void setGrants(AccessRightsElements grants_) { grants = std::move(grants_); }
+    const String & getJWTClaims() const { return jwt_claims; }
+    void setJWTClaims(const String & jwt_claims_) { jwt_claims = jwt_claims_; }
+
+    const String & getTokenProcessorName() const { return token_processor_name; }
+    void setTokenProcessorName(const String & token_processor_name_) { token_processor_name = token_processor_name_; }
 
     friend bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs);
     friend bool operator !=(const AuthenticationData & lhs, const AuthenticationData & rhs) { return !(lhs == rhs); }
@@ -141,6 +146,8 @@ private:
     HTTPAuthenticationScheme http_auth_scheme = HTTPAuthenticationScheme::BASIC;
     time_t valid_until = 0;
     AccessRightsElements grants;
+    String jwt_claims;
+    String token_processor_name;
 };
 
 }

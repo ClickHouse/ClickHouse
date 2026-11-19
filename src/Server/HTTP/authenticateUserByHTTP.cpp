@@ -1,3 +1,4 @@
+#include <Access/AccessControl.h>
 #include <Access/Authentication.h>
 #include <Access/Credentials.h>
 #include <Access/ExternalAuthenticators.h>
@@ -19,7 +20,7 @@
 #    include <Common/Crypto/X509Certificate.h>
 #endif
 
-
+const String BEARER_PREFIX = "bearer ";
 namespace DB
 {
 
@@ -152,6 +153,7 @@ bool authenticateUserByHTTP(
     /// its own configured credentials, an `Authorization` header is still rejected as a mix of
     /// authentication methods, regardless of the query parameters (see below).
     bool has_http_credentials = has_authorization_header && !has_credentials_in_query_params;
+    std::string jwt_token = request.get("X-ClickHouse-JWT-Token", request.get("Authorization", (params.has("token") ? BEARER_PREFIX + params.get("token") : "")));
 
     std::string spnego_challenge;
 #if USE_SSL
@@ -270,7 +272,7 @@ bool authenticateUserByHTTP(
             if (spnego_challenge.empty())
                 throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: SPNEGO challenge is empty");
         }
-        else
+        else if (Poco::icompare(scheme, "Bearer") < 0)
         {
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: '{}' HTTP Authorization scheme is not supported", scheme);
         }
@@ -346,6 +348,16 @@ bool authenticateUserByHTTP(
         }
     }
 #endif
+    else if (!jwt_token.empty() && Poco::toLower(jwt_token).starts_with(BEARER_PREFIX))
+    {
+        const auto token_credentials = TokenCredentials(jwt_token.substr(BEARER_PREFIX.length()));
+        const auto & external_authenticators = global_context->getAccessControl().getExternalAuthenticators();
+
+        if (!external_authenticators.checkTokenCredentials(token_credentials))
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: Token could not be verified.");
+
+        current_credentials = std::make_unique<TokenCredentials>(token_credentials);
+    }
     else // I.e., now using user name and password strings ("Basic").
     {
         if (!current_credentials)

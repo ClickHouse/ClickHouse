@@ -47,6 +47,7 @@
 #include <base/scope_guard.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Access/ExternalAuthenticators.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/saturatedDuration.h>
@@ -2451,6 +2452,10 @@ void TCPHandler::receiveHello()
     if (is_ssh_based_auth)
         user.erase(0, std::string_view(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER).size());
 
+    is_jwt_based_auth = user.starts_with(EncodedUserInfo::JWT_AUTHENTICAION_MARKER);
+    if (is_jwt_based_auth)
+        user.erase(0, std::string_view(EncodedUserInfo::JWT_AUTHENTICAION_MARKER).size());
+
     session = makeSession();
     const auto & client_info = session->getClientInfo();
 
@@ -2528,6 +2533,19 @@ void TCPHandler::receiveHello()
         return;
     }
 #endif
+
+    if (is_jwt_based_auth)
+    {
+        auto credentials = TokenCredentials(password);
+
+        const auto & external_authenticators = server.context()->getAccessControl().getExternalAuthenticators();
+
+        if (!external_authenticators.checkTokenCredentials(credentials))
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Token is invalid");
+
+        session->authenticate(credentials, getClientAddress(client_info), socket().peerAddress());
+        return;
+    }
 
     session->authenticate(user, password, getClientAddress(client_info), socket().peerAddress());
 }
