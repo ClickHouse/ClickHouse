@@ -83,6 +83,7 @@ namespace Setting
     extern const SettingsBool analyze_index_with_multiple_key_columns_per_condition;
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+    extern const SettingsBool input_format_tsv_enum_as_number;
     extern const SettingsTimezone session_timezone;
     extern const SettingsBool validate_enum_literals_in_operators;
 }
@@ -5984,12 +5985,18 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
     /// A string ordered against an `Enum` constant, also in a tuple element, compares by value, not in the order of a string key.
     /// A scalar `Enum` key ordered against a string constant converts the constant to the `Enum`, which matches the numeric key order.
     /// A tuple key takes the common type with a tuple constant instead, which casts an `Enum` element to its name.
-    if (func_name == "less" || func_name == "greater" || func_name == "lessOrEquals" || func_name == "greaterOrEquals")
+    const bool is_ordering = func_name == "less" || func_name == "greater" || func_name == "lessOrEquals" || func_name == "greaterOrEquals";
+    /// `=`, `!=` and `<=>` read a string as an `Enum` number under `input_format_tsv_enum_as_number`, the index reads it as a name.
+    const bool is_equality_with_enum_as_number = (func_name == "equals" || func_name == "notEquals" || func_name == "isNotDistinctFrom")
+        && key_arg.getContext()->getSettingsRef()[Setting::input_format_tsv_enum_as_number];
+    if (is_ordering || is_equality_with_enum_as_number)
     {
         const auto & key_type = key_arg.getDAGNode()->result_type;
         const auto value_type = getConstantValueType(*constant_for_transform.column, const_type);
-        if (comparesStringWithEnum(key_type, value_type)
-            || (isTuple(removeLowCardinalityAndNullable(key_type)) && comparesStringWithEnum(value_type, key_type)))
+        if (is_ordering
+                ? comparesStringWithEnum(key_type, value_type)
+                    || (isTuple(removeLowCardinalityAndNullable(key_type)) && comparesStringWithEnum(value_type, key_type))
+                : comparesStringWithEnum(value_type, key_type))
             return candidates;
     }
 
