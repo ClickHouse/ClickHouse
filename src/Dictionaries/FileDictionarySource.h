@@ -40,7 +40,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadKeys is unsupported for FileDictionarySource");
     }
 
-    bool isModified() const override
+    [[nodiscard]] bool isModified() const override
     {
         // We can't count on that the mtime increases or that it has
         // a particular relation to system time, so just check for strict
@@ -48,17 +48,17 @@ public:
         return getLastModification() != last_modification;
     }
 
-    bool supportsSelectiveLoad() const override { return false; }
+    [[nodiscard]] bool supportsSelectiveLoad() const override { return false; }
 
     ///Not supported for FileDictionarySource
-    bool hasUpdateField() const override { return false; }
+    [[nodiscard]] bool hasUpdateField() const override { return false; }
 
-    DictionarySourcePtr clone() const override { return std::make_shared<FileDictionarySource>(*this); }
+    [[nodiscard]] DictionarySourcePtr clone() const override { return std::make_shared<FileDictionarySource>(*this); }
 
-    std::string toString() const override;
+    [[nodiscard]] std::string toString() const override;
 
 private:
-    Poco::Timestamp getLastModification() const;
+    [[nodiscard]] Poco::Timestamp getLastModification() const;
 
     const std::string filepath;
     const std::string format;
