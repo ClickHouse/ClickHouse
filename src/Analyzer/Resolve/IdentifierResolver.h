@@ -190,13 +190,13 @@ private:
         const ContextPtr & context,
         const StoragePtr & replaced_storage);
 
+    /// Returns an empty result when the table expression has no such column, subcolumn or Nested prefix.
     IdentifierResolveResult tryResolveIdentifierFromStorage(
         const IdentifierLookup & identifier_lookup,
         const TableExpressionNodePtr & table_expression_node,
         const AnalysisTableExpressionData & table_expression_data,
         IdentifierResolveScope & scope,
-        size_t identifier_column_qualifier_parts,
-        bool can_be_not_found = false);
+        size_t identifier_column_qualifier_parts);
 
     IdentifierResolveResult tryResolveIdentifierFromTableExpression(
         const IdentifierLookup & identifier_lookup,
