@@ -1445,9 +1445,11 @@ static bool needsExactCompoundNumericInComparison(const DataTypePtr & left_type,
         const auto left_bare = removeNullable(removeLowCardinality(left_nested));
         const auto right_bare = removeNullable(removeLowCardinality(right_nested));
         const bool temporal_left = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_bare);
+        const bool temporal_right = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(right_bare);
         return (isNumber(left_bare) && isNumber(right_bare)
                 && !tryGetLeastSupertype(DataTypes{left_nested, right_nested}))
             || (temporal_left && isNumber(right_bare))
+            || (isNumber(left_bare) && temporal_right)
             || needsExactCompoundNumericInComparison(left_nested, right_nested);
     };
     if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
@@ -1493,8 +1495,10 @@ static QueryTreeNodePtr buildExactCompoundValueInComparison(
     QueryTreeNodePtr equal;
     if (needsExactCompoundNumericInComparison(left_type, right_type))
         equal = buildExactCompoundNumericInComparison(left, right, left_type, right_type);
-    else if (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(removeNullable(removeLowCardinality(left_type)))
-        && isNumber(removeNullable(removeLowCardinality(right_type))))
+    else if ((isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(removeNullable(removeLowCardinality(left_type)))
+            && isNumber(removeNullable(removeLowCardinality(right_type))))
+        || (isNumber(removeNullable(removeLowCardinality(left_type)))
+            && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(removeNullable(removeLowCardinality(right_type)))))
     {
         auto equals = std::make_shared<FunctionNode>("equals");
         equals->getArguments().getNodes() = {left, makeExactInCast(right, right_type, left_type)};

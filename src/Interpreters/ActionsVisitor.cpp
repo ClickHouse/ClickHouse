@@ -485,7 +485,9 @@ ASTPtr makeNumericNonConstantInReplacement(
             any_match = any_match ? makeASTFunction("or", std::move(any_match), std::move(match)) : std::move(match);
             continue;
         }
-        if ((isNumber(left_bare_type) || isBool(left_bare_type) || isStringOrFixedString(left_bare_type))
+        if ((isNumber(left_bare_type) || isBool(left_bare_type) || isStringOrFixedString(left_bare_type)
+                || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_bare_type)
+                || isUUID(left_bare_type) || isIPv4(left_bare_type) || isIPv6(left_bare_type))
             && (isDynamic(element_bare_type) || isVariant(element_bare_type)))
         {
             auto equals = makeASTFunction("__scalarCarrierValueEqualsForIn", left_operand->clone(), std::move(candidate));
@@ -583,6 +585,7 @@ bool needsExactCompoundNumericInComparison(const DataTypePtr & left_type, const 
         return (isNumber(left_bare) && isNumber(right_bare)
                 && !tryGetLeastSupertype(DataTypes{left_nested, right_nested}))
             || (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_bare) && isNumber(right_bare))
+            || (isNumber(left_bare) && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(right_bare))
             || needsExactCompoundNumericInComparison(left_nested, right_nested);
     };
     if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
@@ -618,8 +621,10 @@ ASTPtr makeExactCompoundValueInComparison(
     ASTPtr equal;
     if (needsExactCompoundNumericInComparison(left_type, right_type))
         equal = makeExactCompoundNumericInComparison(left->clone(), right->clone(), left_type, right_type);
-    else if (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(removeNullable(removeLowCardinality(left_type)))
-        && isNumber(removeNullable(removeLowCardinality(right_type))))
+    else if ((isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(removeNullable(removeLowCardinality(left_type)))
+            && isNumber(removeNullable(removeLowCardinality(right_type))))
+        || (isNumber(removeNullable(removeLowCardinality(left_type)))
+            && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(removeNullable(removeLowCardinality(right_type)))))
     {
         const auto left_bare = removeNullable(removeLowCardinality(left_type));
         const auto right_bare = removeNullable(removeLowCardinality(right_type));
