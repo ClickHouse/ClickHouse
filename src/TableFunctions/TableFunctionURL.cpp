@@ -91,7 +91,7 @@ namespace
             {
                 ASTs equals_args;
                 equals_args.emplace_back(make_intrusive<ASTLiteral>(header_name));
-                equals_args.emplace_back(make_intrusive<ASTLiteral>(header_value));
+                equals_args.emplace_back(make_intrusive<ASTLiteral>(String(header_value)));
                 header_equals.emplace_back(makeASTOperator("equals", std::move(equals_args)));
             }
 
@@ -111,42 +111,31 @@ namespace
 
 VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
-    auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
-    auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
-    size_t table_function_arguments_size = table_function_arguments_nodes.size();
-
     VectorWithMemoryTracking<size_t> result;
+    appendNamedArgumentIndexes(query_node_table_function, result, {"headers"});
 
-    for (size_t i = 0; i < table_function_arguments_size; ++i)
+    /// `http_method` is recognized at any position and with a quoted key, see `StorageURL::evalArgsAndCollectHeaders`.
+    const auto & table_function_arguments_nodes = query_node_table_function->as<TableFunctionNode &>().getArguments().getNodes();
+    for (size_t i = 0; i < table_function_arguments_nodes.size(); ++i)
     {
-        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
-        if (!function_node)
+        const auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
+        if (!function_node || function_node->getFunctionName() != "equals" || std::ranges::find(result, i) != result.end())
             continue;
 
-        if (function_node->getFunctionName() == "headers")
-        {
+        const auto & equals_arguments = function_node->getArguments().getNodes();
+        if (equals_arguments.size() != 2)
+            continue;
+
+        String key;
+        if (const auto * identifier_node = equals_arguments[0]->as<IdentifierNode>())
+            key = identifier_node->getIdentifier().getFullName();
+        else if (const auto * constant_node = equals_arguments[0]->as<ConstantNode>();
+                 constant_node && constant_node->getValue().getType() == Field::Types::Which::String)
+            key = constant_node->getValue().safeGet<String>();
+
+        if (key == "http_method" || key == "method")
             result.push_back(i);
-            continue;
-        }
-
-        if (function_node->getFunctionName() == "equals")
-        {
-            const auto & equals_arguments = function_node->getArguments().getNodes();
-            if (equals_arguments.size() != 2)
-                continue;
-
-            String key;
-            if (const auto * identifier_node = equals_arguments[0]->as<IdentifierNode>())
-                key = identifier_node->getIdentifier().getFullName();
-            else if (const auto * constant_node = equals_arguments[0]->as<ConstantNode>();
-                     constant_node && constant_node->getValue().getType() == Field::Types::Which::String)
-                key = constant_node->getValue().safeGet<String>();
-
-            if (key == "http_method" || key == "method")
-                result.push_back(i);
-        }
     }
-
     return result;
 }
 
@@ -321,6 +310,8 @@ StoragePtr TableFunctionURL::executeImpl(
         ContextMutablePtr delegate_context = Context::createCopy(context);
         delegate_context->setSetting("parallel_replicas_for_cluster_engines", false);
 
+        /// The delegate creates the storage, so it needs the `PARTITION BY` expression to write partitions.
+        delegate->setPartitionBy(partition_by);
         return delegate->execute(
             ast_function,
             delegate_context,
@@ -375,12 +366,6 @@ bool TableFunctionURL::hasUnreplicatedTableDataOnDisk() const
     if (is_relative_url)
         return true;
     return delegate ? delegate->hasUnreplicatedTableDataOnDisk() : ITableFunctionFileLike::hasUnreplicatedTableDataOnDisk();
-}
-
-void TableFunctionURL::setPartitionBy(const ASTPtr & partition_by_)
-{
-    if (delegate)
-        delegate->setPartitionBy(partition_by_);
 }
 
 StoragePtr TableFunctionURL::getStorage(
@@ -557,9 +542,6 @@ std::optional<String> TableFunctionURL::tryGetFormatFromFirstArgument()
 void registerTableFunctionURL(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionURL>({.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 `url` function creates a table from the `URL` with given `format` and `structure`.
 
 `url` function may be used in `SELECT` and `INSERT` queries on data in [URL](/reference/engines/table-engines/special/url) tables.

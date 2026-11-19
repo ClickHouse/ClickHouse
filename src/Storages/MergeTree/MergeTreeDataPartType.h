@@ -30,8 +30,8 @@ public:
 
     auto operator<=>(const MergeTreeDataPartType &) const = default;
 
-    Value getValue() const { return value; }
-    String toString() const;
+    [[nodiscard]] Value getValue() const { return value; }
+    [[nodiscard]] String toString() const;
     void fromString(const String & str);
 
 private:
@@ -54,8 +54,8 @@ public:
 
     auto operator<=>(const MergeTreeDataPartStorageType &) const = default;
 
-    Value getValue() const { return value; }
-    String toString() const;
+    [[nodiscard]] Value getValue() const { return value; }
+    [[nodiscard]] String toString() const;
     void fromString(const String & str);
 
 private:
