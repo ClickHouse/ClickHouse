@@ -1,6 +1,8 @@
 -- A lambda APPLY transformer over JOIN ... USING must name each result after the matched column,
 -- not after the lambda parameter. Identical names made the outer `*` shadow one column with another.
 
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS al;
 DROP TABLE IF EXISTS ar;
 DROP TABLE IF EXISTS sl;

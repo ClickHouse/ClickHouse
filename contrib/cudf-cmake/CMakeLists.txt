@@ -16,11 +16,6 @@ set (CUDF_DIR "${ClickHouse_SOURCE_DIR}/contrib/cudf/cpp")
 # warning CCCL templates trip in anonymous namespaces, as upstream's own build does.
 set (CUDF_CUDA_FLAGS --expt-extended-lambda -diag-suppress=1407)
 
-# NVRTC compiles LTO IR for this one architecture at query time (`src/jit/cache.cpp`), and the
-# precompiled fragments below must match it to link with that IR. Upstream's default for CUDA 13; an
-# override must not exceed the architecture of any GPU the binary will run on.
-set (CUDF_LTO_ARCHITECTURE 75)
-
 set (CUDF_EMBED_DIR "${CMAKE_CURRENT_BINARY_DIR}/rtcx_embed")
 set (CUDF_INSTANTIATIONS_DIR "${CMAKE_CURRENT_BINARY_DIR}/instantiations")
 
@@ -69,7 +64,7 @@ rtcx_embed_includes (cudf_cuda_embed
     DEST_DIRECTORY cudf/cpp/include/cudf
     INCLUDE_DIRECTORIES cudf/cpp/include)
 
-foreach (_jit_dir IN ITEMS jit binaryop/jit join/jit transform/jit)
+foreach (_jit_dir IN ITEMS jit binaryop/jit join/jit rolling transform/jit)
     rtcx_embed_includes (cudf_cuda_embed
         SOURCE_DIRECTORY "${CUDF_DIR}/src/${_jit_dir}"
         DEST_DIRECTORY "cudf/cpp/src/${_jit_dir}"
@@ -123,7 +118,7 @@ function (cudf_add_fragment FRAGMENT INSTANCE UDF_TYPE FILE_INDEX)
         "${CUDF_DIR}/src"
         "${GPU_CUDA_ROOT}/include")
 
-    target_compile_definitions (${_object} PRIVATE CUDF_LTO_MODE)
+    target_compile_definitions (${_object} PRIVATE CUDF_DISABLE_EXPORTS CUDF_LTO_MODE)
     target_compile_options (${_object} PRIVATE ${CUDF_CUDA_FLAGS} --compress-mode=size)
 
     set_target_properties (${_object} PROPERTIES
@@ -132,8 +127,7 @@ function (cudf_add_fragment FRAGMENT INSTANCE UDF_TYPE FILE_INDEX)
         INTERPROCEDURAL_OPTIMIZATION ON
         CUDA_STANDARD 20
         CUDA_STANDARD_REQUIRED ON
-        CUDA_VISIBILITY_PRESET hidden
-        CUDA_ARCHITECTURES ${CUDF_LTO_ARCHITECTURE}-real)
+        CUDA_VISIBILITY_PRESET hidden)
 
     # Island or header-only dependencies only: the IO libraries upstream also names here would hand
     # this target global-group's compile options, and the JIT kernel does not include them.
@@ -155,7 +149,7 @@ function (cudf_add_fragment FRAGMENT INSTANCE UDF_TYPE FILE_INDEX)
 endfunction ()
 
 # The instantiations, exactly the set upstream precompiles: one input column, then two with the
-# right-hand side as a column and as a scalar, then a string input with up to 8 output columns.
+# right-hand side as a column and as a scalar.
 foreach (_type IN LISTS CUDF_PRECOMPILE_PHYSICAL_TYPES)
     get_property (_file_index TARGET cudf_fragments__embed_props PROPERTY EMBED_FILE_INDEX)
     cudf_add_fragment ("transform_kernel_${_file_index}"
@@ -170,34 +164,6 @@ foreach (_type IN LISTS CUDF_PRECOMPILE_PHYSICAL_TYPES)
         cudf_add_fragment ("transform_kernel_${_file_index}"
             "cudf::jit::transform_kernel<false, false, cudf::jit::type_list<cudf::jit::column_accessor<0ULL, cudf::column_device_view_core, ${_type}, false, 0>, cudf::jit::column_accessor<1ULL, cudf::column_device_view_core, ${_type}, ${_rhs_is_scalar}, 0>>, cudf::jit::type_list<cudf::jit::column_accessor<0ULL, cudf::mutable_column_device_view_core, ${_type}, false, 0>>>"
             "int(${_type} *, ${_type}, ${_type})"
-            "${_file_index}")
-    endforeach ()
-endforeach ()
-
-set (CUDF_PRECOMPILE_STRING_OUTPUT_PHYSICAL_TYPES
-    uint8_t uint16_t uint32_t uint64_t cuda::std::span<char>)
-set (CUDF_PRECOMPILE_STRING_OUTPUT_COLUMN_TYPES
-    cudf::mutable_column_device_view_core cudf::mutable_column_device_view_core
-    cudf::mutable_column_device_view_core cudf::mutable_column_device_view_core
-    cudf::jit::mutable_strings_column_device_view)
-
-foreach (_type _column_type IN ZIP_LISTS
-        CUDF_PRECOMPILE_STRING_OUTPUT_PHYSICAL_TYPES CUDF_PRECOMPILE_STRING_OUTPUT_COLUMN_TYPES)
-    foreach (_outputs IN ITEMS "0" "0;1" "0;1;2" "0;1;2;3" "0;1;2;3;4" "0;1;2;3;4;5"
-            "0;1;2;3;4;5;6" "0;1;2;3;4;5;6;7")
-        set (_accessors "")
-        set (_pointers "")
-        foreach (_output IN LISTS _outputs)
-            list (APPEND _accessors
-                "cudf::jit::column_accessor<${_output}ULL, ${_column_type}, ${_type}, false, 0>")
-            list (APPEND _pointers "${_type} *")
-        endforeach ()
-        list (JOIN _accessors " ," _accessors)
-        list (JOIN _pointers " ," _pointers)
-        get_property (_file_index TARGET cudf_fragments__embed_props PROPERTY EMBED_FILE_INDEX)
-        cudf_add_fragment ("transform_kernel_${_file_index}"
-            "cudf::jit::transform_kernel<false, false, cudf::jit::type_list<cudf::jit::column_accessor<0ULL, cudf::column_device_view_core, cudf::string_view, false, 0>>, cudf::jit::type_list<${_accessors}>>"
-            "int(${_pointers}, cudf::string_view)"
             "${_file_index}")
     endforeach ()
 endforeach ()
@@ -303,29 +269,24 @@ set (CUDF_SOURCES
     "${CUDF_DIR}/src/filling/fill.cu"
     "${CUDF_DIR}/src/filling/repeat.cu"
     "${CUDF_DIR}/src/filling/sequence.cu"
-    "${CUDF_DIR}/src/groupby/common/group_struct_minmax_scan.cu"
     "${CUDF_DIR}/src/groupby/common/m2_var_std.cu"
-    "${CUDF_DIR}/src/groupby/common/null_mask.cu"
     "${CUDF_DIR}/src/groupby/common/utils.cpp"
     "${CUDF_DIR}/src/groupby/groupby.cu"
+    "${CUDF_DIR}/src/groupby/hash/compute_global_memory_aggs.cu"
+    "${CUDF_DIR}/src/groupby/hash/compute_global_memory_aggs_null.cu"
     "${CUDF_DIR}/src/groupby/hash/compute_groupby.cu"
-    "${CUDF_DIR}/src/groupby/hash/compute_single_pass_aggs.cpp"
+    "${CUDF_DIR}/src/groupby/hash/compute_mapping_indices.cu"
+    "${CUDF_DIR}/src/groupby/hash/compute_mapping_indices_null.cu"
+    "${CUDF_DIR}/src/groupby/hash/compute_shared_memory_aggs.cu"
     "${CUDF_DIR}/src/groupby/hash/compute_single_pass_aggs.cu"
+    "${CUDF_DIR}/src/groupby/hash/compute_single_pass_aggs_null.cu"
     "${CUDF_DIR}/src/groupby/hash/extract_single_pass_aggs.cpp"
     "${CUDF_DIR}/src/groupby/hash/groupby.cu"
     "${CUDF_DIR}/src/groupby/hash/hash_compound_agg_finalizer.cu"
     "${CUDF_DIR}/src/groupby/hash/output_utils.cu"
-    "${CUDF_DIR}/src/groupby/hash/single_pass_argminmax.cu"
-    "${CUDF_DIR}/src/groupby/hash/single_pass_fused_minmax_sum.cu"
-    "${CUDF_DIR}/src/groupby/hash/single_pass_minmax.cu"
-    "${CUDF_DIR}/src/groupby/hash/single_pass_product.cu"
-    "${CUDF_DIR}/src/groupby/hash/single_pass_sum_overflow.cu"
-    "${CUDF_DIR}/src/groupby/hash/single_pass_sums.cu"
     "${CUDF_DIR}/src/groupby/sort/aggregate.cpp"
     "${CUDF_DIR}/src/groupby/sort/group_argmax.cu"
     "${CUDF_DIR}/src/groupby/sort/group_argmin.cu"
-    "${CUDF_DIR}/src/groupby/sort/group_argminmax_nested.cu"
-    "${CUDF_DIR}/src/groupby/sort/group_argminmax_primitives.cu"
     "${CUDF_DIR}/src/groupby/sort/group_bitwise.cu"
     "${CUDF_DIR}/src/groupby/sort/group_collect.cu"
     "${CUDF_DIR}/src/groupby/sort/group_correlation.cu"
@@ -354,14 +315,16 @@ set (CUDF_SOURCES
     "${CUDF_DIR}/src/groupby/sort/host_udf_aggregation.cpp"
     "${CUDF_DIR}/src/groupby/sort/scan.cpp"
     "${CUDF_DIR}/src/groupby/sort/sort_helper.cu"
-    "${CUDF_DIR}/src/groupby/sort/sort_helper_nested.cu"
     "${CUDF_DIR}/src/groupby/streaming_groupby.cpp"
     "${CUDF_DIR}/src/groupby/streaming_groupby/aggregate.cu"
     "${CUDF_DIR}/src/groupby/streaming_groupby/impl.cu"
     "${CUDF_DIR}/src/groupby/streaming_groupby/insert.cu"
+    "${CUDF_DIR}/src/groupby/streaming_groupby/insert_first.cu"
+    "${CUDF_DIR}/src/groupby/streaming_groupby/insert_first_nested.cu"
     "${CUDF_DIR}/src/groupby/streaming_groupby/insert_nested.cu"
+    "${CUDF_DIR}/src/groupby/streaming_groupby/insert_subsequent.cu"
+    "${CUDF_DIR}/src/groupby/streaming_groupby/insert_subsequent_nested.cu"
     "${CUDF_DIR}/src/groupby/streaming_groupby/merge.cu"
-    "${CUDF_DIR}/src/groupby/streaming_groupby/warp_aggregate.cu"
     "${CUDF_DIR}/src/hash/md5_hash.cu"
     "${CUDF_DIR}/src/hash/murmurhash3_x86_32.cu"
     "${CUDF_DIR}/src/hash/murmurhash3_x64_128.cu"
@@ -370,7 +333,6 @@ set (CUDF_SOURCES
     "${CUDF_DIR}/src/hash/sha256_hash.cu"
     "${CUDF_DIR}/src/hash/sha384_hash.cu"
     "${CUDF_DIR}/src/hash/sha512_hash.cu"
-    "${CUDF_DIR}/src/hash/spark_murmurhash3_x86_32.cu"
     "${CUDF_DIR}/src/hash/xxhash_32.cu"
     "${CUDF_DIR}/src/hash/xxhash_64.cu"
     "${CUDF_DIR}/src/io/comp/brotli_dict.cpp"
@@ -403,7 +365,6 @@ set (CUDF_SOURCES
     "${CUDF_DIR}/src/jit/util.cpp"
     "${CUDF_DIR}/src/join/conditional_join.cu"
     "${CUDF_DIR}/src/join/cross_join.cu"
-    "${CUDF_DIR}/src/join/direct_join.cu"
     "${CUDF_DIR}/src/join/distinct_hash_join.cu"
     "${CUDF_DIR}/src/join/filter_join_indices/filter_join_indices.cu"
     "${CUDF_DIR}/src/join/filter_join_indices/filter_join_indices_jit.cu"
@@ -415,19 +376,13 @@ set (CUDF_SOURCES
     "${CUDF_DIR}/src/join/filter_join_indices/filter_join_indices_output_size_kernel_null_complex.cu"
     "${CUDF_DIR}/src/join/filter_join_indices/filter_join_indices_output_size_kernel_null_primitive.cu"
     "${CUDF_DIR}/src/join/filter_join_indices/filter_join_indices_output_size_kernel_primitive.cu"
-    "${CUDF_DIR}/src/join/filtered_join/filtered_join.cu"
-    "${CUDF_DIR}/src/join/filtered_join/filtered_join_flat.cu"
-    "${CUDF_DIR}/src/join/filtered_join/filtered_join_nested.cu"
-    "${CUDF_DIR}/src/join/filtered_join/filtered_join_nested_query.cu"
-    "${CUDF_DIR}/src/join/filtered_join/filtered_join_primitive.cu"
+    "${CUDF_DIR}/src/join/filtered_join.cu"
     "${CUDF_DIR}/src/join/hash_join/finalize_partitioned_full_join.cpp"
     "${CUDF_DIR}/src/join/hash_join/full_join_match_context.cpp"
     "${CUDF_DIR}/src/join/hash_join/full_join_retrieve.cu"
     "${CUDF_DIR}/src/join/hash_join/full_join_size.cu"
-    "${CUDF_DIR}/src/join/hash_join/hash_csr_kernels.cu"
+    "${CUDF_DIR}/src/join/hash_join/full_join_size_impl.cu"
     "${CUDF_DIR}/src/join/hash_join/hash_join.cu"
-    "${CUDF_DIR}/src/join/hash_join/hash_join_retrieve.cu"
-    "${CUDF_DIR}/src/join/hash_join/hash_join_size.cu"
     "${CUDF_DIR}/src/join/hash_join/inner_join_match_context.cpp"
     "${CUDF_DIR}/src/join/hash_join/inner_join_retrieve.cu"
     "${CUDF_DIR}/src/join/hash_join/inner_join_size.cu"
@@ -435,10 +390,14 @@ set (CUDF_SOURCES
     "${CUDF_DIR}/src/join/hash_join/left_join_retrieve.cu"
     "${CUDF_DIR}/src/join/hash_join/left_join_size.cu"
     "${CUDF_DIR}/src/join/hash_join/match_context.cu"
+    "${CUDF_DIR}/src/join/hash_join/partitioned_count.cu"
+    "${CUDF_DIR}/src/join/hash_join/partitioned_count_outer.cu"
     "${CUDF_DIR}/src/join/hash_join/partitioned_full_join.cu"
     "${CUDF_DIR}/src/join/hash_join/partitioned_inner_join.cu"
     "${CUDF_DIR}/src/join/hash_join/partitioned_join_retrieve.cu"
     "${CUDF_DIR}/src/join/hash_join/partitioned_left_join.cu"
+    "${CUDF_DIR}/src/join/hash_join/partitioned_retrieve.cu"
+    "${CUDF_DIR}/src/join/hash_join/partitioned_retrieve_outer.cu"
     "${CUDF_DIR}/src/join/join.cu"
     "${CUDF_DIR}/src/join/join_utils.cu"
     "${CUDF_DIR}/src/join/key_remapping.cu"
@@ -447,7 +406,6 @@ set (CUDF_SOURCES
     "${CUDF_DIR}/src/join/mixed_join_kernels_semi.cu"
     "${CUDF_DIR}/src/join/mixed_join_semi.cu"
     "${CUDF_DIR}/src/join/sort_merge_join.cu"
-    "${CUDF_DIR}/src/join/streaming_hash_join.cu"
     "${CUDF_DIR}/src/json/json_path.cu"
     "${CUDF_DIR}/src/lists/contains.cu"
     "${CUDF_DIR}/src/lists/combine/concatenate_list_elements.cu"
@@ -468,7 +426,7 @@ set (CUDF_SOURCES
     "${CUDF_DIR}/src/lists/segmented_sort.cu"
     "${CUDF_DIR}/src/lists/sequences.cu"
     "${CUDF_DIR}/src/lists/set_operations.cu"
-    "${CUDF_DIR}/src/lists/stream_compaction/apply_mask.cu"
+    "${CUDF_DIR}/src/lists/stream_compaction/apply_boolean_mask.cu"
     "${CUDF_DIR}/src/lists/stream_compaction/distinct.cu"
     "${CUDF_DIR}/src/lists/utilities.cu"
     "${CUDF_DIR}/src/merge/merge.cu"
@@ -512,16 +470,18 @@ set (CUDF_SOURCES
     "${CUDF_DIR}/src/reductions/segmented/nunique.cu"
     "${CUDF_DIR}/src/reductions/segmented/product.cu"
     "${CUDF_DIR}/src/reductions/segmented/reductions.cpp"
-    "${CUDF_DIR}/src/reductions/segmented/std_var.cu"
+    "${CUDF_DIR}/src/reductions/segmented/std.cu"
     "${CUDF_DIR}/src/reductions/segmented/sum.cu"
     "${CUDF_DIR}/src/reductions/segmented/sum_of_squares.cu"
     "${CUDF_DIR}/src/reductions/segmented/update_validity.cu"
-    "${CUDF_DIR}/src/reductions/std_var.cu"
+    "${CUDF_DIR}/src/reductions/segmented/var.cu"
+    "${CUDF_DIR}/src/reductions/std.cu"
     "${CUDF_DIR}/src/reductions/sum.cu"
     "${CUDF_DIR}/src/reductions/sum_of_squares.cu"
     "${CUDF_DIR}/src/reductions/sum_overflow.cu"
     "${CUDF_DIR}/src/reductions/unique_count.cu"
     "${CUDF_DIR}/src/reductions/unique_count_column.cu"
+    "${CUDF_DIR}/src/reductions/var.cu"
     "${CUDF_DIR}/src/replace/clamp.cu"
     "${CUDF_DIR}/src/replace/nans.cu"
     "${CUDF_DIR}/src/replace/nulls.cu"
@@ -537,13 +497,6 @@ set (CUDF_SOURCES
     "${CUDF_DIR}/src/rolling/detail/rolling_variable_window.cu"
     "${CUDF_DIR}/src/rolling/grouped_rolling.cu"
     "${CUDF_DIR}/src/rolling/range_rolling.cu"
-    "${CUDF_DIR}/src/rolling/range_rolling_bounded_closed.cu"
-    "${CUDF_DIR}/src/rolling/range_rolling_bounded_closed_column.cu"
-    "${CUDF_DIR}/src/rolling/range_rolling_bounded_open.cu"
-    "${CUDF_DIR}/src/rolling/range_rolling_bounded_open_column.cu"
-    "${CUDF_DIR}/src/rolling/range_rolling_current_row.cu"
-    "${CUDF_DIR}/src/rolling/range_rolling_multi_column.cu"
-    "${CUDF_DIR}/src/rolling/range_rolling_unbounded.cu"
     "${CUDF_DIR}/src/rolling/range_window_bounds.cpp"
     "${CUDF_DIR}/src/rolling/rolling.cpp"
     "${CUDF_DIR}/src/round/round.cu"
@@ -556,6 +509,8 @@ set (CUDF_SOURCES
     "${CUDF_DIR}/src/search/contains_scalar.cu"
     "${CUDF_DIR}/src/search/contains_table.cu"
     "${CUDF_DIR}/src/search/contains_table_impl.cu"
+    "${CUDF_DIR}/src/search/contains_table_impl_nested.cu"
+    "${CUDF_DIR}/src/search/contains_table_impl_primitive.cu"
     "${CUDF_DIR}/src/search/search_ordered.cu"
     "${CUDF_DIR}/src/sort/is_sorted.cu"
     "${CUDF_DIR}/src/sort/rank.cu"
@@ -565,19 +520,13 @@ set (CUDF_SOURCES
     "${CUDF_DIR}/src/sort/sort_column.cu"
     "${CUDF_DIR}/src/sort/sort_radix.cu"
     "${CUDF_DIR}/src/sort/sorted_order_radix.cu"
+    "${CUDF_DIR}/src/sort/stable_segmented_sort.cu"
+    "${CUDF_DIR}/src/sort/stable_sort_column.cu"
     "${CUDF_DIR}/src/sort/stable_sort.cu"
     "${CUDF_DIR}/src/sort/top_k.cu"
-    "${CUDF_DIR}/src/stream_compaction/apply_mask.cu"
+    "${CUDF_DIR}/src/stream_compaction/apply_boolean_mask.cu"
     "${CUDF_DIR}/src/stream_compaction/distinct.cu"
     "${CUDF_DIR}/src/stream_compaction/distinct_helpers.cu"
-    "${CUDF_DIR}/src/stream_compaction/distinct_helpers_flat_nan_equal_any.cu"
-    "${CUDF_DIR}/src/stream_compaction/distinct_helpers_flat_nan_equal_ordered.cu"
-    "${CUDF_DIR}/src/stream_compaction/distinct_helpers_flat_nan_unequal_any.cu"
-    "${CUDF_DIR}/src/stream_compaction/distinct_helpers_flat_nan_unequal_ordered.cu"
-    "${CUDF_DIR}/src/stream_compaction/distinct_helpers_nested_nan_equal_any.cu"
-    "${CUDF_DIR}/src/stream_compaction/distinct_helpers_nested_nan_equal_ordered.cu"
-    "${CUDF_DIR}/src/stream_compaction/distinct_helpers_nested_nan_unequal_any.cu"
-    "${CUDF_DIR}/src/stream_compaction/distinct_helpers_nested_nan_unequal_ordered.cu"
     "${CUDF_DIR}/src/stream_compaction/drop_nans.cu"
     "${CUDF_DIR}/src/stream_compaction/drop_nulls.cu"
     "${CUDF_DIR}/src/stream_compaction/filter/filter.cu"
@@ -586,6 +535,7 @@ set (CUDF_SOURCES
     "${CUDF_DIR}/src/strings/attributes.cu"
     "${CUDF_DIR}/src/strings/capitalize.cu"
     "${CUDF_DIR}/src/strings/case.cu"
+    "${CUDF_DIR}/src/strings/char_types/char_cases.cu"
     "${CUDF_DIR}/src/strings/char_types/char_types.cu"
     "${CUDF_DIR}/src/strings/combine/concatenate.cu"
     "${CUDF_DIR}/src/strings/combine/join.cu"
@@ -671,11 +621,9 @@ set (CUDF_SOURCES
     "${CUDF_DIR}/src/text/bpe/byte_pair_encoding.cu"
     "${CUDF_DIR}/src/text/bpe/load_merge_pairs.cu"
     "${CUDF_DIR}/src/text/tokenize.cu"
-    "${CUDF_DIR}/src/text/unicode_normalize.cu"
     "${CUDF_DIR}/src/text/vocabulary_tokenize.cu"
     "${CUDF_DIR}/src/text/wordpiece_tokenize.cu"
     "${CUDF_DIR}/src/transform/bools_to_mask.cu"
-    "${CUDF_DIR}/src/transform/checked_arithmetic.cu"
     "${CUDF_DIR}/src/transform/compute_column.cu"
     "${CUDF_DIR}/src/transform/compute_column_kernel_complex.cu"
     "${CUDF_DIR}/src/transform/compute_column_kernel_null_complex.cu"
@@ -711,11 +659,13 @@ set (CUDF_SOURCES
     "${CUDF_EMBED_DIR}/cudf_fragments.s"
 )
 
-# Sources unreachable from src/GPU/GPUAggregationCudf.cpp: 216 of 487 at cuDF 26.12.
+# Sources unreachable from src/GPU/GPUAggregationCudf.cpp: 212 of 469, 6.5 of cuDF's 16.6 CPU-hours.
 # Derived, not hand-picked - every archive member outside the transitive closure of the island's
 # undefined symbols. Regenerate by resolving `nm -u` of libclickhouse_gpu_cudf.a against
 # `nm -A --defined-only` of lib_cudf.a. A new cuDF call fails the link naming what is missing.
 list (REMOVE_ITEM CUDF_SOURCES
+    "${CUDF_DIR}/src/ast/expression_parser.cpp"
+    "${CUDF_DIR}/src/ast/operators.cpp"
     "${CUDF_DIR}/src/copying/contiguous_split.cu"
     "${CUDF_DIR}/src/copying/pack.cpp"
     "${CUDF_DIR}/src/copying/sample.cu"
@@ -729,8 +679,11 @@ list (REMOVE_ITEM CUDF_SOURCES
     "${CUDF_DIR}/src/groupby/streaming_groupby/aggregate.cu"
     "${CUDF_DIR}/src/groupby/streaming_groupby/impl.cu"
     "${CUDF_DIR}/src/groupby/streaming_groupby/insert.cu"
+    "${CUDF_DIR}/src/groupby/streaming_groupby/insert_first.cu"
+    "${CUDF_DIR}/src/groupby/streaming_groupby/insert_first_nested.cu"
     "${CUDF_DIR}/src/groupby/streaming_groupby/insert_nested.cu"
-    "${CUDF_DIR}/src/groupby/streaming_groupby/warp_aggregate.cu"
+    "${CUDF_DIR}/src/groupby/streaming_groupby/insert_subsequent.cu"
+    "${CUDF_DIR}/src/groupby/streaming_groupby/insert_subsequent_nested.cu"
     "${CUDF_DIR}/src/hash/md5_hash.cu"
     "${CUDF_DIR}/src/hash/murmurhash3_x64_128.cu"
     "${CUDF_DIR}/src/hash/murmurhash3_x86_32.cu"
@@ -739,7 +692,6 @@ list (REMOVE_ITEM CUDF_SOURCES
     "${CUDF_DIR}/src/hash/sha256_hash.cu"
     "${CUDF_DIR}/src/hash/sha384_hash.cu"
     "${CUDF_DIR}/src/hash/sha512_hash.cu"
-    "${CUDF_DIR}/src/hash/spark_murmurhash3_x86_32.cu"
     "${CUDF_DIR}/src/hash/xxhash_32.cu"
     "${CUDF_DIR}/src/hash/xxhash_64.cu"
     "${CUDF_DIR}/src/io/comp/brotli_dict.cpp"
@@ -761,9 +713,9 @@ list (REMOVE_ITEM CUDF_SOURCES
     "${CUDF_DIR}/src/io/utilities/row_selection.cpp"
     "${CUDF_DIR}/src/io/utilities/trie.cu"
     "${CUDF_DIR}/src/io/utilities/type_inference.cu"
+    "${CUDF_DIR}/src/jit/row_ir.cpp"
     "${CUDF_DIR}/src/join/conditional_join.cu"
     "${CUDF_DIR}/src/join/cross_join.cu"
-    "${CUDF_DIR}/src/join/direct_join.cu"
     "${CUDF_DIR}/src/join/distinct_hash_join.cu"
     "${CUDF_DIR}/src/join/filter_join_indices/filter_join_indices.cu"
     "${CUDF_DIR}/src/join/filter_join_indices/filter_join_indices_jit.cu"
@@ -775,19 +727,13 @@ list (REMOVE_ITEM CUDF_SOURCES
     "${CUDF_DIR}/src/join/filter_join_indices/filter_join_indices_output_size_kernel_null_complex.cu"
     "${CUDF_DIR}/src/join/filter_join_indices/filter_join_indices_output_size_kernel_null_primitive.cu"
     "${CUDF_DIR}/src/join/filter_join_indices/filter_join_indices_output_size_kernel_primitive.cu"
-    "${CUDF_DIR}/src/join/filtered_join/filtered_join.cu"
-    "${CUDF_DIR}/src/join/filtered_join/filtered_join_flat.cu"
-    "${CUDF_DIR}/src/join/filtered_join/filtered_join_nested.cu"
-    "${CUDF_DIR}/src/join/filtered_join/filtered_join_nested_query.cu"
-    "${CUDF_DIR}/src/join/filtered_join/filtered_join_primitive.cu"
+    "${CUDF_DIR}/src/join/filtered_join.cu"
     "${CUDF_DIR}/src/join/hash_join/finalize_partitioned_full_join.cpp"
     "${CUDF_DIR}/src/join/hash_join/full_join_match_context.cpp"
     "${CUDF_DIR}/src/join/hash_join/full_join_retrieve.cu"
     "${CUDF_DIR}/src/join/hash_join/full_join_size.cu"
-    "${CUDF_DIR}/src/join/hash_join/hash_csr_kernels.cu"
+    "${CUDF_DIR}/src/join/hash_join/full_join_size_impl.cu"
     "${CUDF_DIR}/src/join/hash_join/hash_join.cu"
-    "${CUDF_DIR}/src/join/hash_join/hash_join_retrieve.cu"
-    "${CUDF_DIR}/src/join/hash_join/hash_join_size.cu"
     "${CUDF_DIR}/src/join/hash_join/inner_join_match_context.cpp"
     "${CUDF_DIR}/src/join/hash_join/inner_join_retrieve.cu"
     "${CUDF_DIR}/src/join/hash_join/inner_join_size.cu"
@@ -795,10 +741,14 @@ list (REMOVE_ITEM CUDF_SOURCES
     "${CUDF_DIR}/src/join/hash_join/left_join_retrieve.cu"
     "${CUDF_DIR}/src/join/hash_join/left_join_size.cu"
     "${CUDF_DIR}/src/join/hash_join/match_context.cu"
+    "${CUDF_DIR}/src/join/hash_join/partitioned_count.cu"
+    "${CUDF_DIR}/src/join/hash_join/partitioned_count_outer.cu"
     "${CUDF_DIR}/src/join/hash_join/partitioned_full_join.cu"
     "${CUDF_DIR}/src/join/hash_join/partitioned_inner_join.cu"
     "${CUDF_DIR}/src/join/hash_join/partitioned_join_retrieve.cu"
     "${CUDF_DIR}/src/join/hash_join/partitioned_left_join.cu"
+    "${CUDF_DIR}/src/join/hash_join/partitioned_retrieve.cu"
+    "${CUDF_DIR}/src/join/hash_join/partitioned_retrieve_outer.cu"
     "${CUDF_DIR}/src/join/join_utils.cu"
     "${CUDF_DIR}/src/join/key_remapping.cu"
     "${CUDF_DIR}/src/join/mark_join.cu"
@@ -806,7 +756,6 @@ list (REMOVE_ITEM CUDF_SOURCES
     "${CUDF_DIR}/src/join/mixed_join_kernels_semi.cu"
     "${CUDF_DIR}/src/join/mixed_join_semi.cu"
     "${CUDF_DIR}/src/join/sort_merge_join.cu"
-    "${CUDF_DIR}/src/join/streaming_hash_join.cu"
     "${CUDF_DIR}/src/json/json_path.cu"
     "${CUDF_DIR}/src/labeling/label_bins.cu"
     "${CUDF_DIR}/src/lists/combine/concatenate_list_elements.cu"
@@ -835,17 +784,12 @@ list (REMOVE_ITEM CUDF_SOURCES
     "${CUDF_DIR}/src/rolling/detail/rolling_variable_window.cu"
     "${CUDF_DIR}/src/rolling/grouped_rolling.cu"
     "${CUDF_DIR}/src/rolling/range_rolling.cu"
-    "${CUDF_DIR}/src/rolling/range_rolling_bounded_closed.cu"
-    "${CUDF_DIR}/src/rolling/range_rolling_bounded_closed_column.cu"
-    "${CUDF_DIR}/src/rolling/range_rolling_bounded_open.cu"
-    "${CUDF_DIR}/src/rolling/range_rolling_bounded_open_column.cu"
-    "${CUDF_DIR}/src/rolling/range_rolling_current_row.cu"
-    "${CUDF_DIR}/src/rolling/range_rolling_multi_column.cu"
-    "${CUDF_DIR}/src/rolling/range_rolling_unbounded.cu"
     "${CUDF_DIR}/src/rolling/range_window_bounds.cpp"
     "${CUDF_DIR}/src/rolling/rolling.cpp"
     "${CUDF_DIR}/src/round/round.cu"
     "${CUDF_DIR}/src/search/contains_scalar.cu"
+    "${CUDF_DIR}/src/search/contains_table_impl_nested.cu"
+    "${CUDF_DIR}/src/search/contains_table_impl_primitive.cu"
     "${CUDF_DIR}/src/sort/is_sorted.cu"
     "${CUDF_DIR}/src/sort/top_k.cu"
     "${CUDF_DIR}/src/stream_compaction/drop_nans.cu"
@@ -855,6 +799,7 @@ list (REMOVE_ITEM CUDF_SOURCES
     "${CUDF_DIR}/src/strings/attributes.cu"
     "${CUDF_DIR}/src/strings/capitalize.cu"
     "${CUDF_DIR}/src/strings/case.cu"
+    "${CUDF_DIR}/src/strings/char_types/char_cases.cu"
     "${CUDF_DIR}/src/strings/char_types/char_types.cu"
     "${CUDF_DIR}/src/strings/combine/join_list_elements.cu"
     "${CUDF_DIR}/src/strings/convert/convert_booleans.cu"
@@ -914,7 +859,6 @@ list (REMOVE_ITEM CUDF_SOURCES
     "${CUDF_DIR}/src/text/normalize.cu"
     "${CUDF_DIR}/src/text/stemmer.cu"
     "${CUDF_DIR}/src/text/tokenize.cu"
-    "${CUDF_DIR}/src/text/unicode_normalize.cu"
     "${CUDF_DIR}/src/text/vocabulary_tokenize.cu"
     "${CUDF_DIR}/src/text/wordpiece_tokenize.cu"
     "${CUDF_DIR}/src/transform/bools_to_mask.cu"
@@ -967,7 +911,6 @@ target_compile_options (_cudf PRIVATE "$<$<COMPILE_LANGUAGE:ASM>:-I${CUDF_EMBED_
 
 target_compile_definitions (_cudf PRIVATE
     CUDF_LOG_ACTIVE_LEVEL=RAPIDS_LOGGER_LOG_LEVEL_INFO
-    CUDF_LTO_ARCHITECTURE=${CUDF_LTO_ARCHITECTURE}
     # `ZSTD_findDecompressedSize` is declared only behind this; upstream sets it on its own zstd
     # target, where ClickHouse's contrib does not.
     ZSTD_STATIC_LINKING_ONLY

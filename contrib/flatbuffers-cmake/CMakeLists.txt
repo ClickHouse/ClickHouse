@@ -23,9 +23,7 @@ add_library(_flatbuffers STATIC ${FLATBUFFERS_SRCS})
 # SYSTEM so the FlatBuffers headers don't trip ClickHouse's -Werror -Weverything (e.g. -Wdocumentation)
 # in consumers that include them directly, such as the native Arrow IPC reader/writer.
 target_include_directories(_flatbuffers SYSTEM PUBLIC "${LIBRARY_DIR}/include")
-# `PUBLIC`, because `flatbuffers/util.h` picks the locale-independent `strtoll_l` and `strtoull_l`
-# from this macro in every consumer that includes it, and musl does not have them.
-target_compile_definitions(_flatbuffers PUBLIC FLATBUFFERS_LOCALE_INDEPENDENT=0)
+target_compile_definitions(_flatbuffers PRIVATE -DFLATBUFFERS_LOCALE_INDEPENDENT=0)
 add_library(ch_contrib::flatbuffers ALIAS _flatbuffers)
 
 # Only Arrow needs `flatc`. Skip it otherwise: when cross-compiling it is a native target, and the
@@ -75,18 +73,17 @@ set(FLATC_SRCS
   ${LIBRARY_DIR}/grpc/src/compiler/swift_generator.cc
   ${LIBRARY_DIR}/grpc/src/compiler/ts_generator.cc)
 
+add_executable(flatc ${FLATC_SRCS})
+target_link_libraries(flatc PRIVATE _flatbuffers)
+target_include_directories(flatc SYSTEM PRIVATE
+  "${LIBRARY_DIR}/include"
+  "${LIBRARY_DIR}"
+  "${LIBRARY_DIR}/grpc")
+target_compile_definitions(flatc PRIVATE -DFLATBUFFERS_LOCALE_INDEPENDENT=0)
+
 # When cross-compiling, `flatc` has to run on the host, so it is built by the native sub-build
 # (see `add_native_target` in the top-level `CMakeLists.txt`), same as `protoc`.
 add_native_target (flatc)
-if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
-    add_executable(flatc IMPORTED GLOBAL)
+if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
     set_target_properties (flatc PROPERTIES IMPORTED_LOCATION "${PROJECT_BINARY_DIR}/native/contrib/flatbuffers-cmake/flatc")
-else ()
-    add_executable(flatc ${FLATC_SRCS})
-    target_link_libraries(flatc PRIVATE _flatbuffers)
-    target_include_directories(flatc SYSTEM PRIVATE
-      "${LIBRARY_DIR}/include"
-      "${LIBRARY_DIR}"
-      "${LIBRARY_DIR}/grpc")
-    target_compile_definitions(flatc PRIVATE -DFLATBUFFERS_LOCALE_INDEPENDENT=0)
 endif ()

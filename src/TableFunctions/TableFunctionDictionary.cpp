@@ -49,13 +49,8 @@ void TableFunctionDictionary::parseArguments(const ASTPtr & ast_function, Contex
 ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     const ExternalDictionariesLoader & external_loader = context->getExternalDictionariesLoader();
-
-    /// Check access before loading the dictionary, because loading contacts the dictionary source,
-    /// and read the dictionary that passed the check.
-    auto resolved_dictionary = external_loader.resolveDictionary(dictionary_name, context);
-    StorageDictionary::checkDictionaryAccess(resolved_dictionary.id, context);
-
-    auto load_result = external_loader.load(resolved_dictionary.getKey());
+    std::string resolved_name = external_loader.resolveDictionaryName(dictionary_name, context);
+    auto load_result = external_loader.load(resolved_name);
     if (load_result)
     {
         /// for regexp tree dictionary, the table structure will be different with dictionary structure. it is:
@@ -78,7 +73,7 @@ ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr c
     }
 
     /// otherwise, we get table structure by dictionary structure.
-    auto dictionary_structure = external_loader.getDictionaryStructure(resolved_dictionary);
+    auto dictionary_structure = external_loader.getDictionaryStructure(dictionary_name, context);
     return ColumnsDescription(StorageDictionary::getNamesAndTypes(dictionary_structure, false));
 }
 

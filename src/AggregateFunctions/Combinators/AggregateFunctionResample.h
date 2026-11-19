@@ -97,12 +97,12 @@ public:
                     getName());
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return nested_function->getName() + "Resample";
     }
 
-    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
     {
         if (!this->haveSameDefinition(rhs))
             return false;
@@ -126,42 +126,42 @@ public:
             nested_function->mergeStateFromDifferentVariant(place + i * size_of_data, *rhs_nested, rhs_place + i * rhs_size_of_data, arena);
     }
 
-    [[nodiscard]] bool isState() const override
+    bool isState() const override
     {
         return nested_function->isState();
     }
 
-    [[nodiscard]] bool isVersioned() const override
+    bool isVersioned() const override
     {
         return nested_function->isVersioned();
     }
 
-    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
+    size_t getVersionFromRevision(size_t revision) const override
     {
         return nested_function->getVersionFromRevision(revision);
     }
 
-    [[nodiscard]] size_t getDefaultVersion() const override
+    size_t getDefaultVersion() const override
     {
         return nested_function->getDefaultVersion();
     }
 
-    [[nodiscard]] DataTypePtr getStateType() const override
+    DataTypePtr getStateType() const override
     {
         return this->getStateTypeWithVersionOf(*nested_function);
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override
+    bool allocatesMemoryInArena() const override
     {
         return nested_function->allocatesMemoryInArena();
     }
 
-    [[nodiscard]] bool hasTrivialDestructor() const override
+    bool hasTrivialDestructor() const override
     {
         return nested_function->hasTrivialDestructor();
     }
 
-    [[nodiscard]] size_t sizeOfData() const override
+    size_t sizeOfData() const override
     {
         /// Nested Resample combinators multiply the sizes, and every layer is only checked against
         /// `max_elements` on its own, so the product can wrap around or exceed any sane allocation.
@@ -172,14 +172,26 @@ public:
         return result;
     }
 
-    [[nodiscard]] size_t alignOfData() const override
+    size_t alignOfData() const override
     {
         return align_of_data;
     }
 
     void create(AggregateDataPtr __restrict place) const override
     {
-        nested_function->createNestedStates(place, total, size_of_data);
+        for (size_t i = 0; i < total; ++i)
+        {
+            try
+            {
+                nested_function->create(place + i * size_of_data);
+            }
+            catch (...)
+            {
+                for (size_t j = 0; j < i; ++j)
+                    nested_function->destroy(place + j * size_of_data);
+                throw;
+            }
+        }
     }
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override
@@ -215,54 +227,6 @@ public:
     {
         for (size_t i = 0; i < total; ++i)
             nested_function->merge(place + i * size_of_data, rhs + i * size_of_data, arena);
-    }
-
-    [[nodiscard]] bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
-    [[nodiscard]] bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
-
-    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
-    {
-        /// The whole state with all its buckets is deferred as one unit (the deferred pointers are later passed
-        /// to `parallelizeMergeMulti` of this function), so it is large as soon as one bucket pair is.
-        for (size_t i = 0; i < total; ++i)
-            if (nested_function->isLargeMergePair(place + i * size_of_data, rhs + i * size_of_data))
-                return true;
-        return false;
-    }
-
-    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
-    {
-        AggregateDataPtrs nested_places(places.size());
-        for (size_t i = 0; i < total; ++i)
-        {
-            for (size_t p = 0; p < places.size(); ++p)
-                nested_places[p] = places[p] + i * size_of_data;
-            nested_function->parallelizeMergePrepare(nested_places, thread_pool, is_cancelled);
-        }
-    }
-
-    void mergeImpl(
-        AggregateDataPtr __restrict place,
-        ConstAggregateDataPtr rhs,
-        ThreadPool & thread_pool,
-        std::atomic<bool> & is_cancelled,
-        Arena * arena) const override
-    {
-        for (size_t i = 0; i < total; ++i)
-            nested_function->merge(place + i * size_of_data, rhs + i * size_of_data, thread_pool, is_cancelled, arena);
-    }
-
-    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
-    {
-        AggregateDataPtrs nested_places(places.size());
-        for (size_t i = 0; i < total; ++i)
-        {
-            if (is_cancelled.load(std::memory_order_seq_cst))
-                return;
-            for (size_t p = 0; p < places.size(); ++p)
-                nested_places[p] = places[p] + i * size_of_data;
-            nested_function->parallelizeMergeMulti(nested_places, thread_pool, is_cancelled, arena);
-        }
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
@@ -359,7 +323,7 @@ public:
             nested_function->rollbackInsertResult(place + i * size_of_data, col.getData());
     }
 
-    [[nodiscard]] AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
+    AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 };
 
 }

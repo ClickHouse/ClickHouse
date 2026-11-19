@@ -1,5 +1,4 @@
 #include <IO/S3/Client.h>
-#include <IO/S3/AwsFormat.h>
 
 #if USE_AWS_S3
 
@@ -18,12 +17,8 @@
 #include <Common/Hex.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/SipHash.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <aws/core/Aws.h>
-#include <aws/core/external/cjson/cJSON.h>
-#include <aws/core/utils/memory/AWSMemory.h>
-#include <aws/common/allocator.h>
 #include <aws/core/client/CoreErrors.h>
 #include <aws/core/utils/cbor/CborValue.h>
 #include <aws/s3/model/HeadBucketRequest.h>
@@ -35,7 +30,6 @@
 #include <aws/core/utils/HashingUtils.h>
 #include <aws/core/utils/logging/ErrorMacros.h>
 #include <aws/core/utils/logging/LogLevel.h>
-#include <aws/core/utils/memory/MemorySystemInterface.h>
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Exception.h>
@@ -45,7 +39,6 @@
 #include <IO/S3/PocoHTTPClientFactory.h>
 #include <IO/S3/AWSLogger.h>
 #include <IO/S3/Credentials.h>
-#include <Common/JemallocNoDumpArenas.h>
 #include <Interpreters/Context.h>
 
 #include <Common/assert_cast.h>
@@ -63,7 +56,6 @@
 #include <Core/Settings.h>
 
 #include <base/sleep.h>
-
 #include <Common/thread_local_rng.h>
 #include <random>
 
@@ -226,11 +218,11 @@ void addAdditionalAMZHeadersToCanonicalHeadersList(
     const NormalizedHTTPHeaderEntries & extra_headers
 )
 {
-    for (const auto & header : extra_headers)
+    for (const auto & [name, value] : extra_headers)
     {
-        if (header.name.starts_with("x-amz-"))
+        if (name.starts_with("x-amz-"))
         {
-            request.SetAdditionalCustomHeaderValue(Aws::String(header.name), Aws::String(header.value));
+            request.SetAdditionalCustomHeaderValue(name, value);
         }
     }
 }
@@ -266,23 +258,13 @@ std::unique_ptr<Client> Client::clone() const
 
 std::unique_ptr<Client> Client::cloneWithConfigurationOverride(const PocoHTTPClientConfiguration & client_configuration_override) const
 {
-    /// `retryStrategy` is the object the SDK retries with, and `ClientFactory::create` builds it from
-    /// `retry_strategy`, so overriding only the latter would keep the retries of the client being cloned.
-    auto config = client_configuration_override;
-    config.validateRetryStrategy();
-    auto retry_strategy = config.retry_strategy;
-    /// As in `ClientFactory::create`: per-thread retries give way to the global coordination.
-    if (config.s3_slow_all_threads_after_retryable_error)
-        retry_strategy.max_retries = 1;
-    config.retryStrategy = std::make_shared<Client::RetryStrategy>(retry_strategy);
-
-    return std::unique_ptr<Client>(new Client(*this, config));
+    return std::unique_ptr<Client>(new Client(*this, client_configuration_override));
 }
 
 namespace
 {
 
-ProviderType deduceProviderType(std::string_view url)
+ProviderType deduceProviderType(const std::string & url)
 {
     if (url.contains(".amazonaws.com"))
         return ProviderType::AWS;
@@ -399,7 +381,7 @@ bool Client::checkIfCredentialsChanged(const Aws::S3::S3Error & error) const
     return error.GetExceptionName() == "AuthenticationRequired" || error.GetExceptionName() == "ExpiredToken";
 }
 
-bool Client::checkIfWrongRegionDefined(std::string_view bucket, const Aws::S3::S3Error & error, Aws::String & region) const
+bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const
 {
     if (detect_region)
         return false;
@@ -422,10 +404,10 @@ bool Client::checkIfWrongRegionDefined(std::string_view bucket, const Aws::S3::S
     return false;
 }
 
-void Client::insertRegionOverride(std::string_view bucket, std::string_view region) const
+void Client::insertRegionOverride(const std::string & bucket, const std::string & region) const
 {
     std::lock_guard lock(cache->region_cache_mutex);
-    auto [it, inserted] = cache->region_for_bucket_cache.insert_or_assign(String(bucket), String(region));
+    auto [it, inserted] = cache->region_for_bucket_cache.insert_or_assign(bucket, region);
     if (inserted)
         LOG_INFO(log, "Detected different region ('{}') for bucket {} than the one defined ('{}')", region, bucket, explicit_region);
 }
@@ -489,7 +471,7 @@ Model::HeadObjectOutcome Client::headObjectInternal(HeadObjectRequest & request)
 
     const auto & error = result.GetError();
 
-    Aws::String new_region;
+    std::string new_region;
     if (checkIfWrongRegionDefined(bucket, error, new_region))
     {
         request.overrideRegion(new_region);
@@ -776,17 +758,6 @@ template <typename RequestType, typename RequestFn>
 std::invoke_result_t<RequestFn, RequestType &>
 Client::doRequest(RequestType & request, RequestFn request_fn) const
 {
-    /// With an empty key the SDK addresses the bucket itself, e.g. `DeleteObject` becomes `DeleteBucket`.
-    if constexpr (requires { request.GetKey(); })
-    {
-        if (request.GetKey().empty())
-            return std::invoke_result_t<RequestFn, RequestType &>(Aws::Client::AWSError<Aws::S3::S3Errors>(
-                Aws::S3::S3Errors::MISSING_PARAMETER,
-                "MISSING_PARAMETER",
-                awsFormat("The object key is empty, so the request would address bucket {} itself", request.GetBucket()),
-                /*isRetryable*/ false));
-    }
-
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
@@ -869,7 +840,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
             continue;
         }
 
-        Aws::String new_region;
+        std::string new_region;
         if (checkIfWrongRegionDefined(bucket, error, new_region))
         {
             request.overrideRegion(new_region);
@@ -898,7 +869,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (!new_uri)
             return result;
 
-        if (initial_endpoint.size() > 11 && initial_endpoint.substr(11) == "amazonaws.com") // Check if user didn't mention any region
+        if (initial_endpoint.substr(11) == "amazonaws.com") // Check if user didn't mention any region
             new_uri->addRegionToURI(request.getRegionOverride());
 
         const auto & current_uri_override = request.getURIOverride();
@@ -951,7 +922,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
             outcome = Aws::Client::AWSError<Aws::Client::CoreErrors>(
                 Aws::Client::CoreErrors::NETWORK_CONNECTION,
                 /*name*/ "",
-                /*message*/ awsFormat("All {} retry attempts failed. Last exception: {}", max_attempts, getCurrentExceptionMessage(false)),
+                /*message*/ fmt::format("All {} retry attempts failed. Last exception: {}", max_attempts, getCurrentExceptionMessage(false)),
                 /*retryable*/ true);
 
             // network exceptions are always retryable, we could just return true here
@@ -1029,7 +1000,7 @@ RequestResult Client::processRequestResult(RequestResult && outcome) const
     if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY && !Expect404ResponseScope::is404Expected())
         CurrentMetrics::add(CurrentMetrics::DiskS3NoSuchKeyErrors);
 
-    Aws::String enriched_message = awsFormat(
+    String enriched_message = fmt::format(
         "{} {}",
         outcome.GetError().GetMessage(),
         Expect404ResponseScope::is404Expected() ? "This error is expected for S3 disk."  : "This error happened for S3 disk.");
@@ -1092,7 +1063,7 @@ void Client::slowDownAfterRetryableError() const
 
 void Client::logConfiguration() const
 {
-    if (client_configuration.group == HTTPConnectionGroupType::DISK)
+    if (client_configuration.for_disk_s3)
     {
         LOG_TRACE(
             log,
@@ -1129,25 +1100,25 @@ void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
         translateHeadersToGCS(*httpRequest);
 }
 
-SecretString Client::getGCSOAuthToken() const
+std::string Client::getGCSOAuthToken() const
 {
     if (provider_type != ProviderType::GCS)
-        return {};
+        return "";
 
     const auto & http_client = GetHttpClient();
 
     if (!http_client)
-        return {};
+        return "";
 
     auto * gcp_oauth_client = dynamic_cast<PocoHTTPClientGCPOAuth *>(http_client.get());
 
     if (!gcp_oauth_client)
-        return {};
+        return "";
 
     return gcp_oauth_client->getBearerToken();
 }
 
-std::string Client::getRegionForBucket(std::string_view bucket, bool force_detect) const
+std::string Client::getRegionForBucket(const std::string & bucket, bool force_detect) const
 {
     std::lock_guard lock(cache->region_cache_mutex);
     if (auto it = cache->region_for_bucket_cache.find(bucket); it != cache->region_for_bucket_cache.end())
@@ -1171,7 +1142,7 @@ std::string Client::getRegionForBucket(std::string_view bucket, bool force_detec
     }
     else
     {
-        static const Aws::String region_header = "x-amz-bucket-region";
+        static const std::string region_header = "x-amz-bucket-region";
         const auto & headers = outcome.GetError().GetResponseHeaders();
         if (auto it = headers.find(region_header); it != headers.end())
             region = it->second;
@@ -1185,7 +1156,7 @@ std::string Client::getRegionForBucket(std::string_view bucket, bool force_detec
 
     LOG_INFO(log, "Found region {} for bucket {}", region, bucket);
 
-    auto [it, _] = cache->region_for_bucket_cache.emplace(String(bucket), std::move(region));
+    auto [it, _] = cache->region_for_bucket_cache.emplace(bucket, std::move(region));
 
     return it->second;
 }
@@ -1218,7 +1189,7 @@ std::optional<S3::URI> Client::getURIFromError(const Aws::S3::S3Error & error) c
 }
 
 // Do a list request because head requests don't have body in response
-std::optional<Aws::S3::S3Error> Client::updateURIForBucketForHead(std::string_view bucket) const
+std::optional<Aws::S3::S3Error> Client::updateURIForBucketForHead(const std::string & bucket) const
 {
     ListObjectsV2Request req;
     req.SetBucket(bucket);
@@ -1229,7 +1200,7 @@ std::optional<Aws::S3::S3Error> Client::updateURIForBucketForHead(std::string_vi
     return result.GetError();
 }
 
-std::optional<S3::URI> Client::getURIForBucket(std::string_view bucket) const
+std::optional<S3::URI> Client::getURIForBucket(const std::string & bucket) const
 {
     std::lock_guard lock(cache->uri_cache_mutex);
     if (auto it = cache->uri_for_bucket_cache.find(bucket); it != cache->uri_for_bucket_cache.end())
@@ -1238,7 +1209,7 @@ std::optional<S3::URI> Client::getURIForBucket(std::string_view bucket) const
     return std::nullopt;
 }
 
-void Client::updateURIForBucket(std::string_view bucket, S3::URI new_uri) const
+void Client::updateURIForBucket(const std::string & bucket, S3::URI new_uri) const
 {
     std::lock_guard lock(cache->uri_cache_mutex);
     if (auto it = cache->uri_for_bucket_cache.find(bucket); it != cache->uri_for_bucket_cache.end())
@@ -1253,7 +1224,7 @@ void Client::updateURIForBucket(std::string_view bucket, S3::URI new_uri) const
     }
 
     LOG_INFO(log, "Updating URI for bucket {} to {}", bucket, new_uri.uri.toString());
-    cache->uri_for_bucket_cache.emplace(String(bucket), std::move(new_uri));
+    cache->uri_for_bucket_cache.emplace(bucket, std::move(new_uri));
 }
 
 ClientCache::ClientCache(const ClientCache & other)
@@ -1373,51 +1344,9 @@ void ClientCacheRegistry::clearCacheForAll()
     }
 }
 
-namespace
-{
-
-class NoDumpMemoryManager : public Aws::Utils::Memory::MemorySystemInterface
-{
-public:
-    NoDumpMemoryManager() { Aws::Utils::Memory::InitializeAWSMemorySystem(*this); }
-
-    void Begin() override {}
-    void End() override {}
-    void * AllocateMemory(std::size_t block_size, std::size_t alignment, const char *) override { return JemallocNoDumpArenas::allocate(block_size, alignment); }
-    void FreeMemory(void * ptr) override { JemallocNoDumpArenas::deallocate(ptr); }
-};
-
-void * awsAllocatorAcquire(aws_allocator *, size_t size) noexcept
-{
-    return JemallocNoDumpArenas::allocate(size, 0, std::nothrow);
-}
-
-void awsAllocatorRelease(aws_allocator *, void * ptr) noexcept
-{
-    JemallocNoDumpArenas::deallocate(ptr);
-}
-
-void * cJSONMalloc(size_t size) noexcept
-{
-    return JemallocNoDumpArenas::allocate(size, 0, std::nothrow);
-}
-
-void cJSONFree(void * ptr) noexcept
-{
-    JemallocNoDumpArenas::deallocate(ptr);
-}
-
-NoDumpMemoryManager no_dump_memory_manager;
-
-}
-
 ClientFactory::ClientFactory()
 {
     aws_options = Aws::SDKOptions{};
-
-    aws_options.memoryManagementOptions.memoryManager = &no_dump_memory_manager;
-    Aws::get_aws_allocator()->mem_acquire = awsAllocatorAcquire;
-    Aws::get_aws_allocator()->mem_release = awsAllocatorRelease;
 
     aws_options.cryptoOptions = Aws::CryptoOptions{};
     aws_options.cryptoOptions.initAndCleanupOpenSSL = false;
@@ -1437,15 +1366,11 @@ ClientFactory::ClientFactory()
     aws_options.ioOptions.tlsConnectionOptions_create_fn = []() { return nullptr; };
 
     Aws::InitAPI(aws_options);
-
-    cJSON_AS4CPP_Hooks cjson_hooks{.malloc_fn = cJSONMalloc, .free_fn = cJSONFree};
-    cJSON_AS4CPP_InitHooks(&cjson_hooks);
 }
 
 ClientFactory::~ClientFactory()
 {
     Aws::ShutdownAPI(aws_options);
-    Aws::Utils::Memory::InitializeAWSMemorySystem(no_dump_memory_manager);
 }
 
 ClientFactory & ClientFactory::instance()
@@ -1457,13 +1382,13 @@ ClientFactory & ClientFactory::instance()
 std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     const PocoHTTPClientConfiguration & cfg_,
     ClientSettings client_settings,
-    std::string_view access_key_id,
-    std::string_view secret_access_key,
-    std::string_view server_side_encryption_customer_key_base64,
+    const String & access_key_id,
+    const String & secret_access_key,
+    const String & server_side_encryption_customer_key_base64,
     ServerSideEncryptionKMSConfig sse_kms_config,
     NormalizedHTTPHeaderEntries headers,
     CredentialsConfiguration credentials_configuration,
-    std::string_view session_token,
+    const String & session_token,
     const std::shared_ptr<ClientCache> & shared_cache)
 {
     PocoHTTPClientConfiguration client_configuration = cfg_;
@@ -1476,7 +1401,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
         String customer_key;
         try
         {
-            customer_key = base64Decode(String(server_side_encryption_customer_key_base64));
+            customer_key = base64Decode(server_side_encryption_customer_key_base64);
         }
         catch (const Poco::DataFormatException &)
         {
@@ -1495,13 +1420,13 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
             server_side_encryption_customer_key_base64});
 
         headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY_MD5,
-            Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(Aws::String(customer_key)))});
+            Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(customer_key))});
     }
 
     // These will be added after request signing
     client_configuration.extra_headers = std::move(headers);
 
-    Aws::Auth::AWSCredentials credentials{Aws::String(access_key_id), Aws::String(secret_access_key), Aws::String(session_token)};
+    Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);
 
     // we need to force environment credentials if explicit credentials are empty and we have role_arn
     // this is a crutch because we know that we have environment credentials on our Cloud.
@@ -1512,10 +1437,6 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
             credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());
 
     auto credentials_provider = getCredentialsProvider(client_configuration, credentials, credentials_configuration);
-
-    /// Only after the credentials providers have taken their copies of the configuration: their
-    /// requests are helper traffic and must not be reported as the connection of a logged request.
-    client_configuration.publish_connection_info = true;
 
     /// Disable per-thread retry loops if global retry coordination is in use.
     if (client_configuration.s3_slow_all_threads_after_retryable_error)
@@ -1543,14 +1464,14 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
 }
 
 PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
-    std::string_view force_region,
+    const String & force_region,
     const RemoteHostFilter & remote_host_filter,
     unsigned int s3_max_redirects,
     const PocoHTTPClientConfiguration::RetryStrategy & retry_strategy,
     bool s3_slow_all_threads_after_network_error,
     bool s3_slow_all_threads_after_retryable_error,
     bool enable_s3_requests_logging,
-    HTTPConnectionGroupType group,
+    bool for_disk_s3,
     std::optional<std::string> opt_disk_name,
     const HTTPRequestThrottler & request_throttler,
     const String & protocol)
@@ -1571,7 +1492,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         s3_slow_all_threads_after_network_error,
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
-        group,
+        for_disk_s3,
         opt_disk_name,
         context->getGlobalContext()->getSettingsRef()[Setting::s3_use_adaptive_timeouts],
         request_throttler,
@@ -1616,9 +1537,9 @@ Model::PutObjectOutcome Client::putObjectWithGOOG4Signature(const Model::PutObje
     const String payload_sha256 = encodeSHA256(body);
     const String payload_hash = hexString(payload_sha256.data(), payload_sha256.size());
 
-    const Poco::URI endpoint(initial_endpoint.c_str());
+    const Poco::URI endpoint(initial_endpoint);
     const String host = endpoint.getAuthority();
-    const String path = fmt::format("/{}/{}", request.GetBucket(), request.GetKey());
+    const String path = "/" + request.GetBucket() + "/" + request.GetKey();
 
     Aws::Http::HeaderValueCollection request_headers = request.GetHeaders();
     for (const auto & [name, value] : request.GetAdditionalCustomHeaders())
@@ -1626,7 +1547,7 @@ Model::PutObjectOutcome Client::putObjectWithGOOG4Signature(const Model::PutObje
 
     MapWithMemoryTracking<String, String> headers;
     for (const auto & [name, value] : translateHeadersToGCS(std::move(request_headers)))
-        headers[boost::algorithm::to_lower_copy(String(name))] = boost::algorithm::trim_copy(String(value));
+        headers[boost::algorithm::to_lower_copy(name)] = boost::algorithm::trim_copy(value);
 
     headers.erase("content-length");
     headers["host"] = host;
@@ -1661,7 +1582,7 @@ Model::PutObjectOutcome Client::putObjectWithGOOG4Signature(const Model::PutObje
 
     std::string key_secret = "GOOG4";
     key_secret.append(secret.data(), secret.size());
-    const auto date_key = hmacSHA256(VectorWithMemoryTracking<uint8_t>(key_secret.begin(), key_secret.end()), datestamp);
+    const auto date_key = hmacSHA256({key_secret.begin(), key_secret.end()}, datestamp);
     const auto region_key = hmacSHA256(date_key, "auto");
     const auto service_key = hmacSHA256(region_key, "s3");
     const auto signing_key = hmacSHA256(service_key, "goog4_request");
@@ -1683,23 +1604,21 @@ Model::PutObjectOutcome Client::putObjectWithGOOG4Signature(const Model::PutObje
     payload->write(body.data(), static_cast<std::streamsize>(body.size()));
     payload->seekg(0);
     http_request->AddContentBody(payload);
-    http_request->SetContentLength(Aws::String(std::to_string(body.size())));
+    http_request->SetContentLength(std::to_string(body.size()));
     for (const auto & [name, value] : headers)
         if (name != "host")
-            http_request->SetHeaderValue(Aws::String(name), Aws::String(value));
-    http_request->SetHeaderValue("authorization", Aws::String(authorization));
+            http_request->SetHeaderValue(name, value);
+    http_request->SetHeaderValue("authorization", authorization);
 
     const auto & retry_strategy = client_configuration.retryStrategy;
     for (long retries = 0;; ++retries) // NOLINT(google-runtime-int)
     {
-        /// `PocoHTTPClient` picks the adaptive timeouts from the attempt number, as `AWSClient` sets it. Not part of the signature.
-        http_request->SetHeaderValue(Aws::Http::SDK_REQUEST_HEADER, awsFormat("attempt={}", retries + 1));
         auto response = GetHttpClient()->MakeRequest(http_request);
         Aws::Client::AWSError<Aws::Client::CoreErrors> error;
         if (!response)
         {
             error = Aws::Client::AWSError<Aws::Client::CoreErrors>(
-                Aws::Client::CoreErrors::NETWORK_CONNECTION, "", awsFormat("GCS create of {} returned no response", request.GetKey()), true);
+                Aws::Client::CoreErrors::NETWORK_CONNECTION, "", fmt::format("GCS create of {} returned no response", request.GetKey()), true);
         }
         else if (!response->HasClientError() && response->GetResponseCode() == Aws::Http::HttpResponseCode::OK)
         {

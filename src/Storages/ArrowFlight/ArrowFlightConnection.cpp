@@ -56,9 +56,7 @@ arrow::flight::FlightCallOptions ArrowFlightConnection::getCallOptions(UInt64 ti
     connect(timeout);
 
     std::lock_guard lock{mutex};
-    arrow::flight::FlightCallOptions call_options;
-    if (auth_header)
-        call_options.headers.emplace_back(auth_header->first, String(auth_header->second));
+    auto call_options = *options;
     call_options.timeout = timeout;
     return call_options;
 }
@@ -95,21 +93,21 @@ void ArrowFlightConnection::connect(arrow::flight::TimeoutDuration timeout) cons
     }
     auto new_client = std::move(client_result).ValueOrDie();
 
-    std::optional<std::pair<String, SecretString>> new_auth_header;
+    auto new_options = std::make_shared<arrow::flight::FlightCallOptions>();
 
     if (use_basic_authentication)
     {
         arrow::flight::FlightCallOptions auth_options;
         auth_options.timeout = timeout;
 
-        auto auth_result = new_client->AuthenticateBasicToken(auth_options, username, String(password));
+        auto auth_result = new_client->AuthenticateBasicToken(auth_options, username, password);
         if (!auth_result.ok())
         {
             throw Exception(
                 ErrorCodes::ARROWFLIGHT_CONNECTION_FAILURE, "Failed to authenticate Arrow Flight server: {}", auth_result.status().ToString());
         }
         auto auth_token = std::move(auth_result).ValueOrDie();
-        new_auth_header.emplace(auth_token.first, SecretString(auth_token.second));
+        new_options->headers.push_back(auth_token);
     }
 
     /// Destroyed after the lock below is released: dropping a client shuts its gRPC transport down,
@@ -124,7 +122,7 @@ void ArrowFlightConnection::connect(arrow::flight::TimeoutDuration timeout) cons
     else
     {
         client = std::move(new_client);
-        auth_header = std::move(new_auth_header);
+        options = std::move(new_options);
     }
 }
 

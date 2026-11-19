@@ -46,10 +46,10 @@ public:
     /// backwards compatibility
     void fromApiVersion(KeeperApiVersion keeper_api_version);
 
-    [[nodiscard]] bool isEnabled(KeeperFeatureFlag feature) const;
+    bool isEnabled(KeeperFeatureFlag feature) const;
 
     void setFeatureFlags(std::string feature_flags_);
-    [[nodiscard]] const std::string & getFeatureFlags() const;
+    const std::string & getFeatureFlags() const;
 
     void enableFeatureFlag(KeeperFeatureFlag feature);
     void disableFeatureFlag(KeeperFeatureFlag feature);

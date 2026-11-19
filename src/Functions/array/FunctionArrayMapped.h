@@ -70,40 +70,18 @@ public:
     /// `getReturnType`. The size is always the first fixed parameter of the function.
     static constexpr bool return_fixed_string = []{ if constexpr (requires { Impl::return_fixed_string; }) return Impl::return_fixed_string; else return false; }();
 
-    /// Some functions (e.g. arrayFirst, arrayMin) fill rows that have no source element with the default of the result type,
-    /// which for an Enum is not the column zero. Such an implementation accepts the result type as a third argument of `execute`.
-    static constexpr bool execute_takes_result_type
-        = requires(const ColumnArray & array, ColumnPtr mapped, const DataTypePtr & type) { Impl::execute(array, mapped, type); };
-
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayMapped>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    [[nodiscard]] bool isHigherOrderFunction() const override { return true; }
-    [[nodiscard]] bool isDeterministic() const override { return IsDeterministic; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return IsDeterministic; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isHigherOrderFunction() const override { return true; }
+    bool isDeterministic() const override { return IsDeterministic; }
+    bool isDeterministicInScopeOfQuery() const override { return IsDeterministic; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-
-    /// Declarative signature opt-in:
-    /// - `Impl::signature` (authoritative): the DSL applies and is the source
-    ///   of truth for argument validation and result-type computation.
-    /// - `Impl::signature_documentation` (docs-only): the string is surfaced
-    ///   via `system.functions` but legacy `getReturnTypeImpl` below stays
-    ///   authoritative — used when the widening rule isn't expressible in
-    ///   the current DSL (e.g. `arraySum`, `arrayCumSum`, `arrayDifference`).
-    [[nodiscard]] String getSignatureString() const override
-    {
-        if constexpr (requires { Impl::signature; })
-            return Impl::signature;
-        else if constexpr (requires { Impl::signature_documentation; })
-            return Impl::signature_documentation;
-        else
-            return {};
-    }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     /// Called if at least one function argument is a lambda expression.
     /// For argument-lambda expressions, it defines the types of arguments of these expressions.
@@ -192,26 +170,8 @@ public:
         arguments[0] = std::make_shared<DataTypeFunction>(nested_types);
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// When the Impl exposes a declarative `signature`, defer to the base
-        /// IFunction path so that the DSL applies it (both argument validation
-        /// and result type come from the signature). The lambda result is
-        /// normalized with `removeLowCardinality` first, as in the legacy path
-        /// below: execution materializes low-cardinality lambda results into
-        /// full columns.
-        if constexpr (requires { Impl::signature; })
-        {
-            const auto * lambda_type = arguments.empty() ? nullptr : checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
-            if (!lambda_type || !lambda_type->getReturnType() || !lambda_type->getReturnType()->lowCardinality())
-                return IFunction::getReturnTypeImpl(arguments);
-
-            ColumnsWithTypeAndName normalized_arguments = arguments;
-            normalized_arguments[0].type = std::make_shared<DataTypeFunction>(
-                lambda_type->getArgumentTypes(), removeLowCardinality(lambda_type->getReturnType()));
-            return IFunction::getReturnTypeImpl(normalized_arguments);
-        }
-
         size_t min_args = (Impl::needExpression() ? 2 : 1) + num_fixed_params ;
         if (arguments.size() < min_args)
             throw Exception(
@@ -304,31 +264,17 @@ public:
             return Impl::getReturnType(return_type, first_array_type->getNestedType());
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        /// Documentation-only signatures must not take the base types-only
-        /// path: it applies the DSL result directly and bypasses the legacy
-        /// lambda-result normalization above. Build synthetic arguments to
-        /// reuse that legacy implementation instead.
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-
-        return getReturnTypeImpl(columns);
-    }
-
-    [[nodiscard]] ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return executeImplCommon(arguments, result_type, input_rows_count, /*dry_run=*/true);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return executeImplCommon(arguments, result_type, input_rows_count, /*dry_run=*/false);
     }
 
-    [[nodiscard]] ColumnPtr executeImplCommon(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t /*input_rows_count*/, bool dry_run) const
+    ColumnPtr executeImplCommon(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/, bool dry_run) const
     {
         if (arguments.size() == 1 + num_fixed_params)
         {
@@ -351,8 +297,6 @@ public:
                     *column_array,
                     column_array->getDataPtr(),
                     arguments.data());
-            else if constexpr (execute_takes_result_type)
-                return Impl::execute(*column_array, column_array->getDataPtr(), return_type);
             else
                 return Impl::execute(*column_array, column_array->getDataPtr());
         }
@@ -511,8 +455,6 @@ public:
                     *column_first_array,
                     lambda_result.column,
                     arguments.data() + 1);
-            else if constexpr (execute_takes_result_type)
-                return Impl::execute(*column_first_array, lambda_result.column, return_type);
             else
                 return Impl::execute(*column_first_array, lambda_result.column);
         }

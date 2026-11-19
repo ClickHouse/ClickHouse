@@ -2,8 +2,10 @@
 
 #if USE_XGBOOST
 
+#include <atomic>
 #include <limits>
 
+#include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -72,24 +74,24 @@ public:
         return std::make_shared<FunctionPredictXGBoost>(context_);
     }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
     /// With all features constant, the model is evaluated once per block instead of once per row.
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     /// A NULL feature is passed to XGBoost as a missing value (NaN), which the model handles the way it was
     /// trained to, instead of turning the prediction into NULL. So the result is always `Float64`.
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     /// A dictionary can be reloaded (retrained) under the same name.
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    bool isDeterministic() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 2)
             throw Exception(
@@ -138,16 +140,13 @@ public:
 
         const String dictionary_name = getConstString(arguments[0], "dictionary name");
 
-        /// Check access before reading the definition, so that a user without access learns nothing about the dictionary,
-        /// and read the definition of the dictionary that passed the check.
-        const auto & loader = context->getExternalDictionariesLoader();
-        const auto dictionary = loader.resolveDictionaryCheckingAccess(dictionary_name, context);
+        checkAccess(dictionary_name);
 
-        validateDictionaryIsXGBoost(dictionary);
+        validateDictionaryIsXGBoost(dictionary_name);
 
         /// Validated here, from the dictionary structure and without loading the dictionary, rather than only in
         /// `executeImpl`: a call over no rows never reaches the model, and must fail the same way as a call with rows.
-        const auto structure = loader.getDictionaryStructure(dictionary);
+        const auto structure = context->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, context);
         const size_t n_features = structure.key ? structure.key->size() : 0;
         const size_t num_feature_args = feature_end - 1;
         if (num_feature_args != n_features)
@@ -165,20 +164,18 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const String dictionary_name = getConstString(arguments[0], "dictionary name");
 
         const auto & loader = context->getExternalDictionariesLoader();
 
-        /// Check access before loading the dictionary, because loading contacts the dictionary source,
-        /// and load the dictionary that passed the check.
-        const auto resolved_dictionary = loader.resolveDictionaryCheckingAccess(dictionary_name, context);
+        checkAccess(dictionary_name);
 
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        auto dictionary = loader.getDictionary(resolved_dictionary, context);
+        auto dictionary = loader.getDictionary(dictionary_name, context);
 
         const auto * xgb_dict = typeid_cast<const XGBoostDictionary *>(dictionary.get());
         if (!xgb_dict)
@@ -214,6 +211,20 @@ public:
 
 private:
     ContextPtr context;
+    mutable std::atomic<bool> access_checked{false};
+
+    void checkAccess(const String & dictionary_name) const
+    {
+        if (access_checked.load(std::memory_order_relaxed))
+            return;
+
+        auto qualified = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
+        context->checkAccess(
+            AccessType::dictGet,
+            qualified.database.empty() ? IDictionary::NO_DATABASE_TAG : qualified.database,
+            qualified.table);
+        access_checked.store(true, std::memory_order_relaxed);
+    }
 
     /// Index one past the last feature argument. The trailing `params` (a Map) is excluded; everything
     /// from index 1 up to this bound is a feature.
@@ -263,14 +274,14 @@ private:
         return static_cast<Int64>(unsigned_value);
     }
 
-    void validateDictionaryIsXGBoost(const ExternalDictionariesLoader::ResolvedDictionary & dictionary) const
+    void validateDictionaryIsXGBoost(const String & dictionary_name) const
     {
-        const auto layout_type = context->getExternalDictionariesLoader().getDictionaryLayoutType(dictionary);
+        const auto layout_type = context->getExternalDictionariesLoader().getDictionaryLayoutType(dictionary_name, context);
         if (layout_type != "xgboost")
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Dictionary '{}' has layout '{}', but function {} requires a dictionary with the XGBOOST layout",
-                dictionary.name,
+                dictionary_name,
                 layout_type,
                 getName());
     }
@@ -290,7 +301,7 @@ REGISTER_FUNCTION(PredictXGBoost)
 {
     factory.registerFunction<FunctionPredictXGBoost>(FunctionDocumentation{
         .description = "Predicts a numeric target for a feature vector using an "
-                       "[`XGBOOST`](/reference/statements/create/dictionary/layouts/xgboost) dictionary. Features are "
+                       "[`XGBOOST`](/sql-reference/statements/create/dictionary/layouts/xgboost) dictionary. Features are "
                        "passed positionally, in the order the dictionary's key columns were declared. This is the only way to "
                        "query an `XGBOOST` dictionary: it holds a trained model rather than rows, so the generic dictionary "
                        "interface (`dictGet`, `dictHas`, `SELECT * FROM dict`) is not supported. The XGBoost integration is "
@@ -299,7 +310,7 @@ REGISTER_FUNCTION(PredictXGBoost)
         .arguments
         = {{"dictionary_name",
             "Name of a dictionary with the XGBOOST layout. See the "
-            "[XGBOOST dictionary layout](/reference/statements/create/dictionary/layouts/xgboost) for how to create it "
+            "[XGBOOST dictionary layout](/sql-reference/statements/create/dictionary/layouts/xgboost) for how to create it "
             "and the training parameters it accepts.",
             {"String"}},
            {"featureN",
@@ -310,7 +321,7 @@ REGISTER_FUNCTION(PredictXGBoost)
             "Optional constant Map of XGBoost prediction parameters, from parameter name to an integer value, e.g. "
             "`map('type', 0, 'iteration_end', 0)`. Every accepted parameter is an integer or a boolean, so fractional "
             "values are rejected. See "
-            "[prediction parameters](/reference/statements/create/dictionary/layouts/xgboost#prediction-parameters) for "
+            "[prediction parameters](/sql-reference/statements/create/dictionary/layouts/xgboost#prediction-parameters) for "
             "the accepted keys.",
             {"Map(String, (U)Int8/16/32/64)"}}},
         .returned_value = {"The model prediction as Float64, one per row.", {"Float64"}},
