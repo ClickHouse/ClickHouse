@@ -5624,7 +5624,9 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
     QueryTreeNodes result_table_function_arguments;
 
-    auto skip_analysis_arguments_indexes = table_function_ptr->skipAnalysisForArguments(table_function_node, scope_context);
+    const auto arguments_indexes_to_skip = table_function_ptr->skipAnalysisForArguments(table_function_node, scope_context);
+    /// Positions in result_table_function_arguments, which differ from the argument indexes once an argument expands into a list.
+    VectorWithMemoryTracking<size_t> skip_analysis_arguments_indexes;
 
     bool previous_table_function_arguments_in_resolve_process = table_function_arguments_in_resolve_process;
     table_function_arguments_in_resolve_process = true;
@@ -5637,11 +5639,12 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     {
         auto & table_function_argument = table_function_arguments[table_function_argument_index];
 
-        auto skip_argument_index_it = std::find(skip_analysis_arguments_indexes.begin(),
-            skip_analysis_arguments_indexes.end(),
+        auto skip_argument_index_it = std::find(arguments_indexes_to_skip.begin(),
+            arguments_indexes_to_skip.end(),
             table_function_argument_index);
-        if (skip_argument_index_it != skip_analysis_arguments_indexes.end())
+        if (skip_argument_index_it != arguments_indexes_to_skip.end())
         {
+            skip_analysis_arguments_indexes.push_back(result_table_function_arguments.size());
             result_table_function_arguments.push_back(table_function_argument);
             continue;
         }
@@ -5668,7 +5671,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             const auto & previous_unresolved_indexes = table_function_node_typed.getUnresolvedArgumentIndexes();
             if (std::find(previous_unresolved_indexes.begin(), previous_unresolved_indexes.end(), table_function_argument_index)
                 != previous_unresolved_indexes.end())
-                skip_analysis_arguments_indexes.push_back(table_function_argument_index);
+                skip_analysis_arguments_indexes.push_back(result_table_function_arguments.size());
 
             result_table_function_arguments.push_back(table_function_argument);
             continue;
@@ -5694,7 +5697,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     /// on the initiator, because it pattern-matches tables that may only exist
                     /// on the remote server.
                     /// For example: SELECT count() FROM remote('host', merge(currentDatabase(), '^test'))
-                    skip_analysis_arguments_indexes.push_back(table_function_argument_index);
+                    skip_analysis_arguments_indexes.push_back(result_table_function_arguments.size());
                 }
                 else
                 {
@@ -5741,7 +5744,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                   * Here concat(x, (SELECT 1)) fails on 'x', but the inner (SELECT 1) subquery
                   * may not have been resolved yet, leaving its join tree as IdentifierNode("system.one").
                   */
-                skip_analysis_arguments_indexes.push_back(table_function_argument_index);
+                skip_analysis_arguments_indexes.push_back(result_table_function_arguments.size());
                 result_table_function_arguments.push_back(table_function_argument);
                 continue;
             }
