@@ -47,11 +47,11 @@ struct SemiAntiJoinSideChecker
         const ContextPtr & context,
         const IQueryTreeNode * resolving_join_on_expression);
 
-    bool shouldSkipSide(JoinTableSide side) const;
+    [[nodiscard]] bool shouldSkipSide(JoinTableSide side) const;
 
     /// The side that stays visible when the compatibility settings hide the other one.
     /// Returns nullopt when both sides remain visible.
-    std::optional<JoinTableSide> preservedSideOrNone() const;
+    [[nodiscard]] std::optional<JoinTableSide> preservedSideOrNone() const;
 
     /// Throw if access to the given side of a SEMI/ANTI JOIN is denied.
     /// The caller is responsible for determining the correct side (e.g. via isFromJoinTree).
@@ -114,9 +114,11 @@ public:
         const IdentifierLookup & identifier_lookup,
         const IdentifierResolveScope & scope);
 
+    /// `replaced_storage` is the view source that the caller swaps into the query tree after the analysis.
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(
         const Identifier & table_identifier,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        const StoragePtr & replaced_storage = nullptr);
 
     /// Build a `nested(...)` FunctionNode for the given identifier prefix by combining
     /// per-field Array columns of the table expression (e.g. `loc.x`, `loc.y`).
@@ -128,7 +130,8 @@ public:
 
     static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
         const Identifier & table_identifier,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        const StoragePtr & replaced_storage = nullptr);
 
     /// Throw `ACCESS_DENIED` unless the user may see at least one column of the table.
     static void checkAccessToTableMetadata(

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Formats/FormatSettings.h>
 #include "config.h"
 
 #if USE_MONGODB

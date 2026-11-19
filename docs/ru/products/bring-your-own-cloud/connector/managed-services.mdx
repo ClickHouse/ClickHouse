@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ru/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -41,7 +40,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 * Команде `prepare` требуется копия конфигурации коннектора (`--config`), `kubectl port-forward` к локальному API исполнителя и `--output-dir` с правом записи. Она сверяет Service name с исполнителем и не запускается, если не может до него дотянуться.
 * Если на этом хосте нет указанных в конфигурации файлов учётных данных, `instances create` читает их из Secret&#39;ов `clicklink-hmac` и `clicklink-mtls` и сообщает о каждом таком чтении. Добавьте `--connector-namespace`, если пространство имен коннектора отличается от `clicklink`. Такое резервное поведение предусмотрено только для `instances create`.
 
-<Image img="/images/cloud/reference/byoc-connector-service-lifecycle.svg" size="lg" alt="Жизненный цикл сервиса коннектора ClickHouse в управляемом режиме" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Жизненный цикл сервиса коннектора ClickHouse в управляемом режиме](/images/cloud/reference/byoc-connector-service-lifecycle.svg)
+
+</Frame>
+
+</div>
 
 <Steps>
   <Step title="Подготовьте сервис" id="prepare">
