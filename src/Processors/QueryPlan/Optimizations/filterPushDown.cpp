@@ -41,6 +41,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 
+#include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 #include <Storages/StorageMerge.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -1262,6 +1263,16 @@ static Names keysWithRejectedSubtotals(const RollupOrCubeStep auto & step, const
     return step.getParams().keys | std::views::filter(has_rejected_subtotals) | std::ranges::to<Names>();
 }
 
+/// `and` and `or` do not throw, but they do not describe it in `canThrowIfKnown`
+static bool cannotThrow(const ActionsDAG::Node * condition)
+{
+    const bool is_logical = condition->type == ActionsDAG::ActionType::FUNCTION
+        && (condition->function_base->getName() == "and" || condition->function_base->getName() == "or");
+    if (is_logical)
+        return std::ranges::all_of(condition->children, cannotThrow);
+    return prewhereConditionCannotThrow(condition);
+}
+
 /// the conditions of the filter on `keys` that do not have a copy below the step; the optimizer visits the same filter again
 static std::optional<ActionsDAG::ActionsForFilterPushDown> takeNewConditionsOn(const Names & keys, const FilterStep & filter, RollupOrCubeStep auto & step)
 {
@@ -1272,12 +1283,23 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> takeNewConditionsOn(c
     if (!conditions)
         return {};
 
+    auto atoms = ActionsDAG::extractConjunctionAtoms(conditions->getOutputs().front());
+    auto names = atoms | std::views::transform(&ActionsDAG::Node::result_name) | std::ranges::to<NameSet>();
+    /// a copy of a part of the filter also runs on the rows that the other part rejects, so then it must not throw
+    bool copies_whole_filter = std::ranges::all_of(
+        ActionsDAG::extractConjunctionAtoms(&filter.getExpression().findInOutputs(filter.getFilterColumnName())),
+        [&](const String & name) { return names.contains(name); },
+        &ActionsDAG::Node::result_name);
+
     ActionsDAG::NodeRawConstPtrs new_conditions;
     std::ranges::copy_if(
-        ActionsDAG::extractConjunctionAtoms(conditions->getOutputs().front()) | std::views::reverse, /// back to the order of the filter
+        atoms | std::views::reverse, /// back to the order of the filter
         std::back_inserter(new_conditions),
-        [&](const String & name) { return step.getConditionsCopiedBelow().insert(name).second; },
-        &ActionsDAG::Node::result_name);
+        [&](const ActionsDAG::Node * condition)
+        {
+            return (copies_whole_filter || cannotThrow(condition))
+                && step.getConditionsCopiedBelow().insert(condition->result_name).second;
+        });
 
     return ActionsDAG::createActionsForConjunction(new_conditions, step.getInputHeaders().front()->getColumnsWithTypeAndName());
 }

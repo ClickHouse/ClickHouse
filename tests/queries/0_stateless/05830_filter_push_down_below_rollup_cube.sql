@@ -68,4 +68,15 @@ SELECT 'not pushed: group_by_use_nulls';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id = 4) WHERE explain LIKE '%Condition:%' SETTINGS group_by_use_nulls = 1;
 SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id = 4 ORDER BY ALL SETTINGS group_by_use_nulls = 1;
 
+SELECT 'a condition that can throw, the whole filter is on the keys';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id = 4 AND k != 1 AND intDiv(10, toInt64(k) - 1) > 0) WHERE explain LIKE '%Condition:%';
+SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id = 4 AND k != 1 AND intDiv(10, toInt64(k) - 1) > 0 ORDER BY ALL;
+
+SELECT 'not pushed: a condition that can throw after a condition on an aggregate';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id, k, sum(v) AS sv FROM t_rollup_filter GROUP BY ROLLUP(id, k) HAVING sv > 50 AND id = 4 AND intDiv(10, toInt64(k) - 1) > 0) WHERE explain LIKE '%Condition:%';
+SELECT id, k, sum(v) AS sv FROM t_rollup_filter GROUP BY ROLLUP(id, k) HAVING sv > 50 AND id = 4 AND intDiv(10, toInt64(k) - 1) > 0 ORDER BY ALL;
+SELECT id, k, sum(v) AS sv FROM t_rollup_filter GROUP BY CUBE(id, k) HAVING sv > 50 AND id = 4 AND intDiv(10, toInt64(k) - 1) > 0 ORDER BY ALL;
+SELECT k, count() AS c FROM (SELECT if(number < 2, 1, 2) AS k FROM numbers(3)) GROUP BY ROLLUP(k) HAVING c = 1 AND intDiv(10, toInt64(k) - 1) > 0 ORDER BY ALL;
+SELECT k, count() AS c FROM (SELECT if(number < 2, 1, 2) AS k FROM numbers(3)) GROUP BY CUBE(k) HAVING c = 1 AND intDiv(10, toInt64(k) - 1) > 0 ORDER BY ALL;
+
 DROP TABLE t_rollup_filter;

@@ -93,3 +93,12 @@ Condition: true
 4	1	38
 4	2	58
 4	\N	174
+a condition that can throw, the whole filter is on the keys
+Condition: and((intDiv(10, minus(toInt64(k), 1)) in [1, +Inf)), and((k not in [1, 1]), (id in [4, 4])))
+4	2	58
+not pushed: a condition that can throw after a condition on an aggregate
+Condition: (id in [4, 4])
+4	2	58
+4	2	58
+2	1
+2	1
