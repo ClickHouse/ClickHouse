@@ -45,6 +45,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_TABLES;
     extern const int UNKNOWN_SETTING;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -54,6 +55,41 @@ void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
     for (const auto & elem : names_and_types)
         if (elem.type->cannotBeStoredInTables())
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_TABLES, "Data type {} of column '{}' cannot be used in tables", elem.type->getName(), elem.name);
+}
+
+
+void throwIfColumnsConflictWithVirtuals(
+    const ColumnsDescription & columns, const VirtualColumnsDescription & virtuals, const String & engine_name, bool reject_reserved_names)
+{
+    for (const auto & storage_column : columns)
+    {
+        if (virtuals.tryGet(storage_column.name, VirtualsKind::Persistent, VirtualsMaterializationPlace::All))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create table with column '{}' for {} engines because it is reserved for persistent virtual column",
+                storage_column.name, engine_name);
+        }
+
+        /// An EPHEMERAL user column has no physical storage and no read-time expression,
+        /// so it cannot properly shadow a virtual column of the same name.
+        /// This leads to a type mismatch: the Block header uses the user column's type
+        /// while the data comes from the virtual column (which may have a different type).
+        if (storage_column.default_desc.kind == ColumnDefaultKind::Ephemeral && virtuals.tryGet(storage_column.name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::All))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create table with ephemeral column '{}' for {} engines "
+                "because it conflicts with a virtual column of the same name",
+                storage_column.name, engine_name);
+        }
+
+        if (reject_reserved_names && virtuals.has(storage_column.name))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create table with column '{}' for {} engines because it is reserved for a virtual column. "
+                "Use another name or enable the setting `allow_reserved_column_names`",
+                storage_column.name, engine_name);
+        }
+    }
 }
 
 
