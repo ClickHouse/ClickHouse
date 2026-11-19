@@ -2,12 +2,12 @@
 -- not the other columns of the sorting key.
 
 DROP TABLE IF EXISTS t_layers_prefix;
-CREATE TABLE t_layers_prefix (k UInt32, s String) ENGINE = MergeTree ORDER BY (k, s)
+CREATE TABLE t_layers_prefix (k UInt32 CODEC(Delta, LZ4), s String) ENGINE = MergeTree ORDER BY (k, s)
 SETTINGS index_granularity = 1024, min_bytes_for_wide_part = 0;
 
 SYSTEM STOP MERGES t_layers_prefix;
-INSERT INTO t_layers_prefix SELECT intDiv(number, 100), repeat(toString(cityHash64(number)), 10) FROM numbers(500000);
-INSERT INTO t_layers_prefix SELECT intDiv(number, 100), repeat(toString(cityHash64(number + 1)), 10) FROM numbers(500000);
+INSERT INTO t_layers_prefix SELECT number, hex(SHA256(toString(number))) FROM numbers(100000);
+INSERT INTO t_layers_prefix SELECT number, hex(SHA256(toString(number + 1000000))) FROM numbers(100000);
 
 -- Without the caches that skip the read of compressed data, which `ReadCompressedBytes` counts.
 SET max_threads = 4, enable_parallel_replicas = 0, use_uncompressed_cache = 0, use_columns_cache = 0;
