@@ -14,7 +14,6 @@
 #include <Core/Joins.h>
 #include <Core/Names.h>
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <algorithm>
 #include <iterator>
 #include <memory>

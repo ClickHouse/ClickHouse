@@ -21,6 +21,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 bool isTopNSort(const IQueryPlanStep & step)
 {
     const auto * sorting_step = typeid_cast<const SortingStep *>(&step);

@@ -7,7 +7,6 @@
 #include <Core/Joins.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <memory>
 #include <optional>
 #include <vector>
