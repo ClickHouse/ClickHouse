@@ -2985,17 +2985,19 @@ def test_namespace_two_part_name_resolution(started_cluster):
             assert f"ON {X}.{P}" in err, f"the missing grant must be on the database table: {err}"
 
         # an `ALIAS` column reads `X.J` as the database table; the catalog table is not a `Join` table
+        # (the second column does the same through a lambda)
         create_table(catalog, X, J)
         node.query(f"CREATE TABLE `{X}`.{J} (k String, v UInt64) ENGINE = Join(ANY, LEFT, k)")
         node.query(f"INSERT INTO `{X}`.{J} VALUES ('kek', 7)")
         node.query(
-            f"CREATE TABLE default.{A} (symbol String, v UInt64 ALIAS joinGet({X}.{J}, 'v', symbol)) "
+            f"CREATE TABLE default.{A} (symbol String, v UInt64 ALIAS joinGet({X}.{J}, 'v', symbol), "
+            f"v2 UInt64 ALIAS arrayMap(x -> joinGet({X}.{J}, 'v', x), [symbol])[1]) "
             f"ENGINE = MergeTree ORDER BY tuple()"
         )
         node.query(f"INSERT INTO default.{A} VALUES ('kek')")
         for outer in ({}, on):
-            result = node.query(f"USE {CATALOG_NAME}; SELECT v FROM default.{A}", settings=outer).strip()
-            assert result == "7", f"ALIAS column, outer {outer}: expected the database table, got {result}"
+            result = node.query(f"USE {CATALOG_NAME}; SELECT v, v2 FROM default.{A}", settings=outer).strip()
+            assert result == "7\t7", f"ALIAS column, outer {outer}: expected the database table, got {result}"
     finally:
         node.query(f"DROP TABLE IF EXISTS default.{A}")
         node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{X}.{J}`")
