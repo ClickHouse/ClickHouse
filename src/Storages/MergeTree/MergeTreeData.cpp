@@ -8377,7 +8377,8 @@ void MergeTreeData::removePartsFromWorkingSet(
 
 void MergeTreeData::removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock)
 {
-    removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(txn, drop_range, lock, /*create_empty_part*/ true);
+    removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(
+        txn, drop_range, lock, /*create_empty_part=*/ true, /*clone_to_detached=*/ false, /*clear_without_timeout=*/ false);
 }
 
 void MergeTreeData::checkPartsCanBeRemovedNonTransactionally(const DataPartsVector & parts, NonTransactionalRemovalKind kind) const
@@ -8485,7 +8486,12 @@ DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
 }
 
 MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(
-    MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock, bool create_empty_part, bool clone_to_detached)
+    MergeTreeTransaction * txn,
+    const MergeTreePartInfo & drop_range,
+    DataPartsLock & lock,
+    bool create_empty_part,
+    bool clone_to_detached,
+    bool clear_without_timeout)
 {
 #ifndef NDEBUG
     {
@@ -8497,10 +8503,8 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
 
     auto parts_to_remove = grabActivePartsToRemoveForDropRange(txn, drop_range, lock);
 
-    bool clear_without_timeout = true;
-    /// We a going to remove active parts covered by drop_range without timeout.
-    /// Let's also reset timeout for inactive parts
-    /// and add these parts to list of parts to remove from ZooKeeper
+    /// Inactive parts covered by drop_range are added to the list of parts to remove from ZooKeeper.
+    /// With clear_without_timeout their timeout is reset as well.
     auto inactive_parts_to_remove_immediately = getDataPartsVectorInPartitionForInternalUsage(
         {DataPartState::Outdated, DataPartState::Deleting}, drop_range.getPartitionId(), lock);
 
@@ -8636,7 +8640,8 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
     {
         if (!drop_range.contains(part->info))
             continue;
-        part->remove_time.store(0, std::memory_order_relaxed);
+        if (clear_without_timeout)
+            part->remove_time.store(0, std::memory_order_relaxed);
         parts_to_remove_from_zookeeper.emplace_back(std::move(part), /* was_active */ false);
     }
 

@@ -1043,7 +1043,7 @@ public:
     void removePartsFromWorkingSet(MergeTreeTransaction * txn, const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & acquired_lock);
 
     /// Removes all parts covered by drop_range from the working set parts.
-    /// Used in REPLACE PARTITION command.
+    /// Used in REPLACE PARTITION command. The removed parts are deleted after old_parts_lifetime, like the source parts of a merge.
     void removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock);
 
     DataPartsVector grabActivePartsToRemoveForDropRange(
@@ -1096,8 +1096,14 @@ public:
     /// Same as above, but also returns list of parts to remove from ZooKeeper.
     /// It includes parts that have been just removed by these method
     /// and Outdated parts covered by drop_range that were removed earlier for any reason.
+    /// If clear_without_timeout is true, all these parts are deleted without waiting for old_parts_lifetime.
     PartsToRemoveFromZooKeeper removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(
-        MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock, bool create_empty_part = true, bool clone_to_detached = false);
+        MergeTreeTransaction * txn,
+        const MergeTreePartInfo & drop_range,
+        DataPartsLock & lock,
+        bool create_empty_part = true,
+        bool clone_to_detached = false,
+        bool clear_without_timeout = true);
 
     /// Restores Outdated part and adds it to working set
     void restoreAndActivatePart(const DataPartPtr & part);
