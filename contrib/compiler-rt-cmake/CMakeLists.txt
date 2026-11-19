@@ -58,6 +58,7 @@ endif()
 #     declarations for anything musl does not provide)
 #   * -march= / -mcpu= / -mtune= (target microarchitecture from cmake/cpu_features.cmake)
 #   * -mpclmul / -maltivec (explicit ISA features added by cmake/cpu_features.cmake)
+#   * -mbranch-protection= (return address signing, so the RTL is protected like the rest of the binary)
 # The --target= flag is applied automatically by cmake from CMAKE_<LANG>_COMPILER_TARGET.
 #
 # Keeping the -march/-m* ISA bits aligns the RTL with the rest of the build:
@@ -66,12 +67,12 @@ endif()
 # the boundary: LLVM's X86VZeroUpperInserter pass is purely caller-side and
 # does not consult callee target-features, so an AVX2-using caller still
 # emits a vzeroupper before any external call regardless of how the callee
-# was built (see contrib/llvm-project/llvm/lib/Target/X86/X86VZeroUpper.cpp).
+# was built (see contrib/llvm-project/llvm/lib/Target/X86/X86InsertVZeroUpper.cpp).
 # Eliminating that overhead requires either dropping the upper-half live
 # state in the caller (e.g. -fsanitize-memory-track-origins=1 for MSan
 # drops the hot __msan_chain_origin calls; see cmake/sanitize.cmake),
 # or LTO so the inserter can see across the call boundary.
-set(_compiler_rt_keep_re "(--gcc-toolchain=[^ ]+|--no-default-config|-isystem +[^ ]+|-nostdlibinc|-march=[^ ]+|-mcpu=[^ ]+|-mtune=[^ ]+|-mpclmul|-maltivec)")
+set(_compiler_rt_keep_re "(--gcc-toolchain=[^ ]+|--no-default-config|-isystem +[^ ]+|-nostdlibinc|-march=[^ ]+|-mcpu=[^ ]+|-mtune=[^ ]+|-mpclmul|-maltivec|-mbranch-protection=[^ ]+)")
 foreach (lang C CXX ASM)
     string(REGEX MATCHALL "${_compiler_rt_keep_re}" _kept "${CMAKE_${lang}_FLAGS}")
     string(JOIN " " CMAKE_${lang}_FLAGS ${_kept})
@@ -809,6 +810,11 @@ endif()
 # satisfies the bare name), while every musl-internal call site - getdelim,
 # strdup, asprintf, realpath, or anything else - keeps resolving to the same
 # interposed allocator the application will later call to free() the result.
+# `sincos` is excluded as well, for a different reason: `sin` and `cos` are not
+# intercepted and come from llvm-libc, so `__real_sincos` must be llvm-libc's
+# `sincos` too (defined in contrib/libllvmlibc-cmake/math/real_sincos.cpp), or
+# `sincos(x)` would disagree with `sin(x)` and `cos(x)` in the last bit. Its
+# strong reference is still emitted, so that the llvm-libc member is linked.
 # The linked libc is switched to the renamed archive in
 # cmake/linux/default_libs.cmake (MUSL_LIBC_TARGET).
 if (USE_MUSL AND _interceptor_runtime)
@@ -827,9 +833,9 @@ if (USE_MUSL AND _interceptor_runtime)
             $nm --defined-only $<TARGET_FILE:${_interceptor_runtime}> | awk '$2 == \"T\" {print $3}' > strong_defs.txt;\
             cat real_refs.txt strong_defs.txt | sort -u > intercepted.txt;\
             $nm --defined-only $<TARGET_FILE:musl> | awk '{print $NF}' | sort -u > musl_defined.txt;\
-            comm -12 intercepted.txt musl_defined.txt | grep -vx -E 'malloc|calloc|realloc|reallocarray|free|posix_memalign|aligned_alloc|valloc|pvalloc|memalign' > names.txt;\
+            comm -12 intercepted.txt musl_defined.txt | grep -vx -E 'malloc|calloc|realloc|reallocarray|free|posix_memalign|aligned_alloc|valloc|pvalloc|memalign|sincos' > names.txt;\
             sed -e 's/.*/& __real_&/' names.txt > ${_musl_renames};\
-            { echo '.section .rodata.musl_real_refs,\"a\"'; sed -e 's/.*/.quad __real_&/' names.txt; } > musl_real_refs.s;\
+            { echo '.section .rodata.musl_real_refs,\"a\"'; sed -e 's/.*/.quad __real_&/' names.txt; echo '.quad __real_sincos'; } > musl_real_refs.s;\
             ${CMAKE_C_COMPILER} --target=${CMAKE_C_COMPILER_TARGET} -c musl_real_refs.s -o ${_musl_real_refs}"
         COMMAND ${CMAKE_OBJCOPY} --redefine-syms=${_musl_renames} $<TARGET_FILE:musl> ${_musl_intercepted}
         DEPENDS musl ${_interceptor_runtime}

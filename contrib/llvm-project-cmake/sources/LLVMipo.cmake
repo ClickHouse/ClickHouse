@@ -26,6 +26,10 @@ set(LLVMIPO_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Transforms/IPO/HotColdSplitting.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/IPO/InferFunctionAttrs.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/IPO/Inliner.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/IPO/Instrumentor.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/IPO/InstrumentorConfigFile.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/IPO/InstrumentorStubPrinter.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/IPO/InstrumentorUtils.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/IPO/Internalize.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/IPO/IPO.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/IPO/IROutliner.cpp
