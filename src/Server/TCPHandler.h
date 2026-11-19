@@ -346,7 +346,7 @@ private:
         /// The buffered input begins with the whole packet.
         Complete,
     };
-    ExternalTablesTerminatorState getExternalTablesTerminatorState(const QueryState & state) const TSA_REQUIRES(callback_mutex);
+    [[nodiscard]] ExternalTablesTerminatorState getExternalTablesTerminatorState(const QueryState & state) const TSA_REQUIRES(callback_mutex);
     /// The bound of the compressed data of the terminating packet (the empty block) read ahead before the query is admitted.
     static constexpr size_t max_compressed_external_tables_terminator_size = 128;
     /// The bound of the whole packet: the packet type, the empty table name, the checksum, the header and the data.
