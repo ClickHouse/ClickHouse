@@ -1148,7 +1148,8 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
         bool shrink_limits = false;
         if (params.isSettingsAlter())
         {
-            auto & settings_changes = new_metadata.settings_changes->as<ASTSetQuery &>();
+            const auto settings_changes_ast = new_metadata.getSettingsChanges();
+            auto & settings_changes = settings_changes_ast->as<ASTSetQuery &>();
             const auto current_settings_snapshot = memory_settings.get();
             const auto & current_settings = *current_settings_snapshot;
             changed_settings_ptr = std::make_unique<MemorySettings>(current_settings);
