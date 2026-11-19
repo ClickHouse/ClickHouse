@@ -1,0 +1,22 @@
+<test>
+    <!-- Reads of one granule of LZ4 data, so every read ends exactly at the end of a compressed block. -->
+
+    <create_query>
+        CREATE TABLE t_lz4_exact_block (s String, u UInt64) ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS default_compression_codec = 'LZ4'
+    </create_query>
+
+    <fill_query>INSERT INTO t_lz4_exact_block SELECT repeat('p', 90) || toString(number), number FROM numbers_mt(40000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_lz4_exact_block FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+    <fill_query>
+        SELECT throwIf(count() != 1, 'lz4_read_big_exact_block: expected 1 active part')
+        FROM system.parts
+        WHERE database = currentDatabase() AND table = 't_lz4_exact_block' AND active
+    </fill_query>
+
+    <query>SELECT count() FROM t_lz4_exact_block WHERE s &lt; 'q' SETTINGS max_block_size = 8192, preferred_block_size_bytes = 0</query>
+    <!-- With implicit projections, `sum` is answered from the column statistics without reading the column. -->
+    <query>SELECT sum(u) FROM t_lz4_exact_block SETTINGS max_block_size = 8192, preferred_block_size_bytes = 0, optimize_use_implicit_projections = 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_lz4_exact_block</drop_query>
+</test>
