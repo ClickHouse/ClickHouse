@@ -826,8 +826,7 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
 void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, size_t length, BloomFilter & bloom_filter);
 
 /// Tokenizes `rows`-many rows of `input`, starting at offset `from`. Returns a ColumnArray(String) with one array per row, containing the tokens.
-/// For an Array `input`, `element_token_offsets`, if set, receives for each non-NULL element
-/// the offset in the returned data where its tokens end.
+/// For an Array `input`, `element_token_offsets` receives where the tokens of each non-NULL element end.
 ColumnPtr tokenizeToArray(
     const ITokenizer & tokenizer,
     const IColumn & input,

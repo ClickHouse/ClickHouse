@@ -1,5 +1,4 @@
--- A text index on an Array column answers the token predicates exactly as the same data without an index,
--- and hasPhrase matches a phrase only within one element, with and without the index.
+-- A text index on an Array column gives the same results as no index; hasPhrase matches within one element.
 
 SET enable_analyzer = 1;
 SET enable_full_text_index = 1;

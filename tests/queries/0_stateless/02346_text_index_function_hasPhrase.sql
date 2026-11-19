@@ -171,7 +171,7 @@ CREATE TABLE tab
 ENGINE = MergeTree()
 ORDER BY (id);
 
--- A NULL element yields no token, and a phrase still does not span the elements around it.
+-- A NULL element yields no token and does not join its neighbors into a phrase.
 INSERT INTO tab VALUES (1, ['quick brown', NULL, 'fox']), (2, ['brown quick', NULL, 'fox']);
 
 SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(tags, 'quick brown') ORDER BY id);

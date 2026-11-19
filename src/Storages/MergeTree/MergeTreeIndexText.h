@@ -329,7 +329,7 @@ struct TextIndexHeader
 {
     MergeTreeTextIndexSerializationVersion version = MergeTreeTextIndexSerializationVersion::V0_Initial;
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::None;
-    /// has_positions, positions_codec, position_increment_gap and positions_block_size are persisted for version >= V2_WithPositions.
+    /// The positions fields are persisted for version >= V2_WithPositions.
     bool has_positions = false;
     UInt8 positions_codec = 0;
     UInt8 position_increment_gap = 0;
@@ -498,7 +498,7 @@ struct MergeTreeIndexTextGranuleBuilder
     void addDocument(std::string_view document, const PostingListBuildContext & context);
     // Adds a document to the granule. The document is inserted directly as a single token.
     void addToken(std::string_view token, const PostingListBuildContext & context);
-    /// Starts the next element of an `Array` row: its first token follows the previous token after `position_increment_gap` free positions.
+    /// Starts the next element of an `Array` row, `position_increment_gap` positions after the previous token.
     void startElement();
     /// Adds the rows from a column or array of `LowCardinality`, tokenizing each dictionary value once.
     void addDocumentsFromLowCardinality(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
@@ -506,7 +506,7 @@ struct MergeTreeIndexTextGranuleBuilder
     void incrementCurrentRow();
     void setCurrentRow(size_t row);
 
-    /// Takes `count` consecutive positions of the current row after the pending gap, and returns the first one.
+    /// Takes `count` consecutive positions after the pending gap and returns the first.
     UInt32 takeTokenPositions(UInt32 count);
 
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
@@ -521,7 +521,7 @@ struct MergeTreeIndexTextGranuleBuilder
 
     bool is_empty = true;
     UInt64 current_row = 0;
-    /// Position of the next token within the current row. Every token of a row shares one sequence.
+    /// Position of the next token within the current row.
     UInt32 current_token_position = 0;
     /// Free positions to skip before the next token, set by `startElement`.
     UInt32 pending_position_gap = 0;
@@ -562,8 +562,7 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
 
 private:
     /// Iterates over a ColumnArray(String) slice and calls addDocument<tokenize> on each element.
-    /// When the rows of `column` are the flattened tokens of the elements of an `Array` column, `element_token_offsets` are
-    /// the offsets in the data of `column` where those elements end, and the gap is placed at them.
+    /// For already tokenized rows, `element_token_offsets` mark where the `Array` elements end, to place the gap there.
     template <bool tokenize>
     void addDocumentsFromArray(
         ColumnPtr column,

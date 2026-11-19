@@ -36,7 +36,7 @@ namespace DB
 class TextIndexBlockedPositionsCodec
 {
 public:
-    /// Posting ranks per block. Persisted in the text index header as `positions_block_size`; only this value is supported yet.
+    /// Posting ranks per block, persisted in the header as `positions_block_size`. The only supported value.
     static constexpr size_t BLOCK_SIZE = 128;
 
     /// Parsed per-token directory; block_offsets are absolute in the .pos stream (seek-ready).

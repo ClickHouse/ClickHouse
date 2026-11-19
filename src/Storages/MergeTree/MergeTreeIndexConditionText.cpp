@@ -1534,8 +1534,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
             return false;
 
-        /// Positions of the elements of an `Array` row are separated by the position increment gap,
-        /// so a phrase matched by positions lies within one element, as the function requires.
+        /// The position increment gap keeps a phrase matched by positions within one `Array` element.
         const bool use_positions = has_positions;
 
         /// An Array phrase carries the tokens verbatim: neither the tokenizer nor the preprocessor applies.
