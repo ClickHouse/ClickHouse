@@ -1304,6 +1304,8 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
             auto column = info.output_type->createColumn();
             column->insertDefault();
             info.missing_bytes_per_value = static_cast<double>(column->byteSizeAt(0) + sumEnumBytesPerValue(*info.output_type));
+            /// E.g. `toJSONString` of a default `JSON` repeats the names of its typed paths in every row.
+            info.missing_size_unknown = !maxByteSizeWithExpandedValues(*column, 0).has_value();
         }
         /// The names of the values of an `Enum`, which a query may take for each value, e.g. by `toString`. They are
         /// charged to every primitive column under the type with an `Enum`, which is an upper bound.
@@ -3386,7 +3388,8 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
     /// Some columns are formed in `formOutputColumn` without a primitive column that bounds them: the columns and the
     /// elements of tuples that are missing in the file are filled with default values, and a variant is assembled
     /// into `Dynamic` or `JSON`, whose size is not bounded by the size of its binary columns (e.g. each row may
-    /// add a path). `max_values` bounds the number of values of the column, at the top level. The values of the arrays
+    /// add a path). A default-filled column with a `JSON` or `Dynamic` in it is of unknown size as well, see
+    /// `OutputColumnInfo::missing_size_unknown`. `max_values` bounds the number of values of the column, at the top level. The values of the arrays
     /// are bounded by the totals of the row group. Adds the size to `bytes`, or sets `size_unknown`.
     std::function<void(size_t, double, double &, bool &)> count_assembled_column
         = [&](size_t output_idx, double max_values, double & bytes, bool & size_unknown)
@@ -3395,6 +3398,7 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
         if (info.is_missing_column)
         {
             bytes += info.missing_bytes_per_value * max_values;
+            size_unknown = size_unknown || info.missing_size_unknown;
             return;
         }
         const TypeIndex kind = removeNullable(info.input_type)->getColumnType();
