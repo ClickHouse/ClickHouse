@@ -10,6 +10,7 @@
 #include <Columns/IColumn.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -201,7 +202,7 @@ void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
     DeletionVectorTransform::transform(chunk, bitmap);
 }
 
-void IcebergBitmapPositionDeleteTransform::initialize()
+void IcebergPositionDeleteTransform::forEachDeletedPosition(const std::function<void(UInt64)> & callback)
 {
     if (const auto & deletion_vector_object = iceberg_object_info->info.deletion_vector)
     {
@@ -213,7 +214,7 @@ void IcebergBitmapPositionDeleteTransform::initialize()
             context,
             log);
         for (const auto position : *deletion_vector)
-            bitmap.add(position);
+            callback(position);
     }
 
     for (auto & position_delete_file : position_delete_files)
@@ -228,9 +229,55 @@ void IcebergBitmapPositionDeleteTransform::initialize()
 
             const auto & position_column = *delete_chunk.getColumns()[position_index];
             for (size_t i = 0; i < delete_chunk.getNumRows(); ++i)
-                bitmap.add(position_column.get64(i));
+                callback(position_column.get64(i));
         }
     }
+}
+
+void IcebergBitmapPositionDeleteTransform::initialize()
+{
+    forEachDeletedPosition([this](UInt64 position) { bitmap.add(position); });
+}
+
+namespace
+{
+
+class DeletedPositionsCollector final : public IcebergPositionDeleteTransform
+{
+public:
+    using IcebergPositionDeleteTransform::IcebergPositionDeleteTransform;
+
+    String getName() const override { return "DeletedPositionsCollector"; }
+
+    void transform(Chunk &) override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "DeletedPositionsCollector does not transform chunks");
+    }
+
+    roaring::Roaring64Map collect()
+    {
+        roaring::Roaring64Map positions;
+        forEachDeletedPosition([&](UInt64 position) { positions.add(position); });
+        return positions;
+    }
+};
+
+}
+
+roaring::Roaring64Map readDeletedPositions(
+    IcebergDataObjectInfoPtr iceberg_object_info,
+    ObjectStoragePtr object_storage,
+    const std::optional<FormatSettings> & format_settings,
+    ContextPtr context)
+{
+    DeletedPositionsCollector collector(
+        std::make_shared<const Block>(),
+        std::move(iceberg_object_info),
+        std::move(object_storage),
+        format_settings,
+        FormatParserSharedResources::singleThreaded(context->getSettingsRef()),
+        context);
+    return collector.collect();
 }
 
 

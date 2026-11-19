@@ -214,6 +214,8 @@ std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
     bool is_equality_delete,
     LoggerPtr logger);
 
+bool positionDeleteMayReferenceDataFile(const ParsedManifestFileEntry & position_delete, const IcebergPathFromMetadata & data_file_path);
+
 }
 
 #endif

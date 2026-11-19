@@ -135,6 +135,14 @@ Iceberg::IcebergPathFromMetadata FileNamesGenerator::generatePositionDeleteFile(
     return Iceberg::IcebergPathFromMetadata(fmt::format("{}data/{}-deletes.{}", table_location, uuid_str, format_name));
 }
 
+Iceberg::IcebergPathFromMetadata FileNamesGenerator::generateDeletionVectorFile()
+{
+    auto uuid_str = uuid_generator.createRandom().toString();
+    if (!data_location.empty())
+        return Iceberg::IcebergPathFromMetadata(fmt::format("{}/{}-deletes.puffin", data_location, uuid_str));
+    return Iceberg::IcebergPathFromMetadata(fmt::format("{}data/{}-deletes.puffin", table_location, uuid_str));
+}
+
 }
 
 #endif
