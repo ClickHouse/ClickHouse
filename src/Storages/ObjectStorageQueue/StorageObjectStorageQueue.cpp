@@ -490,8 +490,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     if (strict_metadata_check && source.empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Cannot identify the source of the queue: the URL has a user name or password, or the Azure endpoint "
-            "is not an `http://` or `https://` URL. Remove them from the URL, or check the `AzureQueue` arguments");
+            "Cannot identify the source of the queue: the Azure endpoint is not an `http://` or `https://` URL");
 
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
         zookeeper_name,

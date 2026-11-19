@@ -601,7 +601,6 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
         Coordination::Requests requests;
         Coordination::Responses responses;
         std::optional<Coordination::Error> code;
-        std::optional<Coordination::Error> stamp_code;
         zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
@@ -625,15 +624,19 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     table_metadata.source_hash = metadata_from_zk->source_hash;
                 }
                 table_metadata.checkEquals(metadata_from_zk.value());
-                if (metadata_from_zk->source_hash.empty() && strict)
-                    throw Exception(
-                        ErrorCodes::METADATA_MISMATCH,
-                        "Existing table metadata in ZooKeeper has no source, as an older version wrote it. "
-                        "Attach a table of this queue on an upgraded server, or use another `keeper_path`");
-                if (metadata_from_zk->source_hash.empty() && !table_metadata.source_hash.empty())
+                if (metadata_from_zk->source_hash.empty())
                 {
-                    metadata_from_zk->source_hash = table_metadata.source_hash;
-                    stamp_code = zk_client->trySet(table_metadata_path, metadata_from_zk->toString(), stat.version);
+                    if (strict)
+                        throw Exception(
+                            ErrorCodes::METADATA_MISMATCH,
+                            "Existing table metadata in ZooKeeper has no source, as an older version wrote it. "
+                            "Attach the main table (following the same `keeper_path`) of this queue on an upgraded server, or use another `keeper_path`");
+
+                    if (!table_metadata.source_hash.empty())
+                    {
+                        metadata_from_zk->source_hash = table_metadata.source_hash;
+                        code = zk_client->trySet(table_metadata_path, metadata_from_zk->toString(), stat.version);
+                    }
                 }
                 return;
             }
@@ -701,8 +704,6 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
             code = zk_client->tryMulti(requests, responses);
         });
-        if (stamp_code.has_value() && *stamp_code != Coordination::Error::ZOK)
-            continue;
         if (code.has_value())
         {
             if (*code == Coordination::Error::ZNODEEXISTS)
@@ -715,6 +716,9 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                         *code, exception.getPathForFirstFailedOp(), zookeeper_path.string());
                 continue;
             }
+            /// Keeper was changed after the metadata was read, for example by another server, so start again.
+            if (*code == Coordination::Error::ZBADVERSION || *code == Coordination::Error::ZNONODE)
+                continue;
             if (*code != Coordination::Error::ZOK)
                 zkutil::KeeperMultiException::check(*code, requests, responses);
         }

@@ -105,8 +105,16 @@ CREATE TABLE tq_type_azure (x String) ENGINE = AzureQueue('http://localhost:1111
 CREATE TABLE tq_type_s3 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_type/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_type'; -- { serverError METADATA_MISMATCH }
 DROP TABLE tq_type_azure;
 
--- A URL with user info is refused, because a hash of the user info would be saved in keeper as a part of the source.
-CREATE TABLE tq_u (x String) ENGINE = S3Queue('http://user:secret@localhost:11111/test/05366_u/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_user_info'; -- { serverError BAD_ARGUMENTS }
+-- The user info of a URL is not a part of the source.
+CREATE TABLE tq_u (x String) ENGINE = S3Queue('http://user:secret@localhost:11111/test/05366_u/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_user_info';
+CREATE TABLE tq_u2 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_u/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_user_info';
+DROP TABLE tq_u2; DROP TABLE tq_u;
+-- The URL without user info is parsed with the same `s3_uri_style`: here `.s3.` in the host does not make it virtual-hosted.
+SET s3_uri_style = 'path';
+CREATE TABLE tq_u3 (x String) ENGINE = S3Queue('http://user:secret@queue.s3.localhost:11111/test/05366_u3/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_user_info_path';
+CREATE TABLE tq_u4 (x String) ENGINE = S3Queue('http://queue.s3.localhost:11111/test/05366_u3/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_user_info_path';
+SET s3_uri_style = DEFAULT;
+DROP TABLE tq_u4; DROP TABLE tq_u3;
 -- Paths that differ only in a part like `&sig=` are different sources.
 CREATE TABLE tq_sig (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_root&sig=a/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_sig';
 CREATE TABLE tq_sig_z (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_root&sig=z/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_sig'; -- { serverError METADATA_MISMATCH }

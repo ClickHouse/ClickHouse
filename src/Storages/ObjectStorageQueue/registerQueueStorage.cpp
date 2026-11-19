@@ -18,6 +18,7 @@
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseReplicatedHelpers.h>
+#include <Poco/URI.h>
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>
@@ -25,7 +26,6 @@
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-#include <Poco/URI.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #endif
 
@@ -43,6 +43,7 @@ namespace Setting
     extern const SettingsString s3queue_default_zookeeper_path;
     extern const SettingsBool enable_object_storage_queue_hive_partitioning;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
+    extern const SettingsS3UriStyle s3_uri_style;
 }
 
 namespace ObjectStorageQueueSetting
@@ -55,21 +56,30 @@ namespace
 {
 
 #if USE_AWS_S3
-ObjectStorageQueueTableMetadata::Source getQueueSource(const StorageS3Configuration & configuration)
+ObjectStorageQueueTableMetadata::Source getQueueSource(const StorageS3Configuration & configuration, const ContextPtr & context)
 {
-    /// `S3::URI` can put a part of the user info into the bucket name, so a URL with user info gets no source.
-    if (!configuration.url.uri.getUserInfo().empty())
-        return {};
-    return {configuration.getTypeName(), configuration.url.endpoint, configuration.url.bucket, configuration.getRawPath().path};
+    /// `S3::URI` keeps the user info in the endpoint or the bucket name, so such a URL is parsed again without it.
+    auto url = configuration.url;
+    if (!url.uri.getUserInfo().empty())
+    {
+        Poco::URI uri = url.uri;
+        uri.setUserInfo("");
+        url = S3::URI(
+            uri.toString(),
+            /*allow_archive_path_syntax*/ false,
+            /*keep_presigned_query_parameters*/ true,
+            /*uri_style*/ context->getSettingsRef()[Setting::s3_uri_style]);
+    }
+    return {configuration.getTypeName(), url.endpoint, url.bucket, configuration.getRawPath().path};
 }
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-ObjectStorageQueueTableMetadata::Source getQueueSource(const StorageAzureConfiguration & configuration)
+ObjectStorageQueueTableMetadata::Source getQueueSource(const StorageAzureConfiguration & configuration, const ContextPtr &)
 {
     String endpoint = configuration.getConnectionURLWithoutQuery();
     const Poco::URI uri(endpoint);
-    if ((uri.getScheme() != "http" && uri.getScheme() != "https") || !uri.getUserInfo().empty())
+    if (uri.getScheme() != "http" && uri.getScheme() != "https")
         return {};
     return {configuration.getTypeName(), std::move(endpoint), configuration.getContainer(), configuration.getRawPath().path};
 }
@@ -165,7 +175,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         }
     }
 
-    auto source = getQueueSource(*configuration);
+    auto source = getQueueSource(*configuration, args.getLocalContext());
 
     /// In `exclusive` mode there is no coordination through Keeper: each server keeps the list of
     /// processed files only in its own memory. If two servers read the same path, both will read
