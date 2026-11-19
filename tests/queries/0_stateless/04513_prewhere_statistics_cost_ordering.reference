@@ -29,6 +29,10 @@
 1
 478
 478
+-- a function whose only non-constant argument is not LowCardinality is charged for its values
+1
+60
+60
 -- a lambda that captures no column is charged for running its body
 1
 83

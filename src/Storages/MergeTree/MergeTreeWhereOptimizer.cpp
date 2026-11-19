@@ -78,7 +78,8 @@ double approximateBytesPerValueForType(const IDataType & type)
 }
 
 /// Adds the bytes per row produced by the functions in `node` that depend on a column, each node once.
-/// A function that the default `LowCardinality` implementation runs on the dictionary produces only an index per row.
+/// A function that the default `LowCardinality` implementation runs on the dictionary of its only non-constant argument
+/// produces only an index per row.
 bool addBytesPerRowOfFunctions(
     const ActionsDAG::Node & node, UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool> & visited, double & bytes)
 {
@@ -98,7 +99,9 @@ bool addBytesPerRowOfFunctions(
         const IFunction * function = adaptor ? adaptor->getFunction().get() : nullptr;
         const bool runs_on_dictionary = node.result_type->lowCardinality() && function
             && function->useDefaultImplementationForLowCardinalityColumns() && function->isDeterministicInScopeOfQuery()
-            && std::ranges::any_of(node.children, [](const ActionsDAG::Node * child) { return child->result_type->lowCardinality(); });
+            && std::ranges::count_if(node.children, [](const ActionsDAG::Node * child) { return !child->column; }) == 1
+            && std::ranges::any_of(
+                node.children, [](const ActionsDAG::Node * child) { return !child->column && child->result_type->lowCardinality(); });
         bytes += runs_on_dictionary ? 1 : approximateBytesPerValueForType(*removeLowCardinality(node.result_type));
 
         /// A lambda that captures no column still runs its body on every element, like one that does.

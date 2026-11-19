@@ -157,6 +157,16 @@ FROM (
 SELECT count() FROM t_prewhere_cost_functions WHERE joinGet('t_prewhere_cost_join_attr', 'v', lc) = 'w1' AND w < 3000000000;
 SELECT count() FROM t_prewhere_cost_functions WHERE joinGet('t_prewhere_cost_join_attr', 'v', lc) = 'w1' AND w < 3000000000 SETTINGS allow_reorder_prewhere_conditions = 0;
 
+SELECT '-- a function whose only non-constant argument is not LowCardinality is charged for its values';
+SELECT position(explain, 'less(') > 0 AND position(explain, 'less(') < position(explain, 'transform(')
+FROM (
+    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_functions WHERE transform(n, [1], ['x'], toLowCardinality('y')) = 'x' AND w < 3000000000
+    SETTINGS min_marks_per_part_to_load_statistics = 0, optimize_if_transform_const_strings_to_lowcardinality = 1
+) WHERE explain LIKE '%Prewhere filter column%';
+
+SELECT count() FROM t_prewhere_cost_functions WHERE transform(n, [1], ['x'], toLowCardinality('y')) = 'x' AND w < 3000000000;
+SELECT count() FROM t_prewhere_cost_functions WHERE transform(n, [1], ['x'], toLowCardinality('y')) = 'x' AND w < 3000000000 SETTINGS allow_reorder_prewhere_conditions = 0;
+
 SELECT '-- a lambda that captures no column is charged for running its body';
 SELECT position(explain, 'less(') > 0 AND position(explain, 'less(') < position(explain, 'arrayExists(')
 FROM (
