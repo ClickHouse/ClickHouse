@@ -195,7 +195,8 @@ public:
     /// Waits for the currently running refresh attempt to complete, either on this replica
     /// or on another one (if `coordinated`).
     /// If the refresh fails, throws an exception.
-    /// If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
+    /// If no refresh is running or due (a due refresh may be waiting for its `refresh_coordination_jitter_ms` delay),
+    /// completes immediately, throwing an exception if previous refresh failed.
     /// For a coordinated view, also waits for a refresh requested but not started yet on any replica, and fails on Keeper errors.
     void wait(const ContextPtr & context);
 
