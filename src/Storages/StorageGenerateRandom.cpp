@@ -49,6 +49,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Core/Settings.h>
+#include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
@@ -1812,16 +1813,33 @@ ColumnPtr fillColumnWithRandomData(const DataTypePtr & type, UInt64 limit, const
                 max_dynamic_paths,
                 max_dynamic_paths,
                 max_dynamic_paths,
-                object_type.getMaxDynamicTypes());
+                object_type.getMaxDynamicTypes(),
+                /*statistics_=*/ {},
+                object_type.getPtr(),
+                object_type.hasSource() ? ColumnString::create() : nullptr);
 
             /// Takes the leading `max_dynamic_paths` leaves as dynamic paths of the column and
             /// serialises the rest into the shared data, sorted by path, one offset per row.
             unflattenAndInsertPaths(leaf_paths, std::move(leaf_columns), *object, limit);
 
+            /// There is no original text, so the source is created from the generated objects.
+            if (object_type.hasSource())
+            {
+                auto serialization = object_type.getDefaultSerialization();
+                auto & source = object->getSourceColumn();
+                for (size_t i = 0; i != limit; ++i)
+                {
+                    WriteBufferFromVector<ColumnString::Chars> buf(source.getChars(), AppendModeTag());
+                    serialization->serializeText(*object, i, buf, FormatSettings{});
+                    buf.finalize();
+                    source.getOffsets().push_back(source.getChars().size());
+                }
+            }
+
             if (object->size() != limit)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "Generated a `JSON` column of {} rows instead of {}", object->size(), limit);
-            object->validateDynamicPathsSizes();
+            object->validateSubcolumnsSizes();
 
             return object;
         }

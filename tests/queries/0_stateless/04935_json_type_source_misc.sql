@@ -30,6 +30,9 @@ SELECT 'the text of a default row contains typed paths';
 SELECT json, json.__source FROM format(JSONEachRow, 'json JSON(with_source=1, a UInt32)', '{"json" : null}') SETTINGS input_format_null_as_default = 1;
 SELECT json, json.__source FROM format(JSONEachRow, 'json JSON(with_source=1)', '{"json" : null}') SETTINGS input_format_null_as_default = 1;
 
+SELECT 'the text of a default row has the defaults of the types, not the zeroes of the columns';
+SELECT json, json.__source FROM format(JSONEachRow, 'json JSON(with_source=1, e Enum8(\'minus\' = -1, \'zero\' = 0))', '{"json" : null}') SETTINGS input_format_null_as_default = 1;
+SELECT json, json.__source FROM format(JSONEachRow, 'json JSON(with_source=1, e Enum8(\'ok\' = 1))', '{"json" : null}') SETTINGS input_format_null_as_default = 1;
 SELECT 'the common type keeps the source only if all types have it';
 SELECT toTypeName(if(1, '{}'::JSON(with_source=1, a UInt32), '{}'::JSON(with_source=1, b UInt32)));
 SELECT toTypeName(if(1, '{}'::JSON(with_source=1, max_dynamic_paths=8), '{}'::JSON(with_source=1, max_dynamic_paths=16)));
@@ -53,3 +56,24 @@ DROP TABLE t_json_source_alter_data;
 SELECT 'CAST between the types with and without the source';
 SELECT x, x.__source FROM (SELECT materialize('{"a" :  1}')::JSON::JSON(with_source=1) AS x);
 SELECT toTypeName(x), x FROM (SELECT materialize('{"a" :  1}')::JSON(with_source=1)::JSON AS x);
+
+SELECT 'skip indexes on paths and values are not used for the source';
+DROP TABLE IF EXISTS t_json_source_index;
+CREATE TABLE t_json_source_index
+(
+    json JSON(with_source=1),
+    INDEX idx_paths JSONAllPaths(json) TYPE bloom_filter GRANULARITY 1,
+    INDEX idx_values JSONAllValues(json) TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_json_source_index VALUES ('{"a":1}'), ('{"b":2}');
+SELECT count() FROM t_json_source_index WHERE json.__source = '{"a":1}' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_json_source_index WHERE json.__source = '{"a":1}' SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_json_source_index WHERE json.__source.size = 7 SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_json_source_index WHERE json.__source = '{"a":1}' SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'idx_paths'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_json_source_index WHERE json.__source = '{"a":1}' SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'idx_values'; -- { serverError INDEX_NOT_USED }
+DROP TABLE t_json_source_index;
+
+SELECT 'generateRandom creates the source from the generated objects';
+SELECT count(), countIf(isValidJSON(json.__source)) FROM (SELECT * FROM generateRandom('json JSON(with_source=1)', 42, 10, 3) LIMIT 100);
+SELECT count(), countIf(arrayAll(s -> isValidJSON(s), arr.__source)) FROM (SELECT * FROM generateRandom('arr Array(JSON(with_source=1))', 42, 10, 3) LIMIT 100);

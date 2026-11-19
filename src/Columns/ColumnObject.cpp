@@ -1138,6 +1138,9 @@ String ColumnObject::createDefaultSourceText() const
     if (typed_paths.empty())
         return String(EMPTY_OBJECT_SOURCE);
 
+    if (!object_type)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Object type is not provided for ColumnObject with source");
+
     /// Serialize a default row of a column without the source, so creating the text is not recursive.
     UnorderedMapWithMemoryTracking<String, MutableColumnPtr> empty_typed_paths;
     empty_typed_paths.reserve(typed_paths.size());
@@ -1145,7 +1148,8 @@ String ColumnObject::createDefaultSourceText() const
         empty_typed_paths[path] = column->cloneEmpty();
 
     auto default_row = ColumnObject::create(std::move(empty_typed_paths), max_dynamic_paths, max_dynamic_types);
-    default_row->insertDefault();
+    /// Typed paths get the defaults of their types, which are not always the zeroes of their columns.
+    object_type->insertDefaultInto(*default_row);
 
     FormatSettings format_settings = getFormatSettings();
     format_settings.json.json_type_use_source = false;
@@ -1189,7 +1193,7 @@ void ColumnObject::insertDefault()
     }
     catch (...)
     {
-        restoreSizes(prev_size);
+        restoreSizesAfterDefaultInsert(prev_size);
         throw;
     }
 }
@@ -1209,12 +1213,12 @@ void ColumnObject::insertManyDefaults(size_t length)
     }
     catch (...)
     {
-        restoreSizes(prev_size);
+        restoreSizesAfterDefaultInsert(prev_size);
         throw;
     }
 }
 
-void ColumnObject::restoreSizes(size_t prev_size)
+void ColumnObject::restoreSizesAfterDefaultInsert(size_t prev_size)
 {
     for (auto & [_, column] : typed_paths)
     {
@@ -3017,7 +3021,7 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
     statistics.reset();
 }
 
-void ColumnObject::validateDynamicPathsSizes() const
+void ColumnObject::validateSubcolumnsSizes() const
 {
     size_t expected_size = shared_data->size();
     for (const auto & [path, column] : dynamic_paths)

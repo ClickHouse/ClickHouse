@@ -13,6 +13,9 @@ inserting from a type without the source creates the text
 the text of a default row contains typed paths
 {"a":0}	{"a":0}
 {}	{}
+the text of a default row has the defaults of the types, not the zeroes of the columns
+{"e":"minus"}	{"e":"minus"}
+{"e":"ok"}	{"e":"ok"}
 the common type keeps the source only if all types have it
 JSON(with_source=1)
 JSON(with_source=1, max_dynamic_paths=16)
@@ -25,3 +28,10 @@ ALTER to the type with the source creates the text from existing data
 CAST between the types with and without the source
 {"a":1}	{"a":1}
 JSON	{"a":1}
+skip indexes on paths and values are not used for the source
+1
+1
+2
+generateRandom creates the source from the generated objects
+100	100
+100	100

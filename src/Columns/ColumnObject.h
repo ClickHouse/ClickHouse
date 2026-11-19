@@ -339,7 +339,7 @@ public:
     /// offset argument - is the offset from which we should check for duplicates.
     void repairDuplicatesInDynamicPathsAndSharedData(size_t offset = 0);
 
-    void validateDynamicPathsSizes() const;
+    void validateSubcolumnsSizes() const;
 
     /// Returns true if the object is empty on the specified row (has no typed paths, no real values dynamic paths and no paths in shared data).
     /// When skip_null_typed_paths is true, typed paths with NULL values are not considered present.
@@ -420,8 +420,9 @@ public:
 private:
 
     void insertFromSharedDataAndFillRemainingDynamicPaths(const ColumnObject & src_object_column, VectorWithMemoryTracking<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length);
-    /// Pop back all the values that were inserted after the column had prev_size rows.
-    void restoreSizes(size_t prev_size);
+    /// Pop back the rows inserted into the existing sub-columns after the column had prev_size rows.
+    /// Only for a failed default insert: it does not remove new dynamic paths or shared data entries.
+    void restoreSizesAfterDefaultInsert(size_t prev_size);
     void expandSource(const Filter & mask, bool inverted);
     String createDefaultSourceText() const;
     /// Copy the source column and fill rows after the end of the original column with default values.

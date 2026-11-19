@@ -978,7 +978,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
         return;
     }
 
-    column_object.validateDynamicPathsSizes();
+    column_object.validateSubcolumnsSizes();
     const auto & dynamic_paths = column_object.getDynamicPaths();
     const auto & shared_data = column_object.getSharedDataPtr();
 
@@ -1212,6 +1212,13 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
                     flattened_paths_columns.back()->size(),
                     limit);
         }
+
+        if (column_object.hasSource() && column_object.getSourceColumn().size() != prev_num_rows + limit)
+            throw Exception(
+                settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
+                "Unexpected size of the source column in flattened Object column: {}. Expected size {}",
+                column_object.getSourceColumn().size() - prev_num_rows,
+                limit);
 
         settings.path.pop_back();
         unflattenAndInsertPaths(structure_state->flattened_paths, std::move(flattened_paths_columns), column_object, limit);

@@ -45,6 +45,10 @@ echo "A path nested in the reserved name in Native input is rejected"
 $CLICKHOUSE_LOCAL -q "SELECT '{\"__source\" : {\"a\" : 42}}'::JSON AS json FORMAT Native" \
     | $CLICKHOUSE_LOCAL --input-format=Native --structure="json $JSON_TYPE" -q "SELECT json FROM table" 2>&1 | grep -c "INCORRECT_DATA"
 
+echo "A flattened Native block with a truncated source is rejected"
+$CLICKHOUSE_LOCAL --output_format_native_use_flattened_dynamic_and_json_serialization=1 -q "SELECT '{}'::JSON(with_source=1) AS json FORMAT Native" | head -c -3 \
+    | $CLICKHOUSE_LOCAL --input-format=Native --structure="json $JSON_TYPE" -q "SELECT count() FROM table" 2>&1 | grep -c "INCORRECT_DATA"
+
 echo "A path nested in the reserved name in RowBinary input is rejected"
 $CLICKHOUSE_LOCAL --output_format_binary_write_json_as_string=0 -q "SELECT '{\"__source\" : {\"a\" : 42}}'::JSON AS json FORMAT RowBinary" \
     | $CLICKHOUSE_LOCAL --input-format=RowBinary --structure="json $JSON_TYPE" -q "SELECT json FROM table" 2>&1 | grep -c "INCORRECT_DATA"
