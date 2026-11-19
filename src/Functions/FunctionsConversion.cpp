@@ -2999,6 +2999,11 @@ FormatSettings getJSONRoundTripFormatSettings(const FormatSettings & format_sett
     FormatSettings result = format_settings;
     result.json.quote_64bit_integers = false;
     result.json.quote_denormals = true;
+    /// An internal round trip must be lossless and independent of the user's presentation settings, which
+    /// would otherwise change the stored value: shortest float text and canonical Boolean tokens.
+    result.float_precision = 0;
+    result.bool_true_representation = "true";
+    result.bool_false_representation = "false";
     return result;
 }
 

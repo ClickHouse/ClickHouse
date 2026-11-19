@@ -1,0 +1,46 @@
+-- A value the optimized JSON-to-JSON conversion stores must not depend on the user's presentation
+-- settings (output_format_float_precision, bool_true_representation/bool_false_representation): the
+-- internal text round trip must be lossless and carrier-independent, matching format+parse. Each case
+-- runs with both json_use_optimized_type_conversion values across the dynamic, shared-data, shared-variant
+-- and failure-skipping routes; only differing cases are printed, so the reference is empty.
+
+SET session_timezone = 'UTC';
+
+DROP TABLE IF EXISTS rt_results;
+CREATE TABLE rt_results (optimized UInt8, name String, result String) ENGINE = Memory;
+
+{% macro check(name, src, dst, json, expr, settings) -%}
+{% for optimized in [1, 0] -%}
+INSERT INTO rt_results
+SELECT {{ optimized }}, '{{ name }}', toString(({{ expr }}))
+FROM (SELECT CAST(CAST('{{ json }}' AS {{ src }}) AS {{ dst }}) AS j)
+SETTINGS {{ settings }}, json_use_optimized_type_conversion = {{ optimized }};
+{% endfor -%}
+{%- endmacro %}
+
+{% set bool_repr = "bool_true_representation = 'yes', bool_false_representation = 'no'" -%}
+{% set bool_repr_skip = bool_repr ~ ", type_json_skip_invalid_typed_paths = 1" -%}
+-- Bool to String: serializeText honors the custom tokens, serializeTextJSON writes true/false; the nested
+-- CAST must use the canonical tokens so every carrier agrees.
+{{ check('bool to String dynamic', 'JSON', 'JSON(a String)', '{"a": true}', 'j.a', bool_repr) }}
+{{ check('bool to String shared', 'JSON(max_dynamic_paths = 0)', 'JSON(max_dynamic_paths = 0, a String)', '{"a": true}', 'j.a', bool_repr) }}
+{{ check('bool to String variant', 'JSON(max_dynamic_types = 0)', 'JSON(max_dynamic_types = 0, a String)', '{"a": true}', 'j.a', bool_repr) }}
+{{ check('bool to String changed path', 'JSON(a Bool)', 'JSON(a String)', '{"a": false}', 'j.a', bool_repr) }}
+{{ check('bool to String skip', 'JSON', 'JSON(a String)', '{"a": true}', 'j.a', bool_repr_skip) }}
+
+{% set float_prec = "output_format_float_precision = 2" -%}
+{% set float_prec_skip = float_prec ~ ", type_json_skip_invalid_typed_paths = 1" -%}
+-- Float64: the round trip must keep the exact bits regardless of presentation precision. reinterpretAsUInt64
+-- reads the stored value, which JSON text would otherwise round and hide.
+{{ check('float bits dynamic', 'JSON', 'JSON(a Float64)', '{"a": 0.123456}', 'reinterpretAsUInt64(j.a)', float_prec) }}
+{{ check('float bits shared', 'JSON(max_dynamic_paths = 0)', 'JSON(max_dynamic_paths = 0, a Float64)', '{"a": 0.123456}', 'reinterpretAsUInt64(j.a)', float_prec) }}
+{{ check('float bits variant', 'JSON(max_dynamic_types = 0)', 'JSON(max_dynamic_types = 0, a Float64)', '{"a": 0.123456}', 'reinterpretAsUInt64(j.a)', float_prec) }}
+{{ check('float bits skip', 'JSON', 'JSON(a Float64)', '{"a": 0.123456}', 'reinterpretAsUInt64(j.a)', float_prec_skip) }}
+{{ check('float to String dynamic', 'JSON', 'JSON(a String)', '{"a": 0.123456}', 'j.a', float_prec) }}
+{{ check('float to String changed path', 'JSON(a Float64)', 'JSON(a String)', '{"a": 0.123456}', 'j.a', float_prec) }}
+
+SELECT name, optimized, result FROM rt_results
+WHERE name IN (SELECT name FROM rt_results GROUP BY name HAVING uniqExact(result) > 1)
+ORDER BY name, optimized DESC;
+
+DROP TABLE rt_results;

@@ -167,6 +167,17 @@ struct FunctionConvertSettings
     {
     }
 
+    /// A value a nested JSON CAST writes as text must not depend on the user's presentation settings
+    /// (they would change the stored value and diverge from the parser route), so normalize them to
+    /// shortest-lossless float text and canonical Boolean tokens.
+    static FormatSettings normalizeNestedConversionFormatSettings(FormatSettings fs)
+    {
+        fs.float_precision = 0;
+        fs.bool_true_representation = "true";
+        fs.bool_false_representation = "false";
+        return fs;
+    }
+
     /// Copy of `base` for a CAST nested inside another conversion: the settings that describe the
     /// user's own top-level CAST are replaced by what the enclosing conversion needs.
     FunctionConvertSettings(
@@ -191,7 +202,7 @@ struct FunctionConvertSettings
         , cast_keep_nullable(cast_keep_nullable_)
         , json_use_optimized_type_conversion(base.json_use_optimized_type_conversion)
         , cast_string_to_date_time_mode(cast_string_to_date_time_mode_)
-        , format_settings(base.format_settings)
+        , format_settings(normalizeNestedConversionFormatSettings(base.format_settings))
         , format_settings_hash(base.format_settings_hash)
     {
     }
