@@ -165,12 +165,12 @@ protected:
                     size_t data_uncompressed = 0;
                     for (const auto & part : parts)
                     {
-                        auto projection_parts = part->getProjectionParts();
+                        const auto & projection_parts = part->getProjectionParts();
                         auto projection_part_it = projection_parts.find(projection.name);
                         if (projection_part_it == projection_parts.end() || !projection_part_it->second)
                             continue;
 
-                        auto projection_part = projection_part_it->second;
+                        const auto & projection_part = projection_part_it->second;
                         auto column_size = projection_part->getTotalColumnsSize();
 
                         total_rows += projection_part->rows_count;
