@@ -76,6 +76,11 @@ public:
             return Status::Finished;
         }
 
+        /// The output may be closed while the source waits for a block, e.g. when an outer `LIMIT` is satisfied by
+        /// another branch of the pipeline.
+        if (getPort().isFinished())
+            return Status::Finished;
+
         if (is_async_state)
             return Status::Async;
 
@@ -83,6 +88,13 @@ public:
     }
 
     int schedule() override { return subscription->fd(); }
+
+    /// Wake up the source waiting in the async poller when its output is closed, so that it finishes.
+    void onUpdatePorts() override
+    {
+        if (getPort().isFinished())
+            subscription->wakeUp();
+    }
 
     void onCancel() noexcept override
     {
