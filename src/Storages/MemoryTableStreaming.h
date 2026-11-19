@@ -23,7 +23,7 @@ public:
     void reset();
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-    int fd() const { return event.fd; }
+    [[nodiscard]] int fd() const { return event.fd; }
 #endif
 
 private:
