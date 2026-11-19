@@ -167,6 +167,12 @@ TEST(TerminalMarkdownRenderer, BadgeComponentRendered)
     EXPECT_EQ(
         plainRenderer(200).render("<CloudOnlyBadge supported={[\"cloud\", \"BYOC\"]}/>"),
         "[Available in ClickHouse Cloud and BYOC]\n");
+    EXPECT_EQ(
+        plainRenderer(200).render("<CloudOnlyBadge supported={['cloud', 'BYOC']}/>"),
+        "[Available in ClickHouse Cloud and BYOC]\n");
+    EXPECT_EQ(
+        plainRenderer(200).render("<CloudOnlyBadge supported={[]}/>"),
+        "[Available in ClickHouse Cloud, ClickHouse Private, and BYOC]\n");
 }
 
 TEST(TerminalMarkdownRenderer, PlanFeatureBadgeRendersItsMessage)
