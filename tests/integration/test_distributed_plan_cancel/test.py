@@ -7,6 +7,8 @@ Reproduces https://github.com/ClickHouse/clickhouse-private/issues/40546
 """
 
 import logging
+import time
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -127,3 +129,112 @@ def test_worker_refuses_queries_beyond_max_queries(started_cluster):
 
     for node in [node1, node2]:
         node.query("DROP TABLE IF EXISTS test_max_queries")
+
+
+# Each reader sleeps 50 s, so the query is still running when a node is killed.
+SLOW_QUERY = (
+    "SELECT count() FROM {table} WHERE sleepEachRow(0.001) = 0 "
+    f"SETTINGS {DISTRIBUTED_SETTINGS}, max_block_size = 1000, function_sleep_max_microseconds_per_block = 0"
+)
+
+
+def create_table(table):
+    for node in [node1, node2]:
+        node.query(f"CREATE TABLE IF NOT EXISTS {table} (k UInt64) ENGINE = MergeTree() ORDER BY k")
+        node.query(f"TRUNCATE TABLE {table}")
+        node.query(f"INSERT INTO {table} SELECT number FROM numbers(100000)")
+
+
+def drop_table(table):
+    for node in [node1, node2]:
+        node.query(f"DROP TABLE IF EXISTS {table}")
+
+
+def wait_for_tasks(node, query_id):
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() > 0 FROM system.processes WHERE initial_query_id = '{query_id}' AND query_id != initial_query_id",
+        "1",
+    )
+
+
+def get_value(node, query):
+    return int(node.query(query).strip() or "0")
+
+
+def test_worker_killed_fails_query(started_cluster):
+    """A worker killed mid-query fails the query at once: the initiator loses its control connection to it."""
+    table = "test_worker_killed"
+    query_id = "test_worker_killed"
+    create_table(table)
+
+    request = node1.get_query_request(SLOW_QUERY.format(table=table), query_id=query_id, timeout=120)
+    wait_for_tasks(node2, query_id)
+    killed_at = time.monotonic()
+    node2.stop_clickhouse(kill=True)
+    try:
+        error = request.get_error()
+        failed_after = time.monotonic() - killed_at
+    finally:
+        node2.start_clickhouse()
+
+    assert "Lost the control connection to stateless worker node2" in error, error
+    assert failed_after < 30, failed_after
+    drop_table(table)
+
+
+def test_initiator_killed_worker_reclaims_tasks(started_cluster):
+    """A worker whose initiator is killed mid-query cancels and forgets the query's tasks and frees its slot."""
+    table = "test_initiator_killed"
+    query_id = "test_initiator_killed"
+    create_table(table)
+    reclaimed_query = "SELECT value FROM system.events WHERE event = 'StatelessWorkerControlReclaimedTasks'"
+    controllers_query = "SELECT value FROM system.metrics WHERE metric = 'StatelessWorkerQueryControllers'"
+    reclaimed_before = get_value(node2, reclaimed_query)
+
+    request = node1.get_query_request(SLOW_QUERY.format(table=table), query_id=query_id, timeout=120)
+    wait_for_tasks(node2, query_id)
+    assert get_value(node2, controllers_query) >= 1
+    node1.stop_clickhouse(kill=True)
+    try:
+        request.get_answer_and_error()
+        assert_eq_with_retry(node2, controllers_query, "0", retry_count=60)
+        assert_eq_with_retry(
+            node2,
+            f"SELECT count() FROM system.processes WHERE initial_query_id = '{query_id}'",
+            "0",
+            retry_count=60,
+        )
+        assert get_value(node2, reclaimed_query) > reclaimed_before
+    finally:
+        node1.start_clickhouse()
+
+    drop_table(table)
+
+
+def test_wrong_interserver_credentials(started_cluster):
+    """A worker refuses the control connection of an initiator with other interserver credentials."""
+    config_path = "/etc/clickhouse-server/config.d/zz_interserver_credentials.xml"
+    credentials = """<clickhouse>
+    <interserver_http_credentials>
+        <user>interserver</user>
+        <password>{password}</password>
+    </interserver_http_credentials>
+</clickhouse>"""
+    table = "test_wrong_credentials"
+    create_table(table)
+    try:
+        for node, password in [(node1, "initiator"), (node2, "worker")]:
+            node.replace_config(config_path, credentials.format(password=password))
+            node.query("SYSTEM RELOAD CONFIG")
+
+        error = node1.query_and_get_error(f"SELECT sum(k) FROM {table} SETTINGS {DISTRIBUTED_SETTINGS}")
+        assert "AUTHENTICATION_FAILED" in error, error
+        assert "Stateless worker node2:9223 refused the control connection" in error, error
+    finally:
+        for node in [node1, node2]:
+            node.exec_in_container(["rm", "-f", config_path])
+            node.query("SYSTEM RELOAD CONFIG")
+
+    assert node1.query(f"SELECT sum(k) FROM {table} SETTINGS {DISTRIBUTED_SETTINGS}") == "4999950000\n"
+    drop_table(table)
