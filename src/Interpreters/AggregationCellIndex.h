@@ -5,7 +5,6 @@
 #include <base/defines.h>
 #include <base/types.h>
 
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -18,9 +17,9 @@ template <typename Table>
 concept IterableCells = requires (Table & table) { table.begin(); };
 
 /// Whether an aggregation table keeps its cells in submaps, each with its own type of cell, as the string
-/// table does. Such a table gives the number of its submaps and the type of the cells of each. It walks its
-/// cells submap by submap with their hashes (see `StringHashTable::forEachCellWithHash`), and turns a cell
-/// into the key that its iterations hand out.
+/// table and the table of fixed-width keys and a string do. Such a table gives the number of its submaps and
+/// the type of the cells of each. It walks its cells submap by submap with their hashes (see
+/// `StringHashTable::forEachCellWithHash`), and turns a cell into the key that its iterations hand out.
 template <typename Table>
 concept SubmapCells = requires (Table & table)
 {
@@ -79,7 +78,7 @@ struct CellIndexTraits<Table>
     }
 
     template <size_t key_class>
-    static std::string_view ALWAYS_INLINE iteratedKey(const Cell<key_class> & cell)
+    static decltype(auto) ALWAYS_INLINE iteratedKey(const Cell<key_class> & cell)
     {
         return Table::template iteratedKey<key_class>(cell);
     }
