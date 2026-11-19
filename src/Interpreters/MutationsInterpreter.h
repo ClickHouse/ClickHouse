@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <IO/Progress.h>
 
 
 namespace DB
