@@ -707,7 +707,7 @@ int SocketImpl::sendNowUnthrottled(const void* buffer, int length)
 #if defined(MSG_NOSIGNAL)
 	flags |= MSG_NOSIGNAL;
 #endif
-	int rc;
+	int rc = 0;
 	int err = 0;
 	do
 	{
@@ -734,7 +734,7 @@ int SocketImpl::receiveNow(void* buffer, int length)
 
 	throttleRecv(length, false);
 
-	int rc;
+	int rc = 0;
 	int err = 0;
 	do
 	{
