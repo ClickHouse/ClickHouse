@@ -882,7 +882,7 @@ def test_create_dictionary():
         f"LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())"
     )
 
-    for toggle, secret in enumerate(["[HIDDEN]", password]):
+    for toggle, (secret, url) in enumerate([("[HIDDEN]", "[HIDDEN]"), (password, "http://localhost:8123/dict.tsv")]):
         assert (
             node.query(f"SHOW CREATE TABLE dict1 {show_secrets}={toggle}")
             == f"CREATE DICTIONARY default.dict1\\n(\\n    `n` int DEFAULT 0,\\n    `m` int DEFAULT 1\\n)\\nPRIMARY KEY n\\nSOURCE(CLICKHOUSE(HOST \\'localhost\\' PORT 9000 USER \\'user1\\' TABLE \\'test\\' PASSWORD \\'{secret}\\' DB \\'default\\'))\\nLIFETIME(MIN 0 MAX 10)\\nLAYOUT(FLAT())\n"
@@ -890,12 +890,12 @@ def test_create_dictionary():
 
         assert (
             node.query(f"SHOW CREATE TABLE dict2 {show_secrets}={toggle}")
-            == f"CREATE DICTIONARY default.dict2\\n(\\n    `n` int DEFAULT 0\\n)\\nPRIMARY KEY n\\nSOURCE(HTTP(URL \\'http://localhost:8123/dict.tsv\\' FORMAT \\'TabSeparated\\' USER \\'huser\\' PASSWORD \\'{secret}\\'))\\nLIFETIME(MIN 0 MAX 10)\\nLAYOUT(FLAT())\n"
+            == f"CREATE DICTIONARY default.dict2\\n(\\n    `n` int DEFAULT 0\\n)\\nPRIMARY KEY n\\nSOURCE(HTTP(URL \\'{url}\\' FORMAT \\'TabSeparated\\' USER \\'huser\\' PASSWORD \\'{secret}\\'))\\nLIFETIME(MIN 0 MAX 10)\\nLAYOUT(FLAT())\n"
         )
 
         assert (
             node.query(f"SHOW CREATE TABLE dict3 {show_secrets}={toggle}")
-            == f"CREATE DICTIONARY default.dict3\\n(\\n    `n` int DEFAULT 0\\n)\\nPRIMARY KEY n\\nSOURCE(HTTP(URL \\'http://localhost:8123/dict.tsv\\' FORMAT \\'TabSeparated\\' CREDENTIALS (USER \\'huser\\' PASSWORD \\'{secret}\\')))\\nLIFETIME(MIN 0 MAX 10)\\nLAYOUT(FLAT())\n"
+            == f"CREATE DICTIONARY default.dict3\\n(\\n    `n` int DEFAULT 0\\n)\\nPRIMARY KEY n\\nSOURCE(HTTP(URL \\'{url}\\' FORMAT \\'TabSeparated\\' CREDENTIALS (USER \\'huser\\' PASSWORD \\'{secret}\\')))\\nLIFETIME(MIN 0 MAX 10)\\nLAYOUT(FLAT())\n"
         )
 
         assert (
@@ -904,8 +904,8 @@ def test_create_dictionary():
             )
             == (
                 f"CREATE DICTIONARY default.dict1 (`n` int DEFAULT 0, `m` int DEFAULT 1) PRIMARY KEY n SOURCE(CLICKHOUSE(HOST \\'localhost\\' PORT 9000 USER \\'user1\\' TABLE \\'test\\' PASSWORD \\'{secret}\\' DB \\'default\\')) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
-                f"CREATE DICTIONARY default.dict2 (`n` int DEFAULT 0) PRIMARY KEY n SOURCE(HTTP(URL \\'http://localhost:8123/dict.tsv\\' FORMAT \\'TabSeparated\\' USER \\'huser\\' PASSWORD \\'{secret}\\')) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
-                f"CREATE DICTIONARY default.dict3 (`n` int DEFAULT 0) PRIMARY KEY n SOURCE(HTTP(URL \\'http://localhost:8123/dict.tsv\\' FORMAT \\'TabSeparated\\' CREDENTIALS (USER \\'huser\\' PASSWORD \\'{secret}\\'))) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
+                f"CREATE DICTIONARY default.dict2 (`n` int DEFAULT 0) PRIMARY KEY n SOURCE(HTTP(URL \\'{url}\\' FORMAT \\'TabSeparated\\' USER \\'huser\\' PASSWORD \\'{secret}\\')) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
+                f"CREATE DICTIONARY default.dict3 (`n` int DEFAULT 0) PRIMARY KEY n SOURCE(HTTP(URL \\'{url}\\' FORMAT \\'TabSeparated\\' CREDENTIALS (USER \\'huser\\' PASSWORD \\'{secret}\\'))) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
             )
         )
 
@@ -916,11 +916,11 @@ def test_create_dictionary():
             "LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())",
 
             "CREATE DICTIONARY dict2 (`n` int DEFAULT 0) PRIMARY KEY n "
-            "SOURCE(HTTP(URL 'http://localhost:8123/dict.tsv' FORMAT 'TabSeparated' USER 'huser' PASSWORD '[HIDDEN]')) "
+            "SOURCE(HTTP(URL '[HIDDEN]' FORMAT 'TabSeparated' USER 'huser' PASSWORD '[HIDDEN]')) "
             "LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())",
 
             "CREATE DICTIONARY dict3 (`n` int DEFAULT 0) PRIMARY KEY n "
-            "SOURCE(HTTP(URL 'http://localhost:8123/dict.tsv' FORMAT 'TabSeparated' CREDENTIALS (USER 'huser' PASSWORD '[HIDDEN]'))) "
+            "SOURCE(HTTP(URL '[HIDDEN]' FORMAT 'TabSeparated' CREDENTIALS (USER 'huser' PASSWORD '[HIDDEN]'))) "
             "LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())",
         ],
         must_not_contain=[password],
