@@ -34,7 +34,7 @@ public:
     static AccessFlags getForwardedTargetAccess();
 
     /// Resolves the target of `ENGINE = Alias(...)` from its arguments, evaluating them in place.
-    static StorageID resolveTargetFromEngineArgs(ASTs & engine_args, const String & default_database, const ContextPtr & context);
+    static StorageID resolveTargetFromEngineArgs(ASTs & engine_args, const String & default_database, const ContextPtr & query_context);
 
     bool isMergeTree() const override;
 

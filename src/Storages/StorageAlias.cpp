@@ -671,7 +671,7 @@ AccessFlags StorageAlias::getForwardedTargetAccess()
         | AccessType::OPTIMIZE | AccessType::CHECK;
 }
 
-StorageID StorageAlias::resolveTargetFromEngineArgs(ASTs & engine_args, const String & default_database, const ContextPtr & context)
+StorageID StorageAlias::resolveTargetFromEngineArgs(ASTs & engine_args, const String & default_database, const ContextPtr & query_context)
 {
     // Supported syntaxes:
     //  CREATE TABLE t2 ENGINE = Alias(t)
@@ -689,7 +689,7 @@ StorageID StorageAlias::resolveTargetFromEngineArgs(ASTs & engine_args, const St
 
     if (engine_args.size() == 1)
     {
-        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], context);
+        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], query_context);
         String table_arg = checkAndGetLiteralArgument<String>(engine_args[0], "table_name");
 
         auto dot_pos = table_arg.find('.');
@@ -700,8 +700,8 @@ StorageID StorageAlias::resolveTargetFromEngineArgs(ASTs & engine_args, const St
 
     if (engine_args.size() == 2)
     {
-        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], context);
-        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], context);
+        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], query_context);
+        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], query_context);
         return StorageID(
             checkAndGetLiteralArgument<String>(engine_args[0], "database_name"),
             checkAndGetLiteralArgument<String>(engine_args[1], "table_name"));
@@ -746,7 +746,6 @@ void registerStorageAlias(StorageFactory & factory)
             || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
         if (fresh_user_definition)
         {
-            StorageID target_id(target_database, target_table);
             if (args.table_id == target_id)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself");
 
