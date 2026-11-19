@@ -5,8 +5,10 @@ data.tsv	100	0	99
 ACCESS_DENIED
 data.1.tsv	1	2	2
 data.tsv	1	1	1
---- A rollover of a partition into a numbered key outside the grant is refused
+--- A rollover of a partition into a numbered key outside the grant is refused, the base objects are written
 ACCESS_DENIED
+part/p0/data.tsv	50	0	98
+part/p1/data.tsv	50	1	99
 --- With a grant covering the numbered keys, the same inserts succeed
 OK
 data.tsv	1	100	100

@@ -27,8 +27,12 @@ CREATE USER $user;
 GRANT CREATE TEMPORARY TABLE ON *.* TO $user;
 GRANT READ ON S3 TO $user;
 GRANT WRITE ON S3('${URL}/data[.]tsv') TO $user;
-GRANT WRITE ON S3('${URL}/part/p[0-9]/data[.]tsv') TO $user;
+GRANT WRITE ON S3('${URL}/part/p[^/]+/data[.]tsv') TO $user;
 "
+
+# The grant of the partitioned insert matches any partition directory, so it allows both the path template
+# `p{_partition_id}/data.tsv` (checked when the table function is executed) and the base key of every partition,
+# but still not their numbered keys such as `p0/data.1.tsv`.
 
 # Every block is exactly 100 numbers, and a new object is started as soon as 100 bytes are written,
 # so an insert of more than one block rolls over into a numbered object.
@@ -57,7 +61,7 @@ ${CLICKHOUSE_CLIENT} -q "
 as_user "INSERT INTO FUNCTION s3('${URL}/data.tsv', 'test', 'testtest', 'TSV', 'x UInt64') SELECT 100 SETTINGS ${SETTINGS}, s3_truncate_on_insert = 1"
 objects 'data*.tsv'
 
-echo '--- A rollover of a partition into a numbered key outside the grant is refused'
+echo '--- A rollover of a partition into a numbered key outside the grant is refused, the base objects are written'
 as_user "INSERT INTO FUNCTION s3('${URL}/part/p{_partition_id}/data.tsv', 'test', 'testtest', 'TSV', 'x UInt64') PARTITION BY x % 2 SELECT number FROM numbers(1000) SETTINGS ${SETTINGS}"
 objects 'part/*/data*.tsv'
 
