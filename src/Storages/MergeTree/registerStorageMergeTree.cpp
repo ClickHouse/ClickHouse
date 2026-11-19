@@ -1260,8 +1260,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         merging_params.allow_tuple_element_aggregation = false;
     }
 
-    /// `InterpreterCreateQuery` checks the built table the same way, but the constructor already takes the data path
-    /// (with `table_disk`, a disk root that can hold the data of another table) and registers the replica in Keeper.
+    /// Must run before the constructor: it takes over the data path, which with `table_disk` may hold another table's data.
     if (args.mode <= LoadingStrictnessLevel::CREATE)
     {
         throwIfColumnsConflictWithVirtuals(metadata.columns, metadata.virtuals, args.engine_name,
