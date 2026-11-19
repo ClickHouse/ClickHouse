@@ -44,11 +44,11 @@ namespace ErrorCodes
 
 std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(const IStorage & storage, const ContextPtr & context)
 {
-    if (typeid_cast<const StorageTimeSeries *>(&storage))
-        return {};
-
     /// Checked before the engine or the metadata of the table is revealed.
     context->checkAccess(AccessType::SELECT, storage.getStorageID());
+
+    if (typeid_cast<const StorageTimeSeries *>(&storage))
+        return {};
 
     const auto * distributed = typeid_cast<const StorageDistributed *>(&storage);
     if (!distributed)

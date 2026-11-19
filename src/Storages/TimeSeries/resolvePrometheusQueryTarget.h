@@ -22,7 +22,8 @@ struct PrometheusQueryDistributedTarget
     String skip_unavailable_shards_mode;
 };
 
-/// Checks that the table is a TimeSeries table or a Distributed table over them. Returns std::nullopt for a TimeSeries table.
+/// Checks the SELECT grant and that the table is a TimeSeries table or a Distributed table over them.
+/// Returns std::nullopt for a TimeSeries table.
 std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(const IStorage & storage, const ContextPtr & context);
 
 /// The version of the outer samples column. A Distributed table has no version, so it is taken from its column.

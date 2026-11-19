@@ -71,6 +71,8 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Couldn't get a table name from the arguments of the {} table function", name);
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+    /// Checked before the engine or the targets of the table are revealed. Reading or writing the target implies it.
+    context->checkAccess(AccessType::SHOW_COLUMNS, time_series_storage_id);
     target_table_type_name = getTargetTable(context)->getName();
 }
 
@@ -89,6 +91,8 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTableWithAccess(
     context->checkAccess(access_type, time_series_storage_id);
     auto target_table = getTargetTable(context);
     context->checkAccess(access_type, target_table->getStorageID());
+    /// An external target can be an `Alias`, whose metadata is that of the table it points to.
+    checkSourceStorageAccess(context, target_table, target_table->getStorageID(), access_type);
     return target_table;
 }
 

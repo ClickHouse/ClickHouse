@@ -32,9 +32,17 @@ function all()
     echo "create as: $(run "CREATE TABLE ${CLICKHOUSE_DATABASE}.stored AS prometheusQuery(${CLICKHOUSE_DATABASE}.ts_dist, 'm', 140)")"
     echo "select: $(run "SELECT count() FROM prometheusQuery(${CLICKHOUSE_DATABASE}.ts_dist, 'm', 140) FORMAT Null")"
     echo "other engine: $(run "DESCRIBE TABLE prometheusQuery(${CLICKHOUSE_DATABASE}.mt, 'm', 140)")"
+    echo "describe local: $(run "DESCRIBE TABLE prometheusQuery(${CLICKHOUSE_DATABASE}.ts_local, 'm', 140)")"
+    echo "describe range local: $(run "DESCRIBE TABLE prometheusQueryRange(${CLICKHOUSE_DATABASE}.ts_local, 'm', 100, 140, 10)")"
+    echo "describe selector: $(run "DESCRIBE TABLE timeSeriesSelector(${CLICKHOUSE_DATABASE}.ts_local, 'm', 0, 140, 'timestamp_and_value')")"
 }
 
 echo '--- no grants'
+all
+
+# The selector also reads the tags target of the table.
+echo '--- SELECT on the local TimeSeries table only'
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.ts_local TO ${user}"
 all
 
 echo '--- with grants'
