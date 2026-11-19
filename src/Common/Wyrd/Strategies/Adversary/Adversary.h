@@ -2,9 +2,11 @@
 
 #include <Common/Wyrd/Strategies/Adversary/AdversaryParams.h>
 #include <Common/VectorWithMemoryTracking.h>
+
 #include <base/defines.h>
 
 #include <atomic>
+#include <exception>
 #include <memory>
 #include <mutex>
 
@@ -32,8 +34,10 @@ public:
 
     void reset();
     AdversaryResult report() const;
+    std::exception_ptr error();
 
     void threadEnter();
+    void threadFail(std::exception_ptr exception);
     void threadFault();
     bool threadSpuriousFailure();
     void threadEnterLockFreeScope();
@@ -52,6 +56,7 @@ private:
 
     std::mutex mutex;
     VectorWithMemoryTracking<std::shared_ptr<SuspendedThread>> suspended TSA_GUARDED_BY(mutex);
+    std::exception_ptr first_error TSA_GUARDED_BY(mutex);
 };
 
 }

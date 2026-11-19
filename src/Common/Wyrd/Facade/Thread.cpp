@@ -5,6 +5,7 @@
 #    include <limits>
 #elif defined(WYRD_ADVERSARY)
 #    include <Common/Wyrd/Strategies/Adversary/Syscall.h>
+#    include <exception>
 #endif
 
 namespace DB::Wyrd
@@ -38,7 +39,14 @@ Thread::Thread(std::function<void()> body_, std::source_location)
           [body = std::move(body_)]
           {
               enterThread();
-              body();
+              try
+              {
+                  body();
+              }
+              catch (...)
+              {
+                  failThread(std::current_exception());
+              }
               exitThread();
           })
 {

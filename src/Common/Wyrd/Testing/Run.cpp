@@ -27,6 +27,7 @@
 #    include <gtest/gtest.h>
 
 #    include <cstdlib>
+#    include <exception>
 #    include <semaphore>
 #    include <thread>
 #endif
@@ -227,6 +228,12 @@ void runTest(std::function<void()> body, TestParams params)
         total.yields += result.yields;
         total.suspends += result.suspends;
         total.spurious_failures += result.spurious_failures;
+
+        if (adversary()->error())
+        {
+            fmt::print(stderr, "Wyrd adversary: run {} failed with an exception in a thread; yields={} suspends={} spurious_failures={}\n", i, result.yields, result.suspends, result.spurious_failures);
+            std::rethrow_exception(adversary()->error());
+        }
 
         if (testing::Test::HasFailure())
         {

@@ -1,6 +1,8 @@
 #include <Common/Wyrd/Strategies/Adversary/Syscall.h>
 #include <Common/Wyrd/Strategies/Adversary/Access.h>
 
+#include <utility>
+
 namespace DB::Wyrd
 {
 
@@ -8,6 +10,12 @@ void enterThread()
 {
     if (auto * current = adversary())
         current->threadEnter();
+}
+
+void failThread(std::exception_ptr exception)
+{
+    if (auto * current = adversary())
+        current->threadFail(std::move(exception));
 }
 
 void exitThread()

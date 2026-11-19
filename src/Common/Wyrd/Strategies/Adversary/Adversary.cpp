@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <semaphore>
 #include <thread>
+#include <utility>
 
 #if defined(OS_LINUX)
 #    include <sched.h>
@@ -75,9 +76,11 @@ Adversary::Adversary(AdversaryParams params_)
 
 void Adversary::reset()
 {
+    std::lock_guard lock(mutex);
     suspend_total.store(0);
     yield_count.store(0);
     spurious_failure_count.store(0);
+    first_error = nullptr;
 }
 
 AdversaryResult Adversary::report() const
@@ -89,11 +92,24 @@ AdversaryResult Adversary::report() const
     };
 }
 
+std::exception_ptr Adversary::error()
+{
+    std::lock_guard lock(mutex);
+    return first_error;
+}
+
 void Adversary::threadEnter()
 {
     thread_count.fetch_add(1);
     if (params.pin_to_single_core)
         pinThisThreadToSingleCore();
+}
+
+void Adversary::threadFail(std::exception_ptr exception)
+{
+    std::lock_guard lock(mutex);
+    if (!first_error)
+        first_error = std::move(exception);
 }
 
 void Adversary::threadFault()
