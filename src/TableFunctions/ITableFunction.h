@@ -17,6 +17,7 @@
 namespace DB
 {
 
+class AccessFlags;
 class Context;
 
 /** Interface for table functions.
@@ -137,6 +138,13 @@ public:
     /// Check the `TABLE ENGINE` grant, for engines that opt in via `requiresTableEngineGrant`.
     void checkEngineAccess(ContextPtr context) const;
 
+    /// `uri` normalized by Poco; an unparsable URI becomes empty.
+    static String normalizeURIForAccessCheck(const String & uri);
+
+    /// Checks the source grant for `uri`; a location that no filter would see as accessed needs the whole-source grant.
+    static void checkSourceAccessForURI(
+        const ContextPtr & context, const AccessFlags & flags, AccessTypeObjects::Source source, const String & uri);
+
     virtual ~ITableFunction() = default;
 
 protected:
@@ -163,9 +171,6 @@ private:
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
     /// privileges as if it was S3.
     virtual const char * getNonClusteredStorageEngineName() const;
-
-protected:
-    String getFunctionURINormalized() const;
 };
 
 /// Properties of table function that are independent of argument types and parameters.
