@@ -149,7 +149,6 @@
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
 #include <Server/StatelessWorker/StatelessWorkerControlServer.h>
-#include <Server/StatelessWorker/StatelessWorkerEndpoint.h>
 #include <Server/StatelessWorker/WorkerControlLoop.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
@@ -2293,11 +2292,8 @@ try
     global_context->updateInterserverCredentials(config());
 
     std::shared_ptr<StatelessWorkerControlServer> stateless_worker_control_server{nullptr};
-    std::shared_ptr<StatelessWorkerEndpoint> stateless_worker_endpoint_ptr{nullptr};
-    String stateless_worker_endpoint_name;
     if (config().getBool("stateless_worker_server.enabled", false))
     {
-        String stateless_worker_endpoint = config().getString("stateless_worker_server.endpoint", "localhost");
         size_t stateless_worker_max_queries = config().getUInt64("stateless_worker_server.max_queries", 1000);
         if (stateless_worker_max_queries == 0)
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
@@ -2310,26 +2306,15 @@ try
         stateless_worker_control_server = std::make_shared<StatelessWorkerControlServer>(
             StatelessWorkerControlServer::Limits{.max_queries = stateless_worker_max_queries, .max_sessions = stateless_worker_max_control_sessions},
             [] { return Context::getGlobalContextInstance()->getInterserverCredentials(); });
-        stateless_worker_endpoint_ptr = std::make_shared<StatelessWorkerEndpoint>(stateless_worker_control_server->getExecutor());
-        stateless_worker_endpoint_name = stateless_worker_endpoint_ptr->getId(stateless_worker_endpoint);
-        global_context->getInterserverIOHandler().addEndpoint(stateless_worker_endpoint_name, stateless_worker_endpoint_ptr);
-        LOG_DEBUG(log, "Added stateless worker endpoint '{}'.", stateless_worker_endpoint_name);
     }
 
     /// Runs after the exchange servers stop, as they hand connections to the control server.
     SCOPE_EXIT({
-        if (stateless_worker_endpoint_ptr)
+        if (stateless_worker_control_server)
         {
-            /// Remove the same endpoint that was registered (the configured name may differ from "localhost").
-            LOG_DEBUG(log, "Shutting down stateless worker endpoint '{}'.", stateless_worker_endpoint_name);
-            global_context->getInterserverIOHandler().removeEndpointIfExists(stateless_worker_endpoint_name);
-
-            stateless_worker_endpoint_ptr->blocker.cancelForever();
+            LOG_DEBUG(log, "Shutting down the stateless worker control server.");
             stateless_worker_control_server->shutdown();
-            /// Acquire the lock to wait for all in-flight requests to finish.
-            std::lock_guard lock(stateless_worker_endpoint_ptr->rwlock);
         }
-        stateless_worker_endpoint_ptr.reset();
         stateless_worker_control_server.reset();
     });
 

@@ -171,10 +171,9 @@ public:
         /// Replica group of the node (for clusters that belong to a `Replicated` database).
         String replica_group;
         UInt16 port{0};
-        /// Optional per-node ports for the distributed-plan engine: the interserver port the
-        /// initiator dispatches tasks to, and the streaming-exchange listener port. Zero means
-        /// "not configured" (the initiator then falls back to the server-level ports).
-        UInt16 stateless_worker_port{0};
+        /// Optional per-node port for the distributed-plan engine: the streaming-exchange listener port, which the
+        /// initiator also dials to control the node's tasks. Zero means "not configured" (the initiator then falls back
+        /// to the server-level port).
         UInt16 streaming_exchange_port{0};
         String user;
         SecretString password;

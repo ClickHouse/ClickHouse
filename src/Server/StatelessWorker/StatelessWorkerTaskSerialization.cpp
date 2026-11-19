@@ -215,55 +215,6 @@ void readRuntimeFilterDescriptors(VectorWithMemoryTracking<RuntimeFilterReceiveD
 
 }
 
-void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out)
-{
-    serializeTask(task_description, task_description.task, task_description.exchange_stream_sources, out);
-}
-
-void serializeTask(const DistributedQueryTaskDescription & task_description, const DistributedQueryTask & task,
-    const ExchangeStreamSources & stream_sources, WriteBuffer & out)
-{
-    const UInt64 version = task_description.serialization_version;
-    writeVarUInt(version, out);
-    writeStringBinary(task_description.initial_query_id, out);
-    writeStringBinary(task.task_id, out);
-    chassert(task_description.serialized_query_plan);
-    writeStringBinary(*task_description.serialized_query_plan, out);
-    writeParameters(task.parameters, out);
-    writeExchangeStreams(task.input_exchange_streams, out);
-    writeExchangeStreams(task.output_exchange_streams, out);
-    writeExchanges(task_description.exchanges, out);
-    writeStreamSources(stream_sources, version, out);
-    writeSettingsChanges(task_description.settings_changes, out);
-    writeRuntimeFilterDescriptors(task.runtime_filter_descriptors, version, out);
-}
-
-void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuffer & in)
-{
-    UInt64 version = 0;
-    readVarUInt(version, in);
-    if (version > DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Distributed task serialization version {} is not supported. The last supported version is {}",
-            version, DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION);
-
-    readStringBinary(task_description.initial_query_id, in);
-
-    auto & task = task_description.task;
-    readStringBinary(task.task_id, in);
-    String serialized_query_plan;
-    readStringBinary(serialized_query_plan, in);
-    task_description.serialized_query_plan = std::make_shared<const String>(std::move(serialized_query_plan));
-    readParameters(task.parameters, in);
-    readExchangeStreams(task.input_exchange_streams, in);
-    readExchangeStreams(task.output_exchange_streams, in);
-    readExchanges(task_description.exchanges, in);
-    readStreamSources(task_description.exchange_stream_sources, version, in);
-    if (version >= 1)
-        readSettingsChanges(task_description.settings_changes, in);
-    readRuntimeFilterDescriptors(task.runtime_filter_descriptors, version, in);
-}
-
 void serializeTaskBatch(const DistributedQueryTaskBatch & batch, WriteBuffer & out)
 {
     serializeTaskBatch(batch, out, [&out](const SerializedQueryPlanPtr & plan) { out.write(plan->data(), plan->size()); });

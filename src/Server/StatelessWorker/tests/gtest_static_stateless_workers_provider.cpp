@@ -163,8 +163,8 @@ TEST(StaticStatelessWorkersProvider, ReportsWorkersStateForIntrospection)
     EXPECT_EQ(state[0].refcount, 0u);
 }
 
-/// The static provider's `<cluster>` form reads the single shard's replicas (with their stateless
-/// worker / streaming-exchange ports) from `<remote_servers>`.
+/// The static provider's `<cluster>` form reads the single shard's replicas (with their streaming-exchange
+/// ports) from `<remote_servers>`.
 TEST(StaticStatelessWorkersProvider, ClusterFormUsesSingleShardReplicas)
 {
     applyStatelessWorkerConfig(R"(
@@ -174,7 +174,6 @@ TEST(StaticStatelessWorkersProvider, ClusterFormUsesSingleShardReplicas)
                 <replica>
                     <host>replica-host</host>
                     <port>9000</port>
-                    <stateless_worker_port>9100</stateless_worker_port>
                     <streaming_exchange_port>9200</streaming_exchange_port>
                 </replica>
             </shard>
@@ -191,7 +190,6 @@ TEST(StaticStatelessWorkersProvider, ClusterFormUsesSingleShardReplicas)
     auto alloc = provider.allocate(0, PROVISIONING_TIMEOUT_MS);
     ASSERT_EQ(alloc->getAddresses().size(), 1u);
     EXPECT_EQ(alloc->getAddresses()[0].host, "replica-host");
-    EXPECT_EQ(alloc->getAddresses()[0].stateless_worker_port, 9100);
     EXPECT_EQ(alloc->getAddresses()[0].streaming_exchange_port, 9200);
 }
 

@@ -50,13 +50,13 @@ std::vector<StatelessWorkerAddress> StaticStatelessWorkersProvider::resolveWorke
 
         addresses.reserve(shard_addresses[0].size());
         for (const auto & replica : shard_addresses[0])
-            addresses.push_back({replica.host_name, replica.stateless_worker_port, replica.streaming_exchange_port});
+            addresses.push_back({replica.host_name, replica.streaming_exchange_port});
     }
     else
     {
         const String host = config.getString(config_prefix + ".host", "");
         if (!host.empty())
-            addresses.push_back({host, 0, 0});
+            addresses.push_back({host, 0});
     }
 
     if (addresses.empty())
@@ -171,7 +171,7 @@ StatelessWorkersProviderPtr StaticStatelessWorkersProvider::makeActiveWorkersPro
         if (!is_active[replica_index])
             continue;
         const auto & replica = shard_addresses[0][replica_index];
-        active_addresses.push_back({replica.host_name, replica.stateless_worker_port, replica.streaming_exchange_port});
+        active_addresses.push_back({replica.host_name, replica.streaming_exchange_port});
     }
     return std::make_shared<StaticStatelessWorkersProvider>(std::move(active_addresses));
 }
@@ -197,8 +197,7 @@ void registerStaticStatelessWorkersProvider(StatelessWorkersProviderFactory & fa
         {
             String signature = config.getString(config_prefix + ".cluster", "") + "|";
             for (const auto & address : StaticStatelessWorkersProvider::resolveWorkerAddresses(config, config_prefix))
-                signature += address.host + ":" + std::to_string(address.stateless_worker_port)
-                    + ":" + std::to_string(address.streaming_exchange_port) + "|";
+                signature += address.host + ":" + std::to_string(address.streaming_exchange_port) + "|";
             return signature;
         },
     };
@@ -214,9 +213,9 @@ std::vector<StatelessWorkerState> StaticStatelessWorkersProvider::getWorkersStat
     for (const auto & address : addresses)
     {
         StatelessWorkerState state;
-        state.worker_id = address.host + ":" + std::to_string(address.stateless_worker_port);
+        state.worker_id = address.host + ":" + std::to_string(address.streaming_exchange_port);
         state.hostname = address.host;
-        state.port = address.stateless_worker_port;
+        state.port = address.streaming_exchange_port;
         state.status = "STATIC";
         state.cached = true;
         state.refcount = 0;

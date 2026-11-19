@@ -509,7 +509,7 @@ void StatelessWorkerControlServer::Session::reclaimTasks()
 StatelessWorkerControlServer::StatelessWorkerControlServer(Limits limits_, CredentialsGetter get_credentials_)
     : limits(limits_)
     , get_credentials(std::move(get_credentials_))
-    , executor(std::make_shared<StatelessTaskExecutor>(limits.max_queries))
+    , executor(std::make_unique<StatelessTaskExecutor>(limits.max_queries))
     , log(getLogger("StatelessWorkerControlServer"))
     /// Unlimited queue: `max_sessions` bounds the sessions, and a new one may wait for the thread of one that is ending.
     , session_pool(

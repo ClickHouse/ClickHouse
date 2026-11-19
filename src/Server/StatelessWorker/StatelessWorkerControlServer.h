@@ -48,8 +48,6 @@ public:
     StatelessWorkerControlServer(Limits limits_, CredentialsGetter get_credentials_);
     ~StatelessWorkerControlServer() override;
 
-    const std::shared_ptr<StatelessTaskExecutor> & getExecutor() const { return executor; }
-
     void handleControlConnection(
         Poco::Net::StreamSocket socket, const StreamingExchangeProtocol::PacketHeader & header, const ExchangeConnectionAuthenticator & authenticate) override;
 
@@ -71,7 +69,7 @@ private:
 
     const Limits limits;
     const CredentialsGetter get_credentials;
-    const std::shared_ptr<StatelessTaskExecutor> executor;
+    const std::unique_ptr<StatelessTaskExecutor> executor;
     const LoggerPtr log;
 
     std::mutex sessions_mutex;

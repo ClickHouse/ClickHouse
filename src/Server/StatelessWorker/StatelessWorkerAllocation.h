@@ -13,12 +13,11 @@ namespace DB
 class DiscoveryStatelessWorkersProvider;
 class StaticStatelessWorkersProvider;
 
-/// How to reach one stateless worker: `stateless_worker_port` for task dispatch and
-/// `streaming_exchange_port` for exchange streams; zero means the server default.
+/// How to reach one stateless worker: `streaming_exchange_port` for the control connection of its tasks and for exchange
+/// streams; zero means the server default.
 struct StatelessWorkerAddress
 {
     std::string host;
-    uint16_t stateless_worker_port = 0;
     uint16_t streaming_exchange_port = 0;
 };
 

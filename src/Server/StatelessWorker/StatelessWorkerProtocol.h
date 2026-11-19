@@ -18,11 +18,11 @@ class ReadBuffer;
 /// `BlockInfo` and no custom serialization, and every build reads it.
 constexpr UInt64 STATELESS_WORKER_PAYLOAD_NATIVE_REVISION = 0;
 
-/// Payload tags of a `get_status` reply. A new payload shape gets a new tag; unknown tags are skipped by length.
+/// Payload tags of a task status. A new payload shape gets a new tag; unknown tags are skipped by length.
 constexpr UInt64 TASK_STATUS_PAYLOAD_END = 0;
 constexpr UInt64 TASK_STATUS_PAYLOAD_LOGS = 1;
 
-/// The `collect` parameter of `start`: which payloads the worker adds to status replies. Unknown names are ignored.
+/// What the initiator asks at the start of a task: which payloads the worker adds to its statuses. Unknown names are ignored.
 struct TaskCollectors
 {
     bool logs = false;
@@ -98,8 +98,8 @@ struct DistributedQueryTaskStatusEntry
     TaskCollectors collectors;
 };
 
-/// A `get_statuses` reply: the count, then per task its id and its status as `get_status` writes it, length-prefixed,
-/// since that reply ends with the body.
+/// A `get_statuses` reply: the count, then per task its id and its status as `DistributedQueryTaskStatus::write` writes it,
+/// length-prefixed, since `DistributedQueryTaskStatus::read` takes the end of its input as the end of the status.
 void writeTaskStatuses(const std::vector<DistributedQueryTaskStatusEntry> & entries, WriteBuffer & out);
 std::vector<DistributedQueryTaskStatusEntry> readTaskStatuses(ReadBuffer & in);
 

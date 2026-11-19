@@ -129,7 +129,7 @@ Cluster::Address::Address(
     if (!port)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Port is not specified in cluster configuration: {}.port", config_prefix);
 
-    /// Optional per-node ports for the distributed-plan engine; zero means "not configured".
+    /// Optional per-node port for the distributed-plan engine; zero means "not configured".
     /// Range-checked before narrowing so an out-of-range value errors instead of wrapping.
     auto read_optional_port = [&](const String & key)
     {
@@ -139,7 +139,6 @@ Cluster::Address::Address(
                 "{}{} must be 0 or in range 1..65535, got {}", config_prefix, key, value);
         return static_cast<UInt16>(value);
     };
-    stateless_worker_port = read_optional_port(".stateless_worker_port");
     streaming_exchange_port = read_optional_port(".streaming_exchange_port");
 
     /// In clickhouse-local, an address of a configured cluster is always a genuinely remote server:

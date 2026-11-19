@@ -102,8 +102,8 @@ public:
     DistributedQueryCancellation();
 
     /// Least first. A consequence is caused by another failure: a cancellation, or an exchange peer
-    /// that went away. An unclassified failure has no code of its own: a task the worker does not
-    /// know, or an HTTP error from a worker endpoint. A root cause is any other error.
+    /// that went away. An unclassified failure has no code of its own, as a task the worker does not
+    /// know. A root cause is any other error.
     enum class FailureRank
     {
         Consequence,

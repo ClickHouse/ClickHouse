@@ -22,8 +22,8 @@ namespace DB
 {
 
 /// Provider for a statically-configured worker cluster: either `<cluster>` (a single-shard
-/// `remote_servers` cluster whose replicas are the workers, with their `stateless_worker_port` and
-/// `streaming_exchange_port`) or `<host>` (one host with default ports). The workers are resolved once,
+/// `remote_servers` cluster whose replicas are the workers, with their `streaming_exchange_port`)
+/// or `<host>` (one host with the default port). The workers are resolved once,
 /// when the provider is built; a config change rebuilds the provider rather than updating it.
 /// A query does not use the replicas of `<cluster>` that are known to be inactive.
 class StaticStatelessWorkersProvider final : public IStatelessWorkersProvider

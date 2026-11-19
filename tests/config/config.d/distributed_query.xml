@@ -1,9 +1,8 @@
 <clickhouse>
 
-    <!-- Enable Stateless Worker endpoint -->
+    <!-- Serve stateless worker tasks; their control connections come to the streaming exchange port. -->
     <stateless_worker_server>
         <enabled>1</enabled>
-        <endpoint>localhost</endpoint>
     </stateless_worker_server>
 
     <stateless_worker_client>

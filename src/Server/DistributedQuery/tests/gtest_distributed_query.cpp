@@ -825,16 +825,17 @@ RuntimeFilterReceiveDescriptor makeDescriptor(const String & key, const DataType
     return descriptor;
 }
 
-String serializeTaskWithDescriptors(VectorWithMemoryTracking<RuntimeFilterReceiveDescriptor> descriptors)
+/// A batch of one task that receives the runtime filters of `descriptors`.
+String serializeBatchWithDescriptors(VectorWithMemoryTracking<RuntimeFilterReceiveDescriptor> descriptors)
 {
-    DistributedQueryTaskDescription description;
-    description.serialization_version = DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS;
-    description.initial_query_id = "q1";
-    description.task.task_id = "t0";
-    description.serialized_query_plan = std::make_shared<const String>();
-    description.task.runtime_filter_descriptors = std::move(descriptors);
+    DistributedQueryTaskBatch::Task batch_task;
+    batch_task.task.task_id = "t0";
+    batch_task.task.runtime_filter_descriptors = std::move(descriptors);
+    DistributedQueryTaskBatch batch;
+    batch.initial_query_id = "q1";
+    batch.stages.push_back({"stage_0", std::make_shared<const String>(), {batch_task}});
     WriteBufferFromOwnString out;
-    serializeTask(description, out);
+    serializeTaskBatch(batch, out);
     return out.str();
 }
 
@@ -847,18 +848,21 @@ TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsRoundTrip)
     auto second = makeDescriptor("key_b", std::make_shared<DataTypeString>(), ExchangeStreamId("ex2", "0", "1"));
     second.geometry.pass_ratio_threshold_for_disabling = 0.25;
     second.geometry.max_ratio_of_set_bits_in_bloom_filter = 0.15;
-    const String bytes = serializeTaskWithDescriptors({first, second});
+    const String bytes = serializeBatchWithDescriptors({first, second});
 
     ReadBufferFromString in(bytes);
-    DistributedQueryTaskDescription restored;
-    deserializeTask(restored, in);
+    DistributedQueryTaskBatch restored;
+    deserializeTaskBatch(restored, in);
 
-    ASSERT_EQ(restored.task.runtime_filter_descriptors.size(), 2u);
-    EXPECT_EQ(restored.task.runtime_filter_descriptors[1].filter_key, "key_b");
-    EXPECT_EQ(serializeTaskWithDescriptors(restored.task.runtime_filter_descriptors), bytes);
+    ASSERT_EQ(restored.stages.size(), 1u);
+    ASSERT_EQ(restored.stages[0].tasks.size(), 1u);
+    const auto & descriptors = restored.stages[0].tasks[0].task.runtime_filter_descriptors;
+    ASSERT_EQ(descriptors.size(), 2u);
+    EXPECT_EQ(descriptors[1].filter_key, "key_b");
+    EXPECT_EQ(serializeBatchWithDescriptors(descriptors), bytes);
 }
 
-/// `deserializeTask` rejects descriptors that a correct initiator never sends.
+/// `deserializeTaskBatch` rejects descriptors that a correct initiator never sends.
 TEST(DistributedTaskSerialization, InvalidRuntimeFilterDescriptorsAreRejected)
 {
     auto valid = makeDescriptor("key_a", std::make_shared<DataTypeUInt64>(), ExchangeStreamId("ex", "0", "0"));
@@ -871,12 +875,12 @@ TEST(DistributedTaskSerialization, InvalidRuntimeFilterDescriptorsAreRejected)
     };
     for (const auto & [what, descriptors] : cases)
     {
-        const String bytes = serializeTaskWithDescriptors(descriptors);
+        const String bytes = serializeBatchWithDescriptors(descriptors);
         ReadBufferFromString in(bytes);
-        DistributedQueryTaskDescription restored;
+        DistributedQueryTaskBatch restored;
         try
         {
-            deserializeTask(restored, in);
+            deserializeTaskBatch(restored, in);
             ADD_FAILURE() << what << " was accepted";
         }
         catch (const Exception & e)
@@ -884,47 +888,6 @@ TEST(DistributedTaskSerialization, InvalidRuntimeFilterDescriptorsAreRejected)
             EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA) << what;
         }
     }
-}
-
-/// Every field of a task survives the round trip; the maps have one entry each, since their order is not fixed.
-TEST(DistributedTaskSerialization, EveryFieldRoundTrip)
-{
-    DistributedQueryTaskDescription description;
-    description.initial_query_id = "q1";
-    description.serialized_query_plan = std::make_shared<const String>("plan bytes");
-    description.task.task_id = "stage_1_0";
-    description.task.parameters.parameters["bucket"] = Field(UInt64(3));
-    description.task.input_exchange_streams = {ExchangeStreamId("exchange_0", "1", "0"), ExchangeStreamId("exchange_0", "2", "0")};
-    description.task.output_exchange_streams = {ExchangeStreamId("exchange_1", "0", "4")};
-    description.task.runtime_filter_descriptors
-        = {makeDescriptor("key_a", std::make_shared<DataTypeUInt64>(), ExchangeStreamId("exchange_2", "0", "0"))};
-    ExchangeDescription exchange;
-    exchange.name = "exchange_0";
-    exchange.kind = ExchangeDescription::Kind::Streaming;
-    exchange.source_bucket_count = 2;
-    exchange.destination_bucket_count = 1;
-    description.exchanges[exchange.name] = exchange;
-    description.exchange_stream_sources.stream_hosts["exchange_0_1_0"] = StreamSourceAddress{.host = "host-a", .port = 9001};
-    description.settings_changes.emplace_back("max_threads", Field(UInt64(4)));
-    description.settings_changes.emplace_back("max_block_size", Field(UInt64(1000)));
-
-    WriteBufferFromOwnString out;
-    serializeTask(description, out);
-    const String bytes = out.str();
-
-    ReadBufferFromString in(bytes);
-    DistributedQueryTaskDescription restored;
-    deserializeTask(restored, in);
-    EXPECT_TRUE(in.eof());
-    EXPECT_EQ(restored.task.task_id, "stage_1_0");
-    EXPECT_EQ(*restored.serialized_query_plan, "plan bytes");
-    EXPECT_EQ(restored.exchanges.at("exchange_0").name, "exchange_0");
-    EXPECT_EQ(restored.exchange_stream_sources.stream_hosts.at("exchange_0_1_0").port, 9001);
-    ASSERT_EQ(restored.settings_changes.size(), 2u);
-
-    WriteBufferFromOwnString again;
-    serializeTask(restored, again);
-    EXPECT_EQ(again.str(), bytes);
 }
 
 namespace

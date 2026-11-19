@@ -9,15 +9,11 @@
 #include <base/types.h>
 #include <base/defines.h>
 
-#include <atomic>
-#include <condition_variable>
-#include <deque>
 #include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace DB
@@ -51,9 +47,9 @@ public:
         /// Error code of a failed or failing task, 0 otherwise.
         int error_code = 0;
         /// Log lines drained on this poll together with the loss counters; set only when the task
-        /// collects logs (see `startTask`).
+        /// collects logs (see `startTasks`).
         std::optional<TaskLogsPayload> logs;
-        /// What the coordinator asked to collect at `start`; empty for an unknown task id.
+        /// What the coordinator asked to collect at the start; empty for an unknown task id.
         TaskCollectors collectors;
     };
 
@@ -91,22 +87,14 @@ public:
     /// Ends an admission; the query keeps its slot while its tasks are registered here.
     void releaseQuery(const String & unique_query_id);
 
-    /// Ignores a task cancelled before its start arrived.
-    Result startTask(const String & unique_task_id, DistributedQueryTaskDescription task, const String & unique_temp_file_path, const TaskCollectors & collectors);
-    /// Starts the tasks of a `start_tasks` batch of the query `unique_query_id`, skipping those cancelled before their start or
-    /// already started. A task that cannot be scheduled fails the call; the tasks scheduled before it keep running.
-    /// Returns false, having started nothing, when `admitQuery` refuses the query. The tasks wake `changes`, or the
-    /// notifier `getStatuses` waits on when it is null.
+    /// Starts the tasks of a `StartTasks` batch of the query `unique_query_id`, skipping those already started. A task that
+    /// cannot be scheduled fails the call; the tasks scheduled before it keep running. Returns false, having started nothing,
+    /// when `admitQuery` refuses the query. The tasks wake `changes`.
     bool startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors,
-        const StatusChangeNotifierPtr & changes = nullptr);
-    TaskStatus getStatus(const String & task_id, UInt64 wait_milliseconds);
-    /// Waits up to `wait_milliseconds` until `beginStatusWait(task_ids).changed()`, then returns the statuses.
-    std::vector<TaskStatus> getStatuses(const Strings & task_ids, UInt64 wait_milliseconds);
+        const StatusChangeNotifierPtr & changes);
     StatusWait beginStatusWait(const Strings & task_ids);
-    /// Remembers an unknown id: the coordinator sends the starts of a stage concurrently, so a cancel can overtake a start.
-    Result cancelTask(const String & task_id);
+    /// Ignores unknown ids.
     void cancelTasks(const Strings & task_ids);
-    Result forgetTask(const String & task_id);
     void forgetTasks(const Strings & task_ids);
 
     void shutdown();
@@ -165,11 +153,11 @@ private:
         std::shared_ptr<Progress> progress = std::make_shared<Progress>();
         /// What the coordinator asked to collect for this task; decides which payloads a status reply carries.
         TaskCollectors collectors;
-        /// Filled by the task's setup only when logs are collected; drained by `getStatus`.
+        /// Filled by the task's setup only when logs are collected; drained by `StatusWait::collect`.
         std::shared_ptr<LogsQueueSlot> logs_queue = std::make_shared<LogsQueueSlot>();
         /// Lines handed to status replies so far.
         std::shared_ptr<ForwardedLogsCounter> forwarded_logs = std::make_shared<ForwardedLogsCounter>();
-        /// The query of a task started by `startTasks`, which keys its `WorkerQueryController`; empty for `startTask`.
+        /// Keys the query's `WorkerQueryController`.
         String unique_query_id;
         StatusChangeNotifierPtr changes;
     };
@@ -179,22 +167,13 @@ private:
     /// The status of a task now; `completion_future` is the caller's copy, since one future object is not shared by threads.
     static TaskStatus currentStatus(const TaskState & task_state, const std::shared_future<std::optional<TaskFailure>> & completion_future);
 
-    /// The notifier `getStatuses` waits on.
-    struct StatusChanges final : StatusChangeNotifier
-    {
-        std::mutex mutex;
-        std::condition_variable changed;
-
-        void notify() override;
-    };
-
     /// The query context and the rest of what a task needs besides its description.
     struct TaskSetup;
 
     static TaskSetup setupTask(const String & unique_task_id, const DistributedQueryTaskDescription & task_description,
         const String & unique_temp_file_path, const TaskCollectors & collectors, const OpenTelemetry::TracingContext & trace_context);
 
-    /// Adds a task to `tasks`; false, and nothing added, for a task cancelled before its start or already started.
+    /// Adds a task to `tasks`; false, and nothing added, for a task already started.
     bool tryRegisterTaskLocked(const String & unique_task_id, const TaskStatePtr & task_state) TSA_REQUIRES(tasks_mutex);
     /// Removes a task from `tasks`; false for an unknown one.
     bool eraseTaskLocked(const String & unique_task_id) TSA_REQUIRES(tasks_mutex);
@@ -210,12 +189,7 @@ private:
     ThreadPool thread_pool;
 
     std::unordered_map<String, TaskStatePtr> tasks TSA_GUARDED_BY(tasks_mutex);
-    /// Ids cancelled before their start arrived. Bounded: past the cap the oldest is dropped.
-    static constexpr size_t MAX_CANCELLED_BEFORE_START = 1000;
-    std::unordered_set<String> cancelled_before_start TSA_GUARDED_BY(tasks_mutex);
-    std::deque<String> cancelled_before_start_order TSA_GUARDED_BY(tasks_mutex);
     std::unordered_map<String, WorkerQueryControllerPtr> query_controllers TSA_GUARDED_BY(tasks_mutex);
-    std::shared_ptr<StatusChanges> status_changes = std::make_shared<StatusChanges>();
     std::mutex tasks_mutex;
 };
 
