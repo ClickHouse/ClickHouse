@@ -10,11 +10,43 @@
 99999	15
 99998	12
 99997	7
+0	11
+1	9
+2	10
+3	18
+4	11
+5	7
+6	6
+7	13
+8	12
+9	8
+0	11
+1	9
+2	10
+3	18
+4	11
+5	7
+6	6
+7	13
+8	12
+9	8
+0	11
+1	9
+2	10
+3	18
+4	11
+5	7
+6	6
+7	13
+8	12
+9	8
 q05480_remote_asc	1
 q05480_remote_desc	1
 q05480_match_asc	0	1
 q05480_match_asc_dynamic_filtering	0	1
 q05480_match_desc	0	1
 q05480_match_no_order_by	0	1
+q05480_priced_no_order_by	1	1
+q05480_priced_order_by	1	1
 q05480_priced_no_order_by	1
 q05480_priced_order_by	1

@@ -48,12 +48,16 @@ FORMAT Null SETTINGS automatic_parallel_replicas_mode = 2, enable_group_by_top_k
 SELECT k, count() FROM t_05480 GROUP BY k LIMIT 10
 FORMAT Null SETTINGS automatic_parallel_replicas_mode = 2, log_comment = 'q05480_match_no_order_by';
 
--- Mode 1 prices the queries with the statistics that mode 2 collected above.
+-- Mode 1 prices the queries with the statistics that mode 2 collected above, and switches to parallel replicas: the
+-- read is too small to occupy the threads, which would decide it before the cost model. The groups are the same as
+-- without parallel replicas.
+SELECT k, count() FROM t_05480 GROUP BY k ORDER BY k LIMIT 10 SETTINGS enable_parallel_replicas = 0;
 SELECT k, count() FROM t_05480 GROUP BY k ORDER BY k LIMIT 10
-FORMAT Null SETTINGS automatic_parallel_replicas_mode = 1, enable_group_by_top_k_dynamic_filtering = 1,
-    log_comment = 'q05480_priced_order_by';
+SETTINGS automatic_parallel_replicas_mode = 1, automatic_parallel_replicas_ignore_thresholds = 1,
+    enable_group_by_top_k_dynamic_filtering = 1, log_comment = 'q05480_priced_order_by';
 SELECT k, count() FROM t_05480 GROUP BY k LIMIT 10
-FORMAT Null SETTINGS automatic_parallel_replicas_mode = 1, log_comment = 'q05480_priced_no_order_by';
+SETTINGS automatic_parallel_replicas_mode = 1, automatic_parallel_replicas_ignore_thresholds = 1,
+    log_comment = 'q05480_priced_no_order_by';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
@@ -82,6 +86,21 @@ WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTE
     AND (current_database = currentDatabase()) AND startsWith(log_comment, 'q05480_match_')
     AND (type = 'QueryFinish') AND is_initial_query
 ORDER BY log_comment;
+
+-- Switched to parallel replicas, whose aggregations skip rows in the heap: the local one counts in the initial query.
+SELECT q.log_comment, any(q.applied), sum(r.ProfileEvents['AggregationTopKRowsSkipped']) > 0
+FROM system.query_log AS r
+INNER JOIN
+(
+    SELECT query_id, log_comment, ProfileEvents['AutoParallelReplicasApplied'] AS applied
+    FROM system.query_log
+    WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES')
+        AND (current_database = currentDatabase()) AND startsWith(log_comment, 'q05480_priced_')
+        AND (type = 'QueryFinish') AND is_initial_query
+) AS q ON r.initial_query_id = q.query_id
+WHERE (r.event_date >= yesterday()) AND (r.event_time >= NOW() - INTERVAL '15 MINUTES') AND (r.type = 'QueryFinish')
+GROUP BY q.log_comment
+ORDER BY q.log_comment;
 
 -- The divisor of the output bytes in `The applied formula: in / threads ? (in / threads + out / divisor)`.
 SELECT q.log_comment, extract(t.message, '\\+ \\d+ / (\\d+)\\)') AS output_divisor
