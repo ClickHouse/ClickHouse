@@ -235,6 +235,8 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
         false);
 
     non_final_reading->disableQueryConditionCache();
+    /// The parts keep their numbering, so the lazy read of the columns the read leaves out reads these rows as well.
+    non_final_reading->shareLazyReadOf(*reading_step);
 
     /// `optimizeReadInOrder` runs before this optimization and may have already opted the original
     /// read out of `PrefetchingConcatProcessor` (aggregation-, distinct- or `LIMIT BY`-in-order, or a
