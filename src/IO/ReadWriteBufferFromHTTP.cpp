@@ -525,9 +525,19 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             if (on_retry)
                 on_retry();
 
-            /// `on_retry` can block: dropping a chunked response reads the next chunk header.
+            /// `on_retry` can block: dropping a chunked response reads the next chunk header. As on the last attempt, an
+            /// interrupted read is reported as such.
             if (deadline && std::chrono::steady_clock::now() + std::chrono::milliseconds(milliseconds_to_wait) >= *deadline)
+            {
+                const bool cleanup_soft_time_limit_reached = isQueryTimeLimitReached() && cancellation;
+                if (cleanup_soft_time_limit_reached && cancellation)
+                    cancellation->cancel(true);
+
+                if (cleanup_soft_time_limit_reached || isReadCancelled())
+                    throw ReadInterruptedException(exception);
+
                 throwDeadlineExceeded(initial_uri, error_message);
+            }
 
             if (!mute_logging)
                 LOG_TRACE(log,

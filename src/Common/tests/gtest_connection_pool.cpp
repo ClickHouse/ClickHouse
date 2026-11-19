@@ -1213,23 +1213,44 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPNoBackoffAfterSlowRetryCleanup
     settings.http_settings.retry_initial_backoff_ms = 1000;
     settings.http_settings.retry_max_backoff_ms = 2000;
     Poco::Net::HTTPBasicCredentials empty_creds;
-    const auto start = std::chrono::steady_clock::now();
-    try
+    auto request = [&](std::chrono::steady_clock::time_point start, const DB::ReadWriteBufferFromHTTP::CancellationPtr & cancellation)
     {
         DB::BuilderRWBufferFromHTTP(Poco::URI("http://" + server.address().toString() + "/"))
             .withBypassProxy(true)
             .withSettings(settings)
             .withTimeouts(timeouts.withReceiveTimeout(Poco::Timespan(500'000)))
             .withDeadline(start + std::chrono::milliseconds(1600))
+            .withCancellation(cancellation)
             .withDelayInit(false)
             .create(empty_creds);
-        FAIL() << "the request succeeded";
-    }
-    catch (const DB::Exception & e)
+    };
+
     {
-        ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, e.code());
+        const auto start = std::chrono::steady_clock::now();
+        try
+        {
+            request(start, nullptr);
+            FAIL() << "the request succeeded";
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, e.code());
+        }
+        ASSERT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(1600));
     }
-    ASSERT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(1600));
+
+    {
+        /// A read cancelled while the response is being dropped is reported as interrupted, not as a timeout.
+        auto cancellation = std::make_shared<DB::ReadWriteBufferFromHTTP::Cancellation>();
+        const auto start = std::chrono::steady_clock::now();
+        std::thread canceller([&]
+        {
+            std::this_thread::sleep_until(start + std::chrono::milliseconds(750));
+            cancellation->cancel(/*softly=*/ false);
+        });
+        SCOPE_EXIT({ canceller.join(); });
+        ASSERT_THROW(request(start, cancellation), DB::ReadInterruptedException);
+    }
 }
 
 TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPPastDeadlineOpensNoConnection)
