@@ -757,6 +757,13 @@ public:
             /// A set containing only `NULL` has no key whose type-sensitive hash
             /// could miss a match. Leave it to the ordinary unknown-result handling.
             const bool only_null_key = set_types[0]->onlyNull() || (set->hasNull() && set->getTotalRowCount() == 1);
+            const bool left_identifier = isUUID(left_type) || isIPv4(left_type) || isIPv6(left_type);
+            const bool key_identifier = isUUID(key_type) || isIPv4(key_type) || isIPv6(key_type);
+            const bool mixed_string_domain =
+                (isStringOrFixedString(left_type)
+                    && (isNumber(key_type) || isBool(key_type) || isEnum(key_type) || key_identifier))
+                || (isStringOrFixedString(key_type)
+                    && (isNumber(left_type) || isBool(left_type) || isEnum(left_type) || left_identifier));
             if (!isDynamic(left_type) && !isVariant(left_type)
                 && (isDynamic(key_type) || isVariant(key_type)) && !only_null_key)
                 throw Exception(
@@ -764,6 +771,11 @@ public:
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
                     left_arg.type->getName(), set_types[0]->getName(), getName());
             if (mixed_temporal_types && !only_null_key)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
+                    left_arg.type->getName(), set_types[0]->getName(), getName());
+            if (mixed_string_domain && !only_null_key)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
