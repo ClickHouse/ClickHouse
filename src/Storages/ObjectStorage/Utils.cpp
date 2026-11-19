@@ -165,7 +165,6 @@ std::optional<String> tryGetHivePartitioningSamplePathOfFileNameGlobs(const Stor
         || path.path.find("**", first_glob_pos) != std::string::npos)
         return std::nullopt;
 
-    /// The same refusal as `GlobIterator`, so a path the reader refuses still fails while the sample path is resolved.
     re2::RE2 matcher(makeRegexpPatternFromGlobs(path.path));
     if (!matcher.ok())
         throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", path.path, matcher.error());
