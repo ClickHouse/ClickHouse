@@ -10,6 +10,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./streaming.lib
 . "$CUR_DIR"/streaming.lib
 
+# A Keeper fault injected after a block number is allocated makes the insert retry with a new block number,
+# which would make the block numbers, and so the cursors below, nondeterministic.
+STREAMING_CLIENT="$STREAMING_CLIENT --insert_keeper_fault_injection_probability=0"
+
 $STREAMING_CLIENT -q "
     CREATE TABLE r1 (p UInt8, a UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/r', 'r1') ORDER BY a PARTITION BY p SETTINGS $STREAMING_TABLE_SETTINGS;
     CREATE TABLE r2 (p UInt8, a UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/r', 'r2') ORDER BY a PARTITION BY p SETTINGS $STREAMING_TABLE_SETTINGS;
