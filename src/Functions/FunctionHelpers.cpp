@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/castColumn.h>
 
 #include <limits>
 
@@ -564,6 +565,15 @@ void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t
                 input_rows_count,
                 current_size);
     }
+}
+
+ColumnWithTypeAndName castNullableEnumToResultType(const ColumnWithTypeAndName & argument, const DataTypePtr & result_type)
+{
+    const auto target_type = makeNullableSafe(removeLowCardinality(result_type));
+    if (!argument.type->isNullable() || !isEnum(removeNullable(argument.type)) || !target_type->isNullable())
+        return argument;
+
+    return {castColumn(argument, target_type), target_type, argument.name};
 }
 
 void checkIntegerArgumentFitsInt64(const IColumn & column, std::string_view function_name, std::string_view argument_name)
