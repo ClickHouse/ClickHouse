@@ -1239,6 +1239,42 @@ static void splitAndModifyMutationCommands(
                 }
             );
         }
+
+        /// A secondary replica can have only historical nonphysical columns after replaying an `ALTER`.
+        /// Materialize a remaining physical column before the rewrite discards its last row-count source.
+        auto is_removed = [&](const String & name)
+        {
+            return dropped_columns.contains(name) || std::ranges::any_of(for_interpreter, [&](const auto & command)
+            {
+                return command.type == MutationCommand::DROP_COLUMN && command.column_name == name;
+            });
+        };
+        bool has_stored_column = std::ranges::any_of(part_columns, [&](const auto & column)
+        {
+            return !is_removed(column.name)
+                && (table_columns.hasPhysical(column.name) || metadata_snapshot->virtuals.has(column.name));
+        });
+        if (!has_stored_column)
+        {
+            for (const auto & column : table_columns.getAllPhysical())
+            {
+                if (is_removed(column.name))
+                    continue;
+
+                bool already_read = std::ranges::any_of(for_interpreter, [&](const auto & command)
+                {
+                    return command.type == MutationCommand::READ_COLUMN && command.column_name == column.name;
+                });
+                if (!already_read)
+                    for_interpreter.push_back(
+                    {
+                        .type = MutationCommand::READ_COLUMN,
+                        .column_name = column.name,
+                        .data_type = column.type,
+                    });
+                break;
+            }
+        }
     }
     else
     {
