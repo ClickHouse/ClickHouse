@@ -70,8 +70,7 @@ void readFinalFromNestedStorage(
 
     if (!query_plan.isInitialized())
     {
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(
-            query_plan, nested_snapshot->getSampleBlockForColumns(require_columns_name), query_info);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, nested_header, query_info);
         return;
     }
 

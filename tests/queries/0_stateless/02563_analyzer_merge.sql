@@ -1,5 +1,7 @@
 -- Tags: no-parallel, no-flaky-check
 
+SET enable_analyzer = 1;
+
 DROP DATABASE IF EXISTS 02563_db;
 CREATE DATABASE 02563_db;
 

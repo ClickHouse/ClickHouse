@@ -908,7 +908,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
     {
         const AccessFlags table_ddl = AccessType::CREATE_DATABASE | AccessType::CREATE_TABLE | AccessType::CREATE_VIEW
             | AccessType::ALTER_TABLE | AccessType::ALTER_VIEW | AccessType::DROP_DATABASE | AccessType::DROP_TABLE | AccessType::DROP_VIEW
-            | AccessType::TRUNCATE | AccessType::UNDROP_TABLE;
+            | AccessType::TRUNCATE;
 
         const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
         const AccessFlags function_ddl = AccessType::CREATE_FUNCTION | AccessType::DROP_FUNCTION;
@@ -922,7 +922,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
         const AccessFlags write_dcl_access = AccessType::ACCESS_MANAGEMENT - AccessType::SHOW_ACCESS;
 
         const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_and_function_ddl | workload_ddl | resource_ddl | named_collection_ddl | handler_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
-        const AccessFlags not_readonly_1_flags = AccessType::CREATE_TEMPORARY_TABLE | AccessType::CREATE_TEMPORARY_VIEW;
+        const AccessFlags not_readonly_1_flags = AccessType::CREATE_TEMPORARY_TABLE;
 
         const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl | workload_ddl | resource_ddl | named_collection_ddl | handler_ddl;
         const AccessFlags introspection_flags = AccessType::INTROSPECTION;
