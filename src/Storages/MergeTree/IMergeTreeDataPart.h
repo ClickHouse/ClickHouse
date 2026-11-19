@@ -75,7 +75,7 @@ public:
 
     const SharedPartColumns & operator*() const { return *bundle; }
     const SharedPartColumns * operator->() const { return bundle.get(); }
-    const SharedPartColumns * get() const { return bundle.get(); }
+    [[nodiscard]] const SharedPartColumns * get() const { return bundle.get(); }
 
 private:
     friend class MergeTreeData;
@@ -533,9 +533,14 @@ public:
 
     void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
 
+    /// The path that identifies the part in the caches shared between tables.
+    String getPathForCacheKey() const;
+
     void setIndex(Columns index_columns);
     void unloadIndex();
     bool isIndexLoaded() const;
+    /// Whether `getIndex` returns the index without reading it from disk: it is loaded, or in the primary index cache.
+    bool isIndexInMemory() const;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
@@ -1003,8 +1008,6 @@ private:
 
     /// `getEstimates`, or `tryGetEstimatesFromMemory` if `only_from_memory`.
     EstimatesPtr getEstimatesImpl(bool only_from_memory) const;
-    /// The path that identifies the part in the caches shared between tables.
-    String getPathForCacheKey() const;
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
 
