@@ -153,6 +153,11 @@ __host__ __device__ constexpr bool isInteger(GPUElementType type)
     return type != GPUElementType::Float32 && type != GPUElementType::Float64 && type != GPUElementType::String;
 }
 
+__host__ __device__ constexpr bool isUnsigned(GPUElementType type)
+{
+    return type == GPUElementType::UInt8 || type == GPUElementType::UInt16 || type == GPUElementType::UInt32 || type == GPUElementType::UInt64;
+}
+
 __host__ __device__ constexpr size_t sizeOf(GPUElementType type)
 {
     switch (type)

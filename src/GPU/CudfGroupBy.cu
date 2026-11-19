@@ -228,9 +228,13 @@ public:
                 ++uses[first];
                 continue;
             }
+            /// cuDF sums unsigned integers into an `Int64`, ClickHouse into a `UInt64` of the same bits.
+            cudf::column_view sums = partial(first);
+            if (isUnsigned(values[aggregates[i].column]) && sums.type().id() == cudf::type_id::INT64)
+                sums = cudf::bit_cast(sums, cudf::data_type{cudf::type_id::UINT64});
             results[i] = guarded("dividing the sums of an `avg` by its counts", [&]
             {
-                return cudf::binary_operation(partial(first), partial(*second), cudf::binary_operator::TRUE_DIV, cudf::data_type{cudf::type_id::FLOAT64}, stream);
+                return cudf::binary_operation(sums, partial(*second), cudf::binary_operator::TRUE_DIV, cudf::data_type{cudf::type_id::FLOAT64}, stream);
             });
         }
         for (size_t i = 0; i < aggregates.size(); ++i)
@@ -577,7 +581,17 @@ public:
 
         /// The originals are freed in the order of `other`'s stream.
         waitFor(stream, other->stream);
-        auto copies = other->parts.copiesOf(part, stream);
+        std::vector<std::unique_ptr<cudf::table>> copies;
+        try
+        {
+            copies = other->parts.copiesOf(part, stream);
+        }
+        catch (...)
+        {
+            /// The copies queued before still read the originals.
+            waitFor(other->stream, stream);
+            throw;
+        }
         waitFor(other->stream, stream);
         for (auto & copy : copies)
             parts.add(std::move(copy));
