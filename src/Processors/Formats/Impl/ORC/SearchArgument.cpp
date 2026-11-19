@@ -412,9 +412,10 @@ TruthValue PredicateLeaf::evaluatePredicateMinMax(const Proto::ColumnStatistics 
         }
         case PredicateDataType::STRING:
         {
-            if (stats.string_statistics && stats.string_statistics->minimum && stats.string_statistics->maximum)
+            /// The bounds of long values contain the actual range, which is enough for the evaluation.
+            if (stats.string_statistics && stats.string_statistics->getLowerBound() && stats.string_statistics->getUpperBound())
                 result = evaluateRange(op, literalsTo<std::string>(literals, [](const Literal & l) { return l.getString(); }),
-                    *stats.string_statistics->minimum, *stats.string_statistics->maximum, has_null);
+                    *stats.string_statistics->getLowerBound(), *stats.string_statistics->getUpperBound(), has_null);
             break;
         }
         case PredicateDataType::DATE:
@@ -499,7 +500,13 @@ TruthValue checkInBloomFilter(PredicateDataType type, const Literal & literal, c
         switch (type)
         {
             case PredicateDataType::LONG: found = bf.testLong(literal.getLong()); break;
-            case PredicateDataType::FLOAT: found = bf.testDouble(literal.getFloat()); break;
+            case PredicateDataType::FLOAT:
+            {
+                /// The writers hash the bits, so the equal `0.0` and `-0.0` have different hashes.
+                const double value = literal.getFloat();
+                found = bf.testDouble(value) || (value == 0 && bf.testDouble(-value));
+                break;
+            }
             case PredicateDataType::STRING: found = bf.testBytes(literal.getString().data(), literal.getString().size()); break;
             case PredicateDataType::DECIMAL:
             {
@@ -552,7 +559,8 @@ TruthValue PredicateLeaf::evaluatePredicateBloomFilter(const BloomFilter & bloom
     }
 }
 
-TruthValue PredicateLeaf::evaluate(UInt32 writer_version, const Proto::ColumnStatistics & stats, const BloomFilter * bloom_filter) const
+TruthValue PredicateLeaf::evaluate(
+    UInt32 writer_version, const Proto::ColumnStatistics & stats, const BloomFilter * bloom_filter, bool timestamps_shifted) const
 {
     /// The files written before ORC-135 store the timestamps in the local time zone of the writer.
     if (type == PredicateDataType::TIMESTAMP && writer_version < WRITER_VERSION_ORC_135)
@@ -568,6 +576,8 @@ TruthValue PredicateLeaf::evaluate(UInt32 writer_version, const Proto::ColumnSta
         return all_null ? TruthValue::YES : (has_null ? TruthValue::YES_NO : TruthValue::NO);
     if (all_null)
         return TruthValue::IS_NULL;
+    if (type == PredicateDataType::TIMESTAMP && timestamps_shifted)
+        return has_null ? TruthValue::YES_NO_NULL : TruthValue::YES_NO;
 
     TruthValue result = evaluatePredicateMinMax(stats);
     if (bloom_filter && result != TruthValue::NO_NULL && result != TruthValue::NO
@@ -594,7 +604,7 @@ public:
     explicit ExpressionTree(size_t leaf_) : op(Operator::LEAF), leaf(leaf_) {}
     ExpressionTree(Operator op_, VectorWithMemoryTracking<ExpressionTreePtr> children_) : op(op_), children(std::move(children_)) {}
 
-    TruthValue evaluate(const VectorWithMemoryTracking<TruthValue> & leaves) const
+    [[nodiscard]] TruthValue evaluate(const VectorWithMemoryTracking<TruthValue> & leaves) const
     {
         switch (op)
         {

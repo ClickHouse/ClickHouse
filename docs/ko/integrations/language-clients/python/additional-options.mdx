@@ -55,7 +55,7 @@ ClickHouse Connect는 lz4, zstd, brotli, gzip, deflate 응답 압축을 지원�
 
 raw 클라이언트 메서드는 클라이언트 수준의 `compress` 설정을 사용하지 않습니다. `raw_query`와 `raw_stream`은 비압축 데이터를 반환하며, `raw_insert`는 payload에 이미 적용된 압축을 설명하는 자체 `compression` 인수를 받습니다.
 
-lz4 및 zstd 지원은 ClickHouse Connect와 함께 설치됩니다. Python 3.14에서는 zstd가 표준 라이브러리 `compression.zstd` 모듈을 사용합니다. Python 3.10부터 3.13까지는 `backports.zstd`를 사용합니다. zstd 지원 없이 빌드된 사용자 지정 CPython 3.14+ 인터프리터도 가져오기는 가능하지만, 이 경우 zstd는 사용 가능한 메서드에서 제외되며 zstd를 명시적으로 요청할 때만 오류가 발생합니다. Brotli는 선택 사항이므로 `compress="br"`를 사용하기 전에 별도로 설치해야 합니다.
+lz4 및 zstd 지원은 ClickHouse Connect와 함께 설치됩니다. Python 3.14 이상에서는 zstd가 표준 라이브러리 `compression.zstd` 모듈을 사용합니다. Python 3.10부터 3.13까지는 `backports.zstd`를 사용합니다. zstd 지원 없이 빌드된 사용자 지정 CPython 3.14+ 인터프리터도 가져오기는 가능하지만, 이 경우 zstd는 사용 가능한 메서드에서 제외되며 zstd를 명시적으로 요청할 때만 오류가 발생합니다. Brotli는 선택 사항이므로 `compress="br"`를 사용하기 전에 별도로 설치해야 합니다.
 
 ClickHouse 워크로드에서는 일반적으로 gzip이 lz4 또는 zstd보다 느립니다.
 

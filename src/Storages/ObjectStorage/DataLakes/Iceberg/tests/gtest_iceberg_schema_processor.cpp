@@ -4,6 +4,8 @@
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
@@ -562,6 +564,34 @@ TEST(IcebergSchemaProcessor, GetSimpleTypeDecimalEmptyScaleThrows)
 TEST(IcebergSchemaProcessor, GetSimpleTypeDecimalSignOnlyScaleThrows)
 {
     EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("decimal(20,+)"), DB::Exception);
+}
+
+/// A copy of a schema in a manifest header carries no `initial-default`: the identical metadata.json copy replaces it,
+/// so a field added with a default reads as that default even if the manifest header copy was registered first.
+TEST(IcebergSchemaProcessor, MetadataSchemaWithInitialDefaultReplacesIdenticalManifestHeader)
+{
+    auto old_schema = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"i","required":false,"type":"int"}]})json");
+    auto from_manifest = parseSchema(R"json({"schema-id":1,"fields":[{"id":1,"name":"i","required":false,"type":"int"},
+        {"id":2,"name":"j","required":false,"type":"int"}]})json");
+    auto from_metadata = parseSchema(R"json({"schema-id":1,"fields":[{"id":1,"name":"i","required":false,"type":"int"},
+        {"id":2,"name":"j","required":false,"type":"int","initial-default":-1}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(old_schema);
+    processor.addIcebergTableSchema(
+        from_manifest, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true);
+    auto stale_dag = processor.getSchemaTransformationDagByIds(0, 1);
+    processor.addIcebergTableSchema(from_metadata);
+
+    auto dag = processor.getSchemaTransformationDagByIds(0, 1);
+    ASSERT_NE(dag, nullptr);
+    EXPECT_NE(dag.get(), stale_dag.get());
+
+    auto type = std::make_shared<DB::DataTypeNullable>(std::make_shared<DB::DataTypeInt32>());
+    auto column = type->createColumn();
+    column->insert(DB::Field(1));
+    DB::Block block{{std::move(column), type, "i"}};
+    DB::ExpressionActions(dag->clone()).execute(block);
+    EXPECT_EQ((*block.getByName("j").column)[0].dump(), DB::Field(-1).dump());
 }
 
 TEST(IcebergSchemaProcessor, GetSimpleTypeRejectsInvalidGeoParameters)
