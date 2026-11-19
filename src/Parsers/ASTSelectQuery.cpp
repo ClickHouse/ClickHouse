@@ -2,6 +2,7 @@
 #include <Common/SipHash.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTInterpolateElement.h>
@@ -11,7 +12,13 @@
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 #include <Parsers/QueryParameterVisitor.h>
+#include <Common/StringUtils.h>
+
+#include <boost/algorithm/string/predicate.hpp>
+
+#include <span>
 
 #include <base/EnumReflection.h>
 
@@ -23,6 +30,83 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+
+namespace
+{
+
+/// Formats an expression of a `LIMIT` clause. An expression whose text starts with one of `words` is enclosed in
+/// parentheses, with an alias outside them, as a parenthesized expression is printed. The expression is formatted
+/// only once: formatting it again would be exponential in the nesting of such expressions.
+void formatLimitExpression(const IAST & expression, std::span<const std::string_view> words, WriteBuffer & ostr, const IAST::FormatSettings & s, IAST::FormatState & state, IAST::FormatStateStacked frame)
+{
+    WriteBufferFromOwnString buf;
+    expression.format(buf, s, state, frame);
+    std::string_view text = buf.stringView();
+
+    size_t word_end = 0;
+    while (word_end < text.size() && isWordCharASCII(text[word_end]))
+        ++word_end;
+    std::string_view first_word = text.substr(0, word_end);
+
+    bool need_parens = false;
+    for (auto word : words)
+    {
+        if (boost::iequals(first_word, word))
+        {
+            need_parens = true;
+            break;
+        }
+    }
+
+    if (!need_parens)
+    {
+        ostr << text;
+        return;
+    }
+
+    /// `(expr) AS alias`, not `(expr AS alias)`: that is how the parenthesized expression is printed after parsing it back.
+    std::string_view alias_text;
+    if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(&expression); with_alias && !with_alias->alias.empty())
+    {
+        WriteBufferFromOwnString alias_buf;
+        alias_buf << " AS ";
+        s.writeIdentifier(alias_buf, with_alias->alias, /*ambiguous=*/false);
+        if (text.ends_with(alias_buf.stringView()))
+        {
+            alias_text = text.substr(text.size() - alias_buf.stringView().size());
+            text.remove_suffix(alias_text.size());
+        }
+    }
+
+    ostr << "(" << text << ")" << alias_text;
+}
+
+/// Formats a boundary of a `LIMIT` range (after `AFTER` or `UNTIL`). `parseLimitRange` reads these words
+/// as contextual keywords and falls back to the row count reading when the next word is one that may
+/// follow a count. A boundary whose text starts with such a word (for example the identifier `settings`,
+/// which is printed without quotes) would not parse back.
+void formatLimitRangeBoundary(const IAST & boundary, WriteBuffer & ostr, const IAST::FormatSettings & s, IAST::FormatState & state, IAST::FormatStateStacked frame)
+{
+    /// The first words of the keywords in `count_followers` of `parseLimitRange`.
+    static constexpr std::string_view count_follower_words[] = {
+        "AS", "BY", "OFFSET", "WITH", "AFTER", "UNTIL", "FETCH", "SETTINGS", "FORMAT", "INTO",
+        "UNION", "EXCEPT", "INTERSECT", "PARALLEL",
+    };
+    formatLimitExpression(boundary, count_follower_words, ostr, s, state, frame);
+}
+
+/// `parseLimitRange` reads a leading `after` or `until` word as the keyword of a range when an expression follows it.
+void formatLimitFirstExpression(const IAST & expression, WriteBuffer & ostr, const IAST::FormatSettings & s, IAST::FormatState & state, IAST::FormatStateStacked frame)
+{
+    static constexpr std::string_view range_keywords[] = {"AFTER", "UNTIL"};
+    if (expression.as<ASTIdentifier>())
+        expression.format(ostr, s, state, frame);
+    else
+        formatLimitExpression(expression, range_keywords, ostr, s, state, frame);
+}
+
 }
 
 
@@ -264,10 +348,12 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         ostr << s.nl_or_ws << indent_str << "LIMIT ";
         if (limitByOffset())
         {
-            limitByOffset()->format(ostr, s, state, frame);
+            formatLimitFirstExpression(*limitByOffset(), ostr, s, state, frame);
             ostr << ", ";
+            limitByLength()->format(ostr, s, state, frame);
         }
-        limitByLength()->format(ostr, s, state, frame);
+        else
+            formatLimitFirstExpression(*limitByLength(), ostr, s, state, frame);
         ostr << " BY";
         if (limit_by_all)
         {
@@ -286,7 +372,7 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         if (limitOffset())
         {
             ostr << " ";
-            limitOffset()->format(ostr, s, state, frame);
+            formatLimitFirstExpression(*limitOffset(), ostr, s, state, frame);
             ostr << ", ";
         }
         else if (limitLength())
@@ -294,25 +380,30 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
             ostr << " ";
         }
         if (limitLength())
-            limitLength()->format(ostr, s, state, frame);
+        {
+            if (limitOffset())
+                limitLength()->format(ostr, s, state, frame);
+            else
+                formatLimitFirstExpression(*limitLength(), ostr, s, state, frame);
+        }
         if (limit_with_ties)
             ostr << s.nl_or_ws << indent_str << " WITH TIES";
         if (limitAfter())
         {
             ostr << s.nl_or_ws << indent_str << " AFTER ";
-            limitAfter()->format(ostr, s, state, frame);
+            formatLimitRangeBoundary(*limitAfter(), ostr, s, state, frame);
             if (limit_after_all)
                 ostr << " ALL";
             if (limitUntil())
             {
                 ostr << s.nl_or_ws << indent_str << " UNTIL ";
-                limitUntil()->format(ostr, s, state, frame);
+                formatLimitRangeBoundary(*limitUntil(), ostr, s, state, frame);
             }
         }
         else if (limitUntil())
         {
             ostr << s.nl_or_ws << indent_str << " UNTIL ";
-            limitUntil()->format(ostr, s, state, frame);
+            formatLimitRangeBoundary(*limitUntil(), ostr, s, state, frame);
         }
     }
     else if (limitOffset())
