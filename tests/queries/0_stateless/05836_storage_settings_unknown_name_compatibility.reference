@@ -1,4 +1,4 @@
---- disabled in the CREATE query ---
+--- disabled explicitly ---
 t_unknown_compat
 --- disabled by compatibility ---
 0
