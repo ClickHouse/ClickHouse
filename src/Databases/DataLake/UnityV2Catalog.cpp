@@ -79,13 +79,13 @@ static const auto TEMPORARY_CREDENTIALS_ENDPOINT = "temporary-table-credentials"
 
 /// Formats handled by the Delta reader. UniForm (`DELTA_UNIFORM_ICEBERG`) can be read as either
 /// Delta or Iceberg, and we choose to read it as Delta because the Delta log is the source of truth.
-static const std::unordered_set<std::string> DELTA_READER_FORMATS = {"DELTA", "DELTA_UNIFORM_ICEBERG"};
+[[clang::no_destroy]] static const std::unordered_set<std::string> DELTA_READER_FORMATS = {"DELTA", "DELTA_UNIFORM_ICEBERG"};
 /// Formats handled by the Iceberg reader (via the Iceberg REST catalog endpoint).
-static const std::unordered_set<std::string> ICEBERG_READER_FORMATS = {"ICEBERG"};
+[[clang::no_destroy]] static const std::unordered_set<std::string> ICEBERG_READER_FORMATS = {"ICEBERG"};
 
 /// Other table types (views, materialized views, streaming tables, foreign tables, shallow clones)
 /// do not support direct reads of their storage.
-static const std::unordered_set<std::string> READABLE_TABLE_TYPES = {"MANAGED", "EXTERNAL"};
+[[clang::no_destroy]] static const std::unordered_set<std::string> READABLE_TABLE_TYPES = {"MANAGED", "EXTERNAL"};
 
 /// An absent `table_type` does not reject the table; the format checks handle that case.
 static bool hasReadableTableType(const Poco::JSON::Object::Ptr & table_json)
@@ -96,7 +96,7 @@ static bool hasReadableTableType(const Poco::JSON::Object::Ptr & table_json)
 
 /// Databricks reports managed Iceberg tables with `data_source_format` == `DELTA`,
 /// so only `securable_kind` tells them apart from plain Delta tables.
-static const std::unordered_set<std::string> ICEBERG_SECURABLE_KINDS = {
+[[clang::no_destroy]] static const std::unordered_set<std::string> ICEBERG_SECURABLE_KINDS = {
     "TABLE_DELTA_ICEBERG_MANAGED",
     "TABLE_DELTA_ICEBERG_EXTERNAL",
 };

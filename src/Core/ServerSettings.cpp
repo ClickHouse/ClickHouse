@@ -2434,7 +2434,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                     known_keys.insert(path);
             }
         }
-        for (const auto & [alias, _] : ServerSettingsTraits::aliases_to_settings)
+        for (const auto & [alias, _] : ServerSettingsTraits::aliasesToSettings())
             known_keys.insert(String(alias));
     }
 
