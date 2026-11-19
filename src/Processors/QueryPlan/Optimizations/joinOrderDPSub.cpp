@@ -1,17 +1,20 @@
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
 #include <Processors/QueryPlan/Optimizations/joinEnum.h>
 #include <Processors/QueryPlan/Optimizations/dpTable.h>
 #include <Processors/QueryPlan/Optimizations/enumeratorChecker.h>
 #include <Processors/QueryPlan/Optimizations/conflictDetector.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/JoinOperator.h>
+#include <Interpreters/JoinUtils.h>
 #include <Common/Exception.h>
 
 #include <algorithm>
@@ -20,6 +23,7 @@
 #include <map>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <Common/MapWithMemoryTracking.h>
 
@@ -114,6 +118,10 @@ public:
     explicit DPSubJoinOrderOptimizer(QueryGraph & query_graph_)
         : query_graph(query_graph_)
     {
+        if (query_graph.distribution_plan_pair_limit)
+            plan_pair_limit = std::min(plan_pair_limit, query_graph.distribution_plan_pair_limit);
+        if (query_graph.distribution_partition_state_limit)
+            partition_state_limit = std::min(partition_state_limit, query_graph.distribution_partition_state_limit);
     }
 
     DPJoinEntryPtr solve();
@@ -132,6 +140,8 @@ private:
 
     /// Native-mask counterparts used exclusively by the DPsub acceptor.
     void initDPsubScratch();
+    /// With `useDistribution`: the types of the classes and the shuffle key of each edge.
+    void initShuffleKeys(const UnorderedMapWithMemoryTracking<const EquivalenceClasses<JoinActionRef>::Class *, UInt32> & class_index);
     [[nodiscard]] std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
 
     /// Conflict-detector (CD) variant: decide validity and the resulting (kind, strictness) using the
@@ -204,6 +214,174 @@ private:
 
     [[nodiscard]] bool useInterestingOrders() const { return dpsub_data.interesting_orders; }
 
+    /// Whether joins are costed by the data they move between nodes, see `QueryGraph::distribution_node_count`.
+    [[nodiscard]] bool useDistribution() const { return dpsub_data.distribution; }
+    /// The search keeps a plan per partitioning state, so its work grows with the product of the plans of two sides. It
+    /// costs distributed joins only for graphs with at most this many classes that join two relations or more. After
+    /// this many pairs of plans it adds no more distributed plans, and the graph is planned again without distribution.
+    static constexpr size_t max_distribution_classes = 16;
+    static constexpr size_t max_distributed_plan_pairs = 10'000'000;
+    /// A set keeps a plan for each state, and its plans are numbered with `Int8`: the keyed states and the three negative
+    /// ones must fit into the positive range.
+    static constexpr size_t max_partition_states = std::numeric_limits<Int8>::max() - 3;
+    /// Counts the pairs of plans of a distributed join; false when the search is over the budget and must stop.
+    bool spendDistributedPlanPairs(size_t pairs)
+    {
+        distributed_plan_pairs += pairs;
+        if (distributed_plan_pairs > plan_pair_limit)
+            distribution_stopped = true;
+        return !distribution_stopped;
+    }
+    /// The states of a plan's rows over the nodes (`DPPlan::partition_state`): an index in `DPSubData::partition_states`
+    /// is partitioned as that entry says, and the negative values are the states below.
+    static constexpr Int8 any_partitioning_state = -1; /// Partitioned in a way that no later join uses.
+    static constexpr Int8 replicated_state = -2;       /// A full copy on every node.
+    static constexpr Int8 single_node_state = -3;      /// All rows on one node.
+    static constexpr Int8 no_state = -4;               /// A state not looked up yet, see `partitionState`.
+    /// The equivalence classes with columns on both sides: the keys both sides may be shuffled by.
+    [[nodiscard]] UInt64 partitionKeyClasses(UInt32 left_mask, UInt32 right_mask) const;
+    /// An equality of two columns of a class, as the key of a shuffle join.
+    struct ShuffleKey
+    {
+        Int32 key_class = -1;     /// -1 when the edge is no equality of two columns of a class
+        UInt8 lhs_relation = 0;
+        UInt8 rhs_relation = 0;
+        bool raw = false;         /// the two columns have one type, so the join hashes their values as they are
+        /// The JOIN compares the two types exactly and they have a common type to hash at, as `extractRoutingEquiKeys` requires.
+        bool hashable = false;
+        UInt32 lhs_relations = 0; /// the relations of the two sides of the equality
+        UInt32 rhs_relations = 0;
+    };
+    [[nodiscard]] const ShuffleKey & shuffleKey(const JoinActionRef * edge) const
+    {
+        return dpsub_data.shuffle_keys[edge - query_graph.edges.data()];
+    }
+    /// Whether predicate cleanup adds an equality of the class to a join with no edge of the class, see `cleanupJoinPredicates`.
+    [[nodiscard]] bool hasSynthesizedShuffleKey(UInt32 key_class) const
+    {
+        return ((dpsub_data.shuffle_classes >> key_class) & 1) && ((dpsub_data.single_type_classes >> key_class) & 1);
+    }
+    /// The state of rows that a shuffle by a raw key of the class hashed: Cascades advertises them as hashed by the two
+    /// columns of the key, the columns of the class in `relations`. `any_partitioning_state` when there is no such state,
+    /// for example when a relation has two columns in the class.
+    Int8 partitionState(UInt32 key_class, UInt32 relations, Int32 type = -1);
+    /// Whether the search chooses the key of a shuffle by the class itself, instead of taking an edge: for a class of one
+    /// type up to `Nullable` and `LowCardinality` with one column per relation, any two columns of the class are equal,
+    /// and the join gets the chosen equality first (see `buildPhysicalPlan`).
+    [[nodiscard]] bool choosesShuffleKey(UInt32 key_class) const
+    {
+        return hasSynthesizedShuffleKey(key_class) && dpsub_data.class_has_states[key_class];
+    }
+    /// The exact types (bits of indexes in `DPSubData::class_type_relations`) that both sides have columns of: a shuffle
+    /// by the class on one of them hashes the key as it is.
+    [[nodiscard]] UInt64 shuffleKeyTypes(UInt32 key_class, UInt32 left_mask, UInt32 right_mask) const;
+    /// The exact type of the columns of the class that rows in the state are hashed by, -1 for another state.
+    [[nodiscard]] Int32 stateType(Int8 state, UInt32 key_class) const
+    {
+        if (state < 0 || dpsub_data.partition_states[state].key_class != key_class)
+            return -1;
+        return dpsub_data.partition_states[state].type;
+    }
+    /// The relations whose column of the class, of the exact type, the result of a plan is hashed by: the two key
+    /// columns of a shuffle by the class, or those of the partitioned side of a broadcast.
+    template <typename DPTable, std::unsigned_integral TUInt>
+    [[nodiscard]] UInt32 routedRelations(const DPTable & dptable, TUInt S, Int32 plan_index, UInt32 key_class, Int32 type) const;
+    /// The two relations of the columns of the shuffle key that the search chose for a plan.
+    template <typename DPTable, std::unsigned_integral TUInt>
+    [[nodiscard]] std::pair<UInt32, UInt32> shuffleKeyRelations(const DPTable & dptable, TUInt S, Int32 plan_index) const;
+    /// The column of the class in the relation.
+    [[nodiscard]] const JoinActionRef & classColumn(UInt32 key_class, UInt32 relation) const;
+    /// Whether rows in the state are hashed by the column of the class in the relation, so that a shuffle by a raw key
+    /// with that column moves no rows.
+    [[nodiscard]] bool isPartitionedBy(Int8 state, UInt32 key_class, UInt32 relation) const
+    {
+        if (state < 0)
+            return false;
+        const auto & partition_state = dpsub_data.partition_states[state];
+        return partition_state.key_class == key_class && ((partition_state.relations >> relation) & 1);
+    }
+    /// Whether a later join may still use a result in the partitioning state.
+    [[nodiscard]] bool isInterestingPartition(Int8 partition_state, UInt32 relations) const
+    {
+        return dpsub_data.class_relations[dpsub_data.partition_states[partition_state].key_class] & ~relations;
+    }
+    /// Whether a set keeps its cheapest plan in a state besides its cheapest plan overall. A copy on every node of all
+    /// relations is no use, since nothing joins it any more.
+    [[nodiscard]] bool isInterestingState(Int8 state, UInt32 relations) const
+    {
+        if (state >= 0)
+            return isInterestingPartition(state, relations);
+        const UInt32 all_relations = (static_cast<UInt32>(1) << query_graph.relation_stats.size()) - 1;
+        return state != replicated_state || relations != all_relations;
+    }
+
+    /// The costs of the hash joins of two sides on the nodes, with the cost functions of Cascades (`exchangeTransferCost`,
+    /// `hashJoinWorkCost`). Each side is first moved to the state a join needs with the exchanges Cascades uses for it.
+    struct DistributedJoinCost
+    {
+        const CostConfig & config;
+        double nodes = 1;
+
+        static constexpr double impossible = std::numeric_limits<double>::infinity();
+        /// A shuffle among the nodes, or a gather or a scatter, which send every row through one node.
+        [[nodiscard]] double shuffle(double rows, double bytes) const
+        {
+            return exchangeTransferCost(rows, bytes, nodes, 0, config).total(config);
+        }
+        [[nodiscard]] double funnel(double rows, double bytes) const
+        {
+            return exchangeTransferCost(rows, bytes, 1, rows, config).total(config);
+        }
+
+        /// To partitioned in any way.
+        [[nodiscard]] double toPartitioned(Int8 state, double rows, double bytes) const
+        {
+            return state == replicated_state || state == single_node_state ? toNewPartitioning(state, rows, bytes) : 0;
+        }
+        /// To a partitioning that no plan has yet: a shuffle, or a scatter from one node. Copies cannot be split without
+        /// multiplying the rows.
+        [[nodiscard]] double toNewPartitioning(Int8 state, double rows, double bytes) const
+        {
+            if (state == replicated_state)
+                return impossible;
+            return state == single_node_state ? funnel(rows, bytes) : shuffle(rows, bytes);
+        }
+        /// To a copy on every node: a broadcast from one node, after a gather when the rows are on several nodes.
+        [[nodiscard]] double toReplicated(Int8 state, double rows, double bytes) const
+        {
+            if (state == replicated_state)
+                return 0;
+            const double broadcast = exchangeTransferCost(rows, bytes, 1, 0, config).total(config);
+            return state == single_node_state ? broadcast : broadcast + toSingleNode(state, rows, bytes);
+        }
+        /// To one node: a gather.
+        [[nodiscard]] double toSingleNode(Int8 state, double rows, double bytes) const
+        {
+            if (state == single_node_state)
+                return 0;
+            if (state == replicated_state)
+                return impossible;
+            return funnel(rows, bytes);
+        }
+        [[nodiscard]] double joinWork(
+            double probe_rows, double build_rows, double build_bytes, double joined_rows, double probe_parallelism,
+            double build_parallelism) const
+        {
+            return hashJoinWorkCost(probe_rows, build_rows, build_bytes, joined_rows, probe_parallelism, build_parallelism, config)
+                .total(config);
+        }
+    };
+    [[nodiscard]] DistributedJoinCost distributedJoinCost() const
+    {
+        return {*query_graph.distribution_cost_config, static_cast<double>(query_graph.distribution_node_count)};
+    }
+    /// The bytes of a row of the join of the relations.
+    [[nodiscard]] double rowBytes(UInt32 relations) const;
+    /// Adds the plans of a single relation besides its partitioned one: on one node, and on every node where Cascades
+    /// may read it there.
+    template <typename Entry>
+    void addLeafStates(UInt32 relation_mask, Entry & leaf) const;
+
     [[nodiscard]] bool useConflictDetector() const
     {
         return query_graph.conflict_detector != JoinOrderConflictDetector::NONE;
@@ -215,6 +393,14 @@ private:
 
     const VectorWithMemoryTracking<JoinActionRef *> & collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask);
     SelectivityEstimate computeSelectivityMask(const VectorWithMemoryTracking<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
+    /// The limits of the distributed search: the defaults above, or lower ones from `QueryGraph`.
+    size_t plan_pair_limit = max_distributed_plan_pairs;
+    size_t partition_state_limit = max_partition_states;
+    size_t distributed_plan_pairs = 0;
+    /// Set when the distributed search went over its budget: its plans are not complete, so its result is not used.
+    bool distribution_stopped = false;
+    /// Set for the second search of a graph, after the distributed one stopped.
+    bool distribution_disabled = false;
 
     QueryGraph & query_graph;
     SelectivityCache expression_selectivity;
@@ -250,8 +436,10 @@ private:
             UInt64 ndv_upper_bound = 0;
         };
         VectorWithMemoryTracking<VectorWithMemoryTracking<EquivMember>> equiv_classes; /// members of each distinct equivalence class
-        VectorWithMemoryTracking<VectorWithMemoryTracking<TUInt>> rel_to_classes; /// relation id -> indices into equiv_classes
+        /// relation id -> indices into equiv_classes of the classes of one type, the only ones that give a join its selectivity
+        VectorWithMemoryTracking<VectorWithMemoryTracking<TUInt>> rel_to_classes;
         VectorWithMemoryTracking<TUInt> class_relations;             /// per equivalence class: relations of its members
+        VectorWithMemoryTracking<TUInt> connecting_class_relations;  /// per class of one type (see `isClassOfOneType`): relations of its members
 
         VectorWithMemoryTracking<UInt64> class_visited;        /// generation stamp per equivalence class
         UInt64 equiv_generation = 0;              /// bumped on each computeSelectivityMask call
@@ -280,6 +468,27 @@ private:
 
         /// Only with `use_interesting_orders`, which needs the classes to fit into a 64-bit mask.
         bool interesting_orders = false;
+        /// Only with `QueryGraph::distribution_node_count`, instead of `interesting_orders`. Needs the classes to fit into a
+        /// 64-bit mask too.
+        bool distribution = false;
+        /// With `distribution`: the partitioning states that a later join can use, added as the search finds them.
+        struct PartitionState
+        {
+            UInt32 key_class = 0; /// rows with equal values of the columns of the class are on one node
+            UInt32 relations = 0; /// the relations whose column of the class Cascades knows the rows are hashed by
+            /// For a class whose key the search chooses: the exact type of the columns the rows are hashed by, and
+            /// `relations` is 0. The search finds these columns when it builds the plan, see `routedRelations`.
+            Int32 type = -1;
+        };
+        VectorWithMemoryTracking<PartitionState> partition_states;
+        UnorderedMapWithMemoryTracking<UInt64, Int8> partition_state_index; /// (class, relations) to its index in `partition_states`
+        /// Per class whose key the search chooses: the relations of its columns of each exact type, and the state of rows
+        /// hashed by the columns of each type (`no_state` until the search finds it).
+        VectorWithMemoryTracking<VectorWithMemoryTracking<UInt32>> class_type_relations;
+        VectorWithMemoryTracking<VectorWithMemoryTracking<Int8>> class_type_states;
+        VectorWithMemoryTracking<ShuffleKey> shuffle_keys;    /// per edge
+        VectorWithMemoryTracking<char> class_has_states;      /// per class: each relation has at most one column in the class
+        UInt64 shuffle_classes = 0;              /// the classes whose columns have a common type to hash at
         UInt64 single_type_classes = 0;                      /// the classes of one type up to `Nullable` and `LowCardinality`
         /// The classes a merge join on keeps the order of its inputs: of one type, or whose equalities in the query convert
         /// both columns monotonically (see `castsKeepOrder`).
@@ -438,9 +647,11 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     /// visits the classes touching the left side instead of rescanning the whole member map
     dpsub_data.equiv_classes.clear();
     dpsub_data.class_relations.clear();
+    dpsub_data.connecting_class_relations.clear();
     dpsub_data.class_members.clear();
     dpsub_data.rel_to_classes.assign(num_relations, {});
     UnorderedMapWithMemoryTracking<const EquivClass *, UInt32> class_index;
+    VectorWithMemoryTracking<char> class_of_one_type;
     for (const auto & [member, class_ptr] : query_graph.column_equivalences.getMemberToClassMap())
     {
         if (!class_ptr)
@@ -466,16 +677,34 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
                 relations |= members.back().relation_bit;
                 columns.push_back(equiv_member);
             }
+            class_of_one_type.push_back(isClassOfOneType(*class_ptr));
+            if (class_of_one_type.back())
+                dpsub_data.connecting_class_relations.push_back(relations);
         }
-        dpsub_data.rel_to_classes[*rel].push_back(it->second);
+        if (class_of_one_type[it->second])
+            dpsub_data.rel_to_classes[*rel].push_back(it->second);
     }
     dpsub_data.class_visited.assign(dpsub_data.equiv_classes.size(), 0);
     dpsub_data.equiv_generation = 0;
 
     const size_t num_classes = dpsub_data.class_members.size();
-    dpsub_data.interesting_orders = query_graph.use_interesting_orders && num_classes <= std::numeric_limits<UInt64>::digits;
+    const auto joining_classes
+        = std::ranges::count_if(dpsub_data.class_relations, [](UInt32 relations) { return std::popcount(relations) > 1; });
+    dpsub_data.distribution = query_graph.distribution_node_count > 1 && query_graph.distribution_cost_config && !distribution_disabled
+        && num_classes <= std::numeric_limits<UInt64>::digits && static_cast<size_t>(joining_classes) <= max_distribution_classes;
+    dpsub_data.interesting_orders = !dpsub_data.distribution && query_graph.use_interesting_orders
+        && num_classes <= std::numeric_limits<UInt64>::digits;
     dpsub_data.single_type_classes = 0;
     dpsub_data.ordered_classes = 0;
+    dpsub_data.partition_states.clear();
+    dpsub_data.partition_state_index.clear();
+    dpsub_data.class_type_relations.assign(num_classes, {});
+    dpsub_data.class_type_states.assign(num_classes, {});
+    dpsub_data.shuffle_keys.assign(n, {});
+    dpsub_data.class_has_states.assign(num_classes, 0);
+    dpsub_data.shuffle_classes = 0;
+    if (dpsub_data.distribution)
+        initShuffleKeys(class_index);
     dpsub_data.rel_prefix_classes.assign(num_relations, {});
     dpsub_data.edge_class.assign(n, -1);
     dpsub_data.prepared_storage_mask = toMask(query_graph.prepared_storage_relations);
@@ -808,7 +1037,7 @@ std::optional<JoinKind> DPSubJoinOrderOptimizer::writtenSemiAntiKind(UInt32 left
 
 bool DPSubJoinOrderOptimizer::areTransitivelyConnectedMask(UInt32 left_mask, UInt32 right_mask) const
 {
-    for (const UInt32 relations : dpsub_data.class_relations)
+    for (const UInt32 relations : dpsub_data.connecting_class_relations)
     {
         if ((relations & left_mask) && (relations & right_mask))
             return true;
@@ -832,6 +1061,196 @@ UInt64 DPSubJoinOrderOptimizer::mergeKeyClasses(
             return 0;
 
     return spanningClasses(left_mask, right_mask);
+}
+
+UInt64 DPSubJoinOrderOptimizer::partitionKeyClasses(UInt32 left_mask, UInt32 right_mask) const
+{
+    UInt64 classes = 0;
+    for (size_t c = 0; c < dpsub_data.class_relations.size(); ++c)
+    {
+        const UInt32 relations = dpsub_data.class_relations[c];
+        if ((relations & left_mask) && (relations & right_mask))
+            classes |= static_cast<UInt64>(1) << c;
+    }
+    return classes;
+}
+
+void DPSubJoinOrderOptimizer::initShuffleKeys(
+    const UnorderedMapWithMemoryTracking<const EquivalenceClasses<JoinActionRef>::Class *, UInt32> & class_index)
+{
+    for (size_t c = 0; c < dpsub_data.class_members.size(); ++c)
+    {
+        const auto & columns = dpsub_data.class_members[c];
+        DataTypes types;
+        UnorderedSetWithMemoryTracking<size_t> relations;
+        for (const auto & column : columns)
+        {
+            types.push_back(column.getType());
+            relations.insert(*column.getSourceRelations().getSingleBit());
+        }
+        const auto type = removeLowCardinalityAndNullable(types.front());
+        const bool single_type = std::ranges::all_of(types, [&](const DataTypePtr & column_type)
+        {
+            return removeLowCardinalityAndNullable(column_type)->equals(*type);
+        });
+        if (single_type)
+            dpsub_data.single_type_classes |= static_cast<UInt64>(1) << c;
+        if (tryGetLeastSupertype(types))
+            dpsub_data.shuffle_classes |= static_cast<UInt64>(1) << c;
+        dpsub_data.class_has_states[c] = relations.size() == columns.size();
+
+        if (choosesShuffleKey(static_cast<UInt32>(c)))
+        {
+            auto & type_relations = dpsub_data.class_type_relations[c];
+            VectorWithMemoryTracking<DataTypePtr> group_types;
+            for (const auto & column : columns)
+            {
+                const auto relation_bit = static_cast<UInt32>(1) << *column.getSourceRelations().getSingleBit();
+                const auto group = std::ranges::find_if(
+                    group_types, [&](const DataTypePtr & group_type) { return group_type->equals(*column.getType()); });
+                if (group == group_types.end())
+                {
+                    group_types.push_back(column.getType());
+                    type_relations.push_back(relation_bit);
+                }
+                else
+                    type_relations[group - group_types.begin()] |= relation_bit;
+            }
+            dpsub_data.class_type_states[c].assign(type_relations.size(), no_state);
+        }
+    }
+
+    for (size_t i = 0; i < query_graph.edges.size(); ++i)
+    {
+        const auto & edge = query_graph.edges[i];
+        if (!edge)
+            continue;
+        auto [op, lhs, rhs] = edge.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals)
+            continue;
+        auto & key = dpsub_data.shuffle_keys[i];
+        key.raw = lhs.getType()->equals(*rhs.getType());
+        key.hashable = JoinCommon::isExactJoinKeyEquality(lhs.getType(), rhs.getType())
+            && (key.raw || tryGetLeastSupertype(DataTypes{lhs.getType(), rhs.getType()}));
+        key.lhs_relations = toMask(lhs.getSourceRelations());
+        key.rhs_relations = toMask(rhs.getSourceRelations());
+
+        const auto lhs_class = query_graph.column_equivalences.getClass(lhs.resolveAliases());
+        if (!lhs_class || lhs_class != query_graph.column_equivalences.getClass(rhs.resolveAliases()))
+            continue;
+        const auto it = class_index.find(lhs_class.get());
+        const auto lhs_relation = lhs.getSourceRelations().getSingleBit();
+        const auto rhs_relation = rhs.getSourceRelations().getSingleBit();
+        if (it == class_index.end() || !lhs_relation || !rhs_relation)
+            continue;
+        key.key_class = static_cast<Int32>(it->second);
+        key.lhs_relation = static_cast<UInt8>(*lhs_relation);
+        key.rhs_relation = static_cast<UInt8>(*rhs_relation);
+    }
+}
+
+Int8 DPSubJoinOrderOptimizer::partitionState(UInt32 key_class, UInt32 relations, Int32 type)
+{
+    if (!dpsub_data.class_has_states[key_class])
+        return any_partitioning_state;
+    auto & states = dpsub_data.partition_states;
+    Int8 * known = nullptr;
+    if (type >= 0)
+    {
+        known = &dpsub_data.class_type_states[key_class][type];
+        if (*known != no_state)
+            return *known;
+    }
+    else
+    {
+        const UInt64 key = (static_cast<UInt64>(key_class) << 32) | relations;
+        if (auto it = dpsub_data.partition_state_index.find(key); it != dpsub_data.partition_state_index.end())
+            return it->second;
+    }
+    Int8 state = any_partitioning_state;
+    if (states.size() < partition_state_limit)
+    {
+        states.push_back({.key_class = key_class, .relations = relations, .type = type});
+        state = static_cast<Int8>(states.size() - 1);
+    }
+    if (known)
+        *known = state;
+    else
+        dpsub_data.partition_state_index.emplace((static_cast<UInt64>(key_class) << 32) | relations, state);
+    return state;
+}
+
+UInt64 DPSubJoinOrderOptimizer::shuffleKeyTypes(UInt32 key_class, UInt32 left_mask, UInt32 right_mask) const
+{
+    UInt64 types = 0;
+    const auto & type_relations = dpsub_data.class_type_relations[key_class];
+    for (size_t type = 0; type < type_relations.size() && type < 64; ++type)
+        if ((type_relations[type] & left_mask) && (type_relations[type] & right_mask))
+            types |= static_cast<UInt64>(1) << type;
+    return types;
+}
+
+const JoinActionRef & DPSubJoinOrderOptimizer::classColumn(UInt32 key_class, UInt32 relation) const
+{
+    for (const auto & column : dpsub_data.class_members[key_class])
+        if (*column.getSourceRelations().getSingleBit() == relation)
+            return column;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Relation {} has no column of equivalence class {}", relation, key_class);
+}
+
+double DPSubJoinOrderOptimizer::rowBytes(UInt32 relations) const
+{
+    double bytes = 0;
+    for (UInt32 remaining = relations; remaining; remaining &= remaining - 1)
+        bytes += query_graph.distribution_inputs[std::countr_zero(remaining)].row_bytes;
+    return std::max(bytes, 1.0);
+}
+
+template <typename Entry>
+void DPSubJoinOrderOptimizer::addLeafStates(UInt32 relation_mask, Entry & leaf) const
+{
+    const auto & input = query_graph.distribution_inputs[std::countr_zero(relation_mask)];
+    const double rows = leaf.estimated_rows ? static_cast<double>(*leaf.estimated_rows) : std::max(input.scanned_rows, 1.0);
+    leaf.search_rows = rows;
+    const double bytes = rowBytes(relation_mask);
+    const auto join_cost = distributedJoinCost();
+    typename Entry::Plan plan = leaf;
+
+    if (input.placement != QueryGraph::InputPlacement::Read)
+    {
+        /// The plan of a subquery is costed by Cascades the same way in every join order, so only moving its result is
+        /// costed here.
+        leaf.cost = 0;
+        if (input.placement == QueryGraph::InputPlacement::SingleNode)
+        {
+            leaf.partition_state = single_node_state;
+            plan.partition_state = any_partitioning_state;
+            plan.cost = join_cost.toPartitioned(single_node_state, rows, bytes);
+        }
+        else
+        {
+            leaf.partition_state = any_partitioning_state;
+            plan.partition_state = single_node_state;
+            plan.cost = join_cost.toSingleNode(any_partitioning_state, rows, bytes);
+        }
+        leaf.ordered.push_back(plan);
+        return;
+    }
+
+    /// Cascades costs a read by the bytes it scans: 1/N of them per node for a partitioned read, all of them for the
+    /// others. A filter that the primary key does not prune still scans the granules it selects.
+    const double read = query_graph.distribution_cost_config->work_weight * std::max(rows, input.scanned_rows) * bytes;
+    leaf.cost = read / static_cast<double>(query_graph.distribution_node_count);
+    leaf.partition_state = any_partitioning_state;
+
+    plan.cost = read;
+    plan.partition_state = single_node_state;
+    leaf.ordered.push_back(plan);
+    if (input.can_read_on_every_node)
+    {
+        plan.partition_state = replicated_state;
+        leaf.ordered.push_back(plan);
+    }
 }
 
 bool DPSubJoinOrderOptimizer::isReadInOrder(UInt32 relation_mask, Int32 order_class) const
@@ -1015,6 +1434,52 @@ const JoinActionRef & DPSubJoinOrderOptimizer::orderColumn(const DPTable & dptab
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Equivalence class {} has no column in relations {}", order_class, toBinaryString(S));
 }
 
+template <typename DPTable, std::unsigned_integral TUInt>
+UInt32 DPSubJoinOrderOptimizer::routedRelations(const DPTable & dptable, TUInt S, Int32 plan_index, UInt32 key_class, Int32 type) const
+{
+    const auto & table_entry = dptable[S];
+    const auto & plan = plan_index < 0 ? table_entry : table_entry.ordered.at(plan_index);
+    /// Only a result in the state of the class and type is hashed so: a later shuffle by another key hashes it again.
+    if (!plan.left || !plan.right || plan.method != JoinMethod::Hash || plan.partition_state < 0)
+        return 0;
+    const auto & state = dpsub_data.partition_states[plan.partition_state];
+    if (state.key_class != key_class || state.type != type)
+        return 0;
+    if (plan.shuffle_class == static_cast<Int8>(key_class))
+    {
+        const auto [left_relation, right_relation] = shuffleKeyRelations(dptable, S, plan_index);
+        return (static_cast<UInt32>(1) << left_relation) | (static_cast<UInt32>(1) << right_relation);
+    }
+    /// A broadcast join keeps the rows of its partitioned side where they are. When that side is in another state, the
+    /// plan shuffles it into this one before the join (see `prunePartitionedPlans`), by its columns of the class.
+    const TUInt side = plan.partitioned_side == 0 ? plan.left : plan.right;
+    const Int32 side_plan = plan.partitioned_side == 0 ? plan.left_plan : plan.right_plan;
+    if (const UInt32 routed = routedRelations(dptable, side, side_plan, key_class, type))
+        return routed;
+    return dpsub_data.class_type_relations[key_class][type] & static_cast<UInt32>(side);
+}
+
+template <typename DPTable, std::unsigned_integral TUInt>
+std::pair<UInt32, UInt32> DPSubJoinOrderOptimizer::shuffleKeyRelations(const DPTable & dptable, TUInt S, Int32 plan_index) const
+{
+    const auto & table_entry = dptable[S];
+    const auto & plan = plan_index < 0 ? table_entry : table_entry.ordered.at(plan_index);
+    const auto key_class = static_cast<UInt32>(plan.shuffle_class);
+    const UInt32 class_relations = dpsub_data.class_relations[key_class];
+    auto key_relation = [&](TUInt side, Int8 side_plan)
+    {
+        UInt32 columns = class_relations & static_cast<UInt32>(side);
+        if (plan.shuffle_type >= 0)
+        {
+            columns &= dpsub_data.class_type_relations[key_class][plan.shuffle_type];
+            if (const UInt32 routed = routedRelations(dptable, side, side_plan, key_class, plan.shuffle_type) & columns)
+                columns = routed;
+        }
+        return static_cast<UInt32>(std::countr_zero(columns));
+    };
+    return {key_relation(plan.left, plan.left_plan), key_relation(plan.right, plan.right_plan)};
+}
+
 std::optional<std::pair<JoinKind, JoinStrictness>>
 DPSubJoinOrderOptimizer::resolveJoinMask(UInt32 left_mask, UInt32 right_mask) const
 {
@@ -1155,6 +1620,16 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
     /// `outer_join_conditions`), so this only diverts genuine post-join filters.
     bool is_inner_step = isInner(entry.kind) || isCrossOrComma(entry.kind);
 
+    /// A shuffle key that the search chose goes first, and `cleanupJoinPredicates` drops the other conditions of its class.
+    if (entry.method == JoinMethod::Hash && entry.shuffle_class >= 0)
+    {
+        const auto key_class = static_cast<UInt32>(entry.shuffle_class);
+        const auto [left_relation, right_relation] = shuffleKeyRelations(dptable, S, plan_index);
+        join_operator.expression.push_back(JoinActionRef::transform(
+            {classColumn(key_class, left_relation), classColumn(key_class, right_relation)},
+            JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+    }
+
     /// The merge key goes first, on the columns the inputs are sorted by; `cleanupJoinPredicates` drops the conditions it makes redundant.
     VectorWithMemoryTracking<char> placed_edges(entry.edges.size(), 0);
     if (entry.method == JoinMethod::Merge)
@@ -1254,8 +1729,11 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
         }
     }
 
-    return std::make_shared<DPJoinEntry>(
+    auto result = std::make_shared<DPJoinEntry>(
         left, right, entry.rows_cost, entry.sel, entry.estimated_rows, std::move(join_operator), entry.method);
+    result->distributed_costs = useDistribution();
+    result->costing_rows = entry.search_rows;
+    return result;
 }
 
 std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
@@ -1299,6 +1777,17 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         Int8 order_class{-1};  /// equivalence class the result is sorted by, if a later join may use it
         Int8 left_plan{-1};    /// plan of `left` in its `ordered`, -1 for its cheapest plan
         Int8 right_plan{-1};
+        Int8 partition_state{-1}; /// how the result is spread over the nodes, see `DPSubJoinOrderOptimizer::replicated_state`
+        /// A shuffle join by a key of a class that the search chose, see `shuffleKeyTypes`: the class, and the exact type
+        /// of the two key columns (an index in `DPSubData::class_type_relations`, -1 when they have no common one). -1
+        /// for other joins.
+        Int8 shuffle_class{-1};
+        Int8 shuffle_type{-1};
+        /// A broadcast join: the side whose rows stay where they are, 0 for the left one, 1 for the right one.
+        UInt8 partitioned_side{0};
+        /// With `useDistribution`: the rows the costs take, `estimated_rows` when known, else the rows before the filters of
+        /// the inputs, joined as `estimateJoinedRows` joins them.
+        double search_rows{1.0};
         VectorWithMemoryTracking<JoinActionRef*> edges; // needed for physical plan generation
     };
     struct DPEntry : DPPlan
@@ -1306,8 +1795,13 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         using Plan = DPPlan;
         Bitvector neighbor{0};
         UnorderedMapWithMemoryTracking<String, ColumnStats> column_stats = {};
-        /// The cheapest plan per interesting sort order, kept even when the cheapest plan overall is another one.
+        /// The cheapest plan per interesting sort order (or partitioning, see `useDistribution`), kept even when the
+        /// cheapest plan overall is another one.
         VectorWithMemoryTracking<DPPlan> ordered;
+        /// With `useDistribution`: `ordered` keeps only the plans that a later join may prefer, see `prunePartitionedPlans`.
+        bool pruned{false};
+        /// The states of the plans that `prunePartitionedPlans` dropped.
+        VectorWithMemoryTracking<Int8> pruned_states;
     };
     using DPTable = DPTable<DPEntry, Bitvector>;
     using Checker = EnumeratorCheckerWithCosts<DPTable, DPSubJoinOrderOptimizer>;
@@ -1331,26 +1825,74 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         return nullptr;
     }
 
-    Checker checker(n, *this);
-    Enumerator enumerator(n, log);
-    enumerator.enumerate(checker, query_graph);
-
-    const Bitvector full_set = (static_cast<Bitvector>(1) << n) - 1;
-    const auto & dptable = checker.getDPTable();
-
-    /// The full set is assembled only if the join graph is connected. When it is not e.g.
-    /// cross products, or predicates that reference a single relation or a constant and thus
-    /// create no binary edge (`... LEFT JOIN t ON t.x = 5`): DPsub cannot stitch the
-    /// disconnected components, so the full-set entry is missing (or was never given a join)
-    const bool full_built = dptable.isConnected(full_set)
-                            && (dptable[full_set].left != 0 || dptable[full_set].right != 0);
-    if (!full_built)
+    /// Returns nothing when the distributed search went over its budget.
+    auto search = [&](Checker & checker) -> std::optional<DPJoinEntryPtr>
     {
-        LOG_TRACE(log, "DPsub: join graph is disconnected");
-        return nullptr;
-    }
+        if (useDistribution())
+        {
+            for (size_t i = 0; i < n; ++i)
+            {
+                auto & leaf = checker.getDPTable()[static_cast<Bitvector>(1) << i];
+                leaf.estimated_rows = query_graph.relation_stats[i].estimated_rows;
+                addLeafStates(static_cast<UInt32>(1) << i, leaf);
+            }
+        }
+        Enumerator enumerator(n, log);
+        enumerator.enumerate(checker, query_graph);
+        if (distribution_stopped)
+            return std::nullopt;
 
-    return buildPhysicalPlan(dptable, full_set);
+        const Bitvector full_set = (static_cast<Bitvector>(1) << n) - 1;
+        const auto & dptable = checker.getDPTable();
+
+        /// The full set is assembled only if the join graph is connected. When it is not e.g.
+        /// cross products, or predicates that reference a single relation or a constant and thus
+        /// create no binary edge (`... LEFT JOIN t ON t.x = 5`): DPsub cannot stitch the
+        /// disconnected components, so the full-set entry is missing (or was never given a join)
+        const bool full_built = dptable.isConnected(full_set)
+                                && (dptable[full_set].left != 0 || dptable[full_set].right != 0);
+        if (!full_built)
+        {
+            LOG_TRACE(log, "DPsub: join graph is disconnected");
+            return nullptr;
+        }
+
+        if (!useDistribution())
+            return buildPhysicalPlan(dptable, full_set);
+
+        /// The result of the joins goes to one node in the end, so a plan pays the gather of its rows too. This is the cost
+        /// of the plan as the root of the query, not under an aggregation, which needs less.
+        const auto & root = dptable[full_set];
+        const auto join_cost = distributedJoinCost();
+        const double root_bytes = rowBytes(full_set);
+        auto root_cost = [&](const DPPlan & plan)
+        {
+            return plan.cost + join_cost.toSingleNode(plan.partition_state, plan.search_rows, root_bytes);
+        };
+        Int32 root_index = -1;
+        for (size_t i = 0; i < root.ordered.size(); ++i)
+            if (root_cost(root.ordered[i]) < root_cost(root_index < 0 ? root : root.ordered[root_index]))
+                root_index = static_cast<Int32>(i);
+        return buildPhysicalPlan(dptable, full_set, root_index);
+    };
+
+    {
+        Checker checker(n, *this);
+        auto result = search(checker);
+        if (useDistribution())
+            LOG_TRACE(log, "DPsub: the distribution-aware search visited {} pairs of plans", distributed_plan_pairs);
+        if (result)
+            return *result;
+    }
+    LOG_TRACE(log, "DPsub: the distribution-aware search visited more than {} pairs of plans, planning the graph without distribution",
+        plan_pair_limit);
+    dp_table.clear();
+    expression_selectivity.clear();
+    distribution_disabled = true;
+    distribution_stopped = false;
+    initDPsubScratch();
+    Checker checker(n, *this);
+    return search(checker).value();
 }
 
 }

@@ -154,6 +154,17 @@ public:
     [[nodiscard]] bool isRuntimeFilterDeclinedForSmallProbe() const { return runtime_filter_declined_small_probe; }
     void setRuntimeFilterDeclinedForSmallProbe() { runtime_filter_declined_small_probe = true; }
     [[nodiscard]] std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
+    /// Whether the join order search chose this join with the costs of Cascades (`query_plan_join_order_distribution`),
+    /// so that Cascades must cost it with `getResultRowsEstimation` as it is, not only as a lower bound.
+    [[nodiscard]] bool isRowsEstimationFromDistributedCosts() const { return rows_estimation_from_distributed_costs; }
+    /// The rows that search costed the join with, also when it has no `getResultRowsEstimation`. They are not an estimate:
+    /// only a later search costs a join of this result with them.
+    [[nodiscard]] double getDistributedCostingRows() const { return distributed_costing_rows; }
+    void setRowsEstimationFromDistributedCosts(double costing_rows)
+    {
+        rows_estimation_from_distributed_costs = true;
+        distributed_costing_rows = costing_rows;
+    }
     [[nodiscard]] std::optional<double> getEstimatedCost() const { return estimated_cost; }
     [[nodiscard]] std::optional<double> getEstimatedSelectivity() const { return estimated_selectivity; }
     [[nodiscard]] bool hasImpreciseEstimate() const { return imprecise_estimate; }
@@ -301,6 +312,8 @@ protected:
     /// Runtime info, do not serialize
 
     std::optional<UInt64> result_rows_estimation = {};
+    bool rows_estimation_from_distributed_costs = false;
+    double distributed_costing_rows = 0;
     std::optional<double> estimated_cost = {};
     std::optional<double> estimated_selectivity = {};
     UInt64 cluster_id = 0;

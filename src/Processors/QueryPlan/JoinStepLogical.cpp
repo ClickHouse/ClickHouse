@@ -3238,6 +3238,8 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->optimized = optimized;
     result_step->runtime_filter_declined_small_probe = runtime_filter_declined_small_probe;
     result_step->result_rows_estimation = result_rows_estimation;
+    result_step->rows_estimation_from_distributed_costs = rows_estimation_from_distributed_costs;
+    result_step->distributed_costing_rows = distributed_costing_rows;
     result_step->estimated_cost = estimated_cost;
     result_step->estimated_selectivity = estimated_selectivity;
     result_step->cluster_id = cluster_id;

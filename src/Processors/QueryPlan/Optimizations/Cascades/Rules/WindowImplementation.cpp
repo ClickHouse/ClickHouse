@@ -20,11 +20,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace QueryPlanOptimizations
-{
-    bool keyTypeBreaksHashSharding(const IDataType & type);
-}
-
 /// Implements a window on a single node (always available) and, for a window with
 /// `PARTITION BY`, on each node: the input requirement asks for rows with equal partition
 /// keys on one node and for the window's sort order on each node; the enforcers add the
@@ -45,32 +40,6 @@ public:
 protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
-
-/// The partition keys as distribution columns, or empty when the window cannot run per
-/// node: without `PARTITION BY` all rows form one partition, and only a single node keeps
-/// them together (empty distribution columns mean "any distribution"); a partition key
-/// that is not a column of the input header cannot be hashed by name; and a key whose
-/// hash disagrees with `compareAt` (floats, `JSON`, `Dynamic`: `-0.` and `0.` compare as
-/// one partition but hash differently) would split one logical partition across nodes
-/// and produce wrong window values.
-static DistributionColumns partitionKeyColumns(const WindowStep & window_step)
-{
-    const auto & partition_by = window_step.getWindowDescription().partition_by;
-    if (partition_by.empty())
-        return {};
-
-    const auto & input_header = window_step.getInputHeaders().at(0);
-    DistributionColumns columns;
-    for (const auto & partition_column : partition_by)
-    {
-        if (!input_header->has(partition_column.column_name))
-            return {};
-        if (QueryPlanOptimizations::keyTypeBreaksHashSharding(*input_header->getByName(partition_column.column_name).type))
-            return {};
-        columns.push_back(NameSet{partition_column.column_name});
-    }
-    return columns;
-}
 
 /// The window needs each stream sorted by its sort description and each partition in one
 /// stream (or one stream in total if the partition keys cannot be hashed). The planner can
@@ -102,7 +71,7 @@ std::vector<GroupExpressionPtr> WindowImplementation::applyImpl(GroupExpressionP
             expression->inputs.size(), expression->getDescription());
 
     std::vector<GroupExpressionPtr> result;
-    const DistributionColumns partition_columns = partitionKeyColumns(*window_step);
+    const DistributionColumns partition_columns = windowPartitionKeyColumns(*window_step);
     const ExpressionProperties window_input_requirement = windowInputRequirement(*window_step, partition_columns);
 
     /// Single-node implementation - always available, and the only one when the window

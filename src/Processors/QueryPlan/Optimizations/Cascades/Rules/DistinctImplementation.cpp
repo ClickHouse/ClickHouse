@@ -55,14 +55,9 @@ protected:
 
         add_alternative(strategySingleton<LocalDistinctStrategy>(), DistributionDescription{}, "Local");
 
-        /// A `DISTINCT` that keeps the order of its input stays on one node: the shares of the nodes would
-        /// interleave when gathered. So does one with `max_rows_in_distinct` or `max_bytes_in_distinct`: each
-        /// node would check the limit on its own share only, and a result over the limit would pass.
-        const auto & columns = step.getColumnNames();
-        const auto & size_limits = step.getSettings().set_size_limits;
-        const bool has_size_limits = size_limits.max_rows != 0 || size_limits.max_bytes != 0;
-        if (step.preservesInputOrder() || has_size_limits || columns.empty())
+        if (!isFinalDistinctDistributable(step))
             return result;
+        const auto & columns = step.getColumnNames();
 
         for (size_t node_count : getCandidateNodeCounts(memo.getContext().cluster_node_count))
         {

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cmath>
 #include <limits>
 #include <vector>
 #include <Common/VectorWithMemoryTracking.h>
@@ -59,6 +60,32 @@ public:
     [[nodiscard]] size_t numRelations() const { return num_relations; }
 private:
     using Plan = typename DPTable::DPEntry::Plan;
+
+    /// Offers the plans of a distributed hash join of the two sides, for every pair of their plans and every way to
+    /// distribute it, see `DPSubJoinOrderOptimizer::useDistribution`.
+    void acceptDistributedJoins(UInt result_subset, UInt lhs_subset, UInt rhs_subset, JoinKind kind, JoinStrictness strictness,
+        const SelectivityEstimate & selectivity, const VectorWithMemoryTracking<JoinActionRef *> & edges);
+    /// Keeps the plan as the cheapest plan of the subset and as its cheapest plan in its state, where that state is
+    /// interesting.
+    void offerPlan(UInt subset, const Plan & plan);
+    /// Drops the plans of a set in a partitioning state that cost at least as much as its cheapest plan shuffled into
+    /// that state, and have at least its rows: a shuffle join by the state's key moves the rows of the cheapest plan for
+    /// less. A broadcast join keeps the state of its partitioned side, so it is also offered on the cheapest plan shuffled
+    /// into a dropped state (`DPEntry::pruned_states`). Done once, when a larger set first uses the set, since DPsub
+    /// plans all subsets of a set before the set itself.
+    void prunePartitionedPlans(UInt subset);
+
+    /// A shuffle of one split by an equality of a class: it depends on the split only, not on the plans of its sides.
+    struct SplitShuffle
+    {
+        UInt32 key_class = 0;
+        bool chosen = false;        /// the search chooses the key by the states of the sides, see `shuffleKeyTypes`
+        bool raw = false;           /// the key hashes its values as they are; false for a cast key or an added one
+        UInt32 left_relation = 0;   /// with `raw`: the relations of the key columns on the two sides
+        UInt32 right_relation = 0;
+        Int8 state = Optimizer::any_partitioning_state; /// the state of the result
+    };
+    VectorWithMemoryTracking<SplitShuffle> split_shuffles; /// scratch of `acceptDistributedJoins`
 
     /// Offers the sort-merge joins of the two sides, one per equivalence class they may be merged on.
     void acceptMergeJoins(UInt result_subset, UInt lhs_subset, UInt rhs_subset, JoinKind kind, JoinStrictness strictness,
@@ -149,6 +176,12 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
              dp_table[lhs_subset].estimated_rows.value_or(0),
              dp_table[rhs_subset].estimated_rows.value_or(0));
 
+    if (optimizer.useDistribution())
+    {
+        acceptDistributedJoins(result_subset, lhs_subset, rhs_subset, kind, strictness, selectivity, edge);
+        return;
+    }
+
     if (!dp_table.isConnected(result_subset) || plan_cost < dp_table[result_subset].cost)
     {
         auto & entry = dp_table[result_subset];
@@ -171,6 +204,249 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
 
     if (optimizer.useInterestingOrders())
         acceptMergeJoins(result_subset, lhs_subset, rhs_subset, kind, strictness, selectivity, edge);
+}
+
+template <class TDPTable, class TOptimizer>
+void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::offerPlan(const UInt subset, const Plan & plan)
+{
+    auto & entry = dp_table[subset];
+    if (optimizer.isInterestingState(plan.partition_state, static_cast<UInt32>(subset)))
+    {
+        auto it = std::ranges::find(entry.ordered, plan.partition_state, &Plan::partition_state);
+        if (it == entry.ordered.end())
+            entry.ordered.push_back(plan);
+        else if (plan.cost < it->cost)
+            *it = plan;
+    }
+    const bool has_plan = entry.left != 0 || entry.right != 0;
+    if (!has_plan || plan.cost < entry.cost)
+    {
+        static_cast<Plan &>(entry) = plan;
+        /// The partitioning of the cheapest plan matters only while a later join may use it.
+        if (entry.partition_state >= 0 && !optimizer.isInterestingPartition(entry.partition_state, static_cast<UInt32>(subset)))
+            entry.partition_state = Optimizer::any_partitioning_state;
+    }
+}
+
+template <class TDPTable, class TOptimizer>
+void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::prunePartitionedPlans(const UInt subset)
+{
+    auto & entry = dp_table[subset];
+    if (entry.pruned)
+        return;
+    entry.pruned = true;
+    const auto join_cost = optimizer.distributedJoinCost();
+    const double cheapest_shuffled = entry.cost
+        + join_cost.toNewPartitioning(entry.partition_state, entry.search_rows, optimizer.rowBytes(static_cast<UInt32>(subset)));
+    std::erase_if(entry.ordered, [&](const Plan & plan)
+    {
+        if (plan.partition_state < 0 || plan.cost < cheapest_shuffled || plan.search_rows < entry.search_rows)
+            return false;
+        entry.pruned_states.push_back(plan.partition_state);
+        return true;
+    });
+}
+
+template <class TDPTable, class TOptimizer>
+void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
+    const UInt result_subset, const UInt lhs_subset, const UInt rhs_subset, const JoinKind kind, const JoinStrictness strictness,
+    const SelectivityEstimate & selectivity, const VectorWithMemoryTracking<JoinActionRef *> & edges)
+{
+    /// The plans of a side: its cheapest plan (-1) and its plans in the other states.
+    prunePartitionedPlans(lhs_subset);
+    prunePartitionedPlans(rhs_subset);
+    const auto left_plans = static_cast<Int8>(dp_table[lhs_subset].ordered.size());
+    const auto right_plans = static_cast<Int8>(dp_table[rhs_subset].ordered.size());
+    if (optimizer.distribution_stopped
+        || !optimizer.spendDistributedPlanPairs(static_cast<size_t>(left_plans + 1) * static_cast<size_t>(right_plans + 1)))
+        return;
+    const auto left_mask = static_cast<UInt32>(lhs_subset);
+    const auto right_mask = static_cast<UInt32>(rhs_subset);
+    const UInt64 key_classes = optimizer.partitionKeyClasses(left_mask, right_mask);
+    const auto join_cost = optimizer.distributedJoinCost();
+    const double nodes = join_cost.nodes;
+    const double left_bytes = optimizer.rowBytes(left_mask);
+    const double right_bytes = optimizer.rowBytes(right_mask);
+    constexpr Int8 any_partitioning = Optimizer::any_partitioning_state;
+    constexpr Int8 replicated = Optimizer::replicated_state;
+    constexpr Int8 single_node = Optimizer::single_node_state;
+
+    /// Shuffle: both sides hashed by one equality of a class. After a shuffle by two columns of one type, Cascades knows
+    /// the rows are hashed by these two columns, so a later shuffle by one of them moves no rows of that side. For a class
+    /// of one type the search chooses the two columns, see `shuffleKeyTypes`. For another class, predicate cleanup keeps
+    /// the first edge of the class, and when the join has no edge of the class, it adds none. An edge cast before hashing
+    /// gives rows that no later join reuses.
+    split_shuffles.clear();
+    for (UInt64 classes = key_classes; classes; classes &= classes - 1)
+    {
+        const auto key_class = static_cast<UInt32>(std::countr_zero(classes));
+        if (optimizer.choosesShuffleKey(key_class))
+        {
+            split_shuffles.push_back({.key_class = key_class, .chosen = true});
+            continue;
+        }
+        const auto edge = std::ranges::find_if(edges, [&](const JoinActionRef * candidate)
+        {
+            return optimizer.shuffleKey(candidate).key_class == static_cast<Int32>(key_class);
+        });
+        if (edge == edges.end())
+        {
+            if (optimizer.hasSynthesizedShuffleKey(key_class))
+                split_shuffles.push_back({.key_class = key_class, .state = any_partitioning});
+            continue;
+        }
+        const auto & key = optimizer.shuffleKey(*edge);
+        if (!key.hashable)
+            continue;
+        const bool lhs_on_left = (left_mask >> key.lhs_relation) & 1;
+        split_shuffles.push_back({
+            .key_class = key_class,
+            .raw = key.raw,
+            .left_relation = lhs_on_left ? key.lhs_relation : key.rhs_relation,
+            .right_relation = lhs_on_left ? key.rhs_relation : key.lhs_relation,
+            .state = key.raw
+                ? optimizer.partitionState(
+                    key_class, (static_cast<UInt32>(1) << key.lhs_relation) | (static_cast<UInt32>(1) << key.rhs_relation))
+                : any_partitioning});
+    }
+
+    /// An equality of two columns of different types, or of expressions, is in no class: Cascades shuffles by it with the
+    /// keys cast to a common type, and no later join reuses the result. The cost is the same for each such edge.
+    const bool has_direct_shuffle_key = std::ranges::any_of(edges, [&](const JoinActionRef * edge)
+    {
+        const auto & key = optimizer.shuffleKey(edge);
+        auto within = [](UInt32 relations, UInt32 mask) { return relations && (relations & ~mask) == 0; };
+        return key.key_class < 0 && key.hashable
+            && ((within(key.lhs_relations, left_mask) && within(key.rhs_relations, right_mask))
+                || (within(key.lhs_relations, right_mask) && within(key.rhs_relations, left_mask)));
+    });
+    if (has_direct_shuffle_key)
+        split_shuffles.push_back({.state = any_partitioning});
+
+    /// The fields of the plans of the split that do not depend on the plans of its sides: the edges are copied once.
+    Plan plan;
+    plan.left = lhs_subset;
+    plan.right = rhs_subset;
+    plan.sel = selectivity.reported_value;
+    plan.kind = kind;
+    plan.strictness = strictness;
+    plan.edges.assign(edges.begin(), edges.end());
+    plan.method = JoinMethod::Hash;
+
+    for (Int8 left_index = -1; left_index < left_plans; ++left_index)
+    {
+        const Plan & left = planAt(lhs_subset, left_index);
+        const double left_rows = left.search_rows;
+        const Int8 left_state = left.partition_state;
+        for (Int8 right_index = -1; right_index < right_plans; ++right_index)
+        {
+            const Plan & right = planAt(rhs_subset, right_index);
+            const double right_rows = right.search_rows;
+            const Int8 right_state = right.partition_state;
+            /// Rows far above any real count only rank plans: the cap keeps their conversion to `UInt64` in range.
+            static constexpr double max_search_rows = 1e18;
+            auto to_rows = [](double rows) { return static_cast<UInt64>(std::min(rows, max_search_rows)); };
+            const double joined_rows = std::clamp(
+                estimateJoinedRows(selectivity, to_rows(left_rows), to_rows(right_rows)), 1.0, max_search_rows);
+            const double inputs_cost = left.cost + right.cost;
+
+            plan.left_plan = left_index;
+            plan.right_plan = right_index;
+            plan.rows_cost = left.rows_cost + right.rows_cost + joined_rows;
+            plan.estimated_rows = optimizer.estimateCardinality(left.estimated_rows, right.estimated_rows, selectivity, kind, strictness);
+            plan.search_rows = plan.estimated_rows ? static_cast<double>(*plan.estimated_rows) : joined_rows;
+
+            auto offer = [&](double cost, Int8 state)
+            {
+                if (!std::isfinite(cost))
+                    return;
+                plan.cost = inputs_cost + cost;
+                plan.partition_state = state;
+                offerPlan(result_subset, plan);
+            };
+            plan.shuffle_class = -1;
+
+            /// Where both sides are split the same way, Cascades may swap the sides of an inner join: the cheaper side builds
+            /// the hash table.
+            auto join_work = [&](double parallelism)
+            {
+                return std::min(
+                    join_cost.joinWork(left_rows, right_rows, right_bytes, joined_rows, parallelism, parallelism),
+                    join_cost.joinWork(right_rows, left_rows, left_bytes, joined_rows, parallelism, parallelism));
+            };
+
+            /// Broadcast: one side copied to every node, the other one partitioned; its partitioning is kept, a side on
+            /// one node is scattered first.
+            plan.partitioned_side = 0;
+            offer(join_cost.toPartitioned(left_state, left_rows, left_bytes) + join_cost.toReplicated(right_state, right_rows, right_bytes)
+                    + join_cost.joinWork(left_rows, right_rows, right_bytes, joined_rows, nodes, 1),
+                left_state == single_node ? any_partitioning : left_state);
+            plan.partitioned_side = 1;
+            offer(join_cost.toPartitioned(right_state, right_rows, right_bytes) + join_cost.toReplicated(left_state, left_rows, left_bytes)
+                    + join_cost.joinWork(right_rows, left_rows, left_bytes, joined_rows, nodes, 1),
+                right_state == single_node ? any_partitioning : right_state);
+            /// The cheapest plan of a side shuffled into a state whose own plan was dropped, then broadcast to.
+            if (right_index == -1)
+                for (const Int8 state : dp_table[rhs_subset].pruned_states)
+                    offer(join_cost.toNewPartitioning(right_state, right_rows, right_bytes)
+                            + join_cost.toReplicated(left_state, left_rows, left_bytes)
+                            + join_cost.joinWork(right_rows, left_rows, left_bytes, joined_rows, nodes, 1),
+                        state);
+            plan.partitioned_side = 0;
+            if (left_index == -1)
+                for (const Int8 state : dp_table[lhs_subset].pruned_states)
+                    offer(join_cost.toNewPartitioning(left_state, left_rows, left_bytes)
+                            + join_cost.toReplicated(right_state, right_rows, right_bytes)
+                            + join_cost.joinWork(left_rows, right_rows, right_bytes, joined_rows, nodes, 1),
+                        state);
+
+            for (const auto & shuffle : split_shuffles)
+            {
+                auto offer_shuffle = [&](bool left_routed, bool right_routed, Int8 state)
+                {
+                    offer((left_routed ? 0.0 : join_cost.toNewPartitioning(left_state, left_rows, left_bytes))
+                            + (right_routed ? 0.0 : join_cost.toNewPartitioning(right_state, right_rows, right_bytes)) + join_work(nodes),
+                        state);
+                };
+                if (!shuffle.chosen)
+                {
+                    offer_shuffle(
+                        shuffle.raw && optimizer.isPartitionedBy(left_state, shuffle.key_class, shuffle.left_relation),
+                        shuffle.raw && optimizer.isPartitionedBy(right_state, shuffle.key_class, shuffle.right_relation),
+                        shuffle.state);
+                    continue;
+                }
+                /// One shuffle per exact type that both sides have columns of: a side hashed by a column of that type
+                /// moves no rows. Without such a type, the key is cast before hashing.
+                plan.shuffle_class = static_cast<Int8>(shuffle.key_class);
+                const Int32 left_type = optimizer.stateType(left_state, shuffle.key_class);
+                const Int32 right_type = optimizer.stateType(right_state, shuffle.key_class);
+                const UInt64 types = optimizer.shuffleKeyTypes(shuffle.key_class, left_mask, right_mask);
+                for (UInt64 remaining = types; remaining; remaining &= remaining - 1)
+                {
+                    const auto type = static_cast<Int32>(std::countr_zero(remaining));
+                    plan.shuffle_type = static_cast<Int8>(type);
+                    offer_shuffle(left_type == type, right_type == type, optimizer.partitionState(shuffle.key_class, 0, type));
+                }
+                if (!types)
+                {
+                    plan.shuffle_type = -1;
+                    offer_shuffle(false, false, any_partitioning);
+                }
+                plan.shuffle_class = -1;
+            }
+
+            /// Local: both sides on one node.
+            offer(join_cost.toSingleNode(left_state, left_rows, left_bytes) + join_cost.toSingleNode(right_state, right_rows, right_bytes)
+                    + join_work(1),
+                single_node);
+
+            /// Replicated: every node joins its copies of both sides, so its result is a copy too.
+            offer(join_cost.toReplicated(left_state, left_rows, left_bytes) + join_cost.toReplicated(right_state, right_rows, right_bytes)
+                    + join_work(1),
+                replicated);
+        }
+    }
 }
 
 template <class TDPTable, class TOptimizer>

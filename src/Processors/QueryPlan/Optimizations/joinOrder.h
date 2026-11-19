@@ -19,6 +19,7 @@ namespace DB
 
 struct DPJoinEntry;
 using DPJoinEntryPtr = std::shared_ptr<DPJoinEntry>;
+struct CostConfig;
 
 enum class JoinMethod : UInt8
 {
@@ -49,6 +50,11 @@ struct DPJoinEntry
     /// For join nodes
     JoinOperator join_operator;
     JoinMethod join_method = JoinMethod::None;
+    /// Whether the join order search costed this join by the data it moves between nodes, with the cost model of
+    /// Cascades (`QueryGraph::distribution_node_count`). Cascades then costs the join with `estimated_rows` as it is.
+    bool distributed_costs = false;
+    /// With `distributed_costs`: the rows the search costed the join with, the same as `estimated_rows` when it is known.
+    double costing_rows = 0;
 
     /// For leaf nodes
     int relation_id = -1;
@@ -164,6 +170,9 @@ struct QueryGraph
     /// Stored as alias-resolved JoinActionRef-s pointing to INPUT nodes.
     EquivalenceClasses<JoinActionRef> column_equivalences;
 
+    /// The relations of each class in `column_equivalences` that has one type (see `isClassOfOneType`).
+    VectorWithMemoryTracking<BitSet> connecting_class_relations;
+
     /// Relations read through a prepared join storage (`Join` engine, key-value storage), which is
     /// looked up by a fixed key.
     BitSet prepared_storage_relations;
@@ -187,13 +196,49 @@ struct QueryGraph
     /// Per relation. Called by DPsub only when it uses interesting orders, since it probes the storage order of every input.
     std::function<VectorWithMemoryTracking<ReadInOrder>(const VectorWithMemoryTracking<NameSet> & candidates)> find_read_in_order_prefixes;
 
+    /// With `query_plan_join_order_distribution`: the nodes Cascades distributes the plan over, 0 when DPsub costs only
+    /// rows. DPsub then costs every join as a local, shuffle, broadcast or replicated join, with the cost model of Cascades.
+    size_t distribution_node_count = 0;
+    std::shared_ptr<const CostConfig> distribution_cost_config;
+    /// Lower limits for the pairs of plans and the partitioning states of that search, 0 for its own limits. Set by tests
+    /// with `_internal_dpsub_distribution_plan_pair_limit` and `_internal_dpsub_distribution_partition_state_limit`.
+    size_t distribution_plan_pair_limit = 0;
+    size_t distribution_partition_state_limit = 0;
+    /// Where the rows of a join input are when its own plan ends.
+    enum class InputPlacement : uint8_t
+    {
+        Read,        /// A table read: partitioned, on one node or on every node, each with the cost of its read.
+        SingleNode,  /// A result on one node, like a `UNION ALL` or a step that Cascades does not distribute.
+        Partitioned, /// A result on several nodes: a join, or a step that Cascades distributes, like a `GROUP BY`.
+    };
+    struct DistributionInput
+    {
+        InputPlacement placement = InputPlacement::SingleNode;
+        /// The bytes of a row of the input columns of the relation that the graph uses.
+        double row_bytes = 1;
+        /// The rows the search costs the input with when it has no estimate: those of the granules a read selects, the
+        /// estimate of the step below its filters, or the costing rows of a join that an earlier search planned. 0 when
+        /// unknown.
+        double scanned_rows = 0;
+        /// Cascades reads such a table on every node instead of broadcasting it.
+        bool can_read_on_every_node = false;
+    };
+    /// Per relation, with `distribution_node_count`.
+    VectorWithMemoryTracking<DistributionInput> distribution_inputs;
+
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();
 
     /// Check if two relation sets are transitively connected through column equivalences
-    /// (i.e., there exists at least one equivalence class with members in both sets).
+    /// (i.e., there exists at least one equivalence class of one type, see `isClassOfOneType`, with members in both sets).
     bool areTransitivelyConnected(const BitSet & left, const BitSet & right) const;
 };
+
+/// Whether the columns of an equivalence class have one type up to `Nullable` and `LowCardinality`. Only such a class is
+/// transitive: `Int32` 0 equals `Enum8('a' = 0)`, which equals the `String` 'a', which equals `Enum8('a' = 1)`, which
+/// equals `Int32` 1. So only such a class connects two relations in the join order search, and only it gives a join an
+/// added condition (see `cleanupJoinPredicates`); a join of two relations connected otherwise would have no condition.
+bool isClassOfOneType(const EquivalenceClasses<JoinActionRef>::Class & columns);
 
 struct QueryPlanOptimizationSettings;
 

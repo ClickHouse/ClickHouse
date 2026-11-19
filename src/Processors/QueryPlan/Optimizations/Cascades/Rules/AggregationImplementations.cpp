@@ -62,13 +62,7 @@ public:
     void addSingleKeyShuffleAggregations(const std::vector<size_t> & candidate_node_counts);
 
     /// See `addShuffleAggregation` for why each condition disables the shuffle strategy.
-    [[nodiscard]] bool isShuffleApplicable() const
-    {
-        return !agg_step.getParams().keys.empty()
-            && !agg_step.isGroupingSets()
-            && !agg_step.getParams().overflow_row
-            && agg_step.getParams().max_rows_to_group_by == 0;
-    }
+    [[nodiscard]] bool isShuffleApplicable() const { return isAggregationShuffleApplicable(agg_step); }
 
     [[nodiscard]] bool hasMultipleKeys() const { return agg_step.getParams().keys.size() >= 2; }
 

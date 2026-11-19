@@ -1,0 +1,19 @@
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin  swapped)
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.m_b)
+            ShuffleExchange
+              JoinLogical (Shuffle HashJoin )
+                Expression (Change column names to column identifiers)
+                  ShuffleExchange
+                    ReadFromMergeTree (ParallelRead default.m_f)
+                Expression (Change column names to column identifiers)
+                  ShuffleExchange
+                    ReadFromMergeTree (ParallelRead default.m_a)
+16	8
+16	8
