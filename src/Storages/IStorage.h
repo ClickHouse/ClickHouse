@@ -2,7 +2,6 @@
 
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
-#include <Databases/IDatabase.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/Context_fwd.h>
@@ -24,6 +23,7 @@
 #include <functional>
 #include <optional>
 #include <list>
+#include <Poco/Timespan.h>
 
 
 namespace DB
@@ -228,6 +228,9 @@ public:
     /// A storage that cannot serve synthesised subcolumns such as `.null`/`.size0` as standalone
     /// inputs may enable this while keeping supportsOptimizationToSubcolumns() false.
     virtual bool supportsOptimizationToTupleElementSubcolumns() const { return supportsOptimizationToSubcolumns(); }
+    /// Same, for the functions of a `Map` that read only its keys or only its values (`mapKeys(m)` -> reading `m.keys`).
+    virtual bool supportsOptimizationToMapKeysAndValuesSubcolumns() const { return supportsOptimizationToSubcolumns(); }
+
     /// True when a subcolumn read under FINAL equals the function computed on the merged column.
     /// Safe for engines whose FINAL merge selects whole rows (Replacing/Collapsing/VersionedCollapsing);
     /// unsafe for value-combining engines (Summing/Graphite/Coalescing) that recompute column values.

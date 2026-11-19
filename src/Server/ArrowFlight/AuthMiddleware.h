@@ -6,6 +6,8 @@
 
 #include <Interpreters/Session.h>
 #include <Server/IServer.h>
+#include <Common/SecretString.h>
+#include <Common/StringHashForHeterogeneousLookup.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
 
@@ -84,12 +86,12 @@ class AuthMiddlewareFactory : public arrow::flight::ServerMiddlewareFactory
     private:
         void cleanupExpiredTokens() TSA_REQUIRES(token_mutex);
 
-        using TokenExpirationList = std::multimap<std::chrono::steady_clock::time_point, std::string>;
+        using TokenExpirationList = std::multimap<std::chrono::steady_clock::time_point, SecretString>;
 
         std::mutex token_mutex;
         TokenExpirationList token_expiration_list TSA_GUARDED_BY(token_mutex);
-        std::unordered_map<std::string, TokenExpirationList::iterator> token_expiration_list_index TSA_GUARDED_BY(token_mutex);
-        std::unordered_map<std::string, std::pair<std::string, std::string>> token_to_credentials TSA_GUARDED_BY(token_mutex);
+        std::unordered_map<SecretString, TokenExpirationList::iterator, StringHashForHeterogeneousLookup, std::equal_to<>> token_expiration_list_index TSA_GUARDED_BY(token_mutex);
+        std::unordered_map<SecretString, std::pair<std::string, SecretString>, StringHashForHeterogeneousLookup, std::equal_to<>> token_to_credentials TSA_GUARDED_BY(token_mutex);
 
         const Poco::Util::AbstractConfiguration & config;
     };
