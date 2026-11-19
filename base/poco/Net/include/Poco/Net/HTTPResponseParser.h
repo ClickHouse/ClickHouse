@@ -61,8 +61,8 @@ namespace Net
         /// Parses the bytes and returns how many of them belong to the header: all of them until
         /// the header of the final response is complete, and none after it, because the rest
         /// belongs to the body.
-        /// Throws `MalformedMessageException` as soon as the header breaks the syntax or the
-        /// limits, also before the header ends.
+        /// Throws `MalformedMessageException` as soon as the header breaks the syntax, and
+        /// `HTTPHeaderLimitException` as soon as it breaks the limits, also before the header ends.
 
         void feedEof();
         /// Reports the end of the data. Completes the header as `HTTPResponse::read` does at the

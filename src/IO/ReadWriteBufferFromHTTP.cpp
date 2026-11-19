@@ -433,9 +433,10 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         }
         catch (Poco::Net::MalformedMessageException & e)
         {
-            /// The server has sent a response that violates the protocol or the limits on the
-            /// header, e.g. a header field longer than `http_max_field_value_size`. It will send
-            /// the same response again. A response cut short is `MessageException` and is retried.
+            /// The server has sent a response that violates the protocol, e.g. a bare CR inside a
+            /// header field. It will send the same response again. A response cut short is
+            /// `MessageException` and is retried. A header that exceeds a limit is reported as
+            /// `LIMIT_EXCEEDED` by `receiveHTTPResponse` and is not retried either.
             is_retriable = false;
 
             error_message = e.displayText();

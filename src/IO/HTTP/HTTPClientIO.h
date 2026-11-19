@@ -140,7 +140,7 @@ std::unique_ptr<HTTPRequestBodyWriteBuffer> sendHTTPRequest(
 /// exceptions `Poco` throws: `Poco::Net::NoMessageException` when the peer sent nothing at all
 /// (a keep-alive connection closed by the server), `Poco::Net::MalformedMessageException` for a
 /// malformed response, and `Poco::Net::MessageException` for one that ends before its header or
-/// body does.
+/// body does. A header that exceeds the limits is `LIMIT_EXCEEDED` instead.
 std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponse(
     Poco::Net::HTTPClientSession & session, Poco::Net::HTTPResponse & response, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
