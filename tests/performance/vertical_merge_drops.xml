@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: it times MergeTree vertical merges with lightweight deletes and TTL. -->
     <!--
         Times a merge that drops rows outside the merging algorithm: lightweight-deleted rows in
         `MergeTree` and `ReplacingMergeTree`, both merged vertically, and rows expired by a rows TTL
