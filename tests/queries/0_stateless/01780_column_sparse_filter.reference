@@ -11,16 +11,3 @@ u	Default
 u	Sparse
 105000
 102000
-t_full_index	a	Default
-t_full_index	b	Default
-t_full_index	c	Default
-t_full_index	s	Default
-t_sparse_index	a	Sparse
-t_sparse_index	b	Sparse
-t_sparse_index	c	Sparse
-t_sparse_index	s	Sparse
-1
-1
-1
-1
-1

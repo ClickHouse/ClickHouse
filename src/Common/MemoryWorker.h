@@ -3,9 +3,7 @@
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/ThreadPool.h>
 #include <Common/Jemalloc.h>
-#include <Common/MemoryStatisticsOS.h>
 #include <Common/PageCache.h>
-#include <Common/IMemoryReleasableCache.h>
 #include <IO/ReadBufferFromFile.h>
 
 #include <atomic>
@@ -16,25 +14,6 @@
 
 namespace DB
 {
-
-/// Result of the combined read of the usage value and the inactive-file statistic.
-/// `inactive_file` is empty when the kernel does not expose the corresponding key
-/// (`inactive_file` on cgroup v2, `total_inactive_file` on cgroup v1) in `memory.stat`:
-/// an absent statistic must not be reported as a real zero.
-struct CgroupsMemoryUsageAndInactive
-{
-    uint64_t usage = 0;
-    std::optional<uint64_t> inactive_file;
-};
-
-/// Result of the best-effort combined read used by the asynchronous metrics: the usage value is
-/// always present, while `inactive_file` is empty if the inactive-file fields could not be parsed
-/// or are not present in `memory.stat` at all.
-struct CgroupsMemoryUsageAndOptionalInactive
-{
-    uint64_t usage = 0;
-    std::optional<uint64_t> inactive_file;
-};
 
 struct ICgroupsReader
 {
@@ -55,16 +34,6 @@ struct ICgroupsReader
     virtual ~ICgroupsReader() = default;
 
     virtual uint64_t readMemoryUsage() = 0;
-
-    virtual CgroupsMemoryUsageAndInactive readMemoryUsageAndInactiveFile() = 0;
-
-    /// Combined read for the asynchronous metrics (`CGroupMemoryUsed` etc. plus the newer
-    /// `CGroupMemoryInactiveFile`). Parses `memory.stat` once via `readMemoryUsageAndInactiveFile`
-    /// in the common case. A failure to parse the inactive-file fields must not suppress the
-    /// pre-existing usage-based metrics for the update cycle, so on failure the usage is re-read
-    /// via the usage-only `readMemoryUsage` path (which does not depend on those fields) and
-    /// `inactive_file` is left empty. Only a failure of the usage path itself propagates.
-    CgroupsMemoryUsageAndOptionalInactive readMemoryUsageAndOptionalInactiveFile();
 
     virtual std::string dumpAllStats() = 0;
 };
@@ -134,15 +103,11 @@ class MemoryWorker
 public:
     MemoryWorker(MemoryWorkerConfig config, std::shared_ptr<PageCache> page_cache_);
 
-    /// Register (or, with nullptr, unregister) a cache to resize on every tick, see `releasable_cache`.
-    void setReleasableCache(std::shared_ptr<IMemoryReleasableCache> cache);
-
     enum class MemoryUsageSource : uint8_t
     {
         None,
         Cgroups,
-        Jemalloc,
-        OS
+        Jemalloc
     };
 
     MemoryUsageSource getSource();
@@ -168,13 +133,7 @@ public:
 
     ~MemoryWorker();
 private:
-    struct MemoryUsage
-    {
-        Int64 resident = 0;
-        Int64 allocated = 0;
-    };
-
-    MemoryUsage getMemoryUsage(bool log_error);
+    uint64_t getMemoryUsage(bool log_error);
 
     void updateResidentMemoryThread();
 
@@ -283,17 +242,7 @@ private:
 
     std::shared_ptr<ICgroupsReader> cgroups_reader;
 
-#if HAS_MEMORY_STATISTICS_OS
-    std::unique_ptr<MemoryStatisticsOS> os_memory_statistics;
-#endif
-
     std::shared_ptr<PageCache> page_cache;
-
-    /// Another cache that gives memory back on demand, resized on every tick like the page cache.
-    /// Set after construction, once the cache exists. See `IMemoryReleasableCache`.
-    std::mutex releasable_cache_mutex;
-    std::shared_ptr<IMemoryReleasableCache> releasable_cache;
-    std::shared_ptr<IMemoryReleasableCache> getReleasableCache();
 
 #if USE_JEMALLOC
     void purgeDirtyPagesThread();
@@ -318,7 +267,6 @@ private:
 
     Jemalloc::MibCache<uint64_t> epoch_mib{"epoch"};
     Jemalloc::MibCache<size_t> resident_mib{"stats.resident"};
-    Jemalloc::MibCache<size_t> allocated_mib{"stats.allocated"};
     Jemalloc::MibCache<size_t> pagesize_mib{"arenas.page"};
     Jemalloc::MibCache<size_t> dirty_decay_ms_mib{"arenas.dirty_decay_ms"};
 

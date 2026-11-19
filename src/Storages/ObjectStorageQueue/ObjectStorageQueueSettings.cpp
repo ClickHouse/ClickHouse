@@ -5,12 +5,12 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/SecretArguments.h>
+#include <Storages/ObjectStorageQueue/AzureQueue_fwd.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <Storages/ObjectStorageQueue/S3Queue_fwd.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/CurrentThread.h>
-#include <Common/HiddenSecret.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -121,10 +121,18 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     /// Hides what `SHOW CREATE TABLE` hides. A secret is hidden whole, as its masker renders SQL.
     auto render_value = [&](const std::string & setting_name, const Field & value) -> String
     {
+        static constexpr std::string_view hidden_secret = "[HIDDEN]";
         if (!display_secrets)
         {
-            if (auto masked = getSecretArgumentsFinder().renderSecretSetting(setting_name, value); masked && masked->contains(HIDDEN_SECRET))
-                return String(HIDDEN_SECRET);
+            /// Both queue engines take the same settings, so the secrets of both apply.
+            for (const auto * settings_to_hide : {&S3Queue::SETTINGS_TO_HIDE, &AzureQueue::SETTINGS_TO_HIDE})
+            {
+                auto it = settings_to_hide->find(setting_name);
+                if (it == settings_to_hide->end())
+                    continue;
+                if (auto masked = it->second(value); masked && masked->contains(hidden_secret))
+                    return String(hidden_secret);
+            }
         }
         return convertFieldToString(value);
     };
@@ -210,11 +218,10 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is
                     {
                         if (is_attach)
                         {
-                            /// `applyChanges` below applies the changes in order, so the last one wins.
                             LOG_WARNING(
                                 getLogger("StorageObjectStorageQueue"),
                                 "Storage {} has a duplicated setting {}. "
-                                "Will use the last declared setting's value",
+                                "Will use the first declared setting's value",
                                 storage_id.getNameForLogs(), change.name);
                         }
                         else

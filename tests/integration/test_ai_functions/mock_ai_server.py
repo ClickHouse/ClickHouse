@@ -28,15 +28,11 @@ Endpoints:
   POST /v1/embeddings_flaky          — like `/v1/embeddings`, but flaky in the same way as above.
   POST /v1/chat/completions          — returns response based on request content:
       - If response_format with json_schema is present, returns JSON matching the schema
-        with values derived from the user message (boolean properties are set from the
-        same true/false heuristic used for the `aiFilter` fallback below).
+        with values derived from the user message.
+      - If the system prompt looks like an `aiFilter` boolean filter, returns plain
+        `true` or `false` based on the user message.
       - Otherwise echoes the user message as plain text.
       Fixed tokens: 10 input, 5 output.
-  POST /v1/chat/completions_no_structured_output — like `/v1/chat/completions`, but ignores
-      `response_format` even when present, simulating a model/gateway that doesn't support
-      structured output: for an `aiFilter` boolean-filter system prompt, returns plain `true` or
-      `false`, or an unrecognized reply (`"gibberish"`) when the user message asks for it;
-      otherwise echoes the user message as plain text.
   POST /v1/embeddings                — returns one deterministic embedding per input.
       Honors `dimensions` if provided, otherwise returns DEFAULT_EMBED_DIM floats.
       `prompt_tokens` = sum of input character lengths.
@@ -133,13 +129,8 @@ def is_filter_request(body):
 
 
 def filter_match_response(user_message):
-    """Return plain true/false for `aiFilter`. False when the user message signals an obvious
-    negative. A message asking for "gibberish" gets a reply that is neither, exercising
-    `aiFilter`'s fail-closed handling of unrecognized text from a model that ignores the requested
-    boolean output entirely."""
+    """Return plain true/false for `aiFilter`. False when the user message signals an obvious negative."""
     lowered = user_message.lower()
-    if "gibberish" in lowered:
-        return "gibberish"
     if any(token in lowered for token in ("false", "no match", "does not match")):
         return "false"
     return "true"
@@ -164,9 +155,6 @@ def build_structured_response(json_schema, user_message):
         if "enum" in prop:
             # For classification: return the first enum value
             result[key] = prop["enum"][0]
-        elif prop.get("type") == "boolean":
-            # For aiFilter: same true/false heuristic as the plain-text fallback below.
-            result[key] = filter_match_response(user_message) == "true"
         else:
             result[key] = user_message
 
@@ -320,39 +308,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             LAST_REQUEST["body"] = body
             LAST_REQUEST["headers"] = {k.lower(): v for k, v in self.headers.items()}
 
-        if parsed.path in ("/v1/metrics/openai", "/v1/metrics/anthropic"):
-            # A known delay provides a lower bound for the request timer.
-            time.sleep(0.02)
-            mode = parse_qs(parsed.query).get("mode", ["cached"])[0]
-            if parsed.path.endswith("anthropic"):
-                response = make_anthropic_response(extract_user_message(body))
-                response["usage"].update(
-                    cache_read_input_tokens=60, cache_creation_input_tokens=30
-                )
-                if mode == "malformed":
-                    del response["content"]
-                elif mode == "truncated":
-                    response["stop_reason"] = "max_tokens"
-            else:
-                response = make_success_response(
-                    extract_user_message(body), prompt_tokens=100
-                )
-                response["usage"]["prompt_tokens_details"] = {"cached_tokens": 60}
-                if mode == "no_details":
-                    del response["usage"]["prompt_tokens_details"]
-                elif mode == "null_details":
-                    response["usage"]["prompt_tokens_details"] = None
-                elif mode == "empty_details":
-                    response["usage"]["prompt_tokens_details"] = {}
-                elif mode == "malformed":
-                    response["choices"] = []
-                elif mode == "truncated":
-                    response["choices"][0]["finish_reason"] = "length"
-            if mode == "no_usage":
-                del response["usage"]
-            self._send_json(200, response)
-            return
-
         if parsed.path == "/v1/chat/slow":
             self._serve_slowly(lambda: make_success_response(extract_user_message(body)))
             return
@@ -394,21 +349,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
             if json_schema:
                 content = build_structured_response(json_schema, user_msg)
-            else:
-                content = user_msg
-
-            self._send_json(200, make_success_response(content))
-            return
-
-        if parsed.path == "/v1/chat/completions_no_structured_output":
-            # Ignores `response_format` on purpose, as a model/gateway that doesn't support
-            # structured output would: replies with bare text for an `aiFilter` boolean-filter
-            # system prompt, otherwise echoes the user message like `/v1/chat/completions` does.
-            user_msg = extract_user_message(body)
-            if is_filter_request(body):
+            elif is_filter_request(body):
                 content = filter_match_response(user_msg)
             else:
                 content = user_msg
+
             self._send_json(200, make_success_response(content))
             return
 
