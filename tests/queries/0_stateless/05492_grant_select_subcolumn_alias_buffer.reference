@@ -1,13 +1,12 @@
--- no grants on the target: denied
-ACCESS_DENIED
+-- no grants on the target: denied through Buffer, allowed through Alias
+OK: 7
 ACCESS_DENIED
 -- a grant on the column covers its subcolumns, the other column stays denied
 OK: 7	x
-OK: 7	x
-ACCESS_DENIED
 ACCESS_DENIED
 -- a revoked column denies its subcolumns, the rest is allowed
 ACCESS_DENIED
-ACCESS_DENIED
 OK: 1	7
+-- a column revoked from the definer denies its subcolumns through Alias, the rest is allowed
+ACCESS_DENIED
 OK: 1	7
