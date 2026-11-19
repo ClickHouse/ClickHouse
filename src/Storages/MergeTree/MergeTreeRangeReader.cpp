@@ -1125,22 +1125,19 @@ size_t MergeTreeRangeReader::Stream::ceilRowsToCompleteGranules(size_t rows_num)
 /// The rows from the current position to the end of the stripe of the columns cache that is the
 /// closest to `rows_num`, but at most twice as far; `rows_num` if the range has no such stripe end.
 /// A block that is a whole stripe is served from the cache and written to it without a copy.
-/// A stripe that is served from the cache, or written to it, is read whole even if `rows_num` is a bit
-/// less: the block shares the columns of the cache, so it is not copied. But not beyond twice `rows_num`,
-/// which is at most `max_block_size_rows` (lowered by a `LIMIT` to read no more than it needs) and is lowered
-/// further by `preferred_block_size_bytes` for wide rows: a block of a whole stripe of wide rows is as costly
-/// to process as one read from disk (the functions and filters of the query run over the whole block and
-/// copy it), and a stripe can hold many times more rows. Only if every reader of the chain can: the columns
-/// a later reader reads from disk would make the block as large.
+/// A stripe that is served from the cache, or written to it, is read whole even if `rows_num` is
+/// less: the block shares the columns of the cache, so it is not copied. But not beyond twice
+/// `max_stripe_block_rows`, see `MergeTreeReadTask::read`. Only if every reader of the chain can: the
+/// columns a later reader reads from disk would make the block as large.
 size_t MergeTreeRangeReader::Stream::alignRowsToColumnsCacheStripes(
-    size_t rows_num, size_t stripe_marks, size_t max_block_size_rows, std::span<IMergeTreeReader * const> columns_cache_readers) const
+    size_t rows_num, size_t stripe_marks, size_t max_stripe_block_rows, std::span<IMergeTreeReader * const> columns_cache_readers) const
 {
     const size_t rows = alignRowsToColumnsCacheStripesImpl(rows_num, stripe_marks);
     const size_t stripe_end = (current_mark / stripe_marks + 1) * stripe_marks;
     if (offset_after_current_mark != 0 || current_mark % stripe_marks != 0 || stripe_end > last_mark)
         return rows;
     const size_t stripe_rows = index_granularity->getRowsCountInRange(current_mark, stripe_end);
-    if (rows >= stripe_rows || stripe_rows > 2 * std::min(rows_num, max_block_size_rows))
+    if (rows >= stripe_rows || stripe_rows > 2 * max_stripe_block_rows)
         return rows;
     for (auto * reader : columns_cache_readers)
     {
@@ -1217,7 +1214,7 @@ static size_t getTotalBytesInColumns(const Columns & columns)
 }
 
 MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(
-    size_t max_rows, MarkRanges & ranges, size_t max_block_size_rows, std::span<IMergeTreeReader * const> columns_cache_readers)
+    size_t max_rows, MarkRanges & ranges, size_t max_stripe_block_rows, std::span<IMergeTreeReader * const> columns_cache_readers)
 {
     IMergeTreeReader * const this_reader[] = {merge_tree_reader};
     if (columns_cache_readers.empty())
@@ -1287,7 +1284,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(
 
             if (!aligned_to_stripes)
             {
-                space_left = stream.alignRowsToColumnsCacheStripes(space_left, stripe_marks, max_block_size_rows, columns_cache_readers);
+                space_left = stream.alignRowsToColumnsCacheStripes(space_left, stripe_marks, max_stripe_block_rows, columns_cache_readers);
                 aligned_to_stripes = true;
             }
 
