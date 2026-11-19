@@ -71,6 +71,7 @@ def clone_submodules():
         "contrib/StringZilla",
         "contrib/rust_vendor",
         "contrib/clickstack",
+        "contrib/musl",
         "contrib/heks",
         "contrib/sql-console",
         "contrib/optimized-routines",
@@ -302,8 +303,6 @@ def main():
         if not Shell.check("sccache --start-server", retries=3):
             print("WARNING: sccache server failed to start, build will proceed without it")
         results.append(
-            # TODO: commented out to make job platform agnostic
-            #   -DCMAKE_TOOLCHAIN_FILE={current_directory}/cmake/linux/toolchain-x86_64-musl.cmake \
             Result.from_commands_run(
                 name="Cmake configuration",
                 command=f"cmake {repo_path_normalized} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} \
