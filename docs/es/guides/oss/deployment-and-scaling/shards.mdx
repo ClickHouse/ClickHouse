@@ -6,8 +6,6 @@ keywords: ['segmento', 'segmentos', 'segmentación', 'réplica', 'réplicas']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <br />
 
 <Note>
@@ -20,13 +18,29 @@ import { Image } from "/snippets/es/components/Image.jsx";
 
 En los clústeres tradicionales de ClickHouse con arquitectura [shared-nothing](https://en.wikipedia.org/wiki/Shared-nothing_architecture), la segmentación se utiliza cuando ① los datos son demasiado grandes para un solo servidor o ② un solo servidor es demasiado lento para procesarlos. La siguiente figura ilustra el caso ①, en el que la tabla [uk&#95;price&#95;paid&#95;simple](/es/concepts/core-concepts/parts) supera la capacidad de una sola máquina:
 
-<Image img="/images/managing-data/core-concepts/shards_01.webp" size="lg" alt="SHARDS" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![SHARDS](/images/managing-data/core-concepts/shards_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 En ese caso, los datos pueden dividirse entre varios servidores ClickHouse en forma de segmentos de tabla:
 
-<Image img="/images/managing-data/core-concepts/shards_02.webp" size="lg" alt="SHARDS" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![SHARDS](/images/managing-data/core-concepts/shards_02.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -59,7 +73,15 @@ Para los [parámetros del motor Distributed](/es/reference/engines/table-engines
 
 El siguiente diagrama ilustra cómo se procesan los INSERT en una tabla distribuida en ClickHouse:
 
-<Image img="/images/managing-data/core-concepts/shards_03.webp" size="lg" alt="SHARDS" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![SHARDS](/images/managing-data/core-concepts/shards_03.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -75,7 +97,15 @@ La siguiente sección explica cómo funciona el reenvío de SELECT.
 
 Este diagrama muestra cómo se procesan las consultas SELECT con una tabla distribuida en ClickHouse:
 
-<Image img="/images/managing-data/core-concepts/shards_04.webp" size="lg" alt="SHARDS" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![SHARDS](/images/managing-data/core-concepts/shards_04.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -95,7 +125,15 @@ Tenga en cuenta que la replicación requiere un componente [Keeper](https://clic
 
 El siguiente diagrama ilustra un clúster de ClickHouse con seis servidores, donde los dos segmentos de tabla `Shard-1` y `Shard-2` introducidos anteriormente tienen cada uno tres réplicas. Se envía una consulta a este clúster:
 
-<Image img="/images/managing-data/core-concepts/shards_replicas_01.webp" size="lg" alt="SHARDS" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![SHARDS](/images/managing-data/core-concepts/shards_replicas_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
