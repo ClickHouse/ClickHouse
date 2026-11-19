@@ -1349,6 +1349,8 @@ void StorageTimeSeriesSelector::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
+    /// Checked again: a table created AS this function keeps its configuration, and is read later, and by another user.
+    context->checkAccess(AccessType::SELECT, config.time_series_storage_id);
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     checkTimeSeriesSelectorSource(config.time_series_storage_id, context);

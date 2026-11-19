@@ -1,0 +1,8 @@
+--- read by the creator
+7
+--- no grant on the source
+ACCESS_DENIED
+--- SELECT on the source
+7
+--- SELECT on the source revoked
+ACCESS_DENIED
