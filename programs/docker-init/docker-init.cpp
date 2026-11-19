@@ -301,11 +301,17 @@ std::vector<std::string> getOverriddenConfigChildren(const std::vector<std::stri
 }
 
 /// The names of the child elements of a configuration key in the configuration as the server loads it: `config_file`
-/// with `config.d`, includes and substitutions applied. Elements included from ZooKeeper (`from_zk`) are not seen.
+/// with `config.d`, includes and substitutions applied.
+/// Elements included from ZooKeeper (`from_zk`) are known only to the server, which loads them after it connects
+/// to ZooKeeper and on every reload, so any of them can add or change the element. A configuration with them is
+/// rejected: the caller must not rely on an incomplete list.
 std::vector<std::string> getConfigChildren(const std::string & config_file, const std::string & key)
 {
     DB::ConfigProcessor processor(config_file, /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
     auto loaded = processor.loadConfig(/* allow_zk_includes = */ true);
+    if (loaded.has_zk_includes)
+        throw Poco::Exception("the configuration has elements included from ZooKeeper (`from_zk`), "
+            "so `" + key + "` in it cannot be read without ZooKeeper");
     Poco::Util::AbstractConfiguration::Keys children;
     loaded.configuration->keys(key, children);
     return children;
@@ -700,39 +706,30 @@ bool pingServer(Poco::UInt16 port_number, [[maybe_unused]] bool secure)
     }
 }
 
-/// Whether the server on 127.0.0.1:`native_port` answers `SELECT 1` as `user`. It is polled while the server is starting,
-/// so any failure means "not ready yet".
-bool queryServer(const std::string & native_port, const std::string & user, const std::string & password)
+/// Whether the server on 127.0.0.1:`port` of the native interface answers. It is polled while the server is starting,
+/// so failing to connect means "not ready yet". Like `/ping`, the check needs no credentials: the server answers
+/// an HTTP request on the native port with `HTTP/1.0 400 Bad Request` and a hint to use `clickhouse-client`
+/// (see `formatHTTPErrorResponseWhenUserIsConnectedToWrongPort` in `TCPHandler`). It does that only once
+/// it handles connections, the same as `/ping` on the HTTP port.
+bool pingNativeServer(Poco::UInt16 port_number)
 {
-    pid_t check_pid = fork();
-    if (check_pid < 0)
-        return false;
-    if (check_pid == 0)
+    try
     {
-        int devnull = open("/dev/null", O_WRONLY);
-        if (devnull >= 0)
-        {
-            dup2(devnull, STDOUT_FILENO);
-            dup2(devnull, STDERR_FILENO);
-            close(devnull);
-        }
-        /// Keep args in a named variable so the strings outlive argv.
-        std::vector<std::string> check_args = {
-            g_clickhouse_binary, "client",
-            "--host", "127.0.0.1",
-            "--port", native_port,
-            "-u", user,
-            "--password", password,
-            "--query", "SELECT 1",
-        };
-        auto argv = buildArgv(check_args);
-        execvp(argv[0], argv.data());
-        _exit(127);
-    }
+        Poco::Net::HTTPClientSession session("127.0.0.1", port_number);
+        session.setTimeout(Poco::Timespan(1, 0));
 
-    int check_status = 0;
-    while (waitpid(check_pid, &check_status, 0) < 0 && errno == EINTR) {}
-    return WIFEXITED(check_status) && WEXITSTATUS(check_status) == 0;
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/ping", Poco::Net::HTTPMessage::HTTP_1_0);
+        session.sendRequest(request);
+        Poco::Net::HTTPResponse response;
+        std::istream & body = session.receiveResponse(response);
+        std::string text{std::istreambuf_iterator<char>(body), std::istreambuf_iterator<char>()};
+        return response.getStatus() == Poco::Net::HTTPResponse::HTTP_BAD_REQUEST
+            && text.find("is for clickhouse-client program") != std::string::npos;
+    }
+    catch (const Poco::Exception &)
+    {
+        return false;
+    }
 }
 
 /// Returns false on first script failure (fail-fast, matches shell `set -e`).
@@ -867,8 +864,8 @@ bool initClickHouseDB(
     /// The readiness check is `/ping` over HTTP (or HTTPS), the same as in entrypoint.sh. It needs no credentials:
     /// the user from the environment may be unable to log in, e.g. when a mounted `users.d` sets the password
     /// of `default` and an init script passes that password itself.
-    /// A configuration with only the native interface has nothing to ping, so then the check is `SELECT 1` over
-    /// the native interface with the user from the environment, which is also the user of the initialization.
+    /// A configuration with only the native interface has nothing to ping, so then the check is the answer of
+    /// the native port to an HTTP request, which needs no credentials either.
     std::string ping_port = getOverriddenConfigValue(extra_server_args, "http_port");
     if (ping_port.empty())
         ping_port = extractConfigValue(config_file, "http_port");
@@ -882,18 +879,23 @@ bool initClickHouseDB(
         ping_secure = true;
     }
 #endif
-    Poco::UInt16 ping_port_number = 0;
-    if (!ping_port.empty())
+    auto parse_port = [](const std::string & port, std::string_view setting, Poco::UInt16 & port_number)
     {
-        const char * ping_port_end = ping_port.data() + ping_port.size();
-        auto [ptr, error] = std::from_chars(ping_port.data(), ping_port_end, ping_port_number);
-        if (error != std::errc() || ptr != ping_port_end || ping_port_number == 0)
+        const char * port_end = port.data() + port.size();
+        auto [ptr, error] = std::from_chars(port.data(), port_end, port_number);
+        if (error != std::errc() || ptr != port_end || port_number == 0)
         {
-            std::cerr << "docker-init: error: invalid " << (ping_secure ? "`https_port`" : "`http_port`")
-                      << " '" << ping_port << "'\n";
+            std::cerr << "docker-init: error: invalid `" << setting << "` '" << port << "'\n";
             return false;
         }
-    }
+        return true;
+    };
+    Poco::UInt16 ping_port_number = 0;
+    if (!ping_port.empty() && !parse_port(ping_port, ping_secure ? "https_port" : "http_port", ping_port_number))
+        return false;
+    Poco::UInt16 native_port_number = 0;
+    if (ping_port.empty() && !parse_port(native_port, "tcp_port", native_port_number))
+        return false;
 
     std::string run_as = std::to_string(run_uid) + ":" + std::to_string(run_gid);
 
@@ -936,7 +938,9 @@ bool initClickHouseDB(
     {
         /// Do not start a server whose listeners are not known to be bound to localhost.
         std::cerr << "docker-init: error: cannot read the protocols from " << config_file << ": "
-                  << DB::getCurrentExceptionMessage(false) << "\n";
+                  << DB::getCurrentExceptionMessage(false)
+                  << "; the temporary server of the initialization (init scripts or `CLICKHOUSE_DB`) is not started, "
+                     "because its listeners cannot be restricted to localhost\n";
         return false;
     }
     for (auto & protocol : getOverriddenConfigChildren(extra_server_args, "protocols"))
@@ -986,7 +990,7 @@ bool initClickHouseDB(
     {
         const bool ready = ping_port_number != 0
             ? pingServer(ping_port_number, ping_secure)
-            : queryServer(native_port, clickhouse_user, clickhouse_password);
+            : pingNativeServer(native_port_number);
         if (ready)
         {
             server_ready = true;
