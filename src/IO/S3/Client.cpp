@@ -759,42 +759,46 @@ AttemptsRecord::Proof Client::proveFailedWrite(const RequestType & request, cons
     return Proof::None;
 }
 
-Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const
+template <typename RequestType, typename RequestFn>
+std::invoke_result_t<RequestFn, RequestType &> Client::publish(RequestType & request, RequestFn request_fn) const
 {
     auto & attempts_record = request.getAttemptsRecord();
     attempts_record.proof = AttemptsRecord::Proof::None;
     auto outcome = [&]
     {
         RequestScope scope(&attempts_record);
-
-        return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-            request, [this](Model::CompleteMultipartUploadRequest & req) { return CompleteMultipartUpload(req); });
+        return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(request, std::move(request_fn));
     }();
 
-    const auto & key = request.GetKey();
-    const auto & bucket = request.GetBucket();
-
-    /// A replayed completion reports NO_SUCH_UPLOAD, its upload id consumed, or a 412 when it was
-    /// conditional -- and so does an abort over somebody else's object. Only the stamped id separates them.
     if (outcome.IsSuccess())
     {
         attempts_record.proof = AttemptsRecord::Proof::Applied;
+        return outcome;
     }
-    else
-    {
-        /// A 412 can be an ordinary lost race for the key; an upload id the server no longer has cannot.
-        const bool warn_if_unproven = outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD;
 
-        attempts_record.proof = proveFailedWrite(request, outcome, warn_if_unproven);
-        if (attempts_record.proof == AttemptsRecord::Proof::Applied)
-        {
-            LOG_INFO(
-                log,
-                "Multipart upload was completed by an earlier attempt of this upload ({}). Key: {}, Bucket: {}",
-                outcome.GetError().GetExceptionName(), key, bucket);
-            outcome = Aws::S3::Model::CompleteMultipartUploadOutcome(Aws::S3::Model::CompleteMultipartUploadResult());
-        }
+    /// A replay of an applied attempt fails its own condition, or finds its upload id consumed, and so does a write over
+    /// the object of another writer: only the stamped id tells them apart. A 412 can be an ordinary lost race, but an
+    /// upload id that the server no longer has cannot, so its failed proof is a warning.
+    const auto & error = outcome.GetError();
+    attempts_record.proof = proveFailedWrite(request, outcome, error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD);
+    if (attempts_record.proof == AttemptsRecord::Proof::Applied)
+    {
+        LOG_INFO(
+            log,
+            "The object was written by an earlier attempt of this write ({}). Key: {}, Bucket: {}",
+            error.GetExceptionName(), request.GetKey(), request.GetBucket());
+        outcome = decltype(outcome)(std::decay_t<decltype(outcome.GetResult())>());
     }
+    return outcome;
+}
+
+Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const
+{
+    auto outcome = publish(
+        request, [this](Model::CompleteMultipartUploadRequest & req) { return CompleteMultipartUpload(req); });
+
+    const auto & key = request.GetKey();
+    const auto & bucket = request.GetBucket();
 
     if (outcome.IsSuccess() && provider_type == ProviderType::GCS && client_settings.gcs_issue_compose_request)
     {
@@ -829,40 +833,14 @@ Model::CopyObjectOutcome Client::CopyObject(CopyObjectRequest & request) const
 
 Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
 {
-    auto & attempts_record = request.getAttemptsRecord();
-    attempts_record.proof = AttemptsRecord::Proof::None;
-    auto outcome = [&]
-    {
-        RequestScope scope(&attempts_record);
-
-        return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-            request,
-            [this](Model::PutObjectRequest & req)
-            {
-                if (isGCSCreateIfAbsentWithHMAC(req))
-                    return putObjectWithGOOG4Signature(req);
-                return PutObject(req);
-            });
-    }();
-
-    /// A replayed conditional PUT fails its own condition; only the stamped id tells that from a lost race.
-    if (outcome.IsSuccess())
-    {
-        attempts_record.proof = AttemptsRecord::Proof::Applied;
-    }
-    else
-    {
-        attempts_record.proof = proveFailedWrite(request, outcome, /* warn_if_unproven= */ false);
-        if (attempts_record.proof == AttemptsRecord::Proof::Applied)
+    return publish(
+        request,
+        [this](Model::PutObjectRequest & req)
         {
-            LOG_INFO(
-                log,
-                "Object was put by an earlier attempt of this write ({}). Key: {}, Bucket: {}",
-                outcome.GetError().GetExceptionName(), request.GetKey(), request.GetBucket());
-            outcome = Aws::S3::Model::PutObjectOutcome(Aws::S3::Model::PutObjectResult());
-        }
-    }
-    return outcome;
+            if (isGCSCreateIfAbsentWithHMAC(req))
+                return putObjectWithGOOG4Signature(req);
+            return PutObject(req);
+        });
 }
 
 Model::PutObjectTaggingOutcome Client::PutObjectTagging(PutObjectTaggingRequest & request) const

@@ -364,6 +364,11 @@ private:
     template <typename RequestType, typename OutcomeType>
     AttemptsRecord::Proof proveFailedWrite(const RequestType & request, const OutcomeType & outcome, bool warn_if_unproven) const;
 
+    /// Sends a request that publishes an object, and records its outcome on the request. A failure that the id proves to
+    /// answer an applied earlier attempt of this write is a success.
+    template <typename RequestType, typename RequestFn>
+    std::invoke_result_t<RequestFn, RequestType &> publish(RequestType & request, RequestFn request_fn) const;
+
     std::optional<S3::URI> getURIForBucket(std::string_view bucket) const;
 
     bool checkIfWrongRegionDefined(std::string_view bucket, const Aws::S3::S3Error & error, Aws::String & region) const;
