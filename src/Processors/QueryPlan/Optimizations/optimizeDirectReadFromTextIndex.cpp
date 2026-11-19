@@ -13,6 +13,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
+#include <Functions/hasPhrase.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
@@ -776,9 +777,8 @@ private:
             }
         }
 
-        /// A phrase must lie within one element, so the tokens of an Array are not flattened for it.
-        const bool match_phrase_per_element = apply_postprocessor && function_name == "hasPhrase"
-            && isArray(new_children[0]->result_type) && tokenizer->getType() != ITokenizer::Type::Array;
+        /// Flattened tokens of an Array would let a phrase span elements.
+        const bool match_phrase_per_element = apply_postprocessor && function_name == "hasPhrase" && isArray(new_children[0]->result_type);
 
         /// Rewrite the haystack into the postprocessed tokens the index stores, so the row-level
         /// function still matches when the index isn't read directly (direct read off, or unmaterialized
@@ -801,7 +801,7 @@ private:
         {
             /// new_children[0] is now an Array(String) of postprocessed tokens. Switch the tokenizer argument
             /// to 'array' to match them verbatim, instead of re-splitting tokens the index stores whole.
-            if (function_name == "hasAnyTokens" || function_name == "hasAllTokens" || function_name == "hasPhrase")
+            if (function_name == "hasAnyTokens" || function_name == "hasAllTokens")
             {
                 chassert(new_children.size() == 3);
                 DataTypePtr arg_type = std::make_shared<DataTypeString>();
@@ -896,8 +896,17 @@ private:
         auto needles_column = needles_type->createColumnConst(0, needles_field);
         new_children[1] = &actions_dag.addColumn(std::move(needles_column), needles_type, applyVisitor(FieldVisitorToString(), needles_field));
 
+        String new_function_name = function_name;
+        if (apply_postprocessor && function_name == "hasPhrase")
+        {
+            /// The postprocessed tokens of the value are one sequence, which `hasPhrase` would match per element.
+            new_function_name = FunctionHasPhraseInTokenSequences::name;
+            const auto & sequences = actions_dag.addFunction(FunctionFactory::instance().get("array", context), {new_children[0]}, "");
+            new_children = {&sequences, new_children[1]};
+        }
+
         /// Recreate a function object because we have modified the arguments.
-        FunctionOverloadResolverPtr new_function_base = FunctionFactory::instance().get(function_name, context);
+        FunctionOverloadResolverPtr new_function_base = FunctionFactory::instance().get(new_function_name, context);
         const ActionsDAG::Node * new_function_node = &actions_dag.addFunction(new_function_base, new_children, "");
 
         if (!new_function_node->result_type->equals(*function_node.result_type))

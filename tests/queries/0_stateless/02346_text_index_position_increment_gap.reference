@@ -55,10 +55,11 @@ a String column has no elements to separate
 0	clickhouse	[1]
 0	hello	[0]
 0	world	[2]
-the array tokenizer: every element is one token and a phrase spans elements
-0	clickhouse	[1]
+the array tokenizer: every element is one token, and the gap separates them as well
+0	clickhouse	[64]
 0	hello	[0]
-0	world	[2]
-1
+0	world	[128]
 0
+0
+1
 invalid arguments

@@ -115,9 +115,9 @@ static_assert(static_cast<UInt64>(IPostingListCodec::Type::PFor) == 2);
 /// within one index.
 static constexpr bool DEFAULT_POSITIONS = false;
 
-/// Fixed for the same reason. A phrase with slop below the gap cannot span two elements of an `Array` row.
-/// The maximum keeps the gap a one-byte VarUInt in the header and bounds the growth of the positions.
+/// Fixed for the same reason. A phrase with slop below the gap cannot span two `Array` elements.
 static constexpr UInt64 DEFAULT_POSITION_INCREMENT_GAP = 63;
+/// Keeps the gap a one-byte VarUInt and bounds the growth of positions.
 static constexpr UInt64 MAX_POSITION_INCREMENT_GAP = 127;
 
 static String formatTokensForLogs(const ITokenizer & tokenizer, const std::vector<String> & tokens)
@@ -1898,7 +1898,7 @@ UInt32 MergeTreeIndexTextGranuleBuilder::takeTokenPositions(UInt32 count)
 
 void MergeTreeIndexTextGranuleBuilder::startElement()
 {
-    /// The first element of a row, and elements after ones without tokens, add no gap of their own.
+    /// No gap before the first token of a row, and elements without tokens add none.
     if (current_token_position != 0)
         pending_position_gap = params.position_increment_gap;
 }
@@ -2153,7 +2153,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
 
     if (postprocessor->hasActions() && !use_postprocessor_drop_fast_path)
     {
-        /// The postprocessor maps tokens 1:1, so the element token offsets also apply to the postprocessed tokens.
+        /// The postprocessor maps tokens 1:1, so the element offsets stay valid.
         IColumn::Offsets element_token_offsets;
         const bool track_elements = params.enable_positions && params.position_increment_gap != 0;
         ColumnPtr tokenized
@@ -2552,9 +2552,9 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
 
     bool enable_positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS) != 0;
 
-    /// Only the elements of an `Array` row are separated. With the `array` tokenizer every element is one token, and a phrase spans elements.
+    /// Only the elements of an `Array` row are separated.
     UInt64 position_increment_gap = extractFieldOption<UInt64>(options, ARGUMENT_POSITION_INCREMENT_GAP).value_or(DEFAULT_POSITION_INCREMENT_GAP);
-    if (!enable_positions || !isArray(index.data_types[0]) || tokenizer->getType() == ITokenizer::Type::Array)
+    if (!enable_positions || !isArray(index.data_types[0]))
         position_increment_gap = 0;
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
@@ -2635,10 +2635,6 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     {
         if (!positions)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' requires '{} = 1'", ARGUMENT_POSITION_INCREMENT_GAP, ARGUMENT_POSITIONS);
-
-        if (tokenizer->getType() == ITokenizer::Type::Array)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' is not supported with the `{}` tokenizer",
-                ARGUMENT_POSITION_INCREMENT_GAP, ArrayTokenizer::getExternalName());
 
         if (*position_increment_gap < 1 || *position_increment_gap > MAX_POSITION_INCREMENT_GAP)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be between 1 and {}, but got {}",

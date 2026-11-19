@@ -69,7 +69,7 @@ public:
     /// `source_ast`, when set, is tokenized instead of `col_name`, so the caller can splice in the preprocessor expression.
     ActionsDAG getOriginalActionsDAG(const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description, const ASTPtr & source_ast = nullptr) const;
 
-    /// arrayExists(e -> hasPhrase(arrayMap(x -> postprocessor(x), tokens(e, '<tokenizer>')), phrase_tokens, 'array'), col).
+    /// __hasPhraseInTokenSequences(arrayMap(e -> arrayMap(x -> postprocessor(x), tokens(e, '<tokenizer>')), col), phrase_tokens).
     ActionsDAG getPhraseActionsDAG(
         const String & col_name,
         const DataTypePtr & col_type,

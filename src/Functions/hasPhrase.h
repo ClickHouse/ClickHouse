@@ -84,4 +84,22 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override;
 };
 
+/// Internal, for text index rewrites: whether `phrase` lies within one of the token sequences of a row.
+class FunctionHasPhraseInTokenSequences final : public IFunction
+{
+public:
+    static constexpr auto name = "__hasPhraseInTokenSequences";
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionHasPhraseInTokenSequences>(); }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
+};
+
 }

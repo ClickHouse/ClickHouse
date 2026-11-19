@@ -1,5 +1,4 @@
--- A text index on an Array column answers the token predicates exactly as the same data without an index,
--- and hasPhrase matches a phrase only within one element, with and without the index.
+-- A text index on an Array column gives the same results as no index; hasPhrase matches within one element.
 
 SET enable_analyzer = 1;
 SET enable_full_text_index = 1;
@@ -122,10 +121,15 @@ SETTINGS allow_experimental_text_index_phrase_search = 1;
 INSERT INTO tab_pp_arr_ref VALUES (1, ['Hello', 'World']), (2, ['world', 'HELLO']);
 INSERT INTO tab_pp_arr_idx SELECT id, messages FROM tab_pp_arr_ref;
 
-SELECT 'hasPhrase hello world spans elements';
+SELECT 'hasPhrase hello world does not span elements';
 SELECT arraySort(groupArray(id)) FROM tab_pp_arr_ref WHERE hasPhrase(arrayMap(x -> lower(x), messages), ['hello', 'world'], 'array');
 SELECT arraySort(groupArray(id)) FROM tab_pp_arr_idx WHERE hasPhrase(messages, ['hello', 'world']);
 SELECT arraySort(groupArray(id)) FROM tab_pp_arr_idx WHERE hasPhrase(messages, ['hello', 'world']) SETTINGS use_skip_indexes = 0, use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0;
+
+SELECT 'hasPhrase hello, one element';
+SELECT arraySort(groupArray(id)) FROM tab_pp_arr_ref WHERE hasPhrase(arrayMap(x -> lower(x), messages), ['hello'], 'array');
+SELECT arraySort(groupArray(id)) FROM tab_pp_arr_idx WHERE hasPhrase(messages, ['hello']);
+SELECT arraySort(groupArray(id)) FROM tab_pp_arr_idx WHERE hasPhrase(messages, ['hello']) SETTINGS use_skip_indexes = 0, use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0;
 
 DROP TABLE tab_pp_arr_ref;
 DROP TABLE tab_pp_arr_idx;
