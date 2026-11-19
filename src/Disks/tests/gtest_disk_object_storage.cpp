@@ -1261,7 +1261,7 @@ TEST_F(DiskObjectStorageTest, ReadOnlyDiskWithLocationsKeepsAbandonedStagingFile
     fs::create_directories(directory);
     {
         DB::WriteBufferFromFile wb(abandoned.string());
-        DB::writeText(std::string("partial"), wb);
+        DB::writeString("partial", wb);
         wb.finalize();
     }
     /// The mark of a staging file, see `setStagingMark`.
