@@ -107,7 +107,6 @@ private:
     /// Names of `header`, with all but `JSONAllPaths` of a table column left empty.
     const Names json_index_columns;
     const bool validate_enum_literals_in_operators;
-    const bool in_null_as_unknown;
     std::vector<RPNElement> rpn;
 
     bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const;
@@ -122,6 +121,7 @@ private:
         const ConstSetPtr & prepared_set,
         const DataTypePtr & type,
         const ColumnPtr & column,
+        bool use_null_as_unknown_semantics,
         RPNElement & out);
 
     bool traverseTreeEquals(

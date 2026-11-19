@@ -44,7 +44,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool validate_enum_literals_in_operators;
-    extern const SettingsBool in_null_as_unknown;
 }
 
 namespace ErrorCodes
@@ -660,7 +659,6 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     , index_nodes(std::move(index_nodes_))
     , json_index_columns(collectJSONIndexColumns(header, index_nodes))
     , validate_enum_literals_in_operators(context_->getSettingsRef()[Setting::validate_enum_literals_in_operators])
-    , in_null_as_unknown(context_->getSettingsRef()[Setting::in_null_as_unknown])
 {
     if (!predicate)
     {
@@ -886,7 +884,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
                 if (prepared_set->hasExplicitSetElements())
                 {
                     const auto prepared_info = getPreparedSetInfo(prepared_set);
-                    if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out))
+                    if (traverseTreeIn(
+                            function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column,
+                            function.getFunctionBase()->useNullAsUnknownSemanticsForIn(), out))
                         return true;
                 }
             }
@@ -973,6 +973,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     const ConstSetPtr & prepared_set,
     const DataTypePtr & type,
     const ColumnPtr & column,
+    bool use_null_as_unknown_semantics,
     RPNElement & out)
 {
     const auto key_node = unwrapLosslessConversion(wrapped_key_node);
@@ -985,7 +986,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
         /// `in_null_as_unknown` probes both signed-zero representations for floating-point
         /// membership. A bloom filter hashes only one representation and could prune a match.
-        if (in_null_as_unknown && isFloat(removeLowCardinalityAndNullable(index_type)))
+        if (use_null_as_unknown_semantics && isFloat(removeLowCardinalityAndNullable(index_type)))
             return false;
 
         /// A NULL of a set built for `toNullable(key)` does not cast to the key type and matches no stored value.
@@ -1034,7 +1035,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
         /// A missing JSON path yields a floating default of positive zero, which
         /// matches a negative-zero set member with this setting enabled.
-        if (in_null_as_unknown && isFloat(removeLowCardinalityAndNullable(key_type)))
+        if (use_null_as_unknown_semantics && isFloat(removeLowCardinalityAndNullable(key_type)))
             return false;
 
         /// Check safety: if key type is non-Nullable and the set contains the default value,
@@ -1077,7 +1078,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             const auto & sub_data_types = tuple_data_type->getElements();
 
             for (size_t index = 0; index < key_node_function_arguments_size; ++index)
-                match_with_subtype |= traverseTreeIn(function_name, key_node_function.getArgumentAt(index), nullptr, sub_data_types[index], sub_columns[index], out);
+                match_with_subtype |= traverseTreeIn(
+                    function_name, key_node_function.getArgumentAt(index), nullptr, sub_data_types[index], sub_columns[index],
+                    use_null_as_unknown_semantics, out);
 
             return match_with_subtype;
         }
@@ -1089,7 +1092,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         /// The map lookup can return a default floating-point zero for a missing key.
         /// The set treats both signs of zero as equal, while the bloom index hashes
         /// their different bit patterns. Decline pruning for this predicate.
-        if (in_null_as_unknown && isFloat(removeLowCardinalityAndNullable(type)))
+        if (use_null_as_unknown_semantics && isFloat(removeLowCardinalityAndNullable(type)))
             return false;
 
         /** It is important to ignore keys like column_map['Key'] IN ('') because if the key does not exist in the map

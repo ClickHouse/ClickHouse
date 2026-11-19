@@ -6,6 +6,15 @@ SELECT
 
 SELECT [toUInt8(1)] IN materialize([CAST([toUInt8(1)] AS Dynamic)]);
 
+SELECT
+    emptyArrayUInt8() IN CAST([] AS Array(Dynamic)),
+    emptyArrayUInt8() IN materialize(CAST([] AS Array(Dynamic))),
+    [toUInt8(1)] IN CAST([NULL] AS Array(Dynamic)),
+    [toUInt8(1)] IN materialize(CAST([NULL] AS Array(Dynamic)));
+
+SELECT count() FROM values('a Array(UInt8)', ([]))
+WHERE a IN materialize(CAST([] AS Array(Dynamic)));
+
 SELECT count() FROM values('a Array(UInt8)', ([1]))
 WHERE a IN materialize(CAST([toUInt8(1)] AS Array(Dynamic)));
 

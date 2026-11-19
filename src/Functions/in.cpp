@@ -317,9 +317,9 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for function {} must be a Map", getName());
         const auto source_type = removeNullable(removeLowCardinality(arguments[1]));
-        if (!isStringOrFixedString(source_type) && !isDynamic(source_type) && !isVariant(source_type))
+        if (!isStringOrFixedString(source_type) && !isMap(source_type) && !isDynamic(source_type) && !isVariant(source_type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second argument for function {} must be a String, Dynamic or Variant", getName());
+                "Second argument for function {} must be a String, Map, Dynamic or Variant", getName());
         auto result_type = std::make_shared<DataTypeUInt8>();
         if (canContainNull(*arguments[1]))
             return std::make_shared<DataTypeNullable>(result_type);
@@ -403,9 +403,9 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for function {} must be an Array", getName());
         const auto source_type = removeNullable(removeLowCardinality(arguments[1]));
-        if (!isDynamic(source_type) && !isVariant(source_type) && !isStringOrFixedString(source_type))
+        if (!isDynamic(source_type) && !isVariant(source_type) && !isStringOrFixedString(source_type) && !isArray(source_type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second argument for function {} must be a Dynamic, Variant or String", getName());
+                "Second argument for function {} must be a Dynamic, Variant, String or Array", getName());
         auto result_type = std::make_shared<DataTypeUInt8>();
         if (canContainNull(*arguments[1]))
             return std::make_shared<DataTypeNullable>(result_type);
@@ -437,7 +437,7 @@ public:
             if (left_values->isNullAt(row))
                 continue;
 
-            if (isStringOrFixedString(source_type))
+            if (isStringOrFixedString(source_type) || isArray(source_type))
             {
                 auto source_row = sources->cut(row, 1);
                 auto converted = tryConvertColumnToTypeOrNull(
@@ -859,6 +859,16 @@ public:
                 if (!res->getBool(row) || left_arg.column->isNullAt(row))
                     continue;
                 auto probe = left_arg.column->cut(row, 1);
+                if (isDecimal(left_type) && isNumber(key_type) && !isDecimal(key_type))
+                {
+                    /// Ordinary set lookup casts the decimal probe to the key type.
+                    /// Verify that this conversion still denotes the same number.
+                    auto converted_key = castColumn(
+                        ColumnWithTypeAndName{probe, left_arg.type, left_arg.name}, makeNullable(key_type));
+                    exact_data[row] = !converted_key->isNullAt(0)
+                        && accurateEqualsCompoundFields((*probe)[0], (*converted_key)[0], left_type, key_type);
+                    continue;
+                }
                 auto converted = tryConvertColumnToTypeOrNull(
                     *probe, left_arg.type, key_type, {}, /*strict=*/true);
                 if (!converted)

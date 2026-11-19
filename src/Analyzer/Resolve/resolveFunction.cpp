@@ -1410,6 +1410,34 @@ static bool isCompoundCarrierForIn(const DataTypePtr & left_type, const DataType
     return (isArray(left) || isMap(left)) && (isDynamic(right) || isVariant(right));
 }
 
+static bool hasCompoundStringToNumericLeaf(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    const auto left = removeNullable(removeLowCardinality(left_type));
+    const auto right = removeNullable(removeLowCardinality(right_type));
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
+    {
+        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
+            return hasCompoundStringToNumericLeaf(left_array->getNestedType(), right_array->getNestedType());
+    }
+    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
+    {
+        if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
+            return hasCompoundStringToNumericLeaf(left_map->getKeyType(), right_map->getKeyType())
+                || hasCompoundStringToNumericLeaf(left_map->getValueType(), right_map->getValueType());
+    }
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
+    {
+        if (const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+            right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        {
+            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+                if (hasCompoundStringToNumericLeaf(left_tuple->getElements()[i], right_tuple->getElements()[i]))
+                    return true;
+        }
+    }
+    return (isNumber(left) || isBool(left) || isEnum(left)) && isStringOrFixedString(right);
+}
+
 static QueryTreeNodePtr buildCompoundCarrierInComparison(
     const QueryTreeNodePtr & left, const QueryTreeNodePtr & right,
     const DataTypePtr & left_type)
@@ -1795,6 +1823,19 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
             match_result = std::move(any_match);
         }
         else if (source_array_type
+            && hasCompoundStringToNumericLeaf(element_arg->getResultType(), source_array_type->getNestedType()))
+        {
+            const String candidate_name = "__in_typed_compound_string_candidate";
+            auto comparison = buildCompoundCarrierInComparison(
+                element_arg, std::make_shared<IdentifierNode>(Identifier{candidate_name}),
+                element_arg->getResultType());
+            auto lambda = std::make_shared<LambdaNode>(
+                std::make_shared<LambdaArgumentsNode>(Names{candidate_name}), std::move(comparison), false /*is_operator*/);
+            auto any_match = std::make_shared<FunctionNode>("arrayExists");
+            any_match->getArguments().getNodes() = {std::move(lambda), source_array->clone()};
+            match_result = std::move(any_match);
+        }
+        else if (source_array_type
             && needsExactCompoundNumericInComparison(element_arg->getResultType(), source_array_type->getNestedType()))
         {
             const String candidate_name = "__in_compound_array_candidate";
@@ -1817,29 +1858,6 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
         }
         if (match_result->as<FunctionNode>())
             resolveFunction(match_result, scope);
-
-        /// An equal-depth `Array(Dynamic)` may be a single array value or a list
-        /// of carried array values. Check both shapes without matching an empty set.
-        const auto * left_array_type = typeid_cast<const DataTypeArray *>(
-            removeNullable(removeLowCardinality(element_arg->getResultType())).get());
-        if (source_array_type && left_array_type
-            && source_array_type->getNumberOfDimensions() == left_array_type->getNumberOfDimensions()
-            && (isDynamic(removeNullable(removeLowCardinality(source_array_type->getNestedType())))
-                || isVariant(removeNullable(removeLowCardinality(source_array_type->getNestedType())))))
-        {
-            auto whole_array_equals = buildNumericInEquality(
-                element_arg, source_array->clone(), element_arg->getResultType(), source_array->getResultType());
-            auto non_null_equals = std::make_shared<FunctionNode>("ifNull");
-            non_null_equals->getArguments().getNodes() = {std::move(whole_array_equals), std::make_shared<ConstantNode>(Field{0u})};
-            auto nonempty = std::make_shared<FunctionNode>("notEmpty");
-            nonempty->getArguments().getNodes().push_back(source_array->clone());
-            auto single_member_match = std::make_shared<FunctionNode>("and");
-            single_member_match->getArguments().getNodes() = {std::move(nonempty), std::move(non_null_equals)};
-            auto either_shape = std::make_shared<FunctionNode>("or");
-            either_shape->getArguments().getNodes() = {std::move(match_result), std::move(single_member_match)};
-            match_result = std::move(either_shape);
-            resolveFunction(match_result, scope);
-        }
 
         if (extra_match_predicate)
         {
@@ -1946,6 +1964,42 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
         to_nullable_fn->getArguments().getNodes().push_back(std::move(result_node));
         result_node = std::move(to_nullable_fn);
         resolveFunction(result_node, scope);
+
+        /// An equal-depth carrier array is one array value when its elements
+        /// are scalar. Active array elements instead make it a set of carried
+        /// array values. Choose the shape before applying emptiness and NULL rules.
+        const auto * left_array_type = typeid_cast<const DataTypeArray *>(
+            removeNullable(removeLowCardinality(element_arg->getResultType())).get());
+        if (source_array_type && left_array_type
+            && source_array_type->getNumberOfDimensions() == left_array_type->getNumberOfDimensions())
+        {
+            const auto carrier_type = removeNullable(removeLowCardinality(source_array_type->getNestedType()));
+            if (isDynamic(carrier_type) || isVariant(carrier_type))
+            {
+                const String candidate_name = "__in_carrier_shape_candidate";
+                auto active_type = std::make_shared<FunctionNode>(isDynamic(carrier_type) ? "dynamicType" : "variantType");
+                active_type->getArguments().getNodes().push_back(
+                    std::make_shared<IdentifierNode>(Identifier{candidate_name}));
+                auto is_array_type = std::make_shared<FunctionNode>("startsWith");
+                is_array_type->getArguments().getNodes() = {
+                    std::move(active_type), std::make_shared<ConstantNode>(String{"Array("}, std::make_shared<DataTypeString>())};
+                auto lambda = std::make_shared<LambdaNode>(
+                    std::make_shared<LambdaArgumentsNode>(Names{candidate_name}), std::move(is_array_type), false /*is_operator*/);
+                auto is_list = std::make_shared<FunctionNode>("arrayExists");
+                is_list->getArguments().getNodes() = {std::move(lambda), source_array->clone()};
+                auto single_member = buildNumericInEquality(
+                    element_arg, source_array->clone(), element_arg->getResultType(), source_array->getResultType());
+                if (is_not_in)
+                    single_member = createNotWrapper(std::move(single_member));
+                auto single_nullable = std::make_shared<FunctionNode>("toNullable");
+                single_nullable->getArguments().getNodes().push_back(std::move(single_member));
+                auto choose_shape = std::make_shared<FunctionNode>("if");
+                choose_shape->getArguments().getNodes() = {
+                    std::move(is_list), std::move(result_node), std::move(single_nullable)};
+                result_node = std::move(choose_shape);
+                resolveFunction(result_node, scope);
+            }
+        }
 
         node = std::move(result_node);
         return ProjectionNames{proj};
@@ -3653,6 +3707,23 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                 && !tryGetLeastSupertype(DataTypes{in_first_argument->getResultType(), non_const_set_candidate->getResultType()})))
                         {
                             auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                            if (hasCompoundStringToNumericLeaf(
+                                in_first_argument->getResultType(), non_const_set_candidate->getResultType()))
+                            {
+                                node = buildCompoundCarrierInComparison(
+                                    fn_args[0], fn_args[1], in_first_argument->getResultType());
+                                resolveFunction(node, scope);
+                                if (is_not_in)
+                                {
+                                    node = createNotWrapper(std::move(node));
+                                    resolveFunction(node, scope);
+                                }
+                                auto to_nullable = std::make_shared<FunctionNode>("toNullable");
+                                to_nullable->getArguments().getNodes().push_back(std::move(node));
+                                node = std::move(to_nullable);
+                                resolveFunction(node, scope);
+                                return ProjectionNames{proj};
+                            }
                             if (needsExactCompoundNumericInComparison(
                                 in_first_argument->getResultType(), non_const_set_candidate->getResultType()))
                             {
@@ -4021,7 +4092,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         {
                             std::erase_if(matchable_elements, [&](const auto & arg)
                             {
-                                if (needsExactCompoundNumericInComparison(in_first_argument->getResultType(), arg->getResultType()))
+                                if (needsExactCompoundNumericInComparison(in_first_argument->getResultType(), arg->getResultType())
+                                    || hasCompoundStringToNumericLeaf(in_first_argument->getResultType(), arg->getResultType()))
                                 {
                                     exact_compound_elements.push_back(arg);
                                     return true;
@@ -4063,9 +4135,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     QueryTreeNodePtr extra_match_predicate;
                     for (const auto & source_compound : exact_compound_elements)
                     {
-                        QueryTreeNodePtr match = buildExactCompoundNumericInComparison(
-                            in_first_argument, source_compound,
-                            in_first_argument->getResultType(), source_compound->getResultType());
+                        QueryTreeNodePtr match;
+                        if (hasCompoundStringToNumericLeaf(in_first_argument->getResultType(), source_compound->getResultType()))
+                            match = buildCompoundCarrierInComparison(
+                                in_first_argument, source_compound, in_first_argument->getResultType());
+                        else
+                            match = buildExactCompoundNumericInComparison(
+                                in_first_argument, source_compound,
+                                in_first_argument->getResultType(), source_compound->getResultType());
                         resolveFunction(match, scope);
                         if (extra_match_predicate)
                         {
@@ -4200,7 +4277,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         }
                         return ProjectionNames{proj};
                     }
-                    if (use_standard_null_semantics && isCompoundCarrierForIn(left_type, non_const_set_candidate->getResultType()))
+                    if (use_standard_null_semantics
+                        && (isCompoundCarrierForIn(left_type, non_const_set_candidate->getResultType())
+                            || hasCompoundStringToNumericLeaf(left_type, non_const_set_candidate->getResultType())))
                     {
                         auto match = buildCompoundCarrierInComparison(
                             fn_args[0], fn_args[1], left_type);

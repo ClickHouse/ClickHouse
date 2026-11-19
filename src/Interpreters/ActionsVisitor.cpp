@@ -612,6 +612,34 @@ bool needsExactCompoundNumericInComparison(const DataTypePtr & left_type, const 
     return false;
 }
 
+bool hasCompoundStringToNumericLeaf(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    const auto left = removeNullable(removeLowCardinality(left_type));
+    const auto right = removeNullable(removeLowCardinality(right_type));
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
+    {
+        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
+            return hasCompoundStringToNumericLeaf(left_array->getNestedType(), right_array->getNestedType());
+    }
+    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
+    {
+        if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
+            return hasCompoundStringToNumericLeaf(left_map->getKeyType(), right_map->getKeyType())
+                || hasCompoundStringToNumericLeaf(left_map->getValueType(), right_map->getValueType());
+    }
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
+    {
+        if (const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+            right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        {
+            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+                if (hasCompoundStringToNumericLeaf(left_tuple->getElements()[i], right_tuple->getElements()[i]))
+                    return true;
+        }
+    }
+    return (isNumber(left) || isBool(left) || isEnum(left)) && isStringOrFixedString(right);
+}
+
 ASTPtr makeExactCompoundNumericInComparison(
     ASTPtr left, ASTPtr right, const DataTypePtr & left_type, const DataTypePtr & right_type);
 
@@ -747,7 +775,13 @@ ASTPtr makeComplexNonConstantInReplacement(
 
         const auto source_bare_type = removeNullable(removeLowCardinality(source_type));
         ASTPtr match;
-        if (needsExactCompoundNumericInComparison(left_operand_type, source_type))
+        if (hasCompoundStringToNumericLeaf(left_operand_type, source_type))
+        {
+            match = makeASTFunction(
+                isMap(left_bare_type) ? "__mapValueEqualsForIn" : "__arrayValueEqualsForIn",
+                left_operand->clone(), elements[i]->clone());
+        }
+        else if (needsExactCompoundNumericInComparison(left_operand_type, source_type))
         {
             match = makeExactCompoundNumericInComparison(
                 left_operand->clone(), elements[i]->clone(), left_operand_type, source_type);
@@ -1862,12 +1896,14 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         && std::any_of(element_types.begin(), element_types.end(), [&](const auto & type)
                         {
                             return needs_complex_candidate_rewrite(type)
-                                || needsExactCompoundNumericInComparison(left_argument_type, type);
+                                || needsExactCompoundNumericInComparison(left_argument_type, type)
+                                || hasCompoundStringToNumericLeaf(left_argument_type, type);
                         });
                     const bool compare_complex_array_sources = use_standard_null_semantics && right_argument_is_array && left_is_complex
                         && right_array_type
                         && (needs_complex_candidate_rewrite(right_array_type->getNestedType())
-                            || needsExactCompoundNumericInComparison(left_argument_type, right_array_type->getNestedType()));
+                            || needsExactCompoundNumericInComparison(left_argument_type, right_array_type->getNestedType())
+                            || hasCompoundStringToNumericLeaf(left_argument_type, right_array_type->getNestedType()));
                     if (compare_numeric_array_sources)
                         replacement = makeArrayCandidateInReplacement(
                             node, left_argument_type, right_array_type->getNestedType(), false);
