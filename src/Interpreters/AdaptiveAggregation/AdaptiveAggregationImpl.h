@@ -238,6 +238,12 @@ struct AdaptiveAggregationSession
     /// The cells of the producers' tables, published under the same mutex.
     size_t table_cells = 0;
 
+    /// A rank that `bucket_top_k` groups of a descending top-K are known to reach, the floor that the merge's
+    /// threshold starts from (see `AdaptiveTopKThreshold`): the largest of the producers' floors, each the threshold
+    /// of the ranks of the producer's own table (see `Aggregator::finishAdaptiveProducer`). Published under the same
+    /// mutex.
+    UInt64 top_k_floor = 0;
+
     /// The staged records the producers spilled over the external-aggregation threshold (see
     /// `Aggregator::spillAdaptivePartitions`): one raw stream per partition, shared by the producers and created by the
     /// first spill into it, so that a merge unit reads back the records of its own partitions only. A stream is a
@@ -300,7 +306,7 @@ struct AdaptiveMergeTask
     PaddedPODArray<UInt32> merge_order;
     AggregateDataPtrs merge_group;
     PaddedPODArray<AggregateDataPtr> record_places;
-    RowStorePointers records;
+    RowPointers records;
     AdaptiveRecordRanges ranges;
     std::vector<std::pair<UInt64, UInt64>> best_counts_and_hashes;
     PaddedPODArray<UInt64> best_hashes;
@@ -314,8 +320,10 @@ struct AdaptiveMergeTask
 /// that serialize row by row, the kernel keeps the bytes as well, one key after another, and once for all the records
 /// of a constant key: building the key again would serialize it a second time. The kernel stages such a batch whenever
 /// the kept bytes reach `adaptive_miss_batch_max_key_bytes`. A fixed-width key is kept as its value, which the kernel
-/// has at hand, while reading it back from the key columns would pack it a second time. The arrays are cleared after
-/// every staging but keep their capacity.
+/// has at hand, while reading it back from the key columns would pack it a second time. A key of fixed-width
+/// values and a string is kept as its size, `sizeof(Keys)` plus the size of the string, from which the record
+/// format takes the size it stores, and the writer reads both parts from the key state.
+/// The arrays are cleared after every staging but keep their capacity.
 class AdaptiveMissBatch
 {
 public:
@@ -383,7 +391,14 @@ private:
     template <typename RecordKey, typename Key>
     ALWAYS_INLINE void addKey(const Key & key, [[maybe_unused]] bool keep_key_bytes)
     {
-        if constexpr (adaptive_key_stages_bytes<RecordKey>)
+        if constexpr (is_keys_and_packed_string<RecordKey>)
+        {
+            /// The state reads the packed values and the string in place, so the batch keeps only the size of
+            /// the key, which the record format turns into the size it stores (see
+            /// `StagedKeysAndPackedStringKey`).
+            key_sizes.push_back(sizeof(key.keys) + static_cast<std::string_view>(key.str).size());
+        }
+        else if constexpr (adaptive_key_stages_bytes<RecordKey>)
         {
             const auto bytes = static_cast<std::string_view>(key);
             /// The records of a constant key share the bytes kept for the first of them.
@@ -415,6 +430,20 @@ struct AdaptiveStagedBytes
     size_t record_bytes = 0;
 };
 
+/// Whether `Method` keeps the NULL key in a slot of its own outside the cells of its table (see
+/// `AggregationDataWithNullKey`), as the methods of a single `Nullable` or `LowCardinality` key do.
+template <typename Method>
+constexpr bool keeps_null_key_slot = Method::low_cardinality_optimization || Method::one_key_nullable_optimization;
+
+/// How the frozen local table took the rows of a block: the hits, and the rows of the NULL key, which go to
+/// the key's slot without a lookup (see `AdaptiveAggregationProducer::FrozenState`). The other rows are
+/// misses.
+struct AdaptiveLocalProbes
+{
+    size_t hits = 0;
+    size_t null_rows = 0;
+};
+
 /// Per-transform context of the adaptive aggregation: the thread's lifecycle phase and its
 /// phase-owned counters, its staged records, and the current block's misses.
 struct AdaptiveAggregationProducer
@@ -431,13 +460,17 @@ struct AdaptiveAggregationProducer
         size_t rows = 0;
     };
 
-    /// The adaptive phase proper: the local table only updates the keys it already holds
-    /// and misses are staged for the merge. Carries the post-freeze hit-rate
-    /// sampling: when the frozen table turns out to hold almost none of the stream's keys
-    /// (a uniform high-cardinality distribution), probing it is pure overhead on every row;
+    /// The adaptive phase proper: the local table only updates the keys it already holds and misses are
+    /// staged for the merge. The NULL key of a method that keeps it in a slot of its own (see
+    /// `keeps_null_key_slot`) is the exception: the table takes every row of that key into the slot, whether
+    /// it holds the key yet or not. A staged record keeps the nested value as its key, so such a row has no
+    /// record, and the slot never grows the table. The row takes no lookup, so it is neither a hit nor a miss.
+    ///
+    /// Carries the post-freeze hit-rate sampling: when the frozen table turns out to hold almost none of the
+    /// stream's keys (a uniform high-cardinality distribution), probing it is pure overhead on every row;
     /// after the sample window the kernel switches to staging ordinary blocks without the lookup.
-    /// Constant-key blocks still look up their one key, so they can keep growing the retained states
-    /// even after per-row probes are bypassed.
+    /// Constant-key blocks still look up their one key, so they can keep growing the retained states even
+    /// after per-row probes are bypassed.
     struct FrozenState
     {
         FrozenState(size_t used_arena_bytes_at_freeze_, size_t memory_usage_at_freeze_)

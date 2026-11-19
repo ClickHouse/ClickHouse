@@ -2160,6 +2160,7 @@ void writeColumnImpl(
         /// Pick enough data for a page.
         size_t next_def_offset = def_offset;
         size_t next_data_offset = data_offset;
+        size_t page_rows = 0;
         while (true)
         {
             /// Bite off a batch of defs and corresponding data values.
@@ -2303,6 +2304,15 @@ void writeColumnImpl(
 
             with_encoder([&](auto & encoder) { encoder.put(converted, data_count); });
 
+            if (options.data_page_row_limit)
+            {
+                if (s.max_rep == 0)
+                    page_rows += def_count;
+                else
+                    for (size_t i = 0; i < def_count; ++i)
+                        page_rows += s.rep[next_def_offset + i] == 0;
+            }
+
             next_def_offset += def_count;
             next_data_offset += data_count;
 
@@ -2317,7 +2327,8 @@ void writeColumnImpl(
                 || s.rep[next_def_offset] == 0;
             const size_t page_target = std::min(options.data_page_size, max_record_bytes);
             if (next_def_offset == num_values ||
-                (at_record_boundary && estimated_data_encoded_size() >= page_target))
+                (at_record_boundary && (estimated_data_encoded_size() >= page_target
+                    || (options.data_page_row_limit && page_rows >= options.data_page_row_limit))))
             {
                 flush_page(next_def_offset - def_offset, next_data_offset - data_offset);
                 break;
