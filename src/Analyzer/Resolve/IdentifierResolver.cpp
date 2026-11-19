@@ -315,7 +315,10 @@ static bool isTableMetadataVisible(const TableNode & table_node, const ContextPt
 
 /// Try resolve table identifier from database catalog
 std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
-    const Identifier & table_identifier, const ContextPtr & context, const StoragePtr & replaced_storage)
+    const Identifier & table_identifier,
+    const ContextPtr & context,
+    bool allow_compound_table_identifier_qualification,
+    const StoragePtr & replaced_storage)
 {
     const bool allow_table_namespaces = context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
     size_t parts_size = table_identifier.getPartsSize();
@@ -337,7 +340,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
     else
     {
         std::shared_ptr<TableNode> current_database_result;
-        if (canBeTablePathInCurrentDatabase(table_identifier, context))
+        if (allow_compound_table_identifier_qualification && canBeTablePathInCurrentDatabase(table_identifier, context))
             current_database_result = tryResolveTableIdentifier("", table_identifier.getFullName(), context, replaced_storage);
 
         IdentifierView table_identifier_view = table_identifier;
@@ -561,9 +564,12 @@ void IdentifierResolver::checkAccessToTableMetadata(
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-    const Identifier & table_identifier, const ContextPtr & context, const StoragePtr & replaced_storage)
+    const Identifier & table_identifier,
+    const ContextPtr & context,
+    bool allow_compound_table_identifier_qualification,
+    const StoragePtr & replaced_storage)
 {
-    if (auto result = tryResolveTableIdentifier(table_identifier, context, replaced_storage))
+    if (auto result = tryResolveTableIdentifier(table_identifier, context, allow_compound_table_identifier_qualification, replaced_storage))
         return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
 
     return {};

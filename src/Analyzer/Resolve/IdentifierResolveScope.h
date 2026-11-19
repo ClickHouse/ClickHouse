@@ -172,6 +172,9 @@ struct IdentifierResolveScope
     /// Valid only during table ALIAS columns resolve.
     AnalysisTableExpressionData * table_expression_data_for_alias_resolution = nullptr;
 
+    /// False inside stored SQL resolved in a scope of the reading query (`ALIAS` expressions): table names are read as written.
+    bool allow_compound_table_identifier_qualification = true;
+
     std::list<std::unordered_map<std::string, ColumnNodePtr> *> join_using_columns;
 
     /// CTE name to its definitions in declaration order (several only with `analyzer_compatibility_allow_cte_redefinition`)

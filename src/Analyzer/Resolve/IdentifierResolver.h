@@ -116,9 +116,11 @@ public:
 
     /// `replaced_storage` is the view source that the caller swaps into the query tree after the analysis.
     /// Checks access to the table metadata.
+    /// `allow_compound_table_identifier_qualification` is the scope's value; the context can forbid it as well.
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(
         const Identifier & table_identifier,
         const ContextPtr & context,
+        bool allow_compound_table_identifier_qualification,
         const StoragePtr & replaced_storage = nullptr);
 
     /// Build a `nested(...)` FunctionNode for the given identifier prefix by combining
@@ -132,6 +134,7 @@ public:
     static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
         const Identifier & table_identifier,
         const ContextPtr & context,
+        bool allow_compound_table_identifier_qualification,
         const StoragePtr & replaced_storage = nullptr);
 
     /// True if the user may see at least one column of the table.

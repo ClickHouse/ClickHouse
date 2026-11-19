@@ -1943,7 +1943,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Try to resolve table identifier from database catalog
     if (!resolve_result.resolved_identifier && identifier_resolve_context.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
     {
-        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context, replaced_storage);
+        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+            identifier_lookup.identifier, scope.context, scope.allow_compound_table_identifier_qualification, replaced_storage);
     }
 
     /// Try to resolve identifier as a niladic function (SQL standard functions that allow omitting parentheses)
@@ -5469,11 +5470,7 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
                     alias_column_to_resolve->setExpression(nullptr);
             });
 
-            /// `ALIAS` expressions are stored SQL: read table names in them as written. Copied per call, because the query
-            /// context is still modified while the join tree is resolved.
-            ContextPtr alias_column_context = Context::createCopyForStoredDefinition(scope.context);
-
-            alias_column_to_resolve->setExpression(buildQueryTree(column_default->expression, alias_column_context));
+            alias_column_to_resolve->setExpression(buildQueryTree(column_default->expression, scope.context));
 
             auto [scope_it, scope_inserted] = node_to_scope_map.try_emplace(alias_column_to_resolve, alias_column_to_resolve, &scope /*parent_scope*/);
             /// The scope exists only if an earlier resolution of this column threw, and holds the state of that attempt.
@@ -5481,7 +5478,8 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
                 scope_it->second = IdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
             IdentifierResolveScope & alias_column_resolve_scope = scope_it->second;
             alias_column_resolve_scope.table_expression_data_for_alias_resolution = &data;
-            alias_column_resolve_scope.context = alias_column_context;
+            /// `ALIAS` expressions are stored SQL: read table names in them as written.
+            alias_column_resolve_scope.allow_compound_table_identifier_qualification = false;
 
             /// Initialize aliases in alias column scope
             QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope.aliases);

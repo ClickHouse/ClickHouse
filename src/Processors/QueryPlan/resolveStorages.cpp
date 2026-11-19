@@ -75,7 +75,7 @@ Identifier parseTableIdentifier(const std::string & str, const ContextPtr & cont
 
 std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context)
 {
-    auto resolve_result = IdentifierResolver::tryResolveTableIdentifier(identifier, context);
+    auto resolve_result = IdentifierResolver::tryResolveTableIdentifier(identifier, context, true);
     if (!resolve_result)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Unknown table {}", identifier.getFullName());
 
