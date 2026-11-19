@@ -13,9 +13,10 @@ SET distributed_plan_default_reader_bucket_count = 2, distributed_plan_default_s
 SET distributed_plan_force_shuffle_aggregation = 1;
 
 -- A read step takes 1024 rows and 1 of 100 passes the filter: about 400 chunks of 10 rows.
--- `max_threads` fixes the number of streams.
+-- `max_threads` and `max_streams_for_merge_tree_reading` fix the number of streams: every stream
+-- sends its first chunks at once, so more streams give more packets.
 SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM t_exchange_small_chunks WHERE v % 100 = 0 GROUP BY k)
-  SETTINGS max_block_size = 1024, max_threads = 2, log_comment = '05830_small_chunks';
+  SETTINGS max_block_size = 1024, max_threads = 2, max_streams_for_merge_tree_reading = 2, log_comment = '05830_small_chunks';
 
 SET make_distributed_plan = 0;
 SYSTEM FLUSH LOGS query_log;
