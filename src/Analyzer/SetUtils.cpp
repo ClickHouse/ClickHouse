@@ -19,6 +19,7 @@
 #include <Interpreters/convertColumnToType.h>
 
 #include <Common/assert_cast.h>
+#include <Common/Exception.h>
 
 #include <algorithm>
 

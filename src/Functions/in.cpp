@@ -27,6 +27,7 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/convertFieldToType.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

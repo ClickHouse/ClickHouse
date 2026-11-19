@@ -9,6 +9,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/Context_fwd.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

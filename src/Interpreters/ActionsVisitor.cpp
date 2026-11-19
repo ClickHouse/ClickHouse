@@ -73,6 +73,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SetUtils.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Columns/ColumnString.h>
 
 
 namespace DB

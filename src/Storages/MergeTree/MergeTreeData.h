@@ -51,9 +51,12 @@
 #include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index/global_fun.hpp>
 #include <boost/range/iterator_range_core.hpp>
+#include <QueryPipeline/QueryPipeline.h>
 
 namespace DB
 {
+
+struct QueryIdHolder;
 
 /// Number of streams is not number parts, but number or parts*files, hence 100.
 const size_t DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE = 100;
