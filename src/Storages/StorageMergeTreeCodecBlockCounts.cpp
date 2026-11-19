@@ -179,10 +179,10 @@ private:
     }
 
     /// Per-substream sizes (metadata only) and, when requested, codec block counts (reads `.bin`).
-    /// Empty for Compact parts: their columns share one `data.bin`, so there is no per-stream `.bin`.
+    /// Empty for Compact and Parquet parts: their columns share one data file, so there is no per-stream `.bin`.
     SubstreamInfo computeForSubstream(const MergeTreeDataPartPtr & part, const String & substream)
     {
-        if (isCompactPart(part))
+        if (isCompactPart(part) || isParquetPart(part))
             return {};
 
         auto filename = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", part->checksums);

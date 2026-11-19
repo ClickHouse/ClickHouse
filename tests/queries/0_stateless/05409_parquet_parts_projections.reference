@@ -1,0 +1,12 @@
+table in Wide, projection in Parquet
+Wide	1000
+p	Parquet	1000	11
+555
+11
+p	Parquet	2000	1
+1555
+table in Parquet, projection in Compact
+Parquet	1000
+p	Compact	1000
+555
+555

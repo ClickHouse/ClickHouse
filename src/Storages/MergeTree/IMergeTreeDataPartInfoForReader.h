@@ -57,6 +57,8 @@ public:
 
     [[nodiscard]] virtual bool isWidePart() const = 0;
 
+    [[nodiscard]] virtual bool isParquetPart() const = 0;
+
     [[nodiscard]] virtual bool isProjectionPart() const = 0;
 
     [[nodiscard]] virtual bool hasLightweightDelete() const = 0;
