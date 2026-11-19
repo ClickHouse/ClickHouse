@@ -10,9 +10,8 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ErrnoException.h>
+#include <Common/clearPasswordFromCommandLine.h>
 #include <Parsers/TokenIterator.h>
 #include <Poco/Util/HelpFormatter.h>
 
@@ -426,19 +425,6 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     else
         history_file = home_path + "/.keeper-client-history";
 
-    if (!history_file.empty() && !fs::exists(history_file))
-    {
-        try
-        {
-            FS::createFile(history_file);
-        }
-        catch (const ErrnoException & e)
-        {
-            if (e.getErrno() != EEXIST)
-                throw;
-        }
-    }
-
     history_max_entries = config().getUInt("history-max-entries", 1000000);
 
     String default_log_level;
@@ -771,6 +757,7 @@ int mainEntryClickHouseKeeperClient(int argc, char ** argv)
     {
         DB::KeeperClient client;
         client.init(argc, argv);
+        clearPasswordFromCommandLine(argc, argv);
         return client.run();
     }
     catch (DB::Exception & e)

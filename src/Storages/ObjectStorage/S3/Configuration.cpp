@@ -56,8 +56,8 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString access_key_id;
     extern const S3AuthSettingsUInt64 expiration_window_seconds;
     extern const S3AuthSettingsBool no_sign_request;
-    extern const S3AuthSettingsString secret_access_key;
-    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsSecretString secret_access_key;
+    extern const S3AuthSettingsSecretString session_token;
     extern const S3AuthSettingsBool use_environment_credentials;
 
     extern const S3AuthSettingsString role_arn;
@@ -68,9 +68,9 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString metadata_service;
     extern const S3AuthSettingsString request_token_path;
     extern const S3AuthSettingsString google_adc_client_id;
-    extern const S3AuthSettingsString google_adc_client_secret;
-    extern const S3AuthSettingsString google_adc_refresh_token;
-    extern const S3AuthSettingsString google_service_account_key;
+    extern const S3AuthSettingsSecretString google_adc_client_secret;
+    extern const S3AuthSettingsSecretString google_adc_refresh_token;
+    extern const S3AuthSettingsSecretString google_service_account_key;
 }
 
 namespace S3RequestSetting
@@ -237,7 +237,7 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
         url = S3::URI(
-            std::filesystem::path(collection_url) / filename,
+            (std::filesystem::path(collection_url) / filename).string(),
             settings[Setting::allow_archive_path_syntax],
             /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
             /*uri_style*/ settings[Setting::s3_uri_style]);
@@ -269,7 +269,7 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         s3_settings->auth_settings.clearServerManagedRequestAuth();
 
     s3_settings->auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
-    s3_settings->auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<String>("secret_access_key", "");
+    s3_settings->auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<SecretString>("secret_access_key");
     /// Default to 0 so a URL-only collection reads anonymously instead of using the server's identity; a
     /// collection can still opt in with `use_environment_credentials = 1`.
     s3_settings->auth_settings[S3AuthSetting::use_environment_credentials]
@@ -277,7 +277,7 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     s3_settings->auth_settings[S3AuthSetting::no_sign_request] = collection.getOrDefault<bool>("no_sign_request", false);
     s3_settings->auth_settings[S3AuthSetting::expiration_window_seconds]
         = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
-    s3_settings->auth_settings[S3AuthSetting::session_token] = collection.getOrDefault<String>("session_token", "");
+    s3_settings->auth_settings[S3AuthSetting::session_token] = collection.getOrDefault<SecretString>("session_token");
 
     if (collection.has("partition_strategy"))
     {
@@ -340,9 +340,9 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     s3_settings->auth_settings[S3AuthSetting::request_token_path] = collection.getOrDefault<String>("request_token_path", "");
     /// An explicit Google ADC triple or service account key is a user-supplied credential, so `gcp_oauth` with it is allowed.
     s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = collection.getOrDefault<String>("google_adc_client_id", "");
-    s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = collection.getOrDefault<String>("google_adc_client_secret", "");
-    s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = collection.getOrDefault<String>("google_adc_refresh_token", "");
-    s3_settings->auth_settings[S3AuthSetting::google_service_account_key] = collection.getOrDefault<String>("google_service_account_key", "");
+    s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = collection.getOrDefault<SecretString>("google_adc_client_secret");
+    s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = collection.getOrDefault<SecretString>("google_adc_refresh_token");
+    s3_settings->auth_settings[S3AuthSetting::google_service_account_key] = collection.getOrDefault<SecretString>("google_service_account_key");
     /// The Google credential of a collection (or of the query's key-value arguments) is explicit; the one merged from
     /// the server config above has just been replaced by it.
     s3_settings->auth_settings.google_credentials_explicit
@@ -450,7 +450,7 @@ void S3StorageParsedArguments::fromDisk(const DiskPtr & disk, ASTs & args, Conte
 
     ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());
     {
-        String path = s3_object_storage.getURI().uri_str;
+        String path(s3_object_storage.getURI().uri_str);
         fs::path root = path;
         fs::path suffix = parsing_result.path_suffix;
         url = S3::URI(String(root / suffix));
