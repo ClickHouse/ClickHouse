@@ -295,7 +295,7 @@ struct KeyColumns
     /// The query relies neither on the shards' order nor on their reductions: it has none of the keys
     /// above, or they read no column of this table (a constant such as `ORDER BY tuple()`, or a joined
     /// table's column).
-    bool none() const { return !unknown && names.empty(); }
+    [[nodiscard]] bool none() const { return !unknown && names.empty(); }
 };
 
 KeyColumns getKeyColumns(const SelectQueryInfo & query_info, bool shards_finalize_reductions)
@@ -2435,7 +2435,9 @@ void StorageDistributed::delayInsertOrThrowIfNeeded(const std::function<bool()> 
 
     UInt64 total_bytes = *totalBytes(getContext());
 
-    if ((*distributed_settings)[DistributedSetting::bytes_to_throw_insert] && total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_throw_insert])
+    /// A rejection at shutdown would drop rows that a Buffer or an asynchronous insert flush has already acknowledged.
+    if ((*distributed_settings)[DistributedSetting::bytes_to_throw_insert] && total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_throw_insert]
+        && !getContext()->isShutdownCalled())
     {
         ProfileEvents::increment(ProfileEvents::DistributedRejectedInserts);
         throw Exception(ErrorCodes::DISTRIBUTED_TOO_MANY_PENDING_BYTES,
