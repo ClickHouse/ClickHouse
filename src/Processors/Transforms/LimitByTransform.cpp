@@ -213,8 +213,8 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
             size_t row_group_idx = 0;
             if (key_emplace_result.isInserted()) /// New grouping key
             {
-                /// Assign a stable index into `group_counts` to the grouping key we just inserted. The key gets it before `push_back`,
-                /// which can throw; `transform` then appends the missing count.
+                /// Assign a stable index into `group_counts` to the grouping key we just inserted.
+                /// The key gets it before `push_back`, which can throw; see `num_assigned_groups`.
                 row_group_idx = num_assigned_groups++;
                 key_emplace_result.setMapped(mappedFromGroupIndex(row_group_idx));
                 group_counts.push_back(0);
@@ -283,7 +283,6 @@ void LimitByTransform::transform(Chunk & chunk)
             grouping_key_columns.push_back(normalized_grouping_key_columns.back().get());
         }
 
-        /// `push_back` in `consumeImpl` may have thrown after its key got the last group index.
         if (unlikely(group_counts.size() < num_assigned_groups))
             group_counts.resize(num_assigned_groups);
 
