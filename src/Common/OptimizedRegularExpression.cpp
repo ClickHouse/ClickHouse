@@ -672,7 +672,10 @@ try
     RegexpAnalysisResult r;
     Literals alternative_literals;
     Literal required_literal;
-    analyzeImpl(regexp_, regexp_.data(), required_literal, r.is_trivial, r.has_capture, alternative_literals); // NOLINT
+    const char * pos = analyzeImpl(regexp_, regexp_.data(), required_literal, r.is_trivial, r.has_capture, alternative_literals);
+    /// The scan stops before the end only at a `)` that closes no group, which re2 rejects.
+    if (pos != regexp_.data() + regexp_.size())
+        return {};
     r.required_substring = std::move(required_literal.literal);
     r.required_substring_is_prefix = required_literal.prefix;
     for (auto & lit : alternative_literals)
