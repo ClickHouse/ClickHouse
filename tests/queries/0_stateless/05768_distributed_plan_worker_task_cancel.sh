@@ -49,6 +49,8 @@ wait_for "SELECT count() = 0 FROM system.processes WHERE initial_query_id = '$QU
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 
 # Tasks ended after the kill, and none of them reports a success.
+# The worker's task rows carry its default database, so they are found through the initiator's row.
 $CLICKHOUSE_CLIENT --query "SELECT count() > 0, countIf(type = 'QueryFinish') FROM system.query_log
-    WHERE event_date >= yesterday() AND initial_query_id = '$QUERY_ID' AND query_id != '$QUERY_ID' AND type != 'QueryStart'
-        AND event_time_microseconds >= '$KILLED_AT'"
+    WHERE event_date >= yesterday() AND query_id != '$QUERY_ID' AND type != 'QueryStart' AND event_time_microseconds >= '$KILLED_AT'
+        AND initial_query_id IN (SELECT query_id FROM system.query_log
+            WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '$QUERY_ID')"
