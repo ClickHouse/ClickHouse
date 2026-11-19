@@ -103,6 +103,19 @@ FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x JO
 SELECT 'key of a smaller input below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
 FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON b.z = s.z);
 
+-- An outer, SEMI or ANTI join below passes the filter to the input whose rows it keeps, and a SEMI join also to the other input.
+SELECT 'LEFT SEMI JOIN below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_p p LEFT SEMI JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON p.y = s.y);
+
+SELECT 'right key of a LEFT SEMI JOIN below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_p p LEFT SEMI JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON b.x = s.y);
+
+SELECT 'RIGHT SEMI JOIN below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_b b RIGHT SEMI JOIN key_path_p p ON b.x = p.x JOIN key_path_s s ON p.y = s.y);
+
+SELECT 'key from the input a LEFT JOIN below adds rows to' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_b b LEFT JOIN key_path_p p ON b.x = p.x JOIN key_path_s s ON p.y = s.y);
+
 DROP TABLE small_probe;
 DROP TABLE large_probe;
 DROP TABLE build_side;

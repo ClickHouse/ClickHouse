@@ -10,6 +10,8 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
+#include <array>
+
 namespace DB::QueryPlanOptimizations
 {
 
@@ -61,56 +63,69 @@ bool filterReachesInputAbove(const QueryPlan::Node * node, NameSet columns, UInt
 bool filterReachesJoinInputAbove(const QueryPlan::Node & node, const JoinStepLogical & join, const NameSet & columns, UInt64 limit)
 {
     const auto & join_operator = join.getJoinOperator();
-    if (node.children.size() != 2 || join_operator.kind != JoinKind::Inner)
+    const auto kind = join_operator.kind;
+    if (node.children.size() != 2 || (kind != JoinKind::Inner && kind != JoinKind::Left && kind != JoinKind::Right))
         return false;
 
+    const bool is_semi = join_operator.strictness == JoinStrictness::Semi;
     const bool can_push_to_right = join_operator.strictness != JoinStrictness::Asof
         && !typeid_cast<const JoinStepLogicalLookup *>(node.children[1]->step.get());
 
-    /// A filter on keys of the join is pushed down to both inputs, the keys of one input replaced by the equal keys of
-    /// the other, see `tryPushDownOverJoinStep`. Only keys that are columns of the same type are followed here.
-    NameToNameMap equal_keys;
-    if (can_push_to_right && join.typeChangingSides().empty())
+    /// The rules of `tryPushDownOverJoinStep`, per input (left, right). An input gets a filter on its own columns unless an
+    /// outer join adds rows for its unmatched rows of the other input. A filter that reads only keys of the join is also
+    /// pushed down as a filter on the equal keys, if the keys it reads count as equal for this join, to an input of which
+    /// the join does not read only the matching rows: such a copy of a runtime filter could make an OUTER or ANTI join
+    /// emit a row it would not.
+    const std::array<bool, 2> gets_own_columns{kind != JoinKind::Right, kind != JoinKind::Left && can_push_to_right};
+    const std::array<bool, 2> keys_are_equal{
+        gets_own_columns[0] || (kind == JoinKind::Right && is_semi), gets_own_columns[1] || (kind == JoinKind::Left && is_semi)};
+    const std::array<bool, 2> gets_equal_keys{kind != JoinKind::Right || is_semi, can_push_to_right && (kind != JoinKind::Left || is_semi)};
+
+    /// Per input, its keys mapped to the equal keys of the other input. Only keys that are columns of the same type are
+    /// followed here.
+    std::array<NameToNameMap, 2> equal_keys;
+    if (join.typeChangingSides().empty())
     {
         for (const auto & condition : join_operator.expression)
         {
             auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
             if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
                 continue;
-            if (!(lhs.fromLeft() && rhs.fromRight()) && !(lhs.fromRight() && rhs.fromLeft()))
+            if (lhs.fromRight() && rhs.fromLeft())
+                std::swap(lhs, rhs);
+            else if (!lhs.fromLeft() || !rhs.fromRight())
                 continue;
             if (lhs.getNode()->type != ActionsDAG::ActionType::INPUT || rhs.getNode()->type != ActionsDAG::ActionType::INPUT
                 || !lhs.getType()->equals(*rhs.getType()))
                 continue;
-            equal_keys.emplace(lhs.getColumnName(), rhs.getColumnName());
-            equal_keys.emplace(rhs.getColumnName(), lhs.getColumnName());
+            equal_keys[0].emplace(lhs.getColumnName(), rhs.getColumnName());
+            equal_keys[1].emplace(rhs.getColumnName(), lhs.getColumnName());
         }
     }
-    const bool reads_only_keys = std::ranges::all_of(columns, [&](const String & column) { return equal_keys.contains(column); });
-
-    for (const auto side : {JoinTableSide::Left, JoinTableSide::Right})
+    const bool reads_only_equal_keys = std::ranges::all_of(columns, [&](const String & column)
     {
-        if (side == JoinTableSide::Right && !can_push_to_right)
-            continue;
+        return (keys_are_equal[0] && equal_keys[0].contains(column)) || (keys_are_equal[1] && equal_keys[1].contains(column));
+    });
 
-        const auto & input = *node.children[side == JoinTableSide::Left ? 0 : 1];
+    for (const size_t side : {0, 1})
+    {
+        const auto & input = *node.children[side];
         NameSet input_columns;
-        if (hasColumns(input, columns))
+        if (gets_own_columns[side] && hasColumns(input, columns))
         {
             input_columns = columns;
         }
-        else if (reads_only_keys)
+        else if (gets_equal_keys[side] && reads_only_equal_keys)
         {
-            const auto & header = *input.step->getOutputHeader();
             for (const auto & column : columns)
-                input_columns.insert(header.has(column) ? column : equal_keys.at(column));
+                input_columns.insert(equal_keys[side].contains(column) ? column : equal_keys[1 - side].at(column));
         }
         else
         {
             continue;
         }
 
-        if (auto rows = join.getInputRowsEstimation(side); rows && *rows > limit)
+        if (auto rows = join.getInputRowsEstimation(side == 0 ? JoinTableSide::Left : JoinTableSide::Right); rows && *rows > limit)
             return true;
         if (filterReachesInputAbove(&input, std::move(input_columns), limit))
             return true;
