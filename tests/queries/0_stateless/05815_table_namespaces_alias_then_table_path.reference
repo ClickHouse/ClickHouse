@@ -1,0 +1,42 @@
+-- 1. alias equals the first path component
+5
+5
+-- 2. same in WHERE
+1
+1
+-- 3. with a JOIN
+5
+5
+-- 4. in JOIN ON
+1
+1
+-- 5. alias equals the database name
+3
+3
+-- 6. same table path on both sides of a JOIN, alias on the left
+5
+5
+-- 7. alias on the right
+5
+5
+-- 8. comma join
+5
+5
+-- 9. column through the alias and through the path
+5	5
+5	5
+-- 10. alias equals the database name, the other side is a table of that database
+4
+4
+-- 11. the alias does not outrank a database-qualified reading of the other side, so the left side wins without the compatibility setting
+9
+4
+-- 12. in a scalar subquery
+4
+4
+-- 13. a missing column is still an error
+Code: 47
+Code: 47
+-- 14. without table namespaces the path is not tried
+Code: 47
+Code: 47
