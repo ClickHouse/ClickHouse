@@ -62,7 +62,7 @@ struct ConditionBounds
     UInt64 structure_hash = 0;
     std::vector<Bound> bounds;
 
-    std::vector<Field> values() const;
+    [[nodiscard]] std::vector<Field> values() const;
 };
 
 /// Returns std::nullopt if `condition` has no bounds outside of the subconditions which are kept as they
