@@ -1,5 +1,7 @@
 #include <Planner/AnalyzeExpression.h>
 
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -405,9 +407,13 @@ static CoreAnalysisResult buildExpressionCoreDAG(
     auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
+    /// Under a materialized view the subqueries of the expression read the source table from the inserted block,
+    /// as the rest of the view's query does (@sa `interpretSubqueryWithAnalyzer`).
+    const StoragePtr view_source = getViewSourceIfRead(execution_context, /* reads_view_source */ true);
+
     QueryAnalyzer analyzer(
         /* only_analyze */ true, /* positional_arguments_already_resolved */ false, /* replaced_storage */ nullptr,
-        /* view_source_in_subqueries */ false, identifier_typo_hint_columns, typo_correction_columns);
+        /* view_source_in_subqueries */ view_source != nullptr, identifier_typo_hint_columns, typo_correction_columns);
 
     auto query_node = std::make_shared<QueryNode>(execution_context);
 
@@ -469,6 +475,11 @@ static CoreAnalysisResult buildExpressionCoreDAG(
             createUniqueAliasesIfNecessary(subquery_tree, execution_context);
 
             auto subquery_options = SelectQueryOptions{}.subquery();
+            if (view_source)
+            {
+                replaceStorageInQueryTree(subquery_tree, execution_context, view_source);
+                subquery_options.view_source_in_subqueries = true;
+            }
             /// Mirror `Planner::addBuildSubqueriesForSetsStepIfNeeded`: the set is built
             /// here (via `buildSetInplace`) before the surrounding query materializes its
             /// CTEs, so the set subquery must materialize any `WITH ... AS MATERIALIZED`
