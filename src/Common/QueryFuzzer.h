@@ -333,6 +333,7 @@ private:
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzzWindowDefinition(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
+    void fuzzOnCluster(IAST & ast);
     void fuzzRefreshStrategy(ASTRefreshStrategy & strategy, bool allow_incremental);
     void fuzzTableStorage(ASTStorage & storage, ASTColumns * columns_list);
     void fuzzExplainQuery(ASTExplainQuery & explain);

@@ -1,5 +1,7 @@
 #include <Common/QueryFuzzer.h>
 
+#include "config.h"
+
 #include <Core/UUID.h>
 #include <Common/DateLUT.h>
 
@@ -192,6 +194,7 @@ const std::unordered_set<String> & distributedClusterNames()
         "test_cluster_1_shard_3_replicas_1_unavailable",
         "test_cluster_multiple_nodes_all_unavailable",
         "test_cluster_with_incorrect_pw",
+        "default",
     };
     return distributed_cluster_names;
 }
@@ -1599,6 +1602,9 @@ String QueryFuzzer::nextFuzzedTableName(const String & full_name)
     return getFuzzedTableName(original_name, index_of_fuzzed_table[original_name]++);
 }
 
+/// The `Shared` database and `Shared*MergeTree` engines exist only in the private build.
+static constexpr bool has_shared_engines = CLICKHOUSE_CLOUD;
+
 /// Fuzz a table storage definition (ENGINE and SETTINGS clauses).
 /// Used both for the storage of a plain CREATE TABLE and for the
 /// inner table storage of a materialized view. `columns_list` may be null.
@@ -1672,10 +1678,16 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage, ASTColumns * columns_li
             "SummingMergeTree",
             "ReplacingMergeTree",
         };
-        engine_name = pickRandomly(fuzz_rand, safe_mergetree_engines);
+        /// A `Shared` engine stays shared and keeps its Keeper path and replica name
+        const bool shared = startsWith(engine_name, "Shared");
+        engine_name = (shared ? "Shared" : "") + pickRandomly(fuzz_rand, safe_mergetree_engines);
         /// Clear engine arguments to avoid arity mismatches with the new engine
         if (auto & arguments = storage.engine->arguments)
-            arguments->children.clear();
+        {
+            auto & children = arguments->children;
+            const bool keep_path = shared && children.size() >= 2 && children[0]->as<ASTLiteral>() && children[1]->as<ASTLiteral>();
+            children.resize(keep_path ? 2 : 0);
+        }
     }
 
     /// Swap a MergeTree-family engine for `CollapsingMergeTree(sign)` or
@@ -1734,14 +1746,14 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage, ASTColumns * columns_li
         }
     }
 
-    /// Swap a MergeTree-family engine for its `Replicated` variant, keeping the engine's own arguments.
+    /// Swap a MergeTree-family engine for its `Replicated` or `Shared` variant, keeping the engine's own arguments.
     /// The Keeper path gets a random suffix, so unlike the corpus paths stripped above, fuzzed copies of
     /// a table do not collide. The default path is no option: its `{uuid}` is rejected outside ON CLUSTER.
     if (!engine_swapped && endsWith(engine_name, "MergeTree") && !startsWith(engine_name, "Shared")
         && !startsWith(engine_name, "Replicated") && fuzz_rand() % 30 == 0)
     {
         engine_swapped = true;
-        engine_name = "Replicated" + engine_name;
+        engine_name = String(has_shared_engines && fuzz_rand() % 2 == 0 ? "Shared" : "Replicated") + engine_name;
         auto * engine = storage.engine;
         if (!engine->arguments)
             engine->set(engine->arguments, make_intrusive<ASTExpressionList>());
@@ -2243,7 +2255,14 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         /// Swap among the parameter-free engines, or to a proxy (`Cluster`, `Remote`, `Overlay`) or a
         /// file-backed (`Filesystem`, `S3`, `URL`) engine, or to `Replicated` (Keeper is in the fuzzer job).
         /// MySQL/PostgreSQL need external servers, so they are left out.
-        static const std::unordered_set<String> safe_database_engines = {"Atomic", "Memory", "Dictionary"};
+        static const std::unordered_set<String> safe_database_engines = {
+            "Atomic",
+            "Memory",
+            "Dictionary",
+#if CLICKHOUSE_CLOUD
+            "Shared",
+#endif
+        };
         static const std::unordered_set<String> proxy_database_engines = {"Cluster", "Remote", "RemoteSecure", "Overlay"};
         static const std::unordered_set<String> storage_database_engines = {"Filesystem", "S3", "URL"};
         auto & engine_name = create.storage->engine->name;
@@ -10923,6 +10942,26 @@ void QueryFuzzer::collectFuzzInfoRecurse(ASTPtr ast)
     }
 }
 
+/// Add, replace or remove the `ON CLUSTER` clause of a DDL query, which then goes through the distributed DDL
+/// queue, and in the private build through the shared catalog of the `default` cluster.
+void QueryFuzzer::fuzzOnCluster(IAST & ast)
+{
+    const bool is_ddl = typeid_cast<ASTCreateQuery *>(&ast) || typeid_cast<ASTDropQuery *>(&ast) || typeid_cast<ASTAlterQuery *>(&ast)
+        || typeid_cast<ASTRenameQuery *>(&ast) || typeid_cast<ASTOptimizeQuery *>(&ast) || typeid_cast<ASTUndropQuery *>(&ast)
+        || typeid_cast<ASTCreateIndexQuery *>(&ast) || typeid_cast<ASTDropIndexQuery *>(&ast) || typeid_cast<ASTDeleteQuery *>(&ast)
+        || typeid_cast<ASTUpdateQuery *>(&ast);
+    auto * query = dynamic_cast<ASTQueryWithOnCluster *>(&ast);
+    if (!is_ddl || !query || fuzz_rand() % 30 != 0)
+        return;
+
+    if (!query->cluster.empty() && fuzz_rand() % 2 == 0)
+    {
+        query->cluster.clear();
+        return;
+    }
+    query->cluster = pickRandomly(fuzz_rand, distributedClusterNames());
+}
+
 void QueryFuzzer::fuzzMain(ASTPtr & ast)
 {
     current_ast_depth = 0;
@@ -10935,6 +10974,7 @@ void QueryFuzzer::fuzzMain(ASTPtr & ast)
 
     collectFuzzInfoMain(ast);
     fuzz(ast);
+    fuzzOnCluster(*ast);
 
     /// Pick up any {name:type} params introduced during fuzzing (e.g. substituted from the
     /// column_like pool). Use try_emplace so values seeded above are not overwritten.
