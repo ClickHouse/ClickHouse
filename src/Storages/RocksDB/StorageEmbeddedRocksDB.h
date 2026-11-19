@@ -88,6 +88,8 @@ public:
         ContextPtr context) override;
 
     bool storesDataOnDisk() const override { return true; }
+    bool supportsParallelInsert() const override { return true; }
+    bool isInsertOrderSensitive() const override { return true; }
     Strings getDataPaths() const override { return {rocksdb_dir}; }
 
     std::shared_ptr<rocksdb::Statistics> getRocksDBStatistics() const;

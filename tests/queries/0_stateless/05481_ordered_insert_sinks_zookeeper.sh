@@ -31,11 +31,11 @@ $CLICKHOUSE_CLIENT --multiquery -q "
 for table in order_rep_rmt order_rep_coalescing order_keeper order_rep_versioned; do
     echo "$table"
     $CLICKHOUSE_CLIENT "${INSERT_SETTINGS[@]}" -q \
-        "EXPLAIN PIPELINE INSERT INTO $table VALUES (0, 0)" | grep -cE "ReplicatedMergeTreeSink|KeeperMapSink"
+        "EXPLAIN PIPELINE INSERT INTO $table VALUES (0, 0)" | grep -cE "ReplicatedMergeTreeSink|KeeperMapSink" || true
 done
 echo order_rep_cmt
 $CLICKHOUSE_CLIENT "${INSERT_SETTINGS[@]}" -q \
-    "EXPLAIN PIPELINE INSERT INTO order_rep_cmt VALUES (0, 1, 0)" | grep -c "ReplicatedMergeTreeSink"
+    "EXPLAIN PIPELINE INSERT INTO order_rep_cmt VALUES (0, 1, 0)" | grep -c "ReplicatedMergeTreeSink" || true
 
 $CLICKHOUSE_CLIENT --multiquery -q "
     DROP TABLE order_rep_rmt SYNC;

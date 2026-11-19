@@ -1012,7 +1012,8 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentViewForwardingToSep
     return false;
 }
 
-bool InsertDependenciesBuilder::forwardedInsertHidesSerialDestination(const StoragePtr & storage, ContextPtr context, size_t depth)
+bool InsertDependenciesBuilder::forwardedInsertHidesSerialDestination(
+    const StoragePtr & storage, ContextPtr context, bool preserve_input_order, size_t depth)
 {
     if (depth > max_insert_forwarding_depth)
         return true;
@@ -1022,27 +1023,28 @@ bool InsertDependenciesBuilder::forwardedInsertHidesSerialDestination(const Stor
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
     {
         auto target = alias->tryGetTargetTable();
-        return !target || insertReachesSerialDestination(target, context, depth + 1);
+        return !target || insertReachesSerialDestination(target, context, preserve_input_order, depth + 1);
     }
 
     /// `MaterializedView` and proxies pass the write through within this pipeline: look through them.
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
     {
         auto target = materialized_view->tryGetTargetTable();
-        return !target || forwardedInsertHidesSerialDestination(target, context, depth + 1);
+        return !target || forwardedInsertHidesSerialDestination(target, context, preserve_input_order, depth + 1);
     }
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
-        return forwardedInsertHidesSerialDestination(proxy->getNested(), context, depth + 1);
+        return forwardedInsertHidesSerialDestination(proxy->getNested(), context, preserve_input_order, depth + 1);
 
     return false;
 }
 
-bool InsertDependenciesBuilder::insertReachesSerialDestination(const StoragePtr & storage, ContextPtr context, size_t depth)
+bool InsertDependenciesBuilder::insertReachesSerialDestination(
+    const StoragePtr & storage, ContextPtr context, bool preserve_input_order, size_t depth)
 {
     if (depth > max_insert_forwarding_depth)
         return true;
 
-    if (!storage->supportsParallelInsert())
+    if (!storage->supportsParallelInsert() || (preserve_input_order && storage->isInsertOrderSensitive()))
         return true;
 
     for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(storage->getStorageID()))
@@ -1052,22 +1054,22 @@ bool InsertDependenciesBuilder::insertReachesSerialDestination(const StoragePtr 
         if (!materialized_view)
             return true;
         auto target = materialized_view->tryGetTargetTable();
-        if (!target || insertReachesSerialDestination(target, context, depth + 1))
+        if (!target || insertReachesSerialDestination(target, context, preserve_input_order, depth + 1))
             return true;
     }
 
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
     {
         auto target = alias->tryGetTargetTable();
-        return !target || insertReachesSerialDestination(target, context, depth + 1);
+        return !target || insertReachesSerialDestination(target, context, preserve_input_order, depth + 1);
     }
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
     {
         auto target = materialized_view->tryGetTargetTable();
-        return !target || insertReachesSerialDestination(target, context, depth + 1);
+        return !target || insertReachesSerialDestination(target, context, preserve_input_order, depth + 1);
     }
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
-        return insertReachesSerialDestination(proxy->getNested(), context, depth + 1);
+        return insertReachesSerialDestination(proxy->getNested(), context, preserve_input_order, depth + 1);
 
     return false;
 }
@@ -1075,7 +1077,7 @@ bool InsertDependenciesBuilder::insertReachesSerialDestination(const StoragePtr 
 InsertDependenciesBuilder::InsertDependenciesBuilder(
     StoragePtr table, ASTPtr query, SharedHeader insert_header,
     bool async_insert_, bool skip_destination_table_, size_t max_insert_threads,
-    ContextPtr context)
+    ContextPtr context, bool preserve_input_order)
     : init_table_id(table->getStorageID())
     , init_storage(table)
     , init_query(query)
@@ -1108,7 +1110,9 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     auto all_sinks_support_parallel_insert = std::ranges::all_of(storages, [&] (auto storage)
     {
         return isView(storage.first)
-            || (storage.second->supportsParallelInsert() && !forwardedInsertHidesSerialDestination(storage.second, init_context));
+            || (storage.second->supportsParallelInsert()
+                && (!preserve_input_order || !storage.second->isInsertOrderSensitive())
+                && !forwardedInsertHidesSerialDestination(storage.second, init_context, preserve_input_order));
     });
 
     /// Fanning out the writing side to `max_insert_threads` sink chains also fans out the dependent

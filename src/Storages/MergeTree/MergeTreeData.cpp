@@ -1383,14 +1383,14 @@ void MergeTreeData::loadStatisticsOfPartsInParallel(
     }
 }
 
-bool MergeTreeData::supportsParallelInsert() const
+bool MergeTreeData::isInsertOrderSensitive() const
 {
     /// These modes resolve rows by insertion order, which parallel sinks do not preserve.
     /// `Replacing` keeps the last inserted row among rows with equal versions too.
-    return merging_params.mode != MergingParams::Collapsing
-        && merging_params.mode != MergingParams::Coalescing
-        && merging_params.mode != MergingParams::Graphite
-        && merging_params.mode != MergingParams::Replacing;
+    return merging_params.mode == MergingParams::Collapsing
+        || merging_params.mode == MergingParams::Coalescing
+        || merging_params.mode == MergingParams::Graphite
+        || merging_params.mode == MergingParams::Replacing;
 }
 
 bool MergeTreeData::supportsFinal() const

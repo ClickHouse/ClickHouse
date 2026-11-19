@@ -32,16 +32,23 @@ $CLICKHOUSE_CLIENT --multiquery -q "
 for table in order_rmt order_coalescing order_kv order_versioned; do
     echo "$table"
     $CLICKHOUSE_CLIENT "${INSERT_SETTINGS[@]}" -q \
-        "EXPLAIN PIPELINE INSERT INTO $table (k, v) VALUES (0, 0)" | grep -cE "MergeTreeSink|EmbeddedRocksDB.*Sink"
+        "EXPLAIN PIPELINE INSERT INTO $table (k, v) VALUES (0, 0)" | grep -cE "MergeTreeSink|EmbeddedRocksDB.*Sink" || true
 done
 echo order_cmt
 $CLICKHOUSE_CLIENT "${INSERT_SETTINGS[@]}" -q \
-    "EXPLAIN PIPELINE INSERT INTO order_cmt VALUES (0, 1, 0)" | grep -c "MergeTreeSink"
+    "EXPLAIN PIPELINE INSERT INTO order_cmt VALUES (0, 1, 0)" | grep -c "MergeTreeSink" || true
 
 # Order-independent destinations retain parallel sinks.
 echo order_mt
 $CLICKHOUSE_CLIENT "${INSERT_SETTINGS[@]}" -q \
-    "EXPLAIN PIPELINE INSERT INTO order_mt VALUES (0, 0)" | grep -c "MergeTreeSink"
+    "EXPLAIN PIPELINE INSERT INTO order_mt VALUES (0, 0)" | grep -c "MergeTreeSink" || true
+
+echo order_kv_select
+for source in numbers numbers_mt; do
+    $CLICKHOUSE_CLIENT "${INSERT_SETTINGS[@]}" --max_block_size=10000 -q \
+        "EXPLAIN PIPELINE INSERT INTO order_kv SELECT number % 10, number FROM $source(100000)" \
+        | grep -c "EmbeddedRocksDB.*Sink" || true
+done
 
 # An order-sensitive materialized-view target also keeps the source single-stream.
 $CLICKHOUSE_CLIENT --multiquery -q "
@@ -50,7 +57,7 @@ $CLICKHOUSE_CLIENT --multiquery -q "
 "
 echo order_mv
 $CLICKHOUSE_CLIENT "${INSERT_SETTINGS[@]}" --parallel_view_processing=1 -q \
-    "EXPLAIN PIPELINE INSERT INTO order_source VALUES (0, 0)" | grep -c "MergeTreeSink"
+    "EXPLAIN PIPELINE INSERT INTO order_source VALUES (0, 0)" | grep -c "MergeTreeSink" || true
 $CLICKHOUSE_CLIENT --multiquery -q "DROP TABLE order_mv; DROP TABLE order_source"
 
 # An `Alias` writes the dependent views of its target in a nested `INSERT` per sink, hidden from the outer insert.
@@ -66,7 +73,7 @@ $CLICKHOUSE_CLIENT --multiquery -q "
 for table in order_alias order_outer; do
     echo "$table"
     $CLICKHOUSE_CLIENT "${INSERT_SETTINGS[@]}" --parallel_view_processing=1 -q \
-        "EXPLAIN PIPELINE INSERT INTO $table VALUES (0, 0)" | grep -c "AliasSink"
+        "EXPLAIN PIPELINE INSERT INTO $table VALUES (0, 0)" | grep -c "AliasSink" || true
 done
 
 $CLICKHOUSE_CLIENT -q "SELECT number % 10, number FROM numbers(100000) FORMAT TSV" > "$DATA_FILE"

@@ -10,6 +10,9 @@ order_cmt
 1
 order_mt
 4
+order_kv_select
+1
+4
 order_mv
 2
 order_alias

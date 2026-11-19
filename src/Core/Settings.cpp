@@ -363,10 +363,11 @@ This applies both to `INSERT SELECT` and to a plain `INSERT` whose data is sent 
 (squashing the blocks and writing them to the destination table) is parallelized
 across up to this many threads.
 
-Destinations whose results depend on insertion order keep a single write stream regardless of this setting:
+Destinations whose results depend on insertion order keep a single write stream when the input has one stream:
 `CollapsingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree`, `ReplacingMergeTree`
-(including their replicated variants), `EmbeddedRocksDB`, and `KeeperMap`. This also applies when such a destination is
-reached through a materialized view or an `Alias` table.
+(including their replicated variants) and `EmbeddedRocksDB`. A `SELECT` with multiple output streams has no input order
+to preserve, so these destinations can retain parallel sinks. `KeeperMap` always keeps a single write stream.
+These restrictions also apply to destinations reached through a materialized view or an `Alias` table.
 
 Possible values:
 

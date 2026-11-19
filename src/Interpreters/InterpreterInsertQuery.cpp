@@ -548,7 +548,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
         async_insert, /*skip_destination_table*/ no_destination, max_insert_threads,
-        context);
+        context, /*preserve_input_order=*/ pipeline.getNumStreams() == 1);
     returning_insert_views_serial = query.returning && insert_dependencies->getViewProcessingNumThreads() == 1;
 
     const auto & settings = context->getSettingsRef();
