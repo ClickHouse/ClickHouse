@@ -20,6 +20,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 opts=(
     --join_algorithm='parallel_hash'
+    --hash_join_layout=auto
     # `query_plan_join_swap_table=true` forces every join to swap sides during reorder so the
     # right children are reorder-built sub-join nodes (rather than the left-deep originals).
     # This is precisely the case the fix targets — without `true` the tied row counts of the

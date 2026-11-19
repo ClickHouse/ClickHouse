@@ -11,6 +11,8 @@ SET max_threads = 1;
 -- Checks the aggregation of this node; with parallel replicas it would run on the replicas.
 SET enable_parallel_replicas = 0;
 SET collect_hash_table_stats_during_aggregation = 1;
+-- The `String` key table used without packed string keys cannot be preallocated, so the `trimBoth` repeat would get 0.
+SET enable_packed_string_keys_in_aggregation = 1;
 SET max_size_to_preallocate_for_aggregation = 1000000000000;
 -- Spilling the aggregation stops the statistics collection.
 SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;

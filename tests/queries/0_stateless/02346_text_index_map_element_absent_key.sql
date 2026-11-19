@@ -7,9 +7,10 @@ SET explain_query_plan_default = 'legacy';
 SET enable_full_text_index = 1;
 -- The runner randomizes `optimize_functions_to_subcolumns`, which decides which spelling of the map
 -- element reaches index analysis. S8's pattern has four literal bytes, which the index answers only
--- while `text_index_like_min_pattern_length` is at most 4.
+-- while `text_index_like_min_pattern_length` is at most 4, and S8's ILIKE needs the dictionary scan.
 SET optimize_functions_to_subcolumns = 1;
 SET text_index_like_min_pattern_length = 4;
+SET use_text_index_like_evaluation_by_dictionary_scan = 1;
 
 DROP TABLE IF EXISTS t_fs;
 CREATE TABLE t_fs (id UInt32, m Map(String, FixedString(6)),

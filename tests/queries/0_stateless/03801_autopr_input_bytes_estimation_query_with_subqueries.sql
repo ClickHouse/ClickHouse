@@ -1,5 +1,9 @@
 -- Tags: stateful, long
 
+-- Pin (randomized in CI): a spilled `IN` set keeps no explicit elements, so the index analysis
+-- and key lookups by the set that this test checks do not happen.
+SET max_bytes_before_external_set = 0;
+
 -- To avoid too slow test execution
 set remote_filesystem_read_method='threadpool', allow_prefetched_read_pool_for_remote_filesystem=1, filesystem_prefetch_step_marks=0, filesystem_prefetch_step_bytes='100Mi';
 

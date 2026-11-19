@@ -1,7 +1,9 @@
 -- Tags: no-object-storage
 -- no-object-storage: remote reads allocate prefetch buffers that can exceed the 200M limit
 DROP TABLE IF EXISTS test;
-CREATE TABLE test (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 1, use_primary_key_cache = 0;
+-- Lazy loading is the subject of this test, and CI randomizes `primary_key_lazy_load` off; without
+-- it ATTACH loads the index eagerly and the two "index was not loaded" checks below see 10 MB.
+CREATE TABLE test (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 1, use_primary_key_cache = 0, primary_key_lazy_load = 1;
 
 SET optimize_trivial_insert_select = 1;
 INSERT INTO test SELECT randomString(1000) FROM numbers(10000);

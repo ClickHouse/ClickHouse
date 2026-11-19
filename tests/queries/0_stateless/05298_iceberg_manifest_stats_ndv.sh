@@ -26,6 +26,7 @@ PINS="--query_plan_optimize_join_order_randomize=0 --query_plan_optimize_join_or
     --enable_join_runtime_filters=0 --enable_parallel_replicas=0 --enable_join_transitive_predicates=0
     --query_plan_propagate_predicate_across_join=0 --materialize_statistics_on_insert=1
     --explain_query_plan_default=legacy --max_insert_threads=1 --max_threads=1 --max_block_size=1000000
+    --statistics_max_set_size_for_exact_selectivity_estimation=10000
     --allow_insert_into_iceberg=1"
 ON="--use_datalake_metadata_statistics=1 --use_statistics=1"
 NO_STATS="--use_datalake_metadata_statistics=1 --use_statistics=0"

@@ -19,6 +19,8 @@ SET adaptive_aggregator_freeze_threshold = 64;
 -- of a top-K. The distributed-plan suite serializes every plan, which the top-K plan pass refuses.
 SET max_rows_to_group_by = 0;
 SET serialize_query_plan = 0;
+-- Pin (randomized in CI): without the bucket top-K pass the adaptive merge prunes nothing.
+SET query_plan_aggregation_bucket_top_k = 1;
 SET log_queries = 1;
 SET log_profile_events = 1;
 

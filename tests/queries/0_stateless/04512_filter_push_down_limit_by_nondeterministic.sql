@@ -6,6 +6,9 @@
 
 DROP TABLE IF EXISTS t_04512;
 SET query_plan_filter_push_down = 1;
+-- Pin to default: CI randomizes query_plan_filter_push_down_below_limit_by off, which changes the
+-- plan shape this test asserts.
+SET query_plan_filter_push_down_below_limit_by = 1;
 
 DROP TABLE IF EXISTS t_04512;
 CREATE TABLE t_04512 (key String, ts DateTime, val UInt64)

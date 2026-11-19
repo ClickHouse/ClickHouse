@@ -4,6 +4,10 @@
 -- constant. Such an atom must stay relaxed: the key point has more than one preimage. The keys read a
 -- `DateTime`, because `toString` of a `DateTime64` is not injective, which relaxes every atom by itself.
 
+-- Pin (randomized in CI): a spilled `IN` set keeps no explicit elements, so the key analysis
+-- by the `NOT IN` sets below does not happen.
+SET max_bytes_before_external_set = 0;
+
 DROP TABLE IF EXISTS t_lossy_const_key;
 
 CREATE TABLE t_lossy_const_key (d DateTime('UTC')) ENGINE = MergeTree ORDER BY toString(d);

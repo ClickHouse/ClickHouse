@@ -2,7 +2,11 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/128071: a `set` index evaluates a derived hint on the column the hint names, not on the one it reads
 
 SET optimize_and_compare_chain = 1;
+-- CI may inject a work budget too small for the chain, so no hint is derived.
+SET optimize_and_compare_chain_max_hash_work = 5000000;
 SET optimize_or_like_chain = 1;
+-- CI may inject a threshold above the four `LIKE` branches below, so the chain is not rewritten.
+SET optimize_or_like_chain_min_substrings = 4;
 SET query_plan_filter_push_down = 1;
 SET query_plan_filter_push_down_below_limit_by = 1;
 SET use_skip_indexes = 1;

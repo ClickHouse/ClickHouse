@@ -11,6 +11,8 @@ SET max_rows_to_group_by = 0;
 SET enable_parallel_single_level_merge = 1;
 SET enable_adaptive_aggregator = 1;
 SET adaptive_aggregator_freeze_threshold = 16384;
+-- Pin (randomized in CI): a lower byte bound freezes the tables, which are then not merged partition by partition.
+SET adaptive_aggregator_freeze_threshold_bytes = 4194304;
 
 -- Each lane feeds one thread. Every lane holds the same 1000 keys, so every table holds 1000 cells, far below
 -- the freeze threshold, and the tables merge partition by partition. The states of `uniqExact` are heavy, so

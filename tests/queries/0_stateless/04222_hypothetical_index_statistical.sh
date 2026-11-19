@@ -35,6 +35,12 @@ $CLICKHOUSE_CLIENT -n -q "
 # No column stats -> falls through to applicability_only.
 echo "--- statistical: no stats, falls back to applicability_only ---"
 $CLICKHOUSE_CLIENT -n -q "
+    -- This table must have NO materialized statistics so the estimator falls back
+    -- to applicability_only. Settings randomization injects
+    -- materialize_statistics_on_insert=1, which (with the build's default
+    -- auto_statistics_types) materializes auto-stats on this INSERT and flips the
+    -- reported source to 'statistical'. Force it off so the table stays stats-free.
+    SET materialize_statistics_on_insert = 0;
     DROP TABLE IF EXISTS t_hypo_no_stat;
     CREATE TABLE t_hypo_no_stat (a UInt64, b UInt64)
     ENGINE = MergeTree ORDER BY a

@@ -1,4 +1,4 @@
--- Random settings limits: optimize_use_projections=(1, None); optimize_use_implicit_projections=(1, None); parallel_replicas_local_plan=(1, None); automatic_parallel_replicas_mode=(0, 0); materialize_statistics_on_insert=(1, None)
+-- Random settings limits: optimize_use_projections=(1, None); optimize_use_implicit_projections=(1, None); parallel_replicas_local_plan=(1, None); automatic_parallel_replicas_mode=(0, 0); materialize_statistics_on_insert=(1, None); use_statistics_for_sum_avg_aggregation=(1, None)
 
 -- Parallel replicas enabled only in a subquery's SETTINGS: what a projection, the minmax / exact count or column statistics answer must still be returned.
 

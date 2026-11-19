@@ -8,6 +8,9 @@ SET enable_join_transitive_predicates = 1;
 SET query_plan_merge_filter_into_join_condition = 1;
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_randomize = 0;
+-- `dpsize` runs with no fallback in the list below, so an exhausted search budget has nowhere to
+-- fall back to and fails the query with Code 717. CI randomizes the budget down to 1; 0 is no limit.
+SET query_plan_optimize_join_order_max_searched_plans = 0;
 SET use_hash_table_stats_for_join_reordering = 0;
 SET enable_parallel_replicas = 0;
 -- Q02: without the outer join conversion `dpsize` alone finds no join order, and the join limits of

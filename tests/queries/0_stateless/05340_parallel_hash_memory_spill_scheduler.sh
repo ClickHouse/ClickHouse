@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # side as one block, so the scheduler first sees a non-empty join after the whole right side is in, and the join
 # is not polled again after the switch: a switch that does not spill leaves nothing on disk.
 settings=(
-    --join_algorithm=parallel_hash --max_threads=1 --max_block_size=1000000
+    --join_algorithm=parallel_hash --hash_join_layout=auto --max_threads=1 --max_block_size=1000000
     --max_bytes_before_external_join=100Gi --max_bytes_ratio_before_external_join=0
     --grace_hash_join_initial_buckets=1 --collect_hash_table_stats_during_joins=0
     --max_rows_in_join=0 --max_bytes_in_join=0 --enable_parallel_replicas=0
@@ -33,7 +33,7 @@ echo "$output" | grep -qE '\[ 0 \] ExternalJoinUncompressedBytes: [1-9]' && echo
 # Four build streams share 16 right blocks, and the scheduler switches the join while they fill it. Every right row
 # has a match, so a row lost converting the four slots changes the result.
 parallel_settings=(
-    --join_algorithm=parallel_hash --max_threads=4 --max_block_size=65536
+    --join_algorithm=parallel_hash --hash_join_layout=auto --max_threads=4 --max_block_size=65536
     --max_bytes_before_external_join=100Gi --max_bytes_ratio_before_external_join=0
     --grace_hash_join_initial_buckets=1 --collect_hash_table_stats_during_joins=0
     --max_rows_in_join=0 --max_bytes_in_join=0 --enable_parallel_replicas=0

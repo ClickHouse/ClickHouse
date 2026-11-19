@@ -3,6 +3,8 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/124502: the query condition cache tells apart a derived hint bound to different columns
 
 SET optimize_and_compare_chain = 1;
+-- Pinned (randomized in CI): a tiny work budget stops deriving the hint the checks below count.
+SET optimize_and_compare_chain_max_hash_work = 5000000;
 SET query_plan_filter_push_down = 1;
 SET use_query_condition_cache = 1;
 

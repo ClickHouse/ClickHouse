@@ -13,7 +13,9 @@ SET min_marks_per_part_to_load_statistics = 0;
 DROP TABLE IF EXISTS t_05259;
 DROP USER IF EXISTS user_05259;
 
-CREATE TABLE t_05259 (p UInt8, id UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY id;
+-- prewarm_statistics_cache pinned to default: CI randomizes it on, which loads statistics on part load
+-- and turns the expected cache misses this test asserts into hits.
+CREATE TABLE t_05259 (p UInt8, id UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY id SETTINGS prewarm_statistics_cache = 0;
 
 INSERT INTO t_05259 SELECT 1, number FROM numbers(10000);
 INSERT INTO t_05259 SELECT 2, number FROM numbers(1000);

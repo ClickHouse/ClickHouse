@@ -27,6 +27,8 @@ SET enable_parallel_replicas = 1;
 -- Mode 2 always collects the statistics, without consulting the cost model.
 SET automatic_parallel_replicas_mode = 2;
 SET parallel_replicas_local_plan = 1;
+-- CI may inject 0, which keeps the condition above the initiator's read: the plans differ, the answer does not.
+SET parallel_replicas_filter_pushdown = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';

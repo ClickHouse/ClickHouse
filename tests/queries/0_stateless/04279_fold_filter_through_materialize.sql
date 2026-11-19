@@ -1,5 +1,8 @@
 -- Issue #78166: WHERE over UNION where each branch wraps a const in materialize
 
+-- CI may inject False; this test counts the always-true/false filters this optimization folds in the plan.
+SET query_plan_replace_always_true_filter = 1;
+
 SELECT uniq(id) FROM (
     SELECT 'online' AS event_type, 'i' AS id FROM numbers(100)
     UNION ALL

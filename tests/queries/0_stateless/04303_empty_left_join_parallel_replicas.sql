@@ -11,6 +11,7 @@
 -- only the leftmost leaf can absorb the entire join, non-leftmost leaves must
 -- fall back to plain `storage->read`.
 
+SET query_plan_optimize_join_order_max_searched_plans = 100000; -- pin (randomized in CI): a small search budget starves DP-only algorithms
 DROP TABLE IF EXISTS t_left_empty;
 DROP TABLE IF EXISTS t_left;
 DROP TABLE IF EXISTS t_right;

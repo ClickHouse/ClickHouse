@@ -7,6 +7,7 @@
 -- With a single thread, the per-thread table is the whole table, so it becomes large too.
 -- The queries are kept small, because the test is run many times in parallel in the flaky check.
 SET max_threads = 1, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0, max_rows_to_read = 0;
+SET hash_join_layout = 'auto'; -- Pin the JOIN layout: the randomizer's 'serial' changes the output the test checks
 
 SELECT 'UInt64 keys';
 SELECT count(), min(c), max(c)

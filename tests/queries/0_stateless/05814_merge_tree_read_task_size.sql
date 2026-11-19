@@ -23,6 +23,8 @@ SET max_block_size = 8192, preferred_block_size_bytes = 0, preferred_max_column_
 -- granules of 8,192 rows.
 SET merge_tree_min_rows_for_concurrent_read = 3072, merge_tree_min_bytes_for_concurrent_read = 0;
 SET merge_tree_min_read_task_size = 8;
+-- Pin (randomized in CI): the end of the read is cut into 1/32 of a share, the default.
+SET merge_tree_read_end_tasks_per_stream = 32;
 SET merge_tree_min_bytes_per_read_stream = 0;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SET allow_prefetched_read_pool_for_local_filesystem = 0, use_columns_cache = 0;
