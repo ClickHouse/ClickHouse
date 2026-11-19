@@ -203,8 +203,13 @@ void PocoAzureHTTPClient::recordWriteAttempt(
     const Azure::Core::Http::Request & request, std::optional<Azure::Core::Http::HttpStatusCode> code)
 {
     auto * scope = current_write_attempts_scope.get();
-    if (scope && request.GetMethod() == Azure::Core::Http::HttpMethod::Put && attemptMayHaveBeenApplied(code))
+    if (!scope || request.GetMethod() != Azure::Core::Http::HttpMethod::Put)
+        return;
+    if (attemptMayHaveBeenApplied(code))
         scope->record.may_have_been_applied = true;
+    /// 409 `BlobAlreadyExists` or `PathAlreadyExists` answers `If-None-Match: *`, and 412 `ConditionNotMet` answers `If-Match`.
+    scope->record.precondition_refused
+        = code == Azure::Core::Http::HttpStatusCode::Conflict || code == Azure::Core::Http::HttpStatusCode::PreconditionFailed;
 }
 
 std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::Send(

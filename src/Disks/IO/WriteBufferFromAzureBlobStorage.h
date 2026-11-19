@@ -66,7 +66,7 @@ private:
     /// also the retries of the SDK. After a failure that an applied attempt may explain, the idempotency id in the metadata
     /// of the blob proves the outcome. A write proven to be applied succeeds.
     void publishWithRetry(std::function<void(size_t)> func, size_t num_tries, size_t cost = 0);
-    AttemptsRecord::Proof proveFailedWrite(bool condition_failed) const;
+    AttemptsRecord::Proof proveFailedWrite() const;
 
     /// Who wrote the blob, told by the idempotency id in its metadata.
     enum class BlobWriter : uint8_t

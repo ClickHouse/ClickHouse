@@ -194,10 +194,10 @@ WriteBufferFromAzureBlobStorage::BlobWriter WriteBufferFromAzureBlobStorage::fin
     return it != properties.Metadata.end() && it->second == idempotency_id ? BlobWriter::ThisWrite : BlobWriter::AnotherWrite;
 }
 
-AttemptsRecord::Proof WriteBufferFromAzureBlobStorage::proveFailedWrite(bool condition_failed) const
+AttemptsRecord::Proof WriteBufferFromAzureBlobStorage::proveFailedWrite() const
 {
     using Proof = AttemptsRecord::Proof;
-    if (!idempotency_id.empty() && (condition_failed || attempts_record.may_have_been_applied))
+    if (!idempotency_id.empty() && (attempts_record.precondition_refused || attempts_record.may_have_been_applied))
     {
         switch (findBlobWriter())
         {
@@ -212,16 +212,12 @@ AttemptsRecord::Proof WriteBufferFromAzureBlobStorage::proveFailedWrite(bool con
                 break;
         }
     }
-    /// After an attempt that may have been applied, the refusal can be the answer to a replay of this write.
-    if (condition_failed && !attempts_record.may_have_been_applied)
-        return Proof::ConditionFailed;
     return Proof::None;
 }
 
 void WriteBufferFromAzureBlobStorage::publishWithRetry(std::function<void(size_t)> func, size_t num_tries, size_t cost)
 {
-    attempts_record.proof = AttemptsRecord::Proof::None;
-    bool condition_failed = false;
+    attempts_record.startCall();
     try
     {
         PocoAzureHTTPClient::WriteAttemptsScope scope(attempts_record);
@@ -232,18 +228,15 @@ void WriteBufferFromAzureBlobStorage::publishWithRetry(std::function<void(size_t
                 {
                     func(attempt);
                 }
-                catch (const Azure::Core::RequestFailedException & e)
+                catch (const Azure::Core::RequestFailedException &)
                 {
-                    /// 409 `BlobAlreadyExists` answers `If-None-Match: *`, and 412 `ConditionNotMet` answers `If-Match`.
-                    condition_failed = e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
-                        || e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed;
+                    /// The transport has recorded the answer.
                     throw;
                 }
                 catch (...)
                 {
                     /// Any other exception from inside an attempt, e.g. of memory, can come after its body was sent.
                     attempts_record.may_have_been_applied = true;
-                    condition_failed = false;
                     throw;
                 }
             },
@@ -252,7 +245,7 @@ void WriteBufferFromAzureBlobStorage::publishWithRetry(std::function<void(size_t
     }
     catch (...)
     {
-        attempts_record.proof = proveFailedWrite(condition_failed);
+        attempts_record.proof = proveFailedWrite();
         if (attempts_record.proof != AttemptsRecord::Proof::Applied)
             throw;
         LOG_INFO(log, "Blob `{}` was written by an earlier attempt of this write: {}", blob_path, getCurrentExceptionMessage(false));

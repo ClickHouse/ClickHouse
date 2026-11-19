@@ -195,10 +195,20 @@ void recordAttemptThatMayHaveBeenApplied()
 }
 
 template <typename ErrorType>
+bool isPreconditionFailure(const Aws::Client::AWSError<ErrorType> & error)
+{
+    return error.GetResponseCode() == Aws::Http::HttpResponseCode::PRECONDITION_FAILED || error.GetExceptionName() == "PreconditionFailed";
+}
+
+template <typename ErrorType>
 void recordFailedAttempt(const Aws::Client::AWSError<ErrorType> & error)
 {
+    auto * scope = Client::RequestScope::current();
+    if (!scope || !scope->attempts_record)
+        return;
     if (attemptMayHaveBeenApplied(error.GetResponseCode(), error.GetExceptionName()))
-        recordAttemptThatMayHaveBeenApplied();
+        scope->attempts_record->may_have_been_applied = true;
+    scope->attempts_record->precondition_refused = isPreconditionFailure(error);
 }
 
 }
@@ -715,11 +725,6 @@ Client::ObjectWriter Client::findObjectWriter(
 namespace
 {
 
-bool isPreconditionFailure(const Aws::S3::S3Error & error)
-{
-    return error.GetResponseCode() == Aws::Http::HttpResponseCode::PRECONDITION_FAILED || error.GetExceptionName() == "PreconditionFailed";
-}
-
 /// Whether a `HeadObject` of the key can prove the outcome of a failed write, and is worth its request.
 template <typename RequestType>
 bool shouldFindObjectWriter(const RequestType & request, const Aws::S3::S3Error & error)
@@ -753,9 +758,6 @@ AttemptsRecord::Proof Client::proveFailedWrite(const RequestType & request, cons
                 break;
         }
     }
-    /// After an attempt that may have been applied, the refusal can be the answer to a replay of this write.
-    if (isPreconditionFailure(error) && !request.getAttemptsRecord().may_have_been_applied)
-        return Proof::ConditionFailed;
     return Proof::None;
 }
 
@@ -763,7 +765,7 @@ template <typename RequestType, typename RequestFn>
 std::invoke_result_t<RequestFn, RequestType &> Client::publish(RequestType & request, RequestFn request_fn) const
 {
     auto & attempts_record = request.getAttemptsRecord();
-    attempts_record.proof = AttemptsRecord::Proof::None;
+    attempts_record.startCall();
     auto outcome = [&]
     {
         RequestScope scope(&attempts_record);
