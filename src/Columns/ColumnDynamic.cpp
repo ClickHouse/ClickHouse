@@ -1443,7 +1443,7 @@ const ColumnDynamic & getSourceDynamicColumn(const IColumn & source, const Colum
 
 }
 
-void ColumnDynamic::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnDynamic::prepareForSquashing(std::span<const IColumn * const> source_columns, size_t factor)
 {
     checkStackSize();
     if (source_columns.empty())
@@ -1467,7 +1467,7 @@ void ColumnDynamic::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr
     prepareVariantsForSquashing(source_columns, factor);
 }
 
-void ColumnDynamic::prepareVariantsForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnDynamic::prepareVariantsForSquashing(std::span<const IColumn * const> source_columns, size_t factor)
 {
     checkStackSize();
     /// Internal variants of source dynamic columns may differ.
@@ -1554,10 +1554,11 @@ void ColumnDynamic::prepareVariantsForSquashing(const VectorWithMemoryTracking<C
     /// Now current dynamic column has all resulting variants and we can call
     /// prepareForSquashing on them to preallocate the memory.
     auto & variant_col = getVariantColumn();
+    ColumnRawPtrsWithStackMemory source_variant_columns;
+    source_variant_columns.reserve(source_columns.size());
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
     {
-        VectorWithMemoryTracking<ColumnPtr> source_variant_columns;
-        source_variant_columns.reserve(source_columns.size());
+        source_variant_columns.clear();
         for (const auto & source_column : source_columns)
         {
             const auto & source_dynamic_column = assert_cast<const ColumnDynamic &>(*source_column);
@@ -1565,7 +1566,7 @@ void ColumnDynamic::prepareVariantsForSquashing(const VectorWithMemoryTracking<C
             /// Try to find this variant in the current source column.
             auto it = source_variant_info.variant_name_to_discriminator.find(variant_info.variant_names[i]);
             if (it != source_variant_info.variant_name_to_discriminator.end())
-                source_variant_columns.push_back(source_dynamic_column.getVariantColumn().getVariantPtrByGlobalDiscriminator(it->second));
+                source_variant_columns.push_back(source_dynamic_column.getVariantColumn().getVariantPtrByGlobalDiscriminator(it->second).get());
         }
 
         variant_col.getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns, factor);
@@ -1583,7 +1584,7 @@ bool ColumnDynamic::dynamicStructureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnDynamic::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnDynamic::chooseDynamicStructureForMerge(std::span<const IColumn * const> source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     checkStackSize();
 
@@ -1696,7 +1697,7 @@ void ColumnDynamic::chooseDynamicStructureForMerge(const VectorWithMemoryTrackin
     /// Variants can also contain Dynamic columns inside, we should collect
     /// all source variants that will be used in the resulting merged column
     /// and call `chooseDynamicStructureForMerge` on all resulting variants.
-    VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnPtr>> variants_source_columns;
+    VectorWithMemoryTracking<ColumnRawPtrsWithStackMemory> variants_source_columns;
     variants_source_columns.resize(variant_info.variant_names.size());
     for (const auto & source_column : source_columns)
     {
@@ -1707,7 +1708,7 @@ void ColumnDynamic::chooseDynamicStructureForMerge(const VectorWithMemoryTrackin
             /// Try to find this variant in current source column.
             auto it = source_variant_info.variant_name_to_discriminator.find(variant_info.variant_names[i]);
             if (it != source_variant_info.variant_name_to_discriminator.end())
-                variants_source_columns[i].push_back(source_dynamic_column.getVariantColumn().getVariantPtrByGlobalDiscriminator(it->second));
+                variants_source_columns[i].push_back(source_dynamic_column.getVariantColumn().getVariantPtrByGlobalDiscriminator(it->second).get());
         }
     }
 
@@ -1776,7 +1777,7 @@ ColumnDynamic::StatisticsPtr ColumnDynamic::getOrCalculateStatistics() const
     return calculated_statistics;
 }
 
-void ColumnDynamic::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnDynamic::takeOrCalculateStatisticsFrom(std::span<const IColumn * const> source_columns)
 {
     checkStackSize();
 
@@ -1830,7 +1831,7 @@ void ColumnDynamic::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking
     statistics = std::make_shared<const Statistics>(std::move(new_statistics));
 
     /// Recursively update statistics for nested variants.
-    VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnPtr>> variants_source_columns;
+    VectorWithMemoryTracking<ColumnRawPtrsWithStackMemory> variants_source_columns;
     variants_source_columns.resize(variant_info.variant_names.size());
     for (const auto & source_column : source_columns)
     {
@@ -1840,7 +1841,7 @@ void ColumnDynamic::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking
         {
             auto it = source_variant_info.variant_name_to_discriminator.find(variant_info.variant_names[i]);
             if (it != source_variant_info.variant_name_to_discriminator.end())
-                variants_source_columns[i].push_back(source_dynamic_column.getVariantColumn().getVariantPtrByGlobalDiscriminator(it->second));
+                variants_source_columns[i].push_back(source_dynamic_column.getVariantColumn().getVariantPtrByGlobalDiscriminator(it->second).get());
         }
     }
 

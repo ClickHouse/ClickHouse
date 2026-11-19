@@ -814,14 +814,14 @@ bool ColumnReplicated::structureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnReplicated::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnReplicated::chooseDynamicStructureForMerge(std::span<const IColumn * const> source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
-    VectorWithMemoryTracking<ColumnPtr> source_nested_columns;
+    ColumnRawPtrsWithStackMemory source_nested_columns;
     source_nested_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
-        if (const auto * rhs_replicated = typeid_cast<const ColumnReplicated *>(source_column.get()))
-            source_nested_columns.emplace_back(rhs_replicated->nested_column);
+        if (const auto * rhs_replicated = typeid_cast<const ColumnReplicated *>(source_column))
+            source_nested_columns.emplace_back(rhs_replicated->nested_column.get());
         else
             source_nested_columns.emplace_back(source_column);
     }
@@ -838,14 +838,14 @@ void ColumnReplicated::takeExactDynamicStructureFrom(const IColumn & source)
 }
 
 
-void ColumnReplicated::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnReplicated::takeOrCalculateStatisticsFrom(std::span<const IColumn * const> source_columns)
 {
-    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
+    ColumnRawPtrsWithStackMemory nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
-        if (const auto * replicated = typeid_cast<const ColumnReplicated *>(source_column.get()))
-            nested_source_columns.push_back(replicated->getNestedColumn());
+        if (const auto * replicated = typeid_cast<const ColumnReplicated *>(source_column))
+            nested_source_columns.push_back(replicated->getNestedColumn().get());
         else
             nested_source_columns.push_back(source_column);
     }

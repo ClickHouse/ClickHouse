@@ -1879,7 +1879,7 @@ const ColumnObject & getSourceObjectColumn(const IColumn & source, const ColumnO
 
 }
 
-void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnObject::prepareForSquashing(std::span<const IColumn * const> source_columns, size_t factor)
 {
     if (source_columns.empty())
         return;
@@ -1957,11 +1957,11 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
     /// Now current object column has all resulting dynamic paths and we can call
     /// prepareForSquashing on them to preallocate the memory.
     /// Also we can preallocate memory for dynamic paths and shared data.
-    VectorWithMemoryTracking<ColumnPtr> shared_data_source_columns;
+    ColumnRawPtrsWithStackMemory shared_data_source_columns;
     shared_data_source_columns.reserve(source_columns.size());
-    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<ColumnPtr>> typed_paths_source_columns;
+    UnorderedMapWithMemoryTracking<String, ColumnRawPtrsWithStackMemory> typed_paths_source_columns;
     typed_paths_source_columns.reserve(typed_paths.size());
-    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<ColumnPtr>> dynamic_paths_source_columns;
+    UnorderedMapWithMemoryTracking<String, ColumnRawPtrsWithStackMemory> dynamic_paths_source_columns;
     dynamic_paths_source_columns.reserve(dynamic_paths.size());
 
     for (const auto & [path, column] : typed_paths)
@@ -1977,15 +1977,15 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
     {
         const auto & source_object_column = assert_cast<const ColumnObject &>(*source_column);
         total_size += source_object_column.size();
-        shared_data_source_columns.push_back(source_object_column.shared_data);
+        shared_data_source_columns.push_back(source_object_column.shared_data.get());
 
         for (const auto & [path, column] : source_object_column.typed_paths)
-            typed_paths_source_columns.at(path).push_back(column);
+            typed_paths_source_columns.at(path).push_back(column.get());
 
         for (const auto & [path, column] : source_object_column.dynamic_paths)
         {
             if (dynamic_paths.contains(path))
-                dynamic_paths_source_columns.at(path).push_back(column);
+                dynamic_paths_source_columns.at(path).push_back(column.get());
         }
     }
 
@@ -2031,7 +2031,7 @@ bool ColumnObject::dynamicStructureEquals(const IColumn & rhs) const
     return true;
 }
 
-void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnObject::chooseDynamicStructureForMerge(std::span<const IColumn * const> source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "chooseDynamicStructureForMerge should be called only on empty Object column");
@@ -2131,26 +2131,28 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
     /// Now we have the resulting set of dynamic paths that will be used in all merged columns.
     /// As we use Dynamic column for dynamic paths, we should call `chooseDynamicStructureForMerge`
     /// on all resulting dynamic columns.
+    ColumnRawPtrsWithStackMemory dynamic_path_source_columns;
     for (auto & [path, column] : dynamic_paths)
     {
-        VectorWithMemoryTracking<ColumnPtr> dynamic_path_source_columns;
+        dynamic_path_source_columns.clear();
         for (const auto & source_column : source_columns)
         {
             const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
             auto it = source_object.dynamic_paths.find(path);
             if (it != source_object.dynamic_paths.end())
-                dynamic_path_source_columns.push_back(it->second);
+                dynamic_path_source_columns.push_back(it->second.get());
         }
         column->chooseDynamicStructureForMerge(dynamic_path_source_columns, max_dynamic_subcolumns);
     }
 
     /// Typed paths also can contain types with dynamic structure.
+    ColumnRawPtrsWithStackMemory typed_path_source_columns;
+    typed_path_source_columns.reserve(source_columns.size());
     for (auto & [path, column] : typed_paths)
     {
-        VectorWithMemoryTracking<ColumnPtr> typed_path_source_columns;
-        typed_path_source_columns.reserve(source_columns.size());
+        typed_path_source_columns.clear();
         for (const auto & source_column : source_columns)
-            typed_path_source_columns.push_back(assert_cast<const ColumnObject &>(*source_column).typed_paths.at(path));
+            typed_path_source_columns.push_back(assert_cast<const ColumnObject &>(*source_column).typed_paths.at(path).get());
         column->chooseDynamicStructureForMerge(typed_path_source_columns, max_dynamic_subcolumns);
     }
 }
@@ -2212,7 +2214,7 @@ ColumnObject::StatisticsPtr ColumnObject::getOrCalculateStatistics() const
     return calculated_statistics;
 }
 
-void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnObject::takeOrCalculateStatisticsFrom(std::span<const IColumn * const> source_columns)
 {
     /// Assumes dynamic structure has already been set by `takeExactDynamicStructureFrom` or `chooseDynamicStructureForMerge`.
 
@@ -2239,10 +2241,16 @@ void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
             {
                 auto it = source_object.dynamic_paths.find(path);
                 if (it != source_object.dynamic_paths.end())
-                    column->takeOrCalculateStatisticsFrom({it->second});
+                {
+                    const IColumn * source_column = it->second.get();
+                    column->takeOrCalculateStatisticsFrom(std::span(&source_column, 1));
+                }
             }
             for (auto & [path, column] : typed_paths)
-                column->takeOrCalculateStatisticsFrom({source_object.typed_paths.at(path)});
+            {
+                const IColumn * source_column = source_object.typed_paths.at(path).get();
+                column->takeOrCalculateStatisticsFrom(std::span(&source_column, 1));
+            }
             return;
         }
     }
@@ -2296,27 +2304,29 @@ void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
     statistics = std::make_shared<const Statistics>(std::move(new_statistics));
 
     /// Recursively update statistics for nested dynamic paths.
+    ColumnRawPtrsWithStackMemory dynamic_path_source_columns;
     for (auto & [path, column] : dynamic_paths)
     {
-        VectorWithMemoryTracking<ColumnPtr> dynamic_path_source_columns;
+        dynamic_path_source_columns.clear();
         for (const auto & source_column : source_columns)
         {
             const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
             auto it = source_object.dynamic_paths.find(path);
             if (it != source_object.dynamic_paths.end())
-                dynamic_path_source_columns.push_back(it->second);
+                dynamic_path_source_columns.push_back(it->second.get());
         }
         if (!dynamic_path_source_columns.empty())
             column->takeOrCalculateStatisticsFrom(dynamic_path_source_columns);
     }
 
     /// Recursively update statistics for typed paths.
+    ColumnRawPtrsWithStackMemory typed_path_source_columns;
+    typed_path_source_columns.reserve(source_columns.size());
     for (auto & [path, column] : typed_paths)
     {
-        VectorWithMemoryTracking<ColumnPtr> typed_path_source_columns;
-        typed_path_source_columns.reserve(source_columns.size());
+        typed_path_source_columns.clear();
         for (const auto & source_column : source_columns)
-            typed_path_source_columns.push_back(assert_cast<const ColumnObject &>(*source_column).typed_paths.at(path));
+            typed_path_source_columns.push_back(assert_cast<const ColumnObject &>(*source_column).typed_paths.at(path).get());
         column->takeOrCalculateStatisticsFrom(typed_path_source_columns);
     }
 }

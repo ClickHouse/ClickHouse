@@ -27,6 +27,36 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
+namespace
+{
+
+/// Source columns are addressed by the element index of the column, so they must have the same number of elements.
+void checkSourceTupleColumns(std::span<const IColumn * const> source_columns, const ColumnTuple & column, std::string_view operation)
+{
+    for (const auto & source_column : source_columns)
+    {
+        const auto * source_tuple = typeid_cast<const ColumnTuple *>(source_column);
+        if (!source_tuple || source_tuple->tupleSize() != column.tupleSize())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Source column for {} of {} is not a Tuple of the same size, but {}",
+                operation,
+                column.getName(),
+                source_column->getName());
+    }
+}
+
+/// Collects element `i` of every source column into `element_source_columns`. The callers check the source columns with
+/// `checkSourceTupleColumns` first. One buffer serves all elements, so a wide tuple doesn't need a buffer per element.
+void collectElementSourceColumns(
+    std::span<const IColumn * const> source_columns, size_t i, ColumnRawPtrsWithStackMemory & element_source_columns)
+{
+    element_source_columns.clear();
+    element_source_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+        element_source_columns.push_back(&assert_cast<const ColumnTuple &>(*source_column).getColumn(i));
+}
+}
 
 std::string ColumnTuple::getName() const
 {
@@ -802,23 +832,16 @@ size_t ColumnTuple::capacity() const
     return getColumn(0).capacity();
 }
 
-void ColumnTuple::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnTuple::prepareForSquashing(std::span<const IColumn * const> source_columns, size_t factor)
 {
     const size_t tuple_size = columns.size();
-    for (const auto & source_column : source_columns)
-    {
-        const auto * source_tuple = typeid_cast<const ColumnTuple *>(source_column.get());
-        if (!source_tuple || source_tuple->tupleSize() != tuple_size)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for squashing of {} is not a Tuple of the same size, but {}", getName(), source_column->getName());
-    }
+    checkSourceTupleColumns(source_columns, *this, "squashing");
 
+    ColumnRawPtrsWithStackMemory element_source_columns;
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        VectorWithMemoryTracking<ColumnPtr> nested_columns;
-        nested_columns.reserve(source_columns.size() * factor);
-        for (const auto & source_column : source_columns)
-            nested_columns.push_back(assert_cast<const ColumnTuple &>(*source_column).getColumnPtr(i));
-        getColumn(i).prepareForSquashing(nested_columns, factor);
+        collectElementSourceColumns(source_columns, i, element_source_columns);
+        getColumn(i).prepareForSquashing(element_source_columns, factor);
     }
 }
 
@@ -968,26 +991,16 @@ bool ColumnTuple::dynamicStructureEquals(const IColumn & rhs) const
     }
 }
 
-void ColumnTuple::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnTuple::chooseDynamicStructureForMerge(std::span<const IColumn * const> source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
-    VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnPtr>> nested_source_columns;
-    nested_source_columns.resize(columns.size());
-    for (size_t i = 0; i != columns.size(); ++i)
-        nested_source_columns[i].reserve(source_columns.size());
+    checkSourceTupleColumns(source_columns, *this, "merge");
 
-    for (const auto & source_column : source_columns)
+    ColumnRawPtrsWithStackMemory element_source_columns;
+    for (size_t i = 0; i != columns.size(); ++i)
     {
-        const auto * source_tuple = typeid_cast<const ColumnTuple *>(source_column.get());
-        if (!source_tuple || source_tuple->tupleSize() != columns.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for merge of {} is not a Tuple of the same size, but {}", getName(), source_column->getName());
-
-        const auto & nsource_columns = source_tuple->getColumns();
-        for (size_t i = 0; i != nsource_columns.size(); ++i)
-            nested_source_columns[i].push_back(nsource_columns[i]);
+        collectElementSourceColumns(source_columns, i, element_source_columns);
+        columns[i]->chooseDynamicStructureForMerge(element_source_columns, max_dynamic_subcolumns);
     }
-
-    for (size_t i = 0; i != columns.size(); ++i)
-        columns[i]->chooseDynamicStructureForMerge(nested_source_columns[i], max_dynamic_subcolumns);
 }
 
 void ColumnTuple::takeExactDynamicStructureFrom(const IColumn & source)
@@ -1011,22 +1024,23 @@ bool ColumnTuple::hasStatistics() const
     return false;
 }
 
-void ColumnTuple::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnTuple::takeOrCalculateStatisticsFrom(std::span<const IColumn * const> source_columns)
 {
+    ColumnRawPtrsWithStackMemory elem_source_columns;
+    elem_source_columns.reserve(source_columns.size());
     for (size_t i = 0; i != columns.size(); ++i)
     {
-        VectorWithMemoryTracking<ColumnPtr> elem_source_columns;
-        elem_source_columns.reserve(source_columns.size());
+        elem_source_columns.clear();
         for (const auto & source_column : source_columns)
         {
             if (!source_column)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
 
-            const auto * source_tuple = typeid_cast<const ColumnTuple *>(source_column.get());
+            const auto * source_tuple = typeid_cast<const ColumnTuple *>(source_column);
             if (!source_tuple || source_tuple->tupleSize() != columns.size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not a Tuple of the same size, but {}", source_column->getName());
 
-            elem_source_columns.push_back(source_tuple->columns[i]);
+            elem_source_columns.push_back(source_tuple->columns[i].get());
         }
 
         if (!columns[i])

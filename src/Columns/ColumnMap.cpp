@@ -304,17 +304,17 @@ size_t ColumnMap::capacity() const
     return nested->capacity();
 }
 
-void ColumnMap::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnMap::prepareForSquashing(std::span<const IColumn * const> source_columns, size_t factor)
 {
-    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
+    ColumnRawPtrsWithStackMemory nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
-        const auto * source_map = typeid_cast<const ColumnMap *>(source_column.get());
+        const auto * source_map = typeid_cast<const ColumnMap *>(source_column);
         if (!source_map)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for squashing of {} is not Map, but {}", getName(), source_column->getName());
 
-        nested_source_columns.push_back(source_map->getNestedColumnPtr());
+        nested_source_columns.push_back(&source_map->getNestedColumn());
     }
     nested->prepareForSquashing(nested_source_columns, factor);
 }
@@ -461,17 +461,17 @@ void ColumnMap::Statistics::merge(const Statistics & other)
     count += other.count;
 }
 
-void ColumnMap::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnMap::chooseDynamicStructureForMerge(std::span<const IColumn * const> source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
-    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
+    ColumnRawPtrsWithStackMemory nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
-        const auto * source_column_map = typeid_cast<const ColumnMap *>(source_column.get());
+        const auto * source_column_map = typeid_cast<const ColumnMap *>(source_column);
         if (!source_column_map)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for merge of {} is not Map, but {}", getName(), source_column->getName());
 
-        nested_source_columns.push_back(source_column_map->getNestedColumnPtr());
+        nested_source_columns.push_back(&source_column_map->getNestedColumn());
     }
     nested->chooseDynamicStructureForMerge(nested_source_columns, max_dynamic_subcolumns);
 }
@@ -499,17 +499,17 @@ ColumnMap::StatisticsPtr ColumnMap::getOrCalculateStatistics() const
     return std::make_shared<Statistics>(calculateStatisticsForRange(0, size()));
 }
 
-void ColumnMap::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnMap::takeOrCalculateStatisticsFrom(std::span<const IColumn * const> source_columns)
 {
     auto new_statistics = std::make_shared<Statistics>();
-    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
+    ColumnRawPtrsWithStackMemory nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
         if (!source_column)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
 
-        const auto * source_map = typeid_cast<const ColumnMap *>(source_column.get());
+        const auto * source_map = typeid_cast<const ColumnMap *>(source_column);
         if (!source_map)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Map, but {}", source_column->getName());
 
@@ -518,7 +518,7 @@ void ColumnMap::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<Col
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Source statistics is invalid");
 
         new_statistics->merge(*source_statistics);
-        nested_source_columns.push_back(source_map->getNestedColumnPtr());
+        nested_source_columns.push_back(&source_map->getNestedColumn());
     }
 
     statistics = std::move(new_statistics);

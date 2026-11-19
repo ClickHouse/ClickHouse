@@ -37,7 +37,7 @@ bool byteSizeAtCanUnderestimateGrowth(const IColumn & column)
 void MergedData::initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs)
 {
     columns = header.cloneEmptyColumns();
-    VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnPtr>> source_columns(columns.size());
+    VectorWithMemoryTracking<ColumnRawPtrs> source_columns(columns.size());
     VectorWithMemoryTracking<bool> is_replicated(columns.size());
     for (const auto & input : inputs)
     {
@@ -47,7 +47,7 @@ void MergedData::initialize(const Block & header, const IMergingAlgorithm::Input
         const auto & input_columns = input.chunk.getColumns();
         for (size_t i = 0; i != input_columns.size(); ++i)
         {
-            source_columns[i].push_back(input_columns[i]);
+            source_columns[i].push_back(input_columns[i].get());
             is_replicated[i] = is_replicated[i] || input_columns[i]->isReplicated();
         }
     }
@@ -186,7 +186,8 @@ void MergedData::insertChunk(Chunk && chunk, size_t rows_size)
             if (columns[i]->getPtr()->isReplicated() && !chunk_columns[i]->isReplicated())
                 chunk_columns[i] = ColumnReplicated::create(std::move(chunk_columns[i]));
 
-            chunk_columns[i]->takeOrCalculateStatisticsFrom({columns[i]->getPtr()});
+            const IColumn * source_column = columns[i].get();
+            chunk_columns[i]->takeOrCalculateStatisticsFrom(std::span(&source_column, 1));
             columns[i] = std::move(chunk_columns[i]);
         }
         else if (columns[i]->isReplicated())
