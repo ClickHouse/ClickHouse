@@ -1023,33 +1023,6 @@ std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join
     return tryExtractConstantFromConditionNode(join_node_typed.getJoinExpression());
 }
 
-void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::shared_ptr<TableJoin> & table_join)
-{
-    StoragePtr storage;
-
-    if (auto * table_node = table_expression->as<TableNode>())
-        storage = table_node->getStorage();
-    else if (auto * table_function = table_expression->as<TableFunctionNode>())
-        storage = table_function->getStorage();
-
-    auto storage_join = castStorage<StorageJoin>(storage, DeferredTable::Load);
-    if (storage_join)
-    {
-        table_join->setStorageJoin(storage_join);
-        return;
-    }
-
-    if (!table_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT) && !table_join->isEnabledAlgorithm(JoinAlgorithm::DEFAULT))
-        return;
-
-    if (auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage);
-        storage_dictionary && storage_dictionary->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
-        /// NOLINT(storage-cast): a dictionary, which the catalog never hands out behind a proxy.
-        table_join->setStorageJoin(std::dynamic_pointer_cast<const IKeyValueEntity>(storage_dictionary->getDictionary()));
-    else if (auto storage_key_value = castStorage<IKeyValueEntity>(storage, DeferredTable::Load); storage_key_value)
-        table_join->setStorageJoin(storage_key_value);
-}
-
 static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
     SharedHeader & right_table_expression_header)

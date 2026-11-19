@@ -17,13 +17,15 @@ namespace ErrorCodes
 
 bool RemoteHostFilter::checkURL(const Poco::URI & uri, bool throw_on_error) const
 {
-    if (checkForDirectEntry(uri.getHost()) || checkForDirectEntry(uri.getHost() + ":" + toString(uri.getPort())))
+    const std::string host_and_port = uri.getHost() + ":" + toString(uri.getPort());
+    if (checkForDirectEntry(uri.getHost()) || checkForDirectEntry(host_and_port))
         return true;
     if (!throw_on_error)
         return false;
 
+    /// Only the host and port are checked. The rest of the URL can carry secrets and is not printed.
     throw Exception(ErrorCodes::UNACCEPTABLE_URL, "URL \"{}\" is not allowed in configuration file, "
-                                                  "see <remote_url_allow_hosts>", uri.toString());
+                                                  "see <remote_url_allow_hosts>", host_and_port);
 }
 
 void RemoteHostFilter::checkHostAndPort(const std::string & host, const std::string & port) const
