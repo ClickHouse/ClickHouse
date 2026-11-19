@@ -1849,6 +1849,11 @@ KeyCondition::KeyCondition(
         ++key_index;
     }
 
+    /// A key column the session computes differently from its stored values is neither analyzed nor bounded by `addCondition`.
+    const auto session_dependent_names = getKeySubexpressionsWithSessionDependentValues(*key_expr_, context);
+    for (const auto & name : session_dependent_names)
+        key_columns.erase(name);
+
     /// Skip any analysis. Toggled by the `use_primary_key` setting. This is useful for catching bugs
     /// in the index condition analysis logic. It is better to skip analysis in the constructor rather than in
     /// `checkInHyperrectangle` or elsewhere, because bugs during `extractAtomsFromTree` calls can lead to
@@ -1861,13 +1866,9 @@ KeyCondition::KeyCondition(
         return;
     }
 
-    /// An atom over a key column the session computes differently from its stored values stays FUNCTION_UNKNOWN.
     auto key_subexpr_names = getAllSubexpressionNames(*key_expr_);
-    for (const auto & name : getKeySubexpressionsWithSessionDependentValues(*key_expr_, context))
-    {
+    for (const auto & name : session_dependent_names)
         key_subexpr_names.erase(name);
-        key_columns.erase(name);
-    }
 
     auto info = BuildInfo {
         .key_expr = key_expr_,

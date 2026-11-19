@@ -36,6 +36,9 @@ nullable	168
 fromUnixTimestamp	168
 final	12
 final without index	12
+sample	324
+sample without index	324
+sample expected	324
 modulo partition	(\'May\',1)
 modulo partition pruning	1
 distinct in order	300
