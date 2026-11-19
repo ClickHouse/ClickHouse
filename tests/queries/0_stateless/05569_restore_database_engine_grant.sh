@@ -123,7 +123,7 @@ GRANT TABLE ENGINE ON *.* TO ${user_ext};
 GRANT CREATE DATABASE, CREATE TABLE, SELECT ON ${db}_r8.* TO ${user_ext};
 GRANT CREATE DATABASE, CREATE TABLE, CREATE VIEW ON ${db}_r9.* TO ${user_ext};
 GRANT CREATE TABLE ON ${db}.* TO ${user_queue};
-GRANT TABLE ENGINE ON S3Queue TO ${user_queue};
+GRANT TABLE ENGINE ON S3Queue, TABLE ENGINE ON Null TO ${user_queue};
 GRANT CLUSTER ON *.* TO ${user_ext}, ${user_queue};
 GRANT READ ON DISK TO ${user_ext}, ${user_queue};
 "
