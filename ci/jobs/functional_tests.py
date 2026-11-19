@@ -247,7 +247,6 @@ OPTIONS_TO_INSTALL_ARGUMENTS = {
     "DatabaseOrdinary": "--db-ordinary",
     "wide parts enabled": "--wide-parts",
     "ParallelReplicas": "--parallel-rep",
-    "plan-based": "--parallel-rep-plan-based",
     "distributed plan": "--distributed-plan",
     "azure": "--azure",
     "AsyncInsert": " --async-insert",
@@ -267,7 +266,6 @@ DIAGNOSTICS_MODE_RUNNER_ARGUMENTS = (
 OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "s3 storage": "--s3-storage --no-stateful",
     "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas",
-    "plan-based": "--parallel-replicas-plan-based",
     "AsyncInsert": " --no-async-insert",
     "DBReplicated": " --no-stateful --replicated-database",
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
@@ -527,7 +525,6 @@ def main():
     is_shared_catalog = False
     is_encrypted_storage = random.choice([True, False])
     is_parallel_replicas = False
-    is_plan_based_parallel_replicas = False
     is_llvm_coverage = False
     is_excluded_from_llvm = False
     is_per_test_coverage = False
@@ -588,8 +585,6 @@ def main():
             is_shared_catalog = True
         if to == "ParallelReplicas":
             is_parallel_replicas = True
-        if to == "plan-based":
-            is_plan_based_parallel_replicas = True
 
     is_no_stateful = "--no-stateful" in runner_options
 
@@ -623,8 +618,6 @@ def main():
         changed_files = info.get_changed_files()
         # The `arm_binary` jobs replacing the LLVM coverage jobs in pull requests must run in full
         # when a CI job script changes: `filter_job.py` lets them through for that very reason.
-        # The plan-based parallel replicas jobs too: a change to the job script can break how they
-        # install and start the server with the plan-based profile.
         is_coverage_replacement_with_ci_script_changes = False
         if info.pr_number > 0 and any(
             Targeting.is_ci_job_script(f) for f in changed_files or []
@@ -633,9 +626,7 @@ def main():
             from ci.defs.job_configs import JobConfigs
 
             is_coverage_replacement_with_ci_script_changes = info.job_name in [
-                j.name
-                for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
-                + JobConfigs.functional_tests_arm_binary_plan_based_parallel_replicas_jobs
+                j.name for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
             ]
         if changed_files:
             # A changed test data submodule is owned by the tests that read it:
@@ -722,10 +713,8 @@ def main():
     # `enable_parallel_replicas`, `max_parallel_replicas`, `cluster_for_parallel_replicas` and
     # `parallel_replicas_for_non_replicated_merge_tree`, so installing both would leave the values to
     # whichever file `users.d` happens to load second.
-    # The plan-based job keeps its own profile: it covers the plan-based implementation, and its blacklist would
-    # only tolerate failures with `--autopr`.
     autopr_mode_note = ""
-    if is_parallel_replicas and not is_plan_based_parallel_replicas and parallel_replicas_job_runs_autopr(info.sha):
+    if is_parallel_replicas and parallel_replicas_job_runs_autopr(info.sha):
         config_installs_args = config_installs_args.replace(OPTIONS_TO_INSTALL_ARGUMENTS["ParallelReplicas"], AUTOPR_ARGUMENT)
         runner_options += f" {AUTOPR_ARGUMENT}"
         # The loop above has already announced the plain option as enabled; say that it is gone.

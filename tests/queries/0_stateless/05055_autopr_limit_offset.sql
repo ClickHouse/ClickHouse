@@ -9,9 +9,6 @@ SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_rep
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost';
 
 SET max_threads=4;
--- With no limit, Top-K filtering takes the `LIMIT 300000` below, and plan-based parallel replicas keeps its read local,
--- so there is no read on the replicas to collect statistics for: https://github.com/ClickHouse/ClickHouse/issues/131858
-SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 SET automatic_parallel_replicas_min_bytes_per_replica=0;
 -- Keep `effective_max_reading_threads` from capping, so the comparison is decided by the network term.
