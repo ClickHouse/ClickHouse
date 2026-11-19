@@ -36,7 +36,7 @@ public:
       * which should be at least 32 bits wide, and should preferably
       * signed.
       */
-    [[nodiscard]] int64_t toModifiedJulianDay() const;
+    int64_t toModifiedJulianDay() const;
     bool tryToModifiedJulianDay(int64_t & res) const;
 
     /** Write the date in text form 'YYYY-MM-DD' to a buffer.
@@ -53,19 +53,19 @@ public:
 
     /** Convert to a string in text form 'YYYY-MM-DD'.
       */
-    [[nodiscard]] std::string toString() const;
+    std::string toString() const;
 
-    [[nodiscard]] int32_t year() const noexcept
+    int32_t year() const noexcept
     {
         return year_;
     }
 
-    [[nodiscard]] uint8_t month() const noexcept
+    uint8_t month() const noexcept
     {
         return month_;
     }
 
-    [[nodiscard]] uint8_t dayOfMonth() const noexcept
+    uint8_t dayOfMonth() const noexcept
     {
         return day_of_month_;
     }
@@ -104,14 +104,14 @@ public:
       * type which should be at least 32 bits wide, and should
       * preferably be signed.
       */
-    [[nodiscard]] int64_t toModifiedJulianDay() const noexcept;
+    int64_t toModifiedJulianDay() const noexcept;
 
-    [[nodiscard]] int32_t year() const noexcept
+    int32_t year() const noexcept
     {
         return year_;
     }
 
-    [[nodiscard]] uint16_t dayOfYear() const noexcept
+    uint16_t dayOfYear() const noexcept
     {
         return day_of_year_;
     }
@@ -135,14 +135,14 @@ public:
     /** Convert month and day in Gregorian or Julian calendars to
       * day of year.
       */
-    [[nodiscard]] uint16_t dayOfYear(bool is_leap_year) const;
+    uint16_t dayOfYear(bool is_leap_year) const;
 
-    [[nodiscard]] uint8_t month() const noexcept
+    uint8_t month() const noexcept
     {
         return month_;
     }
 
-    [[nodiscard]] uint8_t dayOfMonth() const noexcept
+    uint8_t dayOfMonth() const noexcept
     {
         return day_of_month_;
     }

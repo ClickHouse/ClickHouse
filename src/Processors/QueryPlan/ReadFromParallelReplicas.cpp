@@ -1,7 +1,4 @@
 #include <memory>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/SetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeString.h>
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 
@@ -19,7 +16,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
-#include <IO/WriteBufferFromString.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -35,9 +31,9 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Planner/PlannerActionsVisitor.h>
+#include <Planner/Utils.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/BlocksMarshallingStep.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -69,7 +65,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -79,27 +74,12 @@ namespace FailPoints
     extern const char parallel_replicas_wait_for_unused_replicas[];
 }
 
-namespace
-{
-/// Formats the fragment for the step description and for the text that names the query on the
-/// replica. `actions` and `indexes` are off on purpose: they make `describeActions` and
-/// `describeIndexes` ask every MergeTree read for its analysis result, so building a description
-/// string would run index analysis, which is expensive and can throw (for example when the analysis
-/// exceeds `max_rows_to_read`) even though nothing is being read yet.
-String dumpQueryPlanShape(const QueryPlan & query_plan)
-{
-    WriteBufferFromOwnString buffer;
-    query_plan.explainPlan(buffer, ExplainPlanOptions{.header = true, .description = true, .actions = false, .indexes = false});
-    return buffer.str();
-}
-}
-
 ReadFromParallelReplicasStep::ReadFromParallelReplicasStep(
     std::shared_ptr<const QueryPlan> query_plan_,
     ClusterPtr cluster_,
     ParallelReplicasReadingCoordinatorPtr coordinator_,
     ContextPtr context_,
-    VectorWithMemoryTracking<ConnectionPoolPtr> pools_to_use_,
+    std::vector<ConnectionPoolPtr> pools_to_use_,
     std::optional<size_t> exclude_pool_index_,
     ConnectionPoolWithFailoverPtr connection_pool_with_failover_)
     : ISourceStep(query_plan_->getRootNode()->step->getOutputHeader())
@@ -116,7 +96,7 @@ ReadFromParallelReplicasStep::ReadFromParallelReplicasStep(
 {
     chassert(cluster->getShardCount() == 1);
 
-    VectorWithMemoryTracking<String> replicas;
+    std::vector<String> replicas;
     replicas.reserve(pools_to_use.size());
 
     for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
@@ -127,7 +107,7 @@ ReadFromParallelReplicasStep::ReadFromParallelReplicasStep(
         replicas.push_back(pools_to_use[i]->getAddress());
     }
 
-    auto description = fmt::format("QueryPlan: {} Replicas: {}", dumpQueryPlanShape(*query_plan), fmt::join(replicas, ", "));
+    auto description = fmt::format("QueryPlan: {} Replicas: {}", dumpQueryPlan(*query_plan), fmt::join(replicas, ", "));
     setStepDescription(std::move(description), context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
 }
 
@@ -147,7 +127,7 @@ Pipes ReadFromParallelReplicasStep::addPipes(const SharedHeader & out_header)
 {
     Pipes pipes;
 
-    VectorWithMemoryTracking<std::string_view> addresses;
+    std::vector<std::string_view> addresses;
     addresses.reserve(pools_to_use.size());
     for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
     {
@@ -159,7 +139,7 @@ Pipes ReadFromParallelReplicasStep::addPipes(const SharedHeader & out_header)
     LOG_DEBUG(getLogger("ReadFromParallelReplicas"), "Addresses to use: {}", fmt::join(addresses, ", "));
 
     using ProcessorWeakPtr = std::weak_ptr<IProcessor>;
-    UnorderedMapWithMemoryTracking<size_t, ProcessorWeakPtr> remote_sources;
+    std::unordered_map<size_t, ProcessorWeakPtr> remote_sources;
     for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
     {
         if (exclude_pool_index.has_value() && i == exclude_pool_index)
@@ -191,7 +171,7 @@ Pipes ReadFromParallelReplicasStep::addPipes(const SharedHeader & out_header)
     if (!wait_for_unused_replicas)
     {
         coordinator->setReadCompletedCallback(
-            [sources = std::move(remote_sources)](const SetWithMemoryTracking<size_t> & used_replicas)
+            [sources = std::move(remote_sources)](const std::set<size_t> & used_replicas)
             {
                 for (const auto & [replica_num, processor] : sources)
                 {
@@ -215,27 +195,11 @@ Pipe ReadFromParallelReplicasStep::createPipeForSingeReplica(
     size_t parallel_marshalling_threads)
 {
     /// A fragment ending in a partial AggregatingStep emits intermediate aggregate state that a
-    /// MergingAggregated merges, so its chunks must carry AggregatedChunkInfo. A `BlocksMarshalling`
-    /// step only changes how the blocks are put on the wire, so look through it: what it wraps is
-    /// still what decides the chunk info.
+    /// MergingAggregated merges, so its chunks must carry AggregatedChunkInfo.
     bool add_agg_info = false;
     if (const auto * root = query_plan->getRootNode())
-    {
-        if (typeid_cast<const BlocksMarshallingStep *>(root->step.get()))
-        {
-            /// Throws rather than skipping the step: getting this wrong drops `AggregatedChunkInfo`
-            /// from every chunk of an aggregating fragment, which is silently wrong results.
-            if (root->children.size() != 1)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "BlocksMarshalling is a unary step, but the fragment root has {} children",
-                    root->children.size());
-            root = root->children.front();
-        }
-
         if (const auto * agg = typeid_cast<const AggregatingStep *>(root->step.get()))
             add_agg_info = !agg->getFinal();
-    }
 
     bool add_totals = false;
     bool add_extremes = false;
@@ -246,13 +210,11 @@ Pipe ReadFromParallelReplicasStep::createPipeForSingeReplica(
 
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
         pool,
-        dumpQueryPlanShape(*query_plan),
+        dumpQueryPlan(*query_plan),
         out_header,
         context,
         getThrottler(context),
-        /// Carries `_shard_num` of an enclosing distributed query: without it a follower assumes the initiator
-        /// runs a local plan (see `canUseLocalPlanForParallelReplicas`) and skips its own index analysis.
-        context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{},
+        Scalars{},
         context->getExternalTables(),
         QueryProcessingStage::QueryPlan,
         RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)},

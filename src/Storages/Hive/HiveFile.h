@@ -3,9 +3,9 @@
 
 #if USE_HIVE
 
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <vector>
 #include <memory>
+#include <unordered_set>
 
 #include <boost/algorithm/string/join.hpp>
 #include <Processors/Formats/Impl/ORC/Reader.h>
@@ -175,7 +175,7 @@ using HiveFiles = std::vector<HiveFilePtr>;
 struct HiveFileWithSkipSplits
 {
     HiveFilePtr file;
-    UnorderedSetWithMemoryTracking<int> skip_splits;
+    std::unordered_set<int> skip_splits;
 };
 using HiveFilesWithSkipSplits = std::vector<HiveFileWithSkipSplits>;
 
@@ -229,7 +229,7 @@ private:
 
     void loadFileMinMaxIndexImpl() override;
     void loadSplitMinMaxIndexesImpl() override;
-    std::unique_ptr<MinMaxIndex> buildMinMaxIndex(const VectorWithMemoryTracking<ORC::Proto::ColumnStatistics> * statistics);
+    std::unique_ptr<MinMaxIndex> buildMinMaxIndex(const std::vector<ORC::Proto::ColumnStatistics> * statistics);
     void prepareReader();
     void prepareColumnMapping();
 

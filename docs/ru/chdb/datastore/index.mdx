@@ -7,6 +7,8 @@ keywords: ['chdb', 'datastore', 'pandas', 'dataframe', 'sql', 'отложенн�
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 DataStore — это API chDB, совместимый с pandas, который сочетает привычный интерфейс pandas DataFrame с возможностями оптимизации SQL-запросов и позволяет писать код в стиле pandas, сохраняя производительность ClickHouse.
 
 <div id="key-features">
@@ -23,15 +25,7 @@ DataStore — это API chDB, совместимый с pandas, который 
   ## Архитектура
 </div>
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Архитектура DataStore](/images/chdb/datastore_architecture.png)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/chdb/datastore_architecture.png" alt="Архитектура DataStore" />
 
 DataStore использует **отложенное вычисление** с **выполнением на двух движках**:
 
