@@ -131,7 +131,7 @@ Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object);
 /// A named snapshot reference resolved from table metadata.
 struct ResolvedSnapshotRef
 {
-    Int64 snapshot_id;
+    Int64 snapshot_id{};
     /// Tags are read with the schema recorded on the snapshot.
     /// Branches, including `main`, are read with the table's current schema.
     bool is_tag = false;

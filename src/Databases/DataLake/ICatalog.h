@@ -334,7 +334,7 @@ public:
 
     /// Commit `set-snapshot-ref` on a transactional catalog. `type` is `branch` or `tag`.
     /// Returns the committed table metadata, or `nullptr` on a recoverable conflict so the caller can retry.
-    virtual Poco::JSON::Object::Ptr setSnapshotRef(
+    [[nodiscard]] virtual Poco::JSON::Object::Ptr setSnapshotRef(
         const String & namespace_name,
         const String & table_name,
         Poco::JSON::Object::Ptr base_metadata,
@@ -344,7 +344,7 @@ public:
 
     /// Commit `remove-snapshot-ref` on a transactional catalog.
     /// Returns the committed table metadata, or `nullptr` on a recoverable conflict so the caller can retry.
-    virtual Poco::JSON::Object::Ptr removeSnapshotRef(
+    [[nodiscard]] virtual Poco::JSON::Object::Ptr removeSnapshotRef(
         const String & namespace_name,
         const String & table_name,
         Poco::JSON::Object::Ptr base_metadata,
@@ -362,7 +362,7 @@ public:
     /// True when a non-transactional catalog can publish a metadata file the client has already written.
     /// Glue stores a pointer to that file via `updateMetadata`. Catalogs that leave `updateMetadata`
     /// unimplemented must be rejected before the file is written.
-    virtual bool canPublishRewrittenMetadata() const { return false; }
+    [[nodiscard]] virtual bool canPublishRewrittenMetadata() const { return false; }
 
     virtual CredentialsRefreshCallback getCredentialsConfigurationCallback(
         const DB::StorageID & /*storage_id*/, const TableMetadata & /*table_metadata*/)
