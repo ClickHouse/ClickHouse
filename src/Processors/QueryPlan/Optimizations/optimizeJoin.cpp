@@ -196,7 +196,7 @@ struct RuntimeHashStatisticsContext
     }
 };
 
-bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings &)
+bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto * join_step = typeid_cast<JoinStep *>(node.step.get());
     if (!join_step || node.children.size() != 2 || join_step->isOptimized())
@@ -223,8 +223,12 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
     bool need_swap = false;
     if (!join_step->swap_join_tables.has_value())
     {
-        auto lhs_extimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
-        auto rhs_extimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
+        auto lhs_extimation = estimateReadRowsCount(
+            *node.children[0], RelationStatsOptions{.find_single_node_read = &optimization_settings.find_single_node_read})
+            .estimated_rows;
+        auto rhs_extimation = estimateReadRowsCount(
+            *node.children[1], RelationStatsOptions{.find_single_node_read = &optimization_settings.find_single_node_read})
+            .estimated_rows;
         LOG_TRACE(getLogger("optimizeJoinLegacy"), "Left table estimation: {}, right table estimation: {}",
             lhs_extimation ? toString(lhs_extimation.value()) : "unknown",
             rhs_extimation ? toString(rhs_extimation.value()) : "unknown");
@@ -643,7 +647,8 @@ static size_t addChildQueryGraph(
     }
 
     graph.inputs.push_back(node);
-    RelationStats stats = estimateReadRowsCount(*node);
+    RelationStats stats = estimateReadRowsCount(
+        *node, RelationStatsOptions{.find_single_node_read = &graph.context->optimization_settings.find_single_node_read});
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
     if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache
@@ -1535,10 +1540,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                     if (mapped_it == join_expression_map.end())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in join expression map", output_node->result_name);
                     dag_outputs.push_back(mapped_it->second);
-                    /// Include COLUMN Const nodes (like `__join_result_dummy`) in actions_after_join.
-                    /// These are `fromNone` and will be placed in left_dag, ensuring the left pre-join
-                    /// always produces at least one output column (so blocks have correct row count).
-                    if (mapped_it->second->type == ActionsDAG::ActionType::COLUMN)
+                    /// The join returns only the dummy constant (it keeps the row count of its blocks); other constants are
+                    /// computed after the join, which pads a returned column with defaults for the rows without a match.
+                    if (mapped_it->second->type == ActionsDAG::ActionType::COLUMN
+                        && JoinStepLogical::isDummyResultColumn(*mapped_it->second))
                         actions_after_join.push_back(mapped_it->second);
                 }
             }
