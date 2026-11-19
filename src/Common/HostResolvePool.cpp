@@ -369,15 +369,22 @@ void HostResolversPool::dropCache()
 
 HostResolver::Ptr HostResolversPool::getResolver(const String & host)
 {
+    {
+        std::lock_guard lock(mutex);
+
+        auto it = host_pools.find(host);
+        if (it != host_pools.end())
+            return it->second;
+    }
+
+    /// Creating a `HostResolver` resolves the host, which can take seconds when DNS is slow
+    /// or unreachable. Do it outside of the pool-wide lock, otherwise one slow lookup blocks
+    /// the requests to all other hosts as well as `dropCache`.
+    /// If several threads create a resolver for the same host concurrently, the first one inserted wins.
+    auto resolver = HostResolver::create(host);
+
     std::lock_guard lock(mutex);
-
-    auto it = host_pools.find(host);
-    if (it != host_pools.end())
-        return it->second;
-
-    it = host_pools.emplace(host, HostResolver::create(host)).first;
-
-    return it->second;
+    return host_pools.emplace(host, std::move(resolver)).first->second;
 }
 
 void HostResolversPool::injectResolverForTest(const String & host, HostResolver::Ptr resolver)
