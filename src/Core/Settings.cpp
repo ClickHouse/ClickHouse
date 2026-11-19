@@ -10555,7 +10555,7 @@ Minimum estimated ratio of join output rows to build-side rows to enable transfo
     DECLARE_WITH_ALIAS(Bool, allow_ai_functions, true, R"(
 Allow the use of AI functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`, `aiEmbed`, `aiSimilarity`). If disabled, a query that uses them throws an exception.
 )", 0, allow_experimental_ai_functions, \
-        {"26.11", true, true, "Added an alias for setting `allow_experimental_ai_functions`."}, \
+        {"26.10", true, true, "Added an alias for setting `allow_experimental_ai_functions`."}, \
         {"26.9", false, true, "AI functions are beta and enabled by default. At the time the setting was named `allow_experimental_ai_functions`, which is now an alias of it. Keep the default regardless of `compatibility`.", CompatibilitySetting::Ignore}, \
         {"26.4", false, false, "New setting. At the time the setting was named `allow_experimental_ai_functions`, which is now an alias of it."}) \
     DECLARE(UInt64, ai_function_request_timeout_sec, 60, R"(
