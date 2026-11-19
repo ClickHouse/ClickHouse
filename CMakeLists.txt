@@ -257,7 +257,11 @@ option(OMIT_HEAVY_DEBUG_SYMBOLS
     "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
 
-option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
+option(BUILD_STANDALONE_KEEPER "Deprecated: build keeper as a separate binary instead of a symlink to clickhouse" OFF)
+if (BUILD_STANDALONE_KEEPER)
+    message (WARNING "BUILD_STANDALONE_KEEPER is deprecated and will be removed: `clickhouse-keeper` is a symlink to the `clickhouse` binary, "
+        "which runs Keeper in the same way, and a separate binary costs another full ThinLTO link in every build.")
+endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
 # (NOTE: LINKER_NAME can be either path or name, and in different variants)
@@ -413,77 +417,13 @@ if (ARCH_AMD64 AND NOT SANITIZE)
 endif()
 
 if (OS_LINUX AND ARCH_AARCH64 AND NOT SANITIZE)
-    # Sign the return address in the prologue and authenticate it before returning, so that
-    # overwriting a saved return address cannot redirect control flow. `paciasp` and `autiasp`
-    # live in the `NOP` encoding space: they are real operations on a core implementing
-    # `FEAT_PAuth` (ARMv8.3 and later, which covers Graviton3 and Graviton4) and decode as no-ops
-    # on older cores, so one binary still runs everywhere - just unprotected on the older ones.
-    # That holds only for code compiled for a target without `FEAT_PAuth`, which is our baseline
-    # (`cmake/cpu_features.cmake`). In a function compiled for ARMv8.3 or later, through `-march`
-    # or a `target` attribute, clang folds `autiasp; ret` into `retaa`, which raises SIGILL on the
-    # older cores. Such functions have to opt out with `target("branch-protection=none")`, as
-    # the ARMv8.3+ targets in our fork of SimSIMD do, and the compatibility check fails the
-    # `arm_release` package if a `retaa` or `retab` is left anywhere in it. Opting out a whole
-    # library instead does not work: a callee whose branch protection differs from the caller's
-    # is not inlined, and under ThinLTO that fails the `vectorize(enable)` loops in usearch.
-    # Leaf functions are left unsigned, which is the default and free, because they do not spill
-    # the return address to the stack.
-    # `bti` is deliberately left out. The linker keeps the BTI property only when every input
-    # object carries it, including hand-written assembly and every contrib, so enabling it needs
-    # its own audit; without one it would cost code size and enforce nothing.
-    #
-    # Sanitizer builds are excluded, because a signed return address on the stack is only
-    # readable by an unwinder that strips the signature, and the sanitizer runtimes shipped with
-    # the toolchain do not. `compiler-rt`'s frame-pointer unwinder collects the allocation and
-    # deallocation stacks behind every ASan and LSan report, and its `STRIP_PAC_PC` is the
-    # identity unless `compiler-rt` itself was compiled with `-mbranch-protection`. Signed frames
-    # then reach the reports verbatim: the signature occupies the bits above the virtual address,
-    # so most of the frames of a report symbolize to `<unknown module>` (17 of 21 in the one that
-    # this was measured on, against 1 of 26 for the same report on master). It is also a memory
-    # leak in disguise - `paciasp` mixes `SP` into the signature, so one call site produces a
-    # different value at every stack depth and each one takes a fresh entry in the stack depot,
-    # which is never freed.
-    #
-    # What this covers is the code the compiler generates from the C and C++ sources it is given,
-    # plus the assembly sources that opt in themselves through the feature macro it defines, so
-    # anything compiled with a flag set of its own, assembled without that opt-in, or built by
-    # another compiler keeps unsigned return addresses:
-    #   - the in-tree `compiler-rt` runtimes. `contrib/compiler-rt-cmake` filters the inherited
-    #     flags down to an allowlist (`_compiler_rt_keep_re`) which drops the hardening ones, and
-    #     that is also why their unwinder does not strip the signature: `sanitizer_ptrauth.h` keys
-    #     stripping on `__ARM_FEATURE_PAC_DEFAULT`, which is precisely what this flag defines, so
-    #     adding it to that allowlist is what it would take to sign them and to make sanitizer
-    #     builds readable again.
-    #   - raw `.s` inputs and prebuilt libraries. The flag is a code-generation option and says
-    #     nothing about an input that is assembled rather than compiled: a `.s` file assembles to a
-    #     byte-identical object with and without it, so `longjmp.s` and `syscall.s` under
-    #     `base/glibc-compatibility/musl/aarch64` stay unsigned, as does every prebuilt library we
-    #     link. Under `USE_MUSL` the one return address that musl's `aarch64` assembly keeps in
-    #     memory, `x30` in a `jmp_buf`, is signed by hand in `contrib/musl` (`setjmp.s`,
-    #     `longjmp.s`, `sigsetjmp.s`) with `paciasp` and `autiasp` unconditionally; the rest of that
-    #     set never spills `x30` (`dlsym.s` passes it on as a value, `clone.s` saves a function
-    #     pointer, not a return address). Preprocessed `.S` sources can opt in on their own, though, because `COMPILER_FLAGS`
-    #     also feeds `CMAKE_ASM_FLAGS` below and the flag defines `__ARM_FEATURE_PAC_DEFAULT`: 13 of
-    #     the 19 AArch64 OpenSSL sources the build assembles include `crypto/arm_arch.h`, where that
-    #     macro expands `AARCH64_SIGN_LINK_REGISTER` and `AARCH64_VALIDATE_LINK_REGISTER` to
-    #     `paciasp` and `autiasp`, so they do get signed returns and the PAC property note - by
-    #     their own `#if`, not because the flag instruments them.
-    #   - the `boost::context` switch trampolines (`jump_arm64_aapcs_elf_gas.S`,
-    #     `make_arm64_aapcs_elf_gas.S`, `ontop_arm64_aapcs_elf_gas.S`), which key only BTI off the
-    #     feature macros. They save `x30` into the suspended fiber's stack and resume through it
-    #     with a plain `ret`, so a stackful-coroutine continuation stays unsigned. Signing it cannot
-    #     reuse `paciasp` either, because the continuation is resumed on a different `SP` from the
-    #     one it was saved on; it wants a modifier that survives the switch, in its own change.
-    #   - the Rust objects (`skim`, `delta-kernel`, `chdig`, `wasmtime`, ...). `rustc` treats
-    #     `-Zbranch-protection` as ABI-affecting and refuses it while `std` comes precompiled
-    #     without it ("mixing `-Zbranch-protection` will cause an ABI mismatch"), so signing them
-    #     needs `std` built from source with the same flag - non-sanitizer builds do not pass
-    #     `-Zbuild-std` - or an explicit `-Cunsafe-allow-abi-mismatch=branch-protection`.
-    #
-    # Our own unwinding is unaffected: `StackTrace` and jemalloc's profiler go through
-    # `unw_backtrace`, whose DWARF-based stepper follows `DW_CFA_AARCH64_negate_ra_state`, and
-    # the frame-pointer walk that `StackTrace::tryCapture` uses under TSan is abseil's, which
-    # strips the signature with `xpaclri` unconditionally.
+    # Sign return addresses, so that overwriting one on the stack cannot redirect control flow.
+    # `paciasp` and `autiasp` are no-ops on cores without `FEAT_PAuth` (before ARMv8.3), so the
+    # binary still runs there. Code must not be compiled for ARMv8.3 or later (by `-march` or a
+    # `target` attribute), because then the compiler emits `retaa`, which raises SIGILL on those
+    # cores; the compatibility check guards against it.
+    # Sanitizer builds are excluded, because the sanitizer runtimes do not strip the signature
+    # when they unwind, so their reports would show garbage frames.
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbranch-protection=pac-ret")
 endif()
 
@@ -527,6 +467,9 @@ endif ()
 # Clang turns a call to `sincos` into the `llvm.sincos` intrinsic, and for a musl target LLVM lowers that intrinsic
 # to separate `sin` and `cos` calls again (it assumes `sincos` only in glibc, Fuchsia and Android). Our musl links
 # llvm-libc's `sincos`, which shares one argument reduction between the two, so keep the call as it is written.
+#
+# Under sanitizers compiler-rt intercepts `sincos`; `__real_sincos` is bound to llvm-libc's `sincos` as well
+# (see contrib/libllvmlibc-cmake), so the bits match `sin` and `cos` in every build.
 if (USE_MUSL)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fno-builtin-sincos")
 endif ()
@@ -738,7 +681,9 @@ option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 # Increase stack size on Musl. We need big stack for our recursive-descend parser
 # and for analyzer passes that recurse on deeply-nested join trees (e.g.
 # 1000-join queries). Match glibc's 8 MiB default; musl reads this from
-# PT_GNU_STACK and clamps it to DEFAULT_STACK_MAX (also 8 MiB).
+# PT_GNU_STACK and clamps it to DEFAULT_STACK_MAX (also 8 MiB). Our musl fork,
+# like glibc, uses a finite RLIMIT_STACK soft limit instead, so this only
+# applies when the limit is unlimited.
 if (USE_MUSL)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=8388608")
 endif ()
@@ -837,8 +782,8 @@ endif ()
 
 # Full RELRO (relocation read-only): '-z now' resolves all dynamic relocations at startup and '-z relro'
 # then maps the global offset table read-only, so an arbitrary write cannot redirect a call through it.
-# Resolving everything at startup costs nothing here because we link dynamically only against libc
-# and we forbid dlopen (see programs/main.cpp).
+# Resolving everything at startup costs nothing here because we link statically (musl) or dynamically
+# only against libc, and we forbid dlopen (see programs/main.cpp).
 # Not on Darwin: ld64 does not accept '-z' options.
 # The native SunOS linker supports '-z now' but not '-z relro'; LLD supports both.
 if (NOT OS_DARWIN)
@@ -1028,9 +973,9 @@ if (FUZZER)
                 # Targets compiled with -fno-sanitize=all must never be instrumented:
                 # a later -fsanitize=fuzzer-no-link overrides it and re-enables
                 # SanitizerCoverage. That is fatal for the in-tree libc and sanitizer
-                # runtimes (musl, clang_rt_*): their startup code (CRT, __init_libc)
-                # runs before any coverage runtime exists, so every executable would
-                # crash at startup.
+                # runtimes (musl, clang_rt_*): their startup code (rcrt1 self-relocation,
+                # __init_libc) runs before relocations are applied and before any
+                # coverage runtime exists, so every executable would crash at startup.
                 #
                 # The PC table that -fsanitize=fuzzer-no-link implies is left out. `clickhouse_fuzzer`
                 # links every `src/` library into a single image that keeps outgrowing the 2 GiB reach of
@@ -1084,7 +1029,6 @@ if (NATIVE_BUILD_TARGETS
     AND NOT(
         CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
         AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
-        AND NOT USE_MUSL
     )
 )
     message (STATUS "Building native targets: ${NATIVE_BUILD_TARGETS}")

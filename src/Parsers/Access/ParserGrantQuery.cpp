@@ -219,8 +219,6 @@ std::map<String, Documentation> ParserGrantQuery::getDocumentation() const
     documentation["GRANT"] =
     {
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 - Grants [privileges](#privileges) to ClickHouse user accounts or roles.
 - Assigns roles to user accounts or to the other roles.
 

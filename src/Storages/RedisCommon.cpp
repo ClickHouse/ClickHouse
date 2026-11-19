@@ -80,7 +80,7 @@ RedisConnectionPtr getRedisConnection(RedisPoolPtr pool, const RedisConfiguratio
             if (!configuration.password.empty())
             {
                 RedisCommand command("AUTH");
-                command << configuration.password;
+                command << String(configuration.password);
                 String reply = client->execute<String>(command);
                 if (reply != "OK")
                     throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR,
