@@ -48,4 +48,14 @@ ${CLICKHOUSE_CLIENT} --query "select *, _filename, _offset from file_log order b
 
 ${CLICKHOUSE_CLIENT} --query "drop table file_log;"
 
+mkdir -p ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_t/
+for i in {1..5}
+do
+	echo $i, $i >> ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_t/a.txt
+done
+${CLICKHOUSE_CLIENT} --query "create table file_log_t(k UInt8, v UInt8) engine=FileLog('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_t/', 'CSV');"
+${CLICKHOUSE_CLIENT} --query "select _table, count() from file_log_t group by _table settings stream_like_engine_allow_direct_select=1;"
+${CLICKHOUSE_CLIENT} --query "drop table file_log_t;"
+rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}_t
+
 rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}

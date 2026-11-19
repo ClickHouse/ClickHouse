@@ -313,7 +313,7 @@ bool DatabaseFilesystem::empty() const
 ASTPtr DatabaseFilesystem::getCreateDatabaseQueryImpl() const
 {
     const auto & settings = getContext()->getSettingsRef();
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = Filesystem('{}')", backQuoteIfNeed(database_name), path);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = Filesystem({})", backQuoteIfNeed(database_name), quoteString(path));
 
     ParserCreateQuery parser;
     ASTPtr ast

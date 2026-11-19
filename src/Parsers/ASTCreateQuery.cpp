@@ -745,7 +745,10 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     /// `InterpreterCreateQuery::setEngine` does `as_table_function->as<ASTFunction>()->name`.
     child = r.readScreenedChildOfType<ASTFunction>("as_table_function");
     if (child)
+    {
+        child->as<ASTFunction &>().setKind(ASTFunction::Kind::TABLE_FUNCTION);
         set(as_table_function, child);
+    }
 
     /// A table created from a table function has no storage definition of its own, so the grammar
     /// accepts only one of the two and formatting prints them in an order it cannot read back.

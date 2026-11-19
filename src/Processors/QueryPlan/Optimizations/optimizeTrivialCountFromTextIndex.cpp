@@ -250,8 +250,11 @@ bool guardsHold(const ReadFromMergeTree & reading)
     if (!reading.getStorageID().hasDatabase() || getEffectiveRowPolicyFilter(reading.getMergeTreeData(), context))
         return false;
 
+    /// A pending DROP COLUMN (a metadata mutation) makes the reader return defaults, so the cardinalities are stale.
     if (const auto & mutations = reading.getMutationsSnapshot();
-        mutations && (mutations->hasDataMutations() || mutations->hasPatchParts() || mutations->hasLightweightDeletedMask()))
+        mutations
+        && (mutations->hasDataMutations() || mutations->hasMetadataMutations() || mutations->hasPatchParts()
+            || mutations->hasLightweightDeletedMask()))
         return false;
 
     if (reading.getStorageMetadata()->hasUniqueKey())
@@ -337,6 +340,12 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
     if (settings.make_distributed_plan || settings.enable_parallel_replicas)
         return false;
 
+    /// The plan for automatic parallel replicas has no index analysis of its reads, so analyzing here would run it
+    /// over the filter `processAndOptimizeTextIndexFunctions` already rewrote. There is nothing to gain either:
+    /// when the single-node plan made this replacement, automatic parallel replicas does not consider the query.
+    if (settings.find_single_node_read)
+        return false;
+
     auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
     if (!aggregating)
         return false;
@@ -417,6 +426,10 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
     }
 
     String description = makeStepDescription(*search_query);
+
+    if (!matched->reading->getQueryInfo().is_internal && matched->reading->getContext()->hasQueryContext())
+        matched->reading->getContext()->getQueryContext()->addUsedDataSkippingIndex(
+            matched->reading->getMergeTreeData().getStorageID(), search_query->index.index->index.name);
 
     auto & source_node = nodes.emplace_back();
     source_node.step = std::make_unique<ReadFromTextIndexCount>(

@@ -1,4 +1,5 @@
 #include <Storages/StorageAlias.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableProxy.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -7,6 +8,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSQLSecurity.h>
@@ -22,6 +24,8 @@
 #include <Access/ContextAccess.h>
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
+#include <Common/quoteString.h>
+#include <Databases/IDatabase.h>
 
 
 namespace DB
@@ -106,15 +110,22 @@ bool StorageAlias::isMergeTree() const
 
 StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check) const
 {
+    /// Table-level access check only. Column-level checks resolve subcolumns against the target
+    /// metadata snapshot, so they are done by the caller that owns that snapshot (see `StorageAlias::read`).
     if (access_check)
-    {
-        if (access_check->column_names.empty())
-            access_check->context->checkAccess(access_check->access_type, target_database, target_table);
-        else
-            access_check->context->checkAccess(access_check->access_type, target_database, target_table, access_check->column_names);
-    }
+        access_check->context->checkAccess(access_check->access_type, target_database, target_table);
 
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
+}
+
+std::optional<IStorage::ColumnSizeByName> StorageAlias::tryGetColumnSizes(const ContextPtr & query_context) const
+{
+    /// Visibility through an alias follows the grant on the alias itself (definer rights), so the sizes are not filtered
+    /// by the target's grants of the user.
+    auto target = tryGetTargetTable();
+    if (!target)
+        return std::nullopt;
+    return target->tryGetColumnSizes(query_context);
 }
 
 /// AliasSink: Writes data to the target table using full INSERT pipeline
@@ -138,7 +149,7 @@ public:
 
     ~AliasSink() override
     {
-        /// On cancellation without an exception (e.g. timeout_overflow_mode='break') neither
+        /// On cancellation without an exception (e.g. `KILL QUERY`) neither
         /// onFinish() nor onException() runs, leaving the nested executor started but unfinished.
         /// Cancel it so ~PushingPipelineExecutor's finished-or-unwinding invariant holds.
         if (executor)
@@ -166,6 +177,8 @@ public:
 
         auto insert_context = Context::createCopy(getContext());
         insert_context->makeQueryContext();
+        /// A part of the outer query: plan it from the same snapshot.
+        insert_context->shareQueryMaxThreadsSnapshot(*getContext());
         if (getContext()->hasQueryContext())
             insert_context->setQueryAccessInfo(getContext()->getQueryContext()->getQueryAccessInfoPtr());
         addInterpreterContext(insert_context);
@@ -229,6 +242,13 @@ public:
         block_io = {};
     }
 
+    void onPipelineFinished() override
+    {
+        /// Stopped by `timeout_overflow_mode = 'break'`: the nested INSERT finishes as if the input had ended.
+        if (isCancelled() && stage != Stage::Exception && executor)
+            onFinish();
+    }
+
     void onException(std::exception_ptr) override
     {
         if (executor)
@@ -264,12 +284,28 @@ void StorageAlias::read(
     size_t num_streams)
 {
     auto definer_context = getDefinerContext(local_context);
-    auto target_storage = getTargetTable(TargetAccess{definer_context, AccessType::SELECT, column_names});
+    /// Any grant on the target implies `SHOW_TABLES` on it, so this denies a definer with no access to the target before
+    /// the lookup, which could otherwise tell whether the target exists or fail to load its metadata.
+    /// The column-level check below needs the target's metadata, so it is done once the target is known.
+    auto target_storage = getTargetTable(TargetAccess{definer_context, AccessType::SHOW_TABLES});
+    auto target_metadata = target_storage->getInMemoryMetadataPtr(definer_context, false);
+
+    /// Resolve subcolumns against the same target metadata snapshot the read below uses, so the
+    /// authorized columns are exactly the ones that are read.
+    if (column_names.empty())
+        definer_context->checkAccess(AccessType::SELECT, target_database, target_table);
+    else
+        definer_context->checkAccess(
+            AccessType::SELECT,
+            target_database,
+            target_table,
+            target_metadata->getColumns().getColumnNamesForSelectAccessCheck(
+                column_names, definer_context, StorageID(target_database, target_table)));
+
     auto lock = target_storage->lockForShare(
         local_context->getCurrentQueryId(),
         local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(definer_context, false);
     auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, definer_context);
 
     /// Forward the read with the definer's identity so a target that authorizes during read - a
@@ -312,6 +348,26 @@ SinkToStoragePtr StorageAlias::write(
     return std::make_shared<AliasSink>(*this, definer_context, target_metadata, async_insert);
 }
 
+void StorageAlias::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
+{
+    /// `InterpreterAlterQuery` checks the export grants (`SELECT` on the table and its row policy) on the name in the query,
+    /// which is the alias, not the target. The refusal does not need the user, so it also holds on the hosts of `ON CLUSTER`.
+    for (const auto & command : commands)
+    {
+        if (command.type == AlterCommand::MODIFY_SETTING && !StorageFactory::instance().getExportAccessOfAnyEngine(command.settings_changes).empty())
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Changing the settings that send the data of a table elsewhere through an alias is not supported. "
+                "Execute the ALTER directly on the target table: {}.{}",
+                backQuoteIfNeed(target_database),
+                backQuoteIfNeed(target_table));
+        }
+    }
+
+    getTargetTable()->checkAlterIsPossible(commands, local_context);
+}
+
 void StorageAlias::alter(
     const AlterCommands & params,
     ContextPtr local_context,
@@ -349,7 +405,17 @@ void StorageAlias::alter(
     }
 
     auto target_alter_lock = target_storage->lockForAlter(local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    target_storage->alter(params, local_context, target_alter_lock, target_ddl_guard);
+    /// The query cached the target's metadata before this lock, a concurrent ALTER of the target may have changed it since.
+    if (auto metadata_cache = local_context->getQueryMetadataCache())
+        metadata_cache->clear();
+
+    /// The commands were prepared before this lock, and `ADD ENUM VALUES` stores a type merged from the column's
+    /// type at that time, so prepare them again against the target's current metadata.
+    AlterCommands commands = params;
+    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ true);
+    commands.prepare(*target_metadata);
+    target_storage->checkAlterIsPossible(commands, local_context);
+    target_storage->alter(commands, local_context, target_alter_lock, target_ddl_guard);
 }
 
 void StorageAlias::truncate(
@@ -468,7 +534,7 @@ struct AliasCheckTasks : IStorage::DataValidationTasksBase
         chassert(inner);
     }
 
-    size_t size() const override { return inner->size(); }
+    [[nodiscard]] size_t size() const override { return inner->size(); }
 };
 
 }
@@ -550,8 +616,13 @@ bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & s
     if (!isTargetSelectAuthorized(query_context))
         return false;
 
-    auto target = tryGetTargetTable();
-    return target && target->supportsTrivialCountOptimization(storage_snapshot, query_context);
+    /// Ask the storage the snapshot was taken from instead of resolving the target again: a storage
+    /// can only interpret its own snapshot, and the target may have been replaced in between, e.g.
+    /// the proxy of a lazily loaded table by the loaded table.
+    const IStorage & target = storage_snapshot->storage;
+    if (&target == this)
+        return false;
+    return target.supportsTrivialCountOptimization(storage_snapshot, query_context);
 }
 
 std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const

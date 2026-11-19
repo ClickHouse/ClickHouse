@@ -473,7 +473,7 @@ void MergeTreeTemporaryPart::finalize()
     /// in-memory index so `getMinMaxIndex()` reloads from disk and applies the 0-level correction.
     const auto metadata_snapshot = part->getMetadataSnapshot();
     const auto data_settings = part->storage.getSettings();
-    for (const auto & [minmax_column, _] : MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings))
+    for (const auto & [minmax_column, _] : MergeTreeData::getMinMaxColumns(*metadata_snapshot, data_settings))
         if (metadata_snapshot->isVirtualColumn(minmax_column))
             part->setMinMaxIndex(nullptr);
 }
@@ -603,12 +603,24 @@ Block MergeTreeDataWriter::mergeBlock(
     IColumn::Permutation *& permutation,
     const MergeTreeData::MergingParams & merging_params)
 {
+    /// The sign, version and is_deleted columns may be subcolumns, which the merging algorithm reads as separate columns.
+    for (const auto * column_name : {&merging_params.sign_column, &merging_params.version_column, &merging_params.is_deleted_column})
+    {
+        if (!column_name->empty() && !block.has(*column_name))
+            block.insert(block.getSubcolumnByName(*column_name));
+    }
+
     SharedHeader header = std::make_shared<const Block>(std::move(block));
     OpenTelemetry::SpanHolder span("MergeTreeDataWriter::mergeBlock");
 
     size_t block_size = header->rows();
     span.addAttribute("clickhouse.rows", block_size);
     span.addAttribute("clickhouse.columns", header->columns());
+
+    /// The block can lose all its rows before this point, e.g. when insert deduplication removes
+    /// duplicate rows of a materialized view block. Merging algorithms do not expect an empty input.
+    if (block_size == 0)
+        return *header;
 
     auto get_merging_algorithm = [&]() -> std::shared_ptr<IMergingAlgorithm>
     {
@@ -784,10 +796,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPart(
     StorageMetadataPtr metadata_snapshot,
     ContextPtr context,
     bool may_have_leftover,
+    bool defer_fsync,
     const MergeTreeTransactionPtr & txn)
 {
     auto partition_id = block.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*patch_part_index=*/ {}, std::move(context), data.insert_increment.get(), may_have_leftover, txn);
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*patch_part_index=*/ {}, std::move(context), data.insert_increment.get(), may_have_leftover, defer_fsync, txn);
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPatchPart(
@@ -798,7 +811,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPatchPart(
     ContextPtr context,
     bool may_have_leftover)
 {
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(patch_part_index), std::move(context), data.insert_increment.get(), may_have_leftover);
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(patch_part_index), std::move(context), data.insert_increment.get(), may_have_leftover, /*defer_fsync=*/ false);
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
@@ -809,6 +822,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     ContextPtr context,
     UInt64 block_number,
     bool may_have_leftover,
+    bool defer_fsync,
     const MergeTreeTransactionPtr & txn)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
@@ -821,7 +835,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 
     /// Do not write _block_number and _block_offset for 0-level parts: block number is not known on this step.
-    const auto minmax_columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
+    const auto minmax_columns = MergeTreeData::getMinMaxColumns(*metadata_snapshot, data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
     minmax_idx->update(block, minmax_columns);
 
@@ -1179,7 +1193,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             perm_ptr,
             context->getSettingsRef()[Setting::unique_key_max_encoded_size],
             gathered_data.checksums,
-            (*data_settings)[MergeTreeSetting::fsync_after_insert],
+            (*data_settings)[MergeTreeSetting::fsync_after_insert] && !defer_fsync,
             context);
     }
 
@@ -1230,7 +1244,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     auto finalizer = out->finalizePartAsync(
         new_data_part,
         gathered_data,
-        (*data_settings)[MergeTreeSetting::fsync_after_insert]);
+        (*data_settings)[MergeTreeSetting::fsync_after_insert] && !defer_fsync);
 
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
@@ -1406,7 +1420,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
-        data.getContext()->getWriteSettings(),
+        /// Temporary projection parts are written only by merges and mutations (`writeTempProjectionPart`), and a
+        /// single one is installed as the projection of the resulting part by renaming, so it is a part of what
+        /// replicas compare. Projections written on insert are not compared - other replicas fetch them.
+        is_temp
+            ? getWriteSettingsForMergeOrMutation(data.getContext()->getWriteSettings(), data.supportsReplication())
+            : data.getContext()->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr),
         try_adaptive_codec,
         /// A separate instance: `<name>.proj/` is its own part directory.

@@ -28,6 +28,11 @@ public:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
+    void checkSourceObjectAccess(const ContextPtr & context, bool for_structure) const override
+    {
+        checkSourceTableAccess(context, source_table_id, for_structure ? AccessType::SHOW_COLUMNS : AccessType::SHOW_TABLES);
+    }
+
 private:
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
@@ -121,6 +126,8 @@ mergeTreeProjection(database, table, projection)
 | `database`   | The database name to read projection from. |
 | `table`      | The table name to read projection from.    |
 | `projection` | The projection to read from.               |
+
+Resolving the structure of the result, for example with `DESCRIBE`, requires the `SHOW COLUMNS` privilege on the source table, and reading from it requires `SELECT` on the source table.
 
 ## Returned value {#returned-value}
 

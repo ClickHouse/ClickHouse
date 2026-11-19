@@ -18,7 +18,6 @@ public:
     {
         ContextPtr context;
         AccessType access_type;
-        Names column_names = {};
     };
 
     StorageAlias(
@@ -77,7 +76,7 @@ public:
     /// Distributed write to target table
     std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & query, ContextPtr local_context) override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override { getTargetTable()->checkAlterIsPossible(commands, local_context); }
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
     /// Alter target table
     void alter(
@@ -171,6 +170,11 @@ public:
     {
         auto target = tryGetTargetTable();
         return target && target->supportsOptimizationToTupleElementSubcolumns();
+    }
+    bool hasBucketedMapSerialization() const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->hasBucketedMapSerialization();
     }
     bool supportsParallelInsert() const override
     {
@@ -294,14 +298,7 @@ public:
 
     ColumnSizeByName getColumnSizes() const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes() : ColumnSizeByName{}; }
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes(columns, calculate_subcolumn_sizes) : ColumnSizeByName{}; }
-    std::optional<ColumnSizeByName> tryGetColumnSizes() const override
-    {
-        auto target = tryGetTargetTable();
-        if (!target)
-            return std::nullopt;
-
-        return target->getColumnSizes();
-    }
+    std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & query_context) const override;
 
     IndexSizeByName getSecondaryIndexSizes() const override { auto target = tryGetTargetTable(); return target ? target->getSecondaryIndexSizes() : IndexSizeByName{}; }
 

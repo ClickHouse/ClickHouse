@@ -1,6 +1,3 @@
--- Tags: no-fasttest
---       no-fasttest: needs the Parquet format.
-
 -- `CREATE TABLE ... AS file()` persists the columns inferred at DDL time, but file-like table
 -- functions rebuild the nested storage from the *current* external schema and ignore those cached
 -- columns. `StorageTableFunctionProxy::read` hands PREWHERE straight to the nested storage and only
