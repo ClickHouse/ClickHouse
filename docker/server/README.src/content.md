@@ -192,7 +192,7 @@ EOSQL
 
 ## Image without a shell
 
-The default image (the tags without a suffix) is built `FROM scratch`. It contains the `clickhouse` binary, its configuration, and the few system files it needs: the dynamic loader and the C library, CA certificates, `/etc/passwd`. There is no shell, no package manager, and no other programs, so the only software to keep patched is ClickHouse and the C library.
+The default image (the tags without a suffix) is built `FROM scratch`. It contains the statically linked `clickhouse` binary, its configuration, and the few system files it needs: CA certificates, `/etc/passwd`. There is no shell, no package manager, no C library, and no other programs, so the only software to keep patched is ClickHouse.
 
 The logic of the entrypoint (preparing the directories, creating the user from `CLICKHOUSE_USER` and `CLICKHOUSE_PASSWORD`, creating `CLICKHOUSE_DB`, running the scripts from `/docker-entrypoint-initdb.d`) is built into the binary as `clickhouse docker-init`, and is configured with the same environment variables. The differences from the `-ubuntu` image:
 

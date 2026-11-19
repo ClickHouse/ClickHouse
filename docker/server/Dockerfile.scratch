@@ -1,6 +1,6 @@
 # The default ClickHouse server image, built `FROM scratch`.
-# It contains the `clickhouse` binary, its configuration files, and the few system files the binary needs
-# (the dynamic loader and the C library, CA certificates, `/etc/passwd`): no shell, no package manager,
+# It contains the statically linked `clickhouse` binary, its configuration files, and the few system files
+# the binary needs (CA certificates, `/etc/passwd`): no shell, no package manager, no C library,
 # no coreutils. The entrypoint is the compiled `clickhouse docker-init` subcommand.
 #
 # When a shell is needed for troubleshooting, mount one into the container, for example a statically
@@ -144,7 +144,6 @@ RUN clickhouse-local --tmp -q 'SELECT * FROM system.build_options'
 # Assemble the output directory tree that is copied into the final image.
 RUN mkdir -p \
         /output/usr/bin \
-        /output/lib \
         /output/etc/ssl/certs \
         /output/etc/clickhouse-server/config.d \
         /output/etc/clickhouse-server/users.d \
@@ -167,11 +166,13 @@ RUN mkdir -p \
             ln -sf clickhouse "/output/usr/bin/$(basename "${link}")" ; \
         fi ; \
     done \
-    # The shared libraries the binary is linked with (none for a statically linked binary). The libraries
-    # go into `/lib`, which the dynamic loader always searches, and the loader itself keeps the path written
-    # into the binary (`/lib64/ld-linux-x86-64.so.2` or `/lib/ld-linux-aarch64.so.1`).
-    && ldd /usr/bin/clickhouse | awk '$2 == "=>" && $3 ~ /^\// { print $3 }' | xargs -r cp -L -t /output/lib/ \
-    && ldd /usr/bin/clickhouse | awk '$1 ~ /^\// { print $1 }' | xargs -r -I{} cp -L --parents {} /output/ \
+    # The image has no C library and no dynamic loader, so the binary must be statically linked
+    # (the `musl` build, since 26.11): a dynamically linked one would fail to start with `no such file`.
+    && if ldd /usr/bin/clickhouse 2>&1 | grep -q '=>'; then \
+        echo "ERROR: /usr/bin/clickhouse is dynamically linked, but the FROM scratch image needs a static binary" ; \
+        ldd /usr/bin/clickhouse ; \
+        exit 1 ; \
+    fi \
     && cp /etc/ssl/certs/ca-certificates.crt /output/etc/ssl/certs/ \
     && cp -r /etc/clickhouse-server/. /output/etc/clickhouse-server/ \
     && if [ -d /etc/clickhouse-client ]; then cp -r /etc/clickhouse-client/. /output/etc/clickhouse-client/; fi \
@@ -200,9 +201,8 @@ RUN chown -R clickhouse:clickhouse \
     && chmod 1777 /output/tmp
 
 # `/etc/passwd` and `/etc/group` name the `clickhouse` user (uid/gid 101), which `docker-init` switches to
-# when started as root. `/etc/nsswitch.conf` makes the C library look up host names in `/etc/hosts`
-# (which docker generates, e.g. for `--link`) before DNS: without the file, `/etc/hosts` is not consulted
-# when DNS is reachable.
+# when started as root. Host names are resolved from `/etc/hosts` (which docker generates, e.g. for `--link`)
+# and DNS by the `musl` C library itself, without the Name Service Switch, so there is no `/etc/nsswitch.conf`.
 RUN { \
         printf 'root:x:0:0:root:/root:/sbin/nologin\n'; \
         printf 'nobody:x:65534:65534:nobody:/nonexistent:/sbin/nologin\n'; \
@@ -212,12 +212,7 @@ RUN { \
         printf 'root:x:0:\n'; \
         printf 'nobody:x:65534:\n'; \
         printf 'clickhouse:x:101:\n'; \
-    } > /output/etc/group \
-    && { \
-        printf 'passwd: files\n'; \
-        printf 'group: files\n'; \
-        printf 'hosts: files dns\n'; \
-    } > /output/etc/nsswitch.conf
+    } > /output/etc/group
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Stage 2: The image itself.
