@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 namespace Setting
 {
     extern const SettingsBool enable_parallel_blocks_marshalling;
@@ -95,7 +100,8 @@ void BlocksMarshallingStep::transformPipeline(QueryPipelineBuilder & pipeline, c
 
 QueryPlanStepPtr BlocksMarshallingStep::deserialize(Deserialization & ctx)
 {
-    chassert(ctx.input_headers.size() == 1);
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "BlocksMarshallingStep must have exactly one input, got {}", ctx.input_headers.size());
     return std::make_unique<BlocksMarshallingStep>(ctx.input_headers.front());
 }
 

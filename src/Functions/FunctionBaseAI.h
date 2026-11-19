@@ -52,7 +52,7 @@ using AIParamValues = std::map<String, Field, std::less<>>; // STYLE_CHECK_ALLOW
 class FunctionBaseAI : public IFunction
 {
 public:
-    explicit FunctionBaseAI(ContextPtr context_) : context(context_) { throwIfBackgroundExpression(context); }
+    explicit FunctionBaseAI(ContextPtr context_) : context(context_) { throwIfNotAllowed(context); }
 
     [[nodiscard]] bool isStateful() const override { return true; }
     [[nodiscard]] bool isDeterministic() const override { return false; }
@@ -92,7 +92,7 @@ public:
         String collection_name;
         String provider;
         String endpoint;
-        String api_key;
+        SecretString api_key;
         String api_version;
     };
 
@@ -143,9 +143,9 @@ public:
     /// expressions with such a context, which has full access, so the privilege checks do not apply to it.
     static void checkHasUser(const ContextPtr & context);
 
-    /// Throws if the context analyzes expressions that are executed in the background (mutations, expressions stored
-    /// in a table definition), where `checkHasUser` throws.
-    static void throwIfBackgroundExpression(const ContextPtr & context);
+    /// Throws if `allow_ai_functions` is disabled, or if the context analyzes expressions that are executed in the
+    /// background (mutations, expressions stored in a table definition), where `checkHasUser` throws.
+    static void throwIfNotAllowed(const ContextPtr & context);
 
     /// Result of `embedTexts`. `embeddings` is aligned 1:1 with the `inputs` argument of `embedTexts`. An
     /// entry is empty when that input was not embedded (quota exceeded, or a failed request with
@@ -196,7 +196,10 @@ protected:
     /// for the response format, while Anthropic does not but it can be approximated with a tool-use pattern, see AnthropicProvider.h/cpp
     [[nodiscard]] virtual Poco::JSON::Object::Ptr buildResponseFormat(const ColumnsWithTypeAndName & /*arguments*/) const { return nullptr; }
 
-    [[nodiscard]] virtual String postProcessResponse(const String & raw_response) const { return raw_response; }
+    [[nodiscard]] virtual String postProcessResponse(const ColumnsWithTypeAndName & /*arguments*/, const String & raw_response) const
+    {
+        return raw_response;
+    }
 
     /// Insert a post-processed provider response into the result column.
     /// Default appends the string as-is (`ColumnString`); subclasses may parse into other types

@@ -61,7 +61,7 @@ public:
     [[nodiscard]] VectorWithMemoryTracking<size_t> getStepGroups() const override;
     [[nodiscard]] String getStepGroupName(size_t group) const override;
 
-    [[nodiscard]] StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
+    [[nodiscard]] StepAnalyzer makeAnalyzer() const override;
 
 private:
     void updateOutputHeader() override;
