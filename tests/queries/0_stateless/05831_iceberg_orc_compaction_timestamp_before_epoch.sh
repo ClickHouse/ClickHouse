@@ -21,7 +21,8 @@ $CLIENT -q "CREATE TABLE ${TABLE} (id Int64, ts DateTime64(6, 'UTC')) ENGINE = I
 $CLIENT -q "INSERT INTO ${TABLE} VALUES (1, '1969-12-31 23:59:59.5'), (2, '1969-12-31 23:59:59.75')"
 $CLIENT --mutations_sync=2 -q "ALTER TABLE ${TABLE} DELETE WHERE id = 2"
 $CLIENT -q "DROP TABLE ${TABLE}"
-$CLIENT -q "CREATE TABLE ${TABLE} ENGINE = IcebergLocal('${TABLE_PATH}', 'ORC')"
+# The Cloud build enables compaction when the table is created, the open-source one on `OPTIMIZE`.
+$CLIENT --allow_experimental_iceberg_compaction=1 -q "CREATE TABLE ${TABLE} ENGINE = IcebergLocal('${TABLE_PATH}', 'ORC')"
 $CLIENT --allow_experimental_iceberg_compaction=1 -q "OPTIMIZE TABLE ${TABLE}"
 
 $CLIENT -q "SELECT id, ts FROM ${TABLE}"
