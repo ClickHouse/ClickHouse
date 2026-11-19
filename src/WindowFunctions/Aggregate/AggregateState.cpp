@@ -80,10 +80,9 @@ void AggregateState::recreate()
     created = true;
 }
 
-void AggregateState::checkCreated() const
+void AggregateState::throwNotCreated() const
 {
-    if (!created)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate state of window function {} is used after a failed creation", function->getName());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate state of window function {} is used after a failed creation", function->getName());
 }
 
 void AggregateState::add(const WindowArguments & arguments, Int64 begin, Int64 end)

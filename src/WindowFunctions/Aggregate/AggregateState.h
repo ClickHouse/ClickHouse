@@ -8,6 +8,7 @@
 
 #include <Common/AlignedBuffer.h>
 
+#include <base/defines.h>
 #include <base/types.h>
 
 #include <functional>
@@ -30,7 +31,14 @@ public:
     void insertResultInto(IColumn & result);
 
 private:
-    void checkCreated() const;
+    /// Called for every evaluated row, so only the cheap test is inlined.
+    ALWAYS_INLINE void checkCreated() const
+    {
+        if (unlikely(!created))
+            throwNotCreated();
+    }
+
+    [[noreturn]] NO_INLINE void throwNotCreated() const;
 
     AggregateFunctionPtr function;
     AlignedBuffer place;
