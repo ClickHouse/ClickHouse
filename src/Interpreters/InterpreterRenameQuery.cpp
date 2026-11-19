@@ -10,11 +10,13 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/typeid_cast.h>
+#include <Common/SharedMutex.h>
+#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 
 #include <set>
-#include <vector>
+#include <shared_mutex>
 
 
 namespace DB
@@ -30,6 +32,61 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int UNFINISHED;
+}
+
+namespace
+{
+
+/// Databases whose shared "restart replica" lock (the one `DROP DATABASE` waits for) is held by a RENAME running on this thread.
+/// A RENAME can run nested RENAMEs on the same thread (`StorageTimeSeries::renameInMemory` renames the inner tables
+/// with a separate `InterpreterRenameQuery`), and they must reuse the lock of the outer one: `SharedMutex` prefers writers,
+/// so once a `DROP DATABASE` waits for the exclusive lock, even a thread that holds the shared lock cannot take it again,
+/// and the nested rename would fail halfway through the outer one.
+thread_local std::set<String> databases_locked_by_rename;
+
+class RenameDatabaseLocks
+{
+public:
+    explicit RenameDatabaseLocks(const std::set<String> & database_names)
+    {
+        try
+        {
+            for (const auto & database_name : database_names)
+            {
+                if (databases_locked_by_rename.contains(database_name))
+                    continue; /// held by an outer RENAME of this thread
+
+                auto lock = DatabaseCatalog::instance().tryGetLockForRestartReplica(database_name);
+                if (!lock)
+                    throw Exception(ErrorCodes::UNFINISHED, "Cannot rename or exchange tables: database {} is being dropped", backQuoteIfNeed(database_name));
+
+                databases_locked_by_rename.insert(database_name);
+                locks.emplace_back(database_name, std::move(*lock));
+            }
+        }
+        catch (...)
+        {
+            release();
+            throw;
+        }
+    }
+
+    ~RenameDatabaseLocks() { release(); }
+
+    RenameDatabaseLocks(const RenameDatabaseLocks &) = delete;
+    RenameDatabaseLocks & operator=(const RenameDatabaseLocks &) = delete;
+
+private:
+    void release()
+    {
+        for (const auto & [database_name, lock] : locks)
+            databases_locked_by_rename.erase(database_name);
+        locks.clear();
+    }
+
+    std::vector<std::pair<String, std::shared_lock<SharedMutex>>> locks;
+};
+
 }
 
 InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_)
@@ -78,30 +135,6 @@ BlockIO InterpreterRenameQuery::execute()
 
     auto & database_catalog = DatabaseCatalog::instance();
 
-    /// DROP DATABASE holds this lock exclusively while it prepares its tables for shutdown and drops them.
-    /// A RENAME or EXCHANGE must not change the set of tables of a database in the meantime: a table moved
-    /// to another database would still be shut down by the drop and stay read-only there, and an exchange
-    /// would make the drop remove the wrong table. So refuse the rename while a drop runs, and make the drop
-    /// wait for renames in progress. The lock is only tried, so this cannot deadlock with the drop.
-    std::vector<std::shared_lock<SharedMutex>> drop_database_locks;
-    if (!rename.database)
-    {
-        std::set<String> involved_databases;
-        for (const auto & description : descriptions)
-        {
-            involved_databases.insert(description.from_database_name);
-            involved_databases.insert(description.to_database_name);
-        }
-
-        for (const auto & database_name : involved_databases)
-        {
-            auto lock = database_catalog.tryGetLockForRestartReplica(database_name);
-            if (!lock)
-                throw Exception(ErrorCodes::UNFINISHED, "Cannot rename or exchange tables: database {} is being dropped", backQuoteIfNeed(database_name));
-            drop_database_locks.push_back(std::move(*lock));
-        }
-    }
-
     /// Must do it in consistent order.
     for (auto & table_guard : table_guards)
         table_guard.second = database_catalog.getDDLGuard(table_guard.first.database_name, table_guard.first.table_name, nullptr);
@@ -116,6 +149,16 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
     chassert(!rename.rename_if_cannot_exchange || descriptions.size() == 1);
     chassert(!(rename.rename_if_cannot_exchange && rename.exchange));
     auto & database_catalog = DatabaseCatalog::instance();
+
+    /// A `DROP DATABASE` of a database involved here must wait for the whole RENAME, so take the shared lock it waits for.
+    /// Nested RENAMEs of this thread reuse it (see `RenameDatabaseLocks`).
+    std::set<String> databases_to_lock;
+    for (const auto & elem : descriptions)
+    {
+        databases_to_lock.insert(elem.from_database_name);
+        databases_to_lock.insert(elem.to_database_name);
+    }
+    RenameDatabaseLocks database_locks(databases_to_lock);
 
     for (const auto & elem : descriptions)
     {
