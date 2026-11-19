@@ -31,8 +31,8 @@
 #include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/ISource.h>
-#include <Interpreters/castColumn.h>
 #include <Core/Streaming/Settings.h>
 #include <Core/Streaming/CursorTree.h>
 #include <Common/randomSeed.h>
@@ -287,8 +287,16 @@ class MemoryStreamingSource final : public ISource
 {
 public:
     MemoryStreamingSource(
-        SharedHeader header_, std::shared_ptr<const StorageMemory> storage_, bool bounded_, const CursorTreeNodePtr & cursor, ContextPtr context_)
+        SharedHeader header_,
+        NamesAndTypesList columns_,
+        Names nested_arrays_,
+        std::shared_ptr<const StorageMemory> storage_,
+        bool bounded_,
+        const CursorTreeNodePtr & cursor,
+        ContextPtr context_)
         : ISource(header_)
+        , columns_to_read(std::move(columns_))
+        , nested_arrays(std::move(nested_arrays_))
         , storage(std::move(storage_))
         , bounded(bounded_)
         , context(std::move(context_))
@@ -343,6 +351,10 @@ public:
             return Status::Finished;
         }
 
+        /// E.g. a downstream `LIMIT` has got enough rows.
+        if (getPort().isFinished())
+            return Status::Finished;
+
         if (is_async_state)
             return Status::Async;
 
@@ -350,6 +362,14 @@ public:
     }
 
     int schedule() override { return wakeup->fd(); }
+
+    /// Called instead of `prepare` while the source waits for new blocks (`Status::Async`): if the output is closed
+    /// then, wake the source up, so that it finishes without waiting for another change of the data.
+    void onUpdatePorts() override
+    {
+        if (getPort().isFinished())
+            wakeup->notify();
+    }
 
     void onCancel() noexcept override
     {
@@ -399,15 +419,11 @@ protected:
         const auto & block = snapshot->blocks[index];
         ++next_block_number;
 
-        const auto & header = getPort().getHeader();
-        Columns columns;
-        columns.reserve(header.columns());
-        for (const auto & column : header)
-        {
-            /// The structure of the table may have changed since the start of the query.
-            auto stored = block.getColumnOrSubcolumnByName(column.name);
-            columns.push_back(castColumn(stored, column.type)->convertToFullColumnIfConst());
-        }
+        /// The same as an ordinary read: decompresses the columns, casts them to the types at the start of the query
+        /// (the structure of the table may have changed since), and fills the columns absent from older blocks.
+        Columns columns = readColumnsFromMemoryBlock(block, columns_to_read, nested_arrays);
+        for (auto & column : columns)
+            column = column->convertToFullColumnIfConst();
         return Chunk(std::move(columns), block.rows());
     }
 
@@ -427,6 +443,8 @@ private:
         streaming_cursor->merge(cursor);
     }
 
+    const NamesAndTypesList columns_to_read;
+    const Names nested_arrays;
     const std::shared_ptr<const StorageMemory> storage;
     const bool bounded;
     const ContextPtr context;
@@ -458,14 +476,39 @@ void StorageMemory::readImpl(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WATERMARK is not supported for STREAM from a table with engine Memory");
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
+        storage_snapshot->check(column_names);
+        auto columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_names);
+        auto nested_arrays = getArraysOfRequestedNestedFromMemory(columns, storage_snapshot);
         auto header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
         auto source = std::make_shared<MemoryStreamingSource>(
-            header, std::static_pointer_cast<const StorageMemory>(shared_from_this()), !stream_settings.subscribe_for_updates,
-            stream_settings.cursor, context);
+            header, std::move(columns), std::move(nested_arrays), std::static_pointer_cast<const StorageMemory>(shared_from_this()),
+            !stream_settings.subscribe_for_updates, stream_settings.cursor, context);
         source->setStorageLimits(query_info.storage_limits);
         auto step = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
         step->setStepDescription("Read from Memory STREAM");
         query_plan.addStep(std::move(step));
+
+        /// The planner gives the row-level security filter and `PREWHERE` to the storage (as `Memory` supports `PREWHERE`)
+        /// and does not filter the rows itself, so apply them here, the row-level filter first, so that `PREWHERE` is never
+        /// evaluated on the rows the policy hides.
+        if (query_info.row_level_filter)
+        {
+            const auto & row_level_filter = *query_info.row_level_filter;
+            auto filter_step = std::make_unique<FilterStep>(
+                query_plan.getCurrentHeader(), row_level_filter.actions.clone(), row_level_filter.column_name,
+                row_level_filter.do_remove_column);
+            filter_step->setStepDescription("Row-level security filter");
+            query_plan.addStep(std::move(filter_step));
+        }
+        if (query_info.prewhere_info)
+        {
+            const auto & prewhere_info = *query_info.prewhere_info;
+            auto filter_step = std::make_unique<FilterStep>(
+                query_plan.getCurrentHeader(), prewhere_info.prewhere_actions.clone(), prewhere_info.prewhere_column_name,
+                prewhere_info.remove_prewhere_column);
+            filter_step->setStepDescription("PREWHERE");
+            query_plan.addStep(std::move(filter_step));
+        }
         return;
 #else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Streaming queries from a Memory table are not supported on this platform");

@@ -30,6 +30,9 @@ MemoryTableWakeupPtr MemoryTableSubscribers::subscribe()
 {
     auto wakeup = std::make_shared<MemoryTableWakeup>();
     std::lock_guard lock(mutex);
+    /// The subscriptions of the finished queries are removed here as well as in `notify`, so that they do not
+    /// accumulate in a table that is read (e.g. by an incremental refresh) but not written.
+    std::erase_if(wakeups, [](const auto & weak) { return weak.expired(); });
     wakeups.push_back(wakeup);
     num_subscribers.store(wakeups.size(), std::memory_order_relaxed);
     return wakeup;
