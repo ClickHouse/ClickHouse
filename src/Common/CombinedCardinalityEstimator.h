@@ -243,9 +243,12 @@ public:
         else if (container_type == details::ContainerType::MEDIUM)
         {
             toMedium();
-            /// The writer never keeps more than `medium_set_size_max` elements in the medium set
-            /// (it converts to the large container instead), so reject larger sizes before allocating.
-            getContainer<Medium>().read(in, medium_set_size_max);
+            /// The current writer never keeps more than `medium_set_size_max` elements in the medium set
+            /// (it converts to the large container instead), but older servers kept up to four times more
+            /// (up to 18.14 the medium set of a default-precision state held 16384 elements for any type,
+            /// later 8192 until 2019, while the current limit for `String` is 4096). Such states must stay readable,
+            /// so accept up to `4 * medium_set_size_max` and reject larger sizes before allocating.
+            getContainer<Medium>().read(in, 4 * static_cast<size_t>(medium_set_size_max));
         }
         else if (container_type == details::ContainerType::LARGE)
         {
