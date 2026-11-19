@@ -31,7 +31,8 @@ public:
     [[nodiscard]] const AggregateDescriptions & getAggregates() const { return aggregates; }
 
     /// calculates the aggregation keys and the aggregate function arguments from the source columns
-    ActionsDAG buildBeforeAggregationActions();
+    /// stored_keys gets the keys under the names that the part stores, they are not outputs of the actions
+    ActionsDAG buildBeforeAggregationActions(ActionsDAG::NodeRawConstPtrs & stored_keys);
 
     /// the plan that calculates a normal projection with WHERE from a block of the source columns
     QueryPlan buildPlanForNormalProjection(Block source);
@@ -40,10 +41,13 @@ public:
     QueryPlan buildPlanForAggregateProjection(Block source);
 
 private:
-    /// calculates the expressions from the source columns, the outputs have the stored names
+    /// calculates the expressions from the identifiers of the source columns, the outputs have the names that the planner gives
     ActionsDAG buildActions(const QueryTreeNodes & expressions);
 
-    /// the first steps of both plans: reads the block and applies WHERE
+    /// calculates the aggregation keys and the aggregate function arguments
+    ActionsDAG buildKeysAndArgumentsActions();
+
+    /// the first steps of both plans: reads the block under the identifiers of the columns and applies WHERE
     QueryPlan buildPlanForSource(Block source);
 
     /// the last step of both plans: a subquery of IN is an ordinary query, so the step plans it and builds its set
