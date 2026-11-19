@@ -136,7 +136,7 @@ protected:
     bool isBucketInArena(size_t bucket) { return impls[bucket].getAllocator().inArena(); }
 
     /// Whether one more element in `bucket` would make it grow.
-    bool ALWAYS_INLINE isBucketAtFillLimit(size_t bucket) const { return impls[bucket].grower.overflow(impls[bucket].m_size + 1); }
+    [[nodiscard]] bool ALWAYS_INLINE isBucketAtFillLimit(size_t bucket) const { return impls[bucket].grower.overflow(impls[bucket].m_size + 1); }
 
     /// Called before an insert into `bucket`. Grows all buckets at once, so that `bucket` does not grow on its own.
     void ALWAYS_INLINE prepareInsertIntoBucket(size_t bucket)

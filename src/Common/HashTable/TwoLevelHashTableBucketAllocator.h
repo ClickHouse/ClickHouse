@@ -103,7 +103,7 @@ public:
         return new_buf;
     }
 
-    bool inArena() const { return arena != nullptr; }
+    [[nodiscard]] bool inArena() const { return arena != nullptr; }
 
     /// The memory is zero-filled. Every bucket that is placed into the arena takes one reference with `adoptArena`.
     static TwoLevelHashTableArena * createArena(size_t size)
