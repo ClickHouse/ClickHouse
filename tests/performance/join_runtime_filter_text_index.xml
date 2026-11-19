@@ -1,29 +1,38 @@
 <test>
-    <!-- A JOIN runtime filter prunes the granules of the probe side by a `text` index with the `array` tokenizer on the
-         join key, if the filter keeps at most `join_runtime_filter_exact_values_limit / 100` exact keys (100 by default).
+    <!-- A JOIN runtime filter prunes the granules of the probe side by a `text` index with the `array` tokenizer or a
+         `bloom_filter` index on the join key, if the filter keeps at most `join_runtime_filter_exact_values_limit / 100`
+         exact keys (100 by default). Each table has both indexes, and a query ignores one of them to measure the other.
          `fact_clustered` holds every key in 200 consecutive rows, so a few keys select a few granules.
-         `fact_spread` places the keys at random, so nearly every granule holds one of even 100 keys, nothing can be
-         skipped, and the analysis must not cost more than it saves. -->
+         `fact_spread` places the keys at random, about 100 rows per key: one key is in about 8% of the granules,
+         10 keys in about 56%, and 100 keys in nearly all of them, so the analysis must not cost more than it saves. -->
     <settings>
         <!-- Brings the run time of the queries without pruning above 0.1 s. -->
         <max_threads>1</max_threads>
     </settings>
 
-    <create_query>CREATE TABLE fact_clustered (id UInt64, s String, v UInt64, INDEX idx_s s TYPE text(tokenizer = 'array')) ENGINE = MergeTree ORDER BY id</create_query>
-    <create_query>CREATE TABLE fact_spread (id UInt64, s String, v UInt64, INDEX idx_s s TYPE text(tokenizer = 'array')) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE fact_clustered (id UInt64, s String, v UInt64, INDEX idx_text s TYPE text(tokenizer = 'array'), INDEX idx_bloom s TYPE bloom_filter) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE fact_spread (id UInt64, s String, v UInt64, INDEX idx_text s TYPE text(tokenizer = 'array'), INDEX idx_bloom s TYPE bloom_filter) ENGINE = MergeTree ORDER BY id</create_query>
     <create_query>CREATE TABLE dim (s String, n UInt64) ENGINE = MergeTree ORDER BY s</create_query>
 
     <fill_query>INSERT INTO fact_clustered SELECT number, concat('k', toString(intDiv(number, 200))), number FROM numbers(20000000)</fill_query>
     <fill_query>INSERT INTO fact_spread SELECT number, concat('k', toString(cityHash64(number) % 100000)), number FROM numbers(10000000)</fill_query>
     <fill_query>INSERT INTO dim SELECT concat('k', toString(number)), number FROM numbers(100000)</fill_query>
 
-    <!-- 100 keys: the text index skips most granules. -->
-    <query>SELECT sum(f.v) FROM fact_clustered AS f INNER JOIN dim AS d ON f.s = d.s WHERE d.n &lt; 100</query>
-    <!-- 4000 keys: above the limit, the text index is not used. -->
+    <!-- 100 keys: either index skips most granules. -->
+    <query>SELECT sum(f.v) FROM fact_clustered AS f INNER JOIN dim AS d ON f.s = d.s WHERE d.n &lt; 100 SETTINGS ignore_data_skipping_indices = 'idx_bloom'</query>
+    <query>SELECT sum(f.v) FROM fact_clustered AS f INNER JOIN dim AS d ON f.s = d.s WHERE d.n &lt; 100 SETTINGS ignore_data_skipping_indices = 'idx_text'</query>
+    <!-- 4000 keys: above the limit, neither index is used. -->
     <query>SELECT sum(f.v) FROM fact_clustered AS f INNER JOIN dim AS d ON f.s = d.s WHERE d.n &lt; 4000</query>
-    <!-- 100 keys spread over all granules: nothing to skip. -->
-    <query>SELECT sum(f.v) FROM fact_spread AS f INNER JOIN dim AS d ON f.s = d.s WHERE d.n &lt; 100</query>
-    <!-- 4000 keys spread over all granules: above the limit, the text index is not used. -->
+
+    <!-- 1 key spread over the table: most granules are skipped. -->
+    <query>SELECT sum(f.v) FROM fact_spread AS f INNER JOIN dim AS d ON f.s = d.s WHERE d.n &lt; 1 SETTINGS ignore_data_skipping_indices = 'idx_bloom'</query>
+    <!-- 10 keys spread over the table: about half of the granules are skipped. -->
+    <query>SELECT sum(f.v) FROM fact_spread AS f INNER JOIN dim AS d ON f.s = d.s WHERE d.n &lt; 10 SETTINGS ignore_data_skipping_indices = 'idx_bloom'</query>
+    <query>SELECT sum(f.v) FROM fact_spread AS f INNER JOIN dim AS d ON f.s = d.s WHERE d.n &lt; 10 SETTINGS ignore_data_skipping_indices = 'idx_text'</query>
+    <!-- 100 keys spread over the table: nothing to skip. -->
+    <query>SELECT sum(f.v) FROM fact_spread AS f INNER JOIN dim AS d ON f.s = d.s WHERE d.n &lt; 100 SETTINGS ignore_data_skipping_indices = 'idx_bloom'</query>
+    <query>SELECT sum(f.v) FROM fact_spread AS f INNER JOIN dim AS d ON f.s = d.s WHERE d.n &lt; 100 SETTINGS ignore_data_skipping_indices = 'idx_text'</query>
+    <!-- 4000 keys spread over the table: above the limit, neither index is used. -->
     <query>SELECT sum(f.v) FROM fact_spread AS f INNER JOIN dim AS d ON f.s = d.s WHERE d.n &lt; 4000</query>
 
     <drop_query>DROP TABLE IF EXISTS fact_clustered</drop_query>
