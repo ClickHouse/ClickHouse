@@ -414,13 +414,12 @@ private:
     std::condition_variable cv;
     /// Dedups concurrent increasePriority() calls; a pure try-lock, so an atomic flag is enough.
     std::atomic_flag increasing_priority;
-    /// Guarded by `segment_guard`: whether the file segment is counted in `FileCacheSegmentSizes`, and the
-    /// `reserved_size` that it and the efficiency counters hold. `reserved_size` changes without the lock, so
-    /// `accountReservedSize` counts the difference.
+    /// Guarded by `segment_guard`: whether the file segment is counted in `FileCacheSegmentSizes`, its size class
+    /// there, and the `reserved_size` that it and the efficiency counters hold. `reserved_size` changes without the
+    /// lock, so `accountReservedSize` counts the difference. The small fields fill the padding after `increasing_priority`.
     bool counted_in_segment_sizes = false;
-    size_t reserved_size_accounted = 0;
-    /// Guarded by `segment_guard`.
     FileCacheSegmentSizes::Class size_class;
+    size_t reserved_size_accounted = 0;
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     /// Per-segment logger with a unique name; only in debug/sanitizer builds.
