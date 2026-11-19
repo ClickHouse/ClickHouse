@@ -6,6 +6,8 @@
 #include <Core/UUID.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
+#include <unordered_set>
+
 namespace ProfileEvents
 {
     extern const Event VectorSimilarityIndexCacheMisses;
@@ -130,6 +132,15 @@ public:
     void removeEntriesFromCache(const String & path_to_data_part)
     {
         Base::remove([path_to_data_part](const Key & key, const MappedPtr &) { return key.path_to_data_part == path_to_data_part; });
+    }
+
+    /// Keeps `CacheBase::clear`, which clears the whole cache, visible next to the overload below.
+    using Base::clear;
+
+    /// Removes the entries of several data parts.
+    void clear(const std::unordered_set<String> & paths_to_data_parts)
+    {
+        Base::remove([&](const Key & key, const MappedPtr &) { return paths_to_data_parts.contains(key.path_to_data_part); });
     }
 
 private:
