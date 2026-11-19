@@ -33,10 +33,10 @@ namespace ErrorCodes
 class AggregationImplementation : public IOptimizationRule
 {
 public:
-    String getName() const override { return "Aggregation"; }
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
-    Promise getPromise() const override { return 3000; }
-    bool isTransformation() const override { return false; }
+    [[nodiscard]] String getName() const override { return "Aggregation"; }
+    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
+    [[nodiscard]] Promise getPromise() const override { return 3000; }
+    [[nodiscard]] bool isTransformation() const override { return false; }
 
     class StrategyEnumerator;
 
@@ -62,7 +62,7 @@ public:
     void addSingleKeyShuffleAggregations(const std::vector<size_t> & candidate_node_counts);
 
     /// See `addShuffleAggregation` for why each condition disables the shuffle strategy.
-    bool isShuffleApplicable() const
+    [[nodiscard]] bool isShuffleApplicable() const
     {
         return !agg_step.getParams().keys.empty()
             && !agg_step.isGroupingSets()
@@ -70,7 +70,10 @@ public:
             && agg_step.getParams().max_rows_to_group_by == 0;
     }
 
-    bool hasMultipleKeys() const { return agg_step.getParams().keys.size() >= 2; }
+    [[nodiscard]] bool hasMultipleKeys() const { return agg_step.getParams().keys.size() >= 2; }
+
+    /// After this call the Shuffle strategy does not accept an exchange that makes the distribution of its input.
+    void requireShuffleInputWithoutExchange() { shuffle_input_without_enforcer = true; }
 
 private:
     /// Clones the aggregation step with the given description into a physical alternative
@@ -87,6 +90,7 @@ private:
     const ExpressionProperties & required_properties;
     Memo & memo;
     std::vector<GroupExpressionPtr> & result;
+    bool shuffle_input_without_enforcer = false;
 };
 
 /// Logical transformation that splits a single-phase Agg into a two-phase plan:
@@ -104,15 +108,41 @@ private:
 class TwoStageAggregationTransformation : public IOptimizationRule
 {
 public:
-    String getName() const override { return "TwoStageAggregation"; }
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
-    Promise getPromise() const override { return 2000; }
-    bool isTransformation() const override { return true; }
+    [[nodiscard]] String getName() const override { return "TwoStageAggregation"; }
+    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
+    [[nodiscard]] Promise getPromise() const override { return 2000; }
+    [[nodiscard]] bool isTransformation() const override { return true; }
 
 protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
+
+/// Whether the statistics of the input cannot show how much the aggregation reduces its input: a key has
+/// no distinct count, so the group count is a default value, and no other key already shows that there
+/// are fewer than two rows for each group.
+static bool isGroupCountUnknown(const Names & keys, const Group & input_group)
+{
+    if (!input_group.statistics)
+        return true;
+
+    const auto & column_statistics = input_group.statistics->column_statistics;
+    bool has_key_without_distinct_count = false;
+    UInt64 largest_distinct_count = 0;
+    for (const auto & key : keys)
+    {
+        auto key_statistics = column_statistics.find(key);
+        if (key_statistics == column_statistics.end() || key_statistics->second.num_distinct_values == 0)
+            has_key_without_distinct_count = true;
+        else
+            largest_distinct_count = std::max(largest_distinct_count, key_statistics->second.num_distinct_values);
+    }
+    /// There are at least as many groups as values of one key. The count is compared with the largest
+    /// possible number of input rows, because the estimate of the rows after a filter or a join can be
+    /// a guess itself.
+    return has_key_without_distinct_count
+        && Float64(largest_distinct_count) * 2 <= input_group.statistics->max_row_count;
+}
 
 bool AggregationImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
 {
@@ -152,6 +182,8 @@ void AggregationImplementation::StrategyEnumerator::addAlternative(
     alternative->plan_step = std::move(new_step);
     alternative->strategy = std::move(strategy);
     alternative->inputs[0].required_properties.distribution = input_dist;
+    if (alternative->strategy == strategySingleton<ShuffleAggregationStrategy>())
+        alternative->inputs[0].required_properties.distribution.without_enforcer = shuffle_input_without_enforcer;
     alternative->properties.distribution = output_dist;
 
     rule.addPhysicalToMemo(alternative, required_properties, memo, result);
@@ -280,6 +312,25 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
     if (candidate_node_counts.empty())
         return result;
 
+    /// A shuffle of the input rows is better than a shuffle of partial states only when the aggregation
+    /// makes about as many groups as it has input rows. When the group count is not known, the costs
+    /// cannot show this, and a wrong shuffle of the input rows moves much more data than a wrong
+    /// shuffle of the states. The Shuffle strategy then takes only an input that already has the
+    /// distribution, for example the output of a shuffle join by a key. For other inputs the two-stage
+    /// aggregation is the distributed alternative.
+    const auto & context = memo.getContext();
+    const bool can_shuffle_partial_states = context.distributed_plan_partial_aggregation_before_shuffle
+        && !context.distributed_plan_force_shuffle_aggregation
+        && !agg_step->getParams().only_merge
+        && !agg_step->shouldProduceResultsInBucketOrder()
+        && !agg_step->inOrder()
+        && !agg_step->explicitSortingRequired();
+    const bool group_count_is_unknown
+        = isGroupCountUnknown(agg_step->getParams().keys, *memo.getGroup(expression->inputs.front().group_id));
+
+    if (can_shuffle_partial_states && group_count_is_unknown)
+        strategies.requireShuffleInputWithoutExchange();
+
     if (strategies.isShuffleApplicable())
     {
         for (size_t candidate_node_count : candidate_node_counts)
@@ -403,10 +454,10 @@ OptimizationRulePtr createTwoStageAggregationTransformation() { return std::make
 class MergingAggregationImplementation : public IOptimizationRule
 {
 public:
-    String getName() const override { return "MergingAggregation"; }
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
-    Promise getPromise() const override { return 3000; }
-    bool isTransformation() const override { return false; }
+    [[nodiscard]] String getName() const override { return "MergingAggregation"; }
+    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
+    [[nodiscard]] Promise getPromise() const override { return 3000; }
+    [[nodiscard]] bool isTransformation() const override { return false; }
 
 protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;

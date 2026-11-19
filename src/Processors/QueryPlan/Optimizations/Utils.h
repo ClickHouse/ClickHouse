@@ -8,6 +8,7 @@
 
 #include <type_traits>
 #include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -97,7 +98,7 @@ enum class FilterResult
 [[nodiscard]] bool canHoistGatherThroughStep(const IQueryPlanStep & step);
 
 /// Columns of each node's output that are a constant there, or below it where a filter pushed down from above can read them.
-using ConstantColumns = std::unordered_map<const QueryPlan::Node *, NameSet>;
+using ConstantColumns = UnorderedMapWithMemoryTracking<const QueryPlan::Node *, NameSet>;
 
 [[nodiscard]] ConstantColumns collectConstantColumns(const QueryPlan::Node & root);
 
