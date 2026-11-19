@@ -322,7 +322,7 @@ VectorWithMemoryTracking<std::optional<size_t>> DataTypeTuple::matchElementsByNa
 }
 
 VectorWithMemoryTracking<std::optional<size_t>> DataTypeTuple::matchElementsByName(
-    const Strings & from_names, const Strings & to_names, bool case_insensitive)
+    const Strings & from_names, const Strings & to_names, bool case_insensitive, bool * ambiguous)
 {
     UnorderedMapWithMemoryTracking<std::string_view, size_t> positions_by_name;
     positions_by_name.reserve(from_names.size());
@@ -353,7 +353,13 @@ VectorWithMemoryTracking<std::optional<size_t>> DataTypeTuple::matchElementsByNa
             if (!boost::iequals(from_names[j], to_names[i]))
                 continue;
             if (match)
-                throwAmbiguousCaseInsensitiveName(to_names[i], from_names[*match], from_names[j]);
+            {
+                if (!ambiguous)
+                    throwAmbiguousCaseInsensitiveName(to_names[i], from_names[*match], from_names[j]);
+                *ambiguous = true;
+                match.reset();
+                break;
+            }
             match = j;
         }
         if (match && !taken[*match])

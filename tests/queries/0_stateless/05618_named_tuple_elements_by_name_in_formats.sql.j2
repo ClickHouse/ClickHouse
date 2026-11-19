@@ -91,11 +91,15 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05618_union.ORC', 'ORC') SELECT
     [CAST(CAST(tuple(NULL), 'Tuple(a Nullable(Int8))'), 'Variant(Tuple(a Nullable(Int8)), String)'), NULL][number + 1] AS v1,
     CAST([1, NULL]::Array(Nullable(Int8)), 'Variant(Array(Nullable(Int8)), String)') AS v2,
     CAST(CAST(('hello', 42), 'Tuple(A String, a Int32)'), 'Variant(Tuple(A String, a Int32), UInt64)') AS v3,
-    CAST(CAST((11, 'x'), 'Tuple(AB Int32, ab String)'), 'Variant(Tuple(AB Int32, ab String), UInt64)') AS v4
-FROM numbers(2);
+    CAST(CAST((11, 'x'), 'Tuple(AB Int32, ab String)'), 'Variant(Tuple(AB Int32, ab String), UInt64)') AS v4,
+    [CAST(CAST((11, 22), 'Tuple(AB Int32, ab Int32)'), 'Variant(Tuple(AB Int32, ab Int32), Tuple(Ab String))'),
+     CAST(CAST(tuple('x'), 'Tuple(Ab String)'), 'Variant(Tuple(AB Int32, ab Int32), Tuple(Ab String))')][number + 1] AS v5
+FROM numbers(2) SETTINGS allow_suspicious_variant_types = 1;
 SELECT * FROM file(currentDatabase() || '_05618_union.ORC', 'ORC', 'id UInt64, v1 Variant(Tuple(a Int8), String), v2 Variant(Array(Int8), String)') ORDER BY id SETTINGS input_format_null_as_default = 1;
 SELECT * FROM file(currentDatabase() || '_05618_union.ORC', 'ORC', 'id UInt64, v3 Variant(Tuple(A String, a Int64), UInt64), v4 Variant(Tuple(ab String, AB Int64), UInt64)') ORDER BY id SETTINGS input_format_orc_case_insensitive_column_matching = 1;
 SELECT * FROM file(currentDatabase() || '_05618_union.ORC', 'ORC', 'id UInt64, v4 Variant(Tuple(Ab Int64, aB String), UInt64)') ORDER BY id SETTINGS input_format_orc_case_insensitive_column_matching = 1; -- { serverError AMBIGUOUS_COLUMN_NAME }
+SELECT id, v5 FROM file(currentDatabase() || '_05618_union.ORC', 'ORC', 'id UInt64, v5 Variant(Tuple(AB Int64, ab Int32), Tuple(Ab String))') ORDER BY id SETTINGS input_format_orc_case_insensitive_column_matching = 1, allow_suspicious_variant_types = 1;
+SELECT id, v5 FROM file(currentDatabase() || '_05618_union.ORC', 'ORC') ORDER BY id SETTINGS input_format_orc_case_insensitive_column_matching = 1, allow_suspicious_variant_types = 1;
 SELECT id, c3, c4 FROM file(currentDatabase() || '_05618_ci.ORC', 'ORC', 'id UInt32, c3 Tuple(ab Int32, AB Int32), c4 Tuple(AB Int32, Ab Int32)') WHERE c3.ab = 22 AND c4.AB = 22 ORDER BY id SETTINGS input_format_orc_case_insensitive_column_matching = 1, input_format_orc_filter_push_down = 1, optimize_functions_to_subcolumns = 1;
 SELECT count() FROM file(currentDatabase() || '_05618_ci.ORC', 'ORC', 'id UInt32, c3 Tuple(ab Int32, AB Int32), c4 Tuple(AB Int32, Ab Int32)') WHERE c3.ab = 11 OR c4.AB = 11 SETTINGS input_format_orc_case_insensitive_column_matching = 1, input_format_orc_filter_push_down = 1, optimize_functions_to_subcolumns = 1, log_comment = '05618_orc_push_down';
 SYSTEM FLUSH LOGS query_log;

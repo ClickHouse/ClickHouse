@@ -1163,18 +1163,19 @@ static const ORC::Type * traverseDownORCTypeByName(
 /// Forward declarations: updateIncludeTypeIds needs the union branch-hint machinery (defined
 /// below, near readColumnFromORCColumn, which is where it is also used) to prune struct-branch
 /// fields the same way the read path does. See computeOrcUnionBranchHints.
-static bool orcUnionBranchMatchesType(const ORC::Type * orc_branch_type, const DataTypePtr & target_type, bool case_insensitive);
+static bool orcUnionBranchMatchesType(
+    const ORC::Type * orc_branch_type, const DataTypePtr & target_type, bool case_insensitive, bool * ambiguous);
 static bool orcUnionBranchPrefersType(const ORC::Type * orc_branch_type, const DataTypePtr & target_type);
 static DataTypes computeOrcUnionBranchHints(const ORC::Type * orc_type, const DataTypePtr & type_hint, bool case_insensitive_matching);
 
 /// The field of an ORC struct that each of the element names of a named tuple takes, paired as the cast to the tuple pairs them.
 static VectorWithMemoryTracking<std::optional<size_t>> matchORCStructFieldsByName(
-    const ORC::Type * orc_type, const Strings & element_names, bool ignore_case)
+    const ORC::Type * orc_type, const Strings & element_names, bool ignore_case, bool * ambiguous = nullptr)
 {
     Strings field_names(orc_type->getSubtypeCount());
     for (size_t i = 0; i < field_names.size(); ++i)
         field_names[i] = orc_type->getFieldName(i);
-    return DataTypeTuple::matchElementsByName(field_names, element_names, ignore_case);
+    return DataTypeTuple::matchElementsByName(field_names, element_names, ignore_case, ambiguous);
 }
 
 static std::optional<size_t> findORCStructFieldByName(const ORC::Type * orc_type, const String & name, bool ignore_case)
@@ -2590,8 +2591,11 @@ static bool orcIntegerBranchWidensTo(const DataTypePtr & type, size_t orc_size)
 /// tuple with explicit names matches by field name and may project and reorder the ORC struct's
 /// fields (the per-branch repair cast then projects/reorders the read tuple to exactly the target),
 /// while an unnamed target tuple is matched positionally with the same arity. `case_insensitive`
-/// mirrors `input_format_orc_case_insensitive_column_matching` for that name-based matching.
-static bool orcUnionBranchMatchesType(const ORC::Type * orc_branch_type, const DataTypePtr & target_type, bool case_insensitive)
+/// mirrors `input_format_orc_case_insensitive_column_matching` for that name-based matching. A name
+/// that matches several fields only case-insensitively sets `*ambiguous` and does not match, or, if
+/// `ambiguous` is null, throws AMBIGUOUS_COLUMN_NAME.
+static bool orcUnionBranchMatchesType(
+    const ORC::Type * orc_branch_type, const DataTypePtr & target_type, bool case_insensitive, bool * ambiguous)
 {
     checkStackSize();
 
@@ -2640,14 +2644,14 @@ static bool orcUnionBranchMatchesType(const ORC::Type * orc_branch_type, const D
         case ORC::TypeKind::LIST:
             return which.isArray() && orc_branch_type->getSubtypeCount() == 1
                 && orcUnionBranchMatchesType(
-                    orc_branch_type->getSubtype(0), assert_cast<const DataTypeArray &>(*type).getNestedType(), case_insensitive);
+                    orc_branch_type->getSubtype(0), assert_cast<const DataTypeArray &>(*type).getNestedType(), case_insensitive, ambiguous);
         case ORC::TypeKind::MAP:
         {
             if (!which.isMap() || orc_branch_type->getSubtypeCount() != 2)
                 return false;
             const auto & map_type = assert_cast<const DataTypeMap &>(*type);
-            return orcUnionBranchMatchesType(orc_branch_type->getSubtype(0), map_type.getKeyType(), case_insensitive)
-                && orcUnionBranchMatchesType(orc_branch_type->getSubtype(1), map_type.getValueType(), case_insensitive);
+            return orcUnionBranchMatchesType(orc_branch_type->getSubtype(0), map_type.getKeyType(), case_insensitive, ambiguous)
+                && orcUnionBranchMatchesType(orc_branch_type->getSubtype(1), map_type.getValueType(), case_insensitive, ambiguous);
         }
         case ORC::TypeKind::STRUCT:
         {
@@ -2661,10 +2665,12 @@ static bool orcUnionBranchMatchesType(const ORC::Type * orc_branch_type, const D
                 /// a subset of the ORC struct's fields, in any order. Each target field must map to
                 /// an ORC field with a recursively matching type; extra ORC fields are projected out
                 /// by the repair cast.
-                const auto field_positions = matchORCStructFieldsByName(orc_branch_type, tuple_type.getElementNames(), case_insensitive);
+                const auto field_positions
+                    = matchORCStructFieldsByName(orc_branch_type, tuple_type.getElementNames(), case_insensitive, ambiguous);
                 for (size_t i = 0; i < elements.size(); ++i)
                     if (!field_positions[i]
-                        || !orcUnionBranchMatchesType(orc_branch_type->getSubtype(*field_positions[i]), elements[i], case_insensitive))
+                        || !orcUnionBranchMatchesType(
+                            orc_branch_type->getSubtype(*field_positions[i]), elements[i], case_insensitive, ambiguous))
                         return false;
                 return true;
             }
@@ -2673,7 +2679,7 @@ static bool orcUnionBranchMatchesType(const ORC::Type * orc_branch_type, const D
             if (elements.size() != orc_branch_type->getSubtypeCount())
                 return false;
             for (size_t i = 0; i < elements.size(); ++i)
-                if (!orcUnionBranchMatchesType(orc_branch_type->getSubtype(i), elements[i], case_insensitive))
+                if (!orcUnionBranchMatchesType(orc_branch_type->getSubtype(i), elements[i], case_insensitive, ambiguous))
                     return false;
             return true;
         }
@@ -2757,9 +2763,16 @@ static DataTypes computeOrcUnionBranchHints(const ORC::Type * orc_type, const Da
     const auto & alternatives = variant_hint->getVariants();
     VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> candidates(num_children);
     for (size_t i = 0; i < num_children; ++i)
+    {
+        bool ambiguous = false;
         for (size_t a = 0; a < alternatives.size(); ++a)
-            if (orcUnionBranchMatchesType(orc_type->getSubtype(i), alternatives[a], case_insensitive_matching))
+            if (orcUnionBranchMatchesType(orc_type->getSubtype(i), alternatives[a], case_insensitive_matching, &ambiguous))
                 candidates[i].push_back(a);
+        /// No alternative fits the branch and one of them names an ambiguous field: fail on that name, as a struct read does.
+        if (candidates[i].empty() && ambiguous)
+            for (const auto & alternative : alternatives)
+                orcUnionBranchMatchesType(orc_type->getSubtype(i), alternative, case_insensitive_matching, /*ambiguous=*/nullptr);
+    }
 
     VectorWithMemoryTracking<bool> alternative_taken(alternatives.size(), false);
     const auto preferred_candidates = [&](size_t i)
