@@ -7,7 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # 1. With `uuid_type_version = 2`, a bare `UUID` introduced by a SQL UDF called from an `APPLY` transformer (both the
 #    lambda form and the named form) is materialized as `UUID2`, as for an ordinary call of the UDF.
 # 2. The first argument of the two-argument `loop(database, table)` is a scalar database name, so a scalar `format`
-#    there is not treated as a table function and its arguments are not rewritten.
+#    there is not treated as a table function and its arguments are not rewritten. `loop` cannot be used to create a
+#    table by itself, so it is nested in `remote`.
 # 3. The `values` table function keeps a value whose type is the destination type as is, including the active
 #    alternatives of nested `Variant` values.
 
@@ -47,7 +48,7 @@ ALTER TABLE t_apply_mv MODIFY QUERY SELECT * APPLY(x -> ${function_name}(x)) FRO
 SELECT replaceAll(as_select, currentDatabase() || '.', '') FROM system.tables WHERE database = currentDatabase() AND name = 't_apply_mv';
 
 SELECT 'loop with a scalar database name';
-CREATE TABLE t_loop_scalar_database (k UInt8) AS loop(format('{}{}', 'id UUID', 'db'), 'source');
+CREATE TABLE t_loop_scalar_database (k UInt8) AS remote('127.0.0.1', loop(format('{}{}', 'id UUID', 'db'), 'source'));
 SELECT position(create_table_query, 'UUID2') = 0 FROM system.tables WHERE database = currentDatabase() AND name = 't_loop_scalar_database';
 
 SELECT 'values with the destination type';

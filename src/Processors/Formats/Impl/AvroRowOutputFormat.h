@@ -66,7 +66,7 @@ public:
     /// Dotted paths (see `column_path` below) of the `UUID2` values. Avro has a single `uuid` logical type for both
     /// ClickHouse UUID types, so the writer records them in the file metadata (`AVRO_UUID2_PATHS_METADATA_KEY`) to
     /// let schema inference tell `UUID2` apart from `UUID`.
-    const Strings & getUUID2Paths() const { return uuid2_paths; }
+    [[nodiscard]] const Strings & getUUID2Paths() const { return uuid2_paths; }
     void serializeRow(const Columns & columns, size_t row_num, avro::Encoder & encoder);
 
     using SerializeFn = std::function<void(const IColumn & column, size_t row_num, avro::Encoder & encoder)>;
