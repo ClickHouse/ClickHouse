@@ -1292,7 +1292,7 @@ protected:
         {
             task_description.task = task;
             started_tasks.emplace_back(startTask(task_description, started_threads).share());
-            /// TODO AI made this decision: the exception the per-task copies of the plan once raised here (05407).
+            /// Stands for the exception the per-task copies of the plan once raised here (05407).
             fiu_do_on(FailPoints::distributed_plan_local_start_stage_fails_after_first_task,
             {
                 throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while starting the local tasks of stage {}", stage_name);
@@ -1483,7 +1483,7 @@ void TaskToHostMap::assignHostsForTasks(const DistributedQueryPlan & distributed
         {
             const auto & assigned_worker = worker_addresses[current_host];
             task_worker_indices[task.task_id] = current_host;
-            // TODO it would be better to split his logic of assinged worker to host asignment so we have dedicated function with logic
+            // TODO it would be better to split this logic of assigned worker to host assignment so we have dedicated function with logic
             current_host = (current_host + 1) % worker_addresses.size();
             for (const auto & output_stream : task.output_exchange_streams)
                 exchange_stream_source_hosts[output_stream.toString()] = {assigned_worker.host, assigned_worker.streaming_exchange_port};
