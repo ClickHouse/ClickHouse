@@ -1,0 +1,22 @@
+layout
+4	[1000,1000,1000,1000]
+42000
+chunk statistics
+1	1	1	1
+long values are not pruned
+1
+1
+1
+pruning
+10
+10
+05831_full_scan	40	0	0
+05831_page_pruning	2	8	3
+05831_row_group_pruning	1	9	3
+utf-8
+1	1	1	1
+1
+1
+no upper bound
+\N	\N
+1

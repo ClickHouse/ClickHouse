@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstring>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <base/types.h>
 #include <Common/BitHelpers.h>
 
@@ -108,6 +110,13 @@ constexpr bool isSurrogateCodePoint(UInt32 code_point)
 {
     return code_point >= 0xD800 && code_point <= 0xDFFF;
 }
+
+/// A prefix of at most `max_size` bytes that does not split a UTF-8 character. Not greater than `value`.
+std::string_view truncateStringLowerBound(std::string_view value, size_t max_size);
+
+/// A string of about `max_size` bytes greater than `value` and every string with the same prefix:
+/// the last character of the truncated prefix is incremented. `std::nullopt` if there is no such string.
+std::optional<std::string> truncateStringUpperBound(std::string_view value, size_t max_size);
 
 
 /// returns UTF-8 wcswidth. Invalid sequence is treated as zero width character.

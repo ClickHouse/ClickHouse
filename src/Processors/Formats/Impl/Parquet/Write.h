@@ -117,7 +117,7 @@ struct ColumnChunkIndexes
 {
     parq::ColumnIndex column_index; // if write_page_index
     parq::OffsetIndex offset_index; // if write_page_index
-    /// Set to false when a non-null page has stats dropped (e.g. value exceeded max_statistics_size).
+    /// Set to false when a non-null page has stats dropped (e.g. a too-long maximum that has no shorter upper bound).
     /// When false, the column index must not be written because it would contain invalid bounds.
     bool column_index_valid = true;
     /// Set to false when a page had to start in the middle of a record, which the offset index
