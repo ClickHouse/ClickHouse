@@ -34,7 +34,7 @@ FROM numbers(1000);
 
 SELECT count(), countIf(has(s1, 'token1')), countIf(has(s4, 'fourth1')) FROM skip_indexes_adaptive_wb_{{ v }};
 
-CHECK TABLE skip_indexes_adaptive_wb_{{ v }};
+CHECK TABLE skip_indexes_adaptive_wb_{{ v }} SETTINGS check_query_single_value_result = 1;
 {% endfor %}
 
 SYSTEM FLUSH LOGS;
