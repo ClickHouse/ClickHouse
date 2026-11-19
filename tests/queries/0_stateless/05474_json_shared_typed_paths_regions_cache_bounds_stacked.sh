@@ -11,9 +11,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ALIGNMENT=$((1024 * 1024))
 
 # The region of b is the one contiguous block of cached segments over 1 MiB; the header and marks slices are small
-# isolated segments elsewhere in the file. The region's own edge segments can be smaller than 1 MiB when the read is
-# fragmented, so the region is found as the largest contiguous island of segments rather than filtered by size; its
-# min begin and max end are then the region's true bounds, which must not be 1 MiB-aligned.
+# isolated segments elsewhere in the file. The region is found as the largest contiguous island of segments. Its min
+# begin must not be 1 MiB-aligned: without bounds the cache would align the segment down to the 1 MiB boundary below
+# the region, and that first segment is always cached, so this is a stable witness that the bounds clamp the read on
+# both caches. The region's end is not checked: its last segment is clamped to a non-aligned offset too, but prefetch
+# or eviction can leave it uncached, which would make the max end fall on an interior aligned boundary.
 outer_cache="${CLICKHOUSE_TEST_UNIQUE_NAME}_outer"
 inner_cache="${CLICKHOUSE_TEST_UNIQUE_NAME}_inner"
 
@@ -52,9 +54,9 @@ SELECT json.b FROM t_cache_bounds_stacked FORMAT Null;
 
 # The region is the only data of more than 1 MiB the read touches: the others are the header and a marks slice.
 $CLICKHOUSE_CLIENT -m -q "
-SELECT cache, count() > 0, min(rb) % $ALIGNMENT != 0, (max(re) + 1) % $ALIGNMENT != 0
+SELECT cache, count() > 0, min(rb) % $ALIGNMENT != 0
 FROM (
-    SELECT cache, min(b) AS rb, max(e) AS re, sum(sz) AS total
+    SELECT cache, min(b) AS rb, sum(sz) AS total
     FROM (
         SELECT cache, file_segment_range_begin AS b, file_segment_range_end AS e, size AS sz,
                sum(if(file_segment_range_begin > prev_e + 1, 1, 0)) OVER (PARTITION BY cache ORDER BY file_segment_range_begin) AS island

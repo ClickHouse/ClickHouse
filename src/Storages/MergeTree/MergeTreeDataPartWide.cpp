@@ -299,17 +299,25 @@ ColumnSize MergeTreeDataPartWide::calculateTotalColumnsReadSize() const
 
 ColumnSize MergeTreeDataPartWide::getColumnReadSize(const NameAndTypePair & column) const
 {
+    /// A column without dynamic subcolumns reads its whole on-disk size (see calculateColumnReadSize), which is already
+    /// known, so there is nothing to cache.
+    if (!column.type->hasDynamicSubcolumns())
+        return getColumnSize(column.name);
+
     {
         std::lock_guard lock(columns_read_sizes_mutex);
-        if (auto it = columns_read_sizes.find(column.name); it != columns_read_sizes.end())
-            return it->second;
+        if (columns_read_sizes)
+            if (auto it = columns_read_sizes->find(column.name); it != columns_read_sizes->end())
+                return it->second;
     }
 
     /// Calculated outside the lock, since it may read the part's prefixes.
     auto size = calculateColumnReadSize(column);
 
     std::lock_guard lock(columns_read_sizes_mutex);
-    return columns_read_sizes.emplace(column.name, size).first->second;
+    if (!columns_read_sizes)
+        columns_read_sizes = std::make_unique<std::map<String, ColumnSize>>();
+    return columns_read_sizes->emplace(column.name, size).first->second;
 }
 
 ColumnSize MergeTreeDataPartWide::calculateColumnReadSize(const NameAndTypePair & column) const

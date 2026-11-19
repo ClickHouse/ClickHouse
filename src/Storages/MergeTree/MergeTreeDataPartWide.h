@@ -89,7 +89,9 @@ private:
     std::unordered_map<String, std::vector<StreamWithSizeHint>> getListOfStreamsForColumns(const NamesAndTypesList & columns) const;
 
     mutable std::mutex columns_read_sizes_mutex;
-    mutable std::map<String, ColumnSize> columns_read_sizes TSA_GUARDED_BY(columns_read_sizes_mutex);
+    /// Only a column with dynamic subcolumns has a read size below its on-disk size, so this is populated (and
+    /// allocated) only on parts that have such a column.
+    mutable std::unique_ptr<std::map<String, ColumnSize>> columns_read_sizes TSA_GUARDED_BY(columns_read_sizes_mutex);
 };
 
 }

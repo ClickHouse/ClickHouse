@@ -1075,7 +1075,8 @@ private:
     mutable std::atomic_bool cleared_data_in_caches = false;
 
     mutable std::mutex registered_mark_cache_keys_mutex;
-    mutable std::unordered_set<UInt128, UInt128TrivialHash> registered_mark_cache_keys TSA_GUARDED_BY(registered_mark_cache_keys_mutex);
+    /// Only a region read of a JSON column registers keys here, so it stays unallocated on other parts.
+    mutable std::unique_ptr<std::unordered_set<UInt128, UInt128TrivialHash>> registered_mark_cache_keys TSA_GUARDED_BY(registered_mark_cache_keys_mutex);
 
     /// If it's true then the statistics of this part may have been put into the statistics cache.
     mutable std::atomic_bool may_store_data_in_statistics_cache = false;

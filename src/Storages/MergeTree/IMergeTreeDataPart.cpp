@@ -1085,7 +1085,9 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
 void IMergeTreeDataPart::registerMarkCacheKey(UInt128 key) const
 {
     std::lock_guard lock(registered_mark_cache_keys_mutex);
-    registered_mark_cache_keys.insert(key);
+    if (!registered_mark_cache_keys)
+        registered_mark_cache_keys = std::make_unique<std::unordered_set<UInt128, UInt128TrivialHash>>();
+    registered_mark_cache_keys->insert(key);
 }
 
 void IMergeTreeDataPart::removeRegisteredMarksFromCache(MarkCache * mark_cache) const
@@ -1094,9 +1096,11 @@ void IMergeTreeDataPart::removeRegisteredMarksFromCache(MarkCache * mark_cache) 
         return;
 
     std::lock_guard lock(registered_mark_cache_keys_mutex);
-    for (const auto & key : registered_mark_cache_keys)
+    if (!registered_mark_cache_keys)
+        return;
+    for (const auto & key : *registered_mark_cache_keys)
         mark_cache->remove(key);
-    registered_mark_cache_keys.clear();
+    registered_mark_cache_keys->clear();
 }
 
 void IMergeTreeDataPart::clearCaches()
