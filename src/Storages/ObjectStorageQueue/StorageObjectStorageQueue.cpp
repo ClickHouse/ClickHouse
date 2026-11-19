@@ -1842,7 +1842,7 @@ void StorageObjectStorageQueue::alter(
         std::optional<ObjectStorageQueueSettings> settings_in_keeper;
         auto differs_from_queue = [&](const SettingChange & setting)
         {
-            if (!ObjectStorageQueueTableMetadata::isStoredInKeeper(setting.name))
+            if (!ObjectStorageQueueTableMetadata::isStoredInKeeper(setting.name) || !isSettingChangeable(setting.name, mode))
                 return false;
             if (settings_in_memory.get(setting.name) != setting.value)
                 return true;

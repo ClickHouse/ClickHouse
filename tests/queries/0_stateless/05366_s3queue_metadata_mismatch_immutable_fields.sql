@@ -150,11 +150,16 @@ ALTER TABLE tq_a MODIFY SETTING processing_threads_num = 2;
 ALTER TABLE tq_b MODIFY SETTING processing_threads_num = 1;
 SELECT table, value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table IN ('tq_a', 'tq_b') AND name = 'processing_threads_num' ORDER BY table;
 
--- A setting that the mode does not allow to change can still be repeated with the value of the definition.
+-- A setting that the mode does not allow to change can still be repeated with the value of the definition,
+-- also when the queue uses the value of another table (`tq_o1` uses 4 threads of `tq_o`).
 CREATE TABLE tq_o (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_o/*', NOSIGN, 'CSV') SETTINGS mode = 'ordered', keeper_path = '/clickhouse/{database}/05366_o', processing_threads_num = 4;
+CREATE TABLE tq_o1 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_o/*', NOSIGN, 'CSV') SETTINGS mode = 'ordered', keeper_path = '/clickhouse/{database}/05366_o', processing_threads_num = 1;
 ALTER TABLE tq_o MODIFY SETTING processing_threads_num = 4;
+ALTER TABLE tq_o1 MODIFY SETTING processing_threads_num = 1, polling_max_timeout_ms = 2000;
+SELECT create_table_query LIKE '%processing_threads_num = 1%polling_max_timeout_ms = 2000%' FROM system.tables WHERE database = currentDatabase() AND name = 'tq_o1';
 ALTER TABLE tq_o MODIFY SETTING processing_threads_num = 5; -- { serverError SUPPORT_IS_DISABLED }
 DROP TABLE tq_o;
+DROP TABLE tq_o1;
 
 -- `parallel_inserts` is not stored in keeper, so repeating its value next to another setting changes only the other one.
 CREATE TABLE tq_p (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_p/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_p', parallel_inserts = 1;
