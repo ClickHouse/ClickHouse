@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS fact_split;
 DROP TABLE IF EXISTS fact_preprocessor;
 DROP TABLE IF EXISTS fact_added_index;
 DROP TABLE IF EXISTS dim;
+DROP TABLE IF EXISTS dim_two_keys;
 
 CREATE TABLE fact_array (id UInt64, s String, v UInt64, INDEX idx_s s TYPE text(tokenizer = 'array'))
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 16;
@@ -38,6 +39,9 @@ ALTER TABLE fact_added_index ADD INDEX idx_s s TYPE text(tokenizer = 'array');
 INSERT INTO fact_added_index SELECT * FROM fact_array WHERE id >= 1000;
 -- The hot keys are in both parts of `fact_added_index`.
 INSERT INTO dim SELECT concat('k', leftPad(toString(number), 5, '0')), if(number < 32 OR number BETWEEN 1000 AND 1031, 'hot', 'cold') FROM numbers(2000);
+-- Joined on both columns, it gives two runtime filters on the same probe column: 32 keys from `a`, 2000 keys from `b`.
+CREATE TABLE dim_two_keys (a String, b String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO dim_two_keys SELECT concat('k', leftPad(toString(number % 32), 5, '0')), concat('k', leftPad(toString(number), 5, '0')) FROM numbers(2000);
 
 SELECT sum(f.v) FROM fact_array AS f INNER JOIN dim AS d ON f.s = d.s WHERE d.tag = 'hot'
 SETTINGS log_comment = '05830_array';
@@ -57,6 +61,12 @@ SETTINGS log_comment = '05830_no_exact_values', join_runtime_filter_exact_values
 -- Not pruned: the runtime filter keeps the exact values, but more than `join_runtime_filter_exact_values_limit / 100`.
 SELECT sum(f.v) FROM fact_array AS f INNER JOIN dim AS d ON f.s = d.s WHERE d.tag = 'hot'
 SETTINGS log_comment = '05830_over_cap', join_runtime_filter_exact_values_limit = 6000;
+
+-- Not pruned: one of the two runtime filters on the column has more keys than the limit, in either order of the conditions.
+SELECT sum(f.v) FROM fact_array AS f INNER JOIN dim_two_keys AS d ON f.s = d.b AND f.s = d.a
+SETTINGS log_comment = '05830_two_filters_large_first';
+SELECT sum(f.v) FROM fact_array AS f INNER JOIN dim_two_keys AS d ON f.s = d.a AND f.s = d.b
+SETTINGS log_comment = '05830_two_filters_small_first';
 
 -- Not pruned: the index is ignored by name.
 SELECT sum(f.v) FROM fact_array AS f INNER JOIN dim AS d ON f.s = d.s WHERE d.tag = 'hot'
@@ -91,7 +101,8 @@ FROM
         argMax(ProfileEvents['RuntimeFilterGranulesDropped'], event_time) AS dropped
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-        AND log_comment IN ('05830_array', '05830_split', '05830_preprocessor', '05830_no_exact_values', '05830_over_cap', '05830_ignored', '05830_added_index')
+        AND log_comment IN ('05830_array', '05830_split', '05830_preprocessor', '05830_no_exact_values', '05830_over_cap', '05830_two_filters_large_first',
+            '05830_two_filters_small_first', '05830_ignored', '05830_added_index')
     GROUP BY log_comment
 )
 ORDER BY log_comment;
@@ -101,3 +112,4 @@ DROP TABLE fact_split;
 DROP TABLE fact_preprocessor;
 DROP TABLE fact_added_index;
 DROP TABLE dim;
+DROP TABLE dim_two_keys;

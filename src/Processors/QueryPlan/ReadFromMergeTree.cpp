@@ -6223,8 +6223,13 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
         /// A `bloom_filter` or `text` index is only worth checking for a small `IN` set: both check every value of
         /// the set for each granule or range they consider, so the cost grows with the number of values times the
-        /// number of granules, and with many values it exceeds the cost of reading the granules. A `text` index also
-        /// cannot use the range predicate of a filter that did not keep the exact values.
+        /// number of granules, and with many values it exceeds the cost of reading the granules. Neither can use the
+        /// range predicate of a filter that did not keep the exact values.
+        ///
+        /// The pruning predicate combines all runtime filters (see `buildRuntimeRangePredicate`), so every filter on
+        /// the columns of the index is checked: several JOIN conditions on the same column, e.g.
+        /// `f.s = d.a AND f.s = d.b`, give several filters, and the index would analyze an over-cap set of one of
+        /// them even if another is small.
         const UInt64 in_set_cap = context->getSettingsRef()[Setting::join_runtime_filter_exact_values_limit] / 100;
         dynamic_skip_index_filter =
             [lookup = runtime_filter_lookup, descriptors = std::move(key_descriptors), in_set_cap]
@@ -6232,6 +6237,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             {
                 if (index.index.type != "bloom_filter" && index.index.type != "text")
                     return true;
+                bool has_small_set = false;
                 for (const auto & descr : descriptors)
                 {
                     if (std::find(index.index.column_names.begin(), index.index.column_names.end(), descr.key_column_name) == index.index.column_names.end())
@@ -6240,9 +6246,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                     if (!filter)
                         return false;
                     auto values = filter->getRecordedKeyValues();
-                    return values && values->size() <= in_set_cap;
+                    /// A range predicate costs the index nothing: the index cannot use it.
+                    if (!values)
+                        continue;
+                    if (values->size() > in_set_cap)
+                        return false;
+                    has_small_set = true;
                 }
-                return false;
+                return has_small_set;
             };
     }
 
