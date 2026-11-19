@@ -1,10 +1,10 @@
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/SimulatedThread.h>
+#include <Common/Wyrd/Strategies/Simulation/SimulatedThread.h>
 
 #include <boost/context/protected_fixedsize_stack.hpp>
 
 #include <memory>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 SimulatedThread::SimulatedThread(UInt32 id_, size_t stack_size, std::function<void()> body_)

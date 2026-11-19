@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <source_location>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 class SpinWait

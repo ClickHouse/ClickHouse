@@ -10,11 +10,11 @@
 #include <fmt/format.h>
 
 #if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)
-#    include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
+#    include <Common/Wyrd/Facade/Atomic.h>
 #    include <base/types.h>
 #endif
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 #if defined(WYRD_SIMULATION)

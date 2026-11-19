@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/Wyrd/Random.h>
+#include <Common/Wyrd/Random.h>
 
 #include <Common/randomSeed.h>
 
@@ -8,17 +8,17 @@
 #include <random>
 #include <utility>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 namespace
 {
 
-const UInt64 base_seed = randomSeed();
 std::atomic<UInt64> thread_counter{0};
 
 pcg64 & generator()
 {
+    static const UInt64 base_seed = randomSeed();
     thread_local pcg64 rng(base_seed, thread_counter.fetch_add(1));
     return rng;
 }

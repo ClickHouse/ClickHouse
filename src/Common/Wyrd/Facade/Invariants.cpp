@@ -1,7 +1,7 @@
-#include <Processors/Executors/Runtime/Wyrd/Facade/Invariants.h>
+#include <Common/Wyrd/Facade/Invariants.h>
 
 #if defined(WYRD_SIMULATION)
-#    include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Syscall.h>
+#    include <Common/Wyrd/Strategies/Simulation/Syscall.h>
 #elif defined(WYRD_ADVERSARY)
 #    include <stdexcept>
 #else
@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 #endif
 
-namespace Runtime::Wyrd
+namespace Wyrd
 {
 
 void verify(bool condition, std::string message)

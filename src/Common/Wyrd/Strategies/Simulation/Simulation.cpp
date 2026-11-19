@@ -1,6 +1,6 @@
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Simulation.h>
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/SimulatedThread.h>
-#include <Processors/Executors/Runtime/Wyrd/Random.h>
+#include <Common/Wyrd/Strategies/Simulation/Simulation.h>
+#include <Common/Wyrd/Strategies/Simulation/SimulatedThread.h>
+#include <Common/Wyrd/Random.h>
 #include <Common/Exception.h>
 #include <base/defines.h>
 
@@ -24,7 +24,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace Runtime::Wyrd
+namespace Wyrd
 {
 
 struct TraceRecord

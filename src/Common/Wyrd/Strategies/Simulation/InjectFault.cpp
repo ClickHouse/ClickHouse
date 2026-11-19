@@ -1,8 +1,8 @@
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/InjectFault.h>
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Simulation.h>
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Syscall.h>
+#include <Common/Wyrd/Strategies/Simulation/InjectFault.h>
+#include <Common/Wyrd/Strategies/Simulation/Simulation.h>
+#include <Common/Wyrd/Strategies/Simulation/Syscall.h>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 void injectFault(const char * operation, std::source_location location)

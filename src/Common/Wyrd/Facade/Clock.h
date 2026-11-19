@@ -2,7 +2,7 @@
 
 #include <base/types.h>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 UInt64 monotonicNanoseconds();

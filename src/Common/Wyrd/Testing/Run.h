@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/AdversaryParams.h>
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/SimulationParams.h>
+#include <Common/Wyrd/Strategies/Adversary/AdversaryParams.h>
+#include <Common/Wyrd/Strategies/Simulation/SimulationParams.h>
 
 #include <functional>
 #include <optional>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 struct TestParams

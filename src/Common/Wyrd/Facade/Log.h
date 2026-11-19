@@ -5,7 +5,7 @@
 #include <string>
 #include <string_view>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 void logMessage(std::string message);

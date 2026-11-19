@@ -1,20 +1,20 @@
 #if defined(WYRD_SIMULATION)
 
-#include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
-#include <Processors/Executors/Runtime/Wyrd/Facade/Futex.h>
-#include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
-#include <Processors/Executors/Runtime/Wyrd/Facade/Preemption.h>
-#include <Processors/Executors/Runtime/Wyrd/Facade/Thread.h>
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Simulation.h>
-#include <Processors/Executors/Runtime/Wyrd/Testing/LockFreeScope.h>
-#include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
-#include <Processors/Executors/Runtime/Wyrd/Testing/Race.h>
+#include <Common/Wyrd/Facade/Atomic.h>
+#include <Common/Wyrd/Facade/Futex.h>
+#include <Common/Wyrd/Facade/Mutex.h>
+#include <Common/Wyrd/Facade/Preemption.h>
+#include <Common/Wyrd/Facade/Thread.h>
+#include <Common/Wyrd/Strategies/Simulation/Simulation.h>
+#include <Common/Wyrd/Testing/LockFreeScope.h>
+#include <Common/Wyrd/Testing/Test.h>
+#include <Common/Wyrd/Testing/Race.h>
 #include <Common/SetWithMemoryTracking.h>
 
 #include <mutex>
 #include <stdexcept>
 
-using namespace DB::Runtime::Wyrd;
+using namespace DB::Wyrd;
 
 namespace
 {

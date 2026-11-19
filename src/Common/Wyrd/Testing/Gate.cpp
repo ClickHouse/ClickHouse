@@ -1,7 +1,7 @@
-#include <Processors/Executors/Runtime/Wyrd/Testing/Gate.h>
-#include <Processors/Executors/Runtime/Wyrd/Facade/Futex.h>
+#include <Common/Wyrd/Testing/Gate.h>
+#include <Common/Wyrd/Facade/Futex.h>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 void Gate::pass()

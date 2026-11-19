@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/AdversaryParams.h>
+#include <Common/Wyrd/Strategies/Adversary/AdversaryParams.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/defines.h>
 
@@ -8,7 +8,7 @@
 #include <memory>
 #include <mutex>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 struct AdversaryResult

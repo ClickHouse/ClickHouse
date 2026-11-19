@@ -11,7 +11,7 @@
 #    include <Common/ThreadPool.h>
 #endif
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 #if defined(WYRD_SIMULATION)

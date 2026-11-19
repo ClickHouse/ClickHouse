@@ -1,12 +1,12 @@
-#include <Processors/Executors/Runtime/Wyrd/Facade/Clock.h>
+#include <Common/Wyrd/Facade/Clock.h>
 
 #if defined(WYRD_SIMULATION)
-#    include <Processors/Executors/Runtime/Wyrd/Random.h>
+#    include <Common/Wyrd/Random.h>
 #else
 #    include <Common/Stopwatch.h>
 #endif
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 #if defined(WYRD_SIMULATION)

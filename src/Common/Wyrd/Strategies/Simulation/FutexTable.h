@@ -3,7 +3,7 @@
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 struct SimulatedThread;

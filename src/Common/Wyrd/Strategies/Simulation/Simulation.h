@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/FutexTable.h>
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Scheduler.h>
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/SimulationParams.h>
+#include <Common/Wyrd/Strategies/Simulation/FutexTable.h>
+#include <Common/Wyrd/Strategies/Simulation/Scheduler.h>
+#include <Common/Wyrd/Strategies/Simulation/SimulationParams.h>
 #include <Common/SipHash.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -12,7 +12,7 @@
 #include <source_location>
 #include <string>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 struct SimulatedThread;

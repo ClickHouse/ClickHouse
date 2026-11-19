@@ -1,12 +1,12 @@
-#include <Processors/Executors/Runtime/Wyrd/Testing/LockFreeScope.h>
+#include <Common/Wyrd/Testing/LockFreeScope.h>
 
 #if defined(WYRD_SIMULATION)
-#    include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Syscall.h>
+#    include <Common/Wyrd/Strategies/Simulation/Syscall.h>
 #elif defined(WYRD_ADVERSARY)
-#    include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/Syscall.h>
+#    include <Common/Wyrd/Strategies/Adversary/Syscall.h>
 #endif
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 #if defined(WYRD_SIMULATION)

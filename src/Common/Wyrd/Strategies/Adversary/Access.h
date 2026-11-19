@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/Adversary.h>
+#include <Common/Wyrd/Strategies/Adversary/Adversary.h>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 Adversary * adversary();

@@ -5,7 +5,7 @@
 
 #include <cstddef>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 void setRandomSeed(UInt64 seed);

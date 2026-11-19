@@ -1,7 +1,7 @@
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/Syscall.h>
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/Access.h>
+#include <Common/Wyrd/Strategies/Adversary/Syscall.h>
+#include <Common/Wyrd/Strategies/Adversary/Access.h>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 void enterThread()

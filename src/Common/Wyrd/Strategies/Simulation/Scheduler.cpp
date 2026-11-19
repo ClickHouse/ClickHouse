@@ -1,9 +1,9 @@
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Scheduler.h>
-#include <Processors/Executors/Runtime/Wyrd/Random.h>
+#include <Common/Wyrd/Strategies/Simulation/Scheduler.h>
+#include <Common/Wyrd/Random.h>
 
 #include <algorithm>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 namespace

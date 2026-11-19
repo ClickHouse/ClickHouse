@@ -1,8 +1,8 @@
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/Access.h>
+#include <Common/Wyrd/Strategies/Adversary/Access.h>
 
 #include <memory>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 namespace

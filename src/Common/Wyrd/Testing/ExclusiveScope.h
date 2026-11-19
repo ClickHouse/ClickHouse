@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
+#include <Common/Wyrd/Facade/Atomic.h>
 
 #include <base/types.h>
 
@@ -8,7 +8,7 @@
 
 #include <string>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 class ExclusiveScope

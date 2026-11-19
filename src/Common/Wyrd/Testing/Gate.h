@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
+#include <Common/Wyrd/Facade/Atomic.h>
 
 #include <base/types.h>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 class Gate

@@ -1,5 +1,5 @@
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/Adversary.h>
-#include <Processors/Executors/Runtime/Wyrd/Random.h>
+#include <Common/Wyrd/Strategies/Adversary/Adversary.h>
+#include <Common/Wyrd/Random.h>
 
 #include <algorithm>
 #include <semaphore>
@@ -9,7 +9,7 @@
 #    include <sched.h>
 #endif
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 namespace

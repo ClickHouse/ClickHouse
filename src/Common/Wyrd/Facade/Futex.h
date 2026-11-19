@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
+#include <Common/Wyrd/Facade/Atomic.h>
 #include <base/types.h>
 
 #include <source_location>
@@ -9,7 +9,7 @@
 #    include <Common/futex.h>
 #endif
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 #if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)

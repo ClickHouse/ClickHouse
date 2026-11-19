@@ -1,8 +1,8 @@
-#include <Processors/Executors/Runtime/Wyrd/Random.h>
+#include <Common/Wyrd/Random.h>
 
-#include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
+#include <Common/Wyrd/Testing/Test.h>
 
-using namespace DB::Runtime::Wyrd;
+using namespace DB::Wyrd;
 
 WYRD_TEST(Wyrd, RandomSeedReplaysTheSequence)
 {

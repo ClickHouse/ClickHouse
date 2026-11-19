@@ -1,6 +1,6 @@
 #pragma once
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 constexpr bool enabled()

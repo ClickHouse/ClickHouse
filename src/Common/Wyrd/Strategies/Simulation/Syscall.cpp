@@ -1,9 +1,9 @@
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Syscall.h>
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Simulation.h>
+#include <Common/Wyrd/Strategies/Simulation/Syscall.h>
+#include <Common/Wyrd/Strategies/Simulation/Simulation.h>
 
 #include <stdexcept>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 void sync(const char * operation, std::source_location location)

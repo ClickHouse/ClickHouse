@@ -3,7 +3,7 @@
 #include <chrono>
 #include <cstddef>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 struct AdversaryParams

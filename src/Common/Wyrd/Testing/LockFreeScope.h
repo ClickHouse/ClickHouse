@@ -1,6 +1,6 @@
 #pragma once
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 /// Marks a scope in which the adversary may suspend the calling thread to test lock-freedom of the others.

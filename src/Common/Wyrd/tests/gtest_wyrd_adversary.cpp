@@ -1,16 +1,16 @@
 #if defined(WYRD_ADVERSARY)
 
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/Access.h>
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/InjectFault.h>
-#include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
-#include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
-#include <Processors/Executors/Runtime/Wyrd/Facade/Preemption.h>
-#include <Processors/Executors/Runtime/Wyrd/Testing/LockFreeScope.h>
-#include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
-#include <Processors/Executors/Runtime/Wyrd/Testing/Race.h>
+#include <Common/Wyrd/Strategies/Adversary/Access.h>
+#include <Common/Wyrd/Strategies/Adversary/InjectFault.h>
+#include <Common/Wyrd/Facade/Atomic.h>
+#include <Common/Wyrd/Facade/Mutex.h>
+#include <Common/Wyrd/Facade/Preemption.h>
+#include <Common/Wyrd/Testing/LockFreeScope.h>
+#include <Common/Wyrd/Testing/Test.h>
+#include <Common/Wyrd/Testing/Race.h>
 #include <base/types.h>
 
-using namespace DB::Runtime::Wyrd;
+using namespace DB::Wyrd;
 
 WYRD_TEST(Wyrd, AdversaryYieldsAtEveryFaultPoint, .runs = 1, .adversary = {.pin_to_single_core = false, .yield_probability = 1.0, .suspend_probability = 0.0})
 {

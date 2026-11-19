@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/SimulationParams.h>
+#include <Common/Wyrd/Strategies/Simulation/SimulationParams.h>
 #include <Common/VectorWithMemoryTracking.h>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 struct SimulatedThread;

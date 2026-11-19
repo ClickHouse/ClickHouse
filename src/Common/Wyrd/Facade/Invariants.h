@@ -4,7 +4,7 @@
 
 #include <string>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 void abort(std::string message);

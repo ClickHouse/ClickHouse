@@ -4,7 +4,7 @@
 #include <source_location>
 #include <string>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 void sync(const char * operation, std::source_location location = std::source_location::current());

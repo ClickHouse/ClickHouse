@@ -1,9 +1,9 @@
-#include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
-#include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
-#include <Processors/Executors/Runtime/Wyrd/Testing/Race.h>
+#include <Common/Wyrd/Facade/Atomic.h>
+#include <Common/Wyrd/Testing/Test.h>
+#include <Common/Wyrd/Testing/Race.h>
 #include <base/types.h>
 
-using namespace DB::Runtime::Wyrd;
+using namespace DB::Wyrd;
 
 WYRD_TEST(Wyrd, AtomicIntegerOperations)
 {

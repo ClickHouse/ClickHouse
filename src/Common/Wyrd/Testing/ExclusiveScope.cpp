@@ -1,10 +1,10 @@
-#include <Processors/Executors/Runtime/Wyrd/Testing/ExclusiveScope.h>
-#include <Processors/Executors/Runtime/Wyrd/Facade/Log.h>
-#include <Processors/Executors/Runtime/Wyrd/Facade/Invariants.h>
+#include <Common/Wyrd/Testing/ExclusiveScope.h>
+#include <Common/Wyrd/Facade/Log.h>
+#include <Common/Wyrd/Facade/Invariants.h>
 
 #include <fmt/format.h>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 ExclusiveScope::Section::Section(ExclusiveScope & scope_, std::string section_name_)

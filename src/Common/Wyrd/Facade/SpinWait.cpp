@@ -1,14 +1,14 @@
-#include <Processors/Executors/Runtime/Wyrd/Facade/SpinWait.h>
+#include <Common/Wyrd/Facade/SpinWait.h>
 
 #if defined(WYRD_SIMULATION)
-#    include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Syscall.h>
+#    include <Common/Wyrd/Strategies/Simulation/Syscall.h>
 #elif defined(WYRD_ADVERSARY)
-#    include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/InjectFault.h>
+#    include <Common/Wyrd/Strategies/Adversary/InjectFault.h>
 #endif
 
 #include <algorithm>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 namespace

@@ -6,7 +6,7 @@
 
 #include <functional>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 struct SimulatedThread

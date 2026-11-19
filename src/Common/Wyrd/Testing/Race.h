@@ -1,14 +1,14 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
-#include <Processors/Executors/Runtime/Wyrd/Facade/Thread.h>
+#include <Common/Wyrd/Facade/Atomic.h>
+#include <Common/Wyrd/Facade/Thread.h>
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
 #include <functional>
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 /// Threads released at one instant by run

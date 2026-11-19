@@ -1,7 +1,7 @@
-#include <Processors/Executors/Runtime/Wyrd/Testing/Run.h>
+#include <Common/Wyrd/Testing/Run.h>
 
 #if defined(WYRD_SIMULATION)
-#    include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Simulation.h>
+#    include <Common/Wyrd/Strategies/Simulation/Simulation.h>
 #    include <Common/SetWithMemoryTracking.h>
 #    include <Common/VectorWithMemoryTracking.h>
 #    include <Common/randomSeed.h>
@@ -20,7 +20,7 @@
 #    include <string_view>
 #    include <thread>
 #elif defined(WYRD_ADVERSARY)
-#    include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/Access.h>
+#    include <Common/Wyrd/Strategies/Adversary/Access.h>
 #    include <base/scope_guard.h>
 
 #    include <fmt/format.h>
@@ -31,7 +31,7 @@
 #    include <thread>
 #endif
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 #if defined(WYRD_SIMULATION)

@@ -1,7 +1,7 @@
-#include <Processors/Executors/Runtime/Wyrd/Facade/Log.h>
+#include <Common/Wyrd/Facade/Log.h>
 
 #if defined(WYRD_SIMULATION)
-#    include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Syscall.h>
+#    include <Common/Wyrd/Strategies/Simulation/Syscall.h>
 #elif defined(WYRD_ADVERSARY)
 #    include <base/getThreadId.h>
 #    include <cstdio>
@@ -10,7 +10,7 @@
 #    include <cstdio>
 #endif
 
-namespace DB::Runtime::Wyrd
+namespace DB::Wyrd
 {
 
 #if defined(WYRD_SIMULATION)
