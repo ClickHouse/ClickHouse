@@ -77,6 +77,35 @@ namespace
     return (isFloat(left) && isDecimal(right)) || (isDecimal(left) && isFloat(right));
 }
 
+[[nodiscard]] bool hasNestedCalendarDateInComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    const auto left = removeNullable(removeLowCardinality(left_type));
+    const auto right = removeNullable(removeLowCardinality(right_type));
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
+    {
+        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
+            return hasNestedCalendarDateInComparison(left_array->getNestedType(), right_array->getNestedType());
+    }
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
+    {
+        if (const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+            right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        {
+            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+                if (hasNestedCalendarDateInComparison(left_tuple->getElements()[i], right_tuple->getElements()[i]))
+                    return true;
+        }
+    }
+    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
+    {
+        if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
+            return hasNestedCalendarDateInComparison(left_map->getKeyType(), right_map->getKeyType())
+                || hasNestedCalendarDateInComparison(left_map->getValueType(), right_map->getValueType());
+    }
+    return ((isDate(left) || isDate32(left)) && (isDateTime(right) || isDateTime64(right)))
+        || ((isDate(right) || isDate32(right)) && (isDateTime(left) || isDateTime64(left)));
+}
+
 [[nodiscard]] bool accurateEqualsCompoundFields(
     const Field & left, const Field & right, const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
@@ -302,6 +331,11 @@ public:
                 if (discriminator < variant_type.getVariants().size())
                     active_type = variant_type.getVariant(discriminator);
             }
+            if (active_type && isMap(active_type) && hasNestedCalendarDateInComparison(map_type, active_type))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Setting 'in_null_as_unknown' does not yet support comparing {} with a map carrier of {}",
+                    map_type->getName(), active_type->getName());
             if (active_type && isMap(active_type) && hasCompoundDecimalFloatPair(map_type, active_type))
             {
                 auto active_row = carrier->cut(row, 1);
@@ -393,9 +427,10 @@ public:
             auto source_row = carrier->cut(row, 1);
             const auto left_element_type = removeNullable(removeLowCardinality(left_array_type.getNestedType()));
             const auto source_element_type = removeNullable(removeLowCardinality(active_array_type->getNestedType()));
-            if (!left_element_type->equals(*source_element_type)
-                && (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_element_type)
-                    || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(source_element_type)))
+            if (hasNestedCalendarDateInComparison(left_type, active_type)
+                || (!left_element_type->equals(*source_element_type)
+                    && (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_element_type)
+                        || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(source_element_type))))
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with an array carrier of {}",

@@ -1661,7 +1661,8 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
         const auto * source_array_type = typeid_cast<const DataTypeArray *>(removeNullable(source_array->getResultType()).get());
         if (source_array_type)
         {
-            if (isArray(removeNullable(removeLowCardinality(element_arg->getResultType())))
+            const auto left_type = removeNullable(removeLowCardinality(element_arg->getResultType()));
+            if ((isArray(left_type) || isMap(left_type))
                 && hasNestedCalendarDateInComparison(element_arg->getResultType(), source_array_type->getNestedType()))
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
