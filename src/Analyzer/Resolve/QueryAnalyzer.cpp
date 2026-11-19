@@ -5470,10 +5470,8 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
             });
 
             /// `ALIAS` expressions are stored SQL: read table names in them as written. Copied per call, because the query
-            /// context is still modified while the join tree is resolved; no copy without table namespaces.
-            ContextPtr alias_column_context = scope.context;
-            if (scope.context->getSettingsRef()[Setting::allow_experimental_table_namespaces])
-                alias_column_context = Context::createCopyForStoredDefinition(scope.context);
+            /// context is still modified while the join tree is resolved.
+            ContextPtr alias_column_context = Context::createCopyForStoredDefinition(scope.context);
 
             alias_column_to_resolve->setExpression(buildQueryTree(column_default->expression, alias_column_context));
 
