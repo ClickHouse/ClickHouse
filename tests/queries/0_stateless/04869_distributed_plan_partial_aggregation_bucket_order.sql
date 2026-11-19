@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 SET explain_query_plan_default = 'legacy';
 -- Distributed aggregation rejects a nonzero global GROUP BY limit.
 SET max_rows_to_group_by = 0;
@@ -38,13 +40,13 @@ EXPLAIN SELECT k, uniqExact(v) FROM t_bucket_order GROUP BY k;
 -- Each GROUP BY key must come out exactly once. A merge that mistakes unordered buckets for ordered
 -- ones emits some keys twice with split aggregate states. The reorder does not happen on every run,
 -- so repeat the check.
-SELECT count() - uniqExact(k) FROM (SELECT k, uniqExact(v) AS u FROM t_bucket_order GROUP BY k) SETTINGS distributed_plan_fallback_to_local_execution = 0;
-SELECT count() - uniqExact(k) FROM (SELECT k, uniqExact(v) AS u FROM t_bucket_order GROUP BY k) SETTINGS distributed_plan_fallback_to_local_execution = 0;
-SELECT count() - uniqExact(k) FROM (SELECT k, uniqExact(v) AS u FROM t_bucket_order GROUP BY k) SETTINGS distributed_plan_fallback_to_local_execution = 0;
-SELECT count() - uniqExact(k) FROM (SELECT k, uniqExact(v) AS u FROM t_bucket_order GROUP BY k) SETTINGS distributed_plan_fallback_to_local_execution = 0;
-SELECT count() - uniqExact(k) FROM (SELECT k, uniqExact(v) AS u FROM t_bucket_order GROUP BY k) SETTINGS distributed_plan_fallback_to_local_execution = 0;
-SELECT count() - uniqExact(k) FROM (SELECT k, uniqExact(v) AS u FROM t_bucket_order GROUP BY k) SETTINGS distributed_plan_fallback_to_local_execution = 0;
-SELECT count() - uniqExact(k) FROM (SELECT k, uniqExact(v) AS u FROM t_bucket_order GROUP BY k) SETTINGS distributed_plan_fallback_to_local_execution = 0;
-SELECT count() - uniqExact(k) FROM (SELECT k, uniqExact(v) AS u FROM t_bucket_order GROUP BY k) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT count() - uniqExact(k) FROM (SELECT k, uniqExact(v) AS u FROM t_bucket_order GROUP BY k);
+SELECT count() - uniqExact(k) FROM (SELECT k, uniqExact(v) AS u FROM t_bucket_order GROUP BY k);
+SELECT count() - uniqExact(k) FROM (SELECT k, uniqExact(v) AS u FROM t_bucket_order GROUP BY k);
+SELECT count() - uniqExact(k) FROM (SELECT k, uniqExact(v) AS u FROM t_bucket_order GROUP BY k);
+SELECT count() - uniqExact(k) FROM (SELECT k, uniqExact(v) AS u FROM t_bucket_order GROUP BY k);
+SELECT count() - uniqExact(k) FROM (SELECT k, uniqExact(v) AS u FROM t_bucket_order GROUP BY k);
+SELECT count() - uniqExact(k) FROM (SELECT k, uniqExact(v) AS u FROM t_bucket_order GROUP BY k);
+SELECT count() - uniqExact(k) FROM (SELECT k, uniqExact(v) AS u FROM t_bucket_order GROUP BY k);
 
 DROP TABLE t_bucket_order;

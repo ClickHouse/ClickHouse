@@ -32,8 +32,7 @@ inline std::vector<size_t> getCandidateNodeCounts(size_t max_node_count)
     return {max_node_count};
 }
 
-/// Steps that can run on any data partition independently: stateless per-row steps and a preliminary
-/// `DISTINCT`, which deduplicates each stream on its own. Implemented by
+/// Stateless per-row steps that can run on any data partition independently. Implemented by
 /// `DistributionPassthrough` and therefore excluded from `DefaultImplementation` - both go
 /// through this one predicate so a new passthrough step type cannot end up with two
 /// implementation rules or none.
@@ -41,15 +40,15 @@ bool isDistributionPassthroughStep(const IQueryPlanStep & step);
 
 /// Builds the self-referential expression an enforcer inserts: it lives in the source
 /// expression's group and its single input points back to the same group with relaxed
-/// requirements, so the memo search recurses into the group to satisfy them. The expression
-/// records `required_properties`, the ones that the enforcer rule runs for. Only constructs -
-/// the caller still calls `addPhysicalToMemo` with the same required properties.
+/// requirements, so the memo search recurses into the group to satisfy them. The enforced
+/// property marks the expression for the cycle-avoidance rules. Only constructs - the caller
+/// still calls `addPhysicalToMemo` with the original required properties.
 GroupExpressionPtr makeEnforcerExpression(
     const GroupExpressionPtr & source,
     QueryPlanStepPtr step,
     ExpressionProperties input_required,
     ExpressionProperties output_properties,
-    const ExpressionProperties & required_properties);
+    EnforcedProperty enforced);
 
 /// Clones a read with its marks pinned into `target_buckets` coordinator-computed buckets and
 /// wraps it into a physical expression with the given strategy and output distribution. Returns

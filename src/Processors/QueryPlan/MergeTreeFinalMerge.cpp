@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/MergeTreeFinalMerge.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/Exception.h>
 #include <Core/Settings.h>
@@ -46,18 +45,12 @@ void addMergingFinal(
     MergeTreeData::MergingParams merging_params,
     const StorageMetadataPtr & metadata_snapshot,
     size_t max_block_size_rows,
-    bool enable_vertical_final,
-    bool read_in_reverse)
+    bool enable_vertical_final)
 {
     auto header = pipe.getSharedHeader();
     size_t num_outputs = pipe.numOutputPorts();
 
     auto now = time(nullptr);
-
-    /// Only the Replacing merging algorithm supports reading in the reverse order
-    /// (see `ReadFromMergeTree::requestReadingInOrder`).
-    if (read_in_reverse && merging_params.mode != MergeTreeData::MergingParams::Replacing)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading in reverse order with FINAL is supported only for ReplacingMergeTree");
 
     auto get_merging_processor = [&]() -> MergingTransformPtr
     {
@@ -75,7 +68,7 @@ void addMergingFinal(
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation, /*remove_zero_rows=*/ false);
+                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation);
             }
 
             case MergeTreeData::MergingParams::Aggregating:
@@ -84,7 +77,7 @@ void addMergingFinal(
 
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false, /*cleanup*/ !merging_params.is_deleted_column.empty(), enable_vertical_final, read_in_reverse);
+                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false, /*cleanup*/ !merging_params.is_deleted_column.empty(), enable_vertical_final);
 
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingTransform>(header, num_outputs,
@@ -150,7 +143,7 @@ namespace
 SortDescription buildFinalSortDescription(const StorageMetadataPtr & metadata_snapshot, const Settings & settings)
 {
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
-    auto reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
+    std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
     SortDescription sort_description;
     sort_description.compile_sort_description = settings[Setting::compile_sort_description];
     sort_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
@@ -187,7 +180,7 @@ Pipe buildFullFinalMergePipe(
 }
 
 Pipe buildDistributedFinalPipe(
-    const VectorWithMemoryTracking<DistributedReadBucket> & lanes,
+    const std::vector<DistributedReadBucket> & lanes,
     const StorageMetadataPtr & metadata_snapshot,
     MergeTreeData::MergingParams merging_params,
     size_t max_block_size_rows,

@@ -1,12 +1,10 @@
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Poco/String.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
-#include <Parsers/formatSettingName.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
 
@@ -219,21 +217,12 @@ void ASTDictionarySettings::readJSON(const Poco::JSON::Object & json)
             /// instead of being coerced into a setting name.
             JSONObjectReader setting_reader(*obj);
             String setting_name = setting_reader.getString("name");
-            /// An empty name is back-quoted to an empty identifier, which `ParserIdentifier` rejects,
-            /// so it would format a `SETTINGS(...)` clause no parser accepts.
-            if (setting_name.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'name' at index {} in 'changes' array during AST JSON deserialization", i);
             auto value_obj = obj->getObject("value");
             if (!value_obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'value' object at index {} in 'changes' array during AST JSON deserialization", i);
             changes.emplace_back(setting_name, JSONObjectReader::readFieldFromObject(*value_obj));
         }
     }
-
-    /// `ParserDictionarySettings` requires at least one `name = value` pair, and `formatImpl` prints
-    /// the clause unconditionally, so an empty list would format a parser-impossible `SETTINGS()`.
-    if (changes.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'changes' in `DictionarySettings` during AST JSON deserialization");
 }
 
 void ASTDictionarySettings::formatImpl(WriteBuffer & ostr,
@@ -248,8 +237,7 @@ void ASTDictionarySettings::formatImpl(WriteBuffer & ostr,
         if (it != changes.begin())
             ostr << ", ";
 
-        formatSettingName(it->name, ostr);
-        ostr << " = " << applyVisitor(FieldVisitorToString(), it->value);
+        ostr << it->name << " = " << applyVisitor(FieldVisitorToString(), it->value);
     }
     ostr << ")";
 }
@@ -301,26 +289,11 @@ void ASTDictionary::readJSON(const Poco::JSON::Object & json)
     /// user-facing `BAD_ARGUMENTS`. Restore each with `readChildOfType`.
     auto child = r.readChildOfType<ASTExpressionList>("primary_key");
     if (child)
-    {
-        /// `ParserDictionary` reads the primary key as a non-empty list of identifiers.
-        if (child->children.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "'primary_key' of `Dictionary` must be a non-empty list of identifiers during AST JSON deserialization");
-        for (const auto & key : child->children)
-            if (!key || !key->as<ASTIdentifier>())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "'primary_key' of `Dictionary` must be a non-empty list of identifiers during AST JSON deserialization");
         set(primary_key, child);
-    }
 
     child = r.readChildOfType<ASTFunctionWithKeyValueArguments>("source");
     if (child)
-    {
-        /// `ParserDictionary` requires the brackets: `SOURCE(HTTP(...))`.
-        if (!child->as<ASTFunctionWithKeyValueArguments &>().has_brackets)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`Dictionary` 'source' requires brackets during AST JSON deserialization");
         set(source, child);
-    }
 
     child = r.readChildOfType<ASTDictionaryLifetime>("lifetime");
     if (child)

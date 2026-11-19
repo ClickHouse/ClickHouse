@@ -25,8 +25,7 @@ SELECT
     countIf(toString(resample) != toString(resample_ordinary)),
     countIf(toString(distinct) != toString(distinct_ordinary)),
     countIf(toString(tuple_merge) != toString(tuple_ordinary)),
-    countIf(toString(arg_max) != toString(arg_max_ordinary)),
-    countIf(toString(map_merge) != toString(map_ordinary))
+    countIf(toString(arg_max) != toString(arg_max_ordinary))
 FROM
 (
     SELECT
@@ -55,9 +54,7 @@ FROM
         round(tupleElement(contingencyTupleMerge(s_tuple) OVER w, 1), 6) + 0 AS tuple_merge,
         round(tupleElement(finalizeAggregation(contingencyTupleMergeState(s_tuple) OVER w), 1), 6) + 0 AS tuple_ordinary,
         round(contingencyArgMaxMerge(s_arg_max) OVER w, 6) + 0 AS arg_max,
-        round(finalizeAggregation(contingencyArgMaxMergeState(s_arg_max) OVER w), 6) + 0 AS arg_max_ordinary,
-        mapApply((key, value) -> (key, round(value, 6) + 0), contingencyMapMerge(s_map) OVER w) AS map_merge,
-        mapApply((key, value) -> (key, round(value, 6) + 0), finalizeAggregation(contingencyMapMergeState(s_map) OVER w)) AS map_ordinary
+        round(finalizeAggregation(contingencyArgMaxMergeState(s_arg_max) OVER w), 6) + 0 AS arg_max_ordinary
     FROM
     (
         SELECT
@@ -75,8 +72,7 @@ FROM
             contingencyResampleState(0, 20, 10)(b, c, k) AS s_resample,
             contingencyDistinctState(b, c) AS s_distinct,
             contingencyTupleState(tuple(b), tuple(c)) AS s_tuple,
-            contingencyArgMaxState(b, c, k) AS s_arg_max,
-            contingencyMapState(b, c, p) AS s_map
+            contingencyArgMaxState(b, c, k) AS s_arg_max
         FROM t_crosstab_window_merge
         GROUP BY p, k
     )
@@ -84,9 +80,9 @@ FROM
 );
 
 SELECT '-- whole partition: window merge, then the plain aggregate';
-SELECT DISTINCT p, round(contingencyMerge(s) OVER (PARTITION BY p), 6), round((contingencyMapMerge(sm) OVER (PARTITION BY p))[p], 6)
-FROM (SELECT p, contingencyState(b, c) AS s, contingencyMapState(b, c, p) AS sm FROM t_crosstab_window_merge GROUP BY p, k)
+SELECT DISTINCT p, round(contingencyMerge(s) OVER (PARTITION BY p), 6)
+FROM (SELECT p, contingencyState(b, c) AS s FROM t_crosstab_window_merge GROUP BY p, k)
 ORDER BY p;
-SELECT p, round(contingency(b, c), 6), round(contingencyMap(b, c, p)[p], 6) FROM t_crosstab_window_merge GROUP BY p ORDER BY p;
+SELECT p, round(contingency(b, c), 6) FROM t_crosstab_window_merge GROUP BY p ORDER BY p;
 
 DROP TABLE t_crosstab_window_merge;

@@ -24,11 +24,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/Serializations/ISerialization.h>
 #include <IO/NetUtils.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteBufferFromVector.h>
-#include <Processors/Formats/Impl/ArrowOpaqueColumn.h>
 #include <Core/UUID.h>
 #include <Common/assert_cast.h>
 #include <base/arithmeticOverflow.h>
@@ -542,83 +538,50 @@ void RecordBatchEncoder::encodeValues(
             nodes.emplace_back(static_cast<Int64>(entries_end - entries_begin), 0);
             appendEmptyBuffer();
             const auto & map_type = assert_cast<const DataTypeMap &>(*type);
-            /// An Arrow map key must not be nullable, so a `Variant` key written as text writes NULL as JSON `null`.
-            if (isVariant(map_type.getKeyType()) && settings.arrow.output_variant_as_json_string)
-                encodeVariantAsJSONText(entries.getColumn(0), map_type.getKeyType(), entries_begin, entries_end, /*nullable=*/ false);
-            else
-                encodeField(entries.getColumn(0), map_type.getKeyType(), entries_begin, entries_end);
+            encodeField(entries.getColumn(0), map_type.getKeyType(), entries_begin, entries_end);
             encodeField(entries.getColumn(1), map_type.getValueType(), entries_begin, entries_end);
             return;
         }
         default:
-            /// A type with no first-class Arrow mapping, written as an opaque variable-width column or
-            /// rejected, per `output_format_arrow_unsupported_types`. `SchemaConverter::buildField` makes
-            /// the same decision for the schema, so the two cannot disagree.
-            if (settings.arrow.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::THROW)
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Native Arrow IPC writer does not support encoding type {}. Set "
-                    "output_format_arrow_unsupported_types to 'text' or 'binary' to write it as an opaque column",
-                    type->getName());
-            encodeAsOpaque(column, type, begin, end, null_map_column);
-            return;
+            /// A type with no first-class Arrow mapping. Mirror the Apache Arrow library writer: when
+            /// `output_format_arrow_unsupported_types_as_binary` is set, write its raw per-row bytes as an
+            /// Arrow `Binary` column (read back as `String`); otherwise reject it.
+            if (settings.arrow.output_unsupported_types_as_binary)
+            {
+                encodeAsBinary(column, begin, end, null_map_column);
+                return;
+            }
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Native Arrow IPC writer does not support encoding type {}. Set "
+                "output_format_arrow_unsupported_types_as_binary = 1 to write it as binary",
+                type->getName());
     }
 }
 
-void RecordBatchEncoder::encodeAsOpaque(
-    const IColumn & column, const DataTypePtr & type, size_t begin, size_t end, const IColumn * null_map_column)
+void RecordBatchEncoder::encodeAsBinary(const IColumn & column, size_t begin, size_t end, const IColumn * null_map_column)
 {
-    /// Serialize one value per row into a variable-width Arrow column. This goes through
-    /// `ISerialization` rather than `IColumn::getDataAt`: `getDataAt` exposes a column's contiguous
-    /// in-memory bytes, which most of the types reaching this path do not have - `ColumnObject`,
-    /// `ColumnVariant` (hence `ColumnDynamic`) and `ColumnQBit` throw `NOT_IMPLEMENTED`, and
-    /// `ColumnAggregateFunction` returns the `AggregateDataPtr` itself, so the export would carry heap
-    /// addresses instead of aggregate states. `serializeText`/`serializeBinary` are pure virtual on
-    /// `ISerialization`, so every type has a real per-value representation here.
     const size_t num_rows = end - begin;
     const NullMap * null_map
         = null_map_column ? &assert_cast<const ColumnUInt8 &>(*null_map_column).getData() : nullptr;
-    /// `SchemaConverter::buildField` types this column from the same predicate, so what is written here
-    /// cannot disagree with what the reader has been told the column holds.
-    const bool as_text = arrowOpaqueValueIsText(settings.arrow.output_unsupported_types, type);
-    const auto serialization = type->getDefaultSerialization();
-
     PODArray<Int32> arrow_offsets(num_rows + 1);
     arrow_offsets[0] = 0;
     PODArray<char> data;
-    /// One loop per representation, so the per-row loop does not test `as_text` and the binary one stays small.
-    auto encode_rows = [&]<bool as_text_value>()
+    size_t total = 0;
+    for (size_t i = 0; i < num_rows; ++i)
     {
-        WriteBufferFromVector<PODArray<char>> buffer(data);
-        WriteBufferFromOwnString value;
-        String valid_utf8_scratch;
-        for (size_t i = 0; i < num_rows; ++i)
+        /// Skip the payload of a logically-NULL row (matching the Apache Arrow writer's `AppendNull`):
+        /// emit a zero-length slot instead of the arbitrary bytes the null row may carry.
+        if (!(null_map && (*null_map)[begin + i]))
         {
-            /// Skip the payload of a logically-NULL row (matching the Apache Arrow writer's `AppendNull`):
-            /// emit a zero-length slot instead of the arbitrary bytes the null row may carry.
-            if (!(null_map && (*null_map)[begin + i]))
-            {
-                if constexpr (as_text_value)
-                {
-                    value.restart();
-                    serialization->serializeText(column, begin + i, value, settings);
-                    const std::string_view valid = makeValidUTF8View(value.stringView(), valid_utf8_scratch);
-                    buffer.write(valid.data(), valid.size());
-                }
-                else
-                    serialization->serializeBinary(column, begin + i, buffer, settings);
-            }
-            const size_t total = buffer.count();
+            const std::string_view value = column.getDataAt(begin + i);
+            total += value.size();
             if (total > MAX_ARROW_BUFFER_SIZE)
                 throwValueDoesNotFitArrowBuffer(static_cast<Int64>(total));
-            arrow_offsets[i + 1] = static_cast<Int32>(total);
+            data.insert(data.end(), value.data(), value.data() + value.size());
         }
-        buffer.finalize();
-    };
-    if (as_text)
-        encode_rows.template operator()<true>();
-    else
-        encode_rows.template operator()<false>();
+        arrow_offsets[i + 1] = static_cast<Int32>(total);
+    }
     appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
     appendBuffer(data.data(), data.size());
 }
@@ -654,12 +617,6 @@ void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr &
         return;
     }
 
-    if (isVariant(type) && settings.arrow.output_variant_as_json_string)
-    {
-        encodeVariantAsJSONText(column, type, begin, end, /*nullable=*/ true);
-        return;
-    }
-
     /// Variant maps to an Arrow dense union, which (unlike every other type) has no validity buffer.
     if (isVariant(type))
     {
@@ -684,54 +641,6 @@ void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr &
     encodeValues(*nested, nested_type, begin, end, null_map_column);
 }
 
-void RecordBatchEncoder::encodeVariantAsJSONText(
-    const IColumn & column, const DataTypePtr & type, size_t begin, size_t end, bool nullable)
-{
-    const auto & variant_column = assert_cast<const ColumnVariant &>(column);
-    const size_t num_rows = end - begin;
-
-    /// In a non-nullable field, a NULL value is written as its JSON text `null`.
-    auto null_map_column = ColumnUInt8::create(num_rows, static_cast<UInt8>(0));
-    auto & null_map = null_map_column->getData();
-    if (nullable)
-    {
-        for (size_t i = 0; i < num_rows; ++i)
-            null_map[i] = variant_column.isNullAt(begin + i);
-    }
-
-    const Int64 null_count = appendValidity(nullable ? null_map_column.get() : nullptr, 0, num_rows);
-    nodes.emplace_back(static_cast<Int64>(num_rows), null_count);
-
-    const auto serialization = type->getDefaultSerialization();
-    PODArray<Int32> arrow_offsets(num_rows + 1);
-    arrow_offsets[0] = 0;
-    PODArray<char> data;
-    {
-        WriteBufferFromVector<PODArray<char>> buffer(data);
-        WriteBufferFromOwnString value;
-        String valid_utf8_scratch;
-        for (size_t i = 0; i < num_rows; ++i)
-        {
-            /// A NULL row is a zero-length slot.
-            if (!null_map[i])
-            {
-                value.restart();
-                serialization->serializeTextJSON(column, begin + i, value, settings);
-                /// An Arrow `Utf8` column must hold valid UTF-8, while a `String` alternative can hold arbitrary bytes.
-                const std::string_view valid = makeValidUTF8View(value.stringView(), valid_utf8_scratch);
-                buffer.write(valid.data(), valid.size());
-            }
-            const size_t total = buffer.count();
-            if (total > MAX_ARROW_BUFFER_SIZE)
-                throwValueDoesNotFitArrowBuffer(static_cast<Int64>(total));
-            arrow_offsets[i + 1] = static_cast<Int32>(total);
-        }
-        buffer.finalize();
-    }
-    appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
-    appendBuffer(data.data(), data.size());
-}
-
 void RecordBatchEncoder::encodeVariant(const IColumn & column, const DataTypePtr & type, size_t begin, size_t end)
 {
     const auto & variant_column = assert_cast<const ColumnVariant &>(column);
@@ -751,8 +660,8 @@ void RecordBatchEncoder::encodeVariant(const IColumn & column, const DataTypePtr
     /// `ColumnVariant::updateHashWithValueRange`), so the range maps to one contiguous child range per
     /// alternative, and the union offsets are rebased against that child's start.
     const size_t num_local = variant_column.getNumVariants();
-    VectorWithMemoryTracking<size_t> nested_begin(num_local, 0);
-    VectorWithMemoryTracking<size_t> nested_rows(num_local, 0);
+    std::vector<size_t> nested_begin(num_local, 0);
+    std::vector<size_t> nested_rows(num_local, 0);
     for (size_t row = begin; row != end; ++row)
     {
         const auto local = local_discriminators[row];

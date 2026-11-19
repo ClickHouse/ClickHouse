@@ -7,8 +7,6 @@ namespace DB
 
 using FunctionGreater = FunctionComparison<GreaterOp, NameGreater>;
 using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
-
-/// Instantiated in equals.cpp.
 extern template class FunctionComparison<EqualsOp, NameEquals>;
 
 REGISTER_FUNCTION(Greater)
@@ -80,8 +78,5 @@ ColumnPtr FunctionComparison<GreaterOp, NameGreater>::executeArrayLexicographic(
         column_type_name1,
         input_rows_count);
 }
-
-/// Explicit instantiation definition, see the comment in equals.cpp. Must come after the member specializations above.
-template class FunctionComparison<GreaterOp, NameGreater>;
 
 }
