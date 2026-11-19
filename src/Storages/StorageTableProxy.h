@@ -26,8 +26,13 @@ namespace ErrorCodes
 class StorageTableProxy final : public StorageProxy
 {
 public:
+    /// Creates the real storage under the given (current) table id. The id is passed at materialization time,
+    /// because the proxy may have been renamed (e.g. by `RENAME DATABASE`) since the metadata was read, and an
+    /// engine may use its database and table name in the constructor (e.g. the default `kafka_client_id`).
+    using GetNestedFunc = std::function<StoragePtr(const StorageID &)>;
+
     StorageTableProxy(
-        const StorageID & table_id_, std::function<StoragePtr()> get_nested_, ColumnsDescription cached_columns, String engine_name_)
+        const StorageID & table_id_, GetNestedFunc get_nested_, ColumnsDescription cached_columns, String engine_name_)
         : StorageProxy(table_id_)
         , get_nested(std::move(get_nested_))
         , engine_name(std::move(engine_name_))
@@ -100,7 +105,7 @@ public:
         LOG_TRACE(log, "Loading lazy table on first access");
 
         /// A storage built for a `DROP` that did not go through is started and used from here on.
-        auto nested_storage = built_for_drop ? std::exchange(built_for_drop, nullptr) : get_nested();
+        auto nested_storage = built_for_drop ? std::exchange(built_for_drop, nullptr) : get_nested(getStorageID());
         nested_storage->startup();
         {
             /// Renamed under the same lock as `renameInMemory` below, so that a concurrent `RENAME` either sees
@@ -420,7 +425,7 @@ private:
             try
             {
                 LOG_TRACE(log, "Loading table for drop without startup");
-                built_for_drop = get_nested();
+                built_for_drop = get_nested(getStorageID());
                 get_nested = {};
             }
             catch (...)
@@ -443,7 +448,7 @@ private:
     /// Guards `nested` for the callers that hold the database mutex. `nested` is written while holding both mutexes.
     /// Nothing that may take `nested_mutex` or a database mutex is called while holding it.
     mutable std::mutex resolved_nested_mutex;
-    mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
+    mutable GetNestedFunc get_nested; /// Factory that creates the real storage. Cleared after first use.
     const String engine_name; /// Engine from the `CREATE` query, reported until the real storage exists.
     const bool stores_data_on_disk; /// What the engine keeps its data on, reported until the real storage exists.
     const bool supports_replication; /// Whether the engine replicates, reported until the real storage exists.

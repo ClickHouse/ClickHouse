@@ -690,11 +690,12 @@ void DatabaseOrdinary::loadTableLazy(
     StorageID table_id(name.database, query.getTable(), query.uuid);
     String table_data_path = getTableDataPath(query);
 
+    /// The storage is built under the current name of the proxy rather than the one read from the metadata, because
+    /// the table or its database may have been renamed in the meantime, and engines use the name in the constructor.
     auto get_nested = [query_str = ast->formatWithSecretsMultiLine(),
-                        db_name = name.database,
                         table_data_path,
                         global_context = local_context->getGlobalContext(),
-                        mode]() -> StoragePtr
+                        mode](const StorageID & current_table_id) -> StoragePtr
     {
         auto load_context = Context::createCopy(global_context);
         ParserCreateQuery parser;
@@ -706,9 +707,11 @@ void DatabaseOrdinary::loadTableLazy(
             0,
             load_context->getSettingsRef()[Setting::max_parser_depth],
             load_context->getSettingsRef()[Setting::max_parser_backtracks]);
-        const auto & create_query = parsed_ast->as<const ASTCreateQuery &>();
+        auto & create_query = parsed_ast->as<ASTCreateQuery &>();
+        create_query.setDatabase(current_table_id.database_name);
+        create_query.setTable(current_table_id.table_name);
         auto [_, table] = createTableFromAST(
-            create_query, db_name, table_data_path, load_context, mode);
+            create_query, current_table_id.database_name, table_data_path, load_context, mode);
         return table;
     };
 
