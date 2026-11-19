@@ -6,9 +6,9 @@ DROP TABLE IF EXISTS t_enum_minmax;
 DROP TABLE IF EXISTS t_enum_bloom;
 DROP TABLE IF EXISTS t_enum_partition;
 
-CREATE TABLE t_enum_pk (e Enum8('z' = 1, 'a' = 2, '1' = 3, 'b' = 4)) ENGINE = MergeTree ORDER BY e SETTINGS index_granularity = 1, index_granularity_bytes = 0;
-CREATE TABLE t_enum_minmax (k UInt8, e Enum8('z' = 1, 'a' = 2, '1' = 3, 'b' = 4), INDEX i e TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, index_granularity_bytes = 0;
-CREATE TABLE t_enum_bloom (k UInt8, e Enum8('z' = 1, 'a' = 2, '1' = 3, 'b' = 4), INDEX i e TYPE bloom_filter GRANULARITY 1) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, index_granularity_bytes = 0;
+CREATE TABLE t_enum_pk (e Enum8('z' = 1, 'a' = 2, '1' = 3, 'b' = 4)) ENGINE = MergeTree ORDER BY e SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+CREATE TABLE t_enum_minmax (k UInt8, e Enum8('z' = 1, 'a' = 2, '1' = 3, 'b' = 4), INDEX i e TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+CREATE TABLE t_enum_bloom (k UInt8, e Enum8('z' = 1, 'a' = 2, '1' = 3, 'b' = 4), INDEX i e TYPE bloom_filter GRANULARITY 1) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 CREATE TABLE t_enum_partition (e Enum8('z' = 1, 'a' = 2, '1' = 3, 'b' = 4)) ENGINE = MergeTree PARTITION BY e ORDER BY tuple();
 
 INSERT INTO t_enum_pk VALUES ('z'), ('a'), ('1'), ('b');
