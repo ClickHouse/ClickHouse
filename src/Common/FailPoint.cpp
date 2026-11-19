@@ -503,6 +503,7 @@ static struct InitFiu
     PAUSEABLE(keeper_changelog_read_plan_resolved) \
     PAUSEABLE(keeper_changelog_removed_from_disk_set) \
     PAUSEABLE(keeper_changelog_readahead_fill_wedge) \
+    PAUSEABLE_ONCE(keeper_lsmt_get_committed_node_after_repointing) \
     PAUSEABLE(keeper_changelog_readahead_serve_wait) \
     PAUSEABLE(keeper_local_logs_preprocessing_wait) \
     REGULAR(keeper_never_pause_appending_entries) \
