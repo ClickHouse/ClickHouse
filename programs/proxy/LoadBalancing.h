@@ -15,7 +15,7 @@ class ILoadBalancingStrategy
 public:
     virtual ~ILoadBalancingStrategy() = default;
 
-    virtual std::string_view name() const = 0;
+    [[nodiscard]] virtual std::string_view name() const = 0;
 
     /// Choose one of the candidates. The candidates list is never empty.
     virtual BackendPtr choose(const std::vector<BackendPtr> & candidates) = 0;

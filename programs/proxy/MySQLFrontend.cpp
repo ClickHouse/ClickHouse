@@ -36,7 +36,7 @@ namespace
 struct RawPacket : public IMySQLWritePacket, public IMySQLReadPacket
 {
     String payload;
-    size_t getPayloadSize() const override { return payload.size(); }
+    [[nodiscard]] size_t getPayloadSize() const override { return payload.size(); }
     void writePayloadImpl(WriteBuffer & buffer) const override { buffer.write(payload.data(), payload.size()); }
     void readPayloadImpl(ReadBuffer & buffer) override { readStringUntilEOF(payload, buffer); }
 };

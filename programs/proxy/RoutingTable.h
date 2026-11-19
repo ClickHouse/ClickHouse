@@ -29,18 +29,18 @@ public:
     };
 
     /// Returns the target of the first matching rule, or nothing if no rule matches.
-    virtual std::optional<Target> resolve(const RouteAttributes & attributes) const = 0;
+    [[nodiscard]] virtual std::optional<Target> resolve(const RouteAttributes & attributes) const = 0;
 
     /// Whether any rule applicable to this protocol needs the user name or the database
     /// (and therefore the proxy has to parse the first packets of the protocol).
-    virtual bool needsCredentials(ListenerProtocol protocol) const = 0;
+    [[nodiscard]] virtual bool needsCredentials(ListenerProtocol protocol) const = 0;
 
     /// Whether any rule applicable to this protocol needs the query type
     /// (and therefore the proxy has to peek into the first query).
-    virtual bool needsQueryType(ListenerProtocol protocol) const = 0;
+    [[nodiscard]] virtual bool needsQueryType(ListenerProtocol protocol) const = 0;
 
     /// The names of the pools the rules applicable to this protocol may route to.
-    virtual std::vector<String> poolNames(ListenerProtocol protocol) const = 0;
+    [[nodiscard]] virtual std::vector<String> poolNames(ListenerProtocol protocol) const = 0;
 };
 
 /// A routing table defined by the <rules> section of the configuration.
@@ -49,10 +49,10 @@ class ConfigRoutingTable : public IRoutingTable
 public:
     explicit ConfigRoutingTable(const std::vector<RuleConfig> & rules_);
 
-    std::optional<Target> resolve(const RouteAttributes & attributes) const override;
-    bool needsCredentials(ListenerProtocol protocol) const override;
-    bool needsQueryType(ListenerProtocol protocol) const override;
-    std::vector<String> poolNames(ListenerProtocol protocol) const override;
+    [[nodiscard]] std::optional<Target> resolve(const RouteAttributes & attributes) const override;
+    [[nodiscard]] bool needsCredentials(ListenerProtocol protocol) const override;
+    [[nodiscard]] bool needsQueryType(ListenerProtocol protocol) const override;
+    [[nodiscard]] std::vector<String> poolNames(ListenerProtocol protocol) const override;
 
 private:
     struct Matcher
@@ -60,13 +60,13 @@ private:
         std::vector<String> values;             /// Exact values; match if the attribute equals any of them.
         std::shared_ptr<re2::RE2> regexp;       /// Alternatively, a regexp the whole attribute must match.
 
-        bool specified() const { return !values.empty() || regexp; }
+        [[nodiscard]] bool specified() const { return !values.empty() || regexp; }
 
         /// On a regexp match, the values of the capture groups are appended to captures.
         bool matches(const String & value, std::vector<String> & captures) const;
 
         /// How many capture values a successful match appends. Exact values capture nothing.
-        size_t captureCount() const { return regexp ? static_cast<size_t>(regexp->NumberOfCapturingGroups()) : 0; }
+        [[nodiscard]] size_t captureCount() const { return regexp ? static_cast<size_t>(regexp->NumberOfCapturingGroups()) : 0; }
     };
 
     struct Rule

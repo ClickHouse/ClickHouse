@@ -108,16 +108,16 @@ public:
     /// The handshake is over: the connection is no longer bounded by the handshake deadline.
     void disarmHandshakeDeadline() { handshake_deadline.reset(); }
 
-    Poco::Net::SocketAddress peerAddress() const { return socket.peerAddress(); }
+    [[nodiscard]] Poco::Net::SocketAddress peerAddress() const { return socket.peerAddress(); }
     void close();
 
-    bool initialized() const { return !socket.impl()->initialized() ? false : true; }
+    [[nodiscard]] bool initialized() const { return !socket.impl()->initialized() ? false : true; }
     Poco::Net::StreamSocket & raw() { return socket; }
     int fd() { return socket.impl()->sockfd(); }
 
     /// True when the socket carries plaintext (no TLS termination on this leg). Only plaintext legs
     /// can be relayed with splice(2); a TLS-terminated stream must be decrypted in user space.
-    bool plaintext() const { return is_plaintext; }
+    [[nodiscard]] bool plaintext() const { return is_plaintext; }
 
 private:
     Poco::Net::StreamSocket socket;
@@ -155,11 +155,11 @@ public:
     /// Read one CRLF- or LF-terminated line without the terminator. Returns false on end of stream.
     bool readLine(String & line, size_t max_length);
 
-    size_t position() const { return pos; }
-    size_t buffered() const { return buffer.size() - pos; }
+    [[nodiscard]] size_t position() const { return pos; }
+    [[nodiscard]] size_t buffered() const { return buffer.size() - pos; }
 
     /// All bytes received so far, to be forwarded to the backend.
-    const String & received() const { return buffer; }
+    [[nodiscard]] const String & received() const { return buffer; }
 
 private:
     FiberSocket & socket;

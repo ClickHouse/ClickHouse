@@ -155,7 +155,7 @@ struct Cursor
     size_t size = 0;
     size_t pos = 0;
 
-    bool has(size_t n) const { return pos + n <= size; }
+    [[nodiscard]] bool has(size_t n) const { return pos + n <= size; }
     UInt8 u8() { return static_cast<UInt8>(data[pos++]); }
     UInt32 u16() { UInt32 v = (static_cast<UInt8>(data[pos]) << 8) | static_cast<UInt8>(data[pos + 1]); pos += 2; return v; }
     UInt32 u24() { UInt32 v = (static_cast<UInt8>(data[pos]) << 16) | (static_cast<UInt8>(data[pos + 1]) << 8) | static_cast<UInt8>(data[pos + 2]); pos += 3; return v; }

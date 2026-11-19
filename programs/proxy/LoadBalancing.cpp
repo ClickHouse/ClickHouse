@@ -26,7 +26,7 @@ namespace
 class RandomStrategy : public ILoadBalancingStrategy
 {
 public:
-    std::string_view name() const override { return "random"; }
+    [[nodiscard]] std::string_view name() const override { return "random"; }
 
     BackendPtr choose(const std::vector<BackendPtr> & candidates) override
     {
@@ -80,7 +80,7 @@ private:
 class LeastConnectionsStrategy : public ILoadBalancingStrategy
 {
 public:
-    std::string_view name() const override { return "least_connections"; }
+    [[nodiscard]] std::string_view name() const override { return "least_connections"; }
 
     BackendPtr choose(const std::vector<BackendPtr> & candidates) override
     {
@@ -102,7 +102,7 @@ public:
 class LowestLatencyStrategy : public ILoadBalancingStrategy
 {
 public:
-    std::string_view name() const override { return "lowest_latency"; }
+    [[nodiscard]] std::string_view name() const override { return "lowest_latency"; }
 
     BackendPtr choose(const std::vector<BackendPtr> & candidates) override
     {
@@ -125,7 +125,7 @@ public:
 class LeastResourcesStrategy : public ILoadBalancingStrategy
 {
 public:
-    std::string_view name() const override { return "least_resources"; }
+    [[nodiscard]] std::string_view name() const override { return "least_resources"; }
 
     BackendPtr choose(const std::vector<BackendPtr> & candidates) override
     {

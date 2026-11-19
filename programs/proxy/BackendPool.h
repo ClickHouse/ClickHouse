@@ -31,14 +31,14 @@ public:
     /// A pool of one ad-hoc backend, created from a routing rule with a backend template.
     BackendPool(String name_, BackendPtr backend, const StickinessConfig & global_stickiness);
 
-    const String & name() const { return pool_name; }
-    const std::vector<BackendPtr> & backends() const { return all_backends; }
-    std::string_view loadBalancingName() const { return strategy->name(); }
+    [[nodiscard]] const String & name() const { return pool_name; }
+    [[nodiscard]] const std::vector<BackendPtr> & backends() const { return all_backends; }
+    [[nodiscard]] std::string_view loadBalancingName() const { return strategy->name(); }
 
     /// Choose an alive backend honoring stickiness. Returns nullptr if all backends are down.
-    BackendPtr choose(const RouteAttributes & attributes) const;
+    [[nodiscard]] BackendPtr choose(const RouteAttributes & attributes) const;
 
-    bool hasAliveBackends() const;
+    [[nodiscard]] bool hasAliveBackends() const;
 
 private:
     String pool_name;
