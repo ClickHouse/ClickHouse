@@ -162,6 +162,12 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
             return *first + archive_suffix;
     }
 
+    if (!local_distributed_processing)
+    {
+        if (auto sample = tryGetHivePartitioningSamplePathOfFileNameGlobs(*configuration))
+            return *sample;
+    }
+
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.
     query_settings.throw_on_zero_files_match = false;
