@@ -1700,7 +1700,8 @@ static DictionarySparseIndex serializeTokensAndPostings(
     MergeTreeIndexWriterStream * positions_stream)
 {
     size_t num_tokens = sorted_tokens.size();
-    size_t num_blocks = (num_tokens + params.dictionary_block_size - 1) / params.dictionary_block_size;
+    /// Round up without forming the sum, which wraps when the block size is close to the maximum of size_t.
+    size_t num_blocks = num_tokens / params.dictionary_block_size + (num_tokens % params.dictionary_block_size != 0);
 
     auto sparse_index_tokens = ColumnString::create();
     auto & sparse_index_str = assert_cast<ColumnString &>(*sparse_index_tokens);
@@ -1984,11 +1985,21 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
     bool inserted = false;
     TokenToPostingsBuilderMap::LookupResult it{};
 
+    /// Below this size tokens_map fits in L1 and a direct probe costs about as much as the bloom check.
+    static constexpr size_t min_keep_set_bloom_tokens = 64;
+
+    const bool build_bloom = keep_set_bloom.empty() && filter_tokens.size() >= min_keep_set_bloom_tokens;
+    if (build_bloom)
+        keep_set_bloom.init(filter_tokens.size());
+
     for (const auto & filter_token : filter_tokens)
     {
         memcpy(data, filter_token.data(), filter_token.size());
         auto key = PackedStringRef::build(data, filter_token.size(), PackedStringRefHash{});
         data += filter_token.size();
+
+        if (build_bloom)
+            keep_set_bloom.add(key.getHash());
 
         tokens_map.emplace(key, it, inserted);
         chassert(inserted);
@@ -2004,6 +2015,9 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
     /// Keep-set mode: the map is pre-seeded with the only tokens to keep, everything else is skipped.
     if (postprocessor_drop_filter && !postprocessor_drop_filter->drop_on_match)
     {
+        if (!keep_set_bloom.empty() && !keep_set_bloom.mayContain(packed_key.getHash()))
+            return;
+
         auto * it = tokens_map.find(packed_key);
         if (!it)
             return;
@@ -2646,8 +2660,8 @@ static const String ARGUMENT_TOKENIZER = "tokenizer";
 static const String ARGUMENT_PREPROCESSOR = "preprocessor";
 static const String ARGUMENT_POSTPROCESSOR = "postprocessor";
 static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
-static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
-static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
+[[clang::no_destroy]] static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
+[[clang::no_destroy]] static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
 static const String ARGUMENT_POSITIONS = "support_phrase_search";
 

@@ -38,6 +38,13 @@ public:
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
+    /// A row whose result is NULL, or an unused dictionary entry of a `LowCardinality` argument, may hold a UInt64 that
+    /// does not fit Int64, and `executeImpl` would throw for it
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return !uint64ArgumentMayHoldUnusedValues(arguments);
+    }
+
     [[nodiscard]] String getSignatureString() const override
     {
         /// When arg 0 is only-null (Nullable(Nothing)), legacy returns the same Nullable(Nothing).
@@ -53,6 +60,12 @@ public:
         ColumnPtr column_string = arguments[0].column;
         ColumnPtr column_start = arguments[1].column;
         ColumnPtr column_length;
+
+        /// The offset and the length are read with IColumn::getInt() below, so a UInt64 value that
+        /// does not fit Int64 must be rejected here rather than read as a negative number.
+        checkIntegerArgumentFitsInt64(*column_start, name, "offset");
+        if (number_of_arguments == 3)
+            checkIntegerArgumentFitsInt64(*arguments[2].column, name, "length");
 
         std::optional<Int64> start_const;
         std::optional<Int64> length_const;

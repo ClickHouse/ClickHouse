@@ -61,6 +61,8 @@ struct BaseSettingsHelpers
     [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name);
     [[noreturn]] static void throwValuelessSettingHasValue(std::string_view name);
     static void warningSettingNotFound(std::string_view name);
+    /// Returns true (and logs a warning) if `e` is `BAD_ARGUMENTS` or a parse error (`isParseError`); other errors are not skipped.
+    static bool skipInvalidSettingValue(std::string_view name, const Exception & e);
     static void flushWarnings();
 
     /// The value as it is echoed in the "while setting '<name>' to value <value>" context of a rejected value.
@@ -324,7 +326,8 @@ public:
     void write(WriteBuffer & out) const;
 
     /// Read settings written by `write`.
-    void read(ReadBuffer & in);
+    /// With `skip_invalid_values`, a non-important setting whose value is rejected keeps its default instead of failing the read.
+    void read(ReadBuffer & in, bool skip_invalid_values = false);
 
     /// Write only changed settings in binary format.
     /// Used for serialization of object storage settings (`S3Settings`, `DataLakeStorageSettings`),
@@ -836,7 +839,7 @@ void BaseSettings<TTraits>::readBinary(ReadBuffer & in)
 }
 
 template <typename TTraits>
-void BaseSettings<TTraits>::read(ReadBuffer & in)
+void BaseSettings<TTraits>::read(ReadBuffer & in, bool skip_invalid_values)
 {
     resetToDefault();
     const auto & accessor = Traits::Accessor::instance();
@@ -871,7 +874,20 @@ void BaseSettings<TTraits>::read(ReadBuffer & in)
                 accessor.setValue(*this, index, static_cast<Field>(temp));
             }
             else
-                accessor.setValueString(*this, index, BaseSettingsHelpers::readString(in));
+            {
+                String value = BaseSettingsHelpers::readString(in);
+                try
+                {
+                    accessor.setValueString(*this, index, value);
+                }
+                catch (const Exception & e)
+                {
+                    if (!skip_invalid_values || is_important || !BaseSettingsHelpers::skipInvalidSettingValue(name, e))
+                        throw;
+                    /// A failed parse may have assigned the field already.
+                    accessor.resetValueToDefault(*this, index);
+                }
+            }
         }
         else if (is_important)
         {
@@ -1560,10 +1576,15 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
         /** Whether this traits allows custom settings */ \
         static constexpr bool allow_custom_settings = ALLOW_CUSTOM_SETTINGS; \
         \
-        /** Map of aliases to actual setting names */ \
-        static inline const AliasMap aliases_to_settings \
-            = {LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_) \
-                   LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_)}; \
+        /** Map of aliases to actual setting names. Built on first use rather than by a static initializer */ \
+        /** in every translation unit that defines a settings traits. */ \
+        static const AliasMap & aliasesToSettings() \
+        { \
+            static const AliasMap aliases_to_settings \
+                = {LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_) \
+                       LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_)}; \
+            return aliases_to_settings; \
+        } \
         \
         /** Reverse map: setting name -> list of aliases */ \
         using SettingsToAliasesMap = UnorderedMapWithMemoryTracking<std::string_view, VectorWithMemoryTracking<std::string_view>>; \
@@ -1572,7 +1593,7 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             static SettingsToAliasesMap setting_to_aliases_mapping = [] \
             { \
                 UnorderedMapWithMemoryTracking<std::string_view, VectorWithMemoryTracking<std::string_view>> map; \
-                for (const auto & [alias, destination] : aliases_to_settings) \
+                for (const auto & [alias, destination] : aliasesToSettings()) \
                     map[destination].push_back(alias); \
                 return map; \
             }(); \
@@ -1582,7 +1603,7 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
         /** Resolve alias to actual setting name */ \
         static std::string_view resolveName(std::string_view name) \
         { \
-            if (auto it = aliases_to_settings.find(name); it != aliases_to_settings.end()) \
+            if (auto it = aliasesToSettings().find(name); it != aliasesToSettings().end()) \
                 return it->second; \
             return name; \
         }
