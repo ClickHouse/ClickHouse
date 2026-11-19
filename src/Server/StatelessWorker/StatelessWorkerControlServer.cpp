@@ -260,6 +260,8 @@ void StatelessWorkerControlServer::Session::serve()
     const Poco::Timespan io_timeout(std::chrono::duration_cast<std::chrono::microseconds>(server.limits.silence_timeout).count());
     socket.setReceiveTimeout(io_timeout);
     socket.setSendTimeout(io_timeout);
+    /// Replies are small frames, often two back to back: with Nagle the second waits for the initiator's delayed ACK (40 ms).
+    socket.setNoDelay(true);
 
     send(makeHelloReply(0, ""));
     LOG_DEBUG(log, "Opened the control connection of {} from {} ({})", unique_query_id, initiator, peer);
