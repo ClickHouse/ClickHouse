@@ -86,7 +86,7 @@ ${CLICKHOUSE_CLIENT} $pin --user "$reader" --log_comment "05616_reader_${db}_$ru
 ${CLICKHOUSE_CLIENT} --query "
     SYSTEM FLUSH LOGS query_log;
     SELECT if(log_comment LIKE '05616_definer_%', 'definer', 'reader'), read_rows < 5000 FROM system.query_log
-    WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND event_date >= yesterday()
+    WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND event_date >= yesterday() AND is_initial_query
       AND log_comment IN ('05616_definer_${db}_$run', '05616_reader_${db}_$run')
     ORDER BY log_comment"
 

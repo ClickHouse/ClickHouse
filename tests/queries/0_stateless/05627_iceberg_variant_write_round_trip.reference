@@ -1,0 +1,21 @@
+--- Literal dots in JSON keys
+{"a.b":1,"a":{"b":2},"c":{"d.e":{"f":3}}}	['a%2Eb','a.b','c.d%2Ee.f']
+--- Unlimited max_parser_depth
+{"a":{"b":1}}
+--- Deep dotted path with a raised max_parser_depth
+TOO_DEEP_RECURSION
+alive
+--- Explicit Variant schema
+\N	None	[NULL]	(3)	{'k':NULL}
+42	Int64	[1,'x']	('y')	{'k':7}
+z	String	[]	(NULL)	{}
+--- Variant map keys are required
+[('m.key_value.key.metadata',1,1),('m.key_value.key.value',1,1),('m.key_value.value',1,1)]
+{'1':'x','k':'y'}
+--- Widening a variant column
+1	Int64
+2.5	Float64
+x	String
+--- Variant partition sources
+the Iceberg type `variant` cannot be a partition source
+0

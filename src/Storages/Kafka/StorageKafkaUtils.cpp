@@ -46,6 +46,7 @@
 
 #include <cppkafka/cppkafka.h>
 #include <librdkafka/rdkafka.h>
+#include <Databases/IDatabase.h>
 
 #if USE_KRB5
 #    include <Access/KerberosInit.h>
@@ -382,8 +383,6 @@ void registerStorageKafka(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-
 # Kafka table engine
 
 <Tip>
