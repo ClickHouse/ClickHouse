@@ -92,6 +92,7 @@ namespace Setting
     extern const SettingsBool iceberg_insert_single_manifest_for_all_partitions;
     extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
     extern const SettingsNonZeroUInt64 iceberg_metadata_previous_versions_max;
+    extern const SettingsUInt64 iceberg_insert_max_data_files_in_upload;
 }
 
 namespace DataLakeStorageSetting
@@ -1287,6 +1288,8 @@ IcebergStorageSink::IcebergStorageSink(
     const StorageID & table_id_)
     : SinkToStorage(sample_block_)
     , sample_block(sample_block_)
+    , data_file_uploads(object_storage_->supportParallelWrite()
+        ? context_->getSettingsRef()[Setting::iceberg_insert_max_data_files_in_upload] : 0)
     , object_storage(object_storage_)
     , context(context_)
     , format_settings(format_settings_)
@@ -1414,6 +1417,7 @@ void IcebergStorageSink::consume(Chunk & chunk)
                 context->getSettingsRef()[Setting::iceberg_insert_max_bytes_in_data_file],
                 current_schema->getArray(Iceberg::f_fields),
                 filename_generator,
+                data_file_uploads,
                 persistent_table_components.path_resolver,
                 object_storage,
                 context,
@@ -1501,6 +1505,8 @@ void IcebergStorageSink::finalizeBuffers()
         total_chunks_size += writer.getResultBytes();
     }
 
+    data_file_uploads.finalize();
+
     if (writer_per_partition_key.empty())
         return;
 
@@ -1541,6 +1547,7 @@ void IcebergStorageSink::cancelBuffers()
     {
         writer.cancel();
     }
+    data_file_uploads.cancel();
 }
 
 void IcebergStorageSink::removeDataFilesAndManifests()
