@@ -162,6 +162,8 @@ public:
         INSTRUMENT_REMOVE,
         RESET_DDL_WORKER,
         RESET_FILELOG,
+        DROP_SERIAL_ID,
+        RESET_SERIAL_ID,
         STOP_ALL_BACKGROUND,
         START_ALL_BACKGROUND,
         PAUSE_ALL_BACKGROUND,
@@ -238,6 +240,8 @@ public:
     String queue_path;
 
     String fail_point_name;
+    String serial_id_name;
+    std::optional<UInt64> serial_id_reset_value;
 
     enum class FailPointAction
     {

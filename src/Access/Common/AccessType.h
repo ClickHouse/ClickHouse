@@ -420,6 +420,8 @@ enum class AccessType : uint16_t
     M(SYSTEM_INSTRUMENT_REMOVE, "SYSTEM INSTRUMENT REMOVE", GLOBAL, SYSTEM) \
     M(SYSTEM_RESET_DDL_WORKER, "SYSTEM RESET DDL WORKER, RESET DDL WORKER", GLOBAL, SYSTEM) \
     M(SYSTEM_RESET_FILELOG, "RESET FILELOG", TABLE, SYSTEM) \
+    M(SYSTEM_DROP_SERIAL_ID, "SYSTEM DROP SERIAL ID, DROP SERIAL ID", GLOBAL, SYSTEM) \
+    M(SYSTEM_RESET_SERIAL_ID, "SYSTEM RESET SERIAL ID, RESET SERIAL ID", GLOBAL, SYSTEM) \
     M(SYSTEM, "", GROUP, ALL) /* allows to execute SYSTEM {SHUTDOWN|RELOAD CONFIG|...} */ \
     \
     M(dictGet, "dictHas, dictGetHierarchy, dictGetRoot, dictGetChildren, dictGetDescendants, dictIsIn", DICTIONARY, ALL) /* allows to execute functions dictGet(), dictHas(), dictGetHierarchy(), dictGetRoot(), dictGetChildren(), dictGetDescendants(), dictIsIn() */\
