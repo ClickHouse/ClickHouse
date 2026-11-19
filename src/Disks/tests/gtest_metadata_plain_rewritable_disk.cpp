@@ -4132,6 +4132,159 @@ TEST_F(MetadataPlainRewritableDiskTest, BlobRemovalMarkerWithInvalidKeyRemovesNo
     EXPECT_TRUE(object_storage->exists(StoredObject(a_metadata_key)));
 }
 
+/// The keys of the blobs of a directory in the explicit form are read from its `prefix.path`, and the blobs of a removed
+/// subtree are deleted on load. A key that names an object outside of the blobs of the disk must not be accepted there
+/// either: here the subtree of a committed recursive removal lists an absolute key of an object next to the disk.
+TEST_F(MetadataPlainRewritableDiskTest, ExplicitFileListWithInvalidKeyRemovesNothing)
+{
+    EXPECT_EQ(parsePrefixPath("a/\nfiles: 1\nf\tabc/def\t6\n").files.at(0).blob_key, "abc/def");
+    for (const auto & blob_key : std::vector<std::string>{"/other/victim.bin", "../victim.bin", "a/../../victim.bin", "a/./b", "__meta/a/prefix.path"})
+        EXPECT_THROW(parsePrefixPath(fmt::format("a/\nfiles: 1\nf\t{}\t6\n", blob_key)), Exception) << blob_key;
+
+    thread_local_rng.seed(42);
+
+    const std::string test = "ExplicitFileListWithInvalidKeyRemovesNothing";
+    auto metadata = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    /// A hard link to `B` switches `A` to the explicit form.
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("B");
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath("B/f1").serialize(), "shared");
+        tx->createMetadataFile("B/f1", {StoredObject("f1", "f1", size)});
+        tx->createHardLink("B/f1", "A/f1");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto a_metadata_key = createMetadataObjectPath(metadata, "A");
+    ASSERT_TRUE(parsePrefixPath(readObject(object_storage, a_metadata_key)).has_explicit_file_list);
+
+    /// The removal is committed, but its cleanup is interrupted: the subtree is left under a removed name.
+    {
+        FailPointInjection::enableFailPoint("plain_object_storage_fail_on_finalize");
+        SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_fail_on_finalize"));
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("A", /*should_remove_objects=*/nullptr);
+        tx->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_FALSE(metadata->existsDirectory("A"));
+    ASSERT_TRUE(object_storage->exists(StoredObject(a_metadata_key)));
+    metadata->shutdown();
+
+    const std::string victim_key = fmt::format("./{}_victim.bin", test);
+    writeObject(object_storage, victim_key, "victim");
+    SCOPE_EXIT({ std::filesystem::remove(victim_key); });
+
+    const auto original_contents = readObject(object_storage, a_metadata_key);
+    const auto removed_logical_path = parsePrefixPath(original_contents).logical_path;
+    writeObject(object_storage, a_metadata_key, fmt::format("{}\nfiles: 1\nf\t{}\t6\n", removed_logical_path, fs::absolute(victim_key).lexically_normal().string()));
+
+    /// The forged file list makes the load fail, and nothing is deleted.
+    EXPECT_THROW(std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", hard_links_enabled), Exception);
+    EXPECT_EQ(readObject(object_storage, victim_key), "victim");
+    EXPECT_TRUE(object_storage->exists(StoredObject(a_metadata_key)));
+
+    /// With the original file list, the subtree is reclaimed, and the blob still linked from `B` is kept.
+    writeObject(object_storage, a_metadata_key, original_contents);
+    metadata = restartMetadataStorage(test);
+    EXPECT_FALSE(object_storage->exists(StoredObject(a_metadata_key)));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/f1").front().remote_path), "shared");
+    EXPECT_EQ(readObject(object_storage, victim_key), "victim");
+}
+
+/// A metadata-only replacement of `B/target` by `A/source` rewrites `prefix.path` of `B` (which then references the
+/// blob of the source), then of `A` (which then does not). When a later operation of the transaction fails, the rollback
+/// has to restore `A` before `B`: here the rollback dies (the write fails for good) after its first rewrite, and the
+/// content of the source must still be reachable after a reload.
+TEST_F(MetadataPlainRewritableDiskTest, MetadataOnlyReplaceUndoKeepsTheMovedBlobReferenced)
+{
+    class FailingWriteStorage : public LocalObjectStorage
+    {
+    public:
+        using LocalObjectStorage::LocalObjectStorage;
+
+        std::string key_to_fail;
+        std::atomic<size_t> writes_before_failure = 0;
+        std::atomic<size_t> injected_failures = 0;
+
+        std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
+            const StoredObject & object,
+            WriteMode mode,
+            std::optional<ObjectAttributes> attributes,
+            size_t buf_size,
+            const WriteSettings & write_settings) override
+        {
+            if (!key_to_fail.empty() && fs::path(object.remote_path).lexically_normal() == fs::path(key_to_fail).lexically_normal())
+            {
+                if (writes_before_failure == 0)
+                {
+                    ++injected_failures;
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Injected failure to write '{}'", object.remote_path);
+                }
+                --writes_before_failure;
+            }
+            return LocalObjectStorage::writeObject(object, mode, std::move(attributes), buf_size, write_settings);
+        }
+    };
+
+    thread_local_rng.seed(42);
+
+    const std::string test = "MetadataOnlyReplaceUndoKeepsTheMovedBlobReferenced";
+    getMetadataStorage(test);
+    auto object_storage = std::make_shared<FailingWriteStorage>(LocalObjectStorageSettings("failing", getObjectStorage(test)->getCommonKeyPrefix(), false));
+    auto metadata = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", hard_links_enabled);
+
+    auto write_file = [&](const auto & tx, const std::string & path, const std::string & data)
+    {
+        const auto key = tx->generateObjectKeyForPath(path).serialize();
+        size_t size = writeObject(object_storage, key, data);
+        tx->createMetadataFile(path, {StoredObject(key, path, size)});
+    };
+
+    /// A hard link from `A` switches `B` to the explicit form, so the replacement is metadata-only.
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("B");
+        tx->createDirectory("C");
+        write_file(tx, "A/shared", "shared");
+        tx->createHardLink("A/shared", "B/shared");
+        write_file(tx, "A/source", "source");
+        write_file(tx, "B/target", "target");
+        write_file(tx, "C/x", "x");
+        tx->commit(DB::NoCommitOptions{});
+    }
+    ASSERT_TRUE(parsePrefixPath(readObject(object_storage, createMetadataObjectPath(metadata, "B"))).has_explicit_file_list);
+    ASSERT_FALSE(parsePrefixPath(readObject(object_storage, createMetadataObjectPath(metadata, "C"))).has_explicit_file_list);
+
+    /// The replacement rewrites `prefix.path` of `A` once, and every later rewrite of it fails.
+    object_storage->key_to_fail = createMetadataObjectPath(metadata, "A");
+    object_storage->writes_before_failure = 1;
+    {
+        /// Fails the move in `C`, which copies its blob, after the replacement.
+        FailPointInjection::enableFailPoint("plain_object_storage_copy_fail_on_file_move");
+        SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_copy_fail_on_file_move"));
+
+        auto tx = metadata->createTransaction();
+        tx->replaceFile("A/source", "B/target");
+        tx->moveFile("C/x", "C/y");
+        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+    }
+    EXPECT_GT(object_storage->injected_failures.load(), 0u);
+    object_storage->key_to_fail.clear();
+    metadata->shutdown();
+
+    auto reloaded = restartMetadataStorage(test);
+    std::vector<std::string> contents;
+    for (const auto & path : {"A/source", "B/target"})
+        if (reloaded->existsFile(path))
+            contents.push_back(readObject(object_storage, reloaded->getStorageObjects(path).front().remote_path));
+    EXPECT_THAT(contents, testing::Contains("source"));
+    EXPECT_EQ(readObject(object_storage, reloaded->getStorageObjects("A/shared").front().remote_path), "shared");
+}
+
 TEST_F(MetadataPlainRewritableDiskTest, HardLinksDisabled)
 {
     thread_local_rng.seed(42);

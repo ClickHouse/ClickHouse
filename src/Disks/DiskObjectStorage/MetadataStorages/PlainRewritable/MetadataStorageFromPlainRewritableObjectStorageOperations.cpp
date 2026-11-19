@@ -1172,19 +1172,23 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
     {
         LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation"), "Reversing the metadata rewrite for the move from '{}' to '{}'", path_from, path_to);
 
-        if (prefix_path_written_to)
-        {
-            undoWithRetries(getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation"), fmt::format("restore the metadata of the directory of '{}'", path_to), [&]
-            {
-                writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_to).parent_path(), previous_directory_info_to.value());
-            });
-        }
-
+        /// The rewrites are reversed in the reverse order of `execute`, so that the moved blob stays referenced
+        /// throughout: the source is restored before the target drops its reference. Otherwise a process that dies
+        /// in between (or a rewrite of the source that fails for good) would leave the blob linked from nowhere,
+        /// and no marker names it.
         if (prefix_path_written_from)
         {
             undoWithRetries(getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation"), fmt::format("restore the metadata of the directory of '{}'", path_from), [&]
             {
                 writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_from).parent_path(), previous_directory_info_from.value());
+            });
+        }
+
+        if (prefix_path_written_to)
+        {
+            undoWithRetries(getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation"), fmt::format("restore the metadata of the directory of '{}'", path_to), [&]
+            {
+                writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_to).parent_path(), previous_directory_info_to.value());
             });
         }
 
