@@ -47,6 +47,42 @@ FROM (EXPLAIN SELECT * FROM (SELECT 1 AS x) t1
       JOIN (SELECT 1 AS x) t4 ON t1.x = t4.x
       SETTINGS join_runtime_filter_min_probe_rows = 0);
 
+-- A probe estimated at or below the limit still gets the filters when a key comes from a larger input of an inner
+-- join below: the filter is pushed down to that input. Row estimates come from hints.
+DROP TABLE IF EXISTS key_path_p;
+DROP TABLE IF EXISTS key_path_b;
+DROP TABLE IF EXISTS key_path_s;
+
+CREATE TABLE key_path_p (x Int32, y Int32) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE key_path_b (x Int32, z Int32) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE key_path_s (y Int32, z Int32) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO key_path_p SELECT number, number FROM numbers(100);
+INSERT INTO key_path_b SELECT number, number FROM numbers(10);
+INSERT INTO key_path_s SELECT number, number FROM numbers(50);
+
+SET use_statistics = 0;
+SET send_logs_level = 'error';
+SET param__internal_join_table_stat_hints = '
+{
+    "key_path_p": { "cardinality": 100000, "distinct_keys": { "x": 100000, "y": 100000 } },
+    "key_path_b": { "cardinality": 10, "distinct_keys": { "x": 10, "z": 10 } },
+    "key_path_s": { "cardinality": 500, "distinct_keys": { "y": 500, "z": 500 } }
+}';
+
+SELECT 'key from a larger input below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON p.y = s.y);
+
+SELECT 'same, LEFT ANTI' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x LEFT ANTI JOIN key_path_s s ON p.y = s.y);
+
+-- The keys of a multi-key LEFT ANTI JOIN form one tuple filter, which is not pushed below a join whose inputs each hold only some of them.
+SELECT 'multi-key LEFT ANTI' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x LEFT ANTI JOIN key_path_s s ON p.y = s.y AND b.z = s.z);
+
 DROP TABLE small_probe;
 DROP TABLE large_probe;
 DROP TABLE build_side;
+DROP TABLE key_path_p;
+DROP TABLE key_path_b;
+DROP TABLE key_path_s;

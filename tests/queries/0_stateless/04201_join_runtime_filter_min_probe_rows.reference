@@ -4,3 +4,6 @@ min=0, small probe	1
 min=50, 50-row probe	0
 chain default	0
 chain min=0	3
+key from a larger input below	2
+same, LEFT ANTI	2
+multi-key LEFT ANTI	1
