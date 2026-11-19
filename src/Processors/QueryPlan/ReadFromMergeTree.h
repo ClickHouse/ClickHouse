@@ -6,6 +6,7 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/DequeWithMemoryTracking.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/QueryPlan/MergeTreeFinalMerge.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
@@ -399,8 +400,12 @@ public:
     /// Whether `requestReadingInOrder` accepts a reverse direction. With `FINAL`, only the engines whose merge
     /// does not depend on the direct order of rows can read in reverse order.
     bool canReadInReverseOrder() const;
-    bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
-    void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
+    bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_, VirtualRowFixedKeys virtual_row_fixed_keys_ = {});
+    void resetVirtualRowConversions()
+    {
+        virtual_row_conversion = nullptr;
+        virtual_row_fixed_keys.clear();
+    }
 
     /// Whether every part surviving pruning has the value of its virtual row in the index.
     /// Loads only those parts' primary indexes; returns false if part filters are unavailable.
@@ -986,6 +991,9 @@ private:
     Names columns_read_lazily;
 
     ExpressionActionsPtr virtual_row_conversion;
+    /// Empty unless the filter fixes key columns. Then a virtual row is built only from an index entry
+    /// with these values, see `virtualRowMatchesFixedKeys`.
+    VirtualRowFixedKeys virtual_row_fixed_keys;
 
     std::optional<size_t> number_of_current_replica;
 

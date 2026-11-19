@@ -2,14 +2,14 @@
 -- no-random-merge-tree-settings: needs 64-row granules and exactly one part per insert.
 -- no-parallel-replicas: counts the per-input reads of a single-node read-in-order merge.
 
--- A `WHERE` that fixes a key prefix (`k = 1`) disables virtual rows, so every input of the read-in-order merge starts
--- with real data. A buffered input must stop reading ahead once the inputs that sort before it already cover the LIMIT.
+-- Without virtual rows (`read_in_order_use_virtual_row = 0`) every input of the read-in-order merge starts with real
+-- data. A buffered input must stop reading ahead once the inputs that sort before it already cover the LIMIT.
 -- One sparse part is slow to deliver its first rows (`sleepEachRow`), which delays the merge; meanwhile the other
 -- sparse parts must not read to their own LIMIT.
 -- T1 and T2 run on one thread, which starts with the input of the last inserted part, so the dense part is inserted
 -- last. With more threads a sparse part can reach its LIMIT before the dense part delivers any rows.
 
-SET optimize_read_in_order = 1, read_in_order_use_buffering = 1, read_in_order_use_virtual_row = 1,
+SET optimize_read_in_order = 1, read_in_order_use_buffering = 1, read_in_order_use_virtual_row = 0,
     read_in_order_two_level_merge_threshold = 100, max_threads = 8, max_block_size = 128,
     preferred_block_size_bytes = 1000000, merge_tree_min_rows_for_concurrent_read = 163840,
     merge_tree_min_bytes_for_concurrent_read = 251658240, optimize_move_to_prewhere = 0,
@@ -95,7 +95,7 @@ SETTINGS max_threads = 1, log_comment = '05497_t5';
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
 SET max_block_size = DEFAULT;
 
--- Inputs, inputs with a virtual row (none: the key prefix is fixed), inputs that read at least the LIMIT (in T1 and
+-- Inputs, inputs with a virtual row (none: they are disabled), inputs that read at least the LIMIT (in T1 and
 -- T2 only the dense one).
 SELECT
     log_comment,

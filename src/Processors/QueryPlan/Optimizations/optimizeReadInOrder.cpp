@@ -12,6 +12,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTWindowDefinition.h>
@@ -254,7 +255,9 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
 /// FixedColumns are columns which values become constants after filtering.
 /// In a query "SELECT x, y, z FROM table WHERE x = 1 AND y = 'a' ORDER BY x, y, z"
 /// Fixed columns are 'x' and 'y'.
-using FixedColumns = std::unordered_set<const ActionsDAG::Node *>;
+/// The value is what the column is fixed to, in the type of the column. It is Null when it is not known,
+/// e.g. `toString(x) = '1'` fixes `x`, and `x = 1` fixes `x + 1`.
+using FixedColumns = std::unordered_map<const ActionsDAG::Node *, Field>;
 
 /// Whether the type is a `Variant` or `Dynamic`, also as an element of a `Tuple` or of a nested `Tuple`: `equals` compares tuples
 /// element by element, but `Array` and `Map` values of one type with `compareAt`, which tells apart the types stored in a `Dynamic`.
@@ -369,9 +372,24 @@ bool isSingleElementSetForProbe(const ActionsDAG::Node & set_node, const Actions
     return probe_type->equals(*set_type);
 }
 
-void addFixedColumn(const ActionsDAG::Node * fixed_column, FixedColumns & fixed_columns)
+/// The element of a single-element set, see `isSingleElementSetForProbe`.
+Field getSingleSetElement(const ActionsDAG::Node & set_node)
 {
-    fixed_columns.insert(fixed_column);
+    const auto & column_set = assert_cast<const ColumnSet &>(set_node.column->getDataColumn());
+    const auto elements = assert_cast<const FutureSetFromTuple &>(*column_set.getData()).get()->getSetElements();
+    return elements.empty() ? Field() : (*elements.front())[0];
+}
+
+/// Marks the column as fixed. A value which is already known is kept.
+void setFixedColumn(FixedColumns & fixed_columns, const ActionsDAG::Node * column, const Field & value)
+{
+    if (auto & fixed_value = fixed_columns[column]; fixed_value.isNull())
+        fixed_value = value;
+}
+
+void addFixedColumn(const ActionsDAG::Node * fixed_column, const Field & value, FixedColumns & fixed_columns)
+{
+    setFixedColumn(fixed_columns, fixed_column, value);
 
     /// Support injective functions chain.
     const ActionsDAG::Node * maybe_injective = fixed_column;
@@ -380,7 +398,7 @@ void addFixedColumn(const ActionsDAG::Node * fixed_column, FixedColumns & fixed_
         && maybe_injective->function_base->isInjective(getFunctionArgumentColumns(*maybe_injective)))
     {
         maybe_injective = maybe_injective->children.front();
-        fixed_columns.insert(maybe_injective);
+        fixed_columns.try_emplace(maybe_injective);
     }
 }
 
@@ -424,13 +442,18 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
 
                 if (maybe_fixed_column && num_constant_columns + 1 == node->children.size()
                     && !equalsMatchesSeveralValues(maybe_fixed_column->result_type, constant->column, constant->result_type))
-                    addFixedColumn(maybe_fixed_column, fixed_columns);
+                {
+                    /// Null if the type of the column cannot hold exactly that value.
+                    auto value = tryConvertFieldToTypeExact(
+                        (*constant->column)[0], *maybe_fixed_column->result_type, constant->result_type.get());
+                    addFixedColumn(maybe_fixed_column, value, fixed_columns);
+                }
             }
             else if (name == "in" || name == "globalIn" || name == "nullIn" || name == "globalNullIn")
             {
                 if (node->children.size() == 2 && !node->children[0]->column
                     && isSingleElementSetForProbe(*node->children[1], *node->children[0]))
-                    addFixedColumn(node->children[0], fixed_columns);
+                    addFixedColumn(node->children[0], getSingleSetElement(*node->children[1]), fixed_columns);
             }
         }
     }
@@ -535,18 +558,22 @@ void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
     /// This is needed because after DAG merging, there can be multiple INPUT nodes
     /// with the same column name (e.g., one from filter expression and one from SELECT).
     /// If any INPUT node with a given name is fixed, all INPUT nodes with that name should be fixed.
-    std::unordered_set<std::string_view> fixed_input_names;
-    for (const auto * node : fixed_columns)
+    std::unordered_map<std::string_view, Field> fixed_inputs;
+    for (const auto & [node, value] : fixed_columns)
     {
-        if (node->type == ActionsDAG::ActionType::INPUT)
-            fixed_input_names.insert(node->result_name);
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            continue;
+        if (auto & fixed_value = fixed_inputs[node->result_name]; fixed_value.isNull())
+            fixed_value = value;
     }
 
     /// Add all INPUT nodes with matching names to fixed_columns.
     for (const auto & node : dag.getNodes())
     {
-        if (node.type == ActionsDAG::ActionType::INPUT && fixed_input_names.contains(node.result_name))
-            fixed_columns.insert(&node);
+        if (node.type != ActionsDAG::ActionType::INPUT)
+            continue;
+        if (auto it = fixed_inputs.find(node.result_name); it != fixed_inputs.end())
+            setFixedColumn(fixed_columns, &node, it->second);
     }
 
     struct Frame
@@ -585,8 +612,8 @@ void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
                 {
                     if (frame.node->type == ActionsDAG::ActionType::ALIAS)
                     {
-                        if (fixed_columns.contains(frame.node->children.at(0)))
-                            fixed_columns.insert(frame.node);
+                        if (auto it = fixed_columns.find(frame.node->children.at(0)); it != fixed_columns.end())
+                            setFixedColumn(fixed_columns, frame.node, it->second);
                     }
                     else if (frame.node->type == ActionsDAG::ActionType::FUNCTION)
                     {
@@ -606,7 +633,7 @@ void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
                             if (all_args_fixed_or_const)
                             {
                                 //std::cerr << "*** enrichFixedColumns add " << frame.node->result_name << ' ' << static_cast<const void *>(frame.node) << std::endl;
-                                fixed_columns.insert(frame.node);
+                                fixed_columns.try_emplace(frame.node);
                             }
                         }
                     }
@@ -618,20 +645,20 @@ void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
     }
 }
 
-const ActionsDAG::Node * addMonotonicChain(ActionsDAG & dag, const ActionsDAG::Node * node, const MatchedTrees::Match * match, const std::string & input_name)
+const ActionsDAG::Node * addMonotonicChain(ActionsDAG & dag, const ActionsDAG::Node * node, const MatchedTrees::Match * match, const ActionsDAG::Node * input)
 {
     if (!match->monotonicity)
-        return &dag.addInput(input_name, node->result_type);
+        return input;
 
     if (node->type == ActionsDAG::ActionType::ALIAS)
-        return &dag.addAlias(*addMonotonicChain(dag, node->children.front(), match, input_name), node->result_name);
+        return &dag.addAlias(*addMonotonicChain(dag, node->children.front(), match, input), node->result_name);
 
     ActionsDAG::NodeRawConstPtrs args;
     args.reserve(node->children.size());
     for (const auto * child : node->children)
     {
         if (child == match->monotonicity->child_node)
-            args.push_back(addMonotonicChain(dag, match->monotonicity->child_node, match->monotonicity->child_match, input_name));
+            args.push_back(addMonotonicChain(dag, match->monotonicity->child_node, match->monotonicity->child_match, input));
         else
             args.push_back(&dag.addColumn(child->column, child->result_type, child->result_name));
     }
@@ -646,6 +673,8 @@ struct SortingInputOrder
     /// Convert the PR values to ORDER BY key.
     /// If empty, the optimization cannot be applied.
     std::optional<ActionsDAG> virtual_row_conversion{};
+    /// Only an index entry with these values of the fixed key columns is a virtual row.
+    VirtualRowFixedKeys virtual_row_fixed_keys{};
 };
 
 /// For the case when the order of keys is important (ORDER BY keys).
@@ -676,8 +705,12 @@ SortingInputOrder buildInputOrderFromSortDescription(
             //    << " to " << static_cast<const void *>(match.node) << " " << (match.node ? match.node->result_name : "") << std::endl;
             if (!match.monotonicity || match.monotonicity->strict)
             {
-                if (match.node && fixed_columns.contains(node))
-                    fixed_key_columns.insert(match.node);
+                if (auto it = fixed_columns.find(node); match.node && it != fixed_columns.end())
+                {
+                    /// The key column has the value of a column it matches exactly.
+                    const bool same_column = !match.monotonicity && node->result_type->equals(*match.node->result_type);
+                    setFixedColumn(fixed_key_columns, match.node, same_column ? it->second : Field());
+                }
             }
         }
 
@@ -699,15 +732,25 @@ SortingInputOrder buildInputOrderFromSortDescription(
     struct MatchInfo
     {
         const ActionsDAG::Node * source = nullptr;
-        const ActionsDAG::Node * fixed_column = nullptr;
+        /// The value of a constant or of a column fixed by the filter which is not a sorting key column.
+        ColumnConstPtr fixed_value = nullptr;
         const MatchedTrees::Match * monotonic = nullptr;
+        /// The sorting key column the value is taken from, unless it is `fixed_value`.
+        size_t key_index = 0;
     };
 
     std::vector<MatchInfo> match_infos;
     match_infos.reserve(description.size());
 
-    /// For every fixed `ORDER BY` column: the read direction in which it is ordered like its key column, 0 if there is none.
-    std::vector<int> fixed_column_directions;
+    /// Sorting key columns fixed by the filter. They do not determine the read direction.
+    struct FixedKey
+    {
+        size_t key_index = 0;
+        /// The read direction in which `ORDER BY` compares the column like the sorting key does, 0 if there is none.
+        int direction = 0;
+    };
+
+    std::vector<FixedKey> fixed_keys;
 
     while (next_description_column < description.size() && next_sort_key < sorting_key.column_names.size())
     {
@@ -767,7 +810,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
 
             //std::cerr << "====== (no dag) Found direct match" << std::endl;
 
-            match_infos.push_back({.source = sort_column_node});
+            match_infos.push_back({.source = sort_column_node, .key_index = next_sort_key});
             ++next_description_column;
             ++next_sort_key;
         }
@@ -799,11 +842,12 @@ SortingInputOrder buildInputOrderFromSortDescription(
                     const bool requests_nulls_last = sort_column_description.direction == sort_column_description.nulls_direction;
                     if (column_is_nullable && (direction * reverse_indicator == 1) != requests_nulls_last)
                         direction = 0;
-                    fixed_column_directions.push_back(direction);
+                    fixed_keys.push_back({next_sort_key, direction});
 
                     /// Still add the fixed column to the sort description (required for sort matching)
                     /// but don't set current_direction so it won't influence read_direction.
-                    match_infos.push_back({.source = sort_node, .monotonic = match.monotonicity ? &match : nullptr});
+                    match_infos.push_back(
+                        {.source = sort_node, .monotonic = match.monotonicity ? &match : nullptr, .key_index = next_sort_key});
                     order_key_prefix_descr.push_back(sort_column_description);
                     ++next_description_column;
                     ++next_sort_key;
@@ -820,25 +864,23 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 {
                     current_direction *= match.monotonicity->direction;
                     strict_monotonic = match.monotonicity->strict;
-                    match_infos.push_back({.source = sort_node, .monotonic = &match});
+                    match_infos.push_back({.source = sort_node, .monotonic = &match, .key_index = next_sort_key});
                 }
                 else
-                    match_infos.push_back({.source = sort_node});
+                    match_infos.push_back({.source = sort_node, .key_index = next_sort_key});
 
                 ++next_description_column;
                 ++next_sort_key;
             }
             else if (fixed_key_columns.contains(sort_column_node))
             {
-                // A key column fixed by WHERE is skipped here without emitting a MatchInfo, so the
-                // matched columns after it become non-contiguous in the key. The virtual row builder
-                // and pk_header both assume the required key columns are a contiguous prefix and index
-                // them densely, so a skipped key shifts every later column onto the wrong key column
-                // (wrong value -> boundary violation, wrong type -> "Virtual row has different type").
-                // Disable virtual rows whenever a key column is skipped, e.g. pk (a,b) a=1 order by b:
+                // A key column fixed by WHERE is skipped here without emitting a MatchInfo.
+                // An index entry may hold another value of it, and then its later columns do not bound
+                // the rows after the filter, e.g. pk (a,b) a=1 order by b:
                 // 1st part (0, 100), (1, 2), (1, 3), (1, 4)
                 // 2nd part (0, 100), (1, 2), (1, 3), (1, 4).
-                can_optimize_virtual_row = false;
+                // So only an entry with the fixed value is a virtual row, see `virtual_row_fixed_keys`.
+                fixed_keys.push_back({next_sort_key, 0});
 
                 //std::cerr << "+++++++++ Found fixed key by match" << std::endl;
                 ++next_sort_key;
@@ -850,14 +892,17 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 if (!is_fixed_column)
                     break;
 
-                if (!sort_node->column)
-                    /// Virtual row for fixed column from order by is not supported now.
-                    /// TODO: we can do it for the simple case,
-                    /// But it's better to remove fixed columns from ORDER BY completely, e.g:
-                    /// WHERE x = 42 ORDER BY x, y    =>    WHERE x = 42 ORDER BY y
-                    can_optimize_virtual_row = false;
+                /// The virtual row has the fixed value in the column, like the rows.
+                ColumnConstPtr fixed_value = sort_node->column;
+                if (!fixed_value)
+                {
+                    if (const auto & value = fixed_columns.at(sort_node); !value.isNull())
+                        fixed_value = sort_node->result_type->createColumnConst(1, value);
+                    else
+                        can_optimize_virtual_row = false;
+                }
 
-                match_infos.push_back({.source = sort_node, .fixed_column = sort_node});
+                match_infos.push_back({.source = sort_node, .fixed_value = fixed_value});
                 order_key_prefix_descr.push_back(sort_column_description);
                 ++next_description_column;
             }
@@ -920,44 +965,62 @@ SortingInputOrder buildInputOrderFromSortDescription(
     if (pk_column_names.size() < next_sort_key)
         can_optimize_virtual_row = false;
 
-    /// The virtual row takes a fixed `ORDER BY` column from the index like any other key column.
-    /// It bounds the rows only if the read goes in the direction of the column, as if the column was not fixed.
-    if (std::ranges::any_of(fixed_column_directions, [&](int direction) { return direction != read_direction; }))
-        can_optimize_virtual_row = false;
-
     auto order_info = std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, read_direction, limit);
 
     std::optional<ActionsDAG> virtual_row_conversion;
+    VirtualRowFixedKeys virtual_row_fixed_keys;
     if (can_optimize_virtual_row)
     {
+        /// The virtual row is an index entry: it has every key column of the prefix.
         ActionsDAG virtual_row_dag;
-        virtual_row_dag.getOutputs().reserve(match_infos.size());
-        size_t next_pk_name = 0;
+        ActionsDAG::NodeRawConstPtrs pk_inputs;
+        for (size_t i = 0; i < next_sort_key; ++i)
+            pk_inputs.push_back(&virtual_row_dag.addInput(pk_column_names[i], sorting_key.data_types[i]));
+
+        /// The key columns up to the last one which the merge compares.
+        size_t num_compared_keys = 0;
         for (const auto & info : match_infos)
         {
             const ActionsDAG::Node * output = nullptr;
-            if (info.fixed_column)
-                output = &virtual_row_dag.addColumn(info.fixed_column->column, info.fixed_column->result_type, info.fixed_column->result_name);
+            if (info.fixed_value)
+                output = &virtual_row_dag.addColumn(info.fixed_value, info.source->result_type, info.source->result_name);
+            else if (info.monotonic)
+                output = addMonotonicChain(virtual_row_dag, info.source, info.monotonic, pk_inputs[info.key_index]);
             else
             {
-                if (info.monotonic)
-                    output = addMonotonicChain(virtual_row_dag, info.source, info.monotonic, pk_column_names[next_pk_name]);
-                else
-                {
-                    output = &virtual_row_dag.addInput(pk_column_names[next_pk_name], info.source->result_type);
-                    if (pk_column_names[next_pk_name] != info.source->result_name)
-                        output = &virtual_row_dag.addAlias(*output, info.source->result_name);
-                }
-
-                ++next_pk_name;
+                output = pk_inputs[info.key_index];
+                if (output->result_name != info.source->result_name)
+                    output = &virtual_row_dag.addAlias(*output, info.source->result_name);
             }
+
+            if (!info.fixed_value)
+                num_compared_keys = info.key_index + 1;
 
             virtual_row_dag.getOutputs().push_back(output);
         }
-        virtual_row_conversion = std::move(virtual_row_dag);
+
+        /// An index entry bounds the rows of its part in the order of the sorting key, but the merge of the streams compares
+        /// only the columns of `ORDER BY`. So the entry has to have the fixed value in every key column before the last compared
+        /// one, unless `ORDER BY` compares that column like the sorting key does.
+        for (const auto & key : fixed_keys)
+        {
+            if (key.direction == read_direction || key.key_index >= num_compared_keys)
+                continue;
+
+            const auto & value = fixed_key_columns.at(sorting_key_dag.tryFindInOutputs(sorting_key.column_names[key.key_index]));
+            if (value.isNull())
+            {
+                can_optimize_virtual_row = false;
+                break;
+            }
+            virtual_row_fixed_keys.emplace_back(key.key_index, value);
+        }
+
+        if (can_optimize_virtual_row)
+            virtual_row_conversion = std::move(virtual_row_dag);
     }
 
-    return {std::move(order_info), std::move(virtual_row_conversion)};
+    return {std::move(order_info), std::move(virtual_row_conversion), std::move(virtual_row_fixed_keys)};
 }
 
 /// We may need a few different sort descriptions here.
@@ -1012,7 +1075,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
             if (!match.monotonicity || match.monotonicity->strict)
             {
                 if (match.node && fixed_columns.contains(node))
-                    fixed_key_columns.insert(match.node);
+                    fixed_key_columns.try_emplace(match.node);
             }
         }
 
@@ -1262,11 +1325,11 @@ void buildCombinedDAGForMergeChildPlan(
         {
             combined_dag.emplace(std::move(outer_clone));
 
-            for (const auto * outer_node : outer_fixed_columns)
+            for (const auto & [outer_node, value] : outer_fixed_columns)
             {
                 auto it = clone_mapping.find(outer_node);
                 if (it != clone_mapping.end())
-                    combined_fixed_columns.insert(it->second);
+                    setFixedColumn(combined_fixed_columns, it->second, value);
             }
         }
         else
@@ -1274,7 +1337,7 @@ void buildCombinedDAGForMergeChildPlan(
             ActionsDAG::NodeMapping inputs_map;
             combined_dag->mergeInplace(std::move(outer_clone), inputs_map, /*remove_dangling_inputs=*/ false);
 
-            for (const auto * outer_node : outer_fixed_columns)
+            for (const auto & [outer_node, value] : outer_fixed_columns)
             {
                 auto it = clone_mapping.find(outer_node);
                 if (it == clone_mapping.end())
@@ -1282,7 +1345,7 @@ void buildCombinedDAGForMergeChildPlan(
                 const auto * mapped = it->second;
                 if (auto remap_it = inputs_map.find(mapped); remap_it != inputs_map.end())
                     mapped = remap_it->second;
-                combined_fixed_columns.insert(mapped);
+                setFixedColumn(combined_fixed_columns, mapped, value);
             }
         }
     }
@@ -1471,13 +1534,16 @@ InputOrderInfoPtr buildInputOrderInfo(
             bool uses_virtual_row = false;
             if (order_info.virtual_row_conversion)
             {
-                uses_virtual_row = reading->setVirtualRowConversions(std::move(*order_info.virtual_row_conversion));
+                uses_virtual_row = reading->setVirtualRowConversions(
+                    std::move(*order_info.virtual_row_conversion), std::move(order_info.virtual_row_fixed_keys));
                 virtual_row_reader = reading;
             }
 
             /// Joins that can discard left rows need virtual rows from every selected part to avoid
             /// excessive reading by the merge after the join. `LEFT ALL` and `LEFT ANY` preserve left rows.
             /// `query_plan_read_in_order_through_join = 'force'` accepts the over-read.
+            /// The check does not cover `virtual_row_fixed_keys`: a part whose index entry has another value of a fixed
+            /// key column gives no virtual row and is read from the start.
             /// This holds for filled joins (`FilledJoinStep`) just the same - an INNER Join-engine
             /// table filters the ordered streams exactly like a plain INNER join - so the check
             /// runs over every traversed join, not only the ones that need the in-order pin.
