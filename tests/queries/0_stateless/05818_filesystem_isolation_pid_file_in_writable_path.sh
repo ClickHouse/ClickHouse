@@ -7,8 +7,9 @@
 # supervisor overwrite or remove a file there at the next start. Such a pid file stops the startup with `enforce`, and
 # the server runs without the isolation with `best_effort`: one in a path writable inside, one behind a symbolic link in
 # such a path, even if the link leads outside of it, one under another name of such a path (a bind mount on the host, the
-# upper directory of an overlay), and the pid file itself made writable inside. A pid file behind any symbolic link is
-# refused as well, because the directory of the link can be writable inside under a name that is not known. Where the
+# upper directory of an overlay), and the pid file itself made writable inside. A symbolic link on the way is followed
+# only to a directory, and only in a directory that nobody but root can write, because the directory of the link can be
+# writable inside under a name that is not known; `..` after it is the parent of its target. Where the
 # server does start, the test does what such code would do, and restarts it, and the file outside stays as it is.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -24,8 +25,10 @@ enforce, pid file writable inside: refused
 enforce, through the upper directory of an overlay of path: refused
 enforce, in an overlay of path as its upper directory: refused
 enforce, through the upper directory of an overlay of path given by a link: refused
-enforce, through a link outside of path: refused
-enforce, through a link and .. outside of path: refused
+enforce, through a link outside of path: isolated
+enforce, through a link and .. to path: refused
+enforce, through a link in a directory writable by others: refused
+enforce, pid file is a link: refused
 marker: unchanged"
 
 # The configuration of the tests enables the isolation only where the container allows the namespaces: see
@@ -42,7 +45,13 @@ rm -rf "$DIR"
 mkdir -p "$DIR/conf" "$DIR/data/run" "$DIR/log" "$DIR/outside" "$DIR/outside_first" "$DIR/alias" "$DIR/pid_files" \
     "$DIR/overlay" "$DIR/merged" "$DIR/pid_directory" "$DIR/pid_bound" "$DIR/data/runtime"
 DIR=$(cd "$DIR" && pwd -P)
+# Only root can write the directories of the links, unless a case says otherwise.
+chmod 755 "$DIR"
 ln -s "$DIR/pid_directory" "$DIR/pid_link"
+ln -s "$DIR/data/run" "$DIR/data_run_link"
+mkdir -m 777 "$DIR/shared"
+ln -s "$DIR/pid_directory" "$DIR/shared/pid_link"
+ln -s "$DIR/outside/server.pid" "$DIR/pid_file_link"
 echo 0 > "$DIR/pid_files/server.pid"
 echo "outside" > "$DIR/outside/server.pid"
 ln -s "$DIR/outside_first" "$DIR/data/link"
@@ -157,7 +166,9 @@ umount "$DIR/merged"
 umount "$DIR/overlay"
 
 echo "enforce, through a link outside of path: $(run enforce "$DIR/pid_link/server.pid" true)"
-# `..` after the link is the parent of its target, not the directory of the link.
-echo "enforce, through a link and .. outside of path: $(run enforce "$DIR/pid_link/../server.pid" true)"
+# `..` after the link is the parent of its target, `path`, not the directory of the link.
+echo "enforce, through a link and .. to path: $(run enforce "$DIR/data_run_link/../server.pid" true)"
+echo "enforce, through a link in a directory writable by others: $(run enforce "$DIR/shared/pid_link/server.pid" true)"
+echo "enforce, pid file is a link: $(run enforce "$DIR/pid_file_link" true)"
 
 echo "marker: $([ "$(cat "$DIR/outside/server.pid" 2>/dev/null)" = "outside" ] && echo unchanged || echo changed)"

@@ -7,6 +7,8 @@ enforce, pid file writable inside: refused
 enforce, through the upper directory of an overlay of path: refused
 enforce, in an overlay of path as its upper directory: refused
 enforce, through the upper directory of an overlay of path given by a link: refused
-enforce, through a link outside of path: refused
-enforce, through a link and .. outside of path: refused
+enforce, through a link outside of path: isolated
+enforce, through a link and .. to path: refused
+enforce, through a link in a directory writable by others: refused
+enforce, pid file is a link: refused
 marker: unchanged

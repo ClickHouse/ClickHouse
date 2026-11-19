@@ -1319,37 +1319,61 @@ std::optional<std::string> getOverlayUpperDirectory(const std::string & super_op
 /// inside must not be able to change the pid file or a directory on the way to it, or it could make the supervisor write
 /// or remove another file of the host at its next start. Such a directory is found by its path, by its location in its
 /// filesystem, which a bind mount on the host can give another path, and through the upper directory of an overlay. A
-/// storage can be visible under other names in ways that cannot be found, so no symbolic link is allowed on the way:
-/// then code inside can only move directories within what it can write anyway.
-std::string checkPidFile(const std::string & pid_file, const std::vector<Mount> & mounts)
+/// storage can be visible under other names in ways that cannot be found, so a symbolic link is followed only where
+/// nobody but root can change it, as `/var/run -> /run`: then code inside can only move directories within what it can
+/// write anyway. Sets `resolved_pid_file` to the path without links, which the supervisor opens without following any.
+std::string checkPidFile(const std::string & pid_file, const std::vector<Mount> & mounts, std::string & resolved_pid_file)
 {
     if (pid_file.empty())
         return {};
 
-    /// Component by component, as the kernel resolves it: `..` after a link would lead elsewhere than without the link.
-    /// With no link allowed, `..` is the parent of the directory before it.
+    /// Component by component, as the kernel resolves it: `..` after a link is the parent of its target. Every
+    /// directory visited is checked, including the directory of each link.
+    constexpr size_t max_links = 40;
+    size_t links = 0;
     std::vector<fs::path> on_the_way = {"/"};
+    fs::path current = "/";
+    std::deque<fs::path> remaining;
     for (const auto & component : fs::absolute(pid_file).relative_path())
+        remaining.push_back(component);
+    while (!remaining.empty())
     {
+        const fs::path component = std::move(remaining.front());
+        remaining.pop_front();
         if (component.empty() || component == ".")
             continue;
         if (component == "..")
         {
-            if (on_the_way.size() > 1)
-                on_the_way.pop_back();
+            current = current.parent_path();
             continue;
         }
-        const fs::path entry = on_the_way.back() / component;
+        const fs::path entry = current / component;
         struct stat st{};
         if (::lstat(entry.c_str(), &st) == 0 && S_ISLNK(st.st_mode))
-            return fmt::format(
-                "the pid file {} has the symbolic link {} on its way, which code inside could change if the directory of the "
-                "link is writable inside under any name, and make the supervisor outside, which creates and removes the pid "
-                "file, write or remove another file. Use a path without symbolic links, such as one in `/run` rather than "
-                "`/var/run`",
-                pid_file, entry.string());
+        {
+            /// Only root can replace a link owned by root in a directory owned by root that nobody else can write.
+            struct stat directory{};
+            std::error_code error;
+            const fs::path target = fs::read_symlink(entry, error);
+            if (remaining.empty() || error || ++links > max_links || st.st_uid != 0 || ::lstat(current.c_str(), &directory) != 0
+                || directory.st_uid != 0 || (directory.st_mode & (S_IWGRP | S_IWOTH)))
+                return fmt::format(
+                    "the pid file {} has the symbolic link {} on its way, which code inside could change if the directory "
+                    "of the link is writable inside under any name, and make the supervisor outside, which creates and "
+                    "removes the pid file, write or remove another file. A link is allowed only to a directory on the way, "
+                    "if the link and its directory are owned by root and the directory is not writable by the group or by "
+                    "others",
+                    pid_file, entry.string());
+            if (target.is_absolute())
+                current = "/";
+            const fs::path target_components = target.relative_path();
+            remaining.insert(remaining.begin(), target_components.begin(), target_components.end());
+            continue;
+        }
+        current = entry;
         on_the_way.push_back(entry);
     }
+    resolved_pid_file = current.string();
 
     const std::vector<MountInfo> mount_info = readMountInfo();
     /// What is written to an overlay goes to its upper directory.
@@ -1533,11 +1557,12 @@ FilesystemIsolationStatus isolateFilesystem(
 
     /// In a user namespace, the kernel refuses the server the files of the processes outside of it through any `proc`,
     /// and there is no supervisor: the server creates the pid file itself, inside.
+    std::string resolved_pid_file;
     if (!with_user_namespace)
     {
         if (std::string reason = findProcMount(mounts); !reason.empty())
             return cannotIsolate(mode, std::move(reason));
-        if (std::string reason = checkPidFile(pid_file, mounts); !reason.empty())
+        if (std::string reason = checkPidFile(pid_file, mounts, resolved_pid_file); !reason.empty())
             return cannotIsolate(mode, std::move(reason));
     }
     for (auto & alias : getLibraryAliases(mapped_files))
@@ -1563,7 +1588,7 @@ FilesystemIsolationStatus isolateFilesystem(
     {
         status.created_pid_namespace = true;
         status.supervisor_pid = ::getpid();
-        startSupervisedServer(pid_file);
+        startSupervisedServer(resolved_pid_file);
         makeMountsPrivate();
     }
 
