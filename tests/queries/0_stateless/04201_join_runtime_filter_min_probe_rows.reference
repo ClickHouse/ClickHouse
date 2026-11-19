@@ -7,3 +7,4 @@ chain min=0	3
 key from a larger input below	2
 same, LEFT ANTI	2
 multi-key LEFT ANTI	1
+key from a larger right input below	1
