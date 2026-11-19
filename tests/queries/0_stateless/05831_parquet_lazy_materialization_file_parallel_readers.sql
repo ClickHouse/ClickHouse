@@ -15,7 +15,8 @@ SET engine_file_truncate_on_insert = 1, query_plan_optimize_lazy_materialization
 INSERT INTO FUNCTION file(concat(currentDatabase(), '_lazy_parallel/data_{_partition_id}.parquet'), Parquet) PARTITION BY intDiv(k, 2000)
 SELECT number AS k, cityHash64(number) % 1000003 AS ts, concat('val_', toString(number)) AS s, toString(number) AS c1,
     concat('a', c1) AS c2, concat('b', c1) AS c3, concat('c', c1) AS c4, concat('d', c1) AS c5,
-    CAST((c1, c2, c3, c4, c5), 'Tuple(c1 String, c2 String, c3 String, c4 String, c5 String)') AS t
+    CAST((c1, c2, c3, c4, c5), 'Tuple(c1 String, c2 String, c3 String, c4 String, c5 String)') AS t,
+    CAST(s, 'Variant(String, UInt64)') AS v
 FROM numbers(16000);
 
 SELECT '-- rows and files of the LIMITs';
@@ -41,7 +42,7 @@ FROM (SELECT k, c1, c2, c3, c4, c5 FROM file(concat(currentDatabase(), '_lazy_pa
 SETTINGS max_threads = 16, max_block_size = 7;
 
 -- The main pass reads `ts` and `k` of 8 files; the lazy pass reads 1 leaf column (narrow) or 5 (wide, and the Tuple of
--- 5 elements read as the values of an `AggregateFunction` state). The leaf columns of a `JSON` column depend on the file.
+-- 5 elements read as the values of an `AggregateFunction` state). The leaf columns of a `JSON` or `Variant` column depend on the file.
 SELECT k, s FROM file(concat(currentDatabase(), '_lazy_parallel/data_*.parquet'), Parquet) ORDER BY ts, k LIMIT 3000
 FORMAT Null SETTINGS max_threads = 4, log_processors_profiles = 1, log_comment = 'readers_04_narrow';
 SELECT k, s FROM file(concat(currentDatabase(), '_lazy_parallel/data_*.parquet'), Parquet) ORDER BY ts, k LIMIT 3000
@@ -58,12 +59,19 @@ FORMAT Null SETTINGS max_threads = 16, aggregate_function_input_format = 'value'
 -- The ratio lowers the stream budget of the main read, and the lazy readers follow it.
 SELECT k, s FROM file(concat(currentDatabase(), '_lazy_parallel/data_*.parquet'), Parquet) ORDER BY ts, k LIMIT 3000
 FORMAT Null SETTINGS max_threads = 16, max_streams_to_max_threads_ratio = 0.25, log_processors_profiles = 1, log_comment = 'readers_16_narrow_streams';
+SELECT k, v FROM file(concat(currentDatabase(), '_lazy_parallel/data_*.parquet'), Parquet, 'k Int64, ts Int64, v Variant(String, UInt64)') ORDER BY ts, k LIMIT 3000
+FORMAT Null SETTINGS max_threads = 16, log_processors_profiles = 1, log_comment = 'readers_16_variant';
 
 SELECT '-- the number of readers';
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
 SELECT q.log_comment, countIf(p.name = 'StorageFileLazyRows')
 FROM system.query_log AS q
-LEFT JOIN (SELECT query_id, name FROM system.processors_profile_log WHERE event_date >= yesterday()) AS p ON p.query_id = q.query_id
+LEFT JOIN (
+    SELECT query_id, name FROM system.processors_profile_log
+    WHERE event_date >= yesterday() AND name = 'StorageFileLazyRows'
+        AND query_id IN (SELECT query_id FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase()
+            AND type = 'QueryFinish' AND startsWith(log_comment, 'readers_'))
+) AS p ON p.query_id = q.query_id
 WHERE q.event_date >= yesterday() AND q.current_database = currentDatabase() AND q.type = 'QueryFinish' AND startsWith(q.log_comment, 'readers_')
 GROUP BY q.log_comment
 ORDER BY q.log_comment;

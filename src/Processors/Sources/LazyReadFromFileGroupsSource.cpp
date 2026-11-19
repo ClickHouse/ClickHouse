@@ -19,7 +19,7 @@ namespace
 
 std::optional<size_t> countLeafColumnsOfType(const IDataType & type)
 {
-    if (isObject(type) || isDynamic(type))
+    if (isObject(type) || isDynamic(type) || isVariant(type))
         return std::nullopt;
     if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
         return countLeafColumnsOfType(*nullable->getNestedType());

@@ -14,7 +14,7 @@ class Block;
 struct FormatSettings;
 
 /// The number of leaf columns a columnar file stores for `header` (each Tuple element, Map keys and values, the nested column
-/// of Array, Nullable and LowCardinality), or nullopt for a `JSON` or `Dynamic` column, whose number depends on the file.
+/// of Array, Nullable and LowCardinality), or nullopt for a `JSON`, `Dynamic` or `Variant` column, whose number depends on the file.
 std::optional<size_t> countLeafColumns(const Block & header);
 
 /// The leaf columns a reader of `format_header` reads, an `AggregateFunction` parsed from values (`aggregate_function_input_format`)

@@ -13,4 +13,5 @@ readers_16_aggregate_value	3
 readers_16_json	1
 readers_16_narrow	8
 readers_16_narrow_streams	4
+readers_16_variant	1
 readers_16_wide	3

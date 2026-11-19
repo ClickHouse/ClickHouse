@@ -24,7 +24,12 @@ SELECT '-- the number of readers';
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
 SELECT q.log_comment, countIf(p.name = 'StorageFileLazyRows')
 FROM system.query_log AS q
-LEFT JOIN (SELECT query_id, name FROM system.processors_profile_log WHERE event_date >= yesterday()) AS p ON p.query_id = q.query_id
+LEFT JOIN (
+    SELECT query_id, name FROM system.processors_profile_log
+    WHERE event_date >= yesterday() AND name = 'StorageFileLazyRows'
+        AND query_id IN (SELECT query_id FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase()
+            AND type = 'QueryFinish' AND startsWith(log_comment, 'readers_'))
+) AS p ON p.query_id = q.query_id
 WHERE q.event_date >= yesterday() AND q.current_database = currentDatabase() AND q.type = 'QueryFinish' AND startsWith(q.log_comment, 'readers_')
 GROUP BY q.log_comment
 ORDER BY q.log_comment;
