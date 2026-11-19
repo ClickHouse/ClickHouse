@@ -76,7 +76,7 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     }
 
     auto * read_from_merge_tree = dynamic_cast<ReadFromMergeTree *>(frame.node->step.get());
-    if (!read_from_merge_tree)
+    if (!read_from_merge_tree || !read_from_merge_tree->isQueryConditionCacheFilterTaggingAllowed())
         return;
 
     /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
