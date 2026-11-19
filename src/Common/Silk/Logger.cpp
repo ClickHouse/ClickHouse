@@ -19,7 +19,14 @@ namespace silk
 namespace
 {
 
-void logImpl(LogLevel level, const char * file, int line, std::string_view format_string, std::string text) noexcept
+void writeLoggingFailureToStderr(const std::bad_alloc & logger_exception) noexcept
+{
+    (void)::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING));
+    std::string_view logger_exception_message = logger_exception.what();
+    (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message.data()), logger_exception_message.size());
+}
+
+void logImpl(LogLevel level, const char * file, int line, std::string_view format_string, std::string text)
 {
     static Poco::Logger * const logger = getRawLogger("Silk");
 
@@ -48,7 +55,14 @@ void Logger::log(LogLevel level, const char * file, int line, const char * messa
 {
     MemoryTrackerBlockerInThread block_memory_tracker(VariableContext::Global);
 
-    logImpl(level, file, line, message, message);
+    try
+    {
+        logImpl(level, file, line, message, message);
+    }
+    catch (const std::bad_alloc & logger_exception)
+    {
+        writeLoggingFailureToStderr(logger_exception);
+    }
 }
 
 /// NOLINTNEXTLINE(cert-dcl50-cpp,modernize-avoid-variadic-functions)
@@ -63,11 +77,17 @@ void Logger::logf(LogLevel level, const char * file, int line, const char * fmt,
     const int size = std::vsnprintf(nullptr, 0, fmt, args);
     va_end(args);
 
-    std::string message(std::max(size, 0), '\0');
-    std::vsnprintf(message.data(), message.size() + 1, fmt, args_copy); /// NOLINT(cert-err33-c)
+    try
+    {
+        std::string message(std::max(size, 0), '\0');
+        std::vsnprintf(message.data(), message.size() + 1, fmt, args_copy); /// NOLINT(cert-err33-c)
+        logImpl(level, file, line, fmt, std::move(message));
+    }
+    catch (const std::bad_alloc & logger_exception)
+    {
+        writeLoggingFailureToStderr(logger_exception);
+    }
     va_end(args_copy);
-
-    logImpl(level, file, line, fmt, std::move(message));
 }
 
 }
