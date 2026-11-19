@@ -1949,7 +1949,7 @@ ReturnType readDateTimeTextFallback(
             /// In DateTime64 mode a value like ".5" or "-.5" is a valid timestamp: a fractional part
             /// with no integer digits (optionally signed). Leave the whole part at zero and let the caller
             /// read the fraction, so the non-throwing entrypoints (toDateTime64OrNull, schema inference)
-            /// agree with the throwing ones, which recover this case through their catch at the '.'.
+            /// agree with the throwing ones.
             if (dt64_mode && fraction_prefix != nullptr && *buf.position() == '.')
             {
                 /// Require at least one digit after the dot so a bare "."/"+."/"-." is not accepted as
