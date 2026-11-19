@@ -38,8 +38,6 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -73,12 +71,6 @@ namespace ServerSetting
 namespace RefreshSetting
 {
     extern const RefreshSettingsBool all_replicas;
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool enable_block_number_column;
-    extern const MergeTreeSettingsBool enable_block_offset_column;
 }
 
 namespace ErrorCodes
