@@ -2970,6 +2970,19 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
     return true;
 }
 
+void ReadFromMerge::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
+{
+    if (common_processed_stage != QueryProcessingStage::FetchColumns)
+        throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+            "PREWHERE cannot be moved to the tables of {}, because they process the query themselves",
+            storage_merge->getStorageID().getNameForLogs());
+
+    /// The tables are read with the `PREWHERE` of this step, see `createChildrenPlans`.
+    SourceStepWithFilter::updatePrewhereInfo(prewhere_info_value);
+    common_header = output_header;
+    resetChildPlans();
+}
+
 void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     for (const auto & filter_info : pushed_down_filters)

@@ -6873,7 +6873,7 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     if (table_node->hasTableExpressionModifiers())
         return;
 
-    /// `PREWHERE` is moved into the query of the view, which needs the view itself, see `StorageView::getPrewhereColumns`.
+    /// A subquery does not support `PREWHERE`, and the `PREWHERE` of a view is moved to the table of the view by the planner.
     if (const auto * query_node = scope.scope_node->as<QueryNode>(); query_node && query_node->hasPrewhere())
         return;
 

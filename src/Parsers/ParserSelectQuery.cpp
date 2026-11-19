@@ -1482,7 +1482,7 @@ ORDER BY table_1.id;
 
 `PREWHERE` is only supported by tables from the [*MergeTree](/reference/engines/table-engines/mergetree-family/index) family.
 
-It can also be used with a view that selects stored columns of a single such table: the condition is moved into the query of the view. It is not supported for views that hide rows from the reader or change them, such as views with aggregation, `FINAL`, joins or stateful functions.
+It can also be used with a view: the table that the view reads from executes the condition as its own `PREWHERE`. The query fails if the condition cannot be moved to the read of that table as a whole, for example for a view with aggregation, a join, `ORDER BY`, `LIMIT`, `FINAL` or `arrayJoin`, or for a view of a `Distributed` table.
 
 ## Example {#example}
 

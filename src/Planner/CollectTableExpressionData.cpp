@@ -289,9 +289,8 @@ private:
 class CollectPrewhereTableExpressionVisitor : public ConstInDepthQueryTreeVisitor<CollectPrewhereTableExpressionVisitor>
 {
 public:
-    CollectPrewhereTableExpressionVisitor(const QueryTreeNodePtr & query_node_, const ContextPtr & context_)
+    explicit CollectPrewhereTableExpressionVisitor(const QueryTreeNodePtr & query_node_)
         : query_node(query_node_)
-        , context(context_)
     {}
 
     [[nodiscard]] const QueryTreeNodePtr & getPrewhereTableExpression() const
@@ -333,25 +332,18 @@ public:
         if (!table_expression)
         {
             const auto & storage = table_column_source ? table_column_source->getStorage() : table_function_column_source->getStorage();
-            table_storage_snapshot
-                = table_column_source ? table_column_source->getStorageSnapshot() : table_function_column_source->getStorageSnapshot();
-
-            /// A view does not execute `PREWHERE` itself, it is moved into the query of the view, see `getViewQueryWithPrewhere`.
-            const auto * view = table_column_source ? typeid_cast<const StorageView *>(storage.get()) : nullptr;
-            if (view)
-                table_supported_prewhere_columns = view->getPrewhereColumns(table_storage_snapshot, context);
-
-            if (view ? table_supported_prewhere_columns->empty() : !storage->supportsPrewhere())
+            /// A view does not execute `PREWHERE` itself. The planner moves it into the read of the table of the view.
+            if (!storage->supportsPrewhere() && !typeid_cast<const StorageView *>(storage.get()))
                 throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                     "Storage {} (table {}) does not support PREWHERE",
                     storage->getName(),
                     storage->getStorageID().getNameForLogs());
 
+            table_storage_snapshot
+                = table_column_source ? table_column_source->getStorageSnapshot() : table_function_column_source->getStorageSnapshot();
             table_expression = std::move(column_source);
-            if (!view)
-                table_supported_prewhere_columns = storage->supportedPrewhereColumns();
-            /// The table of a view checks the subcolumns itself, when the condition is moved into the query of the view.
-            table_supported_prewhere_columns_include_subcolumns = view || storage->supportedPrewhereColumnsIncludeSubcolumns();
+            table_supported_prewhere_columns = storage->supportedPrewhereColumns();
+            table_supported_prewhere_columns_include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
         }
 
         /// The contract lists top-level names; a subcolumn is admitted through its origin column.
@@ -378,20 +370,18 @@ public:
 
 private:
     QueryTreeNodePtr query_node;
-    ContextPtr context;
     QueryTreeNodePtr table_expression;
     StorageSnapshotPtr table_storage_snapshot;
     std::optional<NameSet> table_supported_prewhere_columns;
     bool table_supported_prewhere_columns_include_subcolumns = false;
 };
 
-void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression, const ContextPtr & context)
+void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression)
 {
     if (auto * table_node = table_expression->as<TableNode>())
     {
         auto storage = table_node->getStorage();
-        const auto * view = typeid_cast<const StorageView *>(storage.get());
-        if (view ? view->getPrewhereColumns(table_node->getStorageSnapshot(), context).empty() : !storage->supportsPrewhere())
+        if (!storage->supportsPrewhere() && !typeid_cast<const StorageView *>(storage.get()))
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Storage {} (table {}) does not support PREWHERE",
                 storage->getName(),
@@ -400,7 +390,7 @@ void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression, cons
     else if (auto * table_function_node = table_expression->as<TableFunctionNode>())
     {
         auto storage = table_function_node->getStorage();
-        if (!storage->supportsPrewhere())
+        if (!storage->supportsPrewhere() && !typeid_cast<const StorageView *>(storage.get()))
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Table function storage {} (table {}) does not support PREWHERE",
                 storage->getName(),
@@ -453,14 +443,14 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
 
     if (query_node_typed.hasPrewhere())
     {
-        CollectPrewhereTableExpressionVisitor collect_prewhere_table_expression_visitor(query_node, planner_context->getQueryContext());
+        CollectPrewhereTableExpressionVisitor collect_prewhere_table_expression_visitor(query_node);
         collect_prewhere_table_expression_visitor.visit(query_node_typed.getPrewhere());
 
         auto prewhere_table_expression = collect_prewhere_table_expression_visitor.getPrewhereTableExpression();
         if (!prewhere_table_expression)
         {
             prewhere_table_expression = table_expressions_nodes[0];
-            checkStorageSupportPrewhere(prewhere_table_expression, planner_context->getQueryContext());
+            checkStorageSupportPrewhere(prewhere_table_expression);
         }
 
         auto & table_expression_data = planner_context->getOrCreateTableExpressionData(prewhere_table_expression);

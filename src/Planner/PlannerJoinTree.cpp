@@ -54,7 +54,6 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/traverseQueryTree.h>
 #include <Analyzer/JoinNode.h>
-#include <Analyzer/LambdaNode.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/SortNode.h>
@@ -1667,82 +1666,6 @@ void pushOrderByIntoView(
     table_expression_query_info.view_query = modified;
 }
 
-/// The query of a view with the `PREWHERE` of the outer query moved into it, where the table of the view executes it.
-/// `collectTableExpressionData` has checked that the view allows it, see `StorageView::getPrewhereColumns`.
-ASTPtr getViewQueryWithPrewhere(
-    const StorageView & view,
-    const StorageSnapshotPtr & storage_snapshot,
-    const SelectQueryInfo & select_query_info,
-    const QueryTreeNodePtr & table_expression,
-    const ContextPtr & query_context)
-{
-    const auto & prewhere = select_query_info.query_tree->as<QueryNode &>().getPrewhere();
-    const auto prewhere_columns = view.getPrewhereColumns(storage_snapshot, query_context);
-    const auto & view_columns = storage_snapshot->metadata->getColumns();
-
-    /// A subcolumn is read from its column with `getSubcolumn`, because the query of the view knows only the names of the columns.
-    std::unordered_map<String, QueryTreeNodePtr> subcolumns;
-
-    /// The condition is analyzed again in the query of the view, by the names of the columns. A subquery would see
-    /// the names of that query, and inside a lambda the name of a column could mean an argument of the lambda.
-    /// A stateful function, or one like `blockSize`, would see the rows of the table instead of the rows of the view.
-    std::function<bool(const QueryTreeNodePtr &, bool)> can_be_moved = [&](const QueryTreeNodePtr & node, bool inside_lambda)
-    {
-        if (!node)
-            return true;
-        if (node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
-            return false;
-        if (const auto * function = node->as<FunctionNode>(); function && function->isOrdinaryFunction()
-            && (function->getFunctionOrThrow()->isStateful() || !function->getFunctionOrThrow()->isDeterministicInScopeOfQuery()))
-            return false;
-        if (const auto * column = node->as<ColumnNode>())
-        {
-            /// Besides the columns of the view only the arguments of lambdas are known in its query.
-            const auto source = column->getColumnSourceOrNull();
-            if (source.get() != table_expression.get())
-                return source && source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS;
-
-            const auto & name = column->getColumnName();
-            if (inside_lambda)
-                return false;
-            if (view_columns.has(name))
-                return prewhere_columns.contains(name);
-
-            /// The name of a subcolumn has one meaning when only one column of the view has such a subcolumn.
-            auto has_subcolumn = [&](const auto & view_column)
-            {
-                const auto prefix = view_column.name + ".";
-                return name.starts_with(prefix) && view_column.type->hasSubcolumn(std::string_view(name).substr(prefix.size()));
-            };
-            if (std::ranges::count_if(view_columns, has_subcolumn) != 1)
-                return false;
-            const auto & origin = *std::ranges::find_if(view_columns, has_subcolumn);
-            if (!prewhere_columns.contains(origin.name))
-                return false;
-            subcolumns[name] = createResolvedFunction(query_context, "getSubcolumn",
-                {std::make_shared<ColumnNode>(NameAndTypePair(origin.name, origin.type), source),
-                 std::make_shared<ConstantNode>(Field(name.substr(origin.name.size() + 1)))});
-            return true;
-        }
-        inside_lambda = inside_lambda || node->getNodeType() == QueryTreeNodeType::LAMBDA;
-        return std::ranges::all_of(node->getChildren(), [&](const auto & child) { return can_be_moved(child, inside_lambda); });
-    };
-
-    /// `FINAL` and `SAMPLE` of the outer query apply to the rows of the view, after its query.
-    if (table_expression->as<TableNode &>().getTableExpressionModifiers() || !can_be_moved(prewhere, false))
-        throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
-            "PREWHERE {} cannot be moved into the query of the view {}",
-            prewhere->formatASTForErrorMessage(),
-            view.getStorageID().getNameForLogs());
-
-    auto view_query = storage_snapshot->metadata->getSelectQuery().inner_query->clone();
-    auto & select = view_query->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front()->as<ASTSelectQuery &>();
-    auto condition = prewhere->clone();
-    replaceColumns(condition, table_expression, subcolumns);
-    select.setExpression(ASTSelectQuery::Expression::PREWHERE, condition->toAST({.fully_qualified_identifiers = false}));
-    return view_query;
-}
-
 /// Storage-level eligibility check: is this storage on its own a candidate for
 /// reading via parallel replicas?  Strips View / MaterializedView wrappers down
 /// to the underlying MergeTree and applies the MergeTree / replication gates.
@@ -2240,21 +2163,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 std::vector<std::pair<FilterDAGInfo, DescriptionHolderPtr>> where_filters;
                 bool row_policy_filter_not_pushed = false;
 
-                /// A view does not execute `PREWHERE` itself. A logical plan cannot carry the query of the view,
-                /// so it keeps the condition as a filter step, like for any other storage.
-                const auto * prewhere_view = prewhere_actions ? typeid_cast<const StorageView *>(storage.get()) : nullptr;
-                if (prewhere_view)
-                {
-                    auto view_query = getViewQueryWithPrewhere(*prewhere_view, storage_snapshot, select_query_info, table_expression, query_context);
-                    if (!select_query_options.build_logical_plan)
-                    {
-                        table_expression_query_info.view_query = std::move(view_query);
-                        /// The query of the view builds the sets of the condition, so the sets of these actions would be built for nothing.
-                        table_expression_data.resetPrewhereFilterActions();
-                    }
-                }
+                /// A view does not execute `PREWHERE` itself. The condition is a filter step above the plan of the view,
+                /// which is then moved into the read of its table, see `QueryPlan::tryMoveRootFilterToPrewhere`.
+                const bool is_prewhere_on_view = prewhere_actions && typeid_cast<const StorageView *>(storage.get());
+                /// The other replicas would read the table of the view by a query that does not have the condition.
+                if (is_prewhere_on_view && !select_query_options.build_logical_plan && query_context->canUseParallelReplicasOnInitiator())
+                    planner_context->getMutableQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
 
-                if (prewhere_actions && select_query_options.build_logical_plan)
+                if (prewhere_actions && (select_query_options.build_logical_plan || is_prewhere_on_view))
                 {
                     /// Collect columns needed by row policy and additional filters
                     NameSet columns_needed_by_other_filters;
@@ -2301,7 +2217,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             remove_prewhere_column},
                         makeDescription("Prewhere"));
                 }
-                else if (prewhere_actions && !prewhere_view)
+                else if (prewhere_actions)
                 {
                     prewhere_info = std::make_shared<PrewhereInfo>();
                     prewhere_info->prewhere_actions = prewhere_actions->clone();
@@ -2340,6 +2256,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     storage, table_expression_query_info, planner_context, used_row_policies, std::move(row_policy_required_names));
                 if (row_policy_filter_info)
                 {
+                    /// The policy of a view is a filter above its plan, so the condition would see the rows that the policy hides.
+                    if (is_prewhere_on_view)
+                        throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                            "PREWHERE is not supported for the view {} with a row policy", storage->getStorageID().getNameForLogs());
+
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
 
                     const bool can_push_down_filter = canPushDownRowPolicyFilter(
@@ -2447,7 +2368,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 const auto * view = (is_single_table_expression
                                      && settings[Setting::optimize_trivial_view_pushdown_to_distributed]
                                      && !settings[Setting::distributed_group_by_no_merge]
-                                     && !select_query_options.build_logical_plan)
+                                     && !select_query_options.build_logical_plan
+                                     && !is_prewhere_on_view)
                     ? typeid_cast<const StorageView *>(storage.get())
                     : nullptr;
                 if (view)
@@ -3171,6 +3093,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     query_plan.addStep(std::move(alias_column_step));
                 }
 
+                /// A logical plan keeps the `PREWHERE` of a view as a filter step, like for any other storage.
+                bool move_prewhere_into_view = is_prewhere_on_view && !select_query_options.build_logical_plan;
                 for (auto && [filter_info, description] : where_filters)
                 {
                     if (query_plan.isInitialized() &&
@@ -3182,8 +3106,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             filter_info.do_remove_column);
                         description->setStepDescription(*filter_step);
                         query_plan.addStep(std::move(filter_step));
+
+                        /// The `PREWHERE` of a view is the first of the filters.
+                        if (move_prewhere_into_view && !query_plan.tryMoveRootFilterToPrewhere())
+                            break;
+                        move_prewhere_into_view = false;
                     }
                 }
+
+                if (move_prewhere_into_view)
+                    throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                        "PREWHERE cannot be executed by the table of the view {}", storage->getStorageID().getNameForLogs());
 
                 if (query_context->hasQueryContext() && !select_query_options.is_internal)
                 {
