@@ -795,6 +795,56 @@ def test_rest_catalog_jwt_expiry_refresh(bearer_catalog_server, bearer_catalog):
     )
 
 
+@pytest.mark.parametrize("status", [401, 403])
+def test_rest_catalog_jwt_mutation_refresh(bearer_catalog_server, bearer_catalog, status):
+    bearer_catalog()
+    create_bearer_catalog(
+        ", vended_credentials = false, storage_endpoint = 'http://minio1:9001', "
+        f"aws_access_key_id = '{minio_access_key}', aws_secret_access_key = '{minio_secret_key}'"
+    )
+
+    def options(**values):
+        response = requests.post(
+            f"{bearer_catalog_server}/options", json=values, timeout=10
+        )
+        response.raise_for_status()
+
+    def create_table(name):
+        node.query(
+            f"CREATE TABLE bearer_rest_auth.`test.{name}` (id Int64) ENGINE = Iceberg"
+        )
+
+    options(jwt_status=503)
+    create_table("cached")
+    events = bearer_catalog_events(bearer_catalog_server)
+    assert sum(event["path"] == "/token" for event in events) == 1
+    initial_auth = next(
+        event["authorization"] for event in events if event["path"] == "/v1/config"
+    )
+    mutations = [event for event in events if event["method"] == "POST"]
+    assert len(mutations) == 1
+    assert mutations[0]["authorization"] == initial_auth
+
+    options(jwt_status=200, reject_mutation_once=status)
+    create_table("refreshed")
+    events = bearer_catalog_events(bearer_catalog_server)
+    assert sum(event["path"] == "/token" for event in events) == 2
+    mutations = [event for event in events if event["method"] == "POST"]
+    assert len(mutations) == 3
+    assert mutations[1]["authorization"] == initial_auth
+    refreshed_auth = mutations[2]["authorization"]
+    assert refreshed_auth != initial_auth
+    assert mutations[1]["body"] == mutations[2]["body"]
+
+    options(jwt_status=503)
+    create_table("cached_after_refresh")
+    events = bearer_catalog_events(bearer_catalog_server)
+    assert sum(event["path"] == "/token" for event in events) == 2
+    mutations = [event for event in events if event["method"] == "POST"]
+    assert len(mutations) == 4
+    assert mutations[-1]["authorization"] == refreshed_auth
+
+
 @pytest.mark.parametrize(
     "options, message",
     [

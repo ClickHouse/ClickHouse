@@ -1165,7 +1165,7 @@ AccessToken JWTEndpointAuth::retrieveToken() const
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Cannot create JWT endpoint HTTP session");
         Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
         for (const auto & header : headers)
-            request.set(header.name, header.value);
+            request.set(header.name, String(header.value));
         DB::sendHTTPRequest(*session, request)->finalize();
         Poco::Net::HTTPResponse response;
         auto in = DB::receiveHTTPResponse(*session, response);
@@ -1221,7 +1221,7 @@ AccessToken JWTEndpointAuth::retrieveToken() const
         }))
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "JWT token endpoint must return a raw JWT with three nonempty segments");
 
-    Int64 expires_at;
+    Int64 expires_at = 0;
     try
     {
         Poco::JSON::Parser parser;
@@ -2058,12 +2058,7 @@ String RestCatalog::sendRequest(const CatalogState & catalog_state, const String
 
     LOG_TEST(log, "REST catalog {} {} body ({} bytes): {}", method, endpoint, body_str.size(), body_str);
 
-    DB::HTTPHeaderEntries headers = getAuthHeaders(catalog_state, /* update_token = */ true);
-    headers.emplace_back("Content-Type", "application/json");
-    headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
-
     const auto & context = getContext();
-    context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers);
 
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
     if (!body_str.empty())
@@ -2077,26 +2072,36 @@ String RestCatalog::sendRequest(const CatalogState & catalog_state, const String
     /// enable_url_encoding=false to allow using tables with encoded sequences in names like 'foo%2Fbar'
     Poco::URI url(endpoint, /* enable_url_encoding */ false);
 
-    auto wb = DB::BuilderRWBufferFromHTTP(url)
-        .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
-        .withMethod(method)
-        .withSettings(context->getReadSettings())
-        .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
-        .withHostFilter(&context->getRemoteHostFilter())
-        .withHeaders(headers)
-        .withOutCallback(out_stream_callback)
-        /// Send the JSON body with an explicit Content-Length: Snowflake Horizon rejects
-        /// chunked transfer encoding on catalog commits with HTTP 500 and an empty body.
-        .withOutCallbackFixedContentLength(body_str.size())
-        .withSkipNotFound(false)
-        .create(credentials);
+    auto make_request = [&](bool force_refresh)
+    {
+        auto headers = getAuthHeaders(catalog_state, force_refresh);
+        headers.emplace_back("Content-Type", "application/json");
+        headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
+        context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers);
 
-    String response_str;
-    if (!ignore_result)
-        readJSONObjectPossiblyInvalid(response_str, *wb);
-    else
-        wb->ignoreAll();
-    return response_str;
+        auto wb = DB::BuilderRWBufferFromHTTP(url)
+            .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
+            .withMethod(method)
+            .withSettings(context->getReadSettings())
+            .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
+            .withHostFilter(&context->getRemoteHostFilter())
+            .withHeaders(headers)
+            .withOutCallback(out_stream_callback)
+            /// Send the JSON body with an explicit Content-Length: Snowflake Horizon rejects
+            /// chunked transfer encoding on catalog commits with HTTP 500 and an empty body.
+            .withOutCallbackFixedContentLength(body_str.size())
+            .withSkipNotFound(false)
+            .create(credentials);
+
+        String response_str;
+        if (!ignore_result)
+            readJSONObjectPossiblyInvalid(response_str, *wb);
+        else
+            wb->ignoreAll();
+        return response_str;
+    };
+
+    return requestWithTokenRefresh(update_token_if_expired, make_request);
 }
 
 void RestCatalog::createNamespaceIfNotExists(const String & namespace_name) const

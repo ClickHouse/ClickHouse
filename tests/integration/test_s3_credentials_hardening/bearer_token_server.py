@@ -2,6 +2,7 @@ import base64
 import json
 import sys
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
@@ -12,6 +13,8 @@ class Handler(BaseHTTPRequestHandler):
     token_number = 0
     jwt_token = ""
     jwt_rejected = False
+    mutation_rejected = False
+    tables = {}
 
     def respond(self, value, status=200):
         body = json.dumps(value).encode()
@@ -25,6 +28,7 @@ class Handler(BaseHTTPRequestHandler):
         type(self).events.append(
             {
                 "path": urlsplit(self.path).path,
+                "method": self.command,
                 "authorization": self.headers.get("Authorization", ""),
                 "token_request_header": self.headers.get("X-Token-Request", ""),
                 "query": urlsplit(self.path).query,
@@ -39,7 +43,47 @@ class Handler(BaseHTTPRequestHandler):
             type(self).token_number = 0
             type(self).jwt_token = ""
             type(self).jwt_rejected = False
+            type(self).mutation_rejected = False
+            type(self).tables = {}
             self.respond({})
+        elif self.path == "/options":
+            type(self).options.update(json.loads(body))
+            self.respond({})
+        elif self.path == "/v1/namespaces/test/tables":
+            self.record()
+            type(self).events[-1]["body"] = json.loads(body)
+            if self.headers.get("Authorization") != f"Bearer {type(self).jwt_token}":
+                self.respond({}, 403)
+                return
+            if (
+                type(self).options.get("reject_mutation_once")
+                and not type(self).mutation_rejected
+            ):
+                type(self).mutation_rejected = True
+                self.respond({}, type(self).options["reject_mutation_once"])
+                return
+            request = json.loads(body)
+            schema = request["schema"]
+            metadata = {
+                "format-version": 2,
+                "table-uuid": str(uuid.uuid4()),
+                "location": f"s3://root/bearer_auth/{request['name']}",
+                "last-updated-ms": int(time.time() * 1000),
+                "last-column-id": max(field["id"] for field in schema["fields"]),
+                "schemas": [schema],
+                "current-schema-id": schema["schema-id"],
+                "partition-specs": [{"spec-id": 0, "fields": []}],
+                "default-spec-id": 0,
+                "last-partition-id": 999,
+                "sort-orders": [{"order-id": 0, "fields": []}],
+                "default-sort-order-id": 0,
+                "last-sequence-number": 0,
+                "snapshots": [],
+                "properties": request.get("properties", {}),
+            }
+            response = {"metadata": metadata}
+            type(self).tables[f"{self.path}/{request['name']}"] = response
+            self.respond(response)
         else:
             self.respond({}, 404)
 
@@ -101,6 +145,15 @@ class Handler(BaseHTTPRequestHandler):
             self.respond({"defaults": {}, "overrides": {}})
         elif path == "/v1/namespaces":
             self.respond({"namespaces": []})
+        elif path == "/v1/namespaces/test":
+            self.respond(
+                {
+                    "namespace": ["test"],
+                    "properties": {"location": "s3://root/bearer_auth"},
+                }
+            )
+        elif path in type(self).tables:
+            self.respond(type(self).tables[path])
         else:
             self.respond({}, 404)
 
