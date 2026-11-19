@@ -156,6 +156,9 @@ namespace CurrentMetrics
     extern const Metric MergeTreePartsLoaderThreads;
     extern const Metric MergeTreePartsLoaderThreadsActive;
     extern const Metric MergeTreePartsLoaderThreadsScheduled;
+    extern const Metric MergeTreePrewarmCacheThreads;
+    extern const Metric MergeTreePrewarmCacheThreadsActive;
+    extern const Metric MergeTreePrewarmCacheThreadsScheduled;
 }
 
 namespace DB
@@ -3090,9 +3093,9 @@ void InterpreterSystemQuery::prewarmVectorSimilarityIndexCache()
 
     getContext()->onQueryExecutionStarted();
     ThreadPool pool(
-        CurrentMetrics::MergeTreePartsLoaderThreads,
-        CurrentMetrics::MergeTreePartsLoaderThreadsActive,
-        CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
+        CurrentMetrics::MergeTreePrewarmCacheThreads,
+        CurrentMetrics::MergeTreePrewarmCacheThreadsActive,
+        CurrentMetrics::MergeTreePrewarmCacheThreadsScheduled,
         getContext()->getSettingsRef()[Setting::max_threads]);
 
     merge_tree->prewarmVectorSimilarityIndexCache(pool, *cache, index_name);

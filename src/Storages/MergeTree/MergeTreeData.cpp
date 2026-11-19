@@ -4860,7 +4860,7 @@ void MergeTreeData::prewarmVectorSimilarityIndexCache(
 
         bool tryInsert(const VectorSimilarityIndexCacheKey & key, VectorSimilarityIndexCache::MappedPtr cell)
         {
-            if (cache.trySetWithoutEviction(key, std::move(cell), byteLimit()))
+            if (cache.trySetWithoutEviction(key, cell, byteLimit()))
                 return true;
             markFull();
             return false;
@@ -4875,6 +4875,10 @@ void MergeTreeData::prewarmVectorSimilarityIndexCache(
     const UUID table_uuid = getStorageID().uuid;
 
     ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGETREE_PREWARM_CACHE);
+    /// `enqueueAndKeepTrack` schedules before it records the task. Reserving every part/index
+    /// job up front keeps that recording from reallocating, so a throw cannot leave an accepted
+    /// job outside the list the runner joins. `budget` is declared before `runner` and outlives it.
+    runner.reserve(data_parts.size() * indexes.size());
 
     for (const auto & part : data_parts)
     {
