@@ -9,7 +9,6 @@
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <Core/AccurateComparison.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageTimeSeries.h>
@@ -302,17 +301,19 @@ namespace
         }
     }
 
-    /// Returns the type of the elements of the `histograms.timestamp` outer column. A table storing histogram samples has it
-    /// (see normalizeTimeSeriesDefinition), so a table without the column must not get here.
+    /// Returns the type of the timestamps of the outer column `histograms`. A table storing histogram samples has the column
+    /// (see normalizeTimeSeriesDefinition), so a table without it must not get here.
     DataTypePtr getHistogramsTimestampType(const StorageInMemoryMetadata & metadata)
     {
-        const auto column_name = Registry::getOuterColumnName(TimeSeriesColumnNames::Timestamp);
-        if (!metadata.columns.has(column_name))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column `{}` is missing in a TimeSeries table storing histogram samples", column_name);
-        const auto array_type = typeid_cast<std::shared_ptr<const DataTypeArray>>(metadata.columns.get(column_name).type);
-        if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have an Array type", column_name);
-        return array_type->getNestedType();
+        if (!metadata.columns.has(TimeSeriesColumnNames::Histograms))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column `{}` is missing in a TimeSeries table storing histogram samples",
+                TimeSeriesColumnNames::Histograms);
+        const auto & type = metadata.columns.get(TimeSeriesColumnNames::Histograms).type;
+        auto timestamp_type = Registry::tryGetTimestampType(type);
+        if (!timestamp_type)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have the type of histogram samples, got {}",
+                TimeSeriesColumnNames::Histograms, type->getName());
+        return timestamp_type;
     }
 }
 
@@ -331,7 +332,7 @@ Block makePrometheusHistogramsBlock(
     const size_t num_rows = time_series.size() + num_metadata_rows;
     SampleColumns columns{timestamp_type, sizes};
 
-    /// The arrays of the group share one offsets column: element k of every array is histogram sample k of the row.
+    /// Element k of the array of a row is histogram sample k of the time series.
     auto offsets = ColumnArray::ColumnOffsets::create();
     auto & offsets_data = offsets->getData();
     offsets_data.reserve(num_rows);
@@ -344,19 +345,16 @@ Block makePrometheusHistogramsBlock(
     }
     offsets_data.resize_fill(num_rows, columns.view.size()); /// The metadata rows have no histograms.
 
-    Block block;
-    const ColumnPtr shared_offsets = std::move(offsets);
-    const auto timestamp_outer_column = Registry::getOuterTimestampColumn(timestamp_type);
-    block.insert(ColumnWithTypeAndName{
-        ColumnArray::create(ColumnPtr{std::move(columns.timestamps)}, shared_offsets), timestamp_outer_column.type, timestamp_outer_column.name});
-
-    auto outer_column = Registry::getOuterPayloadColumns().begin();
+    MutableColumns elements(Registry::getAll().size() + 1);
+    elements[Registry::getTimestampPosition()] = std::move(columns.timestamps);
     for (const auto column : Registry::getAll())
-    {
-        block.insert(ColumnWithTypeAndName{
-            ColumnArray::create(ColumnPtr{std::move(columns.payload[static_cast<size_t>(column)])}, shared_offsets), outer_column->type, outer_column->name});
-        ++outer_column;
-    }
+        elements[Registry::getTuplePosition(column)] = std::move(columns.payload[static_cast<size_t>(column)]);
+
+    Block block;
+    block.insert(ColumnWithTypeAndName{
+        ColumnArray::create(ColumnTuple::create(std::move(elements)), std::move(offsets)),
+        Registry::makeHistogramsArrayType(timestamp_type),
+        TimeSeriesColumnNames::Histograms});
     return block;
 }
 

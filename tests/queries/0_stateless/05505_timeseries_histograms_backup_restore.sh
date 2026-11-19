@@ -14,12 +14,14 @@ SAMPLES_QUERY="SELECT metric_name, samples, histograms.timestamp, histograms.is_
 
 $CLIENT -q "CREATE TABLE ts ENGINE = TimeSeries SETTINGS samples_bucket_step_seconds = 60, recent_samples_ttl_seconds = 0"
 # A series with float samples and integer histograms in one bucket, a float-only series, and a gauge float histogram with custom buckets.
-$CLIENT -q "INSERT INTO ts (metric_name, tags, samples, histograms.timestamp, histograms.count_int, histograms.sum, histograms.positive_int) VALUES
-    ('mixed', {'job': 'test'}, [(toDateTime64(130, 3), 1.5)], [toDateTime64(125, 3), toDateTime64(145, 3)], [1, 2], [0.5, 1.5], [[(0, 1)], [(0, 2)]])"
+$CLIENT -q "INSERT INTO ts (metric_name, tags, samples, histograms)
+    SELECT 'mixed', map('job', 'test'), [(toDateTime64(130, 3), 1.5)],
+        CAST([(toDateTime64(125, 3), 1, 0.5, [(0, 1)]), (toDateTime64(145, 3), 2, 1.5, [(0, 2)])], 'Array(Tuple(timestamp DateTime64(3), count_int Int64, sum Float64, positive_int Array(Tuple(Int32, Int64))))')"
 $CLIENT -q "INSERT INTO ts (metric_name, tags, samples) VALUES ('floats_only', {'job': 'test'}, [(toDateTime64(100, 3), 1.)])"
-$CLIENT -q "INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.counter_reset_hint, histograms.schema, histograms.sum,
-    histograms.count_float, histograms.positive_float, histograms.custom_values) VALUES
-    ('float_custom', {'job': 'test'}, [toDateTime64(100, 3)], [1], [3], [-53], [3.25], [2.5], [[(0, 1.5), (1, 1.)]], [[1.]])"
+$CLIENT -q "INSERT INTO ts (metric_name, tags, histograms)
+    SELECT 'float_custom', map('job', 'test'),
+        CAST([(toDateTime64(100, 3), true, 'gauge', -53, 3.25, 2.5, [(0, 1.5), (1, 1.)], [1.])],
+             'Array(Tuple(timestamp DateTime64(3), is_float Bool, counter_reset_hint String, schema Int8, sum Float64, count_float Float64, positive_float Array(Tuple(Int32, Float64)), custom_values Array(Float64)))')"
 
 BACKUP_NAME="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 $CLIENT -q "BACKUP TABLE ts TO Disk('backups', '$BACKUP_NAME') FORMAT Null"

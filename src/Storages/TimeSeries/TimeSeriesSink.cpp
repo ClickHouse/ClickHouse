@@ -461,8 +461,17 @@ namespace
         const auto * timestamps = typeid_cast<const TimestampColumn *>(&histograms.timestamps);
         if (!timestamps)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} of timestamps in the column `{}`",
-                histograms.timestamps.getName(), TimeSeriesHistogramsColumns::getOuterColumnName(TimeSeriesColumnNames::Timestamp));
+                histograms.timestamps.getName(), TimeSeriesColumnNames::Histograms);
         return *timestamps;
+    }
+
+    /// The outer column `histograms` of the input block: an array of the histogram samples of each row.
+    const ColumnArray & getHistogramsArray(const ColumnWithTypeAndName & histograms)
+    {
+        const auto * array = typeid_cast<const ColumnArray *>(histograms.column.get());
+        if (!array)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnArray for the column `{}`, got {}", histograms.name, histograms.column->getName());
+        return *array;
     }
 
     /// Converts a timestamp to `Decimal64` with the scale of the timestamp type.
@@ -834,7 +843,7 @@ namespace
     /// each bucket makes a row with the columns `id`, `samples`, `bucket`, `min_time`, `max_time` (see makeSamplesBlocksForTimestampType).
     /// For a table of an earlier version every sample makes a row with the columns `id`, `timestamp`, `value`,
     /// then `samples_bucket_step` is zero (see makeSamplesBlockWithOneSamplePerRow).
-    /// `histograms` are the histogram samples of the input block (the `histograms.*` outer columns) when the INSERT has them, and
+    /// `histograms` are the histogram samples of the input block (the outer column `histograms`) when the INSERT has them, and
     /// `histograms_array_type` is the type of the `histograms` column of a table storing histogram samples (see makeSamplesBlock);
     /// both are null for a table without that column. `recent_samples_bucket_step` is unset if there is no recent samples table.
     SamplesBlocks makeSamplesBlocks(
@@ -1079,25 +1088,9 @@ TimeSeriesSink::TimeSeriesSink(
         return (insert_columns_.empty() || std::find(insert_columns_.begin(), insert_columns_.end(), name) != insert_columns_.end());
     };
 
-    /// The `histograms.*` columns exist in tables storing histogram samples only (see TimeSeriesSettings::hasHistogramsInSamples).
+    /// The `histograms` column exists in tables storing histogram samples only (see TimeSeriesSettings::hasHistogramsInSamples).
     has_histograms_column = time_series_settings->hasHistogramsInSamples();
-    if (has_histograms_column)
-    {
-        const String histograms_timestamp_column = TimeSeriesHistogramsColumns::getOuterColumnName(TimeSeriesColumnNames::Timestamp);
-        insert_histograms = is_insert_column(histograms_timestamp_column);
-
-        /// The other columns of the group get default values aligned with the inserted ones (see addMissingDefaults),
-        /// but a histogram sample without a timestamp makes no sense.
-        if (!insert_histograms)
-        {
-            for (const auto & column : TimeSeriesHistogramsColumns::getOuterPayloadColumns())
-            {
-                if (is_insert_column(column.name))
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                        "Column `{}` must be inserted together with column `{}`", column.name, histograms_timestamp_column);
-            }
-        }
-    }
+    insert_histograms = has_histograms_column && is_insert_column(TimeSeriesColumnNames::Histograms);
 
     insert_tags_and_samples = is_insert_column(TimeSeriesColumnNames::MetricName)
         || is_insert_column(TimeSeriesColumnNames::Tags)
@@ -1266,18 +1259,16 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
 
         if (has_histograms_column)
         {
-            /// The row also contains the histogram samples of the series within the bucket. The type of the `histograms` column is the
-            /// registry's: the insert pipeline converts the `histograms.*` outer columns to the table's declared types, which are the
-            /// registry's too (see normalizeTimeSeriesDefinition), and the view over the columns checks them per block; only the type
-            /// of the timestamps depends on the table, so it is checked here once. The column is in the block of every INSERT, filled
-            /// with empty arrays when the `histograms.*` columns are not inserted (see makeSamplesBlock).
-            const auto & histograms_timestamp_column = getHeader().getByName(TimeSeriesHistogramsColumns::getOuterColumnName(TimeSeriesColumnNames::Timestamp));
-            const auto * histograms_timestamp_array_type = typeid_cast<const DataTypeArray *>(histograms_timestamp_column.type.get());
-            if (!histograms_timestamp_array_type || !histograms_timestamp_array_type->getNestedType()->equals(*timestamp_type))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have type Array({}), got {}",
-                    histograms_timestamp_column.name, timestamp_type->getName(), histograms_timestamp_column.type->getName());
-
+            /// The row also contains the histogram samples of the series within the bucket, with the type of the outer `histograms`
+            /// column: the insert pipeline converts the column to its declared type, the registry's (see normalizeTimeSeriesDefinition),
+            /// so it is checked here once. The column is in the block of every INSERT, filled with empty arrays when the outer column
+            /// is not inserted (see makeSamplesBlock).
             histograms_array_type = TimeSeriesHistogramsColumns::makeHistogramsArrayType(timestamp_type);
+            const auto & histograms_column = getHeader().getByName(TimeSeriesColumnNames::Histograms);
+            if (!histograms_column.type->equals(*histograms_array_type))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have type {}, got {}",
+                    histograms_column.name, histograms_array_type->getName(), histograms_column.type->getName());
+
             histograms_max_buckets = settings[TimeSeriesSetting::histograms_max_buckets];
             samples_header.insert(ColumnWithTypeAndName{histograms_array_type, TimeSeriesColumnNames::Histograms});
         }
@@ -1436,14 +1427,16 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     const ColumnArray::Offsets & ts_offsets = ts_arrays->getOffsets();
     size_t total_samples = getTotalSamples(ts_offsets);
 
-    /// The histogram samples of the rows are in the `histograms.*` outer columns (see TimeSeriesHistogramsColumns): arrays sharing
-    /// the offsets of `histograms.timestamp`, which the view checks along with the types of the columns. They are validated before
-    /// anything is pushed, so an invalid histogram leaves no partial data behind.
+    /// The histogram samples of the rows are in the outer column `histograms`, whose tuples the view checks against the registry
+    /// (see TimeSeriesHistogramsColumns). They are validated before anything is pushed, so an invalid histogram leaves no partial
+    /// data behind.
+    const ColumnArray * const histograms_array
+        = insert_histograms ? &getHistogramsArray(block.getByName(TimeSeriesColumnNames::Histograms)) : nullptr;
     const std::optional<TimeSeriesHistogramsColumnsView> histograms_view
-        = insert_histograms ? std::make_optional<TimeSeriesHistogramsColumnsView>(block) : std::nullopt;
-    const size_t total_histograms = histograms_view ? getTotalSamples(*histograms_view->outer_offsets) : 0;
+        = histograms_array ? std::make_optional<TimeSeriesHistogramsColumnsView>(*histograms_array) : std::nullopt;
+    const size_t total_histograms = histograms_array ? getTotalSamples(histograms_array->getOffsets()) : 0;
     if (total_histograms)
-        validateTimeSeriesHistograms(block, histograms_max_buckets);
+        validateTimeSeriesHistograms(*histograms_array, timestamp_type, histograms_max_buckets);
     const TimeSeriesHistogramsColumnsView * const histograms = histograms_view ? &*histograms_view : nullptr;
 
     PaddedPODArray<UInt8> filter;
@@ -1507,7 +1500,7 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     /// visible in the TTL window and then disappear, which looks like data loss.
     if (total_samples)
     {
-        /// A table storing histogram samples gets them from the `histograms.*` columns of the INSERT, or empty arrays when the
+        /// A table storing histogram samples gets them from the `histograms` column of the INSERT, or empty arrays when the
         /// INSERT has none (`histograms_array_type` is null for a table without the `histograms` column).
         SamplesBlocks samples_blocks = makeSamplesBlocks(
             filter, *id_column, id_type, ts_timestamps, timestamp_type, ts_values, value_type, ts_offsets, total_samples,

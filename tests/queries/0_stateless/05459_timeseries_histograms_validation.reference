@@ -1,5 +1,5 @@
 -- is_float is a value of its Bool type: text input is converted to it, binary input other than 0 and 1 is rejected by the validation
--- counter_reset_hint is a value of its Enum8 type: text input is rejected while parsing, binary input by the validation
+-- counter_reset_hint is a value of its Enum8 type: a conversion rejects other values, binary input is rejected by the validation
 -- schema is -4..8 or -53
 -- the bucket indexes of a side increase strictly
 -- no count is negative

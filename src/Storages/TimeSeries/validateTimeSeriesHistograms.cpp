@@ -2,12 +2,9 @@
 
 #include <Columns/ColumnArray.h>
 #include <Common/NaNUtils.h>
-#include <Common/assert_cast.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromString.h>
-#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
 #include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 
 #include <algorithm>
@@ -34,15 +31,14 @@ namespace
     using ColumnsView = TimeSeriesHistogramsColumnsView;
 
     /// Throws INCORRECT_DATA about a histogram sample: its number among the samples of the block, the row of the block it belongs
-    /// to (found from the offsets of the outer arrays) and its timestamp, serialized with the type of the `histograms.timestamp` column.
+    /// to (found from the offsets of the outer array) and its timestamp, serialized with `timestamp_type`.
     class InvalidHistogramThrower
     {
     public:
-        InvalidHistogramThrower(const Block & block, const ColumnsView & columns)
+        InvalidHistogramThrower(const ColumnsView & columns, const DataTypePtr & timestamp_type_)
             : timestamps(columns.timestamps)
             , offsets(*columns.outer_offsets)
-            , timestamp_type(assert_cast<const DataTypeArray &>(
-                *block.getByName(TimeSeriesHistogramsColumns::getOuterColumnName(TimeSeriesColumnNames::Timestamp)).type).getNestedType())
+            , timestamp_type(timestamp_type_)
         {
         }
 
@@ -269,13 +265,13 @@ namespace
 }
 
 
-void validateTimeSeriesHistograms(const Block & histograms_block, UInt64 max_buckets)
+void validateTimeSeriesHistograms(const ColumnArray & histograms, const DataTypePtr & timestamp_type, UInt64 max_buckets)
 {
-    if (!histograms_block.rows())
+    if (histograms.empty())
         return;
 
-    const ColumnsView columns{histograms_block};
-    const InvalidHistogramThrower thrower{histograms_block, columns};
+    const ColumnsView columns{histograms};
+    const InvalidHistogramThrower thrower{columns, timestamp_type};
     const auto & schema = columns.schema.getData();
     const auto & zero_threshold = columns.zero_threshold.getData();
     const auto & sum = columns.sum.getData();

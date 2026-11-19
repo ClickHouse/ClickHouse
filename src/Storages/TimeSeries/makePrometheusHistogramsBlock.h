@@ -14,7 +14,7 @@ namespace DB
 class StorageTimeSeries;
 struct StorageInMemoryMetadata;
 
-/// Builds the `histograms.*` outer columns of a TimeSeries table (see TimeSeriesHistogramsColumns) from the histogram samples
+/// Builds the outer column `histograms` of a TimeSeries table (see TimeSeriesHistogramsColumns) from the histogram samples
 /// of the time series of a remote-write request selected for writing: one row per time series, then `num_metadata_rows` rows
 /// without histograms (see PrometheusRemoteWriteProtocol). The table must store histogram samples, see `dropPrometheusHistograms`
 /// for the others. Returns an empty block if the time series have no histogram samples.

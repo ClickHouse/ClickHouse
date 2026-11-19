@@ -47,15 +47,11 @@ ORDER BY name;
 
 SELECT '-- the sink: both orders within one INSERT';
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0;
-INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.sum, histograms.count_int, histograms.positive_int) VALUES
-    ('ordinary_nan_stale_first', map(), [toDateTime64(100, 3), toDateTime64(100, 3)],
-        [reinterpret(0x7FF0000000000002, 'Float64'), reinterpret(0x7FF8000000000001, 'Float64')], [0, 0], [[], []]),
-    ('ordinary_nan_stale_last', map(), [toDateTime64(100, 3), toDateTime64(100, 3)],
-        [reinterpret(0x7FF8000000000001, 'Float64'), reinterpret(0x7FF0000000000002, 'Float64')], [0, 0], [[], []]),
-    ('smaller_count_stale_first', map(), [toDateTime64(100, 3), toDateTime64(100, 3)],
-        [reinterpret(0x7FF0000000000002, 'Float64'), 1.], [5, 3], [[(0, 5)], [(0, 3)]]),
-    ('smaller_count_stale_last', map(), [toDateTime64(100, 3), toDateTime64(100, 3)],
-        [1., reinterpret(0x7FF0000000000002, 'Float64')], [3, 5], [[(0, 3)], [(0, 5)]]);
+-- The same pairs as above, in the array of one series each; the timestamps 100 become `DateTime64(3)`.
+INSERT INTO ts (metric_name, tags, histograms)
+SELECT concat(name, '_stale_first'), map(), arrayConcat(stale, other) FROM stale_pairs
+UNION ALL
+SELECT concat(name, '_stale_last'), map(), arrayConcat(other, stale) FROM stale_pairs;
 
 SELECT t.metric_name, arrayMap(x -> hex(reinterpretAsUInt64(x)), s.histograms.sum), s.histograms.count_int
 FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS s JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) AS t ON s.id = t.id

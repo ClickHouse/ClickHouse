@@ -2607,7 +2607,7 @@ namespace
     }
 
     /// Generates the canonical outer columns from the resolved types.
-    /// The name of the column with samples and the presence of the `histograms` group depend on the version of the table
+    /// The name of the column with samples and the presence of the `histograms` column depend on the version of the table
     /// (see TimeSeriesVersion.h).
     ColumnsDescription generateOuterColumns(const DataTypePtr & timestamp_type, const DataTypePtr & value_type, UInt64 version)
     {
@@ -2626,15 +2626,8 @@ namespace
         add_column(TimeSeriesColumnNames::getOuterSamples(version),
             std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{timestamp_type, value_type})));
 
-        /// The `histograms` group is generated in its flattened form regardless of the `flatten_nested` setting,
-        /// so the definition doesn't depend on a query-level setting (see TimeSeriesHistogramsColumns).
         if (version >= TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS)
-        {
-            const auto timestamp_column = TimeSeriesHistogramsColumns::getOuterTimestampColumn(timestamp_type);
-            add_column(timestamp_column.name, timestamp_column.type);
-            for (const auto & column : TimeSeriesHistogramsColumns::getOuterPayloadColumns())
-                add_column(column.name, column.type);
-        }
+            add_column(TimeSeriesColumnNames::Histograms, TimeSeriesHistogramsColumns::makeHistogramsArrayType(timestamp_type));
 
         add_column(TimeSeriesColumnNames::MetricFamily, std::make_shared<DataTypeString>());
         add_column(TimeSeriesColumnNames::Type, std::make_shared<DataTypeString>());

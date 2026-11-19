@@ -24,13 +24,13 @@ struct TimeSeriesSettings;
 using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
 /// Sink for inserting data into the TimeSeries table engine.
-/// Transforms outer columns (samples, histograms.*, metric_name, tags, metric_family, type, unit, help)
+/// Transforms outer columns (samples, histograms, metric_name, tags, metric_family, type, unit, help)
 /// into blocks for the target tables (Tags, TimeRanges, Samples, RecentSamples, MetricFamilies).
 /// For a table with buckets of samples (see `TimeSeriesSettings::hasBucketedSamples`) the samples of a series are sorted,
 /// deduplicated and split into time buckets, each bucket makes a row of the samples tables with the columns
 /// `id`, `samples`, `bucket`, `min_time`, `max_time`; a table of an earlier version gets a row per sample (`id`, `timestamp`, `value`).
-/// A table storing histogram samples (see `TimeSeriesSettings::hasHistogramsInSamples`) takes them from the outer columns
-/// `histograms.*`, sorted and split into the same buckets: a row holds the float samples and the histogram samples of one series
+/// A table storing histogram samples (see `TimeSeriesSettings::hasHistogramsInSamples`) takes them from the outer column
+/// `histograms`, sorted and split into the same buckets: a row holds the float samples and the histogram samples of one series
 /// within one bucket in `samples` and `histograms` (either array may be empty), `min_time` and `max_time` cover both.
 class TimeSeriesSink : public SinkToStorage, WithContext
 {
@@ -91,7 +91,7 @@ private:
     bool insert_metric_families = false;
     bool async_insert = false;
 
-    /// Whether the samples tables store histogram samples (the table has the `histograms.*` outer columns),
+    /// Whether the samples tables store histogram samples (the table has the outer column `histograms`),
     /// and whether the INSERT writes them.
     bool has_histograms_column = false;
     bool insert_histograms = false;

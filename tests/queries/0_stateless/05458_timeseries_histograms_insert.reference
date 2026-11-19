@@ -20,12 +20,11 @@ dups	1970-01-01 00:00:10.000	1970-01-01 00:00:50.000
 float_hist	1970-01-01 00:01:40.000	1970-01-01 00:01:40.000
 int_hist	1970-01-01 00:01:40.000	1970-01-01 00:01:40.000
 mixed	1970-01-01 00:02:05.000	1970-01-01 00:02:30.000
--- errors: a histogram needs a series, the payload columns need the timestamps
-0
--- histograms.timestamp alone is a valid empty integer histogram: the other columns default to zeros and empty arrays aligned with the timestamps
+-- errors: a histogram needs a series
+-- a timestamp alone is a valid empty integer histogram: the other elements default to zeros and empty arrays
 timestamps_only	1970-01-01 00:01:00.000	0	['1970-01-01 00:01:40.000']	[false]	[0]	[[]]
 timestamps_only	1970-01-01 00:02:00.000	0	['1970-01-01 00:02:40.000']	[false]	[0]	[[]]
--- an insert without histograms stores an empty histograms array, with or without the histograms.* columns in the column list
+-- an insert without histograms stores an empty histograms array, with or without the histograms column in the column list
 all_columns	[('1970-01-01 00:01:40.000',2)]	[]
 floats_only	[('1970-01-01 00:01:40.000',1)]	[]
 -- mixed integer and float counts above 2^53 choose the same winner in both input orders

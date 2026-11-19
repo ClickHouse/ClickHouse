@@ -53,9 +53,8 @@ struct TimeSeriesColumnNames
 
     /// The column of the "samples" table of a table of version MIN_WITH_NATIVE_HISTOGRAMS or later with the native histogram
     /// samples of one time series within one time bucket, sorted by timestamp, in the same row as the float samples (see class
-    /// TimeSeriesHistogramsColumns for its elements). The outer columns of the TimeSeries table with histogram samples form the
-    /// flattened group `histograms.timestamp`, `histograms.is_float`, `histograms.counter_reset_hint`, ..., one array per element of the tuple.
-    /// Tables of earlier versions have neither.
+    /// TimeSeriesHistogramsColumns for its elements), also the outer column of the TimeSeries table with the histogram samples and the
+    /// column of `timeSeriesSelector` with them. Tables of earlier versions have neither.
     static constexpr const char * Histograms = "histograms";
 
     /// Internal columns used by steps of prometheus query evaluation.

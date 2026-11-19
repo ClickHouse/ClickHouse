@@ -955,15 +955,8 @@ void registerStorageTimeSeries(StorageFactory & factory)
     /// The documentation of the histogram columns is rendered from their registry, so that the names, the types, the codecs and
     /// the descriptions are written once; the fragments are spliced into the markdown below at the places where they are shown.
     const String histograms_type = TimeSeriesHistogramsColumns::describeArrayTypeForDocs("DateTime64(3)");
-    const String histograms_outer_rows = TimeSeriesHistogramsColumns::describeOuterColumnsForDocs(
-        "DateTime64(3)",
-        String{"The timestamps of the native histogram samples of a time series. The `histograms.*` columns are the flattened form of "
-        "`histograms Nested(...)`: one array per element of the `histograms` column of the [samples](#samples-table) table, element k of every "
-        "array being histogram sample k, so the arrays of a row must have the same length. A `SELECT` returns the stored histogram samples "
-        "flattened the same way, one row per row of the [samples](#samples-table) table like `samples` (`SELECT ... FINAL` merges the rows of "
-        "the same bucket which are not merged yet with `timeSeriesGroupArray`). Tables of [versions](#schema-versioning) before "}
-        + histograms_version + " have no such columns");
-    const String histograms_outer_create = TimeSeriesHistogramsColumns::describeOuterColumnsForCreateExample("DateTime64(3)");
+    const String histograms_elements = TimeSeriesHistogramsColumns::describeElementsForDocs(
+        "DateTime64(3)", "The timestamp of the histogram sample, of the type of the timestamps of `samples`");
     const String histograms_codecs_docs = TimeSeriesHistogramsColumns::describeInnerCodecsForDocs();
     const String histograms_codecs_create = TimeSeriesHistogramsColumns::describeInnerCodecsForCreateExample();
     /// `MergeTree` prints the delta codec of the columns of an inner table with its byte size.
@@ -1054,7 +1047,8 @@ Columns of a TimeSeries table are generated automatically. These are outer colum
 | `metric_name` | `String` | The name of the metric |
 | `tags` | `Map(String, String)` | Map of tags (labels) for the time series |
 | `samples` | `Array(Tuple(DateTime64(3), Float64))` by default | Array of (timestamp, value) pairs for a time series, sorted by timestamp. A `SELECT` from a table with buckets of samples returns the rows of the [samples](#samples-table) table as they are, so a time series is returned in several rows (one per bucket; `SELECT ... FINAL` merges the rows of the same bucket which are not merged yet); use the aggregate function `timeSeriesGroupArray` to merge the rows of a time series into one array. The tuple's timestamp and value element types can be derived from the samples `INNER COLUMNS` declaration (see [Specifying outer columns](#specifying-outer-columns)). The column is named `time_series` in tables of [version](#schema-versioning) 2 and earlier |
-)DOCS_MD"} + histograms_outer_rows + R"DOCS_MD(| `metric_family` | `String` | The name of the metric family (for metrics metadata) |
+| `histograms` | `)DOCS_MD"} + histograms_type + R"DOCS_MD(` by default | Array of the native histogram samples of a time series, sorted by timestamp, with the elements described in [Native histogram samples](#native-histogram-samples). A `SELECT` returns the rows of the [samples](#samples-table) table as they are, like `samples` (`SELECT ... FINAL` merges the rows of the same bucket which are not merged yet). Tables of [versions](#schema-versioning) before )DOCS_MD" + histograms_version + R"DOCS_MD( have no such column |
+| `metric_family` | `String` | The name of the metric family (for metrics metadata) |
 | `type` | `String` | The type of the metric (e.g. "counter", "gauge") |
 | `unit` | `String` | The unit of the metric |
 | `help` | `String` | The description of the metric |
@@ -1081,6 +1075,25 @@ To insert metrics metadata, insert into the `metric_family`, `type`, `unit`, and
 INSERT INTO my_table (metric_name, tags, samples, metric_family, type, unit, help) VALUES
     ('http_requests_total', {'method': 'GET'}, [(now64(), 100.0)],
      'http_requests_total', 'counter', 'requests', 'Total HTTP requests')
+```
+
+#### Native histogram samples {#native-histogram-samples}
+
+The tuples of the `histograms` column have the following elements:
+
+| Element | Type | Description |
+|---|---|---|
+)DOCS_MD" + histograms_elements + R"DOCS_MD(
+An element is addressed by its name, for example `histograms.count_int` is the array of the total counts of the integer histograms
+of a row; the whole `histograms` column is read for it. `INSERT ... VALUES` takes the tuples with all their elements in order.
+`INSERT ... SELECT` can insert named tuples with only some of the elements: the elements are matched by their names, the missing ones
+get their default values, and the elements with other names are ignored:
+
+```sql
+INSERT INTO my_table (metric_name, tags, histograms)
+SELECT 'http_request_duration_seconds', map('job', 'api'),
+    CAST([(toDateTime64('2024-01-01 00:00:00', 3), 5, 2.5, [(0, 3), (1, 2)])],
+         'Array(Tuple(timestamp DateTime64(3), count_int Int64, sum Float64, positive_int Array(Tuple(index Int32, count Int64))))')
 ```
 
 ### Specifying outer columns {#specifying-outer-columns}
@@ -1166,7 +1179,7 @@ The _samples_ table must have columns:
 |---|---|---|---|---|
 | `id` | [x] | `Tuple(UInt64, LowCardinality(UUID))` | any | Identifies a combination of a metric names and tags |
 | `samples` | [x] | `SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64)))` | `SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(X), value Float32 or Float64)))`, the elements must be named `timestamp` and `value` | The samples of a time series within the bucket sorted by timestamp |
-| `histograms` | [x] from version )DOCS_MD" + histograms_version + R"DOCS_MD( | `SimpleAggregateFunction(timeSeriesGroupArray, )DOCS_MD" + histograms_type + R"DOCS_MD()` | the same with `DateTime64(X)` as the type of the timestamps | The native histogram samples of a time series within the bucket sorted by timestamp (see above). The elements after `timestamp` are the ones of the [outer columns](#outer-columns) `histograms.*` |
+| `histograms` | [x] from version )DOCS_MD" + histograms_version + R"DOCS_MD( | `SimpleAggregateFunction(timeSeriesGroupArray, )DOCS_MD" + histograms_type + R"DOCS_MD()` | the same with `DateTime64(X)` as the type of the timestamps | The native histogram samples of a time series within the bucket sorted by timestamp (see above). The elements are described in [Native histogram samples](#native-histogram-samples) |
 | `bucket` | [x] | `DateTime64(3)` | the type of the timestamps | The start of the bucket: the timestamps of the samples rounded down to a multiple of the bucket length |
 | `min_time` | [x] | `SimpleAggregateFunction(min, DateTime64(3))` | `SimpleAggregateFunction(min, ...)` of the type of the timestamps | The minimum timestamp of the samples in the row |
 | `max_time` | [x] | `SimpleAggregateFunction(max, DateTime64(3))` | `SimpleAggregateFunction(max, ...)` of the type of the timestamps | The maximum timestamp of the samples in the row |
@@ -1276,7 +1289,8 @@ CREATE TABLE my_table
     `metric_name` String,
     `tags` Map(String, String),
     `samples` Array(Tuple(DateTime64(3), Float64)),
-)DOCS_MD" + histograms_outer_create + R"DOCS_MD(    `metric_family` String,
+    `histograms` )DOCS_MD" + histograms_type + R"DOCS_MD(,
+    `metric_family` String,
     `type` String,
     `unit` String,
     `help` String
@@ -1688,7 +1702,7 @@ the `promql` dialect, and the Prometheus HTTP query API):
 | 9 | The default partition key of an inner [recent samples](#recent-samples-table) table names the timezone: `toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))`. Earlier versions generate it without one, and `toStartOfInterval` counts hours from local midnight, so a change of the server timezone moves the meaning of the partition values they have already written. Existing tables keep the key they were created with, which no `ALTER` can change |
 | 10 | External target tables are not supported for new tables: every target of a table of this version is an inner table. The settings `id_type` and `id_generator` are not supported either: the type of the `id` column and the expression generating identifiers are declared in `TAGS INNER COLUMNS` (see [The `id` column](#id-column)). Tables of earlier versions keep their external target tables and these settings. The stored data didn't change |
 | 11 | The [samples](#samples-table) and [recent samples](#recent-samples-table) tables store buckets of samples: a row keeps the samples of one time series within one time bucket (the columns `samples`, `bucket`, `min_time`, `max_time`) in an `AggregatingMergeTree` ordered by `(id, bucket)`. The settings [`samples_bucket_step_seconds`](#settings), [`samples_partition_by`](#settings), [`samples_index_granularity_bytes`](#settings), [`recent_samples_bucket_step_seconds`](#settings) and [`recent_samples_index_granularity_bytes`](#settings) were introduced, and the defaults of [`samples_index_granularity`](#settings) and [`recent_samples_index_granularity`](#settings) changed. Tables of earlier versions store one sample per row in the columns `timestamp` and `value`: they can still be read, written into and queried with PromQL, and the [timeSeriesSelector](/reference/functions/table-functions/timeSeriesSelector) table function reads them without a conversion when its argument `return_columns` is `'timestamp_and_value'` |
-| )DOCS_MD" + histograms_version + R"DOCS_MD( | The [samples](#samples-table) and [recent samples](#recent-samples-table) tables store native histogram samples in the column `histograms` of the same rows as the float samples (integer and float histograms with their own count types, the buckets as pairs of the bucket index and the count), with counter reset hints updated as described [above](#samples-table), and merged by `timeSeriesGroupArray`; the outer columns `histograms.*` and the setting [`histograms_max_buckets`](#settings) were introduced. Tables of earlier versions store no histograms: the Prometheus remote-write protocol drops the native histograms sent to them with a warning |
+| )DOCS_MD" + histograms_version + R"DOCS_MD( | The [samples](#samples-table) and [recent samples](#recent-samples-table) tables store native histogram samples in the column `histograms` of the same rows as the float samples (integer and float histograms with their own count types, the buckets as pairs of the bucket index and the count), with counter reset hints updated as described [above](#samples-table), and merged by `timeSeriesGroupArray`; the outer column `histograms` and the setting [`histograms_max_buckets`](#settings) were introduced. Tables of earlier versions store no histograms: the Prometheus remote-write protocol drops the native histograms sent to them with a warning |
 
 # Functions {#functions}
 

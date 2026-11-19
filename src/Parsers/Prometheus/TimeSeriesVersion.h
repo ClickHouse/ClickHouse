@@ -53,7 +53,7 @@ namespace DB
 ///       count_int, zero_count_int, count_float, zero_count_float, positive_int, negative_int, positive_float, negative_float,
 ///       custom_values)` sorted by timestamp and merged by `timeSeriesGroupArray`. A histogram is stored as it was sent:
 ///       integer and float histograms keep their own count types, the buckets are pairs of the bucket index and the count.
-///       The outer columns `histograms.*` and the setting `histograms_max_buckets` were introduced. Tables of earlier
+///       The outer column `histograms` and the setting `histograms_max_buckets` were introduced. Tables of earlier
 ///       versions store no histograms.
 namespace TimeSeriesVersion
 {

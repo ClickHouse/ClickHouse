@@ -49,15 +49,19 @@ ORDER BY name;
 
 SELECT '-- the sink: one sample per series after the deduplication, the first, which keeps the common hint or gets an unknown one';
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0;
-INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.counter_reset_hint, histograms.count_int, histograms.sum, histograms.positive_int)
-    VALUES
-    ('gauge_last', map(), [toDateTime64(100, 3), toDateTime64(100, 3)], [2, 3], [1, 1], [1, 1], [[(0, 1)], [(0, 1)]]),
-    ('gauge_first', map(), [toDateTime64(100, 3), toDateTime64(100, 3)], [3, 2], [1, 1], [1, 1], [[(0, 1)], [(0, 1)]]),
-    ('unknown_last', map(), [toDateTime64(100, 3), toDateTime64(100, 3)], [1, 0], [1, 1], [1, 1], [[(0, 1)], [(0, 1)]]),
-    ('unknown_first', map(), [toDateTime64(100, 3), toDateTime64(100, 3)], [0, 1], [1, 1], [1, 1], [[(0, 1)], [(0, 1)]]),
-    ('no_last', map(), [toDateTime64(100, 3), toDateTime64(100, 3)], [1, 2], [1, 1], [1, 1], [[(0, 1)], [(0, 1)]]),
-    ('no_first', map(), [toDateTime64(100, 3), toDateTime64(100, 3)], [2, 1], [1, 1], [1, 1], [[(0, 1)], [(0, 1)]]),
-    ('no_both', map(), [toDateTime64(100, 3), toDateTime64(100, 3)], [2, 2], [1, 1], [1, 1], [[(0, 1)], [(0, 1)]]);
+-- Two samples of every series with the timestamp 100 and the same payload, with the hints of `hints`.
+INSERT INTO ts (metric_name, tags, histograms)
+SELECT name, map(),
+       CAST(arrayMap(hint -> (toDateTime64(100, 3), hint, 1, 1, [(0, 1)]), hints),
+            'Array(Tuple(timestamp DateTime64(3), counter_reset_hint UInt8, count_int Int64, sum Float64, positive_int Array(Tuple(Int32, Int64))))')
+FROM values('name String, hints Array(UInt8)',
+    ('gauge_last', [2, 3]),
+    ('gauge_first', [3, 2]),
+    ('unknown_last', [1, 0]),
+    ('unknown_first', [0, 1]),
+    ('no_last', [1, 2]),
+    ('no_first', [2, 1]),
+    ('no_both', [2, 2]));
 
 SELECT t.metric_name, s.histograms.counter_reset_hint
 FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS s JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) AS t ON s.id = t.id

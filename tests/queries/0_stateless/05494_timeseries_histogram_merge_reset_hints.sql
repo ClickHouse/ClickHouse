@@ -76,19 +76,20 @@ FROM
 CREATE TABLE ts_histogram_hints ENGINE = TimeSeries
 SETTINGS samples_bucket_step_seconds = 60, recent_samples_ttl_seconds = 0
 SAMPLES INNER ENGINE = AggregatingMergeTree SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1;
-INSERT INTO ts_histogram_hints (metric_name, histograms.timestamp, histograms.count_int, histograms.zero_count_int, histograms.sum, histograms.counter_reset_hint)
-VALUES ('m', [toDateTime64(100, 3), toDateTime64(101, 3)], [100, 120], [100, 120], [100, 120], [2, 2]);
-INSERT INTO ts_histogram_hints (metric_name, histograms.timestamp, histograms.count_int, histograms.zero_count_int, histograms.sum, histograms.counter_reset_hint)
-VALUES ('m', [toDateTime64(100, 3), toDateTime64(101, 3), toDateTime64(102, 3)], [1, 2, 3], [1, 2, 3], [1, 2, 3], [2, 2, 2]);
+INSERT INTO ts_histogram_hints (metric_name, histograms)
+SELECT 'm', CAST([(toDateTime64(100, 3), 100, 100, 100, 'not_reset'), (toDateTime64(101, 3), 120, 120, 120, 'not_reset')], 'Array(Tuple(timestamp DateTime64(3), count_int Int64, zero_count_int Int64, sum Float64, counter_reset_hint String))');
+INSERT INTO ts_histogram_hints (metric_name, histograms)
+SELECT 'm', CAST([(toDateTime64(100, 3), 1, 1, 1, 'not_reset'), (toDateTime64(101, 3), 2, 2, 2, 'not_reset'), (toDateTime64(102, 3), 3, 3, 3, 'not_reset')], 'Array(Tuple(timestamp DateTime64(3), count_int Int64, zero_count_int Int64, sum Float64, counter_reset_hint String))');
 SELECT arrayMap(s -> (s.count_int, s.counter_reset_hint), histograms) FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts_histogram_hints) ORDER BY ALL;
 OPTIMIZE TABLE ts_histogram_hints FINAL;
 SELECT arrayMap(s -> (s.count_int, s.counter_reset_hint), histograms) FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts_histogram_hints) ORDER BY ALL;
 
 -- Sorting and deduplicating a single insert detects the reset against the new predecessor.
 TRUNCATE TABLE ts_histogram_hints;
-INSERT INTO ts_histogram_hints (metric_name, histograms.timestamp, histograms.count_int, histograms.zero_count_int, histograms.sum, histograms.counter_reset_hint)
-VALUES ('m', [toDateTime64(100, 3), toDateTime64(101, 3), toDateTime64(100, 3), toDateTime64(101, 3), toDateTime64(102, 3)],
-        [100, 120, 1, 2, 3], [100, 120, 1, 2, 3], [100, 120, 1, 2, 3], [2, 2, 2, 2, 2]);
+INSERT INTO ts_histogram_hints (metric_name, histograms)
+SELECT 'm', CAST([(toDateTime64(100, 3), 100, 100, 100, 'not_reset'), (toDateTime64(101, 3), 120, 120, 120, 'not_reset'),
+                  (toDateTime64(100, 3), 1, 1, 1, 'not_reset'), (toDateTime64(101, 3), 2, 2, 2, 'not_reset'), (toDateTime64(102, 3), 3, 3, 3, 'not_reset')],
+                 'Array(Tuple(timestamp DateTime64(3), count_int Int64, zero_count_int Int64, sum Float64, counter_reset_hint String))');
 SELECT arrayMap(s -> (s.count_int, s.counter_reset_hint), histograms) FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts_histogram_hints);
 
 DROP TABLE ts_histogram_hints;

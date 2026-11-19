@@ -13,8 +13,8 @@ struct SelectQueryInfo;
 struct TimeSeriesSettings;
 
 /// Builds an internal `SELECT` query that produces the requested outer columns of a TimeSeries table by reading from its
-/// target tables "tags", "samples" (the column `samples` and, for a table storing native histograms, the `histograms.*`
-/// columns) and "metric families". Only the target tables required by `requested_columns` are read; when none of them
+/// target tables "tags", "samples" (the column `samples` and, for a table storing native histograms, the column `histograms`)
+/// and "metric families". Only the target tables required by `requested_columns` are read; when none of them
 /// requires another table (e.g. `SELECT count()` requests just `metric_name`), the "tags" table is read, so `count()`
 /// counts the series.
 ///

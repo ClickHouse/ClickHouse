@@ -12,7 +12,6 @@
 
 namespace DB
 {
-class Block;
 
 /// The buckets of one side of a histogram: bucket `i` has the index `indexes[i]` and the count `counts[i]`; the indexes increase.
 template <typename Count>
@@ -115,8 +114,8 @@ protected:
 };
 
 
-/// The payload view with the timestamps of the samples: over the whole stored tuple, or over the outer `histograms.*` columns of a
-/// block. The constructors throw ILLEGAL_COLUMN unless the timestamps have a timestamp type of a TimeSeries table.
+/// The payload view with the timestamps of the samples: over the whole stored tuple, or over an array of such tuples. The constructors
+/// throw ILLEGAL_COLUMN unless the timestamps have a timestamp type of a TimeSeries table.
 template <bool is_const>
 class TimeSeriesHistogramsColumnsViewImpl : public TimeSeriesHistogramPayloadColumnsViewImpl<is_const>
 {
@@ -132,9 +131,8 @@ public:
 
     explicit TimeSeriesHistogramsColumnsViewImpl(Ref<ColumnTuple> tuple);
 
-    /// Over the outer `histograms.*` array columns of `block` (see `TimeSeriesHistogramsColumns::getOuterColumnName`), which must
-    /// share their offsets.
-    explicit TimeSeriesHistogramsColumnsViewImpl(const Block & block) requires is_const;
+    /// Over the tuples of an array of tuples of the stored shape, e.g. the outer `histograms` column of an INSERT.
+    explicit TimeSeriesHistogramsColumnsViewImpl(const ColumnArray & array) requires is_const;
 
     /// Over the columns being built, all of them non-null.
     TimeSeriesHistogramsColumnsViewImpl(IColumn & timestamps_, const Columns & payload) requires (!is_const);
@@ -144,7 +142,7 @@ public:
 
     Ref<IColumn> timestamps;
 
-    /// The offsets of the outer arrays of the block, one entry per row; null for a view over anything but a block.
+    /// The offsets of the array the view is over, one entry per row of the array; null for a view over anything but an array.
     const ColumnArray::Offsets * const outer_offsets = nullptr;
 
     /// All the columns in the order of the stored tuple: `timestamps` first, then the payload.

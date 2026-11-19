@@ -15,10 +15,10 @@ DROP TABLE IF EXISTS ts;
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS samples_bucket_step_seconds = 3600, recent_samples_bucket_step_seconds = 60, recent_samples_ttl_seconds = 1576800000;
 
 -- Unsorted; sorted, the counts go 1, 3, 2: the third sample is a counter reset.
-INSERT INTO ts (metric_name, tags, samples, histograms.timestamp, histograms.count_int, histograms.sum, histograms.positive_int)
-    VALUES ('m', map('job', 'api'), [(toDateTime64('2024-08-20 00:00:05', 3), 0.5)],
-            [toDateTime64('2024-08-20 00:02:10', 3), toDateTime64('2024-08-20 00:00:10', 3), toDateTime64('2024-08-20 00:01:10', 3)],
-            [2, 1, 3], [2, 1, 3], [[(0, 2)], [(0, 1)], [(0, 3)]]);
+INSERT INTO ts (metric_name, tags, samples, histograms)
+SELECT 'm', map('job', 'api'), [(toDateTime64('2024-08-20 00:00:05', 3), 0.5)],
+    CAST([('2024-08-20 00:02:10', 2, 2, [(0, 2)]), ('2024-08-20 00:00:10', 1, 1, [(0, 1)]), ('2024-08-20 00:01:10', 3, 3, [(0, 3)])],
+         'Array(Tuple(timestamp DateTime64(3), count_int Int64, sum Float64, positive_int Array(Tuple(Int32, Int64))))');
 
 SELECT '-- the samples table: one row for the hour, the hints detected over the whole series';
 SELECT bucket, min_time, max_time, samples, arrayMap(h -> (h.timestamp, h.count_int, h.counter_reset_hint), histograms)

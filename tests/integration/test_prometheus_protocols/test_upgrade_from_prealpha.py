@@ -217,7 +217,7 @@ def check_foo_and_bar(samples_column="time_series"):
 
 # Copies the table into a table of the latest version with INSERT SELECT and replaces the original table with the copy.
 # The copy names the columns of the new table: a table of the latest version has more outer columns than the old one
-# (the `histograms.*` group), so a positional `INSERT ... SELECT *` doesn't match; the omitted columns take their defaults.
+# (`histograms`), so a positional `INSERT ... SELECT *` doesn't match; the omitted columns take their defaults.
 def upgrade_to_latest_version():
     node.query("DROP TABLE IF EXISTS prometheus_new SYNC")
     node.query("CREATE TABLE prometheus_new ENGINE=TimeSeries")

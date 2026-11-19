@@ -4,7 +4,6 @@
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Core/Block.h>
 #include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
 
 namespace DB
@@ -45,7 +44,7 @@ namespace
             throwUnexpectedColumn(TimeSeriesColumnNames::Timestamp, "DateTime64, DateTime or UInt32", column);
     }
 
-    /// The sources of the columns a view is built over: the payload elements, the timestamps and the offsets of the outer arrays.
+    /// The sources of the columns a view is built over: the payload elements, the timestamps and the offsets of the outer array.
 
     /// A tuple of the stored shape; `Tuple` is `const ColumnTuple` or `ColumnTuple`.
     template <typename Tuple>
@@ -69,36 +68,25 @@ namespace
     template <typename Tuple>
     TupleSource(Tuple &) -> TupleSource<Tuple>;
 
-    /// The outer `histograms.*` columns of a block, all arrays with the offsets of `histograms.timestamp`.
-    struct BlockSource
+    /// The tuples of an array of tuples of the stored shape.
+    struct ArraySource
     {
-        const Block & block;
-        const ColumnArray & timestamp_array;
+        const ColumnArray & array;
+        const TupleSource<const ColumnTuple> tuple;
 
-        explicit BlockSource(const Block & block_) : block(block_), timestamp_array(getOuterArray(TimeSeriesColumnNames::Timestamp)) { }
+        explicit ArraySource(const ColumnArray & array_) : array(array_), tuple(getTuple(array_)) { }
 
-        [[nodiscard]] const IColumn & timestamps() const { return timestamp_array.getData(); }
-
-        [[nodiscard]] const IColumn & element(Element element) const
-        {
-            const auto & array = getOuterArray(Registry::getName(element));
-            if (!array.hasEqualOffsets(timestamp_array))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` of histogram samples has other array sizes than column `{}`",
-                    Registry::getOuterColumnName(Registry::getName(element)), Registry::getOuterColumnName(TimeSeriesColumnNames::Timestamp));
-            return array.getData();
-        }
-
-        [[nodiscard]] const ColumnArray::Offsets * outerOffsets() const { return &timestamp_array.getOffsets(); }
+        [[nodiscard]] const IColumn & timestamps() const { return tuple.timestamps(); }
+        [[nodiscard]] const IColumn & element(Element element) const { return tuple.element(element); }
+        [[nodiscard]] const ColumnArray::Offsets * outerOffsets() const { return &array.getOffsets(); }
 
     private:
-        [[nodiscard]] const ColumnArray & getOuterArray(std::string_view element_name) const
+        static const ColumnTuple & getTuple(const ColumnArray & array)
         {
-            const auto outer_name = Registry::getOuterColumnName(element_name);
-            const auto & column = *block.getByName(outer_name).column;
-            const auto * array = typeid_cast<const ColumnArray *>(&column);
-            if (!array)
-                throwUnexpectedColumn(outer_name, "Array", column);
-            return *array;
+            const auto * tuple = typeid_cast<const ColumnTuple *>(&array.getData());
+            if (!tuple)
+                throwUnexpectedColumn(TimeSeriesColumnNames::Histograms, "Array(Tuple(...))", array);
+            return *tuple;
         }
     };
 
@@ -269,8 +257,8 @@ TimeSeriesHistogramsColumnsViewImpl<is_const>::TimeSeriesHistogramsColumnsViewIm
 }
 
 template <bool is_const>
-TimeSeriesHistogramsColumnsViewImpl<is_const>::TimeSeriesHistogramsColumnsViewImpl(const Block & block) requires is_const
-    : TimeSeriesHistogramsColumnsViewImpl(typename Base::FromSource{}, BlockSource{block})
+TimeSeriesHistogramsColumnsViewImpl<is_const>::TimeSeriesHistogramsColumnsViewImpl(const ColumnArray & array) requires is_const
+    : TimeSeriesHistogramsColumnsViewImpl(typename Base::FromSource{}, ArraySource{array})
 {
 }
 

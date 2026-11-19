@@ -12,7 +12,6 @@
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
-#include <DataTypes/TimeSeries/TimeSeriesHistogramsColumns.h>
 
 #include <gtest/gtest.h>
 
@@ -185,15 +184,21 @@ namespace
     const String DEFAULT_ID_GENERATOR = "tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags))))";
     const String DEFAULT_SAMPLES_TYPE = "SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64)))";
 
-    /// The type of the generated `histograms` column of the samples tables for the specified type of `timestamp`.
-    String histogramsInnerType(const String & timestamp_type)
+    /// The array of histogram samples for the specified type of `timestamp`: the type of the outer `histograms` column.
+    String histogramsArrayType(const String & timestamp_type)
     {
-        return "SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp " + timestamp_type
+        return "Array(Tuple(timestamp " + timestamp_type
             + ", is_float Bool, counter_reset_hint Enum8('unknown' = 0, 'reset' = 1, 'not_reset' = 2, 'gauge' = 3), schema Int8, zero_threshold Float64, "
             "sum Float64, count_int Int64, zero_count_int Int64, "
             "count_float Float64, zero_count_float Float64, positive_int Array(Tuple(index Int32, count Int64)), "
             "negative_int Array(Tuple(index Int32, count Int64)), positive_float Array(Tuple(index Int32, count Float64)), "
-            "negative_float Array(Tuple(index Int32, count Float64)), custom_values Array(Float64))))";
+            "negative_float Array(Tuple(index Int32, count Float64)), custom_values Array(Float64)))";
+    }
+
+    /// The type of the generated `histograms` column of the samples tables for the specified type of `timestamp`.
+    String histogramsInnerType(const String & timestamp_type)
+    {
+        return "SimpleAggregateFunction(timeSeriesGroupArray, " + histogramsArrayType(timestamp_type) + ")";
     }
 
     const String DEFAULT_HISTOGRAMS_TYPE = histogramsInnerType("DateTime64(3)");
@@ -239,13 +244,10 @@ namespace
 
     const String latest_version_setting = versionSetting(TimeSeriesVersion::LATEST);
 
-    /// The generated outer columns of the `histograms` group for the specified type of `timestamp`.
-    String histogramsOuterColumns(const String & timestamp_type)
+    /// The generated outer column `histograms` for the specified type of `timestamp`.
+    String histogramsOuterColumn(const String & timestamp_type)
     {
-        String result = "`histograms.timestamp` Array(" + timestamp_type + ")";
-        for (const auto & column : TimeSeriesHistogramsColumns::getAll())
-            result += fmt::format(", `histograms.{}` Array({})", TimeSeriesHistogramsColumns::getName(column), TimeSeriesHistogramsColumns::getType(column));
-        return result;
+        return "`histograms` " + histogramsArrayType(timestamp_type);
     }
 }
 
@@ -658,15 +660,15 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, OuterColumns)
     EXPECT_TRUE(extractInnerColumns(definition, "SAMPLES").contains("`samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp UInt32, value Float32))), `histograms` " + histogramsInnerType("UInt32") + ", `bucket` UInt32")) << definition;
 
     /// The outer columns are an IO interface which stores no data, so the declared ones are replaced with the canonical list.
-    definition = normalizeNewTable("CREATE TABLE db.ts (metric_name Int32, tags String, `histograms.count_int` Array(UInt64)) ENGINE = TimeSeries");
+    definition = normalizeNewTable("CREATE TABLE db.ts (metric_name Int32, tags String, histograms Array(UInt64)) ENGINE = TimeSeries");
     EXPECT_EQ(extractOuterColumns(definition),
         "`metric_name` String, `tags` Map(String, String), `samples` Array(Tuple(DateTime64(3), Float64)), "
-        + histogramsOuterColumns("DateTime64(3)") + ", "
+        + histogramsOuterColumn("DateTime64(3)") + ", "
         "`metric_family` String, `type` String, `unit` String, `help` String");
 
-    /// The `histograms` group takes the timestamp type of the table.
+    /// The `histograms` column takes the timestamp type of the table.
     definition = normalizeNewTable("CREATE TABLE db.ts (samples Array(Tuple(UInt32, Float32))) ENGINE = TimeSeries");
-    EXPECT_TRUE(definition.contains(histogramsOuterColumns("UInt32"))) << definition;
+    EXPECT_TRUE(definition.contains(histogramsOuterColumn("UInt32"))) << definition;
 }
 
 
@@ -805,7 +807,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, VersionSetting)
 
 TEST_F(NormalizeTimeSeriesDefinitionTest, HistogramsAreAbsentInEarlierVersions)
 {
-    /// Neither the `histograms` column of the samples tables nor the `histograms.*` outer columns.
+    /// Neither the `histograms` column of the samples tables nor the outer `histograms` column.
     for (UInt64 version = TimeSeriesVersion::MIN_SUPPORTED; version < TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS; ++version)
     {
         auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS " + versionSetting(version));
@@ -829,7 +831,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, HistogramsSettingsRequireVersion)
 TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsPinnedToEarlierVersionDropsHistograms)
 {
     /// A copy pinned to a version without histograms drops the `histograms` column with the codecs declared for its elements,
-    /// the `histograms.*` outer columns and the settings of the histograms.
+    /// the outer `histograms` column and the settings of the histograms.
     const String src = normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS histograms_max_buckets = 1000");
     auto definition = normalizeNewTableAs(
         "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS " + versionSetting(TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS - 1), src);
@@ -840,7 +842,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsPinnedToEarlierVersionDropsHis
     definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
         normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS " + versionSetting(TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS - 1)));
     EXPECT_EQ(extractInnerColumns(definition, "SAMPLES"), DEFAULT_SAMPLES_COLUMNS);
-    EXPECT_TRUE(definition.contains(histogramsOuterColumns("DateTime64(3)"))) << definition;
+    EXPECT_TRUE(definition.contains(histogramsOuterColumn("DateTime64(3)"))) << definition;
 }
 
 

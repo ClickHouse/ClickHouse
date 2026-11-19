@@ -13,10 +13,12 @@ DROP TABLE IF EXISTS ts_presence;
 CREATE TABLE ts_presence ENGINE = TimeSeries
 SETTINGS samples_bucket_step_seconds = 60, recent_samples_ttl_seconds = 0;
 
-INSERT INTO ts_presence (metric_name, samples, histograms.timestamp, histograms.count_int, histograms.zero_count_int)
-VALUES ('mixed', [(toDateTime64(100, 3), 7.)], [toDateTime64(110, 3)], [5], [5]),
-       ('hist', [], [toDateTime64(100, 3), toDateTime64(110, 3)], [1, 2], [1, 2]),
-       ('float', [(toDateTime64(100, 3), 3.)], [], [], []);
+INSERT INTO ts_presence (metric_name, samples, histograms)
+SELECT * FROM values('metric_name String, samples Array(Tuple(DateTime64(3), Float64)),
+                      histograms Array(Tuple(timestamp DateTime64(3), count_int Int64, zero_count_int Int64))',
+    ('mixed', [(toDateTime64(100, 3), 7.)], [(toDateTime64(110, 3), 5, 5)]),
+    ('hist', [], [(toDateTime64(100, 3), 1, 1), (toDateTime64(110, 3), 2, 2)]),
+    ('float', [(toDateTime64(100, 3), 3.)], []));
 
 -- PromQL doesn't read the histograms.
 SELECT position(plan, 'histograms') = 0

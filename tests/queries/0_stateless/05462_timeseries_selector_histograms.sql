@@ -31,27 +31,31 @@ DESCRIBE timeSeriesSelector(ts, 'm', 0, 1, 'floats'); -- { serverError BAD_ARGUM
 -- A float-only series.
 INSERT INTO ts (metric_name, tags, samples) VALUES ('m_float', map('job', 'api'), [(toDateTime64(100, 3), 1.5), (toDateTime64(110, 3), 2.5)]);
 -- A histogram-only series: an integer histogram, then a float histogram, in one bucket.
-INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.counter_reset_hint, histograms.schema, histograms.zero_threshold, histograms.sum,
-                histograms.count_int, histograms.zero_count_int, histograms.positive_int, histograms.negative_int,
-                histograms.count_float, histograms.zero_count_float, histograms.positive_float, histograms.negative_float)
-    VALUES ('m_hist', map('job', 'api'), [toDateTime64(100, 3), toDateTime64(110, 3)], [0, 1], [2, 3], [3, 0], [0.001, 0], [12.5, 3.25],
-            [10, 0], [2, 0], [[(-2, 3), (-1, 2), (1, 3)], []], [[(0, 0)], []],
-            [0, 5.75], [0, 0.5], [[], [(0, 2.5), (1, 2.5)]], [[], [(1, 0.25)]]);
+INSERT INTO ts (metric_name, tags, histograms)
+SELECT 'm_hist', map('job', 'api'),
+    CAST([(toDateTime64(100, 3), false, 'not_reset', 3, 0.001, 12.5, 10, 2, [(-2, 3), (-1, 2), (1, 3)], [(0, 0)], 0, 0, [], []),
+          (toDateTime64(110, 3), true, 'gauge', 0, 0, 3.25, 0, 0, [], [], 5.75, 0.5, [(0, 2.5), (1, 2.5)], [(1, 0.25)])],
+         'Array(Tuple(timestamp DateTime64(3), is_float Bool, counter_reset_hint String, schema Int8, zero_threshold Float64, sum Float64,
+                      count_int Int64, zero_count_int Int64, positive_int Array(Tuple(Int32, Int64)), negative_int Array(Tuple(Int32, Int64)),
+                      count_float Float64, zero_count_float Float64, positive_float Array(Tuple(Int32, Float64)), negative_float Array(Tuple(Int32, Float64))))');
 -- A float sample and a histogram sample of one series in one bucket.
-INSERT INTO ts (metric_name, tags, samples, histograms.timestamp, histograms.count_int, histograms.sum, histograms.positive_int)
-    VALUES ('m_mixed', map('job', 'api'), [(toDateTime64(100, 3), 7.)], [toDateTime64(110, 3)], [5], [2.5], [[(0, 5)]]);
+INSERT INTO ts (metric_name, tags, samples, histograms)
+SELECT 'm_mixed', map('job', 'api'), [(toDateTime64(100, 3), 7.)], CAST([(toDateTime64(110, 3), 5, 2.5, [(0, 5)])], 'Array(Tuple(timestamp DateTime64(3), count_int Int64, sum Float64, positive_int Array(Tuple(Int32, Int64))))');
 -- Histograms in three buckets, a float sample in the first one.
-INSERT INTO ts (metric_name, tags, samples, histograms.timestamp, histograms.count_int, histograms.sum, histograms.positive_int)
-    VALUES ('m_buckets', map('job', 'api'), [(toDateTime64(65, 3), 1.)],
-            [toDateTime64(100, 3), toDateTime64(130, 3), toDateTime64(200, 3)], [1, 2, 3], [0.5, 1.5, 2.5], [[(0, 1)], [(0, 2)], [(0, 3)]]);
+INSERT INTO ts (metric_name, tags, samples, histograms)
+SELECT 'm_buckets', map('job', 'api'), [(toDateTime64(65, 3), 1.)],
+    CAST([(toDateTime64(100, 3), 1, 0.5, [(0, 1)]), (toDateTime64(130, 3), 2, 1.5, [(0, 2)]), (toDateTime64(200, 3), 3, 2.5, [(0, 3)])], 'Array(Tuple(timestamp DateTime64(3), count_int Int64, sum Float64, positive_int Array(Tuple(Int32, Int64))))');
 -- Custom buckets: three bounds define four buckets, the last one up to +Inf.
-INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.schema, histograms.count_int, histograms.sum, histograms.positive_int, histograms.custom_values)
-    VALUES ('m_nhcb', map('job', 'api'), [toDateTime64(100, 3)], [-53], [15], [4.2], [[(0, 1), (1, 2), (2, 4), (3, 8)]], [[0.1, 0.5, 1]]);
+INSERT INTO ts (metric_name, tags, histograms)
+SELECT 'm_nhcb', map('job', 'api'),
+    CAST([(toDateTime64(100, 3), -53, 15, 4.2, [(0, 1), (1, 2), (2, 4), (3, 8)], [0.1, 0.5, 1])],
+         'Array(Tuple(timestamp DateTime64(3), schema Int8, count_int Int64, sum Float64, positive_int Array(Tuple(Int32, Int64)), custom_values Array(Float64)))');
 -- An integer count which Float64 can't hold exactly, and a stale marker (the NaN with the payload 0x7FF0000000000002 in `sum`).
-INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.count_int, histograms.sum, histograms.positive_int)
-    VALUES ('m_big', map('job', 'api'), [toDateTime64(100, 3)], [9007199254740993], [1], [[(0, 9007199254740993)]]);
-INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.sum)
-    VALUES ('m_stale', map('job', 'api'), [toDateTime64(100, 3)], [reinterpretAsFloat64(toUInt64(9218868437227405314))]);
+INSERT INTO ts (metric_name, tags, histograms)
+SELECT 'm_big', map('job', 'api'), CAST([(toDateTime64(100, 3), 9007199254740993, 1, [(0, 9007199254740993)])], 'Array(Tuple(timestamp DateTime64(3), count_int Int64, sum Float64, positive_int Array(Tuple(Int32, Int64))))');
+INSERT INTO ts (metric_name, tags, histograms)
+SELECT 'm_stale', map('job', 'api'),
+    CAST([(toDateTime64(100, 3), reinterpretAsFloat64(toUInt64(9218868437227405314)))], 'Array(Tuple(timestamp DateTime64(3), sum Float64))');
 
 SELECT '-- the histogram samples are returned as stored next to the float samples of the row';
 SELECT samples, histograms FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'samples_and_histograms');
@@ -102,8 +106,10 @@ SELECT count() FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'timestamp_and_val
 SELECT '-- the recent samples table returns the histograms too';
 -- TTL 10 days, the samples are inserted close to now(), so the background TTL cannot drop them during the test.
 CREATE TABLE ts_recent ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000;
-INSERT INTO ts_recent (metric_name, tags, samples, histograms.timestamp, histograms.count_int, histograms.sum, histograms.positive_int)
-    VALUES ('m', map('job', 'api'), [(now64(3) - INTERVAL 3 MINUTE, 1.)], [now64(3) - INTERVAL 2 MINUTE, now64(3) - INTERVAL 1 MINUTE], [1, 2], [0, 0], [[(0, 1)], [(0, 2)]]);
+INSERT INTO ts_recent (metric_name, tags, samples, histograms)
+SELECT 'm', map('job', 'api'), [(now64(3) - INTERVAL 3 MINUTE, 1.)],
+    CAST([(now64(3) - INTERVAL 2 MINUTE, 1, [(0, 1)]), (now64(3) - INTERVAL 1 MINUTE, 2, [(0, 2)])],
+         'Array(Tuple(timestamp DateTime64(3), count_int Int64, positive_int Array(Tuple(Int32, Int64))))');
 SET time_series_prefer_recent_samples_table = 1;
 SELECT sum(length(samples)), sum(length(histograms)) FROM timeSeriesSelector(ts_recent, 'm', now() - INTERVAL 10 MINUTE, now(), 'samples_and_histograms');
 

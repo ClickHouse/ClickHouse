@@ -134,19 +134,19 @@ INSERT INTO histogram_reset_cases (name, timestamps, hints, schemas, thresholds,
 -- A ten-year TTL keeps the fixed timestamps alive. Different bucket sizes exercise both output writers.
 CREATE TABLE ts_reset_detection ENGINE = TimeSeries
 SETTINGS samples_bucket_step_seconds = 60, recent_samples_bucket_step_seconds = 30, recent_samples_ttl_seconds = 315360000;
-INSERT INTO ts_reset_detection
-    (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.counter_reset_hint, histograms.schema,
-     histograms.zero_threshold, histograms.sum, histograms.count_int, histograms.zero_count_int,
-     histograms.positive_int, histograms.negative_int, histograms.count_float, histograms.zero_count_float,
-     histograms.positive_float, histograms.negative_float, histograms.custom_values)
+INSERT INTO ts_reset_detection (metric_name, tags, histograms)
 WITH arrayMap((z, p, n) -> z + arraySum(x -> x.2, p) + arraySum(x -> x.2, n), zeros, positive, negative) AS counts
-SELECT 'reset_test', map('case', name, 'flavour', toString(is_float)), timestamps, arrayMap(t -> is_float, timestamps), hints, schemas,
-       thresholds, sums,
-       arrayMap(c -> if(is_float, 0, c), counts), arrayMap(c -> if(is_float, 0, c), zeros),
-       arrayMap(p -> if(is_float, [], p), positive), arrayMap(n -> if(is_float, [], n), negative),
-       arrayMap(c -> if(is_float, toFloat64(c), 0.), counts), arrayMap(c -> if(is_float, toFloat64(c), 0.), zeros),
-       arrayMap(p -> if(is_float, arrayMap(x -> (x.1, toFloat64(x.2)), p), []), positive),
-       arrayMap(n -> if(is_float, arrayMap(x -> (x.1, toFloat64(x.2)), n), []), negative), bounds
+SELECT 'reset_test', map('case', name, 'flavour', toString(is_float)),
+       CAST(arrayZip(timestamps, arrayMap(t -> is_float, timestamps), hints, schemas, thresholds, sums,
+                     arrayMap(c -> if(is_float, 0, c), counts), arrayMap(c -> if(is_float, 0, c), zeros),
+                     arrayMap(p -> if(is_float, [], p), positive), arrayMap(n -> if(is_float, [], n), negative),
+                     arrayMap(c -> if(is_float, toFloat64(c), 0.), counts), arrayMap(c -> if(is_float, toFloat64(c), 0.), zeros),
+                     arrayMap(p -> if(is_float, arrayMap(x -> (x.1, toFloat64(x.2)), p), []), positive),
+                     arrayMap(n -> if(is_float, arrayMap(x -> (x.1, toFloat64(x.2)), n), []), negative), bounds),
+            'Array(Tuple(timestamp DateTime64(3), is_float Bool, counter_reset_hint UInt8, schema Int8, zero_threshold Float64, sum Float64,
+                         count_int Int64, zero_count_int Int64, positive_int Array(Tuple(Int32, Int64)), negative_int Array(Tuple(Int32, Int64)),
+                         count_float Float64, zero_count_float Float64, positive_float Array(Tuple(Int32, Float64)),
+                         negative_float Array(Tuple(Int32, Float64)), custom_values Array(Float64)))')
 FROM histogram_reset_cases CROSS JOIN (SELECT arrayJoin([toUInt8(0), toUInt8(1)]) AS is_float) AS flavours;
 
 -- Report individual cases on failure, including the actual and expected hints. Concatenate buckets without another aggregation
@@ -170,15 +170,20 @@ FROM
 GROUP BY source ORDER BY source;
 
 -- Integer reset checks must not round counts to Float64; fractional float decreases must also be detected.
-INSERT INTO ts_reset_detection (metric_name, histograms.timestamp, histograms.count_int, histograms.zero_count_int, histograms.counter_reset_hint)
-VALUES ('large_integer_count', ['2026-01-01 00:01:40', '2026-01-01 00:01:41'], [9007199254740993, 9007199254740992], [9007199254740993, 9007199254740992], [0, 2]);
-INSERT INTO ts_reset_detection (metric_name, histograms.timestamp, histograms.is_float, histograms.count_float, histograms.zero_count_float, histograms.counter_reset_hint)
-VALUES ('fractional_float_count', ['2026-01-01 00:01:40', '2026-01-01 00:01:41'], [1, 1], [1.5, 1.25], [1.5, 1.25], [0, 2]);
+INSERT INTO ts_reset_detection (metric_name, histograms)
+SELECT 'large_integer_count',
+    CAST([('2026-01-01 00:01:40', 9007199254740993, 9007199254740993, 'unknown'), ('2026-01-01 00:01:41', 9007199254740992, 9007199254740992, 'not_reset')],
+         'Array(Tuple(timestamp DateTime64(3), count_int Int64, zero_count_int Int64, counter_reset_hint String))');
+INSERT INTO ts_reset_detection (metric_name, histograms)
+SELECT 'fractional_float_count',
+    CAST([('2026-01-01 00:01:40', true, 1.5, 1.5, 'unknown'), ('2026-01-01 00:01:41', true, 1.25, 1.25, 'not_reset')],
+         'Array(Tuple(timestamp DateTime64(3), is_float Bool, count_float Float64, zero_count_float Float64, counter_reset_hint String))');
 -- A representation change starts a new history, even if the counts decrease.
-INSERT INTO ts_reset_detection (metric_name, histograms.timestamp, histograms.is_float, histograms.count_int, histograms.zero_count_int,
-                               histograms.count_float, histograms.zero_count_float, histograms.counter_reset_hint)
-VALUES ('integer_to_float', ['2026-01-01 00:01:40', '2026-01-01 00:01:41'], [0, 1], [10, 0], [10, 0], [0, 1], [0, 1], [0, 2]),
-       ('float_to_integer', ['2026-01-01 00:01:40', '2026-01-01 00:01:41'], [1, 0], [0, 1], [0, 1], [10, 0], [10, 0], [0, 2]);
+INSERT INTO ts_reset_detection (metric_name, histograms)
+SELECT * FROM values('metric_name String, histograms Array(Tuple(timestamp DateTime64(3), is_float Bool, count_int Int64, zero_count_int Int64,
+                                                                     count_float Float64, zero_count_float Float64, counter_reset_hint String))',
+    ('integer_to_float', [('2026-01-01 00:01:40', false, 10, 10, 0, 0, 'unknown'), ('2026-01-01 00:01:41', true, 0, 0, 1, 1, 'not_reset')]),
+    ('float_to_integer', [('2026-01-01 00:01:40', true, 0, 0, 10, 10, 'unknown'), ('2026-01-01 00:01:41', false, 1, 1, 0, 0, 'not_reset')]));
 SELECT t.metric_name, s.histograms.counter_reset_hint
 FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts_reset_detection) AS s INNER JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts_reset_detection) AS t ON s.id = t.id
 WHERE t.metric_name != 'reset_test' ORDER BY t.metric_name;

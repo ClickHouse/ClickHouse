@@ -92,36 +92,6 @@ DataTypePtr TimeSeriesHistogramsColumns::tryGetTimestampType(const DataTypePtr &
     return timestamp_type;
 }
 
-String TimeSeriesHistogramsColumns::getOuterColumnName(std::string_view element_name)
-{
-    return fmt::format("{}.{}", TimeSeriesColumnNames::Histograms, element_name);
-}
-
-std::string_view TimeSeriesHistogramsColumns::getInnerColumnName(std::string_view outer_column_name)
-{
-    const std::string_view prefix = TimeSeriesColumnNames::Histograms;
-    if ((outer_column_name.size() <= prefix.size() + 1) || !outer_column_name.starts_with(prefix) || (outer_column_name[prefix.size()] != '.'))
-        return {};
-    return outer_column_name.substr(prefix.size() + 1);
-}
-
-NameAndTypePair TimeSeriesHistogramsColumns::getOuterTimestampColumn(const DataTypePtr & timestamp_type)
-{
-    return {getOuterColumnName(TimeSeriesColumnNames::Timestamp), std::make_shared<DataTypeArray>(timestamp_type)};
-}
-
-const NamesAndTypesList & TimeSeriesHistogramsColumns::getOuterPayloadColumns()
-{
-    static const NamesAndTypesList columns = []
-    {
-        NamesAndTypesList result;
-        for (auto column : getAll())
-            result.emplace_back(getOuterColumnName(getName(column)), std::make_shared<DataTypeArray>(getDataType(column)));
-        return result;
-    }();
-    return columns;
-}
-
 namespace
 {
     /// The list of the codecs without the keyword: `CODEC(Delta, T64, ZSTD(3))` -> `Delta, T64, ZSTD(3)`.
@@ -153,20 +123,11 @@ String TimeSeriesHistogramsColumns::describeArrayTypeForDocs(std::string_view ti
     return fmt::format("Array(Tuple({}))", elements);
 }
 
-String TimeSeriesHistogramsColumns::describeOuterColumnsForDocs(std::string_view timestamp_type_text, std::string_view timestamp_description)
+String TimeSeriesHistogramsColumns::describeElementsForDocs(std::string_view timestamp_type_text, std::string_view timestamp_description)
 {
-    String result = fmt::format(
-        "| `{}` | `Array({})` by default | {} |\n", getOuterColumnName(TimeSeriesColumnNames::Timestamp), timestamp_type_text, timestamp_description);
+    String result = fmt::format("| `{}` | `{}` by default | {} |\n", TimeSeriesColumnNames::Timestamp, timestamp_type_text, timestamp_description);
     for (const auto column : getAll())
-        result += fmt::format("| `{}` | `Array({})` | {} |\n", getOuterColumnName(getName(column)), getType(column), getDescription(column));
-    return result;
-}
-
-String TimeSeriesHistogramsColumns::describeOuterColumnsForCreateExample(std::string_view timestamp_type_text)
-{
-    String result = fmt::format("    `{}` Array({}),\n", getOuterColumnName(TimeSeriesColumnNames::Timestamp), timestamp_type_text);
-    for (const auto column : getAll())
-        result += fmt::format("    `{}` Array({}),\n", getOuterColumnName(getName(column)), getType(column));
+        result += fmt::format("| `{}` | `{}` | {} |\n", getName(column), getType(column), getDescription(column));
     return result;
 }
 
@@ -200,8 +161,8 @@ String TimeSeriesHistogramsColumns::describeInnerCodecsForCreateExample(bool for
     {
         if (!result.empty())
             result += ",\n";
-        result += fmt::format("    CODEC `{}` ({})",
-            getOuterColumnName(declaration.subcolumn),
+        result += fmt::format("    CODEC `{}.{}` ({})",
+            TimeSeriesColumnNames::Histograms, declaration.subcolumn,
             for_inner_table ? getCodecListForInnerTable(declaration) : String{getCodecList(declaration.codec)});
     }
     return result;

@@ -132,7 +132,7 @@ remote_write:
     send_native_histograms: true
 ```
 
-A `TimeSeries` table stores them in the `histograms` column of its [samples table](/reference/engines/table-engines/integrations/time-series#samples-table), next to the float samples, as they were sent: integer and float histograms (each keeps its own count type), histograms with custom buckets, and stale markers. They can be read through the `histograms.*` columns of the table.
+A `TimeSeries` table stores them in the `histograms` column of its [samples table](/reference/engines/table-engines/integrations/time-series#samples-table), next to the float samples, as they were sent: integer and float histograms (each keeps its own count type), histograms with custom buckets, and stale markers. They can be read through the `histograms` column of the table.
 
 PromQL queries don't support native histograms yet: they evaluate the float samples of the selected time series only and ignore their histogram samples, reading only their timestamps. A query over a series with histogram samples only returns nothing for it.
 

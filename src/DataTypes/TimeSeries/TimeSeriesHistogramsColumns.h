@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
 #include <DataTypes/IDataType.h>
 #include <base/EnumReflection.h>
 
@@ -70,16 +69,12 @@ struct TimeSeriesHistogramsCodecDeclaration
     std::string_view codec;
 };
 
-/// The registry of the payload elements of the `histograms` column and of the outer columns mirroring them.
+/// The registry of the payload elements of the `histograms` column.
 ///
 /// The buckets of a side are `Array(Tuple(index Int32, count Int64 or Float64))` sorted by `index`, the indexes unique, as sent
 /// (empty buckets included). `index` is Prometheus's bucket index of the schema, for `schema = -53` the position among the custom buckets
 /// (bucket k goes up to `custom_values[k]`, the last one to +Inf). The sides and the flavours are separate arrays so that each
 /// data stream keeps one type and one codec.
-///
-/// The outer columns are the flattened form of `histograms Nested(timestamp <timestamp_type>, is_float Bool, ...)`:
-/// `histograms.timestamp Array(<timestamp_type>)`, `histograms.is_float Array(Bool)`, ... Element k of every array is sample k of the
-/// row. The names mirror the elements of the stored tuple, so writing and reading map the columns by name.
 class TimeSeriesHistogramsColumns
 {
 public:
@@ -198,28 +193,14 @@ public:
     /// The position of a payload element in the stored tuple.
     static constexpr size_t getTuplePosition(TimeSeriesHistogramsColumn column) { return getTimestampPosition() + 1 + static_cast<size_t>(column); }
 
-    /// The type of the `histograms` column of the samples tables (without the `SimpleAggregateFunction` wrapper) and of
-    /// `timeSeriesSelector`: `Array(Tuple(timestamp <timestamp_type>, is_float Bool, counter_reset_hint Enum8(...), ..., custom_values Array(Float64)))`.
+    /// The type of the `histograms` column of the samples tables (without the `SimpleAggregateFunction` wrapper), of the outer column
+    /// `histograms` of a TimeSeries table and of `timeSeriesSelector`:
+    /// `Array(Tuple(timestamp <timestamp_type>, is_float Bool, counter_reset_hint Enum8(...), ..., custom_values Array(Float64)))`.
     static DataTypePtr makeHistogramsArrayType(const DataTypePtr & timestamp_type);
 
     /// If `type` is `Array(Tuple(timestamp, <the payload elements>))` (optionally wrapped in `SimpleAggregateFunction`),
     /// returns the type of the timestamps, otherwise null.
     static DataTypePtr tryGetTimestampType(const DataTypePtr & type);
-
-    /// Returns the name of the outer column mirroring an element of the histogram tuple:
-    /// `histograms.<element_name>`, e.g. `histograms.timestamp` or `histograms.count_int`.
-    static String getOuterColumnName(std::string_view element_name);
-
-    /// Returns the name of the element of the histogram tuple mirrored by an outer column of the `histograms` group,
-    /// or an empty string if the name isn't such a column.
-    static std::string_view getInnerColumnName(std::string_view outer_column_name);
-
-    /// The outer column `histograms.timestamp`, whose type depends on the timestamp type of the table.
-    static NameAndTypePair getOuterTimestampColumn(const DataTypePtr & timestamp_type);
-
-    /// The outer columns mirroring the payload elements, in the canonical order: `histograms.is_float Array(Bool)`, ...,
-    /// `histograms.custom_values Array(Array(Float64))`. Their types don't depend on the table, so the list is built once.
-    static const NamesAndTypesList & getOuterPayloadColumns();
 
     /// The helpers below render the registry for the documentation of the TimeSeries engine (see `registerStorageTimeSeries`), so that
     /// the names, the types, the codecs and the descriptions of the histogram columns are written once. `timestamp_type_text` is the
@@ -228,14 +209,10 @@ public:
     /// The type of `makeHistogramsArrayType` as text: `Array(Tuple(timestamp <timestamp_type>, is_float Bool, ..., custom_values Array(Float64)))`.
     static String describeArrayTypeForDocs(std::string_view timestamp_type_text);
 
-    /// The rows of the markdown table of the outer columns (name, type, description), one per `histograms.*` column, each ending with
-    /// a newline. The type of `histograms.timestamp` is marked as the default one, and `timestamp_description` is its description:
-    /// the timestamps aren't in the registry, so the text introducing the group of columns comes from the caller.
-    static String describeOuterColumnsForDocs(std::string_view timestamp_type_text, std::string_view timestamp_description);
-
-    /// The `histograms.*` lines of the column list of a TimeSeries table as `SHOW CREATE TABLE` prints them, each ending with a comma
-    /// and a newline: "    `histograms.timestamp` Array(DateTime64(3)),".
-    static String describeOuterColumnsForCreateExample(std::string_view timestamp_type_text);
+    /// The rows of the markdown table of the elements of the histogram tuple (name, type, description), each ending with a newline.
+    /// The type of `timestamp` is marked as the default one, and `timestamp_description` is its description: the timestamps aren't in
+    /// the registry.
+    static String describeElementsForDocs(std::string_view timestamp_type_text, std::string_view timestamp_description);
 
     /// The codec declarations of the `histograms` column grouped by codec, as text for the documentation:
     /// "`Delta, T64, ZSTD(3)` for `timestamp`; `ZSTD(3)` for `is_float`, ...; `T64, ZSTD(3)` for `count_int`, ...; `Delta, ZSTD(3)` for `positive_int.index`, ...".
