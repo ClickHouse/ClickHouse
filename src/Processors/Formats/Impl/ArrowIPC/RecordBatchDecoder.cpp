@@ -358,6 +358,28 @@ bool carriesNestedRequests(const String & path, const RequestedTypes * types)
     return false;
 }
 
+/// Whether the field at the dotted `path` is decoded for several requested columns (see
+/// `isDecodedForSeveralRequests`), and one of the columns taken from it asks for a raw-byte conversion: the
+/// field's own name, an enclosing field, a dynamic key lookup of an enclosing map, or a subcolumn below it.
+/// Its leaves then keep their bytes and are converted after decoding, which needs the rows hidden by the
+/// nulls of the field (see `RecordBatchDecoder::wrapsInNullable`).
+bool isSharedWithRawByteRequest(const String & path, const RequestedTypes * types)
+{
+    if (!isDecodedForSeveralRequests(path, types))
+        return false;
+    for (const auto & [name, requested] : *types)
+    {
+        if (!asksForRawBytes(requested))
+            continue;
+        if (name == path || isRequestedBelow(path, name) || isRequestedBelow(name, path))
+            return true;
+        for (size_t pos = path.find('.'); pos != String::npos; pos = path.find('.', pos + 1))
+            if (isMapKeyLookup(std::string_view(path).substr(0, pos), name))
+                return true;
+    }
+    return false;
+}
+
 String hintName(const DataTypePtr & hint)
 {
     return hint ? hint->getName() : String{};
@@ -2295,7 +2317,15 @@ bool RecordBatchDecoder::wrapsInNullable(
     if (effective_hint && (effective_hint->isNullable() || effective_hint->isLowCardinalityNullable()
             || isTuple(stripHint(effective_hint))))
         return true;
-    return field.type.kind == TypeKind::Struct && carriesNestedRequests(path, decoding_below_union ? nullptr : target_types);
+    if (field.type.kind != TypeKind::Struct)
+        return false;
+    /// The leaves of a struct that is decoded for several requested columns, or that carries a requested
+    /// subcolumn together with a column enclosing it, keep their bytes for the post-decode conversion, which
+    /// must see the rows hidden by the struct's nulls. This holds also when the struct is itself the inner
+    /// request (`t Tuple(u String), t.u Tuple(s IPv6)`), a map entry (`t.values`, `t.key_1`), or a name
+    /// requested several times with different types.
+    const RequestedTypes * types = decoding_below_union ? nullptr : target_types;
+    return carriesNestedRequests(path, types) || isSharedWithRawByteRequest(path, types);
 }
 
 void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_lengths)

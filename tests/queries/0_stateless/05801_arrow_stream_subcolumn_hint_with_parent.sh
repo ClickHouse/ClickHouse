@@ -138,4 +138,17 @@ echo "/////5gAAAAQAAAAAAAKAAwABgAFAAgACgAAAAABBAAMAAAACAAIAAAABAAIAAAABAAAAAEAAA
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't String') SETTINGS enable_nullable_tuple_type = 0"
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't String, \`t.s\` IPv6') SETTINGS enable_nullable_tuple_type = 0"
 
+
+echo "null inner struct row requested as a column and inside its parent"
+$CLICKHOUSE_LOCAL -q "SELECT CAST(tuple(if(number = 1, NULL, tuple('abcdefghijklmnop'))) AS Tuple(u Nullable(Tuple(s String)))) AS t FROM numbers(2) FORMAT ArrowStream SETTINGS enable_nullable_tuple_type = 1" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Tuple(u String), \`t.u\` Tuple(s IPv6)') SETTINGS enable_nullable_tuple_type = 0"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.u\` Tuple(s IPv6), t Tuple(u String)') SETTINGS enable_nullable_tuple_type = 0"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 'T Tuple(u String), t Tuple(u Tuple(s IPv6))') SETTINGS input_format_arrow_case_insensitive_column_matching = 1, enable_nullable_tuple_type = 0"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 'T Tuple(u Tuple(s IPv6)), t Tuple(u String)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1, enable_nullable_tuple_type = 0"
+
+echo "null struct row of map values"
+$CLICKHOUSE_LOCAL -q "SELECT CAST(map(1, if(number = 1, NULL, tuple('abcdefghijklmnop'))) AS Map(UInt8, Nullable(Tuple(s String)))) AS t FROM numbers(2) FORMAT ArrowStream SETTINGS enable_nullable_tuple_type = 1" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(UInt8, String), \`t.values\` Array(Tuple(s IPv6))') SETTINGS enable_nullable_tuple_type = 0"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(UInt8, String), \`t.key_1\` Tuple(s IPv6)') SETTINGS enable_nullable_tuple_type = 0"
+
 rm -f "$file"

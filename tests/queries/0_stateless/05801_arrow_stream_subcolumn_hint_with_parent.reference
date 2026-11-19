@@ -88,3 +88,17 @@ null struct row with a valid nullable child
 (\'\')
 (\'abcdefghijklmnop\')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
 (\'\')	::
+null inner struct row requested as a column and inside its parent
+('(\'abcdefghijklmnop\')')	('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')
+('(\'\')')	('::')
+('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	('(\'abcdefghijklmnop\')')
+('::')	('(\'\')')
+('(\'abcdefghijklmnop\')')	(('6162:6364:6566:6768:696a:6b6c:6d6e:6f70'))
+('(\'\')')	(('::'))
+(('6162:6364:6566:6768:696a:6b6c:6d6e:6f70'))	('(\'abcdefghijklmnop\')')
+(('::'))	('(\'\')')
+null struct row of map values
+{1:'(\'abcdefghijklmnop\')'}	[('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')]
+{1:'(\'\')'}	[('::')]
+{1:'(\'abcdefghijklmnop\')'}	('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')
+{1:'(\'\')'}	('::')
