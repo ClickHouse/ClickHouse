@@ -8,10 +8,12 @@ A test that takes the `engine` fixture runs once per engine in `ENGINES`, so a p
 """
 
 import json
+import time
 
 import pytest
 
 import helpers.kafka.common as k
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -30,8 +32,23 @@ DB = "lazy"
 # test below runs against it too.
 ENGINES = [("Atomic", "MergeTree"), ("Atomic", "ReplicatedMergeTree")]
 
-# Re-reading the metadata is what turns the tables back into unloaded proxies.
-RELOAD = f"DETACH DATABASE {DB}; ATTACH DATABASE {DB};"
+
+
+def reload():
+    """Re-reading the metadata is what turns the tables back into unloaded proxies."""
+    # A background task of a replicated or streaming table can hold it for a moment longer, and the
+    # database refuses to be detached until it lets go.
+    for _ in range(600):
+        try:
+            node.query(f"DETACH DATABASE {DB}")
+            break
+        except QueryRuntimeException as ex:
+            if "DATABASE_NOT_EMPTY" not in str(ex):
+                raise
+            time.sleep(0.1)
+    else:
+        raise Exception(f"Could not detach database {DB}: it stayed not empty")
+    node.query(f"ATTACH DATABASE {DB}")
 
 
 @pytest.fixture(scope="module")
@@ -89,9 +106,9 @@ def test_kafka_ingests_after_restart(engine):
                      kafka_group_name = '{topic}_unused_group', kafka_format = 'JSONEachRow';
             CREATE TABLE {DB}.dest (key UInt64, value UInt64) ENGINE = {engine} ORDER BY key;
             CREATE MATERIALIZED VIEW {DB}.mv TO {DB}.dest AS SELECT key, value FROM {DB}.kafka_src;
-            {RELOAD}
             """
         )
+        reload()
         assert loaded("kafka_src") == "1"
         # Nothing depends on this one, so its consumer would feed nothing and it stays deferred.
         assert loaded("kafka_unused") == "0"
@@ -129,9 +146,9 @@ def test_no_system_table_loads_a_lazy_table(lazy_database):
             PROJECTION p (SELECT s, count() GROUP BY s))
         ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY id;
         INSERT INTO {DB}.t VALUES ('2026-01-01', 1, 'a');
-        {RELOAD}
         """
     )
+    reload()
     assert loaded("t") == "0"
 
     names = [
@@ -159,7 +176,7 @@ def test_no_system_table_loads_a_lazy_table(lazy_database):
     # Something materialized it, so go again and name every table that does.
     loaders = []
     for name in names:
-        node.query(RELOAD)
+        reload()
         read_all(name)
         if loaded("t") != "0":
             loaders.append(name)
