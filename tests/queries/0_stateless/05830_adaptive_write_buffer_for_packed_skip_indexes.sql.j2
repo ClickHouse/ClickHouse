@@ -1,0 +1,78 @@
+-- Tags: no-debug, no-distributed-cache, no-azure-blob-storage, no-fasttest
+-- - no-fasttest - part_log is not flushed in the fast test
+-- - others - buffer sizes vary on those backends/builds (see 03770)
+-- Random settings limits: max_compress_block_size=(1048576,1048576); adaptive_write_buffer_initial_size=(16384,16384); min_columns_to_activate_adaptive_write_buffer=(1,1); min_bytes_for_wide_part=(0,0); packed_skip_index_max_bytes=(67108864,67108864)
+
+-- Packed skip index substreams stage their bytes in a size-adaptive spool buffer before
+-- they are committed into skp_idx.packed or spilled to a standalone file. With the setting
+-- off, every packed minmax index preallocates a full max_compress_block_size staging buffer
+-- plus a same-size compressor buffer (sixty-plus MiB for thirty tiny indexes); with the
+-- setting on (the default) both start small and grow on demand. Parts must stay consistent
+-- in both modes.
+
+{% for v in [0, 1] %}
+DROP TABLE IF EXISTS packed_skip_indexes_adaptive_wb_{{ v }};
+
+CREATE TABLE packed_skip_indexes_adaptive_wb_{{ v }}
+(
+    c1 UInt64,
+    c2 UInt64,
+    INDEX i1 c1 TYPE minmax GRANULARITY 1000,
+    INDEX i2 c2 TYPE minmax GRANULARITY 1000,
+    INDEX i3 c1 TYPE minmax GRANULARITY 1000,
+    INDEX i4 c2 TYPE minmax GRANULARITY 1000,
+    INDEX i5 c1 TYPE minmax GRANULARITY 1000,
+    INDEX i6 c2 TYPE minmax GRANULARITY 1000,
+    INDEX i7 c1 TYPE minmax GRANULARITY 1000,
+    INDEX i8 c2 TYPE minmax GRANULARITY 1000,
+    INDEX i9 c1 TYPE minmax GRANULARITY 1000,
+    INDEX i10 c2 TYPE minmax GRANULARITY 1000,
+    INDEX i11 c1 TYPE minmax GRANULARITY 1000,
+    INDEX i12 c2 TYPE minmax GRANULARITY 1000,
+    INDEX i13 c1 TYPE minmax GRANULARITY 1000,
+    INDEX i14 c2 TYPE minmax GRANULARITY 1000,
+    INDEX i15 c1 TYPE minmax GRANULARITY 1000,
+    INDEX i16 c2 TYPE minmax GRANULARITY 1000,
+    INDEX i17 c1 TYPE minmax GRANULARITY 1000,
+    INDEX i18 c2 TYPE minmax GRANULARITY 1000,
+    INDEX i19 c1 TYPE minmax GRANULARITY 1000,
+    INDEX i20 c2 TYPE minmax GRANULARITY 1000,
+    INDEX i21 c1 TYPE minmax GRANULARITY 1000,
+    INDEX i22 c2 TYPE minmax GRANULARITY 1000,
+    INDEX i23 c1 TYPE minmax GRANULARITY 1000,
+    INDEX i24 c2 TYPE minmax GRANULARITY 1000,
+    INDEX i25 c1 TYPE minmax GRANULARITY 1000,
+    INDEX i26 c2 TYPE minmax GRANULARITY 1000,
+    INDEX i27 c1 TYPE minmax GRANULARITY 1000,
+    INDEX i28 c2 TYPE minmax GRANULARITY 1000,
+    INDEX i29 c1 TYPE minmax GRANULARITY 1000,
+    INDEX i30 c2 TYPE minmax GRANULARITY 1000
+)
+ENGINE = MergeTree ORDER BY c1
+SETTINGS use_adaptive_write_buffer_for_skip_indexes = {{ v }}, min_columns_to_activate_adaptive_write_buffer = 1, min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 67108864;
+
+INSERT INTO packed_skip_indexes_adaptive_wb_{{ v }} SELECT number, number % 997 FROM numbers(1000);
+
+SELECT count(), countIf(c2 != c1) FROM packed_skip_indexes_adaptive_wb_{{ v }};
+
+CHECK TABLE packed_skip_indexes_adaptive_wb_{{ v }} SETTINGS check_query_single_value_result = 1;
+{% endfor %}
+
+SYSTEM FLUSH LOGS;
+
+-- Compare allocations relatively to stay independent of the environment.
+WITH per_table AS
+(
+    SELECT table,
+        ProfileEvents.Values[indexOf(ProfileEvents.Names, 'IOBufferAllocBytes')] AS alloc_bytes
+    FROM system.part_log
+    WHERE (database = currentDatabase()) AND (table LIKE 'packed_skip_indexes_adaptive_wb_%') AND (event_type = 'NewPart')
+)
+SELECT
+    (SELECT sum(alloc_bytes) FROM per_table WHERE table = 'packed_skip_indexes_adaptive_wb_0')
+        > 3 * (SELECT sum(alloc_bytes) FROM per_table WHERE table = 'packed_skip_indexes_adaptive_wb_1')
+        AS eager_allocates_much_more;
+
+{% for v in [0, 1] %}
+DROP TABLE IF EXISTS packed_skip_indexes_adaptive_wb_{{ v }};
+{% endfor %}
