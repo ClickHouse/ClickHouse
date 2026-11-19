@@ -51,9 +51,14 @@ void Reader::readTail()
         throw Exception(ErrorCodes::INCORRECT_DATA, "Not an ORC file: {} is too small ({} bytes)", stream->getName(), file_size);
 
     static constexpr UInt64 DIRECTORY_SIZE_GUESS = 16 * 1024;
-    UInt64 tail_size = std::min(file_size, DIRECTORY_SIZE_GUESS);
-    std::string tail(tail_size, '\0');
-    stream->read(tail.data(), tail_size, file_size - tail_size);
+    const bool has_cached_tail = !options.serialized_file_tail.empty();
+    std::string tail = std::move(options.serialized_file_tail);
+    if (!has_cached_tail)
+    {
+        tail.resize(std::min(file_size, DIRECTORY_SIZE_GUESS));
+        stream->read(tail.data(), tail.size(), file_size - tail.size());
+    }
+    UInt64 tail_size = tail.size();
 
     postscript_length = static_cast<UInt8>(tail.back());
     if (postscript_length + 1 > tail_size)
@@ -88,6 +93,8 @@ void Reader::readTail()
 
     if (tail_length > tail_size)
     {
+        if (has_cached_tail)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incomplete cached tail for ORC file {}", stream->getName());
         tail.resize(tail_length);
         tail_size = tail_length;
         stream->read(tail.data(), tail_size, file_size - tail_size);
@@ -128,6 +135,9 @@ void Reader::readTail()
         metadata.emplace().parse(decompress(metadata_data, "metadata"), footer.stripes.size(), footer.types.size());
     else
         metadata.emplace();
+
+    if (options.keep_serialized_file_tail)
+        options.serialized_file_tail.assign(tail, tail_size - tail_length, tail_length);
 }
 
 const Proto::Metadata & Reader::getMetadata()

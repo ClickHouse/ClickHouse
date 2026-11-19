@@ -132,6 +132,7 @@ using QueryMaxThreadsSnapshotPtr = std::shared_ptr<QueryMaxThreadsSnapshot>;
 class IcebergMetadataFilesCache;
 class PaimonMetadataFilesCache;
 class ParquetMetadataCache;
+class ORCMetadataCache;
 #if USE_GPU
 namespace GPU
 {
@@ -1883,6 +1884,17 @@ public:
     /// Use this from code paths that can run in such contexts.
     std::shared_ptr<ParquetMetadataCache> tryGetParquetMetadataCache() const;
     void clearParquetMetadataCache() const;
+#endif
+
+#if USE_ORC
+    void setORCMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateORCMetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<ORCMetadataCache> getORCMetadataCache() const;
+    /// Same as `getORCMetadataCache`, but returns nullptr if the cache has not been
+    /// initialised (e.g. on the client side of `INSERT ... FROM INFILE`) instead of throwing.
+    /// Use this from code paths that can run in such contexts.
+    std::shared_ptr<ORCMetadataCache> tryGetORCMetadataCache() const;
+    void clearORCMetadataCache() const;
 #endif
 
     void setAllowedDisksForTableEngines(std::unordered_set<String> && allowed_disks_) { allowed_disks = std::move(allowed_disks_); }
