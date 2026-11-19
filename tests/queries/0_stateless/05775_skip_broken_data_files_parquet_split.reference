@@ -1,0 +1,11 @@
+-- a healthy file is split between the sources
+File × 4 0 → 1
+-- but not with the setting enabled
+File 0 → 1
+-- a healthy file is read fully with the setting enabled
+100000	4999950000
+-- a broken file fails the query without the setting
+1
+-- and is skipped with the setting enabled
+4999950000
+0

@@ -7767,6 +7767,22 @@ Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
 )", 0) \
+    DECLARE(Bool, engine_file_skip_failed_data_files, false, R"(
+Enables or disables skipping files that fail to open, read, decompress, or parse (e.g. a corrupted gzip file) in [File](../../engines/table-engines/special/file.md) engine tables.
+
+Possible values:
+- 0 — `SELECT` throws an exception when a file cannot be read.
+- 1 — `SELECT` skips files that cannot be read and returns results only from files that were read successfully.
+
+Notes:
+- Only errors caused by a broken or missing file are skipped: open and stat failures, files that no longer exist, truncated input, decompression errors, format parse errors, and unreadable archives. All other errors (e.g. memory limits, timeouts, quota violations, query cancellation, exceptions in default expressions, invalid settings, logical errors) always propagate. An exception in a default expression or in a condition of the query propagates even if its error code is one of a broken file, e.g. a parse error from a type conversion. So do the errors of the configuration of the format, e.g. of the file of `input_format_record_errors_file_path`, of a template of the `Template` format, or of a query that provides a format schema.
+- If a file fails in the middle of reading, the rows already read from it are kept in the result; only the rest of the file is skipped.
+- A corrupted archive container (e.g. an unreadable `tar` or `zip`) is skipped as a whole.
+- With the setting enabled, a single file is not split between several reading streams, and lazy materialization (`query_plan_optimize_lazy_materialization_for_file`) is not used.
+- With the setting enabled, the conditions of the query are evaluated only after the data is read, so that their errors are not taken for errors of a broken file: `PREWHERE` is not supported, and the filter is not used to skip data while reading (e.g. row groups of `Parquet` files).
+- The setting does not apply during schema or format inference. Specify both the format and the table structure to avoid reading damaged input during inference.
+)", 0, \
+        {"26.11", false, false, "New setting to skip files that fail to open or read in `File` engine tables."}) \
     DECLARE(Bool, engine_url_skip_empty_files, false, R"(
 Enables or disables skipping empty files in [URL](/reference/engines/table-engines/special/url) engine tables.
 

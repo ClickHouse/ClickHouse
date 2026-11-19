@@ -29,6 +29,7 @@
 
 #include <IO/CompressionMethod.h>
 #include <IO/MMapReadBufferFromFile.h>
+#include <IO/WithFileName.h>
 #include <IO/MMapReadBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -49,11 +50,13 @@
 #if USE_PARQUET
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 #endif
+#include <Formats/ParseError.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Common/Exception.h>
@@ -126,7 +129,9 @@ namespace Setting
     extern const SettingsBool engine_file_allow_create_multiple_files;
     extern const SettingsBool engine_file_empty_if_not_exists;
     extern const SettingsBool engine_file_skip_empty_files;
+    extern const SettingsBool engine_file_skip_failed_data_files;
     extern const SettingsBool engine_file_truncate_on_insert;
+    extern const SettingsString input_format_record_errors_file_path;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsMaxThreads max_parsing_threads;
@@ -166,6 +171,31 @@ namespace ErrorCodes
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int CANNOT_STAT;
     extern const int LOGICAL_ERROR;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int UNEXPECTED_END_OF_FILE;
+    extern const int CANNOT_PARSE_TEXT;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int CANNOT_DECOMPRESS;
+    extern const int CORRUPTED_DATA;
+    extern const int CHECKSUM_DOESNT_MATCH;
+    extern const int ZLIB_INFLATE_FAILED;
+    extern const int LZMA_STREAM_DECODER_FAILED;
+    extern const int ZSTD_DECODER_FAILED;
+    extern const int BZIP2_STREAM_DECODER_FAILED;
+    extern const int LZ4_DECODER_FAILED;
+    extern const int SNAPPY_UNCOMPRESS_FAILED;
+    extern const int BROTLI_READ_FAILED;
+    extern const int CANNOT_UNPACK_ARCHIVE;
+    extern const int UNKNOWN_TYPE;
+    extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
+    extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int INCORRECT_INDEX;
+    extern const int ILLEGAL_PREWHERE;
+    extern const int SYNTAX_ERROR;
+    extern const int INVALID_TEMPLATE_FORMAT;
+    extern const int TYPE_MISMATCH;
     extern const int CANNOT_APPEND_TO_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int CANNOT_DETECT_FORMAT;
@@ -186,6 +216,39 @@ using String = std::string;
 
 namespace
 {
+/// A transform applied to the rows the input format has read (filling in default values,
+/// extracting subcolumns), which records that it threw. Its errors come from the query - for
+/// example, from a default expression - rather than from the file, whatever their error codes,
+/// so `engine_file_skip_failed_data_files` must not skip the file because of them.
+template <typename Transform>
+class RowTransformTrackingErrors final : public Transform
+{
+public:
+    template <typename... Args>
+    explicit RowTransformTrackingErrors(std::shared_ptr<std::atomic<bool>> failed_, Args &&... args)
+        : Transform(std::forward<Args>(args)...)
+        , failed(std::move(failed_))
+    {
+    }
+
+protected:
+    void transform(Chunk & chunk) override
+    {
+        try
+        {
+            Transform::transform(chunk);
+        }
+        catch (...)
+        {
+            failed->store(true);
+            throw;
+        }
+    }
+
+private:
+    std::shared_ptr<std::atomic<bool>> failed;
+};
+
 /// Bound on the recursion depth of `listFilesWithRegexpMatchingImpl`.
 constexpr size_t MAX_LIST_FILES_RECURSION_DEPTH = 1000;
 
@@ -851,6 +914,8 @@ namespace
                     return {nullptr, cached_columns, format};
             }
 
+            /// Note: `engine_file_skip_failed_data_files` only protects data reading (`StorageFileSource::generate`),
+            /// not schema or format inference: a corrupted file read here still fails the query.
             return {createReadBuffer(path, file_stat, false, -1, compression_method, getContext()), std::nullopt, format};
         }
 
@@ -1426,13 +1491,27 @@ bool StorageFile::supportsSubsetOfColumns(const ContextPtr & context) const
     return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
 }
 
+namespace
+{
+/// With `engine_file_skip_failed_data_files`, the input format must only parse the file: an error of
+/// a condition evaluated by the reader (`PREWHERE`, a row policy pushed down with it) could not be told
+/// apart from an error of a broken file, and the file would be skipped instead of the query failing.
+/// So `PREWHERE` is not supported then, and these conditions are evaluated after the read.
+/// `supportsPrewhere` has no context of its own, so the settings of the query are used.
+bool skipsBrokenDataFilesInCurrentQuery()
+{
+    auto query_context = CurrentThread::tryGetQueryContext();
+    return query_context && query_context->getSettingsRef()[Setting::engine_file_skip_failed_data_files];
+}
+}
+
 bool StorageFile::supportsPrewhere() const
 {
-    return supports_prewhere;
+    return supports_prewhere && !skipsBrokenDataFilesInCurrentQuery();
 }
 bool StorageFile::canMoveConditionsToPrewhere() const
 {
-    return supports_prewhere;
+    return supports_prewhere && !skipsBrokenDataFilesInCurrentQuery();
 }
 
 std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
@@ -1955,7 +2034,7 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
     builder.init(Pipe(const_chunk_generator));
     builder.addSimpleTransform([&](const SharedHeader & header)
     {
-        return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
+        return std::make_shared<RowTransformTrackingErrors<ExtractColumnsTransform>>(row_transform_failed, header, requested_columns);
     });
     pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     pipeline->disableProfileEventUpdate();
@@ -1963,9 +2042,183 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
     return true;
 }
 
+namespace
+{
+    /// Creating the input format may also open and read files other than the input file, and run
+    /// queries: the file of `input_format_record_errors_file_path`, a template of the `Template` format,
+    /// a format schema, which may come from a query (`format_schema_source = 'query'`). Their errors
+    /// belong to the configuration of the query, not to the input file, which must not be skipped
+    /// because of them. So an error is attributed to the input file only if:
+    /// - it was thrown by a read of the input buffer, which `ReadBuffer::next` cancels then, whatever
+    ///   the format, e.g. a decompression error while the format peeks at the start of the input;
+    /// - or it is a read or seek error that names the input file, e.g. from a read at a position, which
+    ///   does not use `ReadBuffer::next`. A failure to open or to stat a file never is: the input file
+    ///   is already open at this point;
+    /// - or the format reads the input while it is created (`reads_input`), e.g. the footer of a `Parquet`
+    ///   file, and fails on its contents. Such formats have no external configuration of this kind, and
+    ///   their logger of errors is created separately, outside of the skip handling.
+    /// Errors attributed to the input file are then classified by `isBrokenFileError`.
+    /// Only for the errors thrown while the format is created: the errors thrown while the pipeline is
+    /// executed are copied to `Exception` by the executor, which loses the path of an `ErrnoException`.
+    bool isErrorOfInputFileWhileCreatingFormat(const Exception & e, const ReadBuffer & input, bool reads_input)
+    {
+        if (input.isCanceled())
+            return true;
+
+        const int code = e.code();
+        if (code == ErrorCodes::FILE_DOESNT_EXIST
+            || code == ErrorCodes::CANNOT_OPEN_FILE
+            || code == ErrorCodes::CANNOT_STAT
+            || code == ErrorCodes::CANNOT_FSTAT)
+            return false;
+
+        if (code == ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR || code == ErrorCodes::CANNOT_SEEK_THROUGH_FILE)
+        {
+            const auto * errno_exception = dynamic_cast<const ErrnoException *>(&e);
+            if (!errno_exception)
+                return false;
+            const auto path = errno_exception->getPath();
+            const String input_file_name = getFileNameFromReadBuffer(input);
+            return path && !input_file_name.empty() && *path == input_file_name;
+        }
+
+        return reads_input;
+    }
+
+    /// Errors that input formats raise on broken data while reading it - a malformed type name in a
+    /// `Native` file, data that does not match the template of the `Template` format, a column of an
+    /// unexpected type. While the format is created, the same codes come from its configuration (a
+    /// template, a schema), so they are skippable only while the data is read, when the format only
+    /// parses the input: the conditions of the query are not evaluated by it, and the errors of the
+    /// transforms after it are tracked by `RowTransformTrackingErrors`.
+    bool isBrokenDataErrorWhileReading(int code)
+    {
+        return code == ErrorCodes::SYNTAX_ERROR
+            || code == ErrorCodes::INVALID_TEMPLATE_FORMAT
+            || code == ErrorCodes::TYPE_MISMATCH;
+    }
+
+    /// Errors that `engine_file_skip_failed_data_files` may skip: those caused by a file that
+    /// cannot be opened or whose contents are broken - open and stat failures, truncated input,
+    /// decompression failures, unreadable archives, and format parse errors. Every other error
+    /// (a query-level limit, cancellation, a bad setting, an exception in a default expression,
+    /// a logical error, ...) is not attributable to the file and always propagates.
+    bool isBrokenFileError(int code)
+    {
+        return isParseError(code)
+            || code == ErrorCodes::CANNOT_PARSE_TEXT
+            /// Raised by input formats on structurally invalid content, e.g. a corrupted type name or
+            /// size in a `Native` file, or a `NULL` for a non-`Nullable` column.
+            || code == ErrorCodes::UNKNOWN_TYPE
+            || code == ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
+            || code == ErrorCodes::TOO_LARGE_ARRAY_SIZE
+            || code == ErrorCodes::INCORRECT_INDEX
+            || code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
+            || code == ErrorCodes::UNEXPECTED_END_OF_FILE
+            || code == ErrorCodes::FILE_DOESNT_EXIST
+            || code == ErrorCodes::CANNOT_OPEN_FILE
+            || code == ErrorCodes::CANNOT_STAT
+            || code == ErrorCodes::CANNOT_FSTAT
+            || code == ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR
+            || code == ErrorCodes::CANNOT_SEEK_THROUGH_FILE
+            || code == ErrorCodes::CANNOT_DECOMPRESS
+            || code == ErrorCodes::CORRUPTED_DATA
+            || code == ErrorCodes::CHECKSUM_DOESNT_MATCH
+            || code == ErrorCodes::ZLIB_INFLATE_FAILED
+            || code == ErrorCodes::LZMA_STREAM_DECODER_FAILED
+            || code == ErrorCodes::ZSTD_DECODER_FAILED
+            || code == ErrorCodes::BZIP2_STREAM_DECODER_FAILED
+            || code == ErrorCodes::LZ4_DECODER_FAILED
+            || code == ErrorCodes::SNAPPY_UNCOMPRESS_FAILED
+            || code == ErrorCodes::BROTLI_READ_FAILED
+            || code == ErrorCodes::CANNOT_UNPACK_ARCHIVE;
+    }
+}
+
 Chunk StorageFileSource::generate()
 {
     const bool is_one_format = Poco::toLower(storage->format_name) == "one";
+
+    /// Rethrows the in-flight exception unless `engine_file_skip_failed_data_files` is enabled
+    /// and the error can be attributed to a broken file. `while_reading_data` - the error was thrown
+    /// while the data was read by the pipeline. Must be invoked from within a `catch` block.
+    auto rethrow_unless_skippable = [&](int error_code, bool while_reading_data)
+    {
+        const bool broken_file = isBrokenFileError(error_code) || (while_reading_data && isBrokenDataErrorWhileReading(error_code));
+        if (!broken_file || !getContext()->getSettingsRef()[Setting::engine_file_skip_failed_data_files])
+            throw;
+    };
+
+    /// Common handler for `engine_file_skip_failed_data_files`: rethrows the in-flight exception
+    /// unless it can be skipped, otherwise logs a warning and resets reader state so the outer
+    /// loop can advance to the next file. Must be invoked from within a `catch` block.
+    auto skip_or_rethrow = [&](int error_code, bool while_reading_data)
+    {
+        rethrow_unless_skippable(error_code, while_reading_data);
+        LOG_WARNING(storage->log, "Skipping file {} due to an error: {}", current_path, getCurrentExceptionMessage(false));
+        /// The rows of a skipped file do not contribute to the `ORDER BY ... LIMIT` threshold.
+        checkTopKQueryConditionCacheKeyHolds(/*still_holds=*/ false);
+        total_rows_in_file = 0;
+        current_file_index.reset();
+        reader.reset();
+        pipeline = nullptr;
+        input_format.reset();
+        if (files_iterator->isReadFromArchive())
+        {
+            /// Advance within the current archive so subsequent good entries are not lost.
+            if (files_iterator->isSingleFileReadFromArchive())
+            {
+                file_enumerator = nullptr;
+            }
+            else if (file_enumerator)
+            {
+                /// The enumerator was not consumed into `read_buf` (e.g. `One` format); advance it directly.
+                try
+                {
+                    if (!file_enumerator->nextFile())
+                        file_enumerator = nullptr;
+                }
+                catch (const Exception & e)
+                {
+                    if (!isBrokenFileError(e.code()))
+                        throw;
+                    file_enumerator = nullptr;
+                    archive_reader.reset();
+                }
+            }
+            else if (archive_reader && read_buf)
+            {
+                try
+                {
+                    file_enumerator = archive_reader->nextFile(takeArchiveEntryReadBuffer(std::move(read_buf), archive_entry_read_buf));
+                }
+                catch (const Exception & e)
+                {
+                    if (!isBrokenFileError(e.code()))
+                        throw;
+                    file_enumerator = nullptr;
+                    archive_reader.reset();
+                }
+            }
+        }
+        read_buf.reset();
+        archive_entry_read_buf.reset();
+        if (storage->use_table_fd)
+            finished_generate = true;
+    };
+
+    /// Handler for failures while opening or enumerating an archive: the whole archive is
+    /// abandoned (its remaining entries cannot be trusted) and the outer loop advances to the
+    /// next archive. Must be invoked from within a `catch` block.
+    auto skip_archive_or_rethrow = [&](int error_code)
+    {
+        rethrow_unless_skippable(error_code, /*while_reading_data=*/ false);
+        LOG_WARNING(storage->log, "Skipping archive {} due to an error: {}", current_path, getCurrentExceptionMessage(false));
+        file_enumerator = nullptr;
+        archive_reader.reset();
+        read_buf.reset();
+        archive_entry_read_buf.reset();
+    };
 
     while (!finished_generate)
     {
@@ -1982,120 +2235,138 @@ Chunk StorageFileSource::generate()
                         if (archive.empty())
                             return {};
 
-                        if (!existsOrFileNameTooLong([&] { return fs::exists(archive); }))
+                        current_path = archive;
+                        try
                         {
-                            if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
+                            if (!existsOrFileNameTooLong([&] { return fs::exists(archive); }))
+                            {
+                                if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
+                                    continue;
+
+                                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", archive);
+                            }
+
+                            auto file_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
+                            if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                                 continue;
 
-                            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", archive);
+                            archive_reader = createArchiveReader(archive);
+                            filename_override = files_iterator->getFileNameInArchive();
+
+                            current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
+                            current_archive_entry_cache_key = getArchiveEntryCacheKey(
+                                current_path, std::nullopt, chooseCompressionMethod(*filename_override, storage->compression_method));
+                            if (need_only_count && tryGetCountFromCache(file_stat))
+                                continue;
+
+                            if (is_one_format)
+                            {
+                                if (!archive_reader->fileExists(*filename_override))
+                                    continue;
+
+                                /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
+                                read_buf = std::make_unique<EmptyReadBuffer>();
+                            }
+                            else
+                            {
+                                read_buf = archive_reader->readFile(*filename_override, /*throw_on_not_found=*/false);
+                                if (!read_buf)
+                                    continue;
+
+                                if (auto progress_callback = getContext()->getFileProgressCallback())
+                                    progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
+
+                                decompressArchiveEntryReadBuffer(
+                                    read_buf, archive_entry_read_buf, chooseCompressionMethod(*filename_override, storage->compression_method), getContext());
+                            }
                         }
-
-                        auto file_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
-                        if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
-                            continue;
-
-                        archive_reader = createArchiveReader(archive);
-                        filename_override = files_iterator->getFileNameInArchive();
-
-                        current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
-                        current_archive_entry_cache_key = getArchiveEntryCacheKey(
-                            current_path, std::nullopt, chooseCompressionMethod(*filename_override, storage->compression_method));
-                        if (need_only_count && tryGetCountFromCache(file_stat))
-                            continue;
-
-                        if (is_one_format)
+                        catch (const Exception & e)
                         {
-                            if (!archive_reader->fileExists(*filename_override))
-                                continue;
-
-                            /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
-                            read_buf = std::make_unique<EmptyReadBuffer>();
-                        }
-                        else
-                        {
-                            read_buf = archive_reader->readFile(*filename_override, /*throw_on_not_found=*/false);
-                            if (!read_buf)
-                                continue;
-
-                            if (auto progress_callback = getContext()->getFileProgressCallback())
-                                progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
-
-                            decompressArchiveEntryReadBuffer(
-                                read_buf, archive_entry_read_buf, chooseCompressionMethod(*filename_override, storage->compression_method), getContext());
+                            skip_archive_or_rethrow(e.code());
+                            continue;
                         }
                     }
                     else
                     {
                         std::optional<size_t> entry_position;
-                        while (true)
+                        try
                         {
-                            if (file_enumerator == nullptr)
+                            while (true)
                             {
-                                auto archive = files_iterator->next();
-                                if (archive.empty())
-                                    return {};
-
-                                if (!existsOrFileNameTooLong([&] { return fs::exists(archive); }))
+                                if (file_enumerator == nullptr)
                                 {
-                                    if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
+                                    auto archive = files_iterator->next();
+                                    if (archive.empty())
+                                        return {};
+
+                                    current_path = archive;
+                                    if (!existsOrFileNameTooLong([&] { return fs::exists(archive); }))
+                                    {
+                                        if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
+                                            continue;
+
+                                        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", archive);
+                                    }
+
+                                    current_archive_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
+                                    if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && current_archive_stat.st_size == 0)
                                         continue;
 
-                                    throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", archive);
+                                    archive_reader = createArchiveReader(archive);
+                                    file_enumerator = archive_reader->firstFile();
+                                    entry_positions.reset();
+                                    continue;
                                 }
 
-                                current_archive_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
-                                if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && current_archive_stat.st_size == 0)
-                                    continue;
-
-                                archive_reader = createArchiveReader(archive);
-                                file_enumerator = archive_reader->firstFile();
-                                entry_positions.reset();
-                                continue;
-                            }
-
-                            bool file_found = true;
-                            entry_position = entry_positions.onEntry(file_enumerator->getFileName());
-                            while (!files_iterator->validFileInArchive(file_enumerator->getFileName()))
-                            {
-                                if (!file_enumerator->nextFile())
+                                bool file_found = true;
+                                entry_position = entry_positions.onEntry(file_enumerator->getFileName());
+                                while (!files_iterator->validFileInArchive(file_enumerator->getFileName()))
                                 {
-                                    file_found = false;
+                                    if (!file_enumerator->nextFile())
+                                    {
+                                        file_found = false;
+                                        break;
+                                    }
+                                    entry_position = entry_positions.onEntry(file_enumerator->getFileName());
+                                }
+
+                                if (file_found)
+                                {
+                                    filename_override = file_enumerator->getFileName();
                                     break;
                                 }
-                                entry_position = entry_positions.onEntry(file_enumerator->getFileName());
+
+                                file_enumerator = nullptr;
                             }
 
-                            if (file_found)
+                            chassert(file_enumerator);
+                            current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
+                            current_archive_entry_cache_key = getArchiveEntryCacheKey(
+                                current_path, entry_position, chooseCompressionMethod(*filename_override, storage->compression_method));
+                            current_file_size = file_enumerator->getFileInfo().uncompressed_size;
+                            current_file_last_modified = file_enumerator->getFileInfo().last_modified;
+                            if (need_only_count && tryGetCountFromCache(current_archive_stat))
+                                continue;
+
+                            if (is_one_format)
                             {
-                                filename_override = file_enumerator->getFileName();
-                                break;
+                                /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
+                                read_buf = std::make_unique<EmptyReadBuffer>();
                             }
+                            else
+                            {
+                                read_buf = archive_reader->readFile(std::move(file_enumerator));
+                                if (auto progress_callback = getContext()->getFileProgressCallback())
+                                    progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
 
-                            file_enumerator = nullptr;
+                                decompressArchiveEntryReadBuffer(
+                                    read_buf, archive_entry_read_buf, chooseCompressionMethod(*filename_override, storage->compression_method), getContext());
+                            }
                         }
-
-                        chassert(file_enumerator);
-                        current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
-                        current_archive_entry_cache_key = getArchiveEntryCacheKey(
-                            current_path, entry_position, chooseCompressionMethod(*filename_override, storage->compression_method));
-                        current_file_size = file_enumerator->getFileInfo().uncompressed_size;
-                        current_file_last_modified = file_enumerator->getFileInfo().last_modified;
-                        if (need_only_count && tryGetCountFromCache(current_archive_stat))
+                        catch (const Exception & e)
+                        {
+                            skip_archive_or_rethrow(e.code());
                             continue;
-
-                        if (is_one_format)
-                        {
-                            /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
-                            read_buf = std::make_unique<EmptyReadBuffer>();
-                        }
-                        else
-                        {
-                            read_buf = archive_reader->readFile(std::move(file_enumerator));
-                            if (auto progress_callback = getContext()->getFileProgressCallback())
-                                progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
-
-                            decompressArchiveEntryReadBuffer(
-                                read_buf, archive_entry_read_buf, chooseCompressionMethod(*filename_override, storage->compression_method), getContext());
                         }
                     }
                 }
@@ -2132,6 +2403,14 @@ Chunk StorageFileSource::generate()
                             continue;
                         }
 
+                        /// E.g. the file was removed after the glob was expanded. Nothing is open yet.
+                        if (getContext()->getSettingsRef()[Setting::engine_file_skip_failed_data_files])
+                        {
+                            LOG_WARNING(storage->log, "Skipping file {} because it doesn't exist", current_path);
+                            checkTopKQueryConditionCacheKeyHolds(/*still_holds=*/ false);
+                            continue;
+                        }
+
                         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", current_path);
                     }
                 }
@@ -2150,7 +2429,15 @@ Chunk StorageFileSource::generate()
             if (!read_buf || split_file)
             {
                 struct stat file_stat{};
-                file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
+                try
+                {
+                    file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
+                }
+                catch (const Exception & e)
+                {
+                    skip_or_rethrow(e.code(), /*while_reading_data=*/ false);
+                    continue;
+                }
                 current_file_size = file_stat.st_size;
                 current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
 
@@ -2194,30 +2481,38 @@ Chunk StorageFileSource::generate()
                     continue;
                 }
 
-                if (is_one_format)
+                try
                 {
-                    /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
-                    read_buf = std::make_unique<EmptyReadBuffer>();
-                }
-                else if (!read_buf)
-                {
-                    read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
-
-                    /// `createReadBuffer` opens the file by path, strictly after the `stat` above computed
-                    /// `current_file_cache_version`. Another writer - e.g. a second `File` table pointing at
-                    /// the same path, which is guarded by its own independent `rwlock` and so isn't excluded
-                    /// by ours - could truncate and rewrite the file in that window. Re-stat right after
-                    /// opening: if the token no longer matches what we just opened, it cannot be trusted to
-                    /// pin this read's generation, so fail close (the gates below skip both the Query
-                    /// Condition Cache lookup and, per the bracketing check further down, its population).
-                    if (!storage->use_table_fd && (current_file_version_settled || split_file)
-                        && !fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+                    if (is_one_format)
                     {
-                        if (split_file)
-                            throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
-                                "File {} was modified while being read. Rerun the query", current_path);
-                        current_file_version_settled = false;
+                        /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
+                        read_buf = std::make_unique<EmptyReadBuffer>();
                     }
+                    else if (!read_buf)
+                    {
+                        read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
+
+                        /// `createReadBuffer` opens the file by path, strictly after the `stat` above computed
+                        /// `current_file_cache_version`. Another writer - e.g. a second `File` table pointing at
+                        /// the same path, which is guarded by its own independent `rwlock` and so isn't excluded
+                        /// by ours - could truncate and rewrite the file in that window. Re-stat right after
+                        /// opening: if the token no longer matches what we just opened, it cannot be trusted to
+                        /// pin this read's generation, so fail close (the gates below skip both the Query
+                        /// Condition Cache lookup and, per the bracketing check further down, its population).
+                        if (!storage->use_table_fd && (current_file_version_settled || split_file)
+                            && !fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+                        {
+                            if (split_file)
+                                throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
+                                    "File {} was modified while being read. Rerun the query", current_path);
+                            current_file_version_settled = false;
+                        }
+                    }
+                }
+                catch (const Exception & e)
+                {
+                    skip_or_rethrow(e.code(), /*while_reading_data=*/ false);
+                    continue;
                 }
 
                 checkTopKQueryConditionCacheKeyHolds(/*still_holds=*/ true);
@@ -2382,75 +2677,132 @@ Chunk StorageFileSource::generate()
                 }
             }
 
-            if (object_with_metadata.has_value())
+            /// Format construction may itself read file metadata/content (e.g. a Parquet footer)
+            /// and fail on a broken file, so it is protected by the same skip handling as reading,
+            /// except for the errors of its configuration - see `isErrorOfInputFileWhileCreatingFormat`.
+            bool format_reads_input_while_created = false;
+            ContextPtr format_context = getContext();
+            InputFormatErrorsLoggerPtr errors_logger;
+            if (getContext()->getSettingsRef()[Setting::engine_file_skip_failed_data_files])
             {
-                input_format = FormatFactory::instance().getInputWithMetadata(
-                    storage->format_name,
-                    *read_buf,
-                    block_for_format,
-                    getContext(),
-                    max_block_size,
-                    object_with_metadata,
-                    storage->format_settings,
-                    parser_shared_resources,
-                    format_filter_info,
-                    /*is_remote_fs=*/false,
-                    CompressionMethod::None,
-                    need_only_count);
-            }
-            else
-            {
-                /// No usable metadata (e.g. archive entries, fd-backed storage, missing
-                /// stat info). Fall back to the regular creator — it doesn't trigger the
-                /// `getInputWithMetadata` chassert and the format-level metadata cache
-                /// just isn't consulted on this read.
-                input_format = FormatFactory::instance().getInput(
-                    storage->format_name,
-                    *read_buf,
-                    block_for_format,
-                    getContext(),
-                    max_block_size,
-                    storage->format_settings,
-                    parser_shared_resources,
-                    format_filter_info,
-                    /*is_remote_fs=*/false,
-                    CompressionMethod::None,
-                    need_only_count);
+                /// Whether the format has a random-access creator, which reads the input while the format
+                /// is created, even when seeks are not allowed.
+                FormatSettings format_settings_for_check = storage->format_settings ? *storage->format_settings : getFormatSettings(getContext());
+                format_settings_for_check.seekable_read = true;
+                format_reads_input_while_created
+                    = FormatFactory::instance().checkIfFormatIsRandomAccessInput(storage->format_name, getContext(), format_settings_for_check);
+
+                if (format_reads_input_while_created
+                    && !getContext()->getSettingsRef()[Setting::input_format_record_errors_file_path].value.empty())
+                {
+                    /// The errors of such a format while it is created are attributed to the input file, but
+                    /// `FormatFactory::getInput` also creates the logger of `input_format_record_errors_file_path`,
+                    /// which opens its own file and creates an output format, which may run a schema query.
+                    /// So the logger is created here, where its errors propagate, and not by `getInput`.
+                    auto context_without_errors_logger = Context::createCopy(getContext());
+                    context_without_errors_logger->setSetting("input_format_record_errors_file_path", String{});
+                    format_context = context_without_errors_logger;
+                    errors_logger = std::make_shared<InputFormatErrorsLogger>(getContext());
+                }
             }
 
-            input_format->setBucketsToRead(split_file ? split_file->buckets.at(split_file_bucket) : buckets_to_read);
-            input_format->setSerializationHints(serialization_hints);
-
-            if (need_only_count)
-                input_format->needOnlyCount();
-
-            QueryPipelineBuilder builder;
-            builder.init(Pipe(input_format));
-
-            if (columns_description.hasDefaults())
+            try
             {
+                if (object_with_metadata.has_value())
+                {
+                    input_format = FormatFactory::instance().getInputWithMetadata(
+                        storage->format_name,
+                        *read_buf,
+                        block_for_format,
+                        format_context,
+                        max_block_size,
+                        object_with_metadata,
+                        storage->format_settings,
+                        parser_shared_resources,
+                        format_filter_info,
+                        /*is_remote_fs=*/false,
+                        CompressionMethod::None,
+                        need_only_count);
+                }
+                else
+                {
+                    /// No usable metadata (e.g. archive entries, fd-backed storage, missing
+                    /// stat info). Fall back to the regular creator — it doesn't trigger the
+                    /// `getInputWithMetadata` chassert and the format-level metadata cache
+                    /// just isn't consulted on this read.
+                    input_format = FormatFactory::instance().getInput(
+                        storage->format_name,
+                        *read_buf,
+                        block_for_format,
+                        format_context,
+                        max_block_size,
+                        storage->format_settings,
+                        parser_shared_resources,
+                        format_filter_info,
+                        /*is_remote_fs=*/false,
+                        CompressionMethod::None,
+                        need_only_count);
+                }
+
+                if (errors_logger)
+                    input_format->setErrorsLogger(errors_logger);
+                input_format->setBucketsToRead(split_file ? split_file->buckets.at(split_file_bucket) : buckets_to_read);
+                input_format->setSerializationHints(serialization_hints);
+
+                if (need_only_count)
+                    input_format->needOnlyCount();
+
+                QueryPipelineBuilder builder;
+                builder.init(Pipe(input_format));
+
+                if (columns_description.hasDefaults())
+                {
+                    builder.addSimpleTransform([&](const SharedHeader & header)
+                    {
+                        return std::make_shared<RowTransformTrackingErrors<AddingDefaultsTransform>>(
+                            row_transform_failed, header, columns_description, *input_format, getContext());
+                    });
+                }
+
+                /// Add ExtractColumnsTransform to extract requested columns/subcolumns
+                /// from chunk read by IInputFormat.
                 builder.addSimpleTransform([&](const SharedHeader & header)
                 {
-                    return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
+                    return std::make_shared<RowTransformTrackingErrors<ExtractColumnsTransform>>(row_transform_failed, header, requested_columns);
                 });
+
+                pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+                pipeline->disableProfileEventUpdate();
+                reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             }
-
-            /// Add ExtractColumnsTransform to extract requested columns/subcolumns
-            /// from chunk read by IInputFormat.
-            builder.addSimpleTransform([&](const SharedHeader & header)
+            catch (const Exception & e)
             {
-                return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
-            });
-
-            pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
-            pipeline->disableProfileEventUpdate();
-            reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
+                if (!isErrorOfInputFileWhileCreatingFormat(e, *read_buf, format_reads_input_while_created))
+                    throw;
+                skip_or_rethrow(e.code(), /*while_reading_data=*/ false);
+                continue;
+            }
 
             ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
         }
 
         Chunk chunk;
-        if (reader->pull(chunk))
+        bool pulled = false;
+        try
+        {
+            pulled = reader->pull(chunk);
+        }
+        catch (const Exception & e)
+        {
+            /// The pipeline also runs the transforms of the rows read from the file. Their errors
+            /// belong to the query, not to the file, even when their codes are those of a broken
+            /// file - e.g. `CANNOT_PARSE_TEXT` from a conversion in a default expression.
+            if (row_transform_failed->load())
+                throw;
+            skip_or_rethrow(e.code(), /*while_reading_data=*/ true);
+            continue;
+        }
+        if (pulled)
         {
             UInt64 num_rows = chunk.getNumRows();
             total_rows_in_file += num_rows;
@@ -2645,14 +2997,23 @@ Chunk StorageFileSource::generate()
 
         if (files_iterator->isReadFromArchive() && !files_iterator->isSingleFileReadFromArchive())
         {
-            if (file_enumerator)
+            try
             {
-                if (!file_enumerator->nextFile())
-                    file_enumerator = nullptr;
+                if (file_enumerator)
+                {
+                    if (!file_enumerator->nextFile())
+                        file_enumerator = nullptr;
+                }
+                else
+                {
+                    file_enumerator = archive_reader->nextFile(takeArchiveEntryReadBuffer(std::move(read_buf), archive_entry_read_buf));
+                }
             }
-            else
+            catch (const Exception & e)
             {
-                file_enumerator = archive_reader->nextFile(takeArchiveEntryReadBuffer(std::move(read_buf), archive_entry_read_buf));
+                /// Corruption discovered while seeking the next entry after a successfully
+                /// read one: abandon the rest of the archive.
+                skip_archive_or_rethrow(e.code());
             }
         }
 
@@ -2867,6 +3228,11 @@ void ReadFromFile::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_valu
 bool ReadFromFile::canUseLazyMaterialization() const
 {
     if (need_only_count)
+        return false;
+
+    /// The lazy pass reads the rows recorded by the main pass and cannot skip a file that turns out
+    /// to be broken only there without breaking the alignment of the main and the lazy rows.
+    if (getContext()->getSettingsRef()[Setting::engine_file_skip_failed_data_files])
         return false;
 
     /// The global row index requires per-row file row numbers (ChunkInfoRowNumbers), and the lazy
@@ -3143,6 +3509,7 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
     if (max_num_streams < 2 || need_only_count || format_filter_info->min_max_from_statistics
         || top_k_filter || lazy_row_index_registry
         || !context->getSettingsRef()[Setting::parallelize_output_from_storages]
+        || context->getSettingsRef()[Setting::engine_file_skip_failed_data_files]
         || storage->use_table_fd || storage->archive_info || storage->distributed_processing
         || !FormatFactory::instance().checkIfFormatHasSplitter(storage->format_name)
         || !storage->parallelizeOutputAfterReading(context))
@@ -3274,14 +3641,27 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     if (progress_callback && !storage->archive_info)
         progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
+    /// With `engine_file_skip_failed_data_files`, no condition of the query is evaluated by the input
+    /// format, so that every error raised by the format can be attributed to the file - see
+    /// `StorageFile::supportsPrewhere`. The filter of the step is evaluated after the read anyway: it is
+    /// passed to the format only to skip data early.
+    const bool skip_failed_data_files = ctx->getSettingsRef()[Setting::engine_file_skip_failed_data_files];
+    if (skip_failed_data_files && (query_info.prewhere_info || query_info.row_level_filter))
+        /// The query was planned with settings in which the setting was disabled, e.g. it is enabled
+        /// only in the `SETTINGS` of a subquery.
+        throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+            "Setting engine_file_skip_failed_data_files cannot be used when a PREWHERE or a row policy is evaluated "
+            "while reading the file. Enable it for the whole query, or use WHERE instead of PREWHERE");
+
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
-        info.getFormatFilter(filter_actions_dag), ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+        skip_failed_data_files ? nullptr : info.getFormatFilter(filter_actions_dag),
+        ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
     format_filter_info->need_row_numbers
         = lazy_row_index_registry != nullptr || VirtualColumnUtils::hasRowDependentVirtualColumns(info.requested_virtual_columns);
     format_filter_info->top_k_filter = top_k_filter;
     format_filter_info->min_max_from_statistics = read_min_max_from_statistics && !filter_actions_dag
         && !query_info.prewhere_info && !query_info.row_level_filter;
-    format_filter_info->keep_filter_column_statistics = filter_actions_dag && !storage->use_table_fd && !storage->archive_info
+    format_filter_info->keep_filter_column_statistics = format_filter_info->filter_actions_dag && !storage->use_table_fd && !storage->archive_info
         && ctx->getSettingsRef()[Setting::use_parquet_metadata_cache];
     auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
     if (top_k_query_condition_cache_key)
@@ -4287,6 +4667,7 @@ To read data stored in Hive-style `key=value/` directories, use the [`file`](/re
 - [engine_file_truncate_on_insert](/reference/settings/session-settings/engine-file#engine_file_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
 - [engine_file_allow_create_multiple_files](/reference/settings/session-settings/engine-file#engine_file_allow_create_multiple_files) - allows to create a new file on each insert if format has suffix. Disabled by default.
 - [engine_file_skip_empty_files](/reference/settings/session-settings/engine-file#engine_file_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [engine_file_skip_failed_data_files](/reference/settings/session-settings/engine-file#engine_file_skip_failed_data_files) - allows to skip files that fail to open or read (e.g. corrupted gzip files) while reading. Disabled by default.
 - [storage_file_read_method](/reference/settings/session-settings/storage#storage_file_read_method) - method of reading data from storage file, one of: `read`, `pread`, `mmap`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local.
 )DOCS_MD",
             .syntax = "ENGINE = File(format[, path | fd])",

@@ -463,6 +463,12 @@ private:
     InputFormatPtr input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
+    /// Set when a transform of the rows read by `input_format` (filling in default values, extracting
+    /// subcolumns) throws: such an error belongs to the query rather than to the file, so
+    /// `engine_file_skip_failed_data_files` never skips the file because of it. Shared with the
+    /// transforms, which are owned by `pipeline`. An error it marks always propagates and ends the
+    /// read, so it is never reset.
+    std::shared_ptr<std::atomic<bool>> row_transform_failed = std::make_shared<std::atomic<bool>>(false);
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     /// The `table_id` of the query condition cache entries (see `QueryConditionCache::getTableIdForFileEntries`).

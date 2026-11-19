@@ -5,7 +5,7 @@ namespace DB
 {
 
 /// Extracts required columns and subcolumns from the block.
-class ExtractColumnsTransform final : public ISimpleTransform
+class ExtractColumnsTransform : public ISimpleTransform
 {
 public:
     ExtractColumnsTransform(
