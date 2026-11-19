@@ -186,6 +186,7 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
     typename Method::State state(grouping_key_columns, data.key_sizes, hash_method_context);
 
     UInt64 current_run_start_row = 0;
+    /// If row 0 is in another group, it ends an empty run of group 0, which `processRun` leaves unchanged.
     size_t current_run_group_idx = 0;
 
     FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_pause);
@@ -226,9 +227,7 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
                 chassert(row_group_idx < group_counts.size());
             }
 
-            if (row_idx == 0)
-                current_run_group_idx = row_group_idx;
-            else if (row_group_idx != current_run_group_idx) /// Local run ended
+            if (row_group_idx != current_run_group_idx) /// Local run ended
             {
                 processRun(current_run_start_row, row_idx - current_run_start_row, current_run_group_idx);
                 current_run_group_idx = row_group_idx;
