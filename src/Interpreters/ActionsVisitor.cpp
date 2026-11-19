@@ -1904,7 +1904,35 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         && (needs_complex_candidate_rewrite(right_array_type->getNestedType())
                             || needsExactCompoundNumericInComparison(left_argument_type, right_array_type->getNestedType())
                             || hasCompoundStringToNumericLeaf(left_argument_type, right_array_type->getNestedType()));
-                    if (compare_numeric_array_sources)
+                    const bool choose_carrier_array_shape = use_standard_null_semantics && right_argument_is_array && left_is_complex
+                        && isArray(left_bare_type) && right_array_type
+                        && typeid_cast<const DataTypeArray *>(left_bare_type.get())->getNumberOfDimensions()
+                            == right_array_type->getNumberOfDimensions()
+                        && (isDynamic(removeNullable(removeLowCardinality(right_array_type->getNestedType())))
+                            || isVariant(removeNullable(removeLowCardinality(right_array_type->getNestedType()))));
+                    if (choose_carrier_array_shape)
+                    {
+                        const auto carrier_type = removeNullable(removeLowCardinality(right_array_type->getNestedType()));
+                        const String candidate_name = "__in_carrier_shape_candidate";
+                        auto active_type = makeASTFunction(
+                            isDynamic(carrier_type) ? "dynamicType" : "variantType",
+                            make_intrusive<ASTIdentifier>(candidate_name));
+                        auto is_array_type = makeASTFunction(
+                            "startsWith", std::move(active_type), make_intrusive<ASTLiteral>(String{"Array("}));
+                        auto is_list = makeASTFunction(
+                            "arrayExists", makeASTLambda({candidate_name}, std::move(is_array_type)),
+                            node.arguments->children.at(1)->clone());
+                        auto list_result = makeArrayCandidateInReplacement(
+                            node, left_argument_type, right_array_type->getNestedType(), true);
+                        ASTPtr single_result = makeASTFunction(
+                            "__arrayValueEqualsForIn", node.arguments->children.at(0)->clone(), node.arguments->children.at(1)->clone());
+                        if (isNegativeInFunctionName(node.name))
+                            single_result = makeASTFunction("not", std::move(single_result));
+                        replacement = makeASTFunction(
+                            "if", std::move(is_list), std::move(list_result),
+                            makeASTFunction("toNullable", std::move(single_result)));
+                    }
+                    else if (compare_numeric_array_sources)
                         replacement = makeArrayCandidateInReplacement(
                             node, left_argument_type, right_array_type->getNestedType(), false);
                     else if (compare_complex_array_sources)
