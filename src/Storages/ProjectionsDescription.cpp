@@ -483,6 +483,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
             .ignoreSettingConstraints());
 
     result.required_columns = select.getRequiredColumns();
+    /// the old analysis can take an EPHEMERAL column as the smallest one, but a part does not store it
+    std::erase_if(result.required_columns, [&](const String & column_name) { return columns.getEphemeral().contains(column_name); });
     /// the calculation counts the rows of the block, so the block needs a column
     if (result.required_columns.empty())
         result.required_columns.push_back(ExpressionActions::getSmallestColumn(columns.getAllPhysical()).name);
