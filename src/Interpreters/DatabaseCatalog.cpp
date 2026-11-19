@@ -123,7 +123,7 @@ public:
         : database_catalog(database_catalog_)
     {}
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
         auto context = CurrentThread::tryGetQueryContext();
         if (!context)
@@ -969,8 +969,7 @@ std::optional<DatabaseCatalog::RecomputedDependencies> DatabaseCatalog::getDepen
     auto ast = database.getCreateTableQuery(table_name, query_context);
     if (is_ordinary_view)
     {
-        /// The query of the loaded view may be more qualified than the stored definition (see
-        /// `qualifyNamesFromLegacyMetadata`), and it is the one the view reads.
+        /// The query of the loaded view is the one the view reads, so take it rather than the stored definition.
         auto & create = ast->as<ASTCreateQuery &>();
         auto metadata = table->getInMemoryMetadataPtr(query_context, false);
         create.replace(create.select, metadata->getSelectQuery().inner_query->clone());
@@ -1235,6 +1234,22 @@ void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database,
     chassert(prev_database && prev_table);
     prev_database = std::move(database);
     prev_table = std::move(table);
+}
+
+bool DatabaseCatalog::replaceUnusedTableInUUIDMapping(const UUID & uuid, const StoragePtr & old_table, StoragePtr new_table)
+{
+    chassert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    chassert(old_table && new_table);
+    UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
+    std::lock_guard lock{map_part.mutex};
+    auto it = map_part.map.find(uuid);
+    if (it == map_part.map.end() || it->second.second != old_table)
+        return false;
+    /// The mapping and the caller.
+    if (old_table.use_count() != 2)
+        return false;
+    it->second.second = std::move(new_table);
+    return true;
 }
 
 bool DatabaseCatalog::hasUUIDMapping(const UUID & uuid)
@@ -1784,7 +1799,9 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
         for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end(); ++it)
         {
             auto storage_ptr = it->table;
-            if (it->table_id.uuid == table_id.uuid)
+            if (it->table_id.uuid == table_id.uuid &&
+                it->table_id.database_name == table_id.database_name &&
+                it->table_id.table_name == table_id.table_name)
             {
                 it_dropped_table = it;
                 dropped_table = *it;
@@ -1806,11 +1823,6 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
-        /// A lookup by `UUID` ignores the database name, so the table may have been dropped from another database.
-        if (it_dropped_table->table_id.database_name != table_id.database_name)
-            throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                "Table {} was dropped from database {}, UNDROP into a different database is not supported",
-                table_id.getNameForLogs(), backQuoteIfNeed(it_dropped_table->table_id.database_name));
         /// Check the limit before moving the metadata file: a table that cannot be attached must
         /// stay in the dropped-table queue, so that `UNDROP` can be retried after freeing a slot.
         if (auto * database_on_disk = dynamic_cast<DatabaseOnDisk *>(database.get()))
@@ -2050,7 +2062,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     ///   or it is better to bypass it e.g. to avoid interactions with a remote storage
     auto is_disk_eligible_for_search = [](DiskPtr disk, std::shared_ptr<MergeTreeData> storage)
     {
-        bool is_disk_eligible = !disk->isReadOnly();
+        bool is_disk_eligible = !disk->isBroken() && !disk->isReadOnly();
 
         /// Disk is not actually used by MergeTree table
         if (is_disk_eligible && storage && !storage->getStoragePolicy()->tryGetVolumeIndexByDiskName(disk->getName()).has_value())

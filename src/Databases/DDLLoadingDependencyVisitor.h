@@ -2,6 +2,7 @@
 #include <Core/QualifiedTableName.h>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <optional>
 
@@ -9,7 +10,6 @@
 namespace DB
 {
 
-class ASTConstraintDeclaration;
 class ASTFunction;
 class ASTFunctionWithKeyValueArguments;
 class ASTStorage;
@@ -41,8 +41,6 @@ class DDLLoadingDependencyVisitor : public DDLMatcherBase
 public:
     struct Data
     {
-        /// The default database of the server, used where a nested query is executed with the global
-        /// context rather than with the context of the CREATE query.
         String default_database;
         /// The database against which the unqualified table names of the CREATE query are resolved.
         String current_database;
@@ -63,9 +61,7 @@ private:
     static void visit(const ASTFunction & function, Data & data);
     static void visit(const ASTFunctionWithKeyValueArguments & dict_source, Data & data);
     static void visit(const ASTStorage & storage, Data & data);
-    static void visit(const ASTConstraintDeclaration & constraint, Data & data);
 
-    static void addDependenciesOfExecutedSubqueries(const ASTPtr & ast, Data & data);
     static void extractTableNameFromArgument(const ASTFunction & function, Data & data, size_t arg_idx);
 };
 

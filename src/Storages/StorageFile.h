@@ -19,6 +19,7 @@
 #include <atomic>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <sys/stat.h>
 
 namespace DB
@@ -29,6 +30,9 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 class IInputFormat;
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
+
+struct FileBucketInfo;
+using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
 
 class PullingPipelineExecutor;
 
@@ -139,6 +143,7 @@ public:
     /// Unlike `.null`/`.size0`, a tuple element is a real leaf in the file, so the format can serve
     /// `t.x` on its own and prune on it.
     bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
+    bool supportsOptimizationToMapKeysAndValuesSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
@@ -166,6 +171,9 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
+    /// Renaming the files read (`rename_files_after_processing`) is a write to the source.
+    static void checkAccessForRenamingFiles(const ContextPtr & context);
+
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
@@ -178,7 +186,7 @@ public:
         const ReadFromFormatInfo & info,
         const ContextPtr & context,
         size_t max_block_size,
-        std::vector<FileLazyMaterializingRows::FileRows> files);
+        VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files);
 
 protected:
     friend class StorageFileSource;
@@ -271,7 +279,8 @@ public:
             const NamesAndTypesList & hive_columns_,
             const ContextPtr & context_,
             bool distributed_processing_ = false,
-            String archive_member_path_ = {});
+            String archive_member_path_ = {},
+            std::optional<FormatSettings> format_settings_ = std::nullopt);
 
         String next();
 
@@ -310,6 +319,7 @@ private:
         ExpressionActionsPtr deferred_filter_actions;
         NamesAndTypesList virtual_columns;
         NamesAndTypesList hive_columns;
+        const std::optional<FormatSettings> format_settings;
         /// A known archive member is part of the user-visible `_path` / `_file` value, although
         /// this iterator must open the outer archive file.
         const String archive_member_path;
@@ -349,6 +359,27 @@ private:
     };
     using TopKQueryConditionCacheKeyPtr = std::shared_ptr<const TopKQueryConditionCacheKey>;
 
+    /// A single file that is read by several sources in parallel, which take its buckets (subsets of the
+    /// row groups) one at a time. Made by `ReadFromFile::trySplitSingleFile` and shared by these sources.
+    struct SplitFile
+    {
+        String path;
+        /// The version of the file that was split, see `computeFileCacheVersionToken`. The buckets
+        /// describe this version only, so every source checks that it reads this version.
+        String file_cache_version;
+        VectorWithMemoryTracking<FileBucketInfoPtr> buckets;
+        std::atomic<size_t> next_bucket = 0;
+
+        /// Every source reads only the row groups of the buckets it takes, so the query condition cache entry
+        /// for the file can be written only after all buckets are read.
+        std::mutex mutex;
+        size_t buckets_read TSA_GUARDED_BY(mutex) = 0;
+        bool can_write_query_condition_cache TSA_GUARDED_BY(mutex) = true;
+        size_t total_row_groups TSA_GUARDED_BY(mutex) = 0;
+        std::unordered_set<size_t> matched_row_groups TSA_GUARDED_BY(mutex);
+    };
+    using SplitFilePtr = std::shared_ptr<SplitFile>;
+
     StorageFileSource(
         const ReadFromFormatInfo & info,
         std::shared_ptr<StorageFile> storage_,
@@ -361,7 +392,8 @@ private:
         FormatFilterInfoPtr format_filter_info_,
         LazyFileRegistryPtr lazy_row_index_registry_ = nullptr,
         TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr,
-        const UUID & query_condition_cache_table_id_ = UUIDHelpers::Nil);
+        const UUID & query_condition_cache_table_id_ = UUIDHelpers::Nil,
+        SplitFilePtr split_file_ = nullptr);
 
     /**
       * If specified option --rename_files_after_processing and files created by TableFunctionFile
@@ -398,6 +430,10 @@ private:
 
     /// Writes `pending_top_k_query_condition_cache_entries` to the query condition cache.
     void writePendingTopKQueryConditionCacheEntries();
+
+    /// Records the row groups of the bucket of `split_file` this source has read that produced rows,
+    /// and writes the query condition cache entry for the file once all buckets are read.
+    void finishReadingSplitFileBucket();
 
     std::shared_ptr<StorageFile> storage;
     FilesIteratorPtr files_iterator;
@@ -447,6 +483,10 @@ private:
     };
     std::vector<PendingTopKQueryConditionCacheEntry> pending_top_k_query_condition_cache_entries;
 
+    /// If set, this source reads the buckets of `split_file` it takes; `split_file_bucket` is the current one.
+    SplitFilePtr split_file;
+    size_t split_file_bucket = 0;
+
     std::shared_ptr<IArchiveReader> archive_reader;
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
     ArchiveEntryPositions entry_positions;
@@ -458,6 +498,8 @@ private:
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
     SerializationInfoByName serialization_hints;
+    NameSet map_columns_read_by_keys;
+    NameSet map_columns_read_by_values;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
     UInt64 max_block_size;
@@ -494,6 +536,8 @@ public:
     bool supportsMinMaxFromStatistics() const override;
     void setMinMaxFromStatistics() override { read_min_max_from_statistics = true; }
 
+    bool canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const override;
+
     ReadFromFile(
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
@@ -527,6 +571,15 @@ public:
 
 private:
     StorageFileSource::TopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey() const;
+
+    /// If the query reads a single file that can be split into buckets, returns the buckets to read by
+    /// separate sources. Otherwise the file is read by one source, whose reader may still use several
+    /// threads, but that is much less efficient: the rest of the pipeline then starts with a single
+    /// stream, and the reader can't keep as many threads busy as independent sources do.
+    /// Takes the read lock of the storage into `read_lock` before looking at the file, so that the
+    /// caller keeps it until the sources (which take their own read locks) are constructed.
+    StorageFileSource::SplitFilePtr trySplitSingleFile(
+        const FormatFilterInfoPtr & format_filter_info, const UUID & query_condition_cache_table_id, RWLockImpl::LockHolder & read_lock) const;
 
     std::shared_ptr<StorageFile> storage;
     const Strings paths_snapshot;
