@@ -125,7 +125,7 @@ public:
         /// Znode version. Not serialized.
         int32_t version = -1;
 
-        String toString() const;
+        [[nodiscard]] String toString() const;
         void parse(const String & data, bool running_znode_exists, const LoggerPtr & log_);
     };
 

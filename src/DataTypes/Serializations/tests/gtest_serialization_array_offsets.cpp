@@ -1,5 +1,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <IO/ReadBufferFromString.h>
@@ -58,7 +59,7 @@ ColumnPtr readArrayColumn(const String & offsets_data, const String & elements_d
         return path.back().type == ISerialization::Substream::ArraySizes ? &offsets_in : &elements_in;
     };
 
-    auto serialization = SerializationArray::create(SerializationNumber<UInt8>::create());
+    auto serialization = SerializationArray::create(SerializationNumber<UInt8>::create(), std::make_shared<DataTypeUInt8>());
     auto column = ColumnArray::create(ColumnUInt8::create());
     ISerialization::DeserializeBinaryBulkStatePtr state;
     serialization->deserializeBinaryBulkWithMultipleStreams(*column, limit, settings, state, nullptr);

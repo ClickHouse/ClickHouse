@@ -91,6 +91,7 @@
             "integrations/connectors/data-visualization/community-integrations/explo-and-clickhouse",
             "integrations/connectors/data-visualization/community-integrations/fabi-and-clickhouse",
             "integrations/connectors/data-visualization/community-integrations/hashboard-and-clickhouse",
+            "integrations/connectors/data-visualization/community-integrations/hypequery-and-clickhouse",
             "integrations/connectors/data-visualization/community-integrations/luzmo-and-clickhouse",
             "integrations/connectors/data-visualization/community-integrations/mitzu-and-clickhouse",
             "integrations/connectors/data-visualization/community-integrations/rocketbi-and-clickhouse",
