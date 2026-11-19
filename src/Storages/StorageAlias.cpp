@@ -613,7 +613,7 @@ bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & s
     /// exactly as `read` does. When it is not authorized, decline the shortcut: the query then falls back
     /// to `read`, which raises the proper error (a legacy alias is refused, a missing `SELECT` is denied
     /// against the definer).
-    if (!isTargetSelectAuthorized(query_context))
+    if (!storage_snapshot || !isTargetSelectAuthorized(query_context))
         return false;
 
     /// Ask the storage the snapshot was taken from instead of resolving the target again: a storage
