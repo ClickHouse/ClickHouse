@@ -1123,7 +1123,8 @@ static int requestWithDeadline(
     const Poco::URI & uri,
     std::chrono::steady_clock::time_point deadline,
     bool bypass_proxy = true,
-    std::chrono::milliseconds body_delay = {})
+    std::chrono::milliseconds body_delay = {},
+    std::chrono::steady_clock::time_point * body_written = nullptr)
 {
     Poco::Net::HTTPBasicCredentials empty_creds;
     try
@@ -1131,10 +1132,12 @@ static int requestWithDeadline(
         DB::BuilderRWBufferFromHTTP(uri)
             .withBypassProxy(bypass_proxy)
             .withDeadline(deadline)
-            .withOutCallback([body_delay] (DB::WriteBuffer & out)
+            .withOutCallback([body_delay, body_written] (DB::WriteBuffer & out)
             {
                 std::this_thread::sleep_for(body_delay);
                 DB::writeString("Hello", out);
+                if (body_written)
+                    *body_written = std::chrono::steady_clock::now();
             })
             .withDelayInit(false)
             .create(empty_creds);
@@ -1160,18 +1163,22 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPEndsAtDeadline)
 
 TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPSlowBodyLeavesLessTimeForResponse)
 {
-    setSlowDown(2);
+    setSlowDown(4);
 
-    /// Writing the request body takes 400 ms of the 500 ms.
+    /// Writing the request body takes 1200 ms of the 1500 ms. The response wait then gets the 300 ms left, not the
+    /// 1500 ms the try started with.
     const auto start = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point body_written;
     ASSERT_EQ(
         DB::ErrorCodes::TIMEOUT_EXCEEDED,
         requestWithDeadline(
-            Poco::URI(getServerUrl()), start + std::chrono::milliseconds(500), /*bypass_proxy=*/ true, std::chrono::milliseconds(400)));
+            Poco::URI(getServerUrl()),
+            start + std::chrono::milliseconds(1500),
+            /*bypass_proxy=*/ true,
+            std::chrono::milliseconds(1200),
+            &body_written));
 
-    const auto elapsed = std::chrono::steady_clock::now() - start;
-    ASSERT_GE(elapsed, std::chrono::milliseconds(400));
-    ASSERT_LT(elapsed, std::chrono::milliseconds(750));
+    ASSERT_LT(std::chrono::steady_clock::now() - body_written, std::chrono::milliseconds(1000));
 }
 
 TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPPastDeadlineOpensNoConnection)
