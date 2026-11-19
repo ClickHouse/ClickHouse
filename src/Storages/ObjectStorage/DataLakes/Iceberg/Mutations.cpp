@@ -1,4 +1,5 @@
 #include <Formats/ColumnNameMaps.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -530,7 +531,7 @@ static std::map<String, roaring::Roaring64Map> collectMatchedRowPositions(
         auto positions = block.getByName(block_row_number).column;
         if (const auto * nullable = typeid_cast<const ColumnNullable *>(positions.get()))
         {
-            if (nullable->hasNull())
+            if (std::ranges::any_of(nullable->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected null _row_number");
             positions = nullable->getNestedColumnPtr();
         }
@@ -599,6 +600,7 @@ static DeletionVectorChanges prepareDeletionVectorChanges(
     DeletionVectorChanges changes;
     std::vector<ProcessedManifestFileEntryPtr> position_deletes;
     std::unordered_map<const ProcessedManifestFileEntry *, size_t> manifest_of_position_delete;
+    std::unordered_set<size_t> manifests_without_live_files;
 
     const auto manifest_list = getManifestList(object_storage, persistent_table_components, context, *manifest_list_path, log);
     for (size_t manifest_index = 0; manifest_index < manifest_list.size(); ++manifest_index)
@@ -617,6 +619,10 @@ static DeletionVectorChanges prepareDeletionVectorChanges(
             manifest_of_position_delete.emplace(position_delete.get(), manifest_index);
             position_deletes.push_back(position_delete);
         }
+        if (manifest.content_type == ManifestFileContentType::DELETE
+            && files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty()
+            && files_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
+            manifests_without_live_files.insert(manifest_index);
     }
     std::sort(position_deletes.begin(), position_deletes.end());
 
@@ -661,7 +667,7 @@ static DeletionVectorChanges prepareDeletionVectorChanges(
     {
         if (manifests_to_rewrite.contains(manifest_index))
             changes.manifests_to_rewrite.push_back(manifest_list[manifest_index]);
-        else
+        else if (!manifests_without_live_files.contains(manifest_index))
             changes.carried_forward_manifest_paths.insert(manifest_list[manifest_index].manifest_file_path.serialize());
     }
 

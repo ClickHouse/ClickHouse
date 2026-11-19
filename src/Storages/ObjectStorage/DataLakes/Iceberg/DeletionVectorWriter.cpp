@@ -127,11 +127,11 @@ void setLong(avro::GenericRecord & record, const String & name, Int64 value, con
     auto & datum = record.field(name);
     if (datum.isUnion())
     {
-        const auto & union_schema = record.schema()->leafAt(record.fieldIndex(name));
+        const auto & union_schema = record.schema()->leafAt(static_cast<int>(record.fieldIndex(name)));
         bool found = false;
         for (size_t branch = 0; branch < union_schema->leaves(); ++branch)
         {
-            if (union_schema->leafAt(branch)->type() == avro::AVRO_LONG)
+            if (union_schema->leafAt(static_cast<int>(branch))->type() == avro::AVRO_LONG)
             {
                 datum.selectBranch(branch);
                 found = true;
@@ -235,7 +235,9 @@ RewrittenDeleteManifest rewriteDeleteManifest(
             if (!getOptionalLong(entry, f_file_sequence_number, source_path))
                 setLong(entry, f_file_sequence_number, source.added_sequence_number, source_path);
 
-            auto & data_file = getRequired<avro::GenericRecord>(entry, f_data_file, avro::AVRO_RECORD, source_path);
+            if (!entry.hasField(f_data_file) || entry.field(f_data_file).type() != avro::AVRO_RECORD)
+                throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Manifest {} has no record field '{}'", source_path, f_data_file);
+            const auto & data_file = entry.field(f_data_file).value<avro::GenericRecord>();
             const Int64 record_count = getRequired<int64_t>(data_file, f_record_count, avro::AVRO_LONG, source_path);
             const auto referenced_data_file = getOptionalString(data_file, f_referenced_data_file, source_path);
             const bool is_replaced = getRequired<int32_t>(data_file, f_content, avro::AVRO_INT, source_path) == static_cast<Int32>(FileContentType::POSITION_DELETE)

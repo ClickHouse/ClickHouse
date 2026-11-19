@@ -47,17 +47,26 @@ PY
 )
     local delete_manifests
     delete_manifests=$(${CLICKHOUSE_CLIENT} --query "
-        SELECT arrayStringConcat(groupArray(replaceRegexpOne(manifest_path, '.*/', '')), ',')
+        SELECT replaceRegexpOne(manifest_path, '.*/', '')
         FROM file('${LAKE_RELATIVE}/${table}/metadata/${manifest_list}', 'Avro') WHERE content = 1")
-    ${CLICKHOUSE_CLIENT} --query "
-        SELECT 'entries', status, data_file.file_format, count(), sum(data_file.record_count)
-        FROM file('${LAKE_RELATIVE}/${table}/metadata/{${delete_manifests}}', 'Avro')
-        GROUP BY ALL ORDER BY ALL;
-        SELECT 'max live vectors per data file', max(c) FROM
-        (
-            SELECT count() AS c FROM file('${LAKE_RELATIVE}/${table}/metadata/{${delete_manifests}}', 'Avro')
-            WHERE status != 2 GROUP BY data_file.referenced_data_file
-        );"
+    for manifest in ${delete_manifests}; do
+        ${CLICKHOUSE_CLIENT} --query "
+            SELECT status, data_file.file_format, data_file.record_count, ifNull(data_file.referenced_data_file, '')
+            FROM file('${LAKE_RELATIVE}/${table}/metadata/${manifest}', 'Avro') FORMAT TSV"
+    done | python3 -c '
+import collections, sys
+entries = collections.defaultdict(lambda: [0, 0])
+live_vectors = collections.Counter()
+for line in sys.stdin:
+    status, file_format, record_count, referenced_data_file = line.rstrip("\n").split("\t")
+    entries[(int(status), file_format)][0] += 1
+    entries[(int(status), file_format)][1] += int(record_count)
+    if file_format == "puffin" and status != "2":
+        live_vectors[referenced_data_file] += 1
+for (status, file_format), (count, rows) in sorted(entries.items()):
+    print("entries", status, file_format, count, rows, sep="\t")
+print("max live vectors per data file", max(live_vectors.values(), default=0), sep="\t")
+'
 }
 
 echo "-- two DELETEs of the same data file"
@@ -79,7 +88,7 @@ ${CLICKHOUSE_CLIENT} ${SETTINGS} --query "DELETE FROM t WHERE k = 1000;"
 echo "-- UPDATE"
 ${CLICKHOUSE_CLIENT} ${SETTINGS} --query "ALTER TABLE t UPDATE v = 'updated' WHERE k IN (4, 106) SETTINGS mutations_sync = 1;"
 print_deletes t 2>&1
-${CLICKHOUSE_CLIENT} --query "SELECT k, v FROM icebergLocal('${LAKE}/t') WHERE k IN (3, 4, 5, 6, 105, 106, 107) ORDER BY k"
+${CLICKHOUSE_CLIENT} --query "SELECT k, v, _row_id, _last_updated_sequence_number FROM icebergLocal('${LAKE}/t') WHERE k IN (3, 4, 5, 6, 105, 106, 107) ORDER BY k"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM icebergLocal('${LAKE}/t')"
 
 echo "-- partitioned"
