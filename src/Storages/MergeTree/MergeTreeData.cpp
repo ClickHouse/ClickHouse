@@ -10,7 +10,6 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/SubcolumnCodecs.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/PartitionCommands.h>
@@ -4822,21 +4821,10 @@ void MergeTreeData::prewarmVectorSimilarityIndexCache(
 
     const double ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::vector_similarity_index_cache_prewarm_ratio];
 
-    /// Stop queueing once the cache reaches `vector_similarity_index_cache_prewarm_ratio` of its
-    /// configured size. A task already queued checks again before it starts reading. Inserts that
-    /// have started may go slightly over the ratio; the cache then evicts down to
-    /// `vector_similarity_index_cache_size` and `vector_similarity_index_cache_max_entries`.
-    /// Evicted entries may belong to other tables.
-    /// Created before the runner, so the tasks that capture it outlive the join.
     auto enough_space = [&cache, ratio_to_prewarm]()
     {
         return static_cast<double>(cache.sizeInBytes()) < static_cast<double>(cache.maxSizeInBytes()) * ratio_to_prewarm;
     };
-
-    auto mark_cache = getContext()->getIndexMarkCache();
-    auto uncompressed_cache = getContext()->getIndexUncompressedCache();
-    const auto context = getContext();
-    const UUID table_uuid = getStorageID().uuid;
 
     ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGETREE_PREWARM_CACHE);
     /// `enqueueAndKeepTrack` schedules before it records the task. Reserving every part/index
@@ -4855,67 +4843,14 @@ void MergeTreeData::prewarmVectorSimilarityIndexCache(
                 break;
 
             runner.enqueueAndKeepTrack(
-                [part,
-                 index,
-                 table_uuid,
-                 &cache,
-                 &enough_space,
-                 mark_cache,
-                 uncompressed_cache,
-                 context,
-                 current_component = Coordination::getCurrentComponent()]
+                [part, index, &cache, &enough_space, current_component = Coordination::getCurrentComponent()]
                 {
                     auto component_guard = Coordination::setCurrentComponent(current_component);
-
-                    auto alter_conversions = std::make_shared<AlterConversions>();
-                    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part, alter_conversions);
-                    if (!index->getDeserializedFormat(*part_info, index->getFileName()))
-                        return;
-
-                    const auto skip_index_granularity = index->getGranularity();
-                    const auto & index_granularity = part_info->getIndexGranularity();
-                    const size_t skip_marks = index_granularity.getMarksCountForSkipIndex(skip_index_granularity);
-                    if (skip_marks == 0)
-                        return;
-
                     /// Check again, because another task may have filled the cache while this task was waiting.
-                    /// Inserts that have started may go slightly over the ratio; eviction then brings the cache
-                    /// back to its configured limits. Evicted entries may belong to other tables.
                     if (!enough_space())
                         return;
 
-                    MarkRanges ranges{MarkRange(0, skip_marks)};
-                    auto reader_settings = MergeTreeReaderSettings::createFromContext(context);
-                    MergeTreeIndexReader reader(
-                        index,
-                        part_info,
-                        skip_marks,
-                        ranges,
-                        mark_cache.get(),
-                        uncompressed_cache.get(),
-                        /*vector_similarity_index_cache=*/ nullptr,
-                        reader_settings,
-                        /*interruptible_marks_read=*/ true);
-
-                    const String path_to_data_part
-                        = part->getDataPartStorage().getDiskName() + ":" + part->getRelativePathOfActivePart();
-
-                    for (size_t mark = 0; mark < skip_marks; ++mark)
-                    {
-                        VectorSimilarityIndexCacheKey key{path_to_data_part, index->getFileName(), mark};
-                        if (cache.contains(key))
-                            continue;
-
-                        MergeTreeIndexGranulePtr granule;
-                        reader.read(mark, /*condition=*/ nullptr, granule, /*readable_ranges=*/ nullptr);
-                        if (!granule)
-                            continue;
-
-                        cache.set(
-                            key,
-                            std::make_shared<VectorSimilarityIndexCacheCell>(
-                                std::move(granule), table_uuid, part->name, index->index.name));
-                    }
+                    part->loadVectorSimilarityIndexToCache(index, cache);
                 });
         }
     }

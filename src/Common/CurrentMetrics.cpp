@@ -634,9 +634,9 @@
     M(MergeTreeSnapshotCommitThreadsActive, "Number of active threads used to commit snapshot") \
     M(MergeTreeSnapshotCommitThreadsScheduled, "Number of scheduled threads used to commit snapshot") \
     \
-    M(MergeTreePrewarmCacheThreads, "Number of threads in the thread pool for `SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE`.") \
-    M(MergeTreePrewarmCacheThreadsActive, "Number of threads in the thread pool for `SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE` running a task.") \
-    M(MergeTreePrewarmCacheThreadsScheduled, "Number of queued or active jobs in the thread pool for `SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE`.") \
+    M(MergeTreePrewarmVectorSimilarityIndexCacheThreads, "Number of threads in the thread pool for `SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE`.") \
+    M(MergeTreePrewarmVectorSimilarityIndexCacheThreadsActive, "Number of threads in the thread pool for `SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE` running a task.") \
+    M(MergeTreePrewarmVectorSimilarityIndexCacheThreadsScheduled, "Number of queued or active jobs in the thread pool for `SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE`.") \
 
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
