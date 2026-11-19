@@ -272,6 +272,11 @@ StorageMergeTree::StorageMergeTree(
 
     increment.set(getMaxBlockNumber());
 
+    /// Block numbers restart from the parts on disk, so new parts can get the names of removed ones,
+    /// which the query condition cache still holds verdicts for.
+    if (mode == LoadingStrictnessLevel::ATTACH && getStorageID().hasUUID())
+        getContext()->clearQueryConditionCache();
+
     loadMutations();
     loadDeduplicationLog();
     prewarmCaches(getActivePartsLoadingThreadPool().get(), getCachesToPrewarm(0));
@@ -661,7 +666,7 @@ void StorageMergeTree::alter(
         bool workers_disabled_for_readonly_commit = false;
         try
         {
-            changeSettings(new_metadata.settings_changes, table_lock_holder);
+            changeSettings(new_metadata.getSettingsChanges(), table_lock_holder);
 
             /// The opposite transition, 0 -> 1, disables the workers before the commit as well. The
             /// cleanup thread and the asynchronous outdated and unexpected part loaders of a writable
@@ -731,7 +736,7 @@ void StorageMergeTree::alter(
             /// while the workers of a table that started writable, which the call found already
             /// running, are left as they were (disabled, see above). The cleanup thread is stopped
             /// as on a 0 -> 1 toggle: a read-only table never cleans its disk.
-            changeSettings(old_metadata.settings_changes, table_lock_holder);
+            changeSettings(old_metadata.getSettingsChanges(), table_lock_holder);
             if (statistics_changed)
                 setInMemoryMetadata(old_metadata);
             if ((*old_storage_settings)[MergeTreeSetting::table_readonly])
@@ -858,7 +863,7 @@ void StorageMergeTree::alter(
             std::optional<PreparedMutationEntry> prepared;
             try
             {
-                changeSettings(new_metadata.settings_changes, table_lock_holder);
+                changeSettings(new_metadata.getSettingsChanges(), table_lock_holder);
                 checkTTLExpressions(new_metadata, old_metadata);
 
                 /// Validate setting-dependent metadata against the just-applied settings
@@ -878,7 +883,7 @@ void StorageMergeTree::alter(
             catch (...)
             {
                 LOG_ERROR(log, "Failed to commit metadata changes, reverting settings");
-                changeSettings(old_metadata.settings_changes, table_lock_holder);
+                changeSettings(old_metadata.getSettingsChanges(), table_lock_holder);
                 /// `prepared` destructor removes the orphan `mutation_*.txt` (is_registered == false).
                 throw;
             }
@@ -916,12 +921,7 @@ void StorageMergeTree::alter(
                     throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after mutation registered");
                 });
 
-                setProperties(new_metadata, old_metadata, false, local_context);
-
-                {
-                    auto parts_lock = lockParts();
-                    resetSerializationHints(parts_lock);
-                }
+                setPropertiesAndResetSerializationHints(new_metadata, old_metadata, false, local_context);
             }
             catch (...)
             {
@@ -944,7 +944,7 @@ void StorageMergeTree::alter(
                             addPreparedMutationEntry(std::move(*prepared));
                             mutation_registered = true;
                         }
-                        setProperties(new_metadata, old_metadata, false, local_context);
+                        setPropertiesAndResetSerializationHints(new_metadata, old_metadata, false, local_context);
                     }
                     catch (...)
                     {
@@ -962,6 +962,8 @@ void StorageMergeTree::alter(
                     /// `held_entry` (its `is_registered` flag stops the destructor from
                     /// removing it) and is only removed once `alterTable(old_metadata)`
                     /// durably succeeds. See #80648.
+                    /// Plain `setProperties`: the rejected settings stay live until `changeSettings` after the
+                    /// durable rollback, so hints rebuilt now would come from settings about to be undone.
                     try
                     {
                         setProperties(old_metadata, new_metadata, false, local_context);
@@ -1023,7 +1025,7 @@ void StorageMergeTree::alter(
                                 tryLogCurrentException(log, "Failed to remove rolled-back rename mutation file");
                             }
                         }
-                        changeSettings(old_metadata.settings_changes, table_lock_holder);
+                        changeSettings(old_metadata.getSettingsChanges(), table_lock_holder);
                     }
                     else
                     {
@@ -1045,7 +1047,7 @@ void StorageMergeTree::alter(
                                     background_operations_assignee.trigger();
                                 }
                             }
-                            setProperties(new_metadata, old_metadata, false, local_context);
+                            setPropertiesAndResetSerializationHints(new_metadata, old_metadata, false, local_context);
                         }
                         catch (...)
                         {
@@ -2298,6 +2300,7 @@ bool StorageMergeTree::merge(
     const Names & deduplicate_by_columns,
     bool cleanup,
     const MergeTreeTransactionPtr & txn,
+    const ThreadGroupPtr & query_thread_group,
     PreformattedMessage & out_disable_reason,
     bool optimize_skip_merged_partitions)
 {
@@ -2410,7 +2413,7 @@ bool StorageMergeTree::merge(
         /// Copying a vector of columns `deduplicate by columns.
         IExecutableTask::TaskResultCallback f = [](bool) {};
         auto task = std::make_shared<MergePlainMergeTreeTask>(
-            *this, metadata_snapshot, deduplicate, deduplicate_by_columns, cleanup, merge_entry, table_lock_holder, f);
+            *this, metadata_snapshot, deduplicate, deduplicate_by_columns, cleanup, merge_entry, table_lock_holder, f, query_thread_group);
 
         task->setCurrentTransaction(MergeTreeTransactionHolder{}, MergeTreeTransactionPtr{txn});
 
@@ -2859,7 +2862,9 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
             && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_seconds]
             && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_on_partition_only];
 
-        auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, /* deduplicate */ false, Names{}, cleanup, merge_entry, shared_lock, common_assignee_trigger);
+        auto task = std::make_shared<MergePlainMergeTreeTask>(
+            *this, metadata_snapshot, /* deduplicate */ false, Names{}, cleanup, merge_entry, shared_lock, common_assignee_trigger,
+            /* query_thread_group */ nullptr);
         task->setCurrentTransaction(std::move(transaction_for_merge), std::move(txn));
 
         /// Test hook: drop the merge task before it ever runs, the way the background pool discards
@@ -3256,6 +3261,8 @@ bool StorageMergeTree::optimize(
     }
 
     auto txn = local_context->getCurrentTransaction();
+    /// The merges run for this query, so it gets their counters.
+    const ThreadGroupPtr query_thread_group = CurrentThread::getGroup();
 
     PreformattedMessage disable_reason;
     auto merge_mutate_executor = getContext()->getMergeMutateExecutor();
@@ -3322,7 +3329,7 @@ bool StorageMergeTree::optimize(
                 /// merge inputs outlive any such task.
                 runner.enqueueAndKeepTrack(
                     [this, results, shared_partition_ids, next_partition_index, deduplicate, deduplicate_by_columns, cleanup, txn,
-                     optimize_skip_merged_partitions]
+                     query_thread_group, optimize_skip_merged_partitions]
                     {
                         while (true)
                         {
@@ -3339,6 +3346,7 @@ bool StorageMergeTree::optimize(
                                     deduplicate_by_columns,
                                     cleanup,
                                     txn,
+                                    query_thread_group,
                                     partition_reason,
                                     optimize_skip_merged_partitions))
                                 (*results)[i] = std::unexpected(std::move(partition_reason));
@@ -3361,7 +3369,8 @@ bool StorageMergeTree::optimize(
             for (const String & partition_id : partition_ids)
             {
                 PreformattedMessage partition_reason;
-                if (!merge(true, partition_id, true, deduplicate, deduplicate_by_columns, cleanup, txn, partition_reason, optimize_skip_merged_partitions))
+                if (!merge(true, partition_id, true, deduplicate, deduplicate_by_columns, cleanup, txn, query_thread_group, partition_reason,
+                           optimize_skip_merged_partitions))
                 {
                     failure_reason = std::move(partition_reason);
                     break;
@@ -3394,6 +3403,7 @@ bool StorageMergeTree::optimize(
                 deduplicate_by_columns,
                 cleanup,
                 txn,
+                query_thread_group,
                 disable_reason,
                 local_context->getSettingsRef()[Setting::optimize_skip_merged_partitions]))
         {
