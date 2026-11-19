@@ -36,6 +36,7 @@
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Planner.h>
+#include <Planner/PlannerSteps.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/Utils.h>

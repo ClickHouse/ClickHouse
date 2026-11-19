@@ -394,6 +394,17 @@ StoragePtr createProjectionQuerySource(const ColumnsDescription & columns, Virtu
     return std::make_shared<StorageProjectionSource>(columns, std::move(virtuals), std::move(data));
 }
 
+/// A projection part stores a persistent virtual column only when its query selects it, so only ephemeral ones are always available.
+VirtualColumnsDescription createProjectionVirtuals(const KeyDescription * partition_key)
+{
+    VirtualColumnsDescription virtuals;
+    for (const auto & virtual_column : MergeTreeData::createVirtuals(partition_key))
+        if (virtual_column.isEphemeral())
+            virtuals.add(virtual_column);
+
+    return virtuals;
+}
+
 /// Builds the query tree of the `SELECT` of a projection over `source` and runs the analysis passes on it.
 /// If `unresolved_node_names` is set, remembers the names of the functions before the analysis.
 QueryTreeNodePtr buildProjectionQueryTree(
@@ -780,7 +791,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     }
 
     metadata.setColumns(std::move(metadata_columns));
-    metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key));
+    metadata.setVirtuals(createProjectionVirtuals(partition_key));
 
     /// Initialize implicit-minmax skip indices from the effective projection-level MergeTree settings
     /// (defaults from the projection index plus any user-supplied WITH SETTINGS overrides).
@@ -897,7 +908,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     result.type = ProjectionDescription::Type::Aggregate;
     StorageInMemoryMetadata metadata;
     metadata.setColumns(ColumnsDescription(result.sample_block.getNamesAndTypesList()));
-    metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key));
+    metadata.setVirtuals(createProjectionVirtuals(partition_key));
     metadata.partition_key = KeyDescription::buildEmptyKey();
     metadata.sorting_key = KeyDescription::buildEmptyKey();
     metadata.primary_key = KeyDescription::buildEmptyKey();

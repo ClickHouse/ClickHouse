@@ -810,7 +810,7 @@ bool StorageHive::supportsSubsetOfColumns() const
 class ReadFromHive : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromHive"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromHive"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     ReadFromHive(
@@ -1159,8 +1159,6 @@ void registerStorageHive(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # Hive table engine
 
 <CloudNotSupportedBadge/>
