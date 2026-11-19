@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
+#include <Processors/QueryPlan/Optimizations/joinRuntimeFilterKeyPath.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromTimeSeries.h>
@@ -391,6 +392,13 @@ void optimizeTreeSecondPass(
     /// Join runtime filters are registered and found in the lookup of the thread's query context, so they need a query.
     const bool add_join_runtime_filters = optimization_settings.enable_join_runtime_filters && CurrentThread::tryGetQueryContext();
     bool join_runtime_filters_were_added = false;
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    /// The filters created for a small probe side, to check where they are pushed down to.
+    VectorWithMemoryTracking<RuntimeFiltersKeptForKeyPath> runtime_filters_kept_for_key_path;
+    auto * kept_for_key_path = &runtime_filters_kept_for_key_path;
+#else
+    VectorWithMemoryTracking<RuntimeFiltersKeptForKeyPath> * kept_for_key_path = nullptr;
+#endif
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
@@ -404,7 +412,7 @@ void optimizeTreeSecondPass(
             /// (reordered, runtime-filtered) join shape and clones a fragment, which only `JoinStepLogical`
             /// supports, and lazy materialization for joins reads the join expressions from it.
             if (add_join_runtime_filters)
-                join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
+                join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings, kept_for_key_path);
         });
 
     /// `JoinStepLogical::preCalculateKeys` computes an expression key below the join, after which the join no longer
@@ -446,6 +454,10 @@ void optimizeTreeSecondPass(
                     && typeid_cast<FilterStep *>(frame_node.step.get()))
                     trySplitFilter(&frame_node, nodes, extra_settings);
             });
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        checkRuntimeFiltersKeptForKeyPath(runtime_filters_kept_for_key_path, optimization_settings);
+#endif
 
         /// After the __applyFilter conjuncts settled, register them on the reading steps
         /// (both the read-time index analysis and seal-gated reading consume them).

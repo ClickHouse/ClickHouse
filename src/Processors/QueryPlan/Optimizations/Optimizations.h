@@ -247,9 +247,17 @@ size_t removeUnusedColumns(QueryPlan::Node & root, RemoveUnusedColumnsMode mode)
 /// finds the unused columns of the whole plan at once.
 size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
+struct RuntimeFiltersKeptForKeyPath;
+
 /// Build BloomFilter from right side of JOIN and add condition that looks up into this BloomFilter to the left side of the JOIN.
 /// This condition can potentially be pushed down all the way to the storage and filter unmatched rows very early.
-bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+/// `kept_for_key_path`, if set, receives the filters created for a small probe side because they are pushed down to a
+/// larger input, see `checkRuntimeFiltersKeptForKeyPath`.
+bool tryAddJoinRuntimeFilter(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    VectorWithMemoryTracking<RuntimeFiltersKeptForKeyPath> * kept_for_key_path = nullptr);
 
 /// For an equi-join, copy filter conjuncts from one side onto the other via equi-key substitution
 /// so that index pruning (MergeTree primary key) on the other side picks them up

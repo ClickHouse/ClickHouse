@@ -288,7 +288,11 @@ static size_t countHashTableKeys(const JoinStepLogical & join_step)
     return count;
 }
 
-bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+bool tryAddJoinRuntimeFilter(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    VectorWithMemoryTracking<RuntimeFiltersKeptForKeyPath> * kept_for_key_path)
 {
     /// Is this a join step?
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
@@ -382,14 +386,18 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (join_step->isRuntimeFilterDeclinedForSmallProbe())
         return false;
 
+    bool kept_for_small_probe = false;
     if (optimization_settings.join_runtime_filter_min_probe_rows > 0)
     {
         auto probe_size = join_step->getInputRowsEstimation(JoinTableSide::Left);
-        if (probe_size && *probe_size <= optimization_settings.join_runtime_filter_min_probe_rows
-            && !runtimeFilterReachesInputAbove(node, check_left_does_not_contain, optimization_settings))
+        if (probe_size && *probe_size <= optimization_settings.join_runtime_filter_min_probe_rows)
         {
-            join_step->setRuntimeFilterDeclinedForSmallProbe();
-            return false;
+            if (!runtimeFilterReachesInputAbove(node, check_left_does_not_contain, optimization_settings))
+            {
+                join_step->setRuntimeFilterDeclinedForSmallProbe();
+                return false;
+            }
+            kept_for_small_probe = true;
         }
     }
 
@@ -509,6 +517,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     const UInt64 base_fingerprint = calculateJoinFingerprint(
         *join_step, check_left_does_not_contain, total_join_on_predicates_count, join_keys_probe_side, join_keys_build_side);
 
+    VectorWithMemoryTracking<String> filter_keys;
     auto make_id = [&](size_t i) -> RuntimeFilterId
     {
         SipHash h;
@@ -516,6 +525,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         h.update(i);
         const UInt64 structural_hash = h.get64();
         const String random_key = fmt::format("_rf_rnd_{:016x}_{:016x}", thread_local_rng(), thread_local_rng());
+        filter_keys.push_back(random_key);
         return RuntimeFilterId{.name = runtimeFilterName(structural_hash), .key = random_key};
     };
 
@@ -694,6 +704,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     /// Remove algorithms that are not compatible with runtime filters
     std::erase_if(join_algorithms, [&](auto join_algorithm) { return !supports_runtime_filter(join_algorithm); });
+
+    if (kept_for_small_probe && kept_for_key_path)
+        kept_for_key_path->push_back({.join_node = &node, .filter_keys = std::move(filter_keys)});
 
     return true;
 }

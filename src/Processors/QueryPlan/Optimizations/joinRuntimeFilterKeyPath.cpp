@@ -18,16 +18,27 @@
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Common/Exception.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
 #include <array>
 
-namespace DB::QueryPlanOptimizations
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace QueryPlanOptimizations
 {
 
 namespace
@@ -329,6 +340,63 @@ bool runtimeFilterReachesInputAbove(
         auto columns = getSourceColumns(keys);
         return columns && filterReachesInputAbove(join_node.children[0], std::move(*columns), /*rows_known=*/ true, settings);
     });
+}
+
+void checkRuntimeFiltersKeptForKeyPath(
+    const VectorWithMemoryTracking<RuntimeFiltersKeptForKeyPath> & kept, const QueryPlanOptimizationSettings & settings)
+{
+    for (const auto & [join_node, filter_keys] : kept)
+    {
+        const UnorderedSetWithMemoryTracking<String> keys(filter_keys.begin(), filter_keys.end());
+        bool found = false;
+        bool applied_to_larger_input = false;
+
+        /// A filter step that applies a filter, below a join input estimated above the limit or right above an input
+        /// estimated so, is what `runtimeFilterReachesInputAbove` stands for.
+        struct Frame
+        {
+            QueryPlan::Node * node;
+            bool below_larger_join_input;
+        };
+        VectorWithMemoryTracking<Frame> stack{{join_node->children.front(), false}};
+        while (!stack.empty() && !applied_to_larger_input)
+        {
+            auto [node, below_larger_join_input] = stack.back();
+            stack.pop_back();
+
+            if (const auto * filter = typeid_cast<const FilterStep *>(node->step.get()))
+            {
+                VectorWithMemoryTracking<RuntimeFilterApplication> applications;
+                collectRuntimeFilterApplications(filter->getExpression(), applications);
+                if (std::ranges::any_of(applications, [&](const auto & application) { return keys.contains(application.filter_key); }))
+                {
+                    found = true;
+                    applied_to_larger_input = below_larger_join_input || isEstimatedAbove(*node->children.front(), settings);
+                }
+            }
+
+            const auto * join = typeid_cast<const JoinStepLogical *>(node->step.get());
+            for (size_t i = 0; i < node->children.size(); ++i)
+            {
+                bool below_larger_input = below_larger_join_input;
+                if (join && node->children.size() == 2)
+                {
+                    auto rows = join->getInputRowsEstimation(i == 0 ? JoinTableSide::Left : JoinTableSide::Right);
+                    below_larger_input = below_larger_input || (rows && *rows > settings.join_runtime_filter_min_probe_rows);
+                }
+                stack.push_back({node->children[i], below_larger_input});
+            }
+        }
+
+        if (found && !applied_to_larger_input)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "The JOIN runtime filters of a probe side estimated at most {} rows were created because they are pushed down to a "
+                "larger input, but they are not",
+                settings.join_runtime_filter_min_probe_rows);
+    }
+}
+
 }
 
 }

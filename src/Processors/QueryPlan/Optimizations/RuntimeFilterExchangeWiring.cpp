@@ -4,7 +4,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include <Columns/ColumnConst.h>
 #include <DataTypes/IDataType.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ActionsDAG.h>
@@ -13,6 +12,7 @@
 #include <Processors/QueryPlan/MergeRuntimeFiltersStep.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeFilterExchangeWiring.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/RuntimeFilterGeometry.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -62,51 +62,6 @@ bool stageDependsOnTransitively(
         }
     }
     return false;
-}
-
-struct RuntimeFilterApplication
-{
-    String filter_key; /// Value of the label constant: the rendezvous key.
-    String key_column; /// The probed input column; empty when the probed key is not a plain column.
-};
-
-/// Collects every `__applyFilter` call in the DAG. Only FUNCTION nodes count, so a leftover alias whose
-/// computation was pushed further down is ignored. Matching uses the label's value, a random key that
-/// cannot collide across plan builds.
-void collectRuntimeFilterApplications(const ActionsDAG & dag, VectorWithMemoryTracking<RuntimeFilterApplication> & out)
-{
-    for (const auto & dag_node : dag.getNodes())
-    {
-        if (dag_node.type != ActionsDAG::ActionType::FUNCTION || !dag_node.function_base
-            || dag_node.function_base->getName() != "__applyFilter" || dag_node.children.size() < 2)
-            continue;
-
-        const auto * key_argument = dag_node.children.front();
-        if (!key_argument->column)
-            continue;
-
-        const auto * key_constant = typeid_cast<const ColumnConst *>(key_argument->column.get());
-        if (!key_constant)
-            continue;
-
-        /// Unwrap the probed expression to its input column, looking through renames and the cast
-        /// to the filter element type.
-        const auto * probed = dag_node.children[1];
-        while (true)
-        {
-            if (probed->type == ActionsDAG::ActionType::ALIAS && !probed->children.empty())
-                probed = probed->children.front();
-            else if (
-                probed->type == ActionsDAG::ActionType::FUNCTION && probed->function_base
-                && (probed->function_base->getName() == "CAST" || probed->function_base->getName() == "_CAST") && !probed->children.empty())
-                probed = probed->children.front();
-            else
-                break;
-        }
-        out.push_back(
-            {.filter_key = String(key_constant->getDataAt(0)),
-             .key_column = probed->type == ActionsDAG::ActionType::INPUT ? probed->result_name : String{}});
-    }
 }
 
 /// FilterStep predicates and scan PREWHEREs are where pushdown leaves the applications.
