@@ -59,7 +59,7 @@ public:
     {}
 
     template <typename ... Args>
-    auto NO_SANITIZE_UNDEFINED execute(const Time64 & t, Args && ... args) const
+    [[nodiscard]] auto NO_SANITIZE_UNDEFINED execute(const Time64 & t, Args && ... args) const
     {
         /// Type conversion from float to integer may be required.
         /// We are Ok with implementation specific result for out of range and denormals conversion.
@@ -142,7 +142,7 @@ public:
         return wrapped_transform.executeExtendedResult(t, std::forward<Args>(args)...);
     }
 
-    Time64::NativeType getScaleMultiplier() const { return scale_multiplier; }
+    [[nodiscard]] Time64::NativeType getScaleMultiplier() const { return scale_multiplier; }
 
 private:
     Time64::NativeType scale_multiplier = 1;
