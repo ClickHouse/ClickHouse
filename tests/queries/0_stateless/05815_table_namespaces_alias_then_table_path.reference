@@ -40,3 +40,9 @@ Code: 47
 -- 14. without table namespaces the path is not tried
 Code: 47
 Code: 47
+-- 15. the other table has a column named like the alias, alias on the left
+5
+5
+-- 16. alias on the right
+8
+5

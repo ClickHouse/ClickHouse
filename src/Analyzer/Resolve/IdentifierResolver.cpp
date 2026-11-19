@@ -1142,9 +1142,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
 
      /** If identifier first part binds to some column start or table has full identifier name. Then we can try to find whole identifier in table.
        * 1. Try to bind identifier first part to column in table, if true get full identifier from table or return nothing.
-       * 2. Try to bind identifier first part to table name or storage alias, if true remove first part and try to get full identifier from table or return nothing.
+       * 2. Try to bind identifier first part to storage alias, then identifier first parts to table name (a table path takes as many parts as it has components), if true remove them and try to get the rest of the identifier from table or return nothing.
        * Storage alias works for subquery, table function as well.
-       * 3. Try to bind identifier first parts to database name and table name, if true remove first two parts and try to get full identifier from table or return nothing.
+       * 3. Try to bind identifier first parts to database name and table name, if true remove them and try to get the rest of the identifier from table or return nothing.
        */
     if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier)))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/);

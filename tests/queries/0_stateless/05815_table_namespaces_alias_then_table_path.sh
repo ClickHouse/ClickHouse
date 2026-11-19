@@ -16,6 +16,8 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE ${db}.u (y UInt64) ENGINE = Memory"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${db}.\`${db}.t\` (x UInt64) ENGINE = Memory"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${db}.\`${db2}.t\` (x UInt64) ENGINE = Memory"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${db2}.t (x UInt64) ENGINE = Memory"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE ${db}.o (k UInt64, ns Tuple(t Tuple(x UInt64))) ENGINE = Memory"
+$CLICKHOUSE_CLIENT -q "INSERT INTO ${db}.o VALUES (0, tuple(tuple(8)))"
 $CLICKHOUSE_CLIENT -q "INSERT INTO ${db}.\`ns.t\` VALUES (5)"
 $CLICKHOUSE_CLIENT -q "INSERT INTO ${db2}.\`ns.t\` VALUES (6)"
 $CLICKHOUSE_CLIENT -q "INSERT INTO ${db}.u VALUES (7)"
@@ -24,7 +26,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO ${db}.\`${db2}.t\` VALUES (4)"
 $CLICKHOUSE_CLIENT -q "INSERT INTO ${db2}.t VALUES (9)"
 
 # Each statement runs with analyzer_compatibility_prefer_alias_over_subcolumn = 0, then = 1.
-# The correlated subqueries and single_join_prefer_left_table settings are needed by cases 10-11.
+# Cases 10, 11, 15 and 16 depend on single_join_prefer_left_table; case 12 is a correlated subquery.
 both()
 {
     for compat in 0 1; do
@@ -84,8 +86,16 @@ for compat in 0 1; do
         -q "SELECT ns.t.x FROM ${db}.\`ns.t\` AS ns" 2>&1 | grep -oE 'Code: [0-9]+' | head -n1
 done
 
+# The other table has a column named like the alias; the alias does not outrank a column of the other side, so the left side wins without the compatibility setting.
+echo '-- 15. the other table has a column named like the alias, alias on the left'
+both -q "SELECT ns.t.x FROM ${db}.\`ns.t\` AS ns JOIN ${db}.o AS o ON 1"
+
+echo '-- 16. alias on the right'
+both -q "SELECT ns.t.x FROM ${db}.o AS o JOIN ${db}.\`ns.t\` AS ns ON 1"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.\`ns.t\`"
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${db2}.\`ns.t\`"
+$CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.o"
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.u"
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.\`${db}.t\`"
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.\`${db2}.t\`"
