@@ -11,7 +11,8 @@ so the top-level comment is always authored by the pre-authenticated app, not
 the agent's account. When the summary's Final Verdict is `✅ Approve`, the job also
 submits an `APPROVE` review on the reviewed commit, so the approval is recorded
 on GitHub (needed for compliance); any other verdict dismisses the app's earlier
-approvals of the PR.
+approvals of the PR. A review whose sessions the provider stopped as a cybersecurity risk does not
+approve: its summary comes from the fallback model and can miss a finding.
 
 The agent occasionally hits transient GitHub authorization errors mid-run
 ("Authorization error, you may need to run /login"). The whole attempt is
@@ -249,7 +250,7 @@ def _review_approves():
     return "✅ Approve" in status and not re.search(r"Request changes|Block", status)
 
 
-def _update_approval(info):
+def _update_approval(info, cyber_risk_flagged):
     """Record the verdict as a GitHub review of the app: approve the reviewed commit on `✅ Approve`,
     otherwise dismiss the app's approvals left by earlier runs, so that a PR which needs changes does not
     keep an approval. A run for a commit that is no longer the PR head changes nothing: overlapping runs
@@ -275,7 +276,9 @@ def _update_approval(info):
         print(f"Commit {info.sha} is superseded by the PR head {pr['headRefOid']}, keeping the approval state")
         return
 
-    if _review_approves():
+    if cyber_risk_flagged:
+        print("Not approving: a review session was stopped as a cybersecurity risk")
+    elif _review_approves():
         if any((r.get("commit") or {}).get("oid") == info.sha for r in own_approvals):
             print(f"Commit {info.sha} is already approved")
             return
@@ -286,7 +289,6 @@ def _update_approval(info):
             payload={
                 "commit_id": info.sha,
                 "event": "APPROVE",
-                "body": "AI review approves this commit, see the `AI Review` comment.",
             },
             strict=True,
         )
@@ -391,7 +393,7 @@ def _run_codex_once(prompt, model):
         )
 
 
-def _run(prompt):
+def _run(prompt, flagged_sessions):
     """Run the Codex agent with retries, then post the review comment.
 
     Each attempt re-fetches secrets and re-runs the agent. The attempt counts
@@ -401,7 +403,6 @@ def _run(prompt):
     last_error = None
     model = MODEL
     review_model = model
-    flagged_sessions = []
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             review_model = model
@@ -459,8 +460,15 @@ def review():
 
     os.makedirs("./ci/tmp", exist_ok=True)
     prompt = _pre_review_prompt(info)
-    _run(prompt)
-    _update_approval(info)
+    flagged_sessions = []
+    try:
+        _run(prompt, flagged_sessions)
+    except Exception:
+        # A stopped session must not leave an earlier approval behind when the retries then fail.
+        if flagged_sessions:
+            _update_approval(info, cyber_risk_flagged=True)
+        raise
+    _update_approval(info, bool(flagged_sessions))
 
 
 if __name__ == "__main__":
