@@ -12,10 +12,12 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -69,17 +71,23 @@ bool hasColumns(const QueryPlan::Node & node, const NameSet & columns)
     return std::ranges::all_of(columns, [&](const String & column) { return header.has(column); });
 }
 
-bool filterReachesInputAbove(const QueryPlan::Node * node, NameSet columns, const QueryPlanOptimizationSettings & settings);
+bool isEstimatedAbove(QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings)
+{
+    auto rows = estimateReadRowsCount(node).estimated_rows;
+    return rows && *rows > settings.join_runtime_filter_min_probe_rows;
+}
 
-/// Whether a filter that reads `columns` of the output of the join at `node`, pushed down into one of its inputs, reaches
-/// an input estimated above `join_runtime_filter_min_probe_rows`.
+bool filterReachesInputAbove(QueryPlan::Node * node, NameSet columns, bool rows_known, const QueryPlanOptimizationSettings & settings);
+
+/// Whether a filter that reads `columns` of the output of the join at `node`, pushed down, is applied to an input estimated
+/// above `join_runtime_filter_min_probe_rows`. With `rows_known` the rows of the join were compared already.
 bool filterReachesJoinInputAbove(
-    const QueryPlan::Node & node, const JoinStepLogical & join, const NameSet & columns, const QueryPlanOptimizationSettings & settings)
+    QueryPlan::Node & node, const JoinStepLogical & join, const NameSet & columns, bool rows_known, const QueryPlanOptimizationSettings & settings)
 {
     const auto & join_operator = join.getJoinOperator();
     const auto kind = join_operator.kind;
     if (node.children.size() != 2 || (kind != JoinKind::Inner && kind != JoinKind::Left && kind != JoinKind::Right))
-        return false;
+        return !rows_known && isEstimatedAbove(node, settings);
 
     const bool is_semi = join_operator.strictness == JoinStrictness::Semi;
     const bool can_push_to_right = join_operator.strictness != JoinStrictness::Asof
@@ -121,9 +129,10 @@ bool filterReachesJoinInputAbove(
         return (keys_are_equal[0] && equal_keys[0].contains(column)) || (keys_are_equal[1] && equal_keys[1].contains(column));
     });
 
+    bool pushed_down = false;
     for (const size_t side : {0, 1})
     {
-        const auto & input = *node.children[side];
+        auto & input = *node.children[side];
         NameSet input_columns;
         if (gets_own_columns[side] && hasColumns(input, columns))
         {
@@ -139,13 +148,14 @@ bool filterReachesJoinInputAbove(
             continue;
         }
 
+        pushed_down = true;
         if (auto rows = join.getInputRowsEstimation(side == 0 ? JoinTableSide::Left : JoinTableSide::Right);
             rows && *rows > settings.join_runtime_filter_min_probe_rows)
             return true;
-        if (filterReachesInputAbove(&input, std::move(input_columns), settings))
+        if (filterReachesInputAbove(&input, std::move(input_columns), /*rows_known=*/ true, settings))
             return true;
     }
-    return false;
+    return !pushed_down && !rows_known && isEstimatedAbove(node, settings);
 }
 
 /// The columns of the input of the single-input step at `node` that a filter reading `columns` of its output reads once
@@ -238,25 +248,30 @@ std::optional<NameSet> getColumnsBelowStep(const QueryPlan::Node & node, NameSet
     return {};
 }
 
-/// Whether a filter that reads `columns` of the output of `node`, pushed down into `node`, reaches a join input
-/// estimated above `join_runtime_filter_min_probe_rows`.
-bool filterReachesInputAbove(const QueryPlan::Node * node, NameSet columns, const QueryPlanOptimizationSettings & settings)
+/// Whether a filter that reads `columns` of the output of `node`, pushed down into `node`, is applied to an input estimated
+/// above `join_runtime_filter_min_probe_rows`. With `rows_known` the rows of `node` were compared already, as those of the
+/// probe input or of a join input: below a step that changes the number of rows they have to be estimated where the
+/// filter stays.
+bool filterReachesInputAbove(QueryPlan::Node * node, NameSet columns, bool rows_known, const QueryPlanOptimizationSettings & settings)
 {
+    auto stays_above_node = [&] { return !rows_known && isEstimatedAbove(*node, settings); };
+
     while (true)
     {
         if (!hasColumns(*node, columns))
             return false;
 
         if (const auto * join = typeid_cast<const JoinStepLogical *>(node->step.get()))
-            return filterReachesJoinInputAbove(*node, *join, columns, settings);
+            return filterReachesJoinInputAbove(*node, *join, columns, rows_known, settings);
 
         /// A copy of the filter is pushed down to every input of a union, unless the union changes the structure of one.
         if (const auto * union_step = typeid_cast<const UnionStep *>(node->step.get()))
         {
             const auto & output = *union_step->getOutputHeader();
             if (!std::ranges::all_of(union_step->getInputHeaders(), [&](const auto & input) { return blocksHaveEqualStructure(*input, output); }))
-                return false;
-            return std::ranges::any_of(node->children, [&](const QueryPlan::Node * input) { return filterReachesInputAbove(input, columns, settings); });
+                return stays_above_node();
+            return std::ranges::any_of(
+                node->children, [&](QueryPlan::Node * input) { return filterReachesInputAbove(input, columns, rows_known, settings); });
         }
 
         /// The filter is pushed down to the first input, the others build sets.
@@ -267,11 +282,14 @@ bool filterReachesInputAbove(const QueryPlan::Node * node, NameSet columns, cons
         }
 
         if (node->children.size() != 1)
-            return false;
+            return stays_above_node();
 
         auto columns_below = getColumnsBelowStep(*node, std::move(columns), settings);
         if (!columns_below)
-            return false;
+            return stays_above_node();
+
+        const auto * transforming = dynamic_cast<const ITransformingStep *>(node->step.get());
+        rows_known = rows_known && transforming && transforming->getTransformTraits().preserves_number_of_rows;
         columns = std::move(*columns_below);
         node = node->children.front();
     }
@@ -309,7 +327,7 @@ bool runtimeFilterReachesInputAbove(
     return std::ranges::any_of(filter_keys, [&](const ActionsDAG::NodeRawConstPtrs & keys)
     {
         auto columns = getSourceColumns(keys);
-        return columns && filterReachesInputAbove(join_node.children[0], std::move(*columns), settings);
+        return columns && filterReachesInputAbove(join_node.children[0], std::move(*columns), /*rows_known=*/ true, settings);
     });
 }
 

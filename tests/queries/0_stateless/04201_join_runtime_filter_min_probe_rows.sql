@@ -47,19 +47,22 @@ FROM (EXPLAIN SELECT * FROM (SELECT 1 AS x) t1
       JOIN (SELECT 1 AS x) t4 ON t1.x = t4.x
       SETTINGS join_runtime_filter_min_probe_rows = 0);
 
--- A probe estimated at or below the limit still gets the filters when a key comes from a larger input of an inner
--- join below: the filter is pushed down to that input. Row estimates come from hints.
+-- A probe estimated at or below the limit still gets the filters when they are pushed down to a larger input below.
+-- Row estimates come from hints.
 DROP TABLE IF EXISTS key_path_p;
 DROP TABLE IF EXISTS key_path_b;
 DROP TABLE IF EXISTS key_path_s;
+DROP TABLE IF EXISTS key_path_a;
 
 CREATE TABLE key_path_p (x Int32, y Int32) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE key_path_b (x Int32, z Int32) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE key_path_s (y Int32, z Int32) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE key_path_a (k Int32, v Int32) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO key_path_p SELECT number, number FROM numbers(100);
 INSERT INTO key_path_b SELECT number, number FROM numbers(10);
 INSERT INTO key_path_s SELECT number, number FROM numbers(50);
+INSERT INTO key_path_a SELECT number % 10, number FROM numbers(100);
 
 SET use_statistics = 0;
 SET send_logs_level = 'error';
@@ -67,7 +70,8 @@ SET param__internal_join_table_stat_hints = '
 {
     "key_path_p": { "cardinality": 100000, "distinct_keys": { "x": 100000, "y": 100000 } },
     "key_path_b": { "cardinality": 10, "distinct_keys": { "x": 10, "z": 10 } },
-    "key_path_s": { "cardinality": 500, "distinct_keys": { "y": 500, "z": 500 } }
+    "key_path_s": { "cardinality": 500, "distinct_keys": { "y": 500, "z": 500 } },
+    "key_path_a": { "cardinality": 100000, "distinct_keys": { "k": 100 } }
 }';
 
 SELECT 'key from a larger input below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
@@ -133,9 +137,17 @@ SELECT 'array joined column' AS label, countIf(explain LIKE '%BuildRuntimeFilter
 FROM (EXPLAIN SELECT count() FROM (SELECT p.y AS y, arrayJoin([1, 2]) AS a FROM key_path_p p JOIN key_path_b b ON p.x = b.x) t
       JOIN key_path_s s ON t.a = s.y);
 
+-- Below a step that drops rows, the input the filter is applied to is estimated, here the table under the aggregation.
+SELECT 'aggregation of a larger table' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM (SELECT k, count() AS c FROM key_path_a GROUP BY k) t JOIN key_path_b b ON t.k = b.x);
+
+SELECT 'aggregation of a smaller table' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM (SELECT x, count() AS c FROM key_path_b GROUP BY x) t JOIN key_path_b b ON t.x = b.x);
+
 DROP TABLE small_probe;
 DROP TABLE large_probe;
 DROP TABLE build_side;
 DROP TABLE key_path_p;
 DROP TABLE key_path_b;
 DROP TABLE key_path_s;
+DROP TABLE key_path_a;

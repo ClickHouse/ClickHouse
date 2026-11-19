@@ -11630,7 +11630,7 @@ If the number of set bits in a runtime bloom filter exceeds this ratio the filte
         {"26.9", 0.7, 0.7, "The JOIN runtime filters became a Production tier feature."}, \
         {"26.1", 0.7, 0.7, "New setting"}) \
     DECLARE(UInt64, join_runtime_filter_min_probe_rows, 1000, R"(
-If, at query planning time, the probe side of a JOIN is estimated to produce no more than this number of rows, the JOIN runtime filter is not created. Building and applying a runtime filter for a tiny probe side costs more than it saves. The filter is still created when it is pushed down to an input of a JOIN below that is estimated above this number, because it is applied there. Set to 0 to always create the runtime filter regardless of the estimated probe size.
+If, at query planning time, the probe side of a JOIN is estimated to produce no more than this number of rows, the JOIN runtime filter is not created. Building and applying a runtime filter for a tiny probe side costs more than it saves. The filter is still created when it is pushed down to an input below that is estimated above this number, such as an input of a JOIN or the table read under an aggregation, because it is applied there. Set to 0 to always create the runtime filter regardless of the estimated probe size.
 )", 0, \
         {"26.9", 1000, 1000, "The JOIN runtime filters became a Production tier feature."}, \
         {"26.8", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."}) \

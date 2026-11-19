@@ -22,3 +22,5 @@ aggregation key	2
 aggregate	1
 column next to ARRAY JOIN	2
 array joined column	1
+aggregation of a larger table	1
+aggregation of a smaller table	0
