@@ -127,9 +127,9 @@ namespace DB
     };
 
     /// Built on first use: the `arrow::*()` factories would otherwise run in a static initializer.
-    static const std::vector<std::pair<String, std::shared_ptr<arrow::DataType>>> & internalTypeToArrowType()
+    static const VectorWithMemoryTracking<std::pair<String, std::shared_ptr<arrow::DataType>>> & internalTypeToArrowType()
     {
-        static const std::vector<std::pair<String, std::shared_ptr<arrow::DataType>>> internal_type_to_arrow_type =
+        static const VectorWithMemoryTracking<std::pair<String, std::shared_ptr<arrow::DataType>>> internal_type_to_arrow_type =
         {
             {"UInt8", arrow::uint8()},
             {"Int8", arrow::int8()},
