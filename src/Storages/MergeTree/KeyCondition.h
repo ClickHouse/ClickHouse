@@ -909,7 +909,6 @@ private:
         const Columns & set_columns,
         const DataTypes & set_types,
         SetAtomCandidate candidate,
-        bool allow_relaxed_pruning,
         const DataTypePtr & has_element_type);
 
     /// Maps the predicate expression whose values are tested for set membership (the left-hand side
@@ -1041,4 +1040,8 @@ private:
 /// cast to that type, when the two are compared in `comparison_type`. See the definition.
 bool floatValuesMissKeyValues(
     ColumnPtr column, DataTypePtr type, const DataTypePtr & key_expression_input_type, const DataTypePtr & comparison_type);
+
+/// Errors that must still fail the query when an index evaluates an expression on values the query did not ask about.
+bool isQueryOuterGuardError(int code);
+
 }

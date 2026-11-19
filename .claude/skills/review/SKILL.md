@@ -267,7 +267,10 @@ Focus on problems — do not describe what was checked and found to be fine. Use
 - Only include if there are surprising behaviors, unclear errors, or UX issues.
 
 **Final Verdict**
-- Status: **✅ Approve** / **⚠️ Request changes** / **❌ Block**
+- First line of the section, exactly one of these three lines, copied verbatim with no bold, list marker or other text on it:
+  `Status: ✅ Approve`
+  `Status: ⚠️ Request changes`
+  `Status: ❌ Block`
 - Approve only if there are no unresolved contract violations, no unresolved high-impact plausible risks, and no missing evidence for material claims. A `Performance Improvement` without performance evidence, or a `Bug Fix` without regression evidence or a clear exception, should be **⚠️ Request changes**. If not approving, list the **minimum** required actions.
 
 STYLE & CONDUCT
