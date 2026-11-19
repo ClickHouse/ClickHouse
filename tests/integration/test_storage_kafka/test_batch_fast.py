@@ -2585,7 +2585,7 @@ def test_kafka_no_holes_when_write_suffix_failed(
         # kafka_cluster.open_bash_shell('instance')
 
         instance.query(f"""
-            DROP TABLE test.{kafka_table}_consumer;
+            DROP TABLE test.{kafka_table}_consumer SYNC;
             DROP TABLE test.{kafka_table}_view SYNC;
             DROP USER {definer};
         """)
