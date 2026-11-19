@@ -21,6 +21,10 @@ CANNOT_EXTRACT_TABLE_STRUCTURE
 -- input_format_csv_skip_trailing_empty_lines
 3
 c1	Nullable(Int64)
+-- input_format_csv_allow_whitespace_or_tab_as_delimiter
+1
+c1	Nullable(String)
+c2	Nullable(String)
 -- input_format_tsv_crlf_end_of_line
 2
 CANNOT_EXTRACT_TABLE_STRUCTURE
