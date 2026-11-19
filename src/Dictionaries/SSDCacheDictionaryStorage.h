@@ -1265,6 +1265,12 @@ private:
                 temporary_values_pool.allocContinue(sizes_header_size, block_start);
                 allocated_size_for_columns += sizes_header_size;
             }
+            else
+            {
+                /// A record of size 0 marks the end of the block, so a record without columns takes one byte
+                *temporary_values_pool.allocContinue(1, block_start) = 0;
+                allocated_size_for_columns = 1;
+            }
 
             for (size_t column_index = 0; column_index < columns_to_serialize_size; ++column_index)
             {

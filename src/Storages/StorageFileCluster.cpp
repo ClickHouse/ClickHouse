@@ -103,8 +103,7 @@ namespace
 void checkWriteAccessIfFilesAreRenamed(const ContextPtr & context)
 {
     if (!context->getSettingsRef()[Setting::rename_files_after_processing].value.empty())
-        context->getAccess()->checkAccessWithFilter(
-            AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+        StorageFile::checkAccessForRenamingFiles(context);
 }
 
 }
@@ -193,7 +192,7 @@ RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
                 path_depends_on_server = path_depends_on_server || predicateUsesColumn(predicate, hive_column.name);
     }
     auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, path_depends_on_server ? nullptr : predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context,
-        /*distributed_processing_=*/ false, /*archive_member_path_=*/ String{}, user_files_volume);
+        /*distributed_processing_=*/ false, /*archive_member_path_=*/ String{}, /*format_settings_=*/ std::nullopt, user_files_volume);
     auto next_callback = [iter = std::move(iterator), volume = user_files_volume](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
     {
         auto file = iter->next();
