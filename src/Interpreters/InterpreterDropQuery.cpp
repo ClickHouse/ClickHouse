@@ -42,6 +42,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char drop_database_before_exclusive_ddl_lock[];
+    extern const char drop_database_holding_drop_lock[];
 }
 
 namespace Setting
@@ -662,6 +663,10 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             }
 
             prepare_tables(tables_to_prepare);
+
+            /// Allow tests to pause here: the tables are prepared for shutdown, and the lock that blocks
+            /// RENAME/EXCHANGE of their tables is still held.
+            FailPointInjection::pauseFailPoint(FailPoints::drop_database_holding_drop_lock);
 
             /// Sort tables in reverse dependency order (dependents first, then their dependencies).
             /// This way, if the server crashes mid-drop, the remaining tables will still have their
