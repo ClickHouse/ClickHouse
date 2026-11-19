@@ -25,8 +25,8 @@ public:
     /// Until at least `min_bytes` bytes and one more block, or the whole frame, are decompressed. Returns the total decompressed.
     size_t decompressAtLeast(size_t min_bytes);
 
-    bool inProgress() const;
-    size_t decompressedBytes() const;
+    [[nodiscard]] bool inProgress() const;
+    [[nodiscard]] size_t decompressedBytes() const;
 
     void relocateSource(const char * new_source);
 

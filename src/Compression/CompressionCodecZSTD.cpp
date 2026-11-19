@@ -175,7 +175,7 @@ void releaseDecompressionContext(ContextPools<ZstdDCtxPtr>::Holder & holder)
         --num_decompression_contexts;
     }
     else
-        holder.reset();
+        holder = nullptr;
 }
 
 }
