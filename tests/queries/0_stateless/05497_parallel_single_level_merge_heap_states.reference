@@ -1,0 +1,27 @@
+tables merged source by source
+uniqExact
+1
+groupArray, quantileExact and sum
+1
+-ForEach over uniqExact
+1
+string keys, short, long and empty
+1
+early limit
+ok
+tables merged partition by partition through their indexes
+uniqExact
+1
+uniqExact group large enough for the thread pool
+0	210000
+1	10000
+2	10000
+3	10000
+groupArray, quantileExact and sum
+1
+-ForEach over uniqExact
+1
+string keys, short, long and empty
+1
+early limit
+ok

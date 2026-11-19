@@ -88,33 +88,33 @@ public:
     virtual void deserialize(ReadBuffer & buf, StatisticsFileVersion version) = 0;
     /// Returns the exact number of bytes written by serialize(), if it can be computed
     /// without serializing into a temporary buffer.
-    virtual std::optional<UInt64> getSerializedSize() const { return std::nullopt; }
+    [[nodiscard]] virtual std::optional<UInt64> getSerializedSize() const { return std::nullopt; }
 
     /// Estimate the cardinality of the column.
     /// Throws if the statistics object is not able to do a meaningful estimation.
-    virtual UInt64 estimateCardinality() const;
+    [[nodiscard]] virtual UInt64 estimateCardinality() const;
 
     /// Per-value estimations.
     /// Returns std::nullopt when the statistics object cannot produce a meaningful estimate
     /// (e.g. the value cannot be converted to the column type).
-    virtual std::optional<Float64> estimateEqual(const Field & val) const; /// cardinality of val in the column
-    virtual std::optional<Float64> estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
-    virtual Float64 estimateRange(const Range & range) const;
-    virtual String getNameForLogs() const = 0;
+    [[nodiscard]] virtual std::optional<Float64> estimateEqual(const Field & val) const; /// cardinality of val in the column
+    [[nodiscard]] virtual std::optional<Float64> estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
+    [[nodiscard]] virtual Float64 estimateRange(const Range & range) const;
+    [[nodiscard]] virtual String getNameForLogs() const = 0;
 
     /// The approximate amount of memory retained by this object, including the object itself.
     /// It is the weight of the object in the statistics cache, so it must not be underestimated.
     /// It does not include the description of the statistics, see `descriptionAllocatedBytes`.
-    virtual size_t allocatedBytes() const = 0;
+    [[nodiscard]] virtual size_t allocatedBytes() const = 0;
 
     /// The memory retained by the description of the statistics (its AST), not including the object itself.
-    size_t descriptionAllocatedBytes() const { return stat.allocatedBytes(); }
+    [[nodiscard]] size_t descriptionAllocatedBytes() const { return stat.allocatedBytes(); }
 
     /// Returns true iff `other` can be safely merged into this statistics object.
     /// Incompatible state layouts (e.g. a Nullable vs non-Nullable column type change that
     /// shifts the aggregate-function state layout) should return false so that
     /// ColumnStatistics::structureEquals routes the part to a rebuild instead of a corrupt merge.
-    virtual bool isCompatibleWith(const IStatistics &) const { return true; }
+    [[nodiscard]] virtual bool isCompatibleWith(const IStatistics &) const { return true; }
 
     /// Makes this empty statistics object compatible with `other` (see `isCompatibleWith`), e.g. adopts
     /// the set of sub-statistics of `other` deserialized from an older format.
@@ -139,6 +139,13 @@ struct Estimate
     std::optional<Field> estimated_max;
     std::optional<UInt64> estimated_null_count;
     std::optional<UInt64> estimated_default_count;
+    std::optional<Field> estimated_sum;
+
+    /// False when `estimated_min` and `estimated_max` can miss some non-NULL values, see
+    /// `StatisticsBasic::minMaxCoversAllValues`.
+    bool min_max_covers_all_values = true;
+    /// False when `estimated_null_count` can miss some NULLs, see `StatisticsBasic::nullCountCoversAllRows`.
+    bool null_count_covers_all_rows = true;
 };
 
 using Estimates = std::unordered_map<String, Estimate>;
@@ -152,55 +159,57 @@ public:
 
     void serialize(WriteBuffer & buf) const;
     static std::shared_ptr<ColumnStatistics> deserialize(ReadBuffer & buf, const DataTypePtr & data_type);
-    /// `Basic` statistics built from the rows, bounds and NULL count of data that was not read.
+    /// `Basic` statistics built from the rows, bounds and NULL count of data that was not read; nullopt for an unknown
+    /// NULL count.
     static std::shared_ptr<ColumnStatistics> createBasicFromSummary(
-        const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count);
+        const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, std::optional<UInt64> null_count);
 
     void build(const ColumnPtr & column);
     void merge(const ColumnStatisticsPtr & other);
 
-    UInt64 getNumRows() const { return rows; }
+    [[nodiscard]] UInt64 getNumRows() const { return rows; }
     /// Total NULL rows for a Nullable column when `Basic` statistics are present; 0 otherwise.
     /// Callers should consult `hasNullCount` first.
-    UInt64 getNullCount() const;
+    [[nodiscard]] UInt64 getNullCount() const;
     /// Returns `rows - getNullCount()` when null-count tracking is available, else `rows`.
-    UInt64 getNonNullRowCount() const;
+    [[nodiscard]] UInt64 getNonNullRowCount() const;
     /// True iff null-count tracking is available for this column (e.g. via `Basic` on a Nullable column).
-    bool hasNullCount() const;
+    [[nodiscard]] bool hasNullCount() const;
     /// Average byte size of a non-NULL `String` or `FixedString` value when `Basic` statistics are present.
-    std::optional<Float64> getAvgStringBytes() const;
+    [[nodiscard]] std::optional<Float64> getAvgStringBytes() const;
     /// True iff loaded statistics include a source of numeric min/max values
     /// (`MinMax`, or `Basic` on a numeric/temporal column).
-    bool hasMinMax() const;
+    [[nodiscard]] bool hasMinMax() const;
+    [[nodiscard]] bool hasSum() const;
     /// True iff `estimateCardinality` is backed by a uniq sketch or set by `setCardinality`. When it is not, that method
     /// returns a fixed fraction of the row count, which callers dividing by the cardinality must not mistake for a
     /// measurement.
-    bool hasCardinality() const;
-    UInt64 estimateCardinality() const;
+    [[nodiscard]] bool hasCardinality() const;
+    [[nodiscard]] UInt64 estimateCardinality() const;
     /// Sets the number of distinct values `estimateCardinality` returns, known outside the statistics objects (from data
     /// lake metadata).
     void setCardinality(UInt64 value) { external_cardinality = value; }
-    UInt64 estimateDefaults() const;
+    [[nodiscard]] UInt64 estimateDefaults() const;
 
     /// `null_count / rows` when `Basic` statistics are present; otherwise a default factor.
-    Float64 estimateIsNull() const;
+    [[nodiscard]] Float64 estimateIsNull() const;
     /// `(rows - null_count) / rows` when `Basic` statistics are present; otherwise a default factor.
-    Float64 estimateIsNotNull() const;
+    [[nodiscard]] Float64 estimateIsNotNull() const;
 
-    std::optional<Float64> estimateLess(const Field & val) const;
-    std::optional<Float64> estimateGreater(const Field & val) const;
-    std::optional<Float64> estimateEqual(const Field & val) const;
-    std::optional<Float64> estimateRange(const Range & range) const;
+    [[nodiscard]] std::optional<Float64> estimateLess(const Field & val) const;
+    [[nodiscard]] std::optional<Float64> estimateGreater(const Field & val) const;
+    [[nodiscard]] std::optional<Float64> estimateEqual(const Field & val) const;
+    [[nodiscard]] std::optional<Float64> estimateRange(const Range & range) const;
 
-    Estimate getEstimate() const;
-    String getNameForLogs() const;
+    [[nodiscard]] Estimate getEstimate() const;
+    [[nodiscard]] String getNameForLogs() const;
     /// The approximate amount of memory retained by this object and its statistics objects.
-    size_t allocatedBytes() const;
-    DataTypePtr getDataType() const { return stats_desc.data_type; }
+    [[nodiscard]] size_t allocatedBytes() const;
+    [[nodiscard]] DataTypePtr getDataType() const { return stats_desc.data_type; }
 
-    const StatsMap & getStats() const { return stats; }
-    bool structureEquals(const ColumnStatistics & other) const;
-    std::shared_ptr<ColumnStatistics> cloneEmpty() const;
+    [[nodiscard]] const StatsMap & getStats() const { return stats; }
+    [[nodiscard]] bool structureEquals(const ColumnStatistics & other) const;
+    [[nodiscard]] std::shared_ptr<ColumnStatistics> cloneEmpty() const;
 
 private:
     friend class MergeTreeStatisticsFactory;
@@ -221,12 +230,12 @@ public:
     using Base::Base;
 
     explicit ColumnsStatistics(const ColumnsDescription & columns);
-    ColumnsStatistics cloneEmpty() const;
+    [[nodiscard]] ColumnsStatistics cloneEmpty() const;
 
     void build(const Block & block);
     void buildIfExists(const Block & block);
     void merge(const ColumnsStatistics & other);
-    Estimates getEstimates() const;
+    [[nodiscard]] Estimates getEstimates() const;
 };
 
 struct ColumnDescription;
@@ -242,18 +251,18 @@ public:
     /// only when the current CREATE/ALTER does not newly introduce `minmax`, so unrelated ALTERs of
     /// such old tables are not rejected.
     void validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type, bool allow_deprecated_minmax = false) const;
-    ColumnStatisticsDescription cloneWithSupportedStatistics(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
+    [[nodiscard]] ColumnStatisticsDescription cloneWithSupportedStatistics(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
 
     using Validator = std::function<bool(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
     using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
 
-    ColumnStatisticsPtr get(const ColumnDescription & column_desc) const;
-    ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats_desc) const;
-    ColumnStatisticsDescription::StatisticsTypeDescMap get(const std::vector<StatisticsType> & stat_types, const DataTypePtr & data_type) const;
+    [[nodiscard]] ColumnStatisticsPtr get(const ColumnDescription & column_desc) const;
+    [[nodiscard]] ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats_desc) const;
+    [[nodiscard]] ColumnStatisticsDescription::StatisticsTypeDescMap get(const std::vector<StatisticsType> & stat_types, const DataTypePtr & data_type) const;
     /// Create a single statistics object by type. Returns `nullptr` if the type is unknown
     /// or unsupported for `data_type`. Used by the V4 deserializer to instantiate statistics
     /// types one at a time (and to silently skip types the current build doesn't know about).
-    StatisticsPtr tryCreateSingle(StatisticsType type, const DataTypePtr & data_type) const;
+    [[nodiscard]] StatisticsPtr tryCreateSingle(StatisticsType type, const DataTypePtr & data_type) const;
 
     void registerValidator(StatisticsType type, Validator validator);
     void registerCreator(StatisticsType type, Creator creator);
@@ -277,6 +286,9 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
 /// every column type but leaves its min/max sub-statistics unpopulated
 /// (`StatisticsBasic::hasNumericMinMax`).
 bool canStatisticsTrackMinMax(const DataTypePtr & data_type);
+
+/// Whether `basic` statistics record the sum of a column of this type (integers and `Decimal`, exact in any order).
+bool canStatisticsTrackSum(const DataTypePtr & data_type);
 
 
 }
