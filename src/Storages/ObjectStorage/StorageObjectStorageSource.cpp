@@ -320,6 +320,26 @@ namespace
         return false;
     }
 
+    /// Whether a read of a `Web` object can be served by any of several URLs (failover options of its URL shard, or all
+    /// the URLs if the shard is not known). The metadata (`HEAD`) and the data (`GET`) are each taken from the first
+    /// reachable URL, which is not recorded, and a strong ETag identifies the content only within one resource: two
+    /// hosts can serve different bytes under the same ETag. So such a read has no identity for the page cache.
+    bool webObjectHasSeveralURLs(const RelativePathWithMetadata & object_info, const WebObjectStorage & web_object_storage)
+    {
+        const auto & url_shards = web_object_storage.getURLShards();
+        if (object_info.read_source_index)
+        {
+            if (*object_info.read_source_index >= url_shards.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid URL shard index: {}", *object_info.read_source_index);
+            return url_shards[*object_info.read_source_index].size() > 1;
+        }
+
+        size_t num_urls = 0;
+        for (const auto & urls : url_shards)
+            num_urls += urls.size();
+        return num_urls > 1;
+    }
+
     String getPageCachePathForObjectStorage(
         const RelativePathWithMetadata & object_info, const ObjectStoragePtr & object_storage, const String & credentials_identity)
     {
@@ -2518,6 +2538,13 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     bool use_page_cache = allow_page_cache && !reads_explicit_object_version && !use_filesystem_cache
         && effective_read_settings.page_cache_settings.cache && effective_read_settings.use_page_cache_for_object_storage
         && (!use_distributed_cache || effective_read_settings.use_page_cache_with_distributed_cache);
+
+    if (use_page_cache && object_storage->getType() == ObjectStorageType::Web
+        && webObjectHasSeveralURLs(object_info, assert_cast<const WebObjectStorage &>(*object_storage)))
+    {
+        LOG_DEBUG(log, "Cannot use page cache, the object can be read from several URLs (failover)");
+        use_page_cache = false;
+    }
 
     /// We need object metadata for a few use cases:
     /// 1. object size suggests whether we need to use prefetch
