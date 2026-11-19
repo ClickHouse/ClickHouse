@@ -2130,13 +2130,31 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// keeps only the needed columns (see below), and a column it does not consume would pass through it.
         if (!schema_changed && object_info->data_lake_metadata && object_info->data_lake_metadata->additional_file_columns)
         {
+            /// A requested subcolumn (e.g. `_change_type.size`) needs its column in storage: the schema transform
+            /// extracts the subcolumn from it.
+            auto is_column_or_subcolumn = [&](const String & required_name, const String & column_name)
+            {
+                return required_name == column_name || required_name.starts_with(column_name + ".");
+            };
+            auto is_needed_by_filter = [&](const ActionsDAG & dag, const String & column_name)
+            {
+                for (const auto & required : dag.getRequiredColumns())
+                {
+                    if (is_column_or_subcolumn(required.name, column_name))
+                        return true;
+                }
+                return false;
+            };
             auto is_needed = [&](const String & column_name)
             {
-                if (read_from_format_info.requested_columns.contains(column_name))
+                for (const auto & requested : read_from_format_info.requested_columns)
+                {
+                    if (requested.getNameInStorage() == column_name || is_column_or_subcolumn(requested.name, column_name))
+                        return true;
+                }
+                if (stripped_row_level_filter && is_needed_by_filter(stripped_row_level_filter->actions, column_name))
                     return true;
-                if (stripped_row_level_filter && stripped_row_level_filter->actions.getRequiredColumns().contains(column_name))
-                    return true;
-                return stripped_prewhere_info && stripped_prewhere_info->prewhere_actions.getRequiredColumns().contains(column_name);
+                return stripped_prewhere_info && is_needed_by_filter(stripped_prewhere_info->prewhere_actions, column_name);
             };
             bool header_extended = false;
             for (const auto & column : *object_info->data_lake_metadata->additional_file_columns)
