@@ -1152,6 +1152,92 @@ TEST(Statistics, DeserializeV1MinMaxDropsBounds)
     }
 }
 
+/// Older versions rewrote the `Float64` bounds of `minmax` of `V1` unchanged in `V4`. Such bounds of an integer or
+/// decimal column cannot be written with the serialization of the column type, so the statistics are dropped
+/// when read, while the bounds of the type of the column are kept.
+TEST(Statistics, DeserializeV4BoundsOfAnotherType)
+{
+    tryRegisterAggregateFunctions();
+
+    auto make_v4_file = [](const String & type_name, StatisticsType type, const Field & min, const Field & max)
+    {
+        String payload;
+        {
+            WriteBufferFromString buf(payload);
+            writeIntBinary(static_cast<UInt64>(2), buf); /// row_count
+            if (type == StatisticsType::MinMax)
+            {
+                writeStringBinary(type_name, buf);
+            }
+            else
+            {
+                writeIntBinary(static_cast<UInt8>(1), buf); /// `BasicFeatureMask::NumericMinMax`
+            }
+            writeFieldBinary(min, buf);
+            writeFieldBinary(max, buf);
+            buf.finalize();
+        }
+
+        String file;
+        WriteBufferFromString buf(file);
+        writeIntBinary(static_cast<UInt16>(4), buf); /// StatisticsFileVersion::V4
+        writeIntBinary(static_cast<UInt64>(1ULL << static_cast<UInt8>(type)), buf);
+        writeStringBinary(type_name, buf);
+        writeIntBinary(static_cast<UInt64>(2), buf); /// rows
+        writeIntBinary(static_cast<UInt64>(payload.size()), buf);
+        writeString(payload, buf);
+        buf.finalize();
+        return file;
+    };
+
+    struct Case
+    {
+        const char * type_name;
+        Field min;
+        Field max;
+        bool kept;
+    };
+
+    const std::vector<Case> cases{
+        {"UInt64", Field(1.0), Field(2.0), false},
+        {"Int32", Field(-1.0), Field(2.0), false},
+        {"Decimal64(2)", Field(1.25), Field(2.75), false},
+        {"UInt64", Field(UInt64(1)), Field(UInt64(2)), true},
+        {"Int64", Field(UInt64(1)), Field(UInt64(2)), true},
+        {"Float64", Field(1.25), Field(2.75), true},
+        {"Decimal64(2)", Field(DecimalField<Decimal64>(125, 2)), Field(DecimalField<Decimal64>(275, 2)), true},
+    };
+
+    for (const auto & test_case : cases)
+    {
+        auto data_type = DataTypeFactory::instance().get(test_case.type_name);
+        for (auto type : {StatisticsType::MinMax, StatisticsType::Basic})
+        {
+            ReadBufferFromString rb(make_v4_file(data_type->getName(), type, test_case.min, test_case.max));
+            auto loaded = ColumnStatistics::deserialize(rb, data_type);
+            ASSERT_TRUE(loaded != nullptr);
+            EXPECT_EQ(loaded->getStats().contains(type), test_case.kept) << test_case.type_name << " " << statisticsTypeToString(type);
+
+            /// A merge writes the statistics again.
+            for (auto version : {StatisticsFileVersion::V4, StatisticsFileVersion::V5})
+            {
+                WriteBufferFromOwnString rewritten;
+                loaded->serialize(rewritten, version);
+                ReadBufferFromString rewritten_rb(rewritten.str());
+                auto restored = ColumnStatistics::deserialize(rewritten_rb, data_type);
+                ASSERT_TRUE(restored != nullptr);
+                EXPECT_EQ(restored->getStats().contains(type), test_case.kept) << test_case.type_name;
+                if (test_case.kept)
+                {
+                    auto estimate = restored->getEstimate();
+                    ASSERT_TRUE(estimate.estimated_min.has_value()) << test_case.type_name;
+                    ASSERT_TRUE(estimate.estimated_max.has_value()) << test_case.type_name;
+                }
+            }
+        }
+    }
+}
+
 #if USE_DATASKETCHES
 
 TEST(Statistics, CountMinSketchRoundTrip)

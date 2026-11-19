@@ -144,6 +144,21 @@ UInt64 StatisticsUtils::getSerializedBoundsSize(const Field & min, const Field &
     return sizeof(UInt8) + (min.isNull() ? 0 : value_size) + (max.isNull() ? 0 : value_size);
 }
 
+bool StatisticsUtils::isBoundOfType(const Field & bound, const IDataType & data_type)
+{
+    if (bound.isNull())
+        return true;
+
+    /// The same as `Field::safeGet` used by the serialization: `Bool`, `UInt64` and `Int64` are interchangeable.
+    auto is_integer = [](Field::Types::Which which)
+    {
+        return which == Field::Types::Bool || which == Field::Types::UInt64 || which == Field::Types::Int64;
+    };
+    const auto expected = data_type.getDefault().getType();
+    const auto actual = bound.getType();
+    return actual == expected || (is_integer(actual) && is_integer(expected));
+}
+
 std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & data_type)
 {
     if (!data_type->isValueRepresentedByNumber())
@@ -645,6 +660,30 @@ Estimate ColumnStatistics::getEstimate() const
     return info;
 }
 
+namespace
+{
+
+/// Drop the statistics that were read but cannot be used, see `IStatistics::isUnusable`.
+void dropUnusableStatistics(ColumnStatistics::StatsMap & stats, ColumnStatisticsDescription & stats_desc)
+{
+    for (auto it = stats.begin(); it != stats.end();)
+    {
+        if (it->second->isUnusable())
+        {
+            LOG_TRACE(
+                getLogger("ColumnStatistics"),
+                "Dropping {} statistics read from a file, they will be built again by a merge",
+                statisticsTypeToString(it->first));
+            stats_desc.types_to_desc.erase(it->first);
+            it = stats.erase(it);
+        }
+        else
+            ++it;
+    }
+}
+
+}
+
 void ColumnStatistics::serialize(WriteBuffer & buf, StatisticsFileVersion version) const
 {
     if (version != StatisticsFileVersion::V4 && version != StatisticsFileVersion::V5)
@@ -820,6 +859,7 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
             }
         }
 
+        dropUnusableStatistics(result->stats, result->stats_desc);
         return result;
     }
 
@@ -838,15 +878,7 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     for (const auto & [_, desc] : result->stats)
         desc->deserialize(buf, version);
 
-    /// `minmax` of `V1` has inexact `Float64` bounds, which may not contain all values of the column, and which cannot
-    /// be written again with the serialization of the column type. Drop the statistics: a merge builds them from the rows.
-    if (auto it = result->stats.find(StatisticsType::MinMax); it != result->stats.end()
-        && assert_cast<const StatisticsMinMax &>(*it->second).hasLegacyBounds())
-    {
-        result->stats.erase(it);
-        result->stats_desc.types_to_desc.erase(StatisticsType::MinMax);
-    }
-
+    dropUnusableStatistics(result->stats, result->stats_desc);
     return result;
 }
 

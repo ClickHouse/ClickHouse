@@ -318,6 +318,9 @@ void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion versio
         {
             min = readFieldBinary(buf);
             max = readFieldBinary(buf);
+            /// The bounds of the `Field` encoding have to be written again with the serialization of the column type.
+            if (tracks_numeric && (!StatisticsUtils::isBoundOfType(min, *data_type) || !StatisticsUtils::isBoundOfType(max, *data_type)))
+                is_unusable = true;
         }
         else if (tracks_numeric)
         {

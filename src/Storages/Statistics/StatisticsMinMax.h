@@ -25,9 +25,10 @@ public:
     [[nodiscard]] const Field & getMin() const { return min; }
     [[nodiscard]] const Field & getMax() const { return max; }
 
-    /// Whether the statistics were read from a file of `V1`, which stored inexact `Float64` bounds. Such
-    /// statistics have to be dropped: they are not exact, and they cannot be written in the current format.
-    [[nodiscard]] bool hasLegacyBounds() const { return has_legacy_bounds; }
+    /// The statistics read from a file have to be dropped when their bounds are not exact (`V1` stored them as
+    /// `Float64`), or have a type other than the one of the values of the column (e.g. the `Float64` bounds of
+    /// `V1`, which older versions rewrote unchanged in `V4`), or when they were built for another column type.
+    [[nodiscard]] bool isUnusable() const override { return is_unusable; }
 
     [[nodiscard]] std::optional<Float64> estimateLess(const Field & val) const override;
     [[nodiscard]] String getNameForLogs() const override;
@@ -41,7 +42,7 @@ private:
     /// `data_type` without `LowCardinality`: the type of the values `min` and `max`, serialized with it.
     DataTypePtr value_type;
 
-    bool has_legacy_bounds = false;
+    bool is_unusable = false;
 };
 
 bool minMaxStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);

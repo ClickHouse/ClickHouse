@@ -87,6 +87,10 @@ struct StatisticsUtils
     static void deserializeBounds(Field & min, Field & max, const IDataType & data_type, ReadBuffer & buf);
     /// The number of bytes written by `serializeBounds`: the values of these types have a fixed size.
     static UInt64 getSerializedBoundsSize(const Field & min, const Field & max, const IDataType & data_type);
+    /// Whether `bound` (`NULL` or not) can be written by `serializeBounds` with `data_type`: the type of the `Field`
+    /// is the one of the values of `data_type`. The bounds read from the `Field` encoding of `V2` - `V4` may have
+    /// another type: e.g. the `Float64` bounds of `V1`, which older versions rewrote unchanged in `V4`.
+    static bool isBoundOfType(const Field & bound, const IDataType & data_type);
 };
 
 class IStatistics;
@@ -111,6 +115,10 @@ public:
     /// Returns the exact number of bytes written by `serialize`, if it can be computed
     /// without serializing into a temporary buffer.
     [[nodiscard]] virtual std::optional<UInt64> getSerializedSize(StatisticsFileVersion /*version*/) const { return std::nullopt; }
+
+    /// Whether the statistics read from a file cannot be used and have to be dropped (a merge builds them from the
+    /// rows again): e.g. bounds that are not exact, or that cannot be written with the serialization of the column type.
+    [[nodiscard]] virtual bool isUnusable() const { return false; }
 
     /// Estimate the cardinality of the column.
     /// Throws if the statistics object is not able to do a meaningful estimation.

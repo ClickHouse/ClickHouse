@@ -90,7 +90,7 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion versi
         Float64 max_val = 0;
         readFloatBinary(min_val, buf);
         readFloatBinary(max_val, buf);
-        has_legacy_bounds = true;
+        is_unusable = true;
         return;
     }
 
@@ -105,10 +105,21 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion versi
     readStringBinary(stored_type_name, buf);
     if (stored_type_name != data_type->getName())
     {
+        /// Built for another column type: without the bounds, the statistics would exclude the values of this part.
+        is_unusable = true;
         return;
     }
     min = readFieldBinary(buf);
     max = readFieldBinary(buf);
+
+    /// Older versions rewrote the `Float64` bounds of `V1` unchanged in `V2` - `V4`. Such bounds are not exact,
+    /// and they cannot be written with the serialization of the column type.
+    if (!StatisticsUtils::isBoundOfType(min, *value_type) || !StatisticsUtils::isBoundOfType(max, *value_type))
+    {
+        min = Field();
+        max = Field();
+        is_unusable = true;
+    }
 }
 
 std::optional<Float64> StatisticsMinMax::estimateLess(const Field & val) const
