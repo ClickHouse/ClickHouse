@@ -1598,6 +1598,9 @@ namespace
     void Call::finishQuery()
     {
         finalize = true;
+        /// A cancelled call is finished as a success, and an executor that never started has not cancelled the pipeline.
+        if (cancelled)
+            io.pipeline.cancel();
         io.onFinish();
         addProgressToResult();
         query_scope->logPeakMemoryUsage();
