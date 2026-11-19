@@ -353,7 +353,6 @@ MERGE_QUEUE_SPECIAL_BUILD_TYPES = (
     BuildTypes.AMD_ILLUMOS,
     BuildTypes.PPC64LE,
     BuildTypes.AMD_COMPAT,
-    BuildTypes.AMD_MUSL,
     BuildTypes.RISCV64,
     BuildTypes.S390X,
     BuildTypes.LOONGARCH64,
@@ -692,11 +691,6 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_COMPAT,
             provides=[ArtifactNames.CH_AMD_COMPAT],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
-        ),
-        Job.ParamSet(
-            parameter=BuildTypes.AMD_MUSL,
-            provides=[ArtifactNames.CH_AMD_MUSL],
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
@@ -1730,6 +1724,21 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="arm_binary, AsyncInsert, s3 storage, sequential",
+            runs_on=RunnerLabels.ARM_SMALL,
+            requires=[ArtifactNames.CH_ARM_BINARY],
+        ),
+    )
+    # The `ParallelReplicas` configuration with `parallel_replicas_plan_based` enabled. Not a coverage
+    # replacement: no coverage job runs it, so `ci-coverage` does not skip it (`ci-llvm-coverage`
+    # skips it like every other non-coverage job).
+    functional_tests_arm_binary_plan_based_parallel_replicas_jobs = common_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="arm_binary, ParallelReplicas, plan-based, s3 storage, parallel",
+            runs_on=RunnerLabels.ARM_MEDIUM,
+            requires=[ArtifactNames.CH_ARM_BINARY],
+        ),
+        Job.ParamSet(
+            parameter="arm_binary, ParallelReplicas, plan-based, s3 storage, sequential",
             runs_on=RunnerLabels.ARM_SMALL,
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),

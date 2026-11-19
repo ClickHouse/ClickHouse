@@ -69,6 +69,7 @@
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataFilesCache.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Storages/StreamingStorageRegistry.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
@@ -372,6 +373,7 @@ namespace Setting
     extern const SettingsUInt64 hsts_max_age;
     extern const SettingsString local_filesystem_read_method;
     extern const SettingsBool local_filesystem_read_prefetch;
+    extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_backup_bandwidth;
     extern const SettingsUInt64 max_local_read_bandwidth;
     extern const SettingsUInt64 max_local_write_bandwidth;
@@ -5960,12 +5962,27 @@ VectorSimilarityIndexCachePtr Context::getVectorSimilarityIndexCache() const
     return shared->vector_similarity_index_cache;
 }
 
-void Context::clearVectorSimilarityIndexCache() const
+void Context::clearVectorSimilarityIndexCache(const StorageID & table_id) const
 {
-    std::lock_guard lock(shared->mutex);
+    if (table_id)
+    {
+        auto table = DatabaseCatalog::instance().getTable(table_id, shared_from_this());
 
-    if (shared->vector_similarity_index_cache)
-        shared->vector_similarity_index_cache->clear();
+        auto table_lock = table->lockForShare(getCurrentQueryId(), getSettingsRef()[Setting::lock_acquire_timeout]);
+
+        auto merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load);
+
+        /// Only `MergeTree` tables can have vector similarity indexes, so there is nothing to clear for other tables.
+        if (merge_tree)
+            merge_tree->clearVectorSimilarityIndexCache();
+    }
+    else
+    {
+        std::lock_guard lock(shared->mutex);
+
+        if (shared->vector_similarity_index_cache)
+            shared->vector_similarity_index_cache->clear();
+    }
 }
 
 void Context::setTextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
