@@ -4,8 +4,6 @@
 [259,32,259,32,259]
 -- pairs merge in the order of the list of merges, not in the order of the ids
 [259]	[256,110,97]
--- the text is normalized to NFC first, so both forms of the same text give the same ids
-1
 -- an added token is found in the text and is one id, but a special token is text
 [272,259]	<tool>banana
 [60,124,101,110,100,124,62]

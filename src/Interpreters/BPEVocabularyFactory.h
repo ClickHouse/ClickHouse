@@ -22,7 +22,8 @@ namespace DB
   *         </cl100k_base>
   *     </bpe_vocabularies>
   *
-  * `vocabulary` holds the same content inline instead. A loaded vocabulary is shared by the queries
+  * `vocabulary` holds the same content inline instead. `<format>huggingface</format>` reads a Hugging Face
+  * `tokenizer.json` instead of a `.tiktoken` file, and is declared without a `pretokenizer`. A loaded vocabulary is shared by the queries
   * that name it, and is reloaded when its file or its inline content changes.
   */
 class BPEVocabularyFactory
@@ -38,6 +39,7 @@ private:
         /// Empty for a vocabulary written out in the configuration.
         String path;
         BPEPretokenizer pretokenizer = BPEPretokenizer::Cl100k;
+        bool huggingface = false;
         /// Of the file, or of the inline content, so that a changed vocabulary is picked up.
         UInt64 modification_time = 0;
         UInt64 size = 0;

@@ -524,6 +524,20 @@ UInt32 BPEVocabulary::rankOf(std::string_view piece) const
     return it == nullptr ? no_rank : it->getMapped();
 }
 
+UInt32 BPEVocabulary::pairRank(std::string_view left, std::string_view right) const
+{
+    chassert(left.data() + left.size() == right.data());
+    if (merge_ranks.empty())
+        return rankOf(std::string_view(left.data(), left.size() + right.size()));
+
+    const UInt32 left_id = rankOf(left);
+    const UInt32 right_id = rankOf(right);
+    if (left_id == no_rank || right_id == no_rank)
+        return no_rank;
+    const auto * it = merge_ranks.find((UInt64{left_id} << 32U) | right_id);
+    return it == nullptr ? no_rank : it->getMapped();
+}
+
 void BPEVocabulary::encodePiece(std::string_view piece, PaddedPODArray<UInt32> & result) const
 {
     /// A short piece, which is what ordinary text is made of, is merged the way `tiktoken` merges:
@@ -540,23 +554,24 @@ void BPEVocabulary::encodePiece(std::string_view piece, PaddedPODArray<UInt32> &
             UInt32 rank;
         };
 
-        /// A piece of a single byte is a token, so it never gets here.
-        chassert(piece.size() >= 2);
         const size_t size = piece.size();
+        if (size == 1)
+        {
+            result.push_back(rankOf(piece));
+            return;
+        }
+
         std::array<Part, max_short_piece + 1> parts{};
         size_t count = size + 1;
         for (size_t i = 0; i + 1 < size; ++i)
-            parts[i] = {static_cast<UInt32>(i), rankOf(piece.substr(i, 2))};
+            parts[i] = {static_cast<UInt32>(i), pairRank(piece.substr(i, 1), piece.substr(i + 1, 1))};
         parts[size - 1] = {static_cast<UInt32>(size - 1), no_rank};
         parts[size] = {static_cast<UInt32>(size), no_rank};
 
-        /// The rank of the merge of part `i` with the two parts after it, taken before the second of
-        /// the three is removed.
-        const auto rank_after_merge = [&](size_t i) -> UInt32
+        /// The rank of the pair of `piece[begin, middle)` and `piece[middle, end)`.
+        const auto rank_of_pair = [&](size_t begin, size_t middle, size_t end)
         {
-            if (i + 3 >= count)
-                return no_rank;
-            return rankOf(piece.substr(parts[i].start, parts[i + 3].start - parts[i].start));
+            return pairRank(piece.substr(begin, middle - begin), piece.substr(middle, end - middle));
         };
 
         while (true)
@@ -574,9 +589,15 @@ void BPEVocabulary::encodePiece(std::string_view piece, PaddedPODArray<UInt32> &
             if (min_rank == no_rank)
                 break;
 
+            /// Part `min_index` absorbs the one after it. Taken before that one is removed, the pair
+            /// before the merged part ends at `parts[min_index + 2]`, and the pair it starts ends at
+            /// `parts[min_index + 3]`, if there is such a part.
             if (min_index > 0)
-                parts[min_index - 1].rank = rank_after_merge(min_index - 1);
-            parts[min_index].rank = rank_after_merge(min_index);
+                parts[min_index - 1].rank
+                    = rank_of_pair(parts[min_index - 1].start, parts[min_index].start, parts[min_index + 2].start);
+            parts[min_index].rank = min_index + 3 < count
+                ? rank_of_pair(parts[min_index].start, parts[min_index + 2].start, parts[min_index + 3].start)
+                : no_rank;
             std::copy(parts.begin() + min_index + 2, parts.begin() + count, parts.begin() + min_index + 1);
             --count;
         }
@@ -616,7 +637,7 @@ void BPEVocabulary::encodePiece(std::string_view piece, PaddedPODArray<UInt32> &
         const size_t after = next[i];
         if (after >= size)
             return no_rank;
-        return rankOf(piece.substr(i, next[after] - i));
+        return pairRank(piece.substr(i, after - i), piece.substr(after, next[after] - after));
     };
 
     const auto offer = [&](size_t i)
@@ -661,6 +682,34 @@ void BPEVocabulary::encodePiece(std::string_view piece, PaddedPODArray<UInt32> &
 
 void BPEVocabulary::encode(std::string_view text, PaddedPODArray<UInt32> & result) const
 {
+    if (!has_added_tokens)
+    {
+        encodeText(text, result);
+        return;
+    }
+
+    /// As `tokenizers` does it: the added tokens are found first, the longest one at the leftmost
+    /// position, and the text between them is encoded.
+    size_t gap_start = 0;
+    for (size_t pos = 0; pos < text.size();)
+    {
+        const auto & candidates = added_tokens[static_cast<UInt8>(text[pos])];
+        const auto it = std::ranges::find_if(candidates, [&](const auto & token) { return text.substr(pos).starts_with(token.first); });
+        if (it == candidates.end())
+        {
+            ++pos;
+            continue;
+        }
+        encodeText(text.substr(gap_start, pos - gap_start), result);
+        result.push_back(it->second);
+        pos += it->first.size();
+        gap_start = pos;
+    }
+    encodeText(text.substr(gap_start), result);
+}
+
+void BPEVocabulary::encodeText(std::string_view text, PaddedPODArray<UInt32> & result) const
+{
     size_t pos = 0;
     while (pos < text.size())
     {
@@ -668,7 +717,7 @@ void BPEVocabulary::encode(std::string_view text, PaddedPODArray<UInt32> & resul
         const std::string_view piece = text.substr(pos, length);
 
         /// Most pieces of ordinary text are a token in their own right.
-        if (const UInt32 rank = rankOf(piece); rank != no_rank)
+        if (const UInt32 rank = take_whole_tokens ? rankOf(piece) : no_rank; rank != no_rank)
             result.push_back(rank);
         else
             encodePiece(piece, result);

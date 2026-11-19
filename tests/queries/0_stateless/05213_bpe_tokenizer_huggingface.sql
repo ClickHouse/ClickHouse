@@ -1,5 +1,5 @@
 -- Tags: no-fasttest
--- Tag no-fasttest: the pre-tokenizer patterns need the Unicode character categories of ICU
+-- Tag no-fasttest: the pre-tokenizers need the Unicode character categories of ICU
 
 -- The vocabulary named here is declared in tests/config/config.d/bpe_vocabularies.xml as a Hugging Face
 -- `tokenizer.json`. The expected ids are the ones the `tokenizers` library gives for the same file.
@@ -11,9 +11,6 @@ SELECT tokenizeBPE('banana banana banana', 'example_huggingface_vocabulary');
 
 SELECT '-- pairs merge in the order of the list of merges, not in the order of the ids';
 SELECT tokenizeBPE('banana', 'example_huggingface_vocabulary'), tokenizeBPE('anna', 'example_huggingface_vocabulary');
-
-SELECT '-- the text is normalized to NFC first, so both forms of the same text give the same ids';
-SELECT tokenizeBPE('caf' || char(0xC3, 0xA9), 'example_huggingface_vocabulary') = tokenizeBPE('cafe' || char(0xCC, 0x81), 'example_huggingface_vocabulary');
 
 SELECT '-- an added token is found in the text and is one id, but a special token is text';
 SELECT tokenizeBPE('<tool>banana', 'example_huggingface_vocabulary') AS ids, detokenizeBPE(ids, 'example_huggingface_vocabulary');
