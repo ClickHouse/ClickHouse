@@ -114,8 +114,14 @@ bool isPartitionKeyFunctionOfKeys(
     return allOutputsDependsOnlyOnAllowedNodes(partition_key_outputs, irreducible_nodes, matches);
 }
 
-bool isPartitionKeyFunctionOfKeys(const KeyDescription & partition_key, const ActionsDAG & key_actions, const Names & key_names)
+bool isPartitionKeyFunctionOfKeys(
+    const KeyDescription & partition_key, const ActionsDAG & key_actions, const Names & key_names, const ContextPtr & context)
 {
+    /// The parts are split by the stored partition values, not by the values the session computes.
+    const auto session_dependent = getKeySubexpressionsWithSessionDependentValues(*partition_key.expression, context);
+    if (std::ranges::any_of(partition_key.column_names, [&](const auto & name) { return session_dependent.contains(name); }))
+        return false;
+
     const auto & partition_actions = partition_key.expression->getActionsDAG();
     /// The DAG may output both partition key columns and source columns. For example, with
     /// `PARTITION BY toYYYYMM(date)`, its outputs can be `[toYYYYMM(date), date]`. Only `toYYYYMM(date)`
@@ -178,7 +184,8 @@ void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &,
 
     if (!reading->willOutputEachPartitionThroughSeparatePort()
         && isPartitionKeyFunctionOfKeys(
-            reading->getStorageMetadata()->getPartitionKey(), expression_step->getExpression(), aggregating_step->getParams().keys))
+            reading->getStorageMetadata()->getPartitionKey(), expression_step->getExpression(), aggregating_step->getParams().keys,
+            reading->getContext()))
     {
         if (reading->requestOutputEachPartitionThroughSeparatePortForAggregation())
             aggregating_step->skipMerging();
@@ -204,7 +211,8 @@ void optimizeLimitByPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, con
         return;
 
     if (!reading->willOutputEachPartitionThroughSeparatePort()
-        && isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, limit_by_step->getColumns()))
+        && isPartitionKeyFunctionOfKeys(
+            reading->getStorageMetadata()->getPartitionKey(), *dag, limit_by_step->getColumns(), reading->getContext()))
     {
         if (reading->requestOutputEachPartitionThroughSeparatePortForLimitBy())
             limit_by_step->skipStreamMerging();
@@ -241,7 +249,7 @@ void optimizeDistinctPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, co
     const Names keys = distinct_step->getColumnNames().empty() ? distinct_step->getInputHeaders().front()->getNames()
                                                                : distinct_step->getColumnNames();
     if (!reading->willOutputEachPartitionThroughSeparatePort()
-        && isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, keys))
+        && isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, keys, reading->getContext()))
     {
         reading->requestOutputEachPartitionThroughSeparatePortForDistinct();
     }
@@ -286,7 +294,7 @@ void optimizeWindowPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, cons
         return;
 
     if (!reading->willOutputEachPartitionThroughSeparatePort()
-        && isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, key_names))
+        && isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, key_names, reading->getContext()))
     {
         reading->requestOutputEachPartitionThroughSeparatePortForWindow();
     }
@@ -320,7 +328,7 @@ void optimizeCreatingSetPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &,
         return;
 
     if (!reading->willOutputEachPartitionThroughSeparatePort()
-        && isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, key_names))
+        && isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, key_names, reading->getContext()))
     {
         reading->requestOutputEachPartitionThroughSeparatePortForCreatingSet();
     }

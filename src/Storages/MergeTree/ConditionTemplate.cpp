@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -45,10 +46,11 @@ void fillPartitionConstantsSubstitution(
     const auto key_outputs = key_dag.findInOutputs(partition_key.column_names);
     const auto matches = matchTrees(key_outputs, predicate_dag, /*check_monotonicity=*/false);
     const auto partition_constants = std::views::zip(key_outputs, partition.value) | std::ranges::to<std::unordered_map<const ActionsDAG::Node *, Field>>();
+    const auto session_dependent = getKeySubexpressionsWithSessionDependentValues(*partition_key.expression, context);
 
     for (const auto & [node, match] : matches)
     {
-        if (!match.node || match.monotonicity)
+        if (!match.node || match.monotonicity || session_dependent.contains(match.node->result_name))
             continue;
 
         const auto it = partition_constants.find(match.node);

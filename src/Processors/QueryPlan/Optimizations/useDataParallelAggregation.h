@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -29,7 +30,9 @@ namespace QueryPlanOptimizations
 ///     `a % 4 = 0` but land in partitions `0` and `4`).
 ///
 /// Shared by the per-partition request passes (`optimize*PerPartition`) and `applyStreamDisjointness`.
-bool isPartitionKeyFunctionOfKeys(const KeyDescription & partition_key, const ActionsDAG & key_actions, const Names & key_names);
+/// False when the session computes the partition key differently from the stored partition values (`context`).
+bool isPartitionKeyFunctionOfKeys(
+    const KeyDescription & partition_key, const ActionsDAG & key_actions, const Names & key_names, const ContextPtr & context);
 
 /// Returns whether the selected outputs of `partition_actions` are determined by `key_names`.
 /// Other outputs of `partition_actions` need not be part of the partition key.

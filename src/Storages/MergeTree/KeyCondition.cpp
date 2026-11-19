@@ -1861,9 +1861,17 @@ KeyCondition::KeyCondition(
         return;
     }
 
+    /// An atom over a key column the session computes differently from its stored values stays FUNCTION_UNKNOWN.
+    auto key_subexpr_names = getAllSubexpressionNames(*key_expr_);
+    for (const auto & name : getKeySubexpressionsWithSessionDependentValues(*key_expr_, context))
+    {
+        key_subexpr_names.erase(name);
+        key_columns.erase(name);
+    }
+
     auto info = BuildInfo {
         .key_expr = key_expr_,
-        .key_subexpr_names = getAllSubexpressionNames(*key_expr_),
+        .key_subexpr_names = std::move(key_subexpr_names),
         .columns_named_like_key_expressions = getColumnsNamedLikeKeyExpressions(filter_dag, *key_expr_),
         .require_ready_sets = require_ready_sets_};
 
