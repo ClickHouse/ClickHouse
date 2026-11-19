@@ -1115,8 +1115,9 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
     }
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
-    /// Read all consumers in parallel, as Kafka and RabbitMQ do: with `parallel_view_processing = 0` the pipeline has one thread, and
-    /// sources that share the flush deadline would run one after another, the later ones finding it already spent.
+    /// Read all consumers in parallel when CPU slots are available, as Kafka and RabbitMQ do.
+    /// Each NATSSource measures its flush deadline from when its own read begins in generateImpl,
+    /// so consumers also make progress when concurrency control limits available slots.
     block_io.pipeline.setNumThreads(std::max(block_io.pipeline.getNumThreads(), num_created_consumers.load()));
 
     {
