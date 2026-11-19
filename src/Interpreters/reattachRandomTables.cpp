@@ -1,6 +1,7 @@
 #include <Interpreters/reattachRandomTables.h>
 
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/CurrentThread.h>
@@ -11,12 +12,14 @@
 #include <Access/ContextAccess.h>
 #include <Core/Settings.h>
 #include <Databases/IDatabase.h>
+#include <Disks/IDisk.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageMaterializedView.h>
@@ -33,6 +36,12 @@ namespace ErrorCodes
 {
     extern const int DEADLOCK_AVOIDED;
     extern const int TABLE_IS_DROPPED;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char reattach_tables_throw_after_detach[];
 }
 
 namespace Setting
@@ -136,6 +145,9 @@ bool canBeReattached(const StoragePtr & table, const std::unordered_set<const IS
 /// so require the grants for both.
 /// `ATTACH` also requires `TABLE ENGINE` on the engine from the metadata (see `InterpreterCreateQuery`),
 /// so read the metadata as `ATTACH` does, which works for a table which is not loaded yet as well.
+/// The engine may take its configuration from a named collection, which requires `NAMED COLLECTION`
+/// on it (see `tryGetNamedCollectionWithOverrides`). The collection is referred to by the first argument of the engine
+/// if it is an identifier, so require the grant on such a name, even if the engine does not use named collections.
 /// A table defined with a table function is not reattached at all.
 bool isGrantedToReattach(const DatabasePtr & database, const String & table_name, const ContextPtr & context, const ContextPtr & query_context)
 {
@@ -158,8 +170,19 @@ bool isGrantedToReattach(const DatabasePtr & database, const String & table_name
     if (create.as_table_function)
         return false;
 
-    if (create.storage && create.storage->engine && !access->isGranted(AccessType::TABLE_ENGINE, create.storage->engine->name))
-        return false;
+    if (create.storage && create.storage->engine)
+    {
+        const auto & engine = *create.storage->engine;
+        if (!access->isGranted(AccessType::TABLE_ENGINE, engine.name))
+            return false;
+
+        if (engine.arguments && !engine.arguments->children.empty())
+        {
+            if (const auto * identifier = engine.arguments->children.front()->as<ASTIdentifier>();
+                identifier && !access->isGranted(AccessType::NAMED_COLLECTION, identifier->name()))
+                return false;
+        }
+    }
 
     return true;
 }
@@ -233,15 +256,27 @@ void reattachTables(const DatabasePtr & database, const std::vector<String> & ta
 
         const String quoted_name = backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name);
 
-        /// A failed `DETACH` leaves the table as it was (e.g. it was dropped concurrently), so skip it.
+        /// A `DETACH` which failed before removing the table from the database (e.g. it was dropped concurrently)
+        /// leaves the table as it was, so skip it. But `DETACH ... SYNC` removes the table first and then waits
+        /// until it is no longer in use, and the wait can be cancelled. Then the table is detached already
+        /// and must be attached back.
         try
         {
             executeInternal("DETACH TABLE " + quoted_name + " SYNC", context, query_context);
+            fiu_do_on(FailPoints::reattach_tables_throw_after_detach,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after detaching table {}", quoted_name);
+            });
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Cannot detach table " + quoted_name + ", skipping it", LogsLevel::information);
-            continue;
+            /// The metadata of a detached table stays in the database, the metadata of a dropped table does not.
+            if (database->isTableExist(table_name, context) || !database->getDisk()->existsFile(database->getObjectMetadataPath(table_name)))
+            {
+                tryLogCurrentException(log, "Cannot detach table " + quoted_name + ", skipping it", LogsLevel::information);
+                continue;
+            }
+            tryLogCurrentException(log, "Detaching table " + quoted_name + " failed after it was detached, attaching it back", LogsLevel::information);
         }
 
         /// A failed `ATTACH` after a successful `DETACH` is what we are looking for, so let it fail the query.
