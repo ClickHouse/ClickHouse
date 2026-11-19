@@ -81,9 +81,10 @@ namespace
     class DDLDependencyVisitorData
     {
         friend void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data);
+        friend void visitWithExecutionDatabase(const ASTPtr & ast, DDLDependencyVisitorData & data);
     public:
-        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_, bool validate_current_database_, size_t max_expanded_ast_elements_, const String & engine_arguments_database_, std::optional<bool> enable_global_with_statement_ = {})
-            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), engine_arguments_database(engine_arguments_database_), global_context(global_context_), can_throw(can_throw_), validate_current_database(validate_current_database_), max_expanded_ast_elements(max_expanded_ast_elements_), enable_global_with_statement(enable_global_with_statement_)
+        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_, bool validate_current_database_, size_t max_expanded_ast_elements_, const String & execution_database_, std::optional<bool> enable_global_with_statement_ = {})
+            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), execution_database(execution_database_), global_context(global_context_), can_throw(can_throw_), validate_current_database(validate_current_database_), max_expanded_ast_elements(max_expanded_ast_elements_), enable_global_with_statement(enable_global_with_statement_)
         {
         }
 
@@ -144,7 +145,7 @@ namespace
         QualifiedTableName table_name;
         String default_database;
         String current_database;
-        String engine_arguments_database;
+        String execution_database;
         ContextPtr global_context;
         TableNamesSet dependencies;
         bool can_throw;
@@ -280,6 +281,17 @@ namespace
                     skip_asts.insert(create.select);
             }
 
+            /// The column expressions and the table engine with all of its arguments, including the nested function calls
+            /// (e.g. `dictGet` in the sharding key of `Distributed`), are evaluated in the context of a query,
+            /// so an unqualified name in them is resolved against `execution_database`. They are visited here,
+            /// and skipped by the traversal of the create query, which cannot restore `current_database` after a subtree.
+            if (create.columns_list)
+                visitWithExecutionDatabase(create.columns_list->ptr(), *this);
+            if (create.storage)
+                visitWithExecutionDatabase(create.storage->ptr(), *this);
+            /// The engines of the inner target tables of a materialized view or a `TimeSeries` table.
+            if (create.targets)
+                visitWithExecutionDatabase(create.targets->ptr(), *this);
         }
 
         /// The definition of a dictionary: SOURCE(CLICKHOUSE(...)) LAYOUT(...) LIFETIME(...)
@@ -547,13 +559,9 @@ namespace
         }
 
         /// Finds dependencies of a table engine.
+        /// The table engine is visited with `current_database` set to `execution_database`, see `visitCreateQuery`.
         void visitTableEngine(const ASTFunction & table_engine)
         {
-            /// The arguments of the engine are resolved against the database the storage factory evaluates them with.
-            String current_database_ = current_database;
-            current_database = engine_arguments_database;
-            SCOPE_EXIT({ current_database = current_database_; });
-
             /// Dictionary(db_name.dictionary_name)
             if (table_engine.name == "Dictionary")
                 addQualifiedNameFromArgument(table_engine, 0);
@@ -869,6 +877,17 @@ namespace
         static void visit(const ASTPtr & ast, Data & data) { data.visit(ast); }
     };
 
+    void visitWithExecutionDatabase(const ASTPtr & ast, DDLDependencyVisitorData & data)
+    {
+        String current_database = data.current_database;
+        data.current_database = data.execution_database;
+        SCOPE_EXIT({ data.current_database = current_database; });
+
+        DDLDependencyVisitor::Visitor visitor{data};
+        visitor.visit(ast);
+        data.skip_asts.insert(ast.get());
+    }
+
     void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data)
     {
         try
@@ -895,9 +914,9 @@ namespace
 }
 
 
-CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw, bool validate_current_database, size_t max_expanded_ast_elements, const std::optional<String> & engine_arguments_database, std::optional<bool> enable_global_with_statement)
+CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw, bool validate_current_database, size_t max_expanded_ast_elements, const std::optional<String> & execution_database, std::optional<bool> enable_global_with_statement)
 {
-    DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw, validate_current_database, max_expanded_ast_elements, engine_arguments_database.value_or(current_database), enable_global_with_statement};
+    DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw, validate_current_database, max_expanded_ast_elements, execution_database.value_or(current_database), enable_global_with_statement};
     data.collectNonTableReferences(ast);
     DDLDependencyVisitor::Visitor visitor{data};
     visitor.visit(ast);

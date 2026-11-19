@@ -19,11 +19,11 @@ using TableNamesSet = std::unordered_set<QualifiedTableName>;
 /// Returns a list of all tables which should be loaded before a specified table.
 /// For example, a local ClickHouse table should be loaded before a dictionary which uses that table as its source.
 /// Does not validate AST, works a best-effort way.
-/// `current_database` is the database against which the unqualified table names of the CREATE query
-/// have to be resolved: the current database of the query for a freshly executed CREATE, or the
-/// database owning the table for the metadata loaded at startup.
-/// `engine_arguments_database` is the database the arguments of the table engine are resolved against, `current_database` if not set.
-TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, const String & current_database, bool can_throw = false, const std::optional<String> & engine_arguments_database = {});
+/// The visitor looks only at the expressions which are evaluated in the context of a query: the column expressions
+/// (`DEFAULT`, constraints, ...) and the arguments of the table engine. An unqualified table name in them is resolved
+/// against `execution_database` (the current database of the query which creates or alters the table), or against
+/// `current_database` if it is not set (e.g. for the metadata loaded at startup).
+TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, const String & current_database, bool can_throw = false, const std::optional<String> & execution_database = {});
 
 
 class DDLMatcherBase
@@ -42,10 +42,8 @@ public:
     struct Data
     {
         String default_database;
-        /// The database against which the unqualified table names of the CREATE query are resolved.
+        /// The database against which the unqualified table names are resolved.
         String current_database;
-        /// The database against which the arguments of the table engine are resolved.
-        String engine_arguments_database;
         TableNamesSet dependencies;
         ContextPtr global_context;
         ASTPtr create_query;

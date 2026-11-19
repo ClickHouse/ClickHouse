@@ -135,7 +135,7 @@ namespace
         /// What the query reads in this session, so that the common table expressions it inherits are not tables.
         auto referenced_tables = getDependenciesFromCreateQuery(
             context, /*table_name=*/{}, select_copy, /*current_database=*/"", /*can_throw=*/false, /*validate_current_database=*/true,
-            /*max_expanded_ast_elements=*/0, /*engine_arguments_database=*/{}, context->getSettingsRef()[Setting::enable_global_with_statement]).dependencies;
+            /*max_expanded_ast_elements=*/0, /*execution_database=*/{}, context->getSettingsRef()[Setting::enable_global_with_statement]).dependencies;
         return referenced_tables.contains(view_id.getQualifiedName());
     }
 

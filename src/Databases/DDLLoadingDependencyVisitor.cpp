@@ -16,7 +16,6 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Poco/String.h>
-#include <base/scope_guard.h>
 
 
 namespace DB
@@ -24,13 +23,12 @@ namespace DB
 
 using TableLoadingDependenciesVisitor = DDLLoadingDependencyVisitor::Visitor;
 
-TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, const String & current_database, bool can_throw, const std::optional<String> & engine_arguments_database)
+TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, const String & current_database, bool can_throw, const std::optional<String> & execution_database)
 {
     chassert(global_context == global_context->getGlobalContext());
     TableLoadingDependenciesVisitor::Data data;
     data.default_database = global_context->getCurrentDatabase();
-    data.current_database = current_database;
-    data.engine_arguments_database = engine_arguments_database.value_or(current_database);
+    data.current_database = execution_database.value_or(current_database);
     data.create_query = ast;
     data.global_context = global_context;
     data.table_name = table;
@@ -147,11 +145,6 @@ void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
     if (!storage.engine)
         return;
 
-    /// The arguments of the engine are resolved against the database the storage factory evaluates them with.
-    String current_database = data.current_database;
-    data.current_database = data.engine_arguments_database;
-    SCOPE_EXIT({ data.current_database = current_database; });
-
     if (storage.engine->name == "Distributed")
         /// Checks that dict* expression was used as sharding_key and builds dependency between the dictionary and current table.
         /// Distributed(logs, default, hits[, sharding_key[, policy_name]])
@@ -238,8 +231,7 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
 
     if (qualified_name.database.empty())
     {
-        /// It can be table/dictionary from the database against which the unqualified names of this
-        /// CREATE query (or of the table engine arguments, see `visit(const ASTStorage &)`) are resolved,
+        /// It can be table/dictionary from the database against which the unqualified names are resolved,
         /// or an XML dictionary, but we cannot distinguish it here.
         qualified_name.database = data.current_database;
     }

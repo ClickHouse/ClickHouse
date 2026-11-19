@@ -988,7 +988,7 @@ std::optional<DatabaseCatalog::RecomputedDependencies> DatabaseCatalog::getDepen
     auto self_reference_dependencies = is_ordinary_view
         ? getDependenciesFromCreateQuery(
               global_context, name_to_erase, ast, new_name.database, /*can_throw*/ false, /*validate_current_database*/ false,
-              /*max_expanded_ast_elements*/ 0, /*engine_arguments_database*/ {}, /*enable_global_with_statement*/ true).dependencies
+              /*max_expanded_ast_elements*/ 0, /*execution_database*/ {}, /*enable_global_with_statement*/ true).dependencies
         : TableNamesSet{};
 
     if (is_ordinary_view && self_reference_dependencies.contains(new_name))

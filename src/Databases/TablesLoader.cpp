@@ -4,6 +4,7 @@
 #include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -169,8 +170,16 @@ void TablesLoader::buildDependencyGraph()
 {
     for (const auto & [table_name, table_metadata] : metadata.parsed_tables)
     {
-        auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast, global_context->getCurrentDatabase(), /*can_throw*/ false, /*validate_current_database*/ false);
-        auto new_loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast, global_context->getCurrentDatabase());
+        /// An unqualified name in the query of a view is resolved against the database owning the view, as on the `ALTER` path
+        /// and in the graph of the plain views (`DatabaseOrdinary::loadTableFromMetadataAsync`). The column expressions and
+        /// the arguments of the table engine are evaluated in the context of a query, which is unknown here, so they are
+        /// resolved against the default database of the server, as are the names in the definition of a dictionary.
+        const String default_database = global_context->getCurrentDatabase();
+        const bool is_dictionary = table_metadata.ast->as<const ASTCreateQuery &>().is_dictionary;
+        auto new_ref_dependencies = getDependenciesFromCreateQuery(
+            global_context, table_name, table_metadata.ast, is_dictionary ? default_database : table_name.database, /*can_throw*/ false,
+            /*validate_current_database*/ false, /*max_expanded_ast_elements*/ 0, /*execution_database*/ default_database);
+        auto new_loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast, default_database);
 
         if (!new_ref_dependencies.dependencies.empty())
             referential_dependencies.addDependencies(table_name, new_ref_dependencies.dependencies);
