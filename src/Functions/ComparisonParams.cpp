@@ -22,6 +22,8 @@ ComparisonParams::ComparisonParams(const ContextPtr & context)
     , format_settings_hash(getFormatSettingsHash(context->getSettingsRef()))
 {
     format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
+    /// An input format setting: with it, `enum_column = 'name'` would read `'name'` as a number.
+    format_settings.tsv.enum_as_number = false;
 }
 
 void ComparisonParams::updateHash(SipHash & hash) const
