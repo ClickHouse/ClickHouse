@@ -129,9 +129,13 @@ String sendTaskBatch(const String & endpoint_uri, const String & unique_query_id
     }
 }
 
-/// Get task status by its id.
-/// If wait_for_ms is set, the function will wait for the task to finish for the specified amount of time.
-DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const String & task_id, UInt32 wait_for_ms, const ContextPtr & context, bool for_cleanup)
+namespace
+{
+
+/// Sends `operation` with the task ids in the body. A teardown request is sent although the query can already be killed.
+std::unique_ptr<ReadWriteBufferFromHTTP> sendTaskIds(const String & endpoint_uri, const String & operation, const Strings & task_ids,
+    std::optional<UInt32> wait_for_ms, const ConnectionTimeouts & timeouts, const ReadSettings & read_settings, bool for_teardown,
+    const ContextPtr & context)
 {
     auto credentials = context->getInterserverCredentials();
     Poco::Net::HTTPBasicCredentials creds{};
@@ -141,13 +145,34 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
         creds.setPassword(String(credentials->getPassword()));
     }
 
+    Poco::URI uri(endpoint_uri);
+    uri.addQueryParameter("operation", operation);
+    uri.addQueryParameter("compress", "false");
+    if (wait_for_ms)
+        uri.addQueryParameter("wait_for_ms", std::to_string(*wait_for_ms));
+
+    auto builder = BuilderRWBufferFromHTTP(uri);
+    builder.withConnectionGroup(HTTPConnectionGroupType::HTTP)
+        .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+        .withTimeouts(timeouts)
+        .withSettings(read_settings)
+        .withOutCallback([&task_ids](WriteBuffer & out) { writeTaskIds(task_ids, out); })
+        .withDelayInit(false);
+    if (for_teardown)
+        builder.withoutQueryCancellationCheck();
+    return builder.create(creds);
+}
+
+}
+
+std::vector<DistributedQueryTaskStatusEntry> getTaskStatuses(const String & endpoint_uri, const Strings & task_ids, UInt32 wait_for_ms,
+    const ContextPtr & context, bool for_cleanup)
+{
     ConnectionTimeouts timeouts;
     timeouts.connection_timeout = Poco::Timespan(100 * 1000);
     ReadSettings read_settings;
     if (for_cleanup)
     {
-        /// Bound a best-effort cleanup poll: the receive timeout only needs to cover the worker's
-        /// server-side wait plus a small network margin, and a failed poll must not retry.
         timeouts.send_timeout = Poco::Timespan(2 * 1000 * 1000);
         timeouts.receive_timeout = Poco::Timespan((wait_for_ms + 2000) * 1000);
         read_settings.http_settings.max_tries = 1;
@@ -162,45 +187,17 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
         read_settings.http_settings.retry_max_backoff_ms = 1000;
     }
 
-    Poco::URI uri(endpoint_uri);
-    uri.addQueryParameter("operation",   "get_status");
-    uri.addQueryParameter("compress",    "false");
-    uri.addQueryParameter("task_id",     task_id);
-    uri.addQueryParameter("wait_for_ms", std::to_string(wait_for_ms));
-
-    auto builder = BuilderRWBufferFromHTTP(uri);
-    builder.withConnectionGroup(HTTPConnectionGroupType::HTTP)
-        .withMethod(Poco::Net::HTTPRequest::HTTP_GET)
-        .withTimeouts(timeouts)
-        .withSettings(read_settings)
-        .withDelayInit(false);
-    /// A cleanup poll belongs to the teardown of a query that can already be killed.
-    if (for_cleanup)
-        builder.withoutQueryCancellationCheck();
-    auto in = builder.create(creds);
-
-    DistributedQueryTaskStatus result;
-    result.read(*in, DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS);
-    /// Nothing may follow the end tag.
+    auto in = sendTaskIds(endpoint_uri, "get_statuses", task_ids, wait_for_ms, timeouts, read_settings, for_cleanup, context);
+    auto entries = readTaskStatuses(*in);
     if (!in->eof())
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Unexpected trailing data in stateless worker task status response for task {}", task_id);
-
-    return result;
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected trailing data in a stateless worker statuses response");
+    if (entries.size() != task_ids.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "A stateless worker returned {} statuses for {} tasks", entries.size(), task_ids.size());
+    return entries;
 }
 
-void cancelTask(const String & endpoint_uri, const String & task_id, const ContextPtr & context)
+void cancelTasks(const String & endpoint_uri, const Strings & task_ids, const ContextPtr & context)
 {
-    auto credentials = context->getInterserverCredentials();
-    Poco::Net::HTTPBasicCredentials creds{};
-    if (!credentials->getUser().empty())
-    {
-        creds.setUsername(credentials->getUser());
-        creds.setPassword(String(credentials->getPassword()));
-    }
-
-    /// Short timeouts for cancel — it's best-effort. Workers will
-    /// eventually clean up orphaned tasks on their own.
     ConnectionTimeouts timeouts;
     timeouts.connection_timeout = Poco::Timespan(100 * 1000);
     timeouts.send_timeout = Poco::Timespan(5 * 1000 * 1000);
@@ -211,35 +208,12 @@ void cancelTask(const String & endpoint_uri, const String & task_id, const Conte
     read_settings.http_settings.retry_initial_backoff_ms = 200;
     read_settings.http_settings.retry_max_backoff_ms = 1000;
 
-    Poco::URI uri(endpoint_uri);
-    uri.addQueryParameter("operation",   "cancel");
-    uri.addQueryParameter("compress",    "false");
-    uri.addQueryParameter("task_id",     task_id);
-
-    /// Sent although the query can already be killed: the worker must still stop the task.
-    auto in = BuilderRWBufferFromHTTP(uri)
-        .withConnectionGroup(HTTPConnectionGroupType::HTTP)
-        .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
-        .withTimeouts(timeouts)
-        .withSettings(read_settings)
-        .withDelayInit(false)
-        .withoutQueryCancellationCheck()
-        .create(creds);
-
-    std::string s;
-    readStringUntilEOF(s, *in);
+    auto in = sendTaskIds(endpoint_uri, "cancel_tasks", task_ids, {}, timeouts, read_settings, /*for_teardown=*/ true, context);
+    in->ignoreAll();
 }
 
-void forgetTask(const String & endpoint_uri, const String & task_id, const ContextPtr & context)
+void forgetTasks(const String & endpoint_uri, const Strings & task_ids, const ContextPtr & context)
 {
-    auto credentials = context->getInterserverCredentials();
-    Poco::Net::HTTPBasicCredentials creds{};
-    if (!credentials->getUser().empty())
-    {
-        creds.setUsername(credentials->getUser());
-        creds.setPassword(String(credentials->getPassword()));
-    }
-
     ConnectionTimeouts timeouts;
     timeouts.connection_timeout = Poco::Timespan(100 * 1000);
     timeouts.send_timeout = Poco::Timespan(100 * 1000 * 1000);
@@ -250,22 +224,8 @@ void forgetTask(const String & endpoint_uri, const String & task_id, const Conte
     read_settings.http_settings.retry_initial_backoff_ms = 200;
     read_settings.http_settings.retry_max_backoff_ms = 1000;
 
-    Poco::URI uri(endpoint_uri);
-    uri.addQueryParameter("operation",   "forget");
-    uri.addQueryParameter("compress",    "false");
-    uri.addQueryParameter("task_id",     task_id);
-
-    auto in = BuilderRWBufferFromHTTP(uri)
-        .withConnectionGroup(HTTPConnectionGroupType::HTTP)
-        .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
-        .withTimeouts(timeouts)
-        .withSettings(read_settings)
-        .withDelayInit(false)
-        .withoutQueryCancellationCheck()
-        .create(creds);
-
-    std::string s;
-    readStringUntilEOF(s, *in);
+    auto in = sendTaskIds(endpoint_uri, "forget_tasks", task_ids, {}, timeouts, read_settings, /*for_teardown=*/ true, context);
+    in->ignoreAll();
 }
 
 }

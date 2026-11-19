@@ -10,6 +10,7 @@
 #include <base/defines.h>
 
 #include <atomic>
+#include <condition_variable>
 #include <deque>
 #include <future>
 #include <memory>
@@ -17,6 +18,7 @@
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace DB
 {
@@ -77,9 +79,14 @@ public:
     /// Returns false, having started nothing, for a query new on this worker when `max_queries` queries run already.
     bool startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors);
     TaskStatus getStatus(const String & task_id, UInt64 wait_milliseconds);
+    /// Waits up to `wait_milliseconds` until one of the tasks ends or reports a failure that an earlier reply did not carry,
+    /// then returns the status of each, in order.
+    std::vector<TaskStatus> getStatuses(const Strings & task_ids, UInt64 wait_milliseconds);
     /// Remembers an unknown id: the coordinator sends the starts of a stage concurrently, so a cancel can overtake a start.
     Result cancelTask(const String & task_id);
+    void cancelTasks(const Strings & task_ids);
     Result forgetTask(const String & task_id);
+    void forgetTasks(const Strings & task_ids);
 
     void shutdown();
 
@@ -147,6 +154,18 @@ private:
 
     using TaskStatePtr = std::shared_ptr<TaskState>;
 
+    /// The status of a task now; `completion_future` is the caller's copy, since one future object is not shared by threads.
+    static TaskStatus currentStatus(const TaskState & task_state, const std::shared_future<std::optional<TaskFailure>> & completion_future);
+
+    /// Wakes `getStatuses` when a task reports its failure or ends. Shared with the tasks, which can end after `shutdown`.
+    struct StatusChanges
+    {
+        std::mutex mutex;
+        std::condition_variable changed;
+
+        void notify();
+    };
+
     /// The query context and the rest of what a task needs besides its description.
     struct TaskSetup;
 
@@ -173,6 +192,7 @@ private:
     std::unordered_set<String> cancelled_before_start TSA_GUARDED_BY(tasks_mutex);
     std::deque<String> cancelled_before_start_order TSA_GUARDED_BY(tasks_mutex);
     std::unordered_map<String, WorkerQueryControllerPtr> query_controllers TSA_GUARDED_BY(tasks_mutex);
+    std::shared_ptr<StatusChanges> status_changes = std::make_shared<StatusChanges>();
     std::mutex tasks_mutex;
 };
 

@@ -4,6 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/LimitReadBuffer.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Formats/NativeReader.h>
@@ -187,6 +188,67 @@ TaskLogsPayload readTaskLogsPayload(ReadBuffer & in)
 
     result.rows = readNativeBlock(in);
     return result;
+}
+
+namespace
+{
+
+/// More than any query has tasks on one worker; bounds what a malformed body makes the reader allocate.
+constexpr UInt64 MAX_TASK_IDS_IN_REQUEST = 100000;
+
+UInt64 readTaskCount(ReadBuffer & in)
+{
+    UInt64 count = 0;
+    readVarUInt(count, in);
+    if (count > MAX_TASK_IDS_IN_REQUEST)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many tasks in a stateless worker request: {}", count);
+    return count;
+}
+
+}
+
+void writeTaskIds(const Strings & task_ids, WriteBuffer & out)
+{
+    writeVarUInt(task_ids.size(), out);
+    for (const auto & task_id : task_ids)
+        writeStringBinary(task_id, out);
+}
+
+Strings readTaskIds(ReadBuffer & in)
+{
+    Strings task_ids(readTaskCount(in));
+    for (auto & task_id : task_ids)
+        readStringBinary(task_id, in);
+    return task_ids;
+}
+
+void writeTaskStatuses(const std::vector<DistributedQueryTaskStatusEntry> & entries, WriteBuffer & out)
+{
+    writeVarUInt(entries.size(), out);
+    for (const auto & entry : entries)
+    {
+        writeStringBinary(entry.task_id, out);
+        WriteBufferFromOwnString status;
+        entry.status.write(status, entry.collectors);
+        status.finalize();
+        writeStringBinary(status.str(), out);
+    }
+}
+
+std::vector<DistributedQueryTaskStatusEntry> readTaskStatuses(ReadBuffer & in)
+{
+    std::vector<DistributedQueryTaskStatusEntry> entries(readTaskCount(in));
+    for (auto & entry : entries)
+    {
+        readStringBinary(entry.task_id, in);
+        String status;
+        readStringBinary(status, in);
+        ReadBufferFromString status_in(status);
+        entry.status.read(status_in, DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS);
+        if (!status_in.eof())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected trailing data in the status of stateless worker task {}", entry.task_id);
+    }
+    return entries;
 }
 
 }

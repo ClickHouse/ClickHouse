@@ -378,9 +378,84 @@ void deserializeTaskBatch(DistributedQueryTaskBatch & batch, ReadBuffer & in)
     }
 }
 
+namespace
+{
+
+/// The reply for one task; false when the executor returned a result that is no task status.
+bool makeTaskStatusReply(StatelessTaskExecutor::TaskStatus status, DistributedQueryTaskStatus & reply)
+{
+    reply.progress = std::move(status.progress);
+    reply.logs = std::move(status.logs);
+    switch (status.result)
+    {
+        case StatelessTaskExecutor::TaskRunnig:
+            reply.status = "Running";
+            return true;
+        case StatelessTaskExecutor::TaskFailing:
+            reply.status = "Failing";
+            reply.error_message = status.message;
+            reply.error_code = status.error_code;
+            return true;
+        case StatelessTaskExecutor::TaskFinished:
+            reply.status = "Finished";
+            return true;
+        case StatelessTaskExecutor::TaskCancelled:
+            reply.status = "Cancelled";
+            return true;
+        case StatelessTaskExecutor::TaskFailed:
+            reply.status = "Failed";
+            reply.error_message = status.message;
+            reply.error_code = status.error_code;
+            return true;
+        case StatelessTaskExecutor::UnknownTaskId:
+            /// A gone task is a normal status answer, not a transport error: it has already finished and been reclaimed, or
+            /// was never started. The coordinator treats "Unknown task" as terminal.
+            reply.status = "Unknown task";
+            return true;
+        default:
+            reply.status = fmt::format("Unexpected task status: {}", static_cast<int>(status.result));
+            return false;
+    }
+}
+
+}
+
 void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response)
 {
     auto operation = params.get("operation");
+    if (operation == "get_statuses" || operation == "cancel_tasks" || operation == "forget_tasks")
+    {
+        Strings task_ids = readTaskIds(*body);
+        /// Read the rest of the body, otherwise the keep-alive connection is closed.
+        body->ignoreAll();
+        body.reset();
+
+        if (operation == "cancel_tasks")
+        {
+            task_runner->cancelTasks(task_ids);
+            return;
+        }
+        if (operation == "forget_tasks")
+        {
+            task_runner->forgetTasks(task_ids);
+            return;
+        }
+
+        UInt64 wait_milliseconds = 0;
+        if (params.has("wait_for_ms"))
+            wait_milliseconds = parse<UInt64>(params.get("wait_for_ms"));
+        auto statuses = task_runner->getStatuses(task_ids, wait_milliseconds);
+        std::vector<DistributedQueryTaskStatusEntry> entries(statuses.size());
+        for (size_t i = 0; i < statuses.size(); ++i)
+        {
+            entries[i].task_id = task_ids[i];
+            entries[i].collectors = statuses[i].collectors;
+            makeTaskStatusReply(std::move(statuses[i]), entries[i].status);
+        }
+        writeTaskStatuses(entries, out);
+        return;
+    }
+
     if (operation == "start_tasks")
     {
         auto unique_query_id = params.get("query_id");
@@ -442,63 +517,11 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
         body.reset();
 
         auto status = task_runner->getStatus(task_id, wait_milliseconds);
+        const TaskCollectors collectors = status.collectors;
         DistributedQueryTaskStatus task_status;
-        task_status.progress = std::move(status.progress);
-        task_status.logs = std::move(status.logs);
-
-        switch (status.result)
-        {
-            case StatelessTaskExecutor::TaskRunnig:
-            {
-                response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-                task_status.status = "Running";
-                break;
-            }
-            case StatelessTaskExecutor::TaskFailing:
-            {
-                response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-                task_status.status = "Failing";
-                task_status.error_message = status.message;
-                task_status.error_code = status.error_code;
-                break;
-            }
-            case StatelessTaskExecutor::TaskFinished:
-            {
-                response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-                task_status.status = "Finished";
-                break;
-            }
-            case StatelessTaskExecutor::TaskCancelled:
-            {
-                response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-                task_status.status = "Cancelled";
-                break;
-            }
-            case StatelessTaskExecutor::TaskFailed:
-            {
-                response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-                task_status.status = "Failed";
-                task_status.error_message = status.message;
-                task_status.error_code = status.error_code;
-                break;
-            }
-            case StatelessTaskExecutor::UnknownTaskId:
-            {
-                /// A gone task is a normal status answer, not a transport error: it has already
-                /// finished and been reclaimed, or was never started. Report it as a successful status
-                /// query carrying an "Unknown task" state so the coordinator treats it as terminal.
-                response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-                task_status.status = "Unknown task";
-                break;
-            }
-            default:
-            {
-                response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-                task_status.status = fmt::format("Unexpected task status: {}", static_cast<int>(status.result));
-                break;
-            }
-        }
-        task_status.write(out, status.collectors);
+        response.setStatus(makeTaskStatusReply(std::move(status), task_status)
+            ? Poco::Net::HTTPResponse::HTTP_OK : Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+        task_status.write(out, collectors);
     }
     else if (operation == "cancel")
     {
