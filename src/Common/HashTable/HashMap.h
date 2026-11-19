@@ -75,22 +75,22 @@ struct HashMapCell
     HashMapCell(const value_type & value_, const State &) : value(value_) {}
 
     /// Get the key (externally).
-    external_key_type getKey() const { return static_cast<external_key_type>(value.first); }
+    [[nodiscard]] external_key_type getKey() const { return static_cast<external_key_type>(value.first); }
     Mapped & getMapped() { return value.second; }
-    const Mapped & getMapped() const { return value.second; }
-    const value_type & getValue() const { return value; }
+    [[nodiscard]] const Mapped & getMapped() const { return value.second; }
+    [[nodiscard]] const value_type & getValue() const { return value; }
 
     /// Get the key (internally).
     static const Key & getKey(const value_type & value) { return value.first; }
 
-    bool ALWAYS_INLINE keyEquals(const Key & key_) const { return bitEquals(value.first, key_); }
-    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(value.first, key_); }
-    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(value.first, key_); }
+    [[nodiscard]] bool ALWAYS_INLINE keyEquals(const Key & key_) const { return bitEquals(value.first, key_); }
+    [[nodiscard]] bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(value.first, key_); }
+    [[nodiscard]] bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(value.first, key_); }
 
     void setHash(size_t /*hash_value*/) {}
-    size_t getHash(const Hash & hash) const { return hash(value.first); }
+    [[nodiscard]] size_t getHash(const Hash & hash) const { return hash(value.first); }
 
-    bool isZero(const State & state) const { return isZero(value.first, state); }
+    [[nodiscard]] bool isZero(const State & state) const { return isZero(value.first, state); }
     static bool isZero(const Key & key, const State & /*state*/) { return ZeroTraits::check(key); }
 
     /// Set the key value to zero.
@@ -136,7 +136,7 @@ struct HashMapCell
     }
 
     template <size_t I>
-    auto const & get() const & {
+    [[nodiscard]] auto const & get() const & {
         if constexpr (I == 0) return value.first;
         else if constexpr (I == 1) return value.second;
     }
@@ -171,12 +171,12 @@ struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
 
     using Base::Base; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - see the note on the cell type above
 
-    bool ALWAYS_INLINE keyEquals(const Key & key_) const { return bitEquals(this->value.first, key_); }
-    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && bitEquals(this->value.first, key_); }
-    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t hash_, const typename Base::State &) const { return keyEquals(key_, hash_); }
+    [[nodiscard]] bool ALWAYS_INLINE keyEquals(const Key & key_) const { return bitEquals(this->value.first, key_); }
+    [[nodiscard]] bool ALWAYS_INLINE keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && bitEquals(this->value.first, key_); }
+    [[nodiscard]] bool ALWAYS_INLINE keyEquals(const Key & key_, size_t hash_, const typename Base::State &) const { return keyEquals(key_, hash_); }
 
     void setHash(size_t hash_value) { saved_hash = hash_value; }
-    size_t getHash(const Hash & /*hash_function*/) const { return saved_hash; }
+    [[nodiscard]] size_t getHash(const Hash & /*hash_function*/) const { return saved_hash; }
 };
 
 template <
@@ -341,7 +341,7 @@ public:
         }
     }
 
-    const typename Cell::Mapped & ALWAYS_INLINE at(const Key & x) const
+    [[nodiscard]] const typename Cell::Mapped & ALWAYS_INLINE at(const Key & x) const
     {
         if (auto it = this->find(x); it != this->end())
             return it->getMapped();
