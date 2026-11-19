@@ -6,8 +6,6 @@ description: 'PostgreSQL 마이그레이션 관련 추가 정보'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="postgres-vs-clickhouse-equivalent-and-different-concepts">
   ## Postgres vs ClickHouse: 대응되는 개념과 차이점
 </div>
@@ -40,7 +38,15 @@ ClickHouse는 내부 복제 메커니즘을 관리하기 위해 ClickHouse Keepe
 
 ClickHouse의 복제 프로세스는 (1) 데이터가 임의의 레플리카에 삽입될 때 시작됩니다. 이 데이터는 원시 삽입 형태 그대로 (2) 체크섬과 함께 디스크에 기록됩니다. 기록이 완료되면 해당 레플리카는 (3) 고유한 블록 번호를 할당하고 새 파트의 세부 정보를 기록하여 이 새로운 데이터 파트를 Keeper에 등록하려고 시도합니다. 다른 레플리카는 복제 로그의 새 항목을 (4) 감지하면, (5) 내부 HTTP 프로토콜을 통해 해당 데이터 파트를 다운로드하고 ZooKeeper에 기록된 체크섬과 대조해 검증합니다. 이 방식은 처리 속도가 다르거나 지연이 발생하더라도 모든 레플리카가 결국 일관되고 최신 상태의 데이터를 보유하도록 보장합니다. 또한 이 시스템은 여러 작업을 동시에 처리할 수 있어 데이터 관리 프로세스를 최적화하고, 시스템 확장성과 하드웨어 차이에 대한 견고성을 높입니다.
 
-<Image img="/images/integrations/data-ingestion/dbms/postgres-replicas.webp" size="md" alt="최종 일관성" />
+<div className="ch-image-md">
+
+<Frame>
+
+![최종 일관성](/images/integrations/data-ingestion/dbms/postgres-replicas.webp)
+
+</Frame>
+
+</div>
 
 ClickHouse Cloud는 스토리지와 컴퓨트가 분리된 아키텍처에 맞게 조정된 [클라우드 최적화 복제 메커니즘](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates)을 사용한다는 점에 유의하십시오. 데이터를 공유 객체 스토리지에 저장하므로 노드 간 데이터를 물리적으로 복제할 필요 없이 모든 컴퓨트 노드에서 데이터에 자동으로 접근할 수 있습니다. 대신 Keeper는 컴퓨트 노드 간에 메타데이터만(어떤 데이터가 객체 스토리지의 어디에 존재하는지) 공유하는 데 사용됩니다.
 

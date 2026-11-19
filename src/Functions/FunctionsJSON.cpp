@@ -41,6 +41,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include "config.h"
 
@@ -52,6 +53,7 @@ namespace Setting
     extern const SettingsBool allow_simdjson;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
     extern const SettingsBool json_extract_named_tuples_as_objects;
+    extern const SettingsBool json_extract_use_cast_string_to_date_time_mode;
 }
 
 namespace ErrorCodes
@@ -158,6 +160,7 @@ public:
             }
 
             String error;
+            const bool trivial_default = result_type->isDefaultInsertTrivial();
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (!col_json_const)
@@ -178,9 +181,14 @@ public:
                         added_to_column = impl.insertResultToColumn(*to, element, last_key, format_settings, error);
                 }
 
-                /// We add default value (=null or zero) if something goes wrong, we don't throw exceptions in these JSON functions.
+                /// We add the default of the result type if something goes wrong, we don't throw exceptions in these JSON functions.
                 if (!added_to_column)
-                    to->insertDefault();
+                {
+                    if (trivial_default)
+                        to->insertDefault();
+                    else
+                        result_type->insertDefaultInto(*to);
+                }
             }
             return to;
         }
@@ -242,6 +250,9 @@ public:
                         "Function {} with JSON type input supports only constant string path arguments",
                         String(TName::name));
                 }
+
+                if (format_settings.json.json_type_escape_dots_in_keys)
+                    key = escapeDotInJSONKey(key);
 
                 if (!path.empty())
                     path += '.';
@@ -556,6 +567,58 @@ constexpr bool functionForcesTheReturnType()
     return std::is_same_v<Impl<void>, JSONExtractImpl<void>> || std::is_same_v<Impl<void>, JSONExtractKeysAndValuesImpl<void>>;
 }
 
+/// If the result cannot be wrapped in Nullable (e.g. Array), set the result of the null rows to the default value
+/// of the return type (e.g. an empty array). The parser still sees the values under the null map, which are not
+/// meaningful: `nullIf(x, x)` keeps `x`, and a null key is an empty string, which is a valid key in JSON.
+static ColumnPtr replaceNullRowsWithDefaults(const ColumnPtr & result, const ColumnsWithTypeAndName & args, size_t input_rows_count)
+{
+    VectorWithMemoryTracking<const NullMap *> null_maps;
+    for (const auto & arg : args)
+    {
+        /// A constant argument can be left wrapped in `ColumnConst` when other arguments are not constant.
+        /// If it is null, all rows are null.
+        if (isColumnConst(*arg.column))
+        {
+            if (input_rows_count && arg.column->isNullAt(0))
+            {
+                auto defaults = result->cloneEmpty();
+                defaults->insertManyDefaults(input_rows_count);
+                return defaults;
+            }
+        }
+        else if (const auto * nullable = typeid_cast<const ColumnNullable *>(arg.column.get()))
+            null_maps.push_back(&nullable->getNullMapData());
+    }
+
+    auto is_null_row = [&](size_t row)
+    {
+        for (const auto * null_map : null_maps)
+        {
+            if ((*null_map)[row])
+                return true;
+        }
+        return false;
+    };
+
+    size_t first_null_row = 0;
+    while (first_null_row < input_rows_count && !is_null_row(first_null_row))
+        ++first_null_row;
+    if (first_null_row == input_rows_count)
+        return result;
+
+    auto patched = result->cloneEmpty();
+    patched->reserve(input_rows_count);
+    patched->insertRangeFrom(*result, 0, first_null_row);
+    for (size_t row = first_null_row; row < input_rows_count; ++row)
+    {
+        if (is_null_row(row))
+            patched->insertDefault();
+        else
+            patched->insertFrom(*result, row);
+    }
+    return patched;
+}
+
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
 class ExecutableFunctionJSON final : public IExecutableFunction
 {
@@ -571,15 +634,15 @@ public:
         format_settings.null_as_default = false;
     }
 
-    String getName() const override { return Name::name; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override
+    [[nodiscard]] String getName() const override { return Name::name; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override
     {
         return !functionForcesTheReturnType<Impl>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (null_presence.has_null_constant)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
@@ -598,7 +661,12 @@ public:
             ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, json_return_type, input_rows_count);
 
             if (null_presence.has_nullable)
-                temporary_result = wrapInNullable(temporary_result, columns_without_low_cardinality, result_type, input_rows_count);
+            {
+                if (result_type->isNullable())
+                    temporary_result = wrapInNullable(temporary_result, columns_without_low_cardinality, result_type, input_rows_count);
+                else
+                    temporary_result = replaceNullRowsWithDefaults(temporary_result, columns_without_low_cardinality, input_rows_count);
+            }
 
             if (result_type->lowCardinality())
                 temporary_result = recursiveLowCardinalityTypeConversion(temporary_result, json_return_type, result_type);
@@ -611,7 +679,12 @@ public:
             ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, json_return_type, input_rows_count);
 
             if (null_presence.has_nullable)
-                temporary_result = wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
+            {
+                if (result_type->isNullable())
+                    temporary_result = wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
+                else
+                    temporary_result = replaceNullRowsWithDefaults(temporary_result, arguments, input_rows_count);
+            }
 
             if (result_type->lowCardinality())
                 temporary_result = recursiveLowCardinalityTypeConversion(temporary_result, json_return_type, result_type);
@@ -622,7 +695,7 @@ public:
 
 private:
 
-    ColumnPtr
+    [[nodiscard]] ColumnPtr
     chooseAndRunJSONParser(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
 #if USE_SIMDJSON
@@ -719,7 +792,9 @@ public:
     {
         /// Extracting a string JSON value into a DateTime/DateTime64 column is a string-to-type
         /// cast, so we honour `cast_string_to_date_time_mode` (rather than `date_time_input_format`).
-        format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
+        /// Before 26.8 it followed `date_time_input_format`, which `compatibility` restores.
+        if (context->getSettingsRef()[Setting::json_extract_use_cast_string_to_date_time_mode])
+            format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
 
         /// Not a format setting: it governs these functions, so it is applied here rather than in
         /// `getFormatSettings`, which would also reach the `JSON` data type.
@@ -800,8 +875,10 @@ private:
 
         if (null_presence.has_null_constant)
             return makeNullable(std::make_shared<DataTypeNothing>());
+        /// If the return type cannot be Nullable (e.g. Array), return it as-is.
+        /// Null rows get the default value of the return type (e.g. an empty array), see `replaceNullRowsWithDefaults`.
         if (null_presence.has_nullable)
-            return makeNullable(json_return_type);
+            return makeNullableSafe(json_return_type);
         return json_return_type;
     }
 

@@ -11,9 +11,10 @@
         do not get statistics later through background merges.
 
         The ALTER queries benchmark explicit statistics materialization on
-        tables filled once without materialized statistics. They use
-        CLEAR STATISTICS ALL, MATERIALIZE STATISTICS ALL so every measured run
-        recalculates UniqV2 instead of turning into a no-op after prewarm.
+        tables merged into one part, so both servers mutate the same layout.
+        They use CLEAR STATISTICS ALL, MATERIALIZE STATISTICS ALL so every
+        measured run recalculates UniqV2 instead of turning into a no-op after
+        prewarm.
     -->
 
     <settings>
@@ -89,6 +90,13 @@
         INSERT INTO t_materialize_uniq_v2_f64
         SELECT * FROM t_insert_uniq_v2_f64_src
         SETTINGS materialize_statistics_on_insert = 0
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE t_materialize_uniq_v2_i64 FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+    <fill_query>OPTIMIZE TABLE t_materialize_uniq_v2_f64 FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+    <fill_query>
+        SELECT throwIf(count() != 2, 'insert_statistics_uniq_v2: expected 1 active part per t_materialize_uniq_v2 table')
+        FROM system.parts
+        WHERE database = currentDatabase() AND table IN ('t_materialize_uniq_v2_i64', 't_materialize_uniq_v2_f64') AND active
     </fill_query>
 
     <!-- Int64 insert baseline: no insert-time statistics materialization. -->

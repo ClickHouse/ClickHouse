@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET enable_vertical_final = 1;
 SET optimize_on_insert = 1;
 
