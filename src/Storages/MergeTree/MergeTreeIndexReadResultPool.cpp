@@ -119,7 +119,16 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
 
     auto ranges = input.ranges;
-    [[maybe_unused]] size_t total_granules = ranges.getNumberOfMarks();
+    size_t total_granules = ranges.getNumberOfMarks();
+
+    /// index analysis lists only the indexes that it applies itself
+    auto add_used_index = [&](const String & index_name)
+    {
+        /// a borrowed part on a stateless worker has no data part
+        auto data_part = part_info->getDataPart();
+        if (data_part && context->hasQueryContext())
+            context->getQueryContext()->addUsedDataSkippingIndex(data_part->storage.getStorageID(), index_name);
+    };
 
     IndexGranulesMap index_granules;
 
@@ -129,6 +138,9 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     MergeTreeDataSelectExecutor::PartialDisjunctionResult partial_eval_results;
     if (rpn_template_for_part)
         partial_eval_results.resize(part_info->getIndexGranularity().getMarksCountWithoutFinal() * rpn_template_for_part->getRPN().size(), true);
+
+    /// in a disjunction the indexes exclude granules together in the merge below
+    Names indexes_without_own_drops;
 
     for (const auto & index_and_condition : skip_indexes.useful_indices)
     {
@@ -163,6 +175,10 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             log);
 
         ranges = std::move(filtered_ranges);
+        if (ranges.getNumberOfMarks() < total_granules)
+            add_used_index(index_and_condition.index->index.name);
+        else if (rpn_template_for_part && index_and_condition.index->getDeserializedFormat(*part_info, index_and_condition.index->getFileName()))
+            indexes_without_own_drops.push_back(index_and_condition.index->index.name);
 
         for (auto & [name, granule] : filtered_hints.index_granules)
             index_granules[name] = std::move(granule);
@@ -177,6 +193,10 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
         ranges = MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
                             *part_info, ranges, *rpn_template_for_part,
                             partial_eval_results, reader_settings, log);
+
+        if (ranges.getNumberOfMarks() < total_granules)
+            for (const auto & index_name : indexes_without_own_drops)
+                add_used_index(index_name);
 
         LOG_DEBUG(log, "Final set of granules after AND/OR processing : {} out of {} in part {}",
                         ranges.getNumberOfMarks(), total_granules, part_info->getPartName());
@@ -243,6 +263,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                     /*pk_to_minmax_slot=*/nullptr,
                     context->getSettingsRef(),
                     log);
+                total_granules = ranges.getNumberOfMarks();
             }
 
             MergeTreeDataSelectExecutor::PartialDisjunctionResult no_disjunctions;
@@ -275,6 +296,9 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                     no_disjunctions,
                     log);
                 ranges = std::move(filtered_ranges);
+                if (ranges.getNumberOfMarks() < total_granules)
+                    add_used_index(index_helper->index.name);
+                total_granules = ranges.getNumberOfMarks();
             }
 
             const size_t granules_after = ranges.getNumberOfMarks();
@@ -324,6 +348,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             vector_similarity_index_cache.get());
 
         res->threshold_tracker = skip_indexes.threshold_tracker;
+        if (res->min_max_index_for_top_k && !ranges.empty())
+            add_used_index(skip_indexes.skip_index_for_top_k_filtering->index.name);
     }
 
     res->may_skip_granules_besides_top_k_primary_key
@@ -629,39 +655,49 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
 
     /// Start reading chunks from the projection index reader.
     /// Each chunk contains a column of UInt64 offsets that we insert into the bitmap.
-    while (!processor->is_cancelled && !task->isFinished())
+    try
     {
-        auto chunk = processor->readCurrentTask(*task, algorithm);
-        if (chunk.chunk)
+        while (!processor->is_cancelled && !task->isFinished())
         {
-            if (chunk.chunk.getNumRows() > 0)
+            auto chunk = processor->readCurrentTask(*task, algorithm);
+            if (chunk.chunk)
             {
-                chassert(chunk.chunk.getColumns().size() == 1);
-                auto offset_column = chunk.chunk.getColumns()[0]->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
-                const auto & offsets = assert_cast<const ColumnUInt64 &>(*offset_column);
-
-                auto add_offsets = [&]<typename Offset>(Offset)
+                if (chunk.chunk.getNumRows() > 0)
                 {
-                    if (ranges.parent_ranges.isContiguousFullRange())
+                    chassert(chunk.chunk.getColumns().size() == 1);
+                    auto offset_column = chunk.chunk.getColumns()[0]->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+                    const auto & offsets = assert_cast<const ColumnUInt64 &>(*offset_column);
+
+                    auto add_offsets = [&]<typename Offset>(Offset)
                     {
-                        for (auto offset : offsets.getData())
-                            res->add<Offset>(static_cast<Offset>(offset));
-                    }
-                    else
-                    {
-                        for (auto offset : offsets.getData())
+                        if (ranges.parent_ranges.isContiguousFullRange())
                         {
-                            if (ranges.parent_ranges.contains(offset))
+                            for (auto offset : offsets.getData())
                                 res->add<Offset>(static_cast<Offset>(offset));
                         }
-                    }
-                };
-                if (can_use_32bit_part_offset)
-                    add_offsets(UInt32{});
-                else
-                    add_offsets(UInt64{});
+                        else
+                        {
+                            for (auto offset : offsets.getData())
+                            {
+                                if (ranges.parent_ranges.contains(offset))
+                                    res->add<Offset>(static_cast<Offset>(offset));
+                            }
+                        }
+                    };
+                    if (can_use_32bit_part_offset)
+                        add_offsets(UInt32{});
+                    else
+                        add_offsets(UInt64{});
+                }
             }
         }
+    }
+    catch (const Exception & e)
+    {
+        /// The filter also runs on rows the query does not read, so a failure only disables the projection index for this part.
+        if (isQueryOuterGuardError(e.code()))
+            throw;
+        return nullptr;
     }
 
     /// If the read was cancelled, return nullptr to avoid using an incomplete index bitmap.
@@ -690,7 +726,7 @@ ProjectionIndexBitmapPtr MergeTreeProjectionIndexReader::read(const RangesInData
         auto & reader = projection_index_readers.at(proj_name);
         auto res = reader.read(ranges);
 
-        /// If any bitmap is incomplete (due to cancellation), the projection index becomes invalid.
+        /// If any bitmap is missing (cancellation, or a filter the projection cannot evaluate), the projection index becomes invalid.
         if (!res)
             return nullptr;
 
