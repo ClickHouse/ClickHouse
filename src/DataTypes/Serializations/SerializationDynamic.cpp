@@ -781,9 +781,6 @@ void SerializationDynamic::serializeBinary(const ColumnDynamic & dynamic_column,
 
 void SerializationDynamic::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    /// See the comment in deserializeBinary: the nesting depth comes from the data.
-    checkStackSize();
-
     const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
     const auto & variant_info = dynamic_column.getVariantInfo();
     const auto & variant_column = dynamic_column.getVariantColumn();

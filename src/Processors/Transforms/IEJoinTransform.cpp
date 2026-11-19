@@ -342,6 +342,8 @@ void IEJoinAlgorithm::runBuildStage()
         case BuildStage::BuildL2:
             buildL2(build_validity, build_encoded_keys[1]);
             bit_array.resize_fill((num_union_entries + 63) / 64);
+            for (size_t words = bit_array.size(); words > 1; words = bit_array_summaries.back().size())
+                bit_array_summaries.emplace_back().resize_fill((words + 63) / 64);
             build_validity = {};
             build_encoded_keys = {};
             build_stage = BuildStage::Done;
@@ -754,8 +756,17 @@ void IEJoinAlgorithm::buildL2(const std::array<SideValidity, 2> & validity, Padd
 
 void IEJoinAlgorithm::setBit(size_t pos)
 {
-    bit_array[pos / 64] |= UInt64(1) << (pos % 64);
     bit_array_end = std::max(bit_array_end, pos + 1);
+    UInt64 & word = bit_array[pos / 64];
+    bool was_empty = word == 0;
+    word |= UInt64(1) << (pos % 64);
+    for (size_t level = 0; was_empty && level < bit_array_summaries.size(); ++level)
+    {
+        pos /= 64;
+        UInt64 & summary = bit_array_summaries[level][pos / 64];
+        was_empty = summary == 0;
+        summary |= UInt64(1) << (pos % 64);
+    }
 }
 
 bool IEJoinAlgorithm::testBit(size_t pos) const
@@ -763,37 +774,47 @@ bool IEJoinAlgorithm::testBit(size_t pos) const
     return (bit_array[pos / 64] >> (pos % 64)) & 1;
 }
 
-std::optional<size_t> IEJoinAlgorithm::findNextSetBit()
+size_t IEJoinAlgorithm::findNextSetBit()
 {
-    /// No bit at or past bit_array_end is set, so the scan can stop there. This bounds the
-    /// common case where all matches of the current entry sit right after its own position
-    /// (e.g. band joins): without it every scan would walk empty words to the end of the array.
+    /// No bit at or past bit_array_end is set.
     if (scan_pos >= bit_array_end)
         return num_union_entries;
 
-    size_t word_index = scan_pos / 64;
-    const size_t word_end = (bit_array_end + 63) / 64;
-    UInt64 word = bit_array[word_index] & (~UInt64(0) << (scan_pos % 64));
+    auto level_words = [&](size_t level) -> const PaddedPODArray<UInt64> &
+    {
+        return level == 0 ? bit_array : bit_array_summaries[level - 1];
+    };
+
+    /// Ascend while the rest of the current word is empty; the level above marks the later non-empty words.
+    size_t level = 0;
+    size_t index = scan_pos;
     while (true)
     {
         ++produce_work;
-        if (word)
-        {
-            size_t pos = word_index * 64 + std::countr_zero(word);
-            scan_pos = pos + 1;
-            return pos;
-        }
-        ++word_index;
-        if (word_index >= word_end)
+        const auto & words = level_words(level);
+        const size_t word_index = index / 64;
+        if (word_index >= words.size())
             return num_union_entries;
-        if (produce_work >= produce_work_budget)
+        if (UInt64 word = words[word_index] & (~UInt64(0) << (index % 64)))
         {
-            /// Yield mid-scan: all inspected words were clear, resume at the first uninspected one.
-            scan_pos = word_index * 64;
-            return std::nullopt;
+            index = word_index * 64 + std::countr_zero(word);
+            break;
         }
-        word = bit_array[word_index];
+        if (level == bit_array_summaries.size())
+            return num_union_entries;
+        index = word_index + 1;
+        ++level;
     }
+
+    while (level > 0)
+    {
+        --level;
+        ++produce_work;
+        index = index * 64 + std::countr_zero(level_words(level)[index]);
+    }
+
+    scan_pos = index + 1;
+    return index;
 }
 
 void IEJoinAlgorithm::checkFrontierInvariant() const
@@ -805,6 +826,12 @@ void IEJoinAlgorithm::checkFrontierInvariant() const
         bool qualifies = frontierAdvances(i, l2_cursor);
         bool is_right_side = !entryIsLeft(l1_entries[permutation[i]]);
         chassert(testBit(permutation[i]) == (is_right_side && qualifies));
+    }
+    for (size_t level = 0; level < bit_array_summaries.size(); ++level)
+    {
+        const auto & below = level == 0 ? bit_array : bit_array_summaries[level - 1];
+        for (size_t word = 0; word < below.size(); ++word)
+            chassert(((bit_array_summaries[level][word / 64] >> (word % 64)) & 1) == (below[word] != 0));
     }
 }
 
@@ -946,10 +973,8 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
             continue;
         }
 
-        std::optional<size_t> found = findNextSetBit();
-        if (!found)
-            break;
-        if (*found >= num_union_entries)
+        size_t found = findNextSetBit();
+        if (found >= num_union_entries)
         {
             /// The current left row's scan is exhausted; for SEMI/ANTI decide it on the
             /// candidates accumulated so far.
@@ -960,7 +985,7 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
             continue;
         }
 
-        UInt64 right_entry = l1_entries[*found];
+        UInt64 right_entry = l1_entries[found];
         /// Bits are set only at positions of right-side entries.
         chassert(has_current_left && !entryIsLeft(right_entry));
 

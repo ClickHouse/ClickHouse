@@ -139,9 +139,21 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(Array, [const String]) -> String";
+        FunctionArgumentDescriptors mandatory_args
+        {
+            {"arr", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+        };
+
+        FunctionArgumentDescriptors optional_args
+        {
+            {"separator", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"},
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

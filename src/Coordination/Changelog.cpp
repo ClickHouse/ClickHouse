@@ -4620,6 +4620,8 @@ void Changelog::applyEntriesFromBuffer(uint64_t index, nuraft::buffer & buffer)
     {
         uint64_t cur_index = index + i;
         int buf_size = buffer.get_int();
+        if (buf_size < 0 || static_cast<size_t>(buf_size) > buffer.size() - buffer.pos())
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Log entry {} in a log pack has invalid size {}", cur_index, buf_size);
 
         nuraft::ptr<nuraft::buffer> buf_local = nuraft::buffer::alloc(buf_size);
         buffer.get(buf_local);

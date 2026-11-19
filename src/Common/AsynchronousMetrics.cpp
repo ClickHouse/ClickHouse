@@ -1,7 +1,6 @@
 #include <utility>
 #include <Core/ServerSettings.h>
 #include <IO/MMappedFileCache.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/UncompressedCache.h>
@@ -30,7 +29,6 @@
 
 #include <boost/locale/date_time_facet.hpp>
 
-#include <charconv>
 #include <ranges>
 #include <string_view>
 
@@ -546,57 +544,6 @@ void applyAsynchronousMetricsKeyValuesMode(AsynchronousMetricValues & values, As
     /// A legacy name is the name that the very same measurement had before the change, so it never collides
     /// with the name of another metric.
     values.merge(legacy_values);
-}
-
-AsynchronousMetricKeyValues readCPUFrequenciesFromProcCPUInfo(ReadBuffer & in)
-{
-    // We need the following lines:
-    // processor : 4
-    // cpu MHz : 4052.941
-    // They contain tabs and are interspersed with other info.
-
-    std::optional<Int32> core_id = 0;
-    AsynchronousMetricKeyValues cpu_frequencies;
-    std::string s;
-    while (!in.eof())
-    {
-        // We don't have any backslash escape sequences in /proc/cpuinfo, so
-        // this function will read the line until EOL, which is exactly what
-        // we need.
-        readEscapedStringUntilEOL(s, in);
-        // It doesn't read the EOL itself, and the last line may have none.
-        checkChar('\n', in);
-
-        static constexpr std::string_view PROCESSOR = "processor";
-        if (s.starts_with(PROCESSOR))
-        {
-            /// s390x example: processor 0: version = FF, identification = 039C88, machine = 3906
-            /// non s390x example: processor : 0
-            auto core_id_start = std::ssize(PROCESSOR);
-            while (core_id_start < std::ssize(s) && !isNumericASCII(s[core_id_start]))
-                ++core_id_start;
-
-            Int32 parsed = 0;
-            auto [_, ec] = std::from_chars(s.data() + core_id_start, s.data() + s.size(), parsed);
-            if (ec == std::errc())
-                core_id = parsed;
-            else
-                core_id.reset();
-        }
-        else if (s.starts_with("cpu MHz") && core_id)
-        {
-            if (auto colon = s.find(':'); colon != String::npos)
-            {
-                ReadBufferFromString value(std::string_view(s).substr(colon + 1));
-                skipWhitespaceIfAny(value);
-                Float64 mhz = 0;
-                if (tryReadText(mhz, value))
-                    cpu_frequencies[toString(*core_id)] = mhz;
-            }
-        }
-    }
-
-    return cpu_frequencies;
 }
 
 namespace
@@ -1358,7 +1305,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         "The difference in time the thread for calculation of the asynchronous metrics was scheduled to wake up and the time it was in fact, woken up."
         " A proxy-indicator of overall system latency and responsiveness." };
 
-#if HAS_MEMORY_STATISTICS_OS
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
     MemoryStatisticsOS::Data memory_statistics_data = memory_stat.get();
 #endif
 
@@ -1554,7 +1501,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     /// Process process memory usage according to OS
-#if HAS_MEMORY_STATISTICS_OS
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
     {
         MemoryStatisticsOS::Data & data = memory_statistics_data;
 
@@ -1951,13 +1898,10 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             uint64_t limit = 0;
             tryReadText(limit, *cgroupmem_limit_in_bytes);
 
-            /// The best-effort combined read keeps the pre-existing metrics below published even
-            /// if the inactive-file fields of `memory.stat` cannot be parsed; in that case only
-            /// `CGroupMemoryInactiveFile` is skipped for this update cycle.
-            auto stats = cgroupmem_reader->readMemoryUsageAndOptionalInactiveFile();
+            uint64_t usage = cgroupmem_reader->readMemoryUsage();
 
             new_values["CGroupMemoryTotal"] = { limit, "The total amount of memory in cgroup, in bytes. If stated zero, the limit is the same as OSMemoryTotal." };
-            new_values["CGroupMemoryUsed"] = { stats.usage, "The amount of memory used in cgroup, in bytes. "
+            new_values["CGroupMemoryUsed"] = { usage, "The amount of memory used in cgroup, in bytes. "
                 "On cgroup v2 this is anon + sock + non-reclaimable kernel memory; on cgroup v1 this is RSS. "
                 "In both cases the kernel OS page cache (file-backed cache) is excluded." };
 
@@ -1965,8 +1909,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             if (context && context->getPageCache())
                 userspace_page_cache_bytes = context->getPageCache()->sizeInBytes();
 
-            UInt64 cgroup_usage_without_page_cache = (stats.usage > userspace_page_cache_bytes)
-                                                   ? (stats.usage - userspace_page_cache_bytes)
+            UInt64 cgroup_usage_without_page_cache = (usage > userspace_page_cache_bytes)
+                                                   ? (usage - userspace_page_cache_bytes)
                                                    : 0;
 
             new_values["CGroupMemoryUsedWithoutPageCache"] = {
@@ -1975,21 +1919,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 "This is CGroupMemoryUsed minus the userspace page cache size. "
                 "When userspace page cache is disabled, this value equals CGroupMemoryUsed."
             };
-
-            /// The metric is published only when the kernel actually exposes the statistic
-            /// (`inactive_file` on cgroup v2, `total_inactive_file` on cgroup v1): an absent key
-            /// is not a zero, so it must not be reported as one.
-            if (stats.inactive_file)
-                new_values["CGroupMemoryInactiveFile"] = { *stats.inactive_file,
-                    "The amount of memory used for inactive, file-backed page cache in the same cgroup that CGroupMemoryUsed is read from, in bytes. "
-                    "This is reclaimable memory: the kernel can drop it under memory pressure. "
-                    "Kubernetes and cAdvisor compute the working set size (WSS) by subtracting this value from the raw cgroup memory usage "
-                    "(memory.current on cgroup v2, memory.usage_in_bytes on cgroup v1). "
-                    "Note that CGroupMemoryUsed is not that raw usage, because it already excludes the file-backed page cache. "
-                    "The value matches the one used by kubelet for the container on cgroup v2, and on cgroup v1 when the server runs in a container "
-                    "where the memory controller mount is the container's own cgroup. On cgroup v1 the value is read from the memory controller mount root, "
-                    "so on a host where the server runs in a nested v1 cgroup it covers the whole hierarchy under that root rather than the server's own cgroup. "
-                    "The metric is absent when the kernel does not expose the statistic in memory.stat." };
         }
         catch (...)
         {
@@ -2094,7 +2023,45 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         try
         {
             cpuinfo->rewind();
-            auto cpu_frequencies = readCPUFrequenciesFromProcCPUInfo(*cpuinfo);
+
+            // We need the following lines:
+            // processor : 4
+            // cpu MHz : 4052.941
+            // They contain tabs and are interspersed with other info.
+
+            int core_id = 0;
+            AsynchronousMetricKeyValues cpu_frequencies;
+            while (!cpuinfo->eof())
+            {
+                std::string s;
+                // We don't have any backslash escape sequences in /proc/cpuinfo, so
+                // this function will read the line until EOL, which is exactly what
+                // we need.
+                readEscapedStringUntilEOL(s, *cpuinfo);
+                // It doesn't read the EOL itself.
+                ++cpuinfo->position();
+
+                static constexpr std::string_view PROCESSOR = "processor";
+                if (s.starts_with(PROCESSOR))
+                {
+                    /// s390x example: processor 0: version = FF, identification = 039C88, machine = 3906
+                    /// non s390x example: processor : 0
+                    auto core_id_start = std::ssize(PROCESSOR);
+                    while (core_id_start < std::ssize(s) && !std::isdigit(s[core_id_start]))
+                        ++core_id_start;
+
+                    core_id = std::stoi(s.substr(core_id_start));
+                }
+                else if (s.starts_with("cpu MHz"))
+                {
+                    if (auto colon = s.find_first_of(':'))
+                    {
+                        auto mhz = std::stod(s.substr(colon + 2));
+                        cpu_frequencies[toString(core_id)] = mhz;
+                    }
+                }
+            }
+
             if (!cpu_frequencies.empty())
                 new_values["CPUFrequencyMHz"] = { "cpu", std::move(cpu_frequencies),
                     "The current frequency of every CPU core, in MHz, keyed by the CPU core number. Most of the modern CPUs adjust the frequency dynamically for power saving and Turbo Boosting." };

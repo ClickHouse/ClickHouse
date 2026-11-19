@@ -7,7 +7,6 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Common/MultiVersion.h>
-#include <IO/BufferWithOwnMemory.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadSettings.h>
@@ -70,8 +69,6 @@ public:
 
     std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override;
 
-    void setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling) override { read_settings.io_scheduling = io_scheduling; }
-
     size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
 
     bool supportsReadAt() override { return true; }
@@ -117,7 +114,7 @@ private:
     size_t max_single_read_retries;
     size_t max_single_download_retries;
     ReadSettings read_settings;
-    Memory<> tmp_buffer;
+    std::vector<char> tmp_buffer;
     size_t tmp_buffer_size;
     bool use_external_buffer;
 
@@ -141,8 +138,6 @@ private:
 
     off_t offset = 0;
     size_t total_size{};
-    /// The size of the whole blob from the `Content-Range` of the last download response.
-    size_t blob_size_from_response = 0;
     bool initialized = false;
     char * data_ptr;
     size_t data_capacity;

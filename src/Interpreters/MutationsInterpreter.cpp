@@ -230,8 +230,6 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     return query_tree;
 }
 
-}
-
 ColumnDependencies getAllColumnDependencies(
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & updated_columns,
@@ -256,6 +254,8 @@ ColumnDependencies getAllColumnDependencies(
     }
 
     return dependencies;
+}
+
 }
 
 
@@ -520,11 +520,6 @@ bool MutationsInterpreter::Source::hasBrokenProjection(const String & name) cons
     return part && part->hasBrokenProjection(name);
 }
 
-bool MutationsInterpreter::Source::hasUnloadedProjection(const String & name) const
-{
-    return part && part->hasUnloadedProjection(name);
-}
-
 bool MutationsInterpreter::Source::isCompactPart() const
 {
     return part && part->getType() == MergeTreeDataPartType::Compact;
@@ -670,13 +665,6 @@ static void validateUpdateColumns(
 
     const auto & storage_columns = storage_snapshot->metadata->columns;
     const auto & virtual_columns = storage_snapshot->metadata->virtuals;
-
-    /// The sign and version columns may be subcolumns, so recomputing the column they belong to changes them as well.
-    for (const auto & key_column : key_columns)
-    {
-        if (auto column = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column))
-            key_storage_columns.insert(column->getNameInStorage());
-    }
     for (const auto & column_name : updated_columns)
     {
         if (key_columns.contains(column_name))
@@ -1022,7 +1010,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         [&](const String & name, ColumnDependency::Kind kind)
     {
         if (kind == ColumnDependency::PROJECTION)
-            return source.hasProjection(name) || source.hasUnloadedProjection(name);
+            return source.hasProjection(name);
 
         if (kind == ColumnDependency::SKIP_INDEX)
             return source.hasSecondaryIndex(name, metadata_snapshot);
@@ -1795,11 +1783,9 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 LOG_DEBUG(logger, "Will rebuild commit-order projection {}", projection.name);
                 materialized_projections.insert(projection.name);
-                continue;
             }
 
-            if (!source.hasUnloadedProjection(projection.name))
-                continue;
+            continue;
         }
 
         /// Always rebuild broken projections.
@@ -1828,6 +1814,19 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         if (changed)
             materialized_projections.insert(projection.name);
+    }
+
+    /// A mutation that does not rewrite the whole part keeps the lightweight-deleted rows in it,
+    /// so a rebuilt projection needs `_row_exists` to leave them out.
+    const auto & source_part = source.getMergeTreeDataPart();
+    const bool projections_see_deleted_mask = settings.return_all_columns
+        || std::ranges::any_of(stages, [](const Stage & stage)
+            { return stage.affects_all_columns || stage.column_to_updated.contains(RowExistsColumn::name); });
+    if (!materialized_projections.empty() && source_part && source_part->hasLightweightDelete() && !projections_see_deleted_mask)
+    {
+        auto & stage = stages.emplace_back(context);
+        stage.is_readonly = true;
+        stage.column_to_updated.emplace(RowExistsColumn::name, make_intrusive<ASTIdentifier>(RowExistsColumn::name));
     }
 
     /// Every column emitted by a non-readonly stage is written into the new part at its current
@@ -2427,7 +2426,8 @@ void MutationsInterpreter::Source::read(
             mutation_settings.apply_deleted_mask,
             createFilterDAGForStage(first_stage),
             false,
-            false,
+            /*prefetch_begin_of_range=*/ false,
+            /*allow_remote_fs_prefetch=*/ canPrefetchInMergeOrMutation(*data, {part}, required_columns, context_),
             context_,
             getLogger("MutationsInterpreter"));
     }
