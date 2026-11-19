@@ -396,7 +396,7 @@ class IExtendedPool : public IHTTPConnectionPoolForEndpoint
 public:
     using Ptr = std::shared_ptr<IExtendedPool>;
 
-    virtual HTTPConnectionGroupType getGroupType() const = 0;
+    [[nodiscard]] virtual HTTPConnectionGroupType getGroupType() const = 0;
     /// Appends expired connections to `expired_connections` for the caller to destroy after releasing its locks:
     /// closing a TLS connection may do socket I/O. Returns the number of connections left.
     virtual size_t wipeExpired(std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> & expired_connections) = 0;
@@ -600,7 +600,7 @@ private:
             notifySocketInode();
         }
 
-        String getTarget() const
+        [[nodiscard]] String getTarget() const
         {
             if (!Session::getProxyConfig().host.empty())
                 return fmt::format("{}:{} over proxy {}",
@@ -908,7 +908,7 @@ public:
         group->releaseStoredConnections(stored_connections.size());
     }
 
-    String getTarget() const
+    [[nodiscard]] String getTarget() const
     {
         if (!proxy_configuration.isEmpty())
             return fmt::format("{} over proxy {}",
@@ -967,12 +967,12 @@ public:
         return prepareNewConnection(timeouts, connect_time);
     }
 
-    const IHTTPConnectionPoolForEndpoint::Metrics & getMetrics() const override
+    [[nodiscard]] const IHTTPConnectionPoolForEndpoint::Metrics & getMetrics() const override
     {
         return group->getMetrics();
     }
 
-    HTTPConnectionGroupType getGroupType() const override
+    [[nodiscard]] HTTPConnectionGroupType getGroupType() const override
     {
         return group->getType();
     }
@@ -1010,12 +1010,19 @@ public:
     }
 
 private:
-    EndpointConnectionPool(ConnectionGroup::Ptr group_, String host_, UInt16 port_, bool https_, ProxyConfiguration proxy_configuration_)
+    EndpointConnectionPool(
+        ConnectionGroup::Ptr group_,
+        HTTPConnectionTransport transport_,
+        String host_,
+        UInt16 port_,
+        bool https_,
+        ProxyConfiguration proxy_configuration_)
         : host(std::move(host_))
         , port(port_)
         , https(https_)
         , proxy_configuration(std::move(proxy_configuration_))
         , group(group_)
+        , transport(transport_)
     {
     }
 
@@ -1024,7 +1031,7 @@ private:
     ConnectionPtr createConnection()
     {
 #if USE_SILK
-        if (group->getType() == HTTPConnectionGroupType::AMBER)
+        if (transport == HTTPConnectionTransport::FiberAware)
         {
             Poco::Net::StreamSocket socket;
             if (https)
@@ -1115,6 +1122,16 @@ private:
         /// The target host is resolved by the proxy, so it is checked against `remote_url_allow_hosts` here, and
         /// the proxy itself, which comes from the server configuration or the environment, is not.
         NameResolutionFilter::check(host);
+
+#if USE_SILK
+        /// `HTTPSClientSession::connect` tunnels through a separate proxy session and wraps its socket in TLS
+        /// with ordinary Poco sockets, so the connection would block despite its transport.
+        if (transport == HTTPConnectionTransport::FiberAware && https && poco_proxy_config.tunnel)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot connect to {} over tunneling proxy {}: tunneling is not supported for fiber-aware HTTPS connections",
+                host, proxy_configuration.host);
+#endif
 
         auto connection = createConnection();
         connection->setKeepAlive(true);
@@ -1381,6 +1398,7 @@ private:
     const bool https;
     const ProxyConfiguration proxy_configuration;
     const ConnectionGroup::Ptr group;
+    const HTTPConnectionTransport transport;
 
     std::mutex mutex;
     ConnectionsMinHeap stored_connections TSA_GUARDED_BY(mutex);
@@ -1389,6 +1407,7 @@ private:
 struct EndpointPoolKey
 {
     HTTPConnectionGroupType connection_group;
+    HTTPConnectionTransport transport;
     String target_host;
     UInt16 target_port;
     bool is_target_https;
@@ -1398,6 +1417,7 @@ struct EndpointPoolKey
     {
         return std::tie(
                    connection_group,
+                   transport,
                    target_host,
                    target_port,
                    is_target_https,
@@ -1411,6 +1431,7 @@ struct EndpointPoolKey
                    proxy_config.password)
             == std::tie(
                    rhs.connection_group,
+                   rhs.transport,
                    rhs.target_host,
                    rhs.target_port,
                    rhs.is_target_https,
@@ -1431,6 +1452,7 @@ struct Hasher
     {
         SipHash s;
         s.update(k.connection_group);
+        s.update(k.transport);
         s.update(k.target_host);
         s.update(k.target_port);
         s.update(k.is_target_https);
@@ -1445,14 +1467,19 @@ struct Hasher
     }
 };
 
-static IExtendedPool::Ptr
-createConnectionPool(ConnectionGroup::Ptr group, std::string host, UInt16 port, bool secure, ProxyConfiguration proxy_configuration)
+static IExtendedPool::Ptr createConnectionPool(
+    ConnectionGroup::Ptr group,
+    HTTPConnectionTransport transport,
+    std::string host,
+    UInt16 port,
+    bool secure,
+    ProxyConfiguration proxy_configuration)
 {
     if (secure)
     {
 #if USE_SSL
         return EndpointConnectionPool<Poco::Net::HTTPSClientSession>::create(
-            group, std::move(host), port, secure, std::move(proxy_configuration));
+            group, transport, std::move(host), port, secure, std::move(proxy_configuration));
 #else
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS support is disabled, because ClickHouse was built without SSL library");
@@ -1461,7 +1488,7 @@ createConnectionPool(ConnectionGroup::Ptr group, std::string host, UInt16 port, 
     else
     {
         return EndpointConnectionPool<Poco::Net::HTTPClientSession>::create(
-            group, std::move(host), port, secure, std::move(proxy_configuration));
+            group, transport, std::move(host), port, secure, std::move(proxy_configuration));
     }
 }
 
@@ -1485,7 +1512,8 @@ private:
     Poco::Timestamp last_wipe_time TSA_GUARDED_BY(mutex);
 
 public:
-    IHTTPConnectionPoolForEndpoint::Ptr getPool(HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration)
+    IHTTPConnectionPoolForEndpoint::Ptr getPool(
+        HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration, HTTPConnectionTransport transport)
     {
         Poco::Timestamp now;
 
@@ -1506,7 +1534,7 @@ public:
             last_wipe_time = now;
         }
 
-        return getPoolImpl(type, uri, proxy_configuration);
+        return getPoolImpl(type, uri, proxy_configuration, transport);
     }
 
     void setLimits(HTTPConnectionPools::Limits disk, HTTPConnectionPools::Limits storage, HTTPConnectionPools::Limits http, HTTPConnectionPools::Limits amber)
@@ -1529,7 +1557,7 @@ public:
         amber_group->setSocketBufferSizes(std::move(amber));
     }
 
-    HTTPConnectionPools::SocketBufferSizes getSocketBufferSizes(HTTPConnectionGroupType type) const
+    [[nodiscard]] HTTPConnectionPools::SocketBufferSizes getSocketBufferSizes(HTTPConnectionGroupType type) const
     {
         /// ConnectionGroup has its own mutex, no need for Impl::mutex here.
         /// The groups are created once in the constructor and never replaced.
@@ -1546,7 +1574,7 @@ public:
         }
     }
 
-    bool isSoftLimitReached(HTTPConnectionGroupType type) const
+    [[nodiscard]] bool isSoftLimitReached(HTTPConnectionGroupType type) const
     {
         /// ConnectionGroup has its own mutex, no need for Impl::mutex here.
         switch (type)
@@ -1602,17 +1630,19 @@ protected:
         }
     }
 
-    IExtendedPool::Ptr getPoolImpl(HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration)
+    IExtendedPool::Ptr getPoolImpl(
+        HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration, HTTPConnectionTransport transport)
         TSA_REQUIRES(mutex)
     {
         auto [host, port, secure] = getHostPortSecure(uri, proxy_configuration);
-        auto key = EndpointPoolKey{type, host, port, secure, proxy_configuration};
+        auto key = EndpointPoolKey{type, transport, host, port, secure, proxy_configuration};
 
         auto it = endpoints_pool.find(key);
         if (it != endpoints_pool.end())
             return it->second;
 
-        it = endpoints_pool.emplace(key, createConnectionPool(getGroup(type), std::move(host), port, secure, proxy_configuration)).first;
+        /// Pools of both transports share the group, so the group limits cover all its connections.
+        it = endpoints_pool.emplace(key, createConnectionPool(getGroup(type), transport, std::move(host), port, secure, proxy_configuration)).first;
 
         return it->second;
     }
@@ -1707,10 +1737,10 @@ void HTTPConnectionPools::dropCache()
     impl->dropCache();
 }
 
-IHTTPConnectionPoolForEndpoint::Ptr
-HTTPConnectionPools::getPool(HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration)
+IHTTPConnectionPoolForEndpoint::Ptr HTTPConnectionPools::getPool(
+    HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration, HTTPConnectionTransport transport)
 {
-    return impl->getPool(type, uri, proxy_configuration);
+    return impl->getPool(type, uri, proxy_configuration, transport);
 }
 
 HTTPConnectionPools::PoolSocketInodes HTTPConnectionPools::getSocketInodes()

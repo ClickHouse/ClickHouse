@@ -99,6 +99,14 @@ if __name__ == "__main__":
     env = _Environment.get()
     sha = env.SHA
 
+    # `toolchain_s3_dir` points at master's artifacts, so a PR from a run on another
+    # branch would reference an archive that does not exist
+    if env.BRANCH != "master":
+        Result.create_from(
+            status=Result.Status.SKIPPED,
+            info=f"Not a master run (branch {env.BRANCH}), the toolchain PR is only created from master",
+        ).complete_job()
+
     results = []
     res = True
 

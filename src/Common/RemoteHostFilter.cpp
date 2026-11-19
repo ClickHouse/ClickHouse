@@ -3,12 +3,9 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/StringUtils.h>
 #include <Common/Exception.h>
-#include <Common/maskURIPassword.h>
 #include <Common/parseAddress.h>
 #include <Common/re2.h>
 #include <IO/WriteHelpers.h>
-
-#include <boost/algorithm/string/replace.hpp>
 
 namespace DB
 {
@@ -20,21 +17,15 @@ namespace ErrorCodes
 
 bool RemoteHostFilter::checkURL(const Poco::URI & uri, bool throw_on_error) const
 {
-    if (checkForDirectEntry(uri.getHost()) || checkForDirectEntry(uri.getHost() + ":" + toString(uri.getPort())))
+    const std::string host_and_port = uri.getHost() + ":" + toString(uri.getPort());
+    if (checkForDirectEntry(uri.getHost()) || checkForDirectEntry(host_and_port))
         return true;
     if (!throw_on_error)
         return false;
 
-    std::string masked_uri = uri.toString();
-    maskURIUserinfo(masked_uri);
-    /// An S3 URI can carry its query folded into the path, which `toString` renders with '?' as `%3F` and '%' as
-    /// `%25`, leaving no raw query. Undo the '?' first, so a `%253F` written in the path does not become a separator.
-    boost::replace_all(masked_uri, "%3F", "?");
-    if (uri.getRawQuery().empty())
-        boost::replace_all(masked_uri, "%25", "%");
-    maskPresignedURLParameters(masked_uri);
+    /// Only the host and port are checked. The rest of the URL can carry secrets and is not printed.
     throw Exception(ErrorCodes::UNACCEPTABLE_URL, "URL \"{}\" is not allowed in configuration file, "
-                                                  "see <remote_url_allow_hosts>", masked_uri);
+                                                  "see <remote_url_allow_hosts>", host_and_port);
 }
 
 void RemoteHostFilter::checkHostAndPort(const std::string & host, const std::string & port) const

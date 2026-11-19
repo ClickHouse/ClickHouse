@@ -955,6 +955,8 @@
          with an empty user name). Set to an empty value to reject such connections.
          Never applied to interserver connections.
          Can be overridden per endpoint in the <protocols> section with the same tag.
+
+         The substituted user is authenticated as usual (password, <networks>, ...).
     -->
     <!-- <default_session_user>default</default_session_user> -->
 
@@ -2000,7 +2002,7 @@
         </rule>
         <rule>
             <name>hide sensitive HTTP query-string parameters</name>
-            <regexp>([?&][^&=]*(?:secret|password|passwd|token|credential|signature|key)[^&=]*=)[^&\s]*</regexp>
+            <regexp>([?&amp;][^&amp;=]*(?:secret|password|passwd|token|credential|signature|key)[^&amp;=]*=)[^&amp;\s]*</regexp>
             <replace>\1[HIDDEN]</replace>
         </rule>
     </query_masking_rules> -->

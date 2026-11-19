@@ -5,7 +5,6 @@
 #include <base/defines.h>
 #include <base/types.h>
 
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -18,9 +17,9 @@ template <typename Table>
 concept IterableCells = requires (Table & table) { table.begin(); };
 
 /// Whether an aggregation table keeps its cells in submaps, each with its own type of cell, as the string
-/// table does. Such a table gives the number of its submaps and the type of the cells of each. It walks its
-/// cells submap by submap with their hashes (see `StringHashTable::forEachCellWithHash`), and turns a cell
-/// into the key that its iterations hand out.
+/// table and the table of fixed-width keys and a string do. Such a table gives the number of its submaps and
+/// the type of the cells of each. It walks its cells submap by submap with their hashes (see
+/// `StringHashTable::forEachCellWithHash`), and turns a cell into the key that its iterations hand out.
 template <typename Table>
 concept SubmapCells = requires (Table & table)
 {
@@ -79,7 +78,7 @@ struct CellIndexTraits<Table>
     }
 
     template <size_t key_class>
-    static std::string_view ALWAYS_INLINE iteratedKey(const Cell<key_class> & cell)
+    static decltype(auto) ALWAYS_INLINE iteratedKey(const Cell<key_class> & cell)
     {
         return Table::template iteratedKey<key_class>(cell);
     }
@@ -121,10 +120,10 @@ public:
     template <typename Table, typename PartitionOf>
     AggregationCellIndex(Table & table, size_t num_partitions_, PartitionOf && partition_of);
 
-    size_t numPartitions() const { return num_partitions; }
+    [[nodiscard]] size_t numPartitions() const { return num_partitions; }
 
     /// The cells of the partitions from `first_partition` to `end_partition`.
-    size_t cellCount(size_t first_partition, size_t end_partition) const
+    [[nodiscard]] size_t cellCount(size_t first_partition, size_t end_partition) const
     {
         size_t count = 0;
         for (size_t key_class = 0; key_class < key_classes; ++key_class)
