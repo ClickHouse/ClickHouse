@@ -1,5 +1,6 @@
 #include <TableFunctions/TableFunctionTimeSeries.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Common/quoteString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -81,6 +82,16 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTable(const Cont
     return time_series_storage->getTargetTable(target_kind, context);
 }
 
+template <ViewTarget::Kind target_kind>
+StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTableWithAccess(const ContextPtr & context, AccessType access_type) const
+{
+    /// The rows are those of the target, reached through the TimeSeries table, so both need the grant.
+    context->checkAccess(access_type, time_series_storage_id);
+    auto target_table = getTargetTable(context);
+    context->checkAccess(access_type, target_table->getStorageID());
+    return target_table;
+}
+
 
 template <ViewTarget::Kind target_kind>
 std::optional<String> TableFunctionTimeSeriesTarget<target_kind>::getParallelReplicasReadID() const
@@ -94,15 +105,16 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
         ContextPtr context,
         const String & /* table_name */,
         ColumnsDescription /* cached_columns */,
-        bool /* is_insert_query */) const
+        bool is_insert_query) const
 {
-    return getTargetTable(context);
+    return getTargetTableWithAccess(context, is_insert_query ? AccessType::INSERT : AccessType::SELECT);
 }
 
 template <ViewTarget::Kind target_kind>
 ColumnsDescription TableFunctionTimeSeriesTarget<target_kind>::getActualTableStructure(ContextPtr context, bool /* is_insert_query */) const
 {
-    auto metadata_snapshot = getTargetTable(context)->getInMemoryMetadataPtr(context, false);
+    /// DESCRIBE passes `is_insert_query` as true, so the structure needs what DESCRIBE of a table needs.
+    auto metadata_snapshot = getTargetTableWithAccess(context, AccessType::SHOW_COLUMNS)->getInMemoryMetadataPtr(context, false);
     return metadata_snapshot->columns;
 }
 

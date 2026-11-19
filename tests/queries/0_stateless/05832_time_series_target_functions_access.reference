@@ -1,0 +1,42 @@
+--- no grants
+timeSeriesSamples: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesData: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesTags: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesTimeRanges: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesMetricFamilies: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesMetrics: describe ACCESS_DENIED, select ACCESS_DENIED
+insert: ACCESS_DENIED
+--- SELECT on the TimeSeries table only
+timeSeriesSamples: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesData: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesTags: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesTimeRanges: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesMetricFamilies: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesMetrics: describe ACCESS_DENIED, select ACCESS_DENIED
+insert: ACCESS_DENIED
+--- SELECT on the target tables only
+timeSeriesSamples: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesData: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesTags: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesTimeRanges: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesMetricFamilies: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesMetrics: describe ACCESS_DENIED, select ACCESS_DENIED
+insert: ACCESS_DENIED
+--- SELECT on the database
+timeSeriesSamples: describe OK, select OK
+timeSeriesData: describe OK, select OK
+timeSeriesTags: describe OK, select OK
+timeSeriesTimeRanges: describe OK, select OK
+timeSeriesMetricFamilies: describe OK, select OK
+timeSeriesMetrics: describe OK, select OK
+insert: ACCESS_DENIED
+--- SELECT and INSERT on the database
+timeSeriesSamples: describe OK, select OK
+timeSeriesData: describe OK, select OK
+timeSeriesTags: describe OK, select OK
+timeSeriesTimeRanges: describe OK, select OK
+timeSeriesMetricFamilies: describe OK, select OK
+timeSeriesMetrics: describe OK, select OK
+insert: OK
+--- metric families
+injected
