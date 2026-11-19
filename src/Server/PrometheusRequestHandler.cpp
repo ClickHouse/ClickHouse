@@ -801,7 +801,7 @@ private:
         evaluation_settings.table_timestamp_type = std::make_shared<DataTypeDateTime64>(3);
         evaluation_settings.use_current_time = true;
         auto checked_query = std::make_shared<PrometheusQueryTree>(std::move(nodes), new_root, time_scale);
-        PrometheusQueryToSQL::Converter{checked_query, evaluation_settings}.getSQL();
+        (void)PrometheusQueryToSQL::Converter{checked_query, evaluation_settings}.getSQL();
     }
 
     /// Prometheus checks the values of parameters and label names only when it evaluates a query, the SQL conversion checks them.
