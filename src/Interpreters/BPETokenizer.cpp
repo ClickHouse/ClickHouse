@@ -5,6 +5,8 @@
 #include <Common/UTF8Helpers.h>
 #include <IO/WriteBuffer.h>
 
+#include <Poco/Exception.h>
+
 #include <algorithm>
 #include <array>
 #include <charconv>
@@ -28,7 +30,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -176,6 +177,10 @@ size_t contractionLength(std::string_view text, size_t pos, bool case_insensitiv
         return case_insensitive && c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
     };
 
+    /// `(?i:s)` also matches U+017F LATIN SMALL LETTER LONG S, whose case folding is `s`.
+    if (case_insensitive && text.substr(pos + 1, 2) == "\xC5\xBF")
+        return 3;
+
     switch (at(1))
     {
         case 's': case 'd': case 'm': case 't':
@@ -252,6 +257,31 @@ size_t nextPieceR50k(std::string_view text, size_t pos)
     return length; /// `\s`
 }
 
+/// `\p{N}{1,3}` at `pos`, which holds a number.
+size_t numberLength(std::string_view text, size_t pos)
+{
+    size_t end = pos;
+    for (size_t digit = 0; digit < 3 && end < text.size(); ++digit)
+    {
+        size_t length = 0;
+        if (!isNumber(codePointAt(text, end, length)))
+            break;
+        end += length;
+    }
+    return end - pos;
+}
+
+/// ` ?[^\s\p{L}\p{N}]+` followed by any number of characters `trailing` accepts, or zero.
+template <typename Predicate>
+size_t punctuationLength(std::string_view text, size_t pos, UInt32 first, Predicate && trailing)
+{
+    const size_t start = first == ' ' ? pos + 1 : pos;
+    size_t length = 0;
+    if (start >= text.size() || !isPunctuationish(codePointAt(text, start, length)))
+        return 0;
+    return scanWhile(text, scanWhile(text, start, isPunctuationish), trailing) - pos;
+}
+
 /// `'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}++|\p{N}{1,3}+| ?[^\s\p{L}\p{N}]++[\r\n]*+|\s++$|\s*[\r\n]|\s+(?!\S)|\s`
 size_t nextPieceCl100k(std::string_view text, size_t pos)
 {
@@ -275,31 +305,11 @@ size_t nextPieceCl100k(std::string_view text, size_t pos)
 
     /// `\p{N}{1,3}+`
     if (isNumber(first))
-    {
-        size_t end = pos;
-        for (size_t digit = 0; digit < 3 && end < text.size(); ++digit)
-        {
-            size_t length = 0;
-            if (!isNumber(codePointAt(text, end, length)))
-                break;
-            end += length;
-        }
-        return end - pos;
-    }
+        return numberLength(text, pos);
 
     /// ` ?[^\s\p{L}\p{N}]++[\r\n]*+`
-    {
-        const size_t start = first == ' ' ? pos + 1 : pos;
-        if (start < text.size())
-        {
-            size_t length = 0;
-            if (isPunctuationish(codePointAt(text, start, length)))
-            {
-                const size_t end = scanWhile(text, start, isPunctuationish);
-                return scanWhile(text, end, isNewline) - pos;
-            }
-        }
-    }
+    if (size_t length = punctuationLength(text, pos, first, isNewline))
+        return length;
 
     const WhitespaceRun run = scanWhitespace(text, pos);
     if (run.end == text.size())
@@ -380,32 +390,12 @@ size_t nextPieceO200k(std::string_view text, size_t pos)
 
     /// `\p{N}{1,3}`
     if (isNumber(first))
-    {
-        size_t end = pos;
-        for (size_t digit = 0; digit < 3 && end < text.size(); ++digit)
-        {
-            size_t length = 0;
-            if (!isNumber(codePointAt(text, end, length)))
-                break;
-            end += length;
-        }
-        return end - pos;
-    }
+        return numberLength(text, pos);
 
     /// ` ?[^\s\p{L}\p{N}]+[\r\n/]*`
-    {
-        const size_t start = first == ' ' ? pos + 1 : pos;
-        if (start < text.size())
-        {
-            size_t length = 0;
-            if (isPunctuationish(codePointAt(text, start, length)))
-            {
-                const size_t end = scanWhile(text, start, isPunctuationish);
-                const auto is_newline_or_slash = [](UInt32 code_point) { return isNewline(code_point) || code_point == '/'; };
-                return scanWhile(text, end, is_newline_or_slash) - pos;
-            }
-        }
-    }
+    const auto is_newline_or_slash = [](UInt32 code_point) { return isNewline(code_point) || code_point == '/'; };
+    if (size_t length = punctuationLength(text, pos, first, is_newline_or_slash))
+        return length;
 
     const WhitespaceRun run = scanWhitespace(text, pos);
     if (run.newline_end != 0)
@@ -428,8 +418,6 @@ size_t nextBPEPiece(BPEPretokenizer pretokenizer, std::string_view text, size_t 
         case BPEPretokenizer::R50k: return nextPieceR50k(text, pos);
         case BPEPretokenizer::Cl100k: return nextPieceCl100k(text, pos);
         case BPEPretokenizer::O200k: return nextPieceO200k(text, pos);
-        case BPEPretokenizer::HuggingFace:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "A `tokenizer.json` vocabulary has no hand-written pre-tokenizer");
     }
 }
 
@@ -449,7 +437,9 @@ std::shared_ptr<const BPEVocabulary> BPEVocabulary::parse(std::string_view conte
     vocabulary->pretokenizer = pretokenizer;
 
     size_t line_number = 0;
-    std::vector<bool> single_bytes(256, false);
+
+    /// Ranks index `by_rank`, so they are bounded by the size of the vocabulary rather than trusted.
+    const size_t max_rank = 2 * std::ranges::count(contents, '\n') + 256;
 
     for (size_t pos = 0; pos < contents.size();)
     {
@@ -484,7 +474,7 @@ std::shared_ptr<const BPEVocabulary> BPEVocabulary::parse(std::string_view conte
         {
             token = base64Decode(std::string(line.substr(0, separator)));
         }
-        catch (...)
+        catch (const Poco::DataFormatException &)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Line {} of a BPE vocabulary has a token that is not base64 encoded", line_number);
@@ -513,9 +503,6 @@ std::shared_ptr<const BPEVocabulary> BPEVocabulary::parse(std::string_view conte
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "A BPE vocabulary has rank {} twice, at line {}", rank, line_number);
         vocabulary->by_rank[rank] = stored;
-
-        if (token.size() == 1)
-            single_bytes[static_cast<UInt8>(token[0])] = true;
     }
 
     if (vocabulary->ranks.empty())
@@ -523,8 +510,8 @@ std::shared_ptr<const BPEVocabulary> BPEVocabulary::parse(std::string_view conte
 
     /// Encoding starts from the individual bytes of a piece, so every byte has to be a token of its
     /// own, and text that is not valid UTF-8 has to be encodable too.
-    for (size_t byte = 0; byte < single_bytes.size(); ++byte)
-        if (!single_bytes[byte])
+    for (size_t byte = 0; byte < 256; ++byte)
+        if (const char c = static_cast<char>(byte); vocabulary->rankOf({&c, 1}) == no_rank)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "A BPE vocabulary has no token for the single byte {}, so it cannot encode arbitrary text", byte);
 
@@ -534,20 +521,6 @@ std::shared_ptr<const BPEVocabulary> BPEVocabulary::parse(std::string_view conte
 UInt32 BPEVocabulary::rankOf(std::string_view piece) const
 {
     const auto * it = ranks.find(piece);
-    return it == nullptr ? no_rank : it->getMapped();
-}
-
-UInt32 BPEVocabulary::pairRank(std::string_view left, std::string_view right) const
-{
-    chassert(left.data() + left.size() == right.data());
-    if (pretokenizer != BPEPretokenizer::HuggingFace)
-        return rankOf(std::string_view(left.data(), left.size() + right.size()));
-
-    const UInt32 left_id = rankOf(left);
-    const UInt32 right_id = rankOf(right);
-    if (left_id == no_rank || right_id == no_rank)
-        return no_rank;
-    const auto * it = merge_ranks.find((UInt64{left_id} << 32U) | right_id);
     return it == nullptr ? no_rank : it->getMapped();
 }
 
@@ -567,24 +540,23 @@ void BPEVocabulary::encodePiece(std::string_view piece, PaddedPODArray<UInt32> &
             UInt32 rank;
         };
 
+        /// A piece of a single byte is a token, so it never gets here.
+        chassert(piece.size() >= 2);
         const size_t size = piece.size();
-        if (size == 1)
-        {
-            result.push_back(rankOf(piece));
-            return;
-        }
-
         std::array<Part, max_short_piece + 1> parts{};
         size_t count = size + 1;
         for (size_t i = 0; i + 1 < size; ++i)
-            parts[i] = {static_cast<UInt32>(i), pairRank(piece.substr(i, 1), piece.substr(i + 1, 1))};
+            parts[i] = {static_cast<UInt32>(i), rankOf(piece.substr(i, 2))};
         parts[size - 1] = {static_cast<UInt32>(size - 1), no_rank};
         parts[size] = {static_cast<UInt32>(size), no_rank};
 
-        /// The rank of the pair of `piece[begin, middle)` and `piece[middle, end)`.
-        const auto rank_of_pair = [&](size_t begin, size_t middle, size_t end)
+        /// The rank of the merge of part `i` with the two parts after it, taken before the second of
+        /// the three is removed.
+        const auto rank_after_merge = [&](size_t i) -> UInt32
         {
-            return pairRank(piece.substr(begin, middle - begin), piece.substr(middle, end - middle));
+            if (i + 3 >= count)
+                return no_rank;
+            return rankOf(piece.substr(parts[i].start, parts[i + 3].start - parts[i].start));
         };
 
         while (true)
@@ -602,15 +574,9 @@ void BPEVocabulary::encodePiece(std::string_view piece, PaddedPODArray<UInt32> &
             if (min_rank == no_rank)
                 break;
 
-            /// Part `min_index` absorbs the one after it. Taken before that one is removed, the pair
-            /// before the merged part ends at `parts[min_index + 2]`, and the pair it starts ends at
-            /// `parts[min_index + 3]`, if there is such a part.
             if (min_index > 0)
-                parts[min_index - 1].rank
-                    = rank_of_pair(parts[min_index - 1].start, parts[min_index].start, parts[min_index + 2].start);
-            parts[min_index].rank = min_index + 3 < count
-                ? rank_of_pair(parts[min_index].start, parts[min_index + 2].start, parts[min_index + 3].start)
-                : no_rank;
+                parts[min_index - 1].rank = rank_after_merge(min_index - 1);
+            parts[min_index].rank = rank_after_merge(min_index);
             std::copy(parts.begin() + min_index + 2, parts.begin() + count, parts.begin() + min_index + 1);
             --count;
         }
@@ -644,13 +610,13 @@ void BPEVocabulary::encodePiece(std::string_view piece, PaddedPODArray<UInt32> &
     using Candidate = std::pair<UInt32, size_t>;
     std::priority_queue<Candidate, std::vector<Candidate>, std::greater<>> candidates;
 
-    /// The rank of the pair that starts at part `i`, where `end` bounds the part after it.
+    /// The rank of the pair of part `i` and the part after it.
     const auto pairRankAt = [&](size_t i) -> UInt32
     {
         const size_t after = next[i];
         if (after >= size)
             return no_rank;
-        return pairRank(piece.substr(i, after - i), piece.substr(after, next[after] - after));
+        return rankOf(piece.substr(i, next[after] - i));
     };
 
     const auto offer = [&](size_t i)
@@ -693,33 +659,20 @@ void BPEVocabulary::encodePiece(std::string_view piece, PaddedPODArray<UInt32> &
     }
 }
 
-void BPEVocabulary::encodePieceOrToken(std::string_view piece, PaddedPODArray<UInt32> & result) const
-{
-    /// Most pieces of ordinary text are a token in their own right.
-    if (take_whole_tokens)
-    {
-        if (const UInt32 rank = rankOf(piece); rank != no_rank)
-        {
-            result.push_back(rank);
-            return;
-        }
-    }
-    encodePiece(piece, result);
-}
-
 void BPEVocabulary::encode(std::string_view text, PaddedPODArray<UInt32> & result) const
 {
-    if (pretokenizer == BPEPretokenizer::HuggingFace)
-    {
-        encodeHuggingFace(text, result);
-        return;
-    }
-
     size_t pos = 0;
     while (pos < text.size())
     {
         const size_t length = nextBPEPiece(pretokenizer, text, pos);
-        encodePieceOrToken(text.substr(pos, length), result);
+        const std::string_view piece = text.substr(pos, length);
+
+        /// Most pieces of ordinary text are a token in their own right.
+        if (const UInt32 rank = rankOf(piece); rank != no_rank)
+            result.push_back(rank);
+        else
+            encodePiece(piece, result);
+
         pos += length;
     }
 }

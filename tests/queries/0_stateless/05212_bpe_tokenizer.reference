@@ -16,3 +16,4 @@
 2	2	1
 3	0	1
 -- errors
+-- the vocabulary can be reloaded, so the functions are not deterministic
