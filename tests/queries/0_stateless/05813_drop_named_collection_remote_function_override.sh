@@ -7,9 +7,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `remote(nc, rand())` resolves through the collection `nc`: a non-`equals` function after the collection
-# name is accepted as an override and skipped. Such a definition must hold the collection both when it is
-# the persisted target of a `Remote` table and when a `Remote` table is loaded lazily.
+# `remote(nc, rand())` and `remote(nc, numbers(1))` resolve through the collection `nc`: a non-`equals`
+# function after the collection name, a table function included, is accepted as an override and skipped.
+# Such a definition must hold the collection both when it is the persisted target of a `Remote` table and
+# when a `Remote` table is loaded lazily.
 
 NC="nc_${CLICKHOUSE_DATABASE}"
 DB="${CLICKHOUSE_DATABASE}_1"
@@ -23,6 +24,15 @@ SELECT dummy FROM t_nested;
 SET check_named_collection_dependencies = true;
 DROP NAMED COLLECTION ${NC}; -- { serverError NAMED_COLLECTION_IS_USED }
 DROP TABLE t_nested;
+"
+
+echo "--- ENGINE = Remote(..., remote(nc, numbers(1))) ---"
+${CLICKHOUSE_CLIENT} -m -q "
+CREATE TABLE t_nested_tf (dummy UInt8) ENGINE = Remote('127.0.0.1', remote(${NC}, numbers(1)));
+SELECT dummy FROM t_nested_tf;
+SET check_named_collection_dependencies = true;
+DROP NAMED COLLECTION ${NC}; -- { serverError NAMED_COLLECTION_IS_USED }
+DROP TABLE t_nested_tf;
 "
 
 echo "--- ENGINE = Remote(nc, rand()) loaded lazily ---"
