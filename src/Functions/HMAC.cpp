@@ -19,6 +19,8 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
+#include <mutex>
+
 namespace DB
 {
 
