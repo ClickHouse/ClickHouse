@@ -13,21 +13,24 @@
 
 #include <Common/ProxyConfiguration.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/Stopwatch.h>
 
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
 
 #include <Poco/StreamCopier.h>
 
+#include <chrono>
 #include <functional>
 #include <mutex>
+#include <thread>
 
 namespace
 {
 
 std::string headerOrEmpty(const Aws::Http::HeaderValueCollection & headers, const std::string & name)
 {
-    auto it = headers.find(name);
-    return it == headers.end() ? "" : it->second;
+    auto it = headers.find(Aws::String(name));
+    return it == headers.end() ? "" : std::string(it->second);
 }
 
 }
@@ -151,7 +154,7 @@ TEST(GCSHeaderTranslation, NormalizesHeaderNames)
     for (const auto & header : headers)
     {
         names.push_back(header.name);
-        values.push_back(header.value);
+        values.emplace_back(header.value);
     }
 
     EXPECT_EQ(names, (std::vector<std::string>{"x-amz-meta-owner", "x-amz-storage-class", "custom-auth-token"}));
@@ -342,7 +345,7 @@ DB::S3::PutObjectRequest makeCreateIfAbsentRequest(const std::string & idempoten
     DB::S3::PutObjectRequest request;
     request.SetBucket("test-bucket");
     request.SetKey("table(1)/metadata/v2.metadata.json");
-    request.SetMetadata({{"owner", "analytics"}, {DB::S3::IDEMPOTENCY_ID_METADATA_KEY, idempotency_id}});
+    request.SetMetadata({{"owner", "analytics"}, {DB::S3::IDEMPOTENCY_ID_METADATA_KEY, Aws::String(idempotency_id)}});
     request.setIdempotencyId(idempotency_id);
     request.SetIfNoneMatch("*");
     request.SetContentType("binary/octet-stream");
@@ -359,7 +362,8 @@ std::unique_ptr<DB::S3::Client> makeClientTalkingToMockGCS(
     DB::NormalizedHTTPHeaderEntries headers = {},
     const std::string & access_key_id = "",
     const std::string & secret_access_key = "",
-    unsigned int max_retries = 0)
+    unsigned int max_retries = 0,
+    const std::function<void(DB::S3::PocoHTTPClientConfiguration &)> & configure = {})
 {
     auto client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
         "us-east-1",
@@ -383,6 +387,8 @@ std::unique_ptr<DB::S3::Client> makeClientTalkingToMockGCS(
             .port = mock_port,
         };
     };
+    if (configure)
+        configure(client_configuration);
 
     DB::S3::ClientSettings client_settings{
         .use_virtual_addressing = false,
@@ -594,6 +600,45 @@ TEST(GCSHeaderTranslation, CreateIfAbsentWithHMACReportsALostRace)
     ASSERT_FALSE(outcome.IsSuccess());
     EXPECT_EQ(outcome.GetError().GetExceptionName(), "PreconditionFailed");
     EXPECT_EQ(server.getRequests().size(), 2u);
+}
+
+/// GCS gets a server-side copy as `x-goog-copy-source` and answers it only after copying the data.
+TEST(GCSHeaderTranslation, CopyObjectIsNotRetriedAfterTheAdaptiveTimeout)
+{
+    ScriptedGCSServer server([](size_t, const Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+    {
+        if (request.has("x-goog-copy-source"))
+            std::this_thread::sleep_for(std::chrono::milliseconds(3500));
+        respond(
+            response,
+            Poco::Net::HTTPResponse::HTTP_OK,
+            R"(<?xml version="1.0" encoding="UTF-8"?><CopyObjectResult>)"
+            R"(<LastModified>2026-01-01T00:00:00.000Z</LastModified><ETag>"copy-etag"</ETag></CopyObjectResult>)");
+    });
+    DB::RemoteHostFilter remote_host_filter;
+    auto client = makeClientTalkingToMockGCS(
+        server.getPort(), remote_host_filter, {}, "", "", /* max_retries = */ 1,
+        [](DB::S3::PocoHTTPClientConfiguration & configuration)
+        {
+            configuration.s3_use_adaptive_timeouts = true;
+            configuration.requestTimeoutMs = 30 * 1000;
+        });
+    ASSERT_TRUE(client);
+
+    DB::S3::CopyObjectRequest request;
+    request.SetBucket("test-bucket");
+    request.SetKey("dst");
+    request.SetCopySource("test-bucket/src");
+
+    Stopwatch watch;
+    const auto outcome = client->CopyObject(request);
+    ASSERT_TRUE(outcome.IsSuccess()) << outcome.GetError().GetMessage();
+
+    const auto requests = server.getRequests();
+    ASSERT_EQ(requests.size(), 1u);
+    EXPECT_TRUE(requests[0].headers.has("x-goog-copy-source"));
+    EXPECT_FALSE(requests[0].headers.has("x-amz-copy-source"));
+    EXPECT_GE(watch.elapsedMilliseconds(), 3500u);
 }
 
 #endif
