@@ -1221,7 +1221,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 merging_params.getModeName());
     }
 
-    if (metadata.secondary_indices.hasType("vector_similarity") && args.mode == LoadingStrictnessLevel::CREATE && !is_ddl_replay
+    if (metadata.secondary_indices.hasType("vector_similarity") && is_fresh_definition && !is_ddl_replay
         && !is_stored_definition)
         MergeTreeData::checkVectorSimilarityIndexIsAllowed(merging_params, *storage_settings);
 
