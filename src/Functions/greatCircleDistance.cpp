@@ -112,7 +112,7 @@ struct Impl
         return f;
     }
 
-    T fastCos(T x) const
+    [[nodiscard]] T fastCos(T x) const
     {
         T y = std::abs(x) * (T(COS_LUT_SIZE) / T(PI) / T(2.0));
         size_t i = toIndex(y);
@@ -121,7 +121,7 @@ struct Impl
         return cos_lut[i] + (cos_lut[i + 1] - cos_lut[i]) * y;
     }
 
-    T fastSin(T x) const
+    [[nodiscard]] T fastSin(T x) const
     {
         T y = std::abs(x) * (T(COS_LUT_SIZE) / T(PI) / T(2.0));
         size_t i = toIndex(y);
@@ -132,7 +132,7 @@ struct Impl
 
     /// fast implementation of asin(sqrt(x))
     /// max error in floats 0.00369%, in doubles 0.00072%
-    T fastAsinSqrt(T x) const
+    [[nodiscard]] T fastAsinSqrt(T x) const
     {
         if (x < T(0.122))
         {
