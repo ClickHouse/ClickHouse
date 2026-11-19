@@ -202,8 +202,7 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
     return filter_condition;
 }
 
-/// Whether a runtime filter on probe key `column`, pushed down from above `node` the way `tryPushDownFilter` pushes it, passes
-/// a join input estimated at more than `limit` rows. Stops (returns false) at any step the filter is not pushed through.
+/// Whether a filter on `column`, pushed down into `node` as `tryPushDownFilter` does, reaches a join input estimated above `limit` rows.
 static bool keyPathHasInputAbove(const QueryPlan::Node * node, const String & column, UInt64 limit)
 {
     while (node)
@@ -412,8 +411,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     const bool check_left_does_not_contain = (join_operator.kind == JoinKind::Left && join_operator.strictness == JoinStrictness::Anti);
 
     /// Skip if the probe side is known to produce at most `join_runtime_filter_min_probe_rows` rows
-    /// Planning and pipeline overhead outweighs any saving on a tiny probe, unless a key filter is
-    /// pushed down to a larger join input below.
+    /// Planning and pipeline overhead outweighs any saving on a tiny probe, unless a key filter is pushed down to a larger join input.
     ///
     /// The decision is recorded on the step and travels with a copy of it. It is the one decision
     /// this pass takes from a row estimate, and estimates are not part of the plan format, so on a
@@ -444,7 +442,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                     probe_keys.push_back(rhs.getColumnName());
             }
 
-            /// A multi-key LEFT ANTI filter is one tuple condition, which is not pushed below a join whose inputs each hold only some of the keys.
+            /// A multi-key LEFT ANTI filter is one tuple condition, not pushed below a join whose inputs each hold only some of the keys.
             const bool walk_key_paths = !(check_left_does_not_contain && probe_keys.size() > 1);
             const bool filter_reaches_large_input = walk_key_paths
                 && std::ranges::any_of(probe_keys, [&](const String & key) { return keyPathHasInputAbove(node.children[0], key, limit); });
