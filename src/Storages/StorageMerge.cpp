@@ -1856,12 +1856,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                     ApplyAliasColumnExpressionsVisitor visitor(replacement_table_expression);
                     visitor.visit(column_node);
 
-                    /// The query reads the column under the type the `Merge` table declares.
-                    auto merge_column = merge_storage_snapshot->metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, column);
-                    if (merge_column && !merge_column->type->equals(*column_type))
-                        column_name_to_node.emplace(column, buildCastFunction(column_node, merge_column->type, modified_context));
-                    else
-                        column_name_to_node.emplace(column, column_node);
+                    column_name_to_node.emplace(column, column_node);
                     aliases.push_back({ .name = column, .type = column_type, .expression = column_node->toAST() });
                 }
                 else

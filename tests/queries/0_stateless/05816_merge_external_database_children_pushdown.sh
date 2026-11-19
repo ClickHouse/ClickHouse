@@ -22,8 +22,6 @@ CREATE TABLE src2 (id INTEGER, v TEXT) STRICT;
 INSERT INTO src2 VALUES (5, 'q5'), (8, 'q8');
 CREATE TABLE loose (id INTEGER, v TEXT);
 INSERT INTO loose VALUES (5, 'w5');
-CREATE TABLE wide (id INTEGER, v TEXT) STRICT;
-INSERT INTO wide VALUES (0, 'n0'), (256, 'n256');
 "
 
 TABLES="
@@ -34,12 +32,6 @@ CREATE TABLE t_s2 (id Nullable(Int64), v Nullable(String)) ENGINE = SQLite('${DB
 CREATE TABLE t_w (id Nullable(Int64), v Nullable(String)) ENGINE = SQLite('${DB_PATH}', 'loose');
 CREATE TABLE t_q (id Nullable(Int64), v Nullable(String)) ENGINE = SQLite('${DB_PATH}', query('SELECT id, v FROM src'));
 CREATE TABLE m (id Nullable(Int64), v Nullable(String)) ENGINE = Merge(currentDatabase(), '^t_(l|s)$');
-CREATE TABLE t_n (id Nullable(Int64), v Nullable(String)) ENGINE = SQLite('${DB_PATH}', 'wide');
-CREATE TABLE m_n (id Nullable(UInt8), v Nullable(String)) ENGINE = Merge(currentDatabase(), '^t_(l|n)$');
-CREATE TABLE t_na (id Nullable(Int64), v Nullable(String), a Nullable(Int64) ALIAS id) ENGINE = SQLite('${DB_PATH}', 'wide');
-CREATE TABLE m_na (a Nullable(UInt8), v Nullable(String)) ENGINE = Merge(currentDatabase(), '^t_(l|na)$');
-CREATE TABLE b_n (id Nullable(UInt8), v Nullable(String)) ENGINE = Buffer(currentDatabase(), t_n, 1, 1000000, 1000000, 1000000000, 1000000000, 1000000000000, 1000000000000);
-CREATE TABLE m_lc (id Nullable(Int64), v LowCardinality(Nullable(String))) ENGINE = Merge(currentDatabase(), '^t_s$');
 "
 
 echo 'MergeTree and SQLite:'
@@ -70,33 +62,6 @@ ${CLICKHOUSE_LOCAL} --query="${TABLES}
 SELECT id, v FROM merge(currentDatabase(), '^t_(l|q)$') WHERE id = 5 SETTINGS external_table_strict_query = 1;
 " 2>&1 | grep -c 'INCORRECT_QUERY'
 
-# 256 is 0 as `UInt8`, so the filter over the `Merge` column cannot be evaluated by SQLite.
-echo 'A Merge column narrower than the SQLite column:'
-${CLICKHOUSE_LOCAL} --query="${TABLES}
-SELECT id, v FROM m_n WHERE id = 0 ORDER BY v;
-"
-${CLICKHOUSE_LOCAL} --query="${TABLES}
-SELECT id, v FROM m_n WHERE id = 0 SETTINGS external_table_strict_query = 1;
-" 2>&1 | grep -c 'INCORRECT_QUERY'
-
-echo 'An ALIAS column of the SQLite table under a narrower Merge column:'
-${CLICKHOUSE_LOCAL} --query="${TABLES}
-SELECT a, v FROM m_na WHERE a = 0 ORDER BY v;
-"
-${CLICKHOUSE_LOCAL} --query="${TABLES}
-SELECT a, v FROM m_na WHERE a = 0 SETTINGS external_table_strict_query = 1;
-" 2>&1 | grep -c 'INCORRECT_QUERY'
-
-echo 'A Buffer column narrower than the SQLite column:'
-${CLICKHOUSE_LOCAL} --query="${TABLES}
-SELECT id, v FROM b_n WHERE id = 0 ORDER BY v;
-"
-
-echo 'A LowCardinality Merge column:'
-${CLICKHOUSE_LOCAL} --send_logs_level=trace --query="${TABLES}
-SELECT id, v FROM m_lc WHERE v = 's5' FORMAT Null;
-" 2>&1 | grep -oE 'Query: SELECT .* FROM `src`.*$'
-
 ${CLICKHOUSE_CLIENT} --multiquery --query "
 CREATE TABLE t_l (id Nullable(Int64), v Nullable(String)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_l VALUES (1, 'l1'), (5, 'l5');
@@ -111,9 +76,6 @@ GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO pg_self_${CLICKHOUSE_DATABASE};
 CREATE TABLE t_pg (id Nullable(Int64), v Nullable(String))
     ENGINE = PostgreSQL('localhost:${CLICKHOUSE_PORT_POSTGRESQL}', '${CLICKHOUSE_DATABASE}', 't_l', 'pg_self_${CLICKHOUSE_DATABASE}', 'pgpass');
 CREATE TABLE m_pg (id Nullable(Int64), v Nullable(String)) ENGINE = Merge(currentDatabase(), '^t_(l|pg)\$');
-CREATE TABLE t_pgn (id Int64, v String)
-    ENGINE = PostgreSQL('localhost:${CLICKHOUSE_PORT_POSTGRESQL}', '${CLICKHOUSE_DATABASE}', 't_l', 'pg_self_${CLICKHOUSE_DATABASE}', 'pgpass');
-CREATE TABLE m_pgn (id Nullable(Int64), v Nullable(String)) ENGINE = Merge(currentDatabase(), '^t_pgn\$');
 CREATE TABLE t_q (id Nullable(Int64), v Nullable(String)) ENGINE = SQLite('${DB_PATH}', query('SELECT id, v FROM src'));
 CREATE TABLE m_s (id Nullable(Int64), v Nullable(String)) ENGINE = Merge(currentDatabase(), '^t_s\$');
 DROP USER IF EXISTS strict_${CLICKHOUSE_DATABASE};
@@ -132,11 +94,6 @@ SELECT id, v FROM m_my WHERE id = 5 FORMAT Null;
 echo 'MergeTree and PostgreSQL:'
 ${CLICKHOUSE_CLIENT} --send_logs_level=trace --query "
 SELECT id, v FROM m_pg WHERE id = 5 FORMAT Null;
-" 2>&1 | grep -oE 'Query: SELECT .* FROM "t_l".*$'
-
-echo 'A Nullable Merge column over a PostgreSQL column:'
-${CLICKHOUSE_CLIENT} --send_logs_level=trace --query "
-SELECT id, v FROM m_pgn WHERE id = 5 FORMAT Null;
 " 2>&1 | grep -oE 'Query: SELECT .* FROM "t_l".*$'
 
 # The receiving side of a serialized query plan has no query tree until it analyzes the read itself.

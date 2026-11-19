@@ -1291,7 +1291,7 @@ String transformQueryForExternalDatabase(
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "No column names for query '{}' to external table '{}.{}'",
                             query_info.query_tree->formatASTForErrorMessage(), database, table);
 
-        auto clone_query = getASTForExternalDatabaseFromQueryTree(context, query_info.query_tree, query_info.table_expression, available_columns);
+        auto clone_query = getASTForExternalDatabaseFromQueryTree(context, query_info.query_tree, query_info.table_expression);
 
         return transformQueryForExternalDatabaseImpl(
             clone_query,
@@ -1350,7 +1350,7 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
         /// The analyzer has not produced an AST yet; nothing to inspect if the query tree is unavailable.
         if (!query_info.query_tree || !query_info.table_expression)
             return;
-        clone_query = getASTForExternalDatabaseFromQueryTree(context, query_info.query_tree, query_info.table_expression, available_columns);
+        clone_query = getASTForExternalDatabaseFromQueryTree(context, query_info.query_tree, query_info.table_expression);
     }
     else if (query_info.query)
     {

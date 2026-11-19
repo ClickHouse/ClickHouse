@@ -11,24 +11,9 @@ Strict mode, a table without STRICT:
 1
 Strict mode, a query-backed table:
 1
-A Merge column narrower than the SQLite column:
-0	n0
-0	n256
-1
-An ALIAS column of the SQLite table under a narrower Merge column:
-0	n0
-0	n256
-1
-A Buffer column narrower than the SQLite column:
-0	n0
-0	n256
-A LowCardinality Merge column:
-Query: SELECT `id`, `v` FROM `src` WHERE `v` = 's5'
 MergeTree and MySQL:
 Query: SELECT `id`, `v` FROM `default`.`t_l` WHERE `id` = 5
 MergeTree and PostgreSQL:
-Query: SELECT "id", "v" FROM "t_l" WHERE "id" = 5
-A Nullable Merge column over a PostgreSQL column:
 Query: SELECT "id", "v" FROM "t_l" WHERE "id" = 5
 Serialized query plan:
 5	s5
