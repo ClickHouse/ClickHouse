@@ -363,6 +363,7 @@ void optimizeJoinByShards(QueryPlan::Node & root);
 /// the reading is then gated on the build completion seal which delivers the filter for
 /// primary key range pruning (see SealGatedReadTransform).
 void markSealGatedReading(QueryPlan::Node & root);
+void optimizeJoinByPartitions(QueryPlan::Node & root);
 void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_shards);
 void optimizeDistinctInOrder(const Stack & stack, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeLimitForAggregationInOrder(QueryPlan::Node & root);

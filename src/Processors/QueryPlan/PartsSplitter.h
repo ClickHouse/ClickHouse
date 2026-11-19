@@ -81,6 +81,8 @@ struct SplitPartsByRanges
 {
     using Values = VectorWithMemoryTracking<Field>;
 
+    /// With no `borders`, the layers are disjoint by construction (groups of whole partitions, see
+    /// `optimizeJoinByPartitions`) and are read without a range filter.
     VectorWithMemoryTracking<RangesInDataParts> layers;
     VectorWithMemoryTracking<Values> borders;
     bool in_reverse_order = false;

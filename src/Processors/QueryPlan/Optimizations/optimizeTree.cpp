@@ -1019,6 +1019,9 @@ void optimizeTreeSecondPass(
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);
 
+    /// After `optimizeJoinByShards`, which claims its reads first.
+    if (optimization_settings.query_plan_join_shard_by_partitions)
+        optimizeJoinByPartitions(root);
     /// Runs after the filters were pushed down into the reading steps: the mark is detected
     /// from the `__applyFilter` conjunct of the reading step's own filter.
     if (optimization_settings.join_seal_gated_reading)
