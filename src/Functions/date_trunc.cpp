@@ -11,6 +11,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/WeekFunctionsSettings.h>
 #include <Functions/toStartOfInterval.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -104,6 +105,7 @@ public:
         /// which also changes how `toStartOfInterval` clamps values near the epoch.
         : to_start_of_interval(createLegacyToStartOfIntervalOverloadResolver(context))
         , function_date_trunc_return_type_behavior(context->getSettingsRef()[Setting::function_date_trunc_return_type_behavior])
+        , first_weekday(WeekFunctionsSettings(context).firstWeekday(1))
     {
     }
 
@@ -262,7 +264,7 @@ public:
 
         std::optional<Date32RoundingNarrowing> date32_narrowing;
         if (args.size() >= 2 && isDate32(removeLowCardinalityAndNullable(args[1].type)))
-            date32_narrowing = describeDate32RoundingNarrowing(return_type, datepart_kind, 1);
+            date32_narrowing = describeDate32RoundingNarrowing(return_type, datepart_kind, 1, first_weekday);
 
         auto function = std::make_shared<FunctionDateTrunc>(to_start_of_interval, datepart_kind, date32_narrowing);
 
@@ -276,6 +278,7 @@ public:
 private:
     FunctionOverloadResolverPtr to_start_of_interval;
     UInt64 function_date_trunc_return_type_behavior;
+    UInt8 first_weekday;
 };
 
 }

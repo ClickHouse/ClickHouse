@@ -1010,7 +1010,7 @@ public:
         {
             const auto * interval_column = checkAndGetColumnConst<ColumnInt64>(args[1].column.get());
             const Int64 num_units = interval_column ? interval_column->getValue<Int64>() : 0;
-            date32_narrowing = describeDate32RoundingNarrowing(return_type, interval_type->getKind(), num_units);
+            date32_narrowing = describeDate32RoundingNarrowing(return_type, interval_type->getKind(), num_units, first_weekday);
         }
 
         auto function = std::make_shared<FunctionToStartOfInterval>(overload, preserve_argument_type, date32_narrowing, first_weekday);
@@ -1036,13 +1036,19 @@ FunctionOverloadResolverPtr createLegacyToStartOfIntervalOverloadResolver(Contex
     return std::make_unique<FunctionToStartOfIntervalOverloadResolver>(context, /* preserve_argument_type_ = */ false);
 }
 
-std::optional<Date32RoundingNarrowing> describeDate32RoundingNarrowing(const DataTypePtr & result_type, IntervalKind::Kind kind, Int64 num_units)
+std::optional<Date32RoundingNarrowing> describeDate32RoundingNarrowing(
+    const DataTypePtr & result_type, IntervalKind::Kind kind, Int64 num_units, UInt8 first_weekday)
 {
     const DataTypePtr type = removeNullable(recursiveRemoveLowCardinality(result_type));
     if (isDate(type))
-        return Date32RoundingNarrowing{.kind = kind, .num_units = num_units, .time_zone = &DateLUT::instance("UTC")};
+        return Date32RoundingNarrowing{
+            .kind = kind, .num_units = num_units, .time_zone = &DateLUT::instance("UTC"), .first_weekday = first_weekday};
     if (isDateTime(type))
-        return Date32RoundingNarrowing{.kind = kind, .num_units = num_units, .time_zone = &assert_cast<const DataTypeDateTime &>(*type).getTimeZone()};
+        return Date32RoundingNarrowing{
+            .kind = kind,
+            .num_units = num_units,
+            .time_zone = &assert_cast<const DataTypeDateTime &>(*type).getTimeZone(),
+            .first_weekday = first_weekday};
     return {};
 }
 
@@ -1073,7 +1079,9 @@ IFunction::Monotonicity getDate32RoundingMonotonicity(const Date32RoundingNarrow
                 return seconds >= 0 && seconds <= std::numeric_limits<UInt32>::max();
             }
             case IntervalKind::Kind::Week:
-                return fits_date(ToStartOfInterval<IntervalKind::Kind::Week>::execute(d, units, time_zone, 1));
+                /// Rounded as the function rounds it: from `week_functions_starting_day`, not always from Monday.
+                return fits_date(ToStartOfInterval<IntervalKind::Kind::Week>::executeWithFirstWeekday(
+                    d, units, time_zone, 1, narrowing.first_weekday));
             case IntervalKind::Kind::Month:
                 return fits_date(ToStartOfInterval<IntervalKind::Kind::Month>::execute(d, units, time_zone, 1));
             case IntervalKind::Kind::Quarter:
