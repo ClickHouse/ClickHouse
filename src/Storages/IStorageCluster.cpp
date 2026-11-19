@@ -27,10 +27,15 @@
 #include <Columns/ColumnSet.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Interpreters/SetSerialization.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Functions/FunctionFactory.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Base64.h>
 
@@ -58,11 +63,14 @@ namespace Setting
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_rows_to_transfer;
 }
 
 namespace ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
+    extern const int INCORRECT_DATA;
 }
 
 IStorageCluster::IStorageCluster(
@@ -78,7 +86,22 @@ IStorageCluster::IStorageCluster(
 namespace
 {
 
-bool isSerializableFilterNode(const ActionsDAG::Node & node, const UnorderedMapWithMemoryTracking<String, ColumnWithTypeAndName> & replica_columns)
+/// A set is sent to every replica, so it has to fit `max_rows_to_transfer` and `max_bytes_to_transfer` like the sets
+/// of a distributed plan. Unlike there, a larger set does not fail the query: its conjunct stays on the initiator.
+bool fitsTransferLimits(const Columns & set_columns, const SizeLimits & transfer_limits)
+{
+    const UInt64 rows = set_columns.empty() ? 0 : set_columns.front()->size();
+    UInt64 bytes = 0;
+    for (const auto & column : set_columns)
+        bytes += column->byteSize();
+    return (!transfer_limits.max_rows || rows <= transfer_limits.max_rows)
+        && (!transfer_limits.max_bytes || bytes <= transfer_limits.max_bytes);
+}
+
+bool isSerializableFilterNode(
+    const ActionsDAG::Node & node,
+    const UnorderedMapWithMemoryTracking<String, ColumnWithTypeAndName> & replica_columns,
+    const SizeLimits & transfer_limits)
 {
     /// A lambda's body is built, and JIT-compiled in place, while the initiator plans the query, so a replica cannot always rebuild it.
     if (WhichDataType(node.result_type).isFunction())
@@ -93,26 +116,33 @@ bool isSerializableFilterNode(const ActionsDAG::Node & node, const UnorderedMapW
         if (!column_set)
             return true;
         const auto & future_set = column_set->getData();
-        if (typeid_cast<const FutureSetFromTuple *>(future_set.get()))
-            return true;
+        if (const auto * from_tuple = typeid_cast<const FutureSetFromTuple *>(future_set.get()))
+            return fitsTransferLimits(from_tuple->getKeyColumns(), transfer_limits);
         if (typeid_cast<const FutureSetFromSubquery *>(future_set.get()))
         {
             auto set = future_set->get();
-            return set && set->hasExplicitSetElements() && !set->isTruncated();
+            return set && set->hasExplicitSetElements() && !set->isTruncated()
+                && fitsTransferLimits(set->getSetElements(), transfer_limits);
         }
         return false;
     }
     for (const auto * child : node.children)
-        if (!isSerializableFilterNode(*child, replica_columns))
+        if (!isSerializableFilterNode(*child, replica_columns, transfer_limits))
             return false;
-    return node.type == ActionsDAG::ActionType::FUNCTION || node.type == ActionsDAG::ActionType::ALIAS;
+    /// The replica rebuilds a function only through `FunctionFactory`, so it cannot rebuild an executable or a WASM UDF.
+    if (node.type == ActionsDAG::ActionType::FUNCTION)
+        return FunctionFactory::instance().has(node.function_base->getName());
+    return node.type == ActionsDAG::ActionType::ALIAS;
 }
 
-String serializeFilterForReplicas(const ActionsDAG::Node & predicate, const UnorderedMapWithMemoryTracking<String, ColumnWithTypeAndName> & replica_columns)
+String serializeFilterForReplicas(
+    const ActionsDAG::Node & predicate,
+    const UnorderedMapWithMemoryTracking<String, ColumnWithTypeAndName> & replica_columns,
+    const SizeLimits & transfer_limits)
 {
     ActionsDAG::NodeRawConstPtrs serializable;
     for (const auto * atom : ActionsDAG::extractConjunctionAtoms(&predicate))
-        if (isSerializableFilterNode(*atom, replica_columns))
+        if (isSerializableFilterNode(*atom, replica_columns, transfer_limits))
             serializable.push_back(atom);
 
     auto filter = ActionsDAG::buildFilterActionsDAG(serializable, replica_columns);
@@ -126,6 +156,55 @@ String serializeFilterForReplicas(const ActionsDAG::Node & predicate, const Unor
     return base64Encode(out.str());
 }
 
+}
+
+void addFilterPushedDownByInitiator(QueryPlan & query_plan, const ContextPtr & context)
+{
+    const String & serialized = context->getSettingsRef()[Setting::cluster_table_function_pushed_down_filter].value;
+    if (serialized.empty())
+        return;
+
+    /// A client can send this setting with a query that reaches a replica, so decode it within the same type budget as a client's query plan.
+    const size_t max_type_complexity = getBinaryTypeDecodingComplexityLimit(context);
+    const String decoded = base64Decode(serialized);
+    ReadBufferFromString in(decoded);
+    DeserializedSetsRegistry registry;
+    auto filter = ActionsDAG::deserialize(in, registry, context, max_type_complexity);
+    QueryPlan::deserializeAndMakeSets(registry, in, context, max_type_complexity);
+    if (filter.getOutputs().size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "A filter pushed down by the initiator must have one output, got {}", filter.getOutputs().size());
+    /// The initiator sends no lambda and no `arrayJoin` (see `isSerializableFilterNode`), so neither is accepted from a client.
+    for (const auto & node : filter.getNodes())
+        if (node.type == ActionsDAG::ActionType::ARRAY_JOIN || WhichDataType(node.result_type).isFunction())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "A filter pushed down by the initiator cannot have the node {}", node.result_name);
+
+    const auto header = query_plan.getCurrentHeader();
+    std::unordered_map<String, const ActionsDAG::Node *> inputs;
+    for (const auto * input : filter.getInputs())
+    {
+        const auto * column = header->findByName(input->result_name);
+        if (!column || !column->type->equals(*input->result_type))
+            return;
+        inputs.emplace(input->result_name, input);
+    }
+
+    const auto * filter_node = filter.getOutputs().at(0);
+    const String filter_column_name = filter_node->result_name;
+    const bool filter_is_read_column = filter_node->type == ActionsDAG::ActionType::INPUT;
+
+    ActionsDAG::NodeRawConstPtrs outputs{filter_node};
+    for (const auto & column : header->getColumnsWithTypeAndName())
+    {
+        auto it = inputs.find(column.name);
+        const auto * node = it != inputs.end() ? it->second : &filter.addInput(column.name, column.type);
+        if (node != filter_node)
+            outputs.push_back(node);
+    }
+    filter.getOutputs() = std::move(outputs);
+
+    auto filter_step = std::make_unique<FilterStep>(header, std::move(filter), filter_column_name, !filter_is_read_column);
+    filter_step->setStepDescription("Filter pushed down by the initiator");
+    query_plan.addStep(std::move(filter_step));
 }
 
 void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -143,7 +222,7 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
     /// the arguments of the window functions, or the columns read.
     const bool header_is_select_list = processed_stage == QueryProcessingStage::WithMergeableState
         && !query_info.need_aggregate && !query_info.has_window;
-    if (storage->isObjectStorage() && header_is_select_list && filter_actions_dag && !filter_actions_dag->getOutputs().empty()
+    if (storage->supportsFilterPushdownToReplicas() && header_is_select_list && filter_actions_dag && !filter_actions_dag->getOutputs().empty()
         && select && select->select())
     {
         const auto & header_columns = getOutputHeader()->getColumnsWithTypeAndName();
@@ -160,7 +239,11 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
         }
 
         if (!replica_columns.empty())
-            pushed_down_filter = serializeFilterForReplicas(*filter_actions_dag->getOutputs().at(0), replica_columns);
+        {
+            const auto & settings = context->getSettingsRef();
+            const SizeLimits transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], OverflowMode::THROW);
+            pushed_down_filter = serializeFilterForReplicas(*filter_actions_dag->getOutputs().at(0), replica_columns, transfer_limits);
+        }
     }
 
     createExtension(predicate);

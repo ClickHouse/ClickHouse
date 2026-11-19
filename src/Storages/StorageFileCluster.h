@@ -27,6 +27,7 @@ public:
         const ConstraintsDescription & constraints_);
 
     std::string getName() const override { return "FileCluster"; }
+    bool supportsFilterPushdownToReplicas() const override { return true; }
 
     RemoteQueryExecutor::Extension getTaskIteratorExtension(
         const ActionsDAG::Node * predicate,

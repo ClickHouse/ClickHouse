@@ -5471,12 +5471,20 @@ ActionsDAG ActionsDAG::deserialize(
             /// Column is already deserialized
             if (!node.children.empty())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized column can't have children");
+            /// `addColumn` never makes a constant without a value, and the code that runs a DAG relies on it.
+            if (!node.column)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized column {} has no value", node.result_name);
         }
         else if (node.type == ActionType::ALIAS)
         {
             /// nothing to deserialize
             if (node.children.size() != 1)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized alias must have one children");
+            /// An alias passes on the column of its child, so the code that plans and runs a DAG relies on it having the child's type.
+            const auto & child_type = node.children.front()->result_type;
+            if (!node.result_type->equals(*child_type))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized alias {} has type {}, but its child has type {}",
+                    node.result_name, node.result_type->getName(), child_type->getName());
         }
         else if (node.type == ActionType::FUNCTION)
         {
@@ -5539,6 +5547,12 @@ ActionsDAG ActionsDAG::deserialize(
             /// nothing to deserialize
             if (node.children.size() != 1)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized array join must have one children");
+            /// The same type as `addArrayJoin` gives the node.
+            const auto & argument_type = node.children.front()->result_type;
+            const auto array_type = getArrayJoinDataType(argument_type);
+            if (!array_type || !node.result_type->equals(*array_type->getNestedType()))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized array join {} has type {}, but its argument has type {}",
+                    node.result_name, node.result_type->getName(), argument_type->getName());
         }
         else
         {

@@ -49,6 +49,8 @@ public:
 
     bool isObjectStorage() const override { return true; }
 
+    bool supportsFilterPushdownToReplicas() const override { return true; }
+
     bool supportsParallelInsert() const override;
 
     bool supportsDelete() const override;

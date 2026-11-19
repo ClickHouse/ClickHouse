@@ -52,6 +52,9 @@ public:
     bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
+    /// Whether the replica's storage can apply the filter sent by the initiator.
+    virtual bool supportsFilterPushdownToReplicas() const { return false; }
+
     const String & getClusterName() const { return cluster_name; }
 
     /// The existing table that the replicas read by its name, if this storage reads such a table.
@@ -102,6 +105,10 @@ private:
     LoggerPtr log;
     String cluster_name;
 };
+
+
+/// Add the filter sent by the initiator if its inputs match the replica's read header.
+void addFilterPushedDownByInitiator(QueryPlan & query_plan, const ContextPtr & context);
 
 
 class ReadFromCluster : public SourceStepWithFilter

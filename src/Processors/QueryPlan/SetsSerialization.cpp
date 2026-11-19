@@ -212,6 +212,10 @@ QueryPlanAndSets QueryPlan::deserializeSets(
 
         UInt8 kind = 0;
         readVarUInt(kind, in);
+        if (flags.only_set_values && kind != UInt8(SetSerializationKind::TupleValues))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Serialized set {}_{} has kind {}, but only a set of values is allowed", hash.low64, hash.high64, int(kind));
+
         if (kind == UInt8(SetSerializationKind::StorageSet))
         {
             String storage_name;
@@ -275,6 +279,11 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} has unknown kind {}",
                 hash.low64, hash.high64, int(kind));
     }
+
+    /// `serializeSets` writes a record for every set it registered, and a set without one would be planned without its data.
+    for (const auto & [hash, columns] : registry.sets)
+        if (!columns.empty())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} has no record", hash.low64, hash.high64);
 
     return res;
 }
@@ -354,9 +363,11 @@ void QueryPlan::serializeReadySets(SerializedSetsRegistry & registry, WriteBuffe
     serializeSets(registry, out, flags);
 }
 
-void QueryPlan::deserializeAndMakeSets(DeserializedSetsRegistry & registry, ReadBuffer & in, const ContextPtr & context)
+void QueryPlan::deserializeAndMakeSets(DeserializedSetsRegistry & registry, ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity)
 {
-    makeSets(deserializeSets(QueryPlan{}, registry, in, SerializationFlags{}, context, 0), context);
+    SerializationFlags flags;
+    flags.only_set_values = true;
+    makeSets(deserializeSets(QueryPlan{}, registry, in, flags, context, max_type_complexity), context);
 }
 
 QueryPlan QueryPlan::makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context)

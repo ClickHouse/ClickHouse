@@ -58,7 +58,7 @@ ActionsDAG deserializeDag(const String & data)
     return ActionsDAG::deserialize(in, registry, getContext().context);
 }
 
-void expectRejected(const String & data)
+void expectRejected(const String & data, const String & message = "is out of range")
 {
     try
     {
@@ -68,7 +68,7 @@ void expectRejected(const String & data)
     catch (const Exception & e)
     {
         EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA) << e.message();
-        EXPECT_NE(e.message().find("is out of range"), std::string::npos) << e.message();
+        EXPECT_NE(e.message().find(message), std::string::npos) << e.message();
     }
 }
 
@@ -179,6 +179,38 @@ TEST(ActionsDAGDeserialization, RejectsInputOutOfRange)
 TEST(ActionsDAGDeserialization, RejectsOutputOutOfRange)
 {
     expectRejected(plusStream("a", false, {2}));
+}
+
+TEST(ActionsDAGDeserialization, RejectsColumnWithoutValue)
+{
+    WriteBufferFromOwnString out;
+    writeVarUInt(1, out);
+    writeNode(out, ActionType::COLUMN, "f", u8, {});
+    writeIds(out, {});
+    writeIds(out, {0});
+    expectRejected(out.str(), "has no value");
+}
+
+TEST(ActionsDAGDeserialization, RejectsAliasOfAnotherType)
+{
+    WriteBufferFromOwnString out;
+    writeVarUInt(2, out);
+    writeNode(out, ActionType::INPUT, "a", u8, {});
+    writeNode(out, ActionType::ALIAS, "b", u16, {0});
+    writeIds(out, {0});
+    writeIds(out, {1});
+    expectRejected(out.str(), "but its child has type");
+}
+
+TEST(ActionsDAGDeserialization, RejectsArrayJoinOfNonArray)
+{
+    WriteBufferFromOwnString out;
+    writeVarUInt(2, out);
+    writeNode(out, ActionType::INPUT, "a", u8, {});
+    writeNode(out, ActionType::ARRAY_JOIN, "j", u8, {0});
+    writeIds(out, {0});
+    writeIds(out, {1});
+    expectRejected(out.str(), "but its argument has type");
 }
 
 TEST(ActionsDAGDeserialization, NestedLambda)
