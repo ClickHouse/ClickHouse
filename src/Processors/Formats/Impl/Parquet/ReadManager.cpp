@@ -842,6 +842,11 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
         size_t i = first_incomplete_row_group.load();
         if (row_group_idx != i)
             return false;
+        /// Stages before `ColumnData` handle the whole row group at once. The first incomplete row group
+        /// must be able to pass them even when a later row group holds the stage's memory, otherwise
+        /// it waits for that memory while the later row group waits for it to be delivered.
+        if (stage_idx < ReadStage::ColumnData)
+            return true;
         const RowGroup & row_group = reader.row_groups[row_group_idx];
         /// Must check stage first so that read_ptr is meaningful (we start advancing it in finishRowSubgroupStage).
         /// Using acquire ordering to synchronize with the release (seq_cst) store in `finishRowGroupStage`.
