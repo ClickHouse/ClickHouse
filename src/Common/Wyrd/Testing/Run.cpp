@@ -113,6 +113,10 @@ void runTest(std::function<void()> body, TestParams params)
             failed.error_message = fmt::format(
                 "Simulation with seed {} is not deterministic: digests {} and {}, {} and {} steps",
                 simulation.seed, first.digest, second.digest, first.total_steps, second.total_steps);
+        else if (first.status != second.status)
+            failed.error_message = fmt::format(
+                "Simulation with seed {} is not deterministic: it ended with {} and then with {}. {} {}",
+                simulation.seed, magic_enum::enum_name(first.status), magic_enum::enum_name(second.status), first.exception_message, second.exception_message);
         else if (first.status != SimulationResult::Status::Ok)
             failed.error_message = fmt::format(
                 "Simulation with seed {} ended with {} after {} steps. {}",
