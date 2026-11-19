@@ -979,6 +979,26 @@ def test_timestamps(started_cluster):
     assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-rest/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
 
+    berlin_catalog = f"{CATALOG_NAME}_berlin"
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        berlin_catalog,
+        {"iceberg_timezone_for_timestamptz": "Europe/Berlin"},
+    )
+    berlin_table = f"{berlin_catalog}.`{root_namespace}.{table_name}`"
+    assert node.query(
+        f"SELECT type FROM system.columns WHERE database = '{berlin_catalog}' AND table = '{root_namespace}.{table_name}' AND name = 'timestamptz'",
+        settings={"show_data_lake_catalogs_in_system_tables": 1},
+    ) == "Nullable(DateTime64(6, \\'Europe/Berlin\\'))\n"
+    assert node.query(
+        f"SELECT toTypeName(timestamptz), timestamptz, toUnixTimestamp(timestamptz) FROM {berlin_table}"
+    ) == "Nullable(DateTime64(6, \\'Europe/Berlin\\'))\t2024-01-01 13:00:00.000000\t1704110400\n"
+    assert node.query(
+        f"SELECT count() FROM {berlin_table} WHERE timestamptz = '2024-01-01 13:00:00'"
+    ) == "1\n"
+    node.query(f"DROP DATABASE {berlin_catalog}")
+
 
 def test_insert(started_cluster):
     node = started_cluster.instances["node1"]
@@ -1523,6 +1543,45 @@ def test_create_without_engine_arguments(started_cluster, engine_clause):
         started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": "http://minio1:9001"}
     )
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+
+def test_create_without_engine_arguments_namespace_location_not_a_uri(started_cluster):
+    # Databricks reports `not_used` as the location of a schema with managed tables.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_namespace_location_not_a_uri_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace, properties={"location": "not_used"})
+    assert catalog.load_namespace_properties(root_namespace)["location"] == "not_used"
+
+    create_clickhouse_iceberg_database(
+        started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": "http://minio1:9001"}
+    )
+
+    # Without a table engine nothing tells the storage type.
+    error = node.query_and_get_error(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}_default` (x String)",
+        settings={"allow_experimental_database_iceberg": 1},
+    )
+    assert "cannot tell where table" in error, error
+
+    node.query(
+        f"CREATE TABLE {table_ref} (x String) ENGINE = IcebergS3",
+        settings={"allow_experimental_database_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    node.query(
+        f"INSERT INTO {table_ref} VALUES ('AAPL')",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"SELECT * FROM {table_ref}") == "AAPL\n"
+
+    # The catalog chose the location.
+    metadata_location = catalog.load_table(f"{root_namespace}.{table_name}").metadata_location
+    assert f"/{root_namespace}/{table_name}/metadata/" in metadata_location, metadata_location
 
 
 @pytest.mark.parametrize("namespace_exists", [False, True])

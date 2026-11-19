@@ -25,7 +25,7 @@
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/TypeTree.h>
+#include <DataTypes/hasNullable.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
 #include <Common/SipHash.h>
@@ -47,6 +47,7 @@
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Storages/SelectQueryInfo.h>
+#include <base/find_symbols.h>
 #include <base/scope_guard.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
@@ -88,6 +89,7 @@ namespace ProfileEvents
     extern const Event ColumnsCacheHits;
     extern const Event ColumnsCacheMisses;
     extern const Event ParquetRuntimeFilterPrunedRowGroups;
+    extern const Event ParquetRuntimeFilterPrunedPages;
     extern const Event ParquetTopKRowGroupsBoundedByDictionary;
 }
 
@@ -109,18 +111,6 @@ static bool writesCompressedV2PagesAsUncompressed(std::string_view created_by)
     for (size_t i = 0; i < created_by.size() && isNumericASCII(created_by[i]) && major < 2; ++i)
         major = major * 10 + static_cast<UInt64>(created_by[i] - '0');
     return major < 2;
-}
-
-/// Thrift deserialization can store an out-of-range value into an unscoped enum field when the
-/// input file is malformed. Loading such an enum directly is undefined behavior (caught by
-/// -fsanitize=enum); reading the raw underlying integer via memcpy is well-defined. We use it to
-/// validate page-header enums up front, so the rest of the reader only ever loads valid values.
-template <typename E>
-static int thriftEnumToInt(const E & e)
-{
-    std::underlying_type_t<E> v;
-    memcpy(&v, &e, sizeof(v));
-    return static_cast<int>(v);
 }
 
 /// The smallest memory limit in effect for the current thread: of the query, of the user, or of the server.
@@ -163,7 +153,8 @@ static void checkSchemaElementEnums(const parq::FileMetaData & file_metadata)
         };
         check(element.type, parq::_Type_VALUES_TO_NAMES, "physical type");
         check(element.repetition_type, parq::_FieldRepetitionType_VALUES_TO_NAMES, "repetition type");
-        check(element.converted_type, parq::_ConvertedType_VALUES_TO_NAMES, "converted type");
+        if (thriftEnumToInt(element.converted_type) != LEGACY_NULL_CONVERTED_TYPE)
+            check(element.converted_type, parq::_ConvertedType_VALUES_TO_NAMES, "converted type");
     }
 }
 
@@ -630,12 +621,7 @@ std::optional<Range> Reader::getTopKSortColumnRange(size_t row_group_idx) const
         /// for NaN values, min and max should be ignored"), while `ORDER BY` sorts `nan` together
         /// with the NULLs. So, exactly like a chunk that may contain nulls, a floating-point chunk
         /// that may contain a `nan` is not bounded by its statistics and cannot be skipped by them.
-        /// (`tryTopKForFormatSource` keeps floating-point sort keys off this path entirely for now,
-        /// because the per-row filter is not `nan`-aware either - see
-        /// https://github.com/ClickHouse/ClickHouse/issues/116705 - but the statistics shortcut is
-        /// unsound on its own and stays unsound after that is fixed.)
-        bool can_contain_float = anyInTypeTree(*output_block_type_ptr, [](const IDataType & node) { return isFloat(node); });
-        if (can_contain_float)
+        if (hasTypeThatCanContainFloat(output_block_type_ptr))
             return std::nullopt;
 
         /// Parquet orders `UUID` statistics bytewise (parquet.thrift gives the `UUID` logical type
@@ -1650,10 +1636,10 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
         && format_filter_info->key_condition)
         prepareBloomFilterCondition();
 
-    if (options.format.parquet.page_filter_push_down && format_filter_info->key_condition)
+    /// `column_index_conditions` points into `conditions`, which must live as long as the reader.
+    auto add_column_index_conditions = [&](const decltype(column_conditions) & conditions, bool from_join_runtime_filter)
     {
-        format_filter_info->key_condition->extractSingleColumnConditions(column_conditions, nullptr);
-        for (const auto & [idx_in_output_block, key_condition] : column_conditions)
+        for (const auto & [idx_in_output_block, key_condition] : conditions)
         {
             const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
             /// No file-readable column for this key-condition column: it has no page-index
@@ -1664,8 +1650,15 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
 
             if (!output_info.is_primitive || !primitive_columns[output_info.primitive_start].decoder.allow_stats)
                 continue;
-            primitive_columns[output_info.primitive_start].column_index_conditions.push_back({key_condition.get(), SIZE_MAX});
+            primitive_columns[output_info.primitive_start].column_index_conditions.push_back(
+                {.condition = key_condition.get(), .spatial_key_condition_idx = SIZE_MAX, .from_join_runtime_filter = from_join_runtime_filter});
         }
+    };
+
+    if (options.format.parquet.page_filter_push_down && format_filter_info->key_condition)
+    {
+        format_filter_info->key_condition->extractSingleColumnConditions(column_conditions, nullptr);
+        add_column_index_conditions(column_conditions, /*from_join_runtime_filter=*/ false);
     }
 
     /// Page-level pruning for spatial bbox columns: extract per-column conditions from each
@@ -1695,6 +1688,13 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
                 }
             }
         }
+    }
+
+    /// Added last: `applyColumnIndex` counts a page as pruned by the runtime filter only if no other condition ruled it out.
+    if (options.format.parquet.page_filter_push_down && join_runtime_filter_key_condition)
+    {
+        join_runtime_filter_key_condition->extractSingleColumnConditions(join_runtime_filter_column_conditions, nullptr);
+        add_column_index_conditions(join_runtime_filter_column_conditions, /*from_join_runtime_filter=*/ true);
     }
 
     initColumnsCache();
@@ -2065,11 +2065,8 @@ void Reader::preparePrewhere()
     const auto & prewhere_info = format_filter_info->prewhere_info;
     UnorderedSetWithMemoryTracking<size_t> prewhere_output_column_idxs;
 
-    /// TODO [parquet]: We currently run prewhere after reading all prewhere columns of the row
-    ///     subgroup, in one thread per row group. Instead, we could extract single-column conditions
-    ///     and run them after decoding the corresponding columns, in parallel.
-    ///     (Still run multi-column conditions, like `col1 = 42 or col2 = 'yes'`, after reading all columns.)
-    ///     Probably reuse tryBuildPrewhereSteps from MergeTree for splitting the expression.
+    /// TODO [parquet]: Steps run one after another, each after all of its columns are decoded.
+    ///     Single-column steps could instead run in parallel, as soon as their column is decoded.
 
     /// Convert ActionsDAG to ExpressionActions.
     std::optional<ExpressionActionsSettings> actions_settings;
@@ -3061,6 +3058,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
         size_t prev_row_idx = 0; // start of the latest range of rows that pass filter
         size_t pruned_pages = 0;
+        size_t pruned_pages_by_join_runtime_filter = 0;
         for (size_t page_idx = 0; page_idx < num_pages; ++page_idx)
         {
             Range & range = hyperrectangle[column_info.idx_in_output_block];
@@ -3090,8 +3088,8 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             /// All conjunctive predicates on this column (e.g. two `pointInPolygon` calls sharing
             /// the same bbox column) must agree the page can match; any one of them ruling it out
             /// is enough to prune, so an unproductive later `checkInHyperrectangle` call is skipped.
-            bool passes_filter = std::all_of(
-                column_info.column_index_conditions.begin(), column_info.column_index_conditions.end(),
+            const auto first_failed = std::ranges::find_if_not(
+                column_info.column_index_conditions,
                 [&](const PrimitiveColumnInfo::ColumnIndexCondition & c)
                 {
                     /// A `covering.bbox` predicate may only prune when the full bbox is known for
@@ -3110,7 +3108,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                     return c.condition->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true;
                 });
 
-            if (!passes_filter)
+            if (first_failed != column_info.column_index_conditions.end())
             {
                 size_t start_row = column.offset_index.page_locations[page_idx].first_row_index;
                 size_t end_row = page_idx + 1 < num_pages ? column.offset_index.page_locations[page_idx + 1].first_row_index : row_group.meta->num_rows;
@@ -3119,6 +3117,8 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                     column.row_ranges_after_column_index.emplace_back(prev_row_idx, start_row);
                 prev_row_idx = end_row;
                 ++pruned_pages;
+                if (first_failed->from_join_runtime_filter)
+                    ++pruned_pages_by_join_runtime_filter;
             }
         }
 
@@ -3127,19 +3127,29 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
 
         if (pruned_pages)
             ProfileEvents::increment(ProfileEvents::ParquetPrunedPages, pruned_pages);
+        if (pruned_pages_by_join_runtime_filter)
+        {
+            pages_pruned_by_join_runtime_filter += pruned_pages_by_join_runtime_filter;
+            ProfileEvents::increment(ProfileEvents::ParquetRuntimeFilterPrunedPages, pruned_pages_by_join_runtime_filter);
+        }
     }
     catch (Exception & e)
     {
         /// A `covering.bbox` column that only carries spatial conditions was injected for this
         /// optimization alone: it is neither an output column nor part of the query's own filter.
-        /// Malformed page statistics for it must fail closed (no page pruning for this column)
-        /// rather than abort the read, matching `getHyperrectangleForRowGroup`. A bbox column the
-        /// query itself reads or filters on has non-spatial conditions too and keeps throwing.
+        /// The column index of a column that only JOIN runtime filter conditions use is read for them alone too.
+        /// Malformed page statistics for them must fail closed (no page pruning for this column)
+        /// rather than abort the read, matching `getHyperrectangleForRowGroup`. A column the
+        /// query itself filters on has static conditions too and keeps throwing.
         /// Running out of memory is not malformed statistics and keeps throwing too.
-        const bool only_spatial_conditions = std::all_of(
-            column_info.column_index_conditions.begin(), column_info.column_index_conditions.end(),
-            [](const PrimitiveColumnInfo::ColumnIndexCondition & c) { return c.spatial_key_condition_idx != SIZE_MAX; });
-        if (column_info.is_spatial_bbox_column && only_spatial_conditions && e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+        const bool only_optional_conditions = std::ranges::all_of(
+            column_info.column_index_conditions,
+            [](const PrimitiveColumnInfo::ColumnIndexCondition & c)
+            { return c.spatial_key_condition_idx != SIZE_MAX || c.from_join_runtime_filter; });
+        const bool only_join_runtime_filter_conditions = std::ranges::all_of(
+            column_info.column_index_conditions, &PrimitiveColumnInfo::ColumnIndexCondition::from_join_runtime_filter);
+        if (only_optional_conditions && (column_info.is_spatial_bbox_column || only_join_runtime_filter_conditions)
+            && e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
         {
             column.row_ranges_after_column_index.clear();
             if (row_group.meta->num_rows > 0)
@@ -3594,6 +3604,29 @@ size_t Reader::memoryEstimateLimit() const
     return std::min(watermark, MAX_ALLOCATION_SIZE / 4) + 1;
 }
 
+namespace
+{
+
+/// May read `verdicts[verdicts.size()]`, which is in the padding.
+void narrowFilterByVerdicts(IColumnFilter & filter, const IColumnFilter & verdicts)
+{
+    size_t verdict_idx = 0;
+    for (auto & row : filter)
+    {
+        const bool passed = row != 0;
+        row = passed ? verdicts.data()[verdict_idx] : 0;
+        verdict_idx += passed;
+    }
+    chassert(verdict_idx == verdicts.size(), fmt::format("{} verdicts for {} passing rows", verdicts.size(), verdict_idx));
+}
+
+}
+
+/// A gap of failing values up to this size is decoded and dropped rather than skipped.
+static constexpr size_t max_gap_bytes_to_coalesce = 128;
+/// Wider values cost more to copy again when dropping the gap than the skip saves.
+static constexpr size_t max_coalesced_value_bytes = 8;
+
 void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, RowGroup & row_group, RowSubgroup & row_subgroup)
 {
     /// Allocate columns for values, null map, and array offsets.
@@ -3668,6 +3701,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         column.data_pages.empty() &&
         !column.need_null_map;
     const size_t subgroup_end_row_idx = row_subgroup.start_row_idx + row_subgroup.filter.rows_total;
+    bool coalesced_runs = false;
 
     if (use_filter_in_decoder)
     {
@@ -3691,25 +3725,60 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     }
     else
     {
+        const IColumnFilter & mask = row_subgroup.filter.filter;
+        const char * mask_begin = reinterpret_cast<const char *>(mask.data());
+        const char * mask_end = mask_begin + mask.size();
+        auto find_next = [&](size_t row, bool passes)
+        {
+            const char * pos = mask_begin + row;
+            return size_t((passes ? find_first_not_symbols<'\0'>(pos, mask_end) : find_first_symbols<'\0'>(pos, mask_end)) - mask_begin);
+        };
+
+        /// Only values copied as is: converting a failing row could throw.
+        const auto & converter = column_info.decoder.fixed_size_converter;
+        const bool can_coalesce_runs = !mask.empty() && column_info.levels.back().rep == 0 && !column_info.group_nullable
+            && converter && converter->isTrivial() && converter->input_size <= max_coalesced_value_bytes;
+        IColumnFilter decoded_rows_filter;
+        size_t passing_rows_decoded = 0;
+
         size_t row_subidx = 0;
         while (true) // loop over row ranges that pass the filter
         {
             size_t num_rows = row_subgroup.filter.rows_total - row_subidx;
-            if (!row_subgroup.filter.filter.empty())
+            if (!mask.empty())
             {
-                while (row_subidx < row_subgroup.filter.rows_total && !row_subgroup.filter.filter[row_subidx])
-                    row_subidx += 1;
-                num_rows = 0;
-                while (row_subidx + num_rows < row_subgroup.filter.rows_total && row_subgroup.filter.filter[row_subidx + num_rows])
-                    num_rows += 1;
+                row_subidx = find_next(row_subidx, true);
+                num_rows = find_next(row_subidx, false) - row_subidx;
             }
             if (!num_rows)
                 break;
             size_t start_row_idx = row_subgroup.start_row_idx + row_subidx;
-            size_t end_row_idx = start_row_idx + num_rows;
-            row_subidx += num_rows;
 
             skipToRowOrNextPage(start_row_idx, column, column_info);
+
+            if (can_coalesce_runs)
+            {
+                const size_t page_end = std::min(row_subgroup.filter.rows_total,
+                    column.page.end_row_idx.value_or(subgroup_end_row_idx) - row_subgroup.start_row_idx);
+                size_t range_end = row_subidx + num_rows;
+                while (range_end < page_end)
+                {
+                    const size_t next_run = find_next(range_end, true);
+                    if (next_run >= page_end || (next_run - range_end) * converter->input_size > max_gap_bytes_to_coalesce)
+                        break;
+                    range_end = find_next(next_run, false);
+                    if (!coalesced_runs)
+                        decoded_rows_filter.resize_fill(passing_rows_decoded, 1);
+                    coalesced_runs = true;
+                }
+                if (coalesced_runs)
+                    decoded_rows_filter.insert(mask.begin() + row_subidx, mask.begin() + range_end);
+                else
+                    passing_rows_decoded += num_rows;
+                num_rows = range_end - row_subidx;
+            }
+            size_t end_row_idx = start_row_idx + num_rows;
+            row_subidx += num_rows;
 
             while (true) // loop over pages
             {
@@ -3731,7 +3800,20 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
                 chassert(page.value_idx == 0);
             }
         }
+
+        if (coalesced_runs)
+        {
+            if (subchunk.null_map)
+            {
+                const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
+                subchunk.column->expand(null_map, /*inverted*/ true);
+                subchunk.null_map = subchunk.null_map->filter(decoded_rows_filter, row_subgroup.filter.rows_pass)->assumeMutable();
+            }
+            subchunk.column = subchunk.column->filter(decoded_rows_filter, row_subgroup.filter.rows_pass)->assumeMutable();
+        }
     }
+
+    column.dictionary.flushStringValueFilterStats();
 
     for (const auto & offsets : subchunk.arrays_offsets)
     {
@@ -3756,7 +3838,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         subchunk.null_map = nullptr;
     }
 
-    if (subchunk.null_map)
+    if (subchunk.null_map && !coalesced_runs)
     {
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
         /// Fill defaults at null rows so the column reaches full size. For a group_nullable leaf,
@@ -3803,6 +3885,14 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     }
 
     chassert(subchunk.column->getDataType() == column_info.output_type->getColumnType());
+
+    if (column_info.levels_only_arrays)
+    {
+        /// Nothing takes the values, and the row subgroup keeps its columns until the end of the read.
+        subchunk.column.reset();
+        subchunk.null_map.reset();
+        subchunk.arrays_offsets.resize(column_info.levels_only_arrays);
+    }
 
     OutputColumnState & state = row_subgroup.output.at(column_info.idx_in_output_block);
     chassert(!state.column);
@@ -4221,7 +4311,7 @@ void Reader::createPageDecoder(PageState & page, ColumnChunk & column, const Pri
     if (page.is_dictionary_encoded)
         page.decoder = makeDictionaryIndicesDecoder(page.encoding, column.dictionary.count, page.data);
     else
-        page.decoder = column_info.decoder.makeDecoder(page.encoding, page.data, column_info.string_value_filter.get());
+        page.decoder = column_info.decoder.makeDecoder(page.encoding, page.data, page.num_values, column_info.string_value_filter.get());
 }
 
 /// Returns true if this row is found in this page, and value_idx is at the first value of this row.
@@ -4659,6 +4749,14 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
     const OutputColumnInfo & output_info = output_columns.at(output_column_idx);
     MutableColumnPtr res;
 
+    if (output_info.is_missing_column && output_info.missing_column_default)
+    {
+        /// Not a missing value: `AddingDefaultsTransform` must not replace it.
+        res = output_info.output_type->createColumn();
+        res->insertMany(*output_info.missing_column_default, num_rows);
+        return res;
+    }
+
     if (output_info.is_missing_column)
     {
         res = output_info.output_type->createColumn();
@@ -4674,6 +4772,10 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
 
         return res;
     }
+
+    if (output_info.report_as_missing && output_info.idx_in_output_block.has_value()
+        && *output_info.idx_in_output_block < row_subgroup.block_missing_values.getNumColumns())
+        row_subgroup.block_missing_values.setBits(*output_info.idx_in_output_block, num_rows);
 
     /// Physically-nullable struct read as Nullable(Tuple(...)). input_type is Nullable(Tuple), but
     /// we assemble the inner ColumnTuple from the leaves and then wrap it in ColumnNullable using
@@ -4745,7 +4847,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         else
             res = ColumnTuple::create(std::move(columns));
     }
-    else if (kind == TypeIndex::Dynamic || kind == TypeIndex::Object)
+    else if (kind == TypeIndex::Dynamic || kind == TypeIndex::Object || kind == TypeIndex::Variant)
     {
         chassert(output_info.nested_columns.size() == 2);
         MutableColumnPtr metadata = formOutputColumn(row_subgroup, output_info.nested_columns[0], num_rows);
@@ -4753,7 +4855,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
 
         res = output_info.input_type->createColumn();
         res->reserve(num_rows);
-        decodeVariantColumn(*metadata, *value, *res, output_info.input_type, output_info.name, num_rows, options.format);
+        decodeVariantColumn(*metadata, *value, *res, output_info.input_type, output_info.name, num_rows, VariantSettings(options.format));
     }
     else
     {
@@ -4944,11 +5046,14 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
 
         /// Expand the filter to correspond to all column subchunk rows, rather than only rows that
         /// passed previous filters (previous prewhere steps).
-        auto mut_col = IColumn::mutate(std::move(filter_column));
-        auto & mut_filter = typeid_cast<ColumnUInt8 &>(*mut_col);
         if (row_subgroup.filter.rows_pass != row_subgroup.filter.rows_total)
-            mut_filter.expand(row_subgroup.filter.filter, /*inverted*/ false);
-        row_subgroup.filter.filter = std::move(mut_filter.getData());
+            narrowFilterByVerdicts(row_subgroup.filter.filter, filter);
+        else
+        {
+            auto mut_col = IColumn::mutate(std::move(filter_column));
+            auto & mut_filter = typeid_cast<ColumnUInt8 &>(*mut_col);
+            row_subgroup.filter.filter = std::move(mut_filter.getData());
+        }
         row_subgroup.filter.rows_pass = rows_pass;
     }
 }
@@ -4970,13 +5075,17 @@ void Reader::initColumnsCache()
     /// in `system.columns_cache`.
     columns_cache_identities.assign(extended_sample_block.columns(), 0);
     bool any_column = false;
+    /// A tuple can have elements absent from the file, filled with these defaults.
+    const UInt64 defaults_hash = format_filter_info && format_filter_info->column_mapper
+        ? format_filter_info->column_mapper->getIcebergInitialDefaultsHash()
+        : 0;
     for (size_t idx = 0; idx < extended_sample_block.columns(); ++idx)
     {
         const auto & output_idx = sample_block_to_output_columns_idx.at(idx);
         if (!output_idx.has_value())
             continue;
         const OutputColumnInfo & info = output_columns.at(*output_idx);
-        if (info.is_missing_column || info.primitive_start == info.primitive_end)
+        if (info.is_missing_column || info.report_as_missing || info.primitive_start == info.primitive_end)
             continue;
 
         SipHash hash;
@@ -4984,6 +5093,7 @@ void Reader::initColumnsCache()
         hash.update(info.input_type->getName());
         hash.update(info.output_type->getName());
         hash.update(info.nullable_group);
+        hash.update(defaults_hash);
         bool decoded = true;
         for (size_t i = info.primitive_start; i < info.primitive_end; ++i)
         {
@@ -4996,6 +5106,7 @@ void Reader::initColumnsCache()
             hash.update(primitive.output_type->getName());
             hash.update(primitive.output_nullable);
             hash.update(primitive.group_nullable);
+            hash.update(primitive.levels_only_arrays);
         }
         if (!decoded)
             continue;
