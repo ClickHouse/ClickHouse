@@ -388,8 +388,11 @@ std::vector<StorageID> StorageTimeSeries::getInnerTableIDs(ViewTarget::Kind targ
     if (with_not_attached)
     {
         auto table_id = getStorageID();
+        /// The UUID of the target is kept, so another table that took over one of the names is not looked up.
+        const auto * target = tryGetTarget(target_kind);
+        UUID inner_table_uuid = target ? target->table_id.uuid : UUIDHelpers::Nil;
         for (const auto & name : getInnerTableNames(target_kind))
-            inner_table_ids.emplace_back(table_id.database_name, name);
+            inner_table_ids.emplace_back(table_id.database_name, name, inner_table_uuid);
     }
     return inner_table_ids;
 }
