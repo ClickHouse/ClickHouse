@@ -17,6 +17,7 @@ namespace DB
 {
 
 class AccessFlags;
+class ASTCreateQuery;
 
 struct DistributedSettings;
 struct Settings;
@@ -335,5 +336,9 @@ private:
 
 /// The `SecretArgumentsSpec` of the `remote`/`remoteSecure` table functions and the `Remote`/`RemoteSecure` table engines.
 SecretArgumentsSpec remoteSecretArguments();
+
+/// The grants to persist the table function target of a `Remote`/`RemoteSecure` definition, for a statement whose
+/// table is built elsewhere with no user: a legacy `ON CLUSTER` `CREATE` or a `RESTORE`. Does nothing for another engine.
+void checkAccessToCreateRemoteTableTarget(const ASTCreateQuery & create, const ContextPtr & context);
 
 }

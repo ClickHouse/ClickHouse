@@ -1,5 +1,10 @@
 #include <Access/ContextAccess.h>
 #include <TableFunctions/ITableFunction.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Functions/FunctionFactory.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableFunction.h>
@@ -23,6 +28,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int ACCESS_DENIED;
 }
@@ -51,6 +57,12 @@ void ITableFunction::checkSourceAccess(ContextPtr context, bool is_insert_query)
     }
 }
 
+void ITableFunction::checkEngineAccessIfRequired(ContextPtr context) const
+{
+    if (requiresTableEngineGrant())
+        checkEngineAccess(context);
+}
+
 void ITableFunction::checkSourceTableAccess(const ContextPtr & context, const StorageID & table_id, AccessType access_type) const
 {
     context->checkAccess(access_type, table_id);
@@ -74,9 +86,6 @@ void ITableFunction::checkSourceStorageAccess(
 
 void ITableFunction::checkEngineAccess(ContextPtr context) const
 {
-    if (!requiresTableEngineGrant())
-        return;
-
     if (const String engine = getEngineNameForAccessCheck(); !engine.empty())
         context->checkAccess(AccessType::TABLE_ENGINE, engine);
 }
@@ -88,11 +97,79 @@ String ITableFunction::getEngineNameForAccessCheck() const
     return engine ? engine : "";
 }
 
+void ITableFunction::checkAccessToCreateTableTarget(const ASTPtr & table_function_ast, ContextPtr context)
+{
+    if (!table_function_ast)
+        return;
+
+    /// A parameterized view is called like a table function in a query; the analyzer resolves it as a view.
+    const auto & factory = TableFunctionFactory::instance();
+    const auto & name = table_function_ast->as<ASTFunction &>().name;
+    if (!factory.isTableFunctionName(name))
+        return;
+
+    /// The same veto as for the outermost function of a definition, see `InterpreterCreateQuery`.
+    const auto unparsed = factory.tryGet(name, context);
+    if (unparsed->dependsOnCurrentUserGrants())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Table function '{}' cannot be used to create a table, neither directly nor nested in another table "
+            "function or in a table engine argument",
+            name);
+
+    /// A grant on a source is matched against the argument that names the source, the first one, or the second one
+    /// of a cluster function, or against an override of a named collection, `key = value` with any spelling of the
+    /// key, so they must mean here what they mean where the query runs. The other arguments, e.g. a sharding key, may vary.
+    if (const auto & function = table_function_ast->as<ASTFunction &>(); function.arguments && unparsed->getSourceAccessObject())
+    {
+        const auto & arguments = function.arguments->children;
+        const size_t source_index = unparsed->isClusterFunction() ? 1 : 0;
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            const auto * assignment = arguments[i]->as<ASTFunction>();
+            if (i == source_index || (assignment && assignment->name == "equals"))
+                throwIfValueVariesByContext(*arguments[i], context);
+        }
+    }
+
+    TableFunctionPtr table_function;
+    try
+    {
+        table_function = factory.get(table_function_ast, context);
+    }
+    catch (Exception & e)
+    {
+        /// An argument that resolves only within its query, e.g. a URL bound by `WITH`, cannot be checked here.
+        e.addMessage("while checking the grants to persist the table function `{}` with its arguments as written", name);
+        throw;
+    }
+    table_function->checkAccessToCreateTable(context);
+}
+
+void ITableFunction::throwIfValueVariesByContext(const IAST & value, const ContextPtr & context)
+{
+    if (value.as<ASTSelectWithUnionQuery>())
+        return;
+    if (value.as<ASTSubquery>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "A subquery in an argument of a table function persisted in a table cannot be checked");
+
+    if (const auto * function = value.as<ASTFunction>())
+        if (const auto resolver = FunctionFactory::instance().tryGet(function->name, context); resolver && !resolver->isDeterministic())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "An argument of a table function persisted in a table uses `{}`, whose value depends on where the query runs, "
+                "and cannot be checked",
+                function->name);
+
+    for (const auto & child : value.children)
+        throwIfValueVariesByContext(*child, context);
+}
+
 ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const
 {
     /// Resolving table structure is always a read operation.
     checkSourceAccess(context, /*is_insert_query*/ false);
-    checkEngineAccess(context);
+    checkEngineAccessIfRequired(context);
     checkSourceObjectAccess(context, /*for_structure=*/ true);
     /// Resolving the structure may access the source (e.g. schema inference fetches a URL), so it must be
     /// gated in the same way as `execute`: otherwise `DESCRIBE TABLE url(...)` would let a user who cannot
@@ -101,25 +178,29 @@ ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr 
     return getActualTableStructure(context, is_insert_query);
 }
 
-StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name,
-                                   ColumnsDescription cached_columns, bool use_global_context, bool is_insert_query, bool check_create_temporary_table, bool check_source_access) const
+void ITableFunction::checkAccessToExecute(ContextPtr context, bool is_insert_query, bool check_create_temporary_table, bool check_source_access) const
 {
-    ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
-
     if (check_source_access)
         checkSourceAccess(context, is_insert_query);
 
     /// Deliberately not under `check_source_access`: no caller takes over these checks.
-    checkEngineAccess(context);
+    checkEngineAccessIfRequired(context);
     checkSourceObjectAccess(context, /*for_structure=*/ false);
 
     if (check_create_temporary_table)
         checkCreateTemporaryTableAccess(context, is_insert_query);
+}
+
+StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name,
+                                   ColumnsDescription cached_columns, bool use_global_context, bool is_insert_query, bool check_create_temporary_table, bool check_source_access) const
+{
+    ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
+    checkAccessToExecute(context, is_insert_query, check_create_temporary_table, check_source_access);
 
     auto context_to_use = use_global_context ? context->getGlobalContext() : context;
 
     StoragePtr storage;
-    if (cached_columns.empty())
+    if (!isTableDefinition(cached_columns))
     {
         storage = executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
     }

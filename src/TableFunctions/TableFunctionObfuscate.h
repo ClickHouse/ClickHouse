@@ -31,6 +31,9 @@ public:
     /// `VIEW` over `obfuscate(...)` is unaffected: it is expanded into the reading query.
     bool canBeUsedToCreateTable() const override { return false; }
 
+    /// Nested in a carrier such as `remote(..., view(...))`, the query would run where the carrier sends it.
+    void checkAccessToCreateTable(ContextPtr context) const override;
+
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
     const char * getStorageEngineName() const override { return "Obfuscate"; }

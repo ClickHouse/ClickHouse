@@ -49,7 +49,7 @@ public:
     void checkSourceObjectAccess(const ContextPtr & context, bool /*for_structure*/) const override
     {
         else_table_function->checkSourceAccess(context, /*is_insert_query=*/ false);
-        else_table_function->checkEngineAccess(context);
+        else_table_function->checkEngineAccessIfRequired(context);
         else_table_function->checkSourceObjectAccess(context, /*for_structure=*/ true);
         else_table_function->checkCreateTemporaryTableAccess(context, /*is_insert_query=*/ false);
     }

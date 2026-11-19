@@ -89,6 +89,13 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
     return res;
 }
 
+void TableFunctionRemote::checkAccessToCreateTable(ContextPtr context) const
+{
+    /// The shards resolve a persisted table function target under the connection's user, so the creator
+    /// needs the grants to persist that target too.
+    checkAccessToCreateTableTarget(remote_table_function_ptr, context);
+}
+
 ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     chassert(cluster);

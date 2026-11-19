@@ -2956,6 +2956,37 @@ Since [`remote`](/reference/functions/table-functions/remote) and [`cluster`](/r
         .related = {"Merge"}});
 }
 
+namespace
+{
+
+PreformattedMessage remoteEngineHelpMessage(bool secure)
+{
+    return PreformattedMessage::create(
+        "Storage engine '{}' requires from 1 to 6 parameters: "
+        "<addresses pattern> [, <name of remote database>, <name of remote table>] [, username[, password], sharding_key]",
+        secure ? "RemoteSecure" : "Remote");
+}
+
+}
+
+void checkAccessToCreateRemoteTableTarget(const ASTCreateQuery & create, const ContextPtr & context)
+{
+    if (!create.storage || !create.storage->engine || !create.storage->engine->arguments)
+        return;
+    const auto & engine_name = create.storage->engine->name;
+    if (engine_name != "Remote" && engine_name != "RemoteSecure")
+        return;
+
+    /// Parsed on a copy: the statement is shipped as written.
+    ASTs args;
+    for (const auto & arg : create.storage->engine->arguments->children)
+        args.push_back(arg->clone());
+    const bool secure = engine_name == "RemoteSecure";
+    auto parsed = parseRemoteFunctionArguments(
+        args, context, /* name = */ "remote", /* is_cluster_function = */ false, secure, remoteEngineHelpMessage(secure));
+    ITableFunction::checkAccessToCreateTableTarget(parsed.remote_table_function_ptr, context);
+}
+
 void registerStorageRemote(StorageFactory & factory);
 void registerStorageRemote(StorageFactory & factory)
 {
@@ -2965,10 +2996,7 @@ void registerStorageRemote(StorageFactory & factory)
     /// of `CREATE TABLE ... AS remote(...)`.
     auto create = [](const StorageFactory::Arguments & args, bool secure) -> StoragePtr
     {
-        auto help_message = PreformattedMessage::create(
-            "Storage engine '{}' requires from 1 to 6 parameters: "
-            "<addresses pattern> [, <name of remote database>, <name of remote table>] [, username[, password], sharding_key]",
-            secure ? "RemoteSecure" : "Remote");
+        auto help_message = remoteEngineHelpMessage(secure);
 
         if (args.engine_args.empty())
             throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -3051,6 +3079,11 @@ void registerStorageRemote(StorageFactory & factory)
         const bool loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode)
             || args.query.attach_short_syntax
             || args.getLocalContext()->isRecoveryFromStoredMetadata();
+
+        /// See `TableFunctionRemote::checkAccessToCreateTable`. Gated as the `AS` form is: a `RESTORE` introduces
+        /// the definition under the restoring user, a replay in a `Replicated` database is skipped.
+        if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()) || args.is_restore_from_backup)
+            ITableFunction::checkAccessToCreateTableTarget(parsed.remote_table_function_ptr, args.getLocalContext());
 
         ColumnsDescription columns = args.columns;
 

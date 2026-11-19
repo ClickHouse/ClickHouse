@@ -106,6 +106,18 @@ public:
 
     virtual bool canBeUsedToCreateTable() const { return true; }
 
+    /// The grants to persist a definition `CREATE TABLE ... AS f(...)`, on top of the ones `execute` checks for a
+    /// call in a query. Not called when a stored definition is replayed, see `isReplayedTableDefinition`.
+    virtual void checkAccessToCreateTable(ContextPtr /*context*/) const {}
+
+    /// Runs `checkAccessToCreateTable` of the table function in `table_function_ast`, which a carrier (`remote`,
+    /// `loop`, the `Remote` engine) persists as its target. Does nothing for a null AST.
+    static void checkAccessToCreateTableTarget(const ASTPtr & table_function_ast, ContextPtr context);
+
+    /// Refuses a value of a persisted target that may differ where the definition runs: a subquery, or a function
+    /// that is not deterministic, such as `currentUser`. A nested query is not entered, it has its own check.
+    static void throwIfValueVariesByContext(const IAST & value, const ContextPtr & context);
+
     /// Whether the storage this table function returns is chosen by the current user's grants
     /// (e.g. `viewIfPermitted`). Such a function cannot appear anywhere in a persisted table
     /// definition, not even nested in an argument of another table function such as `remote`:
@@ -170,7 +182,10 @@ public:
     }
 
     /// Check the `TABLE ENGINE` grant, for engines that opt in via `requiresTableEngineGrant`.
-    void checkEngineAccess(ContextPtr context) const;
+    void checkEngineAccessIfRequired(ContextPtr context) const;
+
+    /// The grants `execute` checks before running the function, for a statement whose table is built elsewhere.
+    void checkAccessToExecute(ContextPtr context, bool is_insert_query, bool check_create_temporary_table, bool check_source_access) const;
 
     /// The function returns the name of the table engine that this function uses, as the `TABLE ENGINE` grant names it:
     /// a cluster function is checked as its non-clustered engine. It is empty when the function has no engine.
@@ -187,6 +202,13 @@ public:
 
 protected:
     virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
+
+    /// `cached_columns` come from the metadata of a table created `AS` this function, so `executeImpl` receives
+    /// them only for such a table definition, including its replay, and never for a call in a query.
+    static bool isTableDefinition(const ColumnsDescription & cached_columns) { return !cached_columns.empty(); }
+
+    /// Check `TABLE ENGINE` for the engine the function stands for.
+    void checkEngineAccess(ContextPtr context) const;
 
     /// Set only for `INSERT INTO FUNCTION ... PARTITION BY`. Each partition's destination then comes from the data,
     /// so it needs its own write access check.

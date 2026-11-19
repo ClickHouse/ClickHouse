@@ -1,0 +1,73 @@
+--- the redirect target outside of the grant
+1
+1
+1
+--- an escaped redirect target is checked as the request sends it
+1
+1
+--- a wildcard expanded from index pages needs the grant on the whole source
+1
+--- the grant without a filter
+Pepyaka
+--- a cluster read follows redirects as the cluster user
+grant READ ON URL
+grant READ ON URL
+Pepyaka
+--- a filtered grant takes nothing from the caches another user filled
+1
+1
+1
+1
+1
+1
+--- a URL table reads with the grant on the table
+Pepyaka
+--- a table created AS url reads with the grant on the table only
+Pepyaka
+Pepyaka
+Pepyaka
+--- a URL table infers its structure with the grant on the engine
+Pepyaka
+--- a table created AS url needs the grants of a URL table
+grant TABLE ENGINE ON URL
+grant TABLE ENGINE ON URL
+grant WRITE ON URL
+1
+grant TABLE ENGINE ON URL
+grant TABLE ENGINE ON URL
+grant TABLE ENGINE ON URL
+grant TABLE ENGINE ON URL
+grant TABLE ENGINE ON URL
+grant TABLE ENGINE ON URL
+grant TABLE ENGINE ON URL
+grant TABLE ENGINE ON URL
+grant TABLE ENGINE ON URL
+grant READ ON URL
+Pepyaka
+--- a parameterized view in a persisted view is not a table function
+1
+1
+1
+1
+--- a restored table created AS url needs the grants too
+grant TABLE ENGINE ON URL
+Pepyaka
+--- an argument bound by an alias in a persisted view is checked as its value
+1
+1
+1
+1
+1
+1
+1
+1
+grant READ ON URL
+grant READ ON URL
+1
+1
+1
+1
+1
+1
+1
+1

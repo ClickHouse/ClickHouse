@@ -26,7 +26,10 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
+#include <TableFunctions/ITableFunction.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Common/FailPoint.h>
 #include <Common/NamedCollections/NamedCollectionsBackup.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
@@ -60,6 +63,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool restore_replicated_merge_tree_to_shared_merge_tree;
     extern const SettingsBool restore_replace_external_engines_to_null;
+    extern const SettingsBool restore_replace_external_table_functions_to_null;
 }
 
 namespace FailPoints
@@ -511,6 +515,22 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                         for (const ASTStorage * inner_engine : create.targets->getInnerEngines())
                             add_engine(*inner_engine);
                     }
+
+                    /// The targets a definition persists, see `ITableFunction::checkAccessToCreateTable`. The hosts replace
+                    /// a table function by `Null` only if it is not `allow_readonly`, see `InterpreterCreateQuery::setEngine`.
+                    if (create.as_table_function)
+                    {
+                        const auto & factory = TableFunctionFactory::instance();
+                        const auto properties = factory.tryGetProperties(create.as_table_function->as<ASTFunction>()->name);
+                        const bool hosts_replace_by_null
+                            = context->getSettingsRef()[Setting::restore_replace_external_table_functions_to_null]
+                            && restore_settings.core_settings.tryGet("restore_replace_external_table_functions_to_null") != nullptr
+                            && !(properties && properties->allow_readonly);
+                        if (!hosts_replace_by_null)
+                            ITableFunction::checkAccessToCreateTableTarget(create.as_table_function->ptr(), context);
+                    }
+                    if (!hosts_replace_external_engines_to_null)
+                        checkAccessToCreateRemoteTableTarget(create, context);
                 }
             }
 
