@@ -1560,6 +1560,10 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// Both implementations throw for some values (arrays of different sizes, a decimal overflow, a zero norm).
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     /// Documentation-only — `Traits` may expose a `signature` constant describing
     /// the shape accepted by both the tuple- and array-path. The actual return
     /// type is computed by the underlying `tuple_function` / `array_function`,
