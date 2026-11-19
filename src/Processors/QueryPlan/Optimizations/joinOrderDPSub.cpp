@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <limits>
 #include <map>
 #include <optional>
@@ -84,17 +85,41 @@ bool entriesCarryStrictness(const QueryGraph & query_graph)
 }
 
 /// A numeric statistics value as a double, for estimating the share of a key range.
-std::optional<double> toNumber(const std::optional<Field> & value)
+std::optional<double> toNumber(const Field & value)
 {
-    if (!value)
-        return std::nullopt;
-    switch (value->getType())
+    switch (value.getType())
     {
-        case Field::Types::UInt64: return static_cast<double>(value->safeGet<UInt64>());
-        case Field::Types::Int64: return static_cast<double>(value->safeGet<Int64>());
-        case Field::Types::Float64: return value->safeGet<Float64>();
+        case Field::Types::UInt64: return static_cast<double>(value.safeGet<UInt64>());
+        case Field::Types::Int64: return static_cast<double>(value.safeGet<Int64>());
+        case Field::Types::Float64: return value.safeGet<Float64>();
         default: return std::nullopt;
     }
+}
+
+/// The value range of a key column of a relation, as `probeReadFraction` reads it.
+struct KeyRange
+{
+    double min = 0;
+    double max = 0;
+    /// The keys lie in the range (`ValueRangeGuarantee::Superset`), as the keys of a build side must.
+    bool encloses = false;
+    /// The keys are plausibly spread over the range (`ValueRangeGuarantee::Representative`), as the share of a probe side
+    /// that a range of its keys holds assumes. Such a range also encloses the keys, with the same endpoints.
+    bool representative = false;
+};
+
+/// The range of a key column with the statistics `stats`, for both roles. Endpoints that are not finite numbers give none.
+KeyRange makeKeyRange(const ColumnStats & stats)
+{
+    const auto range = stats.valueRange(ValueRangeGuarantee::Superset);
+    if (!range)
+        return {};
+    const auto min = toNumber(range->min);
+    const auto max = toNumber(range->max);
+    if (!min || !max || !std::isfinite(*min) || !std::isfinite(*max) || *min > *max)
+        return {};
+    const bool representative = stats.valueRange(ValueRangeGuarantee::Representative).has_value();
+    return {.min = *min, .max = *max, .encloses = true, .representative = representative};
 }
 
 /// Whether a join may have its inputs swapped. Inner and cross joins commute, and an `ALL`
@@ -294,13 +319,7 @@ private:
         /// Relations that are sort-merge joins planned in a group of their own, sorted by their merge key.
         TUInt join_result_relations = 0;
 
-        /// Per relation and class (`relation * num_classes + class`): the value range of its column of the class, if known.
-        struct KeyRange
-        {
-            double min = 0;
-            double max = 0;
-            bool known = false;
-        };
+        /// Per relation and class (`relation * num_classes + class`): the value range of its column of the class.
         VectorWithMemoryTracking<KeyRange> key_ranges;
     };
     DPsubMaskData<UInt32> dpsub_data;
@@ -515,12 +534,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
 
                 const auto & column_stats = query_graph.relation_stats[relation].column_stats;
                 if (auto it = column_stats.find(column.getColumnName()); it != column_stats.end())
-                {
-                    auto min = toNumber(it->second.min_value);
-                    auto max = toNumber(it->second.max_value);
-                    if (min && max && *min <= *max)
-                        dpsub_data.key_ranges[relation * num_classes + c] = {*min, *max, true};
-                }
+                    dpsub_data.key_ranges[relation * num_classes + c] = makeKeyRange(it->second);
             }
         }
 
@@ -982,8 +996,9 @@ double DPSubJoinOrderOptimizer::probeReadFraction(UInt32 probe_mask, UInt32 buil
         return 1.0;
 
     const size_t num_classes = dpsub_data.class_members.size();
+    /// The share of the probe rows in a part of its range assumes that they are spread over the range.
     const auto & probe = dpsub_data.key_ranges[std::countr_zero(probe_mask) * num_classes + order_class];
-    if (!probe.known || probe.max <= probe.min)
+    if (!probe.representative || probe.max <= probe.min)
         return 1.0;
 
     /// The keys of the build side lie in the range of each of its columns of the class.
@@ -993,7 +1008,7 @@ double DPSubJoinOrderOptimizer::probeReadFraction(UInt32 probe_mask, UInt32 buil
     for (UInt32 remaining = build_mask; remaining; remaining &= remaining - 1)
     {
         const auto & range = dpsub_data.key_ranges[std::countr_zero(remaining) * num_classes + order_class];
-        if (!range.known)
+        if (!range.encloses)
             continue;
         min = std::max(min, range.min);
         max = std::min(max, range.max);
