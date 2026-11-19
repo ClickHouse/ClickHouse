@@ -31,6 +31,16 @@ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_structure_hint_input_join (id UInt3
 
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_analyzer=1" -d 'INSERT INTO t_structure_hint_input_join SELECT i.id, g.v FROM input() AS i JOIN (SELECT 1 AS id2, 99 AS v) AS g ON i.id = g.id2 FORMAT JSONEachRow {"id":1,"v":10}'
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_analyzer=1" -d 'INSERT INTO t_structure_hint_input_join SELECT id, g.v FROM input() AS i JOIN (SELECT 2 AS id2, 98 AS v) AS g ON id = g.id2 FORMAT JSONEachRow {"id":2,"v":20}'
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_structure_hint_input_joined"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_structure_hint_input_joined (v UInt32) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO t_structure_hint_input_joined VALUES (97)"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_analyzer=1" -d "INSERT INTO t_structure_hint_input_join SELECT i.id, ${CLICKHOUSE_DATABASE}.t_structure_hint_input_joined.v FROM input() AS i CROSS JOIN ${CLICKHOUSE_DATABASE}.t_structure_hint_input_joined FORMAT JSONEachRow {\"id\":3,\"v\":30}"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_analyzer=1" -d 'INSERT INTO t_structure_hint_input_join WITH g AS (SELECT 96 AS v) SELECT i.id, g.v FROM input() AS i CROSS JOIN g FORMAT JSONEachRow {"id":4,"v":40}'
 
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM t_structure_hint_input_join ORDER BY ALL"
+${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE t_structure_hint_input_join"
+
+${CLICKHOUSE_CLIENT} --query "INSERT INTO t_structure_hint_input_join SELECT id, ${CLICKHOUSE_DATABASE}.t_structure_hint_input_joined.v FROM generateRandom(1, 10, 0) AS r CROSS JOIN ${CLICKHOUSE_DATABASE}.t_structure_hint_input_joined LIMIT 1"
+${CLICKHOUSE_CLIENT} --query "SELECT v FROM t_structure_hint_input_join"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_structure_hint_input_join"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_structure_hint_input_joined"

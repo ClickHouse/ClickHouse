@@ -69,6 +69,20 @@ INSERT INTO t_structure_hint_alias_generated SELECT `n.a`, `n.b` FROM null();
 SELECT * FROM t_structure_hint_alias_generated;
 DROP TABLE t_structure_hint_alias_generated;
 
+-- A column of a CTE or of a temporary table is not a column of generateRandom.
+DROP TABLE IF EXISTS t_structure_hint_alias_cte;
+CREATE TABLE t_structure_hint_alias_cte (id UInt32, v UInt32) ENGINE = Memory;
+INSERT INTO t_structure_hint_alias_cte WITH g AS (SELECT 99 AS v) SELECT id, g.v FROM generateRandom(1, 10, 0) AS r CROSS JOIN g LIMIT 1;
+INSERT INTO t_structure_hint_alias_cte WITH g AS (SELECT 98 AS v UNION ALL SELECT 98) SELECT id, g.v FROM generateRandom(1, 10, 0) AS r CROSS JOIN g LIMIT 1;
+SET enable_materialized_cte = 1;
+INSERT INTO t_structure_hint_alias_cte WITH g AS MATERIALIZED (SELECT 97 AS v) SELECT id, g.v FROM generateRandom(1, 10, 0) AS r CROSS JOIN g LIMIT 1;
+SET enable_materialized_cte = DEFAULT;
+CREATE TEMPORARY TABLE t_structure_hint_alias_temporary (v UInt32);
+INSERT INTO t_structure_hint_alias_temporary VALUES (96);
+INSERT INTO t_structure_hint_alias_cte SELECT id, t_structure_hint_alias_temporary.v FROM generateRandom(1, 10, 0) AS r CROSS JOIN t_structure_hint_alias_temporary LIMIT 1;
+SELECT v FROM t_structure_hint_alias_cte ORDER BY v DESC;
+DROP TABLE t_structure_hint_alias_cte;
+
 -- Choosing the hint column names must not run the schema inference of the source.
 TRUNCATE TABLE t_structure_hint_alias;
 SET log_comment = '05480_structure_hint_alias_no_inference';

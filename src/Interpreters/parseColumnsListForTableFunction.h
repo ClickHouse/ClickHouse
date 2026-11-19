@@ -47,12 +47,13 @@ void removeMisboundDefaultsFromStructureHint(
 /// any other compound identifier, like a subcolumn or a column of another table, which must not be hinted. A quoted name with
 /// a dot like `t.a` can be a subcolumn too, so it is hinted only if `is_forced` (the setting is `1`). Set `hint_is_structure` for
 /// `input`, `generateRandom` and `null`: the hint is their only structure, so any name there, like `n.a`, is a column with this
-/// name, and only the alias is removed. Then empty only for a column of another table of the query, named in `table_names`.
+/// name, and only the alias is removed. Then empty only for a column of another table of the query, qualified by one of
+/// `table_qualifiers`, like `t` or `db`, `t`.
 String getStructureHintColumnName(
     const Strings & identifier_parts,
     const String & table_function_alias,
     bool hint_is_structure,
-    const NameSet & table_names,
+    const std::vector<Strings> & table_qualifiers,
     bool is_forced);
 
 /// Names and types of `columns`, plus each `DEFAULT` without secret arguments that the nodes can evaluate from them.

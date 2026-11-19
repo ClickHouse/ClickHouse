@@ -3645,16 +3645,20 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             auto hint_table_function_name = table_function_ptr->getName();
             bool hint_is_structure
                 = hint_table_function_name == "input" || hint_table_function_name == "generateRandom" || hint_table_function_name == "null";
-            NameSet table_names;
+            std::vector<Strings> table_qualifiers;
             if (hint_is_structure)
             {
                 for (const auto * other_table_expression : getTableExpressions(*select_query_hint))
                 {
-                    DatabaseAndTableWithAlias other_table(*other_table_expression, "");
+                    DatabaseAndTableWithAlias other_table(*other_table_expression, getCurrentDatabase());
                     if (!other_table.alias.empty())
-                        table_names.insert(other_table.alias);
+                        table_qualifiers.push_back({other_table.alias});
                     if (!other_table.table.empty())
-                        table_names.insert(other_table.table);
+                    {
+                        table_qualifiers.push_back({other_table.table});
+                        if (!other_table.database.empty())
+                            table_qualifiers.push_back({other_table.database, other_table.table});
+                    }
                 }
             }
 
@@ -3665,7 +3669,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                 if (auto * identifier = (*expression)->as<ASTIdentifier>())
                 {
                     auto column_name = getStructureHintColumnName(
-                        identifier->name_parts, table_expression->tryGetAlias(), hint_is_structure, table_names,
+                        identifier->name_parts, table_expression->tryGetAlias(), hint_is_structure, table_qualifiers,
                         use_structure_from_insertion_table_in_table_functions == 1);
 
                     if (column_name.empty())

@@ -317,7 +317,7 @@ String getStructureHintColumnName(
     const Strings & identifier_parts,
     const String & table_function_alias,
     bool hint_is_structure,
-    const NameSet & table_names,
+    const std::vector<Strings> & table_qualifiers,
     bool is_forced)
 {
     if (identifier_parts.empty())
@@ -329,7 +329,10 @@ String getStructureHintColumnName(
 
     if (hint_is_structure)
     {
-        if (parts_begin == identifier_parts.begin() && identifier_parts.size() > 1 && table_names.contains(identifier_parts.front()))
+        if (parts_begin == identifier_parts.begin() && std::ranges::any_of(table_qualifiers, [&](const Strings & qualifier)
+            {
+                return qualifier.size() < identifier_parts.size() && std::equal(qualifier.begin(), qualifier.end(), identifier_parts.begin());
+            }))
             return {};
 
         String column_name = *parts_begin;

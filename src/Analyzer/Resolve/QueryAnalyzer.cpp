@@ -5762,15 +5762,32 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         auto hint_table_function_name = table_function_ptr->getName();
         bool hint_is_structure
             = hint_table_function_name == "input" || hint_table_function_name == "generateRandom" || hint_table_function_name == "null";
-        NameSet table_names;
+        std::vector<Strings> table_qualifiers;
         if (hint_is_structure)
         {
             for (const auto & join_table_expression : extractTableExpressions(scope.scope_node->as<QueryNode &>().getJoinTreeNodeTyped()))
             {
                 if (join_table_expression->hasAlias())
-                    table_names.insert(join_table_expression->getAlias());
-                if (const auto * table_node = join_table_expression->as<TableNode>())
-                    table_names.insert(table_node->getStorageID().table_name);
+                    table_qualifiers.push_back({join_table_expression->getAlias()});
+                if (const auto * inlined_view_name = getInlinedViewName(join_table_expression.get()))
+                {
+                    table_qualifiers.push_back({inlined_view_name->table_name});
+                    table_qualifiers.push_back({inlined_view_name->database_name, inlined_view_name->table_name});
+                }
+                else if (const auto * table_node = join_table_expression->as<TableNode>())
+                {
+                    if (table_node->isMaterializedCTE())
+                        table_qualifiers.push_back({table_node->getMaterializedCTE()->cte_name});
+                    if (!table_node->getTemporaryTableName().empty())
+                        table_qualifiers.push_back({table_node->getTemporaryTableName()});
+                    const auto & table_storage_id = table_node->getStorageID();
+                    table_qualifiers.push_back({table_storage_id.table_name});
+                    table_qualifiers.push_back({table_storage_id.database_name, table_storage_id.table_name});
+                }
+                else if (const auto * query_node = join_table_expression->as<QueryNode>(); query_node && query_node->isCTE())
+                    table_qualifiers.push_back({query_node->getCTEName()});
+                else if (const auto * union_node = join_table_expression->as<UnionNode>(); union_node && union_node->isCTE())
+                    table_qualifiers.push_back({union_node->getCTEName()});
             }
         }
 
@@ -5781,7 +5798,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             if (auto * identifier_node = (*expression)->as<IdentifierNode>())
             {
                 auto column_name = getStructureHintColumnName(
-                    identifier_node->getIdentifier().getParts(), table_function_node->getAlias(), hint_is_structure, table_names,
+                    identifier_node->getIdentifier().getParts(), table_function_node->getAlias(), hint_is_structure, table_qualifiers,
                     use_structure_from_insertion_table_in_table_functions == 1);
 
                 if (column_name.empty())
