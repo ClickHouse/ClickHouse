@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <limits>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -46,7 +45,7 @@ struct PendingPriorityIncreases::Buffers
         }
 
         /// Pops at most one buffer of increases, so that a call ends while hits keep adding.
-        size_t pop(std::vector<PendingPriorityIncrease> & increases, size_t max_increases)
+        size_t pop(PriorityIncreases & increases, size_t max_increases)
         {
             static_assert(std::is_nothrow_move_constructible_v<PendingPriorityIncrease>);
 
@@ -115,7 +114,7 @@ void PendingPriorityIncreases::allocateIfNeeded(size_t buffer_size)
         created.release(); /// NOLINT(bugprone-unused-return-value)
 }
 
-PendingPriorityIncreases::AddResult PendingPriorityIncreases::add(PendingPriorityIncrease & increase)
+bool PendingPriorityIncreases::tryAdd(PendingPriorityIncrease & increase, const std::function<void()> & on_half_full)
 {
     auto & current_buffers = *buffers.load(std::memory_order_acquire);
     auto & buffer = current_buffers.getBufferOfCurrentThread();
@@ -127,7 +126,7 @@ PendingPriorityIncreases::AddResult PendingPriorityIncreases::add(PendingPriorit
         auto & slot = buffer.slots[position % buffer_size];
         const auto distance = static_cast<std::ptrdiff_t>(slot.sequence.load(std::memory_order_acquire) - position);
         if (distance < 0)
-            return AddResult::Full;
+            return false;
 
         if (distance > 0)
         {
@@ -141,29 +140,34 @@ PendingPriorityIncreases::AddResult PendingPriorityIncreases::add(PendingPriorit
 
         slot.increase = std::move(increase);
         slot.sequence.store(position + 1, std::memory_order_release);
-        return buffer.getSizeApprox() >= (buffer_size + 1) / 2 ? AddResult::AddedAtLeastHalfFull : AddResult::Added;
+        /// Counted from the claimed position, so that one add per filling of the buffer reaches half.
+        const size_t size_with_this_increase = position + 1 - buffer.read_position.load(std::memory_order_relaxed);
+        if (size_with_this_increase == (buffer_size + 1) / 2 && on_half_full)
+            on_half_full();
+        return true;
     }
 }
 
-void PendingPriorityIncreases::pop(std::vector<PendingPriorityIncrease> & increases, size_t max_increases)
+void PendingPriorityIncreases::pop(PriorityIncreases & increases, std::optional<size_t> max_increases)
 {
     auto * current_buffers = buffers.load(std::memory_order_acquire);
     if (!current_buffers)
         return;
 
     const size_t buffers_count = current_buffers->buffers.size();
-    increases.reserve(increases.size() + std::min(max_increases, buffers_count * current_buffers->buffer_size));
-    for (size_t i = 0; i < buffers_count && max_increases; ++i)
-        max_increases -= current_buffers->buffers[(first_buffer_to_pop + i) % buffers_count].pop(increases, max_increases);
+    size_t remaining = std::min(max_increases.value_or(SIZE_MAX), buffers_count * current_buffers->buffer_size);
+    increases.reserve(increases.size() + remaining);
+    for (size_t i = 0; i < buffers_count && remaining; ++i)
+        remaining -= current_buffers->buffers[(first_buffer_to_pop + i) % buffers_count].pop(increases, remaining);
     first_buffer_to_pop = (first_buffer_to_pop + 1) % buffers_count;
 }
 
-void PendingPriorityIncreases::popBufferOfCurrentThread(std::vector<PendingPriorityIncrease> & increases)
+void PendingPriorityIncreases::popBufferOfCurrentThread(PriorityIncreases & increases)
 {
     if (auto * current_buffers = buffers.load(std::memory_order_acquire))
     {
         increases.reserve(increases.size() + current_buffers->buffer_size);
-        current_buffers->getBufferOfCurrentThread().pop(increases, std::numeric_limits<size_t>::max());
+        current_buffers->getBufferOfCurrentThread().pop(increases, current_buffers->buffer_size);
     }
 }
 

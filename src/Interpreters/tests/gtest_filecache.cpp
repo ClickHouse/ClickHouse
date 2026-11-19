@@ -4913,7 +4913,7 @@ TEST_F(FileCacheTest, LRUPendingPriorityIncreases)
     for (size_t i = 0; i < 4; ++i)
         add(i);
 
-    /// Repeated hits of one thread on one entry need one record.
+    /// More hits than a buffer holds: the hit which finds it full applies it.
     for (size_t i = 0; i < 40; ++i)
         hit(0);
 
@@ -4979,7 +4979,7 @@ TEST_F(FileCacheTest, LRUPendingPriorityIncreasesBuffer)
     const auto buffer_full_before = events[ProfileEvents::FilesystemCachePriorityIncreaseBufferFull];
     const auto applied_before = events[ProfileEvents::FilesystemCacheAppliedPriorityIncreases];
 
-    /// The first record leaves the ring of two slots half full, which asks once for the records to be applied.
+    /// The first record fills the ring of two slots to half, which asks for the records to be applied.
     hit(0);
     hit(1);
     ASSERT_EQ(notifications, 1u);
@@ -4993,13 +4993,13 @@ TEST_F(FileCacheTest, LRUPendingPriorityIncreasesBuffer)
     ASSERT_EQ(priority.getPendingPriorityIncreasesApprox(), 0u);
     ASSERT_EQ(queue_offsets(), (std::vector<size_t>{30, 0, 10, 20}));
 
-    /// The request is still open, so no new notification. The cleanup task applies the batch and closes it.
+    /// The emptied ring fills to half again.
     hit(3);
-    ASSERT_EQ(notifications, 1u);
+    ASSERT_EQ(notifications, 2u);
     priority.applyAllPendingPriorityIncreases();
     ASSERT_EQ(priority.getPendingPriorityIncreasesApprox(), 0u);
     ASSERT_EQ(queue_offsets(), (std::vector<size_t>{0, 10, 20, 30}));
 
     hit(0);
-    ASSERT_EQ(notifications, 2u);
+    ASSERT_EQ(notifications, 3u);
 }

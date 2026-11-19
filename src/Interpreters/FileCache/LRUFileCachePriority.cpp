@@ -159,7 +159,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
     }
 
     /// Earlier hits should end up before the new entry. One batch bounds the time under the lock.
-    applyPendingBatch(lock);
+    applyPendingPriorityIncreases(batch_priority_increase_max_batch_size.load(std::memory_order_relaxed), lock);
 
 #ifndef NDEBUG
     for (const auto & queue_entry : queue)
@@ -326,10 +326,7 @@ size_t LRUFileCachePriority::removeInvalidatedEntries(size_t max_batch)
             if (auto entry = ref.entry.lock(); entry && entry->getState() == Entry::State::Invalidated)
             {
                 if (!lock)
-                {
                     lock.emplace(getPriorityGuard().writeLock());
-                    applyPendingBatch(*lock);
-                }
 
                 /// The entry could have been removed while the lock was being acquired.
                 if (entry->getState() == Entry::State::Invalidated)
@@ -357,19 +354,20 @@ size_t LRUFileCachePriority::removeInvalidatedEntries(size_t max_batch)
 
 void LRUFileCachePriority::applyAllPendingPriorityIncreases()
 {
-    /// Hits after this point wake the cleanup task again. Also applies what stays below the half-full mark.
-    cleanup_task_woken.store(false, std::memory_order_relaxed);
-    const size_t max_batch_size = batch_priority_increase_max_batch_size.load(std::memory_order_relaxed);
-    const size_t batches_to_apply = (pending_priority_increases.getSizeApprox() + max_batch_size - 1) / max_batch_size;
-    if (!batches_to_apply)
+    /// Only what is pending now, so that the task ends while hits keep adding.
+    size_t increases_to_apply_count = pending_priority_increases.getSizeApprox();
+    if (!increases_to_apply_count)
         return;
 
     assertNotSealed("applyAllPendingPriorityIncreases");
-    for (size_t batch = 0; batch < batches_to_apply; ++batch)
+    const size_t max_batch_size = batch_priority_increase_max_batch_size.load(std::memory_order_relaxed);
+    while (increases_to_apply_count)
     {
         auto lock = getPriorityGuard().writeLock();
-        if (!applyPendingBatch(lock))
+        const size_t popped = applyPendingPriorityIncreases(max_batch_size, lock);
+        if (!popped)
             break;
+        increases_to_apply_count -= std::min(increases_to_apply_count, popped);
     }
 }
 
@@ -768,10 +766,7 @@ IFileCachePriority::PriorityDumpPtr LRUFileCachePriority::dump()
     {
         /// The caller wants the exact order. One pass is bounded, unlike repeating batches while hits keep coming.
         auto write_lock = getPriorityGuard().writeLock();
-        std::vector<PendingPriorityIncrease> increases;
-        pending_priority_increases.pop(increases, std::numeric_limits<size_t>::max());
-        if (const size_t applied = moveToTail(increases, write_lock))
-            ProfileEvents::increment(ProfileEvents::FilesystemCacheAppliedPriorityIncreases, applied);
+        applyPendingPriorityIncreases(std::nullopt, write_lock);
     }
     auto lock = getPriorityGuard().readLock();
     std::vector<FileSegmentInfo> res;
@@ -853,108 +848,62 @@ bool LRUFileCachePriority::tryIncreasePriority(
 
     pending_priority_increases.allocateIfNeeded(batch_priority_increase_buffer_size.load(std::memory_order_relaxed));
 
-    /// Consecutive hits of a thread on one entry need one record. Compared only by address.
-    static thread_local const Entry * last_recorded_entry = nullptr;
-
-    const bool was_pending = entry->has_pending_priority_increase.load(std::memory_order_relaxed)
-        || entry->has_pending_priority_increase.exchange(true, std::memory_order_relaxed);
-    if (was_pending && last_recorded_entry == entry.get())
+    PendingPriorityIncrease increase{entry, lru_iterator.get()};
+    if (pending_priority_increases.tryAdd(increase, apply_priority_increases_notifier))
         return true;
 
-    PendingPriorityIncrease increase{entry, lru_iterator.get()};
-    using AddResult = PendingPriorityIncreases::AddResult;
-    switch (pending_priority_increases.add(increase))
-    {
-        case AddResult::AddedAtLeastHalfFull:
-        {
-            /// Load first, so that hits on a buffer which stays over half full do not all write the flag.
-            if (!cleanup_task_woken.load(std::memory_order_relaxed)
-                && !cleanup_task_woken.exchange(true, std::memory_order_relaxed)
-                && apply_priority_increases_notifier)
-                apply_priority_increases_notifier();
-            [[fallthrough]];
-        }
-        case AddResult::Added:
-        {
-            last_recorded_entry = entry.get();
-            return true;
-        }
-        case AddResult::Full:
-        {
-            try
-            {
-                applyFullBuffer(increase);
-            }
-            catch (...)
-            {
-                /// Otherwise hits of this thread would treat the entry as recorded while it is not.
-                if (!was_pending)
-                    entry->has_pending_priority_increase.store(false, std::memory_order_relaxed);
-                throw;
-            }
-            return true;
-        }
-    }
-}
-
-void LRUFileCachePriority::applyFullBuffer(const PendingPriorityIncrease & increase)
-{
-    /// The cleanup task did not keep up. Wait for the write lock rather than lose the increase.
+    /// The buffer is full: the cleanup task did not keep up. Wait for the write lock rather than lose the increase.
     ProfileEvents::increment(ProfileEvents::FilesystemCachePriorityIncreaseBufferFull);
+    PriorityIncreases increases;
     auto lock = getPriorityGuard().writeLock();
-
-    pending_priority_increases.popBufferOfCurrentThread(increases_to_apply);
-    size_t applied = moveToTail(increases_to_apply, lock);
-    applied += moveToTail(std::span(&increase, 1), lock);
-    increases_to_apply.clear();
-    ProfileEvents::increment(ProfileEvents::FilesystemCacheAppliedPriorityIncreases, applied);
+    pending_priority_increases.popBufferOfCurrentThread(increases);
+    applyPriorityIncreases(increases, lock, &increase);
+    return true;
 }
 
-bool LRUFileCachePriority::moveEntryToTail(const PendingPriorityIncrease & increase, const CachePriorityGuard::WriteLock &)
+bool LRUFileCachePriority::applyPriorityIncrease(const PendingPriorityIncrease & increase, const CachePriorityGuard::WriteLock &)
 {
     /// The iterator is valid while the entry is in the queue, and `remove` sets `Removed` under the write lock.
     const auto entry = increase.entry.lock();
-    if (!entry)
+    if (!entry || entry->getState() == Entry::State::Removed)
         return false;
 
-    const bool in_queue = entry->getState() != Entry::State::Removed;
-    if (in_queue)
-    {
-        moveEvictionPosIfEqualImpl(increase.iterator);
-        queue.splice(queue.end(), queue, increase.iterator);
-    }
-    entry->has_pending_priority_increase.store(false, std::memory_order_relaxed);
-    return in_queue;
+    moveEvictionPosIfEqualImpl(increase.iterator);
+    queue.splice(queue.end(), queue, increase.iterator);
+    return true;
 }
 
-size_t LRUFileCachePriority::moveToTail(
-    std::span<const PendingPriorityIncrease> increases, const CachePriorityGuard::WriteLock & lock)
+void LRUFileCachePriority::applyPriorityIncreases(
+    const PriorityIncreases & increases,
+    const CachePriorityGuard::WriteLock & lock,
+    const PendingPriorityIncrease * current_hit)
 {
-    std::lock_guard eviction_pos_lock(eviction_pos_mutex);
     size_t applied = 0;
-    for (const auto & increase : increases)
-        applied += moveEntryToTail(increase, lock);
-    return applied;
-}
-
-size_t LRUFileCachePriority::applyPendingBatch(const CachePriorityGuard::WriteLock & lock)
-{
-    pending_priority_increases.pop(increases_to_apply, batch_priority_increase_max_batch_size.load(std::memory_order_relaxed));
-    const size_t count = increases_to_apply.size();
-    const size_t applied = moveToTail(increases_to_apply, lock);
-    /// Do not keep the control blocks of the entries allocated.
-    increases_to_apply.clear();
+    {
+        std::lock_guard eviction_pos_lock(eviction_pos_mutex);
+        for (const auto & increase : increases)
+            applied += applyPriorityIncrease(increase, lock);
+        if (current_hit)
+            applied += applyPriorityIncrease(*current_hit, lock);
+    }
     if (applied)
         ProfileEvents::increment(ProfileEvents::FilesystemCacheAppliedPriorityIncreases, applied);
-    return count;
+}
+
+size_t LRUFileCachePriority::applyPendingPriorityIncreases(std::optional<size_t> max_increases, const CachePriorityGuard::WriteLock & lock)
+{
+    PriorityIncreases increases;
+    pending_priority_increases.pop(increases, max_increases);
+    applyPriorityIncreases(increases, lock);
+    return increases.size();
 }
 
 IFileCachePriority::EntryPtr LRUFileCachePriority::LRUIterator::getEntry() const
 {
-    return lockEntryOrThrow();
+    return getEntryOrThrow();
 }
 
-IFileCachePriority::EntryPtr LRUFileCachePriority::LRUIterator::lockEntryOrThrow() const
+IFileCachePriority::EntryPtr LRUFileCachePriority::LRUIterator::getEntryOrThrow() const
 {
     const bool is_iterator_valid = iterator != LRUQueue::iterator{};
     auto entry_ptr = entry.lock();
@@ -1075,7 +1024,7 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
 
 bool LRUFileCachePriority::LRUIterator::assertValid() const
 {
-    [[maybe_unused]] const auto entry_ptr = lockEntryOrThrow();
+    [[maybe_unused]] const auto entry_ptr = getEntryOrThrow();
     return true;
 }
 

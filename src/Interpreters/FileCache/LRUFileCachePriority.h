@@ -4,13 +4,11 @@
 #include <list>
 #include <mutex>
 #include <optional>
-#include <span>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/CacheUsage.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/FileCache/Guards.h>
 #include <Interpreters/FileCache/PendingPriorityIncreases.h>
-#include <Common/CacheLine.h>
 
 class FileCacheTest_MoveEvictionPos_Test;
 class FileCacheTest_LRUPendingPriorityIncreasesBuffer_Test;
@@ -253,12 +251,6 @@ private:
     std::atomic<size_t> invalidated_count = 0;
 
     PendingPriorityIncreases pending_priority_increases;
-    /// Set by the hit which wakes the cleanup task to apply `pending_priority_increases`, cleared when the task
-    /// starts applying, so the task is woken once and not on every hit to a buffer which is at least half full.
-    std::atomic<bool> cleanup_task_woken = false;
-    /// Increases popped from `pending_priority_increases`. Used only under the queue write lock, on its own
-    /// cache line, so that the cleanup side does not write the lines which hits read.
-    alignas(CH_CACHE_LINE_SIZE) std::vector<PendingPriorityIncrease> increases_to_apply;
 
     /// Id of the current priority queue.
     /// Used to find its eviction info in collected eviction info map
@@ -320,15 +312,17 @@ private:
     void moveEvictionPosIfEqual(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &);
     void moveEvictionPosIfEqualImpl(LRUQueue::iterator it) TSA_REQUIRES(eviction_pos_mutex);
 
-    /// Move the entry to the queue tail, unless it was removed from the queue in the meantime. Returns whether it moved.
-    bool moveEntryToTail(const PendingPriorityIncrease & increase, const CachePriorityGuard::WriteLock &)
+    /// Moves the entry of `increase` to the queue tail, unless the entry was removed from the queue in the meantime.
+    /// Returns whether the entry was moved.
+    bool applyPriorityIncrease(const PendingPriorityIncrease & increase, const CachePriorityGuard::WriteLock &)
         TSA_REQUIRES(eviction_pos_mutex);
-    /// Returns the number of entries moved.
-    size_t moveToTail(std::span<const PendingPriorityIncrease> increases, const CachePriorityGuard::WriteLock &);
-    /// Applies one batch of the pending increases and returns its size.
-    size_t applyPendingBatch(const CachePriorityGuard::WriteLock &);
-    /// For a hit whose buffer is full: waits for the write lock and applies that buffer and `increase`.
-    void applyFullBuffer(const PendingPriorityIncrease & increase);
+    /// Applies `increases` in order, then `current_hit` if given.
+    void applyPriorityIncreases(
+        const PriorityIncreases & increases,
+        const CachePriorityGuard::WriteLock &,
+        const PendingPriorityIncrease * current_hit = nullptr);
+    /// Pops up to `max_increases` pending increases, or all of them if not set, applies them and returns their number.
+    size_t applyPendingPriorityIncreases(std::optional<size_t> max_increases, const CachePriorityGuard::WriteLock &);
 };
 
 class LRUFileCachePriority::LRUIterator : public IFileCachePriority::Iterator
@@ -369,7 +363,7 @@ private:
     bool assertValid() const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
 
     /// Throws if the iterator is invalid.
-    EntryPtr lockEntryOrThrow() const;
+    EntryPtr getEntryOrThrow() const;
 
     void invalidateImpl() noexcept;
 

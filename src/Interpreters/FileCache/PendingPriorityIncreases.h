@@ -1,10 +1,13 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 #include <list>
 #include <memory>
-#include <vector>
+#include <optional>
+#include <boost/container/small_vector.hpp>
 #include <Common/CacheLine.h>
+#include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 
 namespace DB
@@ -17,6 +20,10 @@ struct PendingPriorityIncrease
     std::list<IFileCachePriority::EntryPtr>::iterator iterator;
 };
 
+/// A batch of the default size stays on the stack, so popping one under the queue write lock does not allocate.
+using PriorityIncreases
+    = boost::container::small_vector<PendingPriorityIncrease, FILECACHE_DEFAULT_BATCH_PRIORITY_INCREASE_MAX_BATCH_SIZE>;
+
 /// Priority increases recorded by cache hits and not yet applied to the priority queue: lock-free ring buffers,
 /// as many as CPU cores, each thread always adding to the same one. Hits add without a lock, and increases are
 /// popped only under the queue write lock, so there is one reader and the lock is taken once per batch.
@@ -26,27 +33,20 @@ public:
     ~PendingPriorityIncreases();
 
     /// Allocates the buffers of `buffer_size` increases each on the first call, so a queue without hits
-    /// has none. Must be called before `add`.
+    /// has none. Must be called before `tryAdd`.
     void allocateIfNeeded(size_t buffer_size);
 
-    enum class AddResult
-    {
-        Added,
-        /// Added, and the buffer of the calling thread is at least half full: time to ask for the increases to be applied.
-        AddedAtLeastHalfFull,
-        /// Not added: the buffer of the calling thread is full.
-        Full,
-    };
+    /// Returns false, without moving from `increase`, if the buffer of the calling thread is full.
+    /// Calls `on_half_full` if it is set and this increase filled the buffer to half.
+    [[nodiscard]] bool tryAdd(PendingPriorityIncrease & increase, const std::function<void()> & on_half_full);
 
-    /// Moves from `increase` only if it is added.
-    AddResult add(PendingPriorityIncrease & increase);
-
-    /// Moves up to `max_increases` increases to the end of `increases`. Increases of one thread keep their order.
-    /// Pops at most the buffers' capacity, so a call ends while hits keep adding. Requires the queue write lock.
-    void pop(std::vector<PendingPriorityIncrease> & increases, size_t max_increases);
+    /// Moves up to `max_increases` increases, or all of them if not set, to the end of `increases`. Increases of one
+    /// thread keep their order. Pops at most the buffers' capacity, so a call ends while hits keep adding.
+    /// Requires the queue write lock.
+    void pop(PriorityIncreases & increases, std::optional<size_t> max_increases);
 
     /// Same, for all the increases in the buffer which the calling thread adds to.
-    void popBufferOfCurrentThread(std::vector<PendingPriorityIncrease> & increases);
+    void popBufferOfCurrentThread(PriorityIncreases & increases);
 
     /// The number of increases, without synchronization with concurrent hits.
     [[nodiscard]] size_t getSizeApprox() const;

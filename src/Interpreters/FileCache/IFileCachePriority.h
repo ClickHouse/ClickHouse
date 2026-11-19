@@ -66,9 +66,6 @@ public:
 
         std::atomic<size_t> size;
 
-        /// Set by a cache hit whose move to the queue tail is recorded but not applied yet.
-        std::atomic<bool> has_pending_priority_increase = false;
-
         std::string toString(const std::string & prefix = "") const;
 
         /// Locks `key_metadata`, throwing if it expired.
