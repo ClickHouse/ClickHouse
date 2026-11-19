@@ -1,0 +1,8 @@
+bool_read	4080
+bool_seal	4080
+bool_skip_minmax	4080
+bool_nullable	4076
+bool_u8_build	4080
+u16_bool_u8_build	4095
+u16_u8_bool_build	16
+bool_read_pruned	1

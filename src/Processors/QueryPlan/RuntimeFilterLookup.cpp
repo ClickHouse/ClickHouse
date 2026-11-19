@@ -1315,9 +1315,10 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
     else
         key_node_ptr = &dag.addInput(column_name, column_type);
     const auto & key_node = *key_node_ptr;
-    const auto & key_casted = key_node.result_type->equals(*target_type)
-        ? key_node
-        : dag.addCast(key_node, target_type, {}, context);
+    /// The cast the filter is applied through: `equals` cannot tell whether it changes values, e.g. from `UInt8` to `Bool`.
+    const auto & key_casted = descriptor.key_cast_type ? dag.addCast(key_node, descriptor.key_cast_type, {}, context)
+        : key_node.result_type->equals(*target_type)   ? key_node
+                                                       : dag.addCast(key_node, target_type, {}, context);
 
     if (exact_values)
     {
