@@ -2,6 +2,8 @@
 -- Tag no-fasttest: Parquet, and MinIO via s3_conn.
 -- Tag no-replicated-database: the replicated DDL worker evaluates the `IcebergLocal` arguments without the session, so it does not see the `TEMPORARY TABLE iceberg_path`
 
+-- The test checks this pass
+SET query_plan_propagate_predicate_across_join = 1;
 -- Runtime filters would skip target data too
 SET enable_join_runtime_filters = 0;
 -- Under parallel replicas the reads are remote and the pass bails
