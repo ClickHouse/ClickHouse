@@ -93,6 +93,10 @@ private:
     /// determine if the next row for that group should be outputted or not.
     VectorWithMemoryTracking<UInt64> group_counts;
 
+    /// The number of group indices given to keys. One more than `group_counts.size()` only after `push_back` threw for the
+    /// key that got the last index; `transform` appends that count before the next chunk.
+    size_t num_assigned_groups = 0;
+
     /// Slices from the current chunk that will be emitted to output.
     PODArray<ChunkRowRange> output_slices;
 

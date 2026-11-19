@@ -57,6 +57,20 @@ Chunk makeDistinctKeyChunk(UInt64 first_key, UInt64 count)
     return Chunk(Columns{std::move(key_column), std::move(value_column)}, count);
 }
 
+/// One chunk with the given grouping keys; the value of a row is its position in the chunk.
+Chunk makeKeyChunk(std::initializer_list<UInt64> keys)
+{
+    auto key_column = ColumnUInt64::create();
+    auto value_column = ColumnUInt64::create();
+    for (UInt64 key : keys)
+    {
+        value_column->insertValue(key_column->size());
+        key_column->insertValue(key);
+    }
+    const UInt64 count = key_column->size();
+    return Chunk(Columns{std::move(key_column), std::move(value_column)}, count);
+}
+
 /// One sorted chunk of `num_groups` contiguous groups, each `group_size` rows, with ascending
 /// keys `first_key, first_key + 1, ...`. This is valid sorted-stream input. Under `LIMIT 1 BY
 /// key` only the first row of each group survives, so the kept rows are sparse across a large
@@ -138,6 +152,75 @@ TEST(LimitByTransform, ClearsOutputSlicesWhenTransformThrows)
     EXPECT_EQ(second_chunk.getNumRows(), 4u);
     for (const auto & column : second_chunk.getColumns())
         EXPECT_EQ(column->size(), second_chunk.getNumRows());
+}
+
+/// A new grouping key enters the hash table before `group_counts` grows for it, and that growth is memory tracked, so it
+/// can throw. Whichever allocation throws, every key in the table must count its rows against a group of its own in later
+/// chunks: not one past the end of `group_counts`, and not the group of a key inserted after it.
+TEST(LimitByTransform, KeepsAGroupForEveryKeyWhenGroupStorageGrowthThrows)
+{
+    MainThreadStatus::getInstance();
+    auto & thread_status = CurrentThread::get();
+    auto & thread_tracker = thread_status.memory_tracker;
+    const Int64 prev_hard_limit = thread_tracker.getHardLimit();
+    const Int64 prev_untracked_memory_limit = thread_status.untracked_memory_limit;
+    auto restore_limits = [&]
+    {
+        thread_tracker.setHardLimit(prev_hard_limit);
+        thread_status.untracked_memory_limit = prev_untracked_memory_limit;
+        CurrentThread::flushUntrackedMemory();
+    };
+    CurrentThread::flushUntrackedMemory();
+    SCOPE_EXIT({ restore_limits(); });
+
+    /// `LIMIT 2 BY key` over the non-constant "key" column -> hash-map variant.
+    LimitByTransform transform(makeHeader(), /*group_length_=*/ 2, /*group_offset_=*/ 0, Names{"key"});
+
+    auto throws_memory_limit_exceeded = [&](Chunk chunk)
+    {
+        try
+        {
+            runTransform(transform, chunk);
+        }
+        catch (const Exception & e)
+        {
+            return e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED;
+        }
+        return false;
+    };
+
+    /// 1023 distinct keys, one row each: `group_counts` holds 1023 groups and has room for 1024.
+    Chunk first_chunk = makeDistinctKeyChunk(/*first_key=*/ 0, /*count=*/ 1023);
+    runTransform(transform, first_chunk);
+    ASSERT_EQ(first_chunk.getNumRows(), 1023u);
+
+    /// Two new keys: `group_counts` has to grow for one of them.
+    Chunk second_chunk = makeKeyChunk({5000, 6000});
+    Chunk third_chunk = makeKeyChunk({6000});
+
+    /// From here every allocation is checked against a hard limit at the current usage, so growing `group_counts` throws.
+    CurrentThread::flushUntrackedMemory();
+    thread_status.untracked_memory_limit = 0;
+    thread_tracker.setHardLimit(thread_tracker.get() + 1);
+
+    ASSERT_TRUE(throws_memory_limit_exceeded(std::move(second_chunk)));
+    /// Still under the limit, and `group_counts` still has no count for key 6000.
+    ASSERT_TRUE(throws_memory_limit_exceeded(std::move(third_chunk)));
+
+    restore_limits();
+
+    /// Both new keys again, then key 7, which kept one of its two rows in the first chunk.
+    Chunk last_chunk = makeKeyChunk({5000, 5000, 5000, 6000, 6000, 6000, 7, 7, 7});
+    ASSERT_NO_THROW(runTransform(transform, last_chunk));
+    ASSERT_EQ(last_chunk.getNumRows(), 5u);
+    const auto & columns = last_chunk.getColumns();
+    const std::vector<UInt64> expected_keys{5000, 5000, 6000, 6000, 7};
+    const std::vector<UInt64> expected_values{0, 1, 3, 4, 6};
+    for (size_t row = 0; row < expected_keys.size(); ++row)
+    {
+        EXPECT_EQ(columns[0]->getUInt(row), expected_keys[row]) << "row " << row;
+        EXPECT_EQ(columns[1]->getUInt(row), expected_values[row]) << "row " << row;
+    }
 }
 
 /// Same regression but for the sorted-stream variant `LimitBySortedStreamTransform`, which

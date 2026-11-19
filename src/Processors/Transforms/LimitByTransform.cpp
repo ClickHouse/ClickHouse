@@ -210,19 +210,14 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
                 FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
 
             auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, *data.aggregates_pool);
-            /// A key is given its group index only after `push_back` succeeds. If it throws, the key stays in the hash table
-            /// with a null mapped value, and since `ISimpleTransform::work` may pass later chunks to this transform, the key
-            /// gets its group the next time it is seen.
-            if (key_emplace_result.isInserted())
-                key_emplace_result.setMapped(nullptr);
-
             size_t row_group_idx = 0;
-            if (!key_emplace_result.getMapped()) /// New grouping key
+            if (key_emplace_result.isInserted()) /// New grouping key
             {
-                /// Assign a stable index into `group_counts` to the grouping key we just inserted.
-                row_group_idx = group_counts.size();
-                group_counts.push_back(0);
+                /// Assign a stable index into `group_counts` to the grouping key we just inserted. The key gets it before `push_back`,
+                /// which can throw; `transform` then appends the missing count.
+                row_group_idx = num_assigned_groups++;
                 key_emplace_result.setMapped(mappedFromGroupIndex(row_group_idx));
+                group_counts.push_back(0);
             }
             else /// Existing grouping key
             {
@@ -287,6 +282,10 @@ void LimitByTransform::transform(Chunk & chunk)
             normalized_grouping_key_columns.push_back(removeSpecialRepresentations(chunk_columns[position])->convertToFullColumnIfConst());
             grouping_key_columns.push_back(normalized_grouping_key_columns.back().get());
         }
+
+        /// `push_back` in `consumeImpl` may have thrown after its key got the last group index.
+        if (unlikely(group_counts.size() < num_assigned_groups))
+            group_counts.resize(num_assigned_groups);
 
         /// `consumeImpl` maps rows to groups and splits the chunk into runs.
         switch (data.type)
