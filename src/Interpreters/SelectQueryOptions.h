@@ -36,15 +36,12 @@ struct SelectQueryOptions
     /// This flag is needed for projection description.
     /// Otherwise, keys for GROUP BY may be removed as constants.
     bool ignore_ast_optimizations = false;
-    bool ignore_alias = false;
     bool is_internal = false;
     bool is_subquery = false; // non-subquery can also have subquery_depth > 0, e.g. insert select
     bool with_all_cols = false; /// asterisk include materialized and aliased columns
     bool settings_limit_offset_done = false;
     bool is_explain = false; /// The value is true if it's explain statement.
     bool is_create_parameterized_view = false;
-    /// Bypass setting constraints for some internal queries such as projection ASTs.
-    bool ignore_setting_constraints = false;
     bool is_create_view = false; /// this select is a part of CREATE [MATERIALIZED] VIEW query
 
     /// Bypass access check for select query.
@@ -156,21 +153,9 @@ struct SelectQueryOptions
         return *this;
     }
 
-    SelectQueryOptions & ignoreAlias(bool value = true)
-    {
-        ignore_alias = value;
-        return *this;
-    }
-
     SelectQueryOptions & ignoreASTOptimizations(bool value = true)
     {
         ignore_ast_optimizations = value;
-        return *this;
-    }
-
-    SelectQueryOptions & ignoreSettingConstraints(bool value = true)
-    {
-        ignore_setting_constraints = value;
         return *this;
     }
 

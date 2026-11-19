@@ -3791,7 +3791,7 @@ void InterpreterSelectQuery::initSettings()
     auto & query = getSelectQuery();
     if (query.settings())
     {
-        InterpreterSetQuery(query.settings(), context).executeForCurrentContext(options.ignore_setting_constraints);
+        InterpreterSetQuery(query.settings(), context).executeForCurrentContext(/* ignore_setting_constraints= */ false);
     }
 
     const auto & client_info = context->getClientInfo();
