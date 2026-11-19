@@ -12,27 +12,19 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이 설정은 ClickHouse 서버 구성을 정의하며 ClickHouse 소스에서 자동 생성됩니다.
 
-<div id="paimon_metadata_files_cache_max_entries">
-  ## paimon_metadata_files_cache_max_entries
-</div>
+## paimon_metadata_files_cache_max_entries {#paimon_metadata_files_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="Yes" />paimon 메타데이터 파일 캐시의 최대 항목 수입니다. 0은 항목 수 제한이 없음을 의미합니다.
 
-<div id="paimon_metadata_files_cache_policy">
-  ## paimon_metadata_files_cache_policy
-</div>
+## paimon_metadata_files_cache_policy {#paimon_metadata_files_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Paimon 메타데이터 캐시 정책의 이름입니다.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Paimon 메타데이터 캐시 eviction 정책의 이름입니다. 가능한 값: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="paimon_metadata_files_cache_size">
-  ## paimon_metadata_files_cache_size
-</div>
+## paimon_metadata_files_cache_size {#paimon_metadata_files_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />paimon 메타데이터 캐시의 최대 크기(바이트)입니다. 0은 비활성화를 의미합니다.
 
-<div id="paimon_metadata_files_cache_size_ratio">
-  ## paimon_metadata_files_cache_size_ratio
-</div>
+## paimon_metadata_files_cache_size_ratio {#paimon_metadata_files_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />paimon 메타데이터 캐시에서 보호 큐(SLRU 정책 사용 시)가 캐시 전체 크기에서 차지하는 비율입니다.
 

@@ -12,8 +12,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
-#include <parquet/file_reader.h>
-#include <parquet/metadata.h>
 #include <boost/noncopyable.hpp>
 #include <IO/WithFileName.h>
 #include <generated/parquet_types.h>
@@ -104,7 +102,7 @@ struct ParquetMetadataCacheCell : private boost::noncopyable
 private:
     static constexpr size_t SIZE_IN_MEMORY_OVERHEAD = 200;
     static constexpr size_t MIN_KEPT_STATISTICS_BYTES = 4096;
-    size_t calculateMemorySize() const;
+    [[nodiscard]] size_t calculateMemorySize() const;
 };
 
 /// Weight function for metadata cache

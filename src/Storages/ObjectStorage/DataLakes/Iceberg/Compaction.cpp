@@ -154,7 +154,7 @@ struct Plan
             return partition_value_to_index[row];
         }
 
-        const Row & getPartitionValue(size_t partition_index) const { return partition_values.at(partition_index); }
+        [[nodiscard]] const Row & getPartitionValue(size_t partition_index) const { return partition_values.at(partition_index); }
 
     private:
         struct PartitionValueHasher
@@ -226,7 +226,7 @@ static Plan getPlan(
     Plan plan;
     plan.generator = FileNamesGenerator(persistent_table_components.path_resolver.getTableLocation(), false, compression_method, write_format);
 
-    const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [metadata_version, metadata_file_path, _, _2] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_table_components.table_path,
         data_lake_settings,
@@ -400,9 +400,6 @@ static void writeDataFiles(
             if (schema_object->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
             {
                 column_mapper = createColumnMapper(schema_object);
-                const auto & metadata_object = initial_plan.initial_metadata_object;
-                if (metadata_object->has(Iceberg::f_last_column_id) && !metadata_object->isNull(Iceberg::f_last_column_id))
-                    column_mapper->setLastAssignedFieldId(metadata_object->getValue<Int64>(Iceberg::f_last_column_id));
                 break;
             }
         }
@@ -450,7 +447,7 @@ static void writeDataFiles(
             format_settings,
             parser_shared_resources,
             input_format_filter_info,
-            true /* is_remote_fs */,
+            object_storage->isRemote(),
             chooseCompressionMethod(data_file->data_object_info->getPath(), toContentEncodingName(write_compression_method)),
             false);
 
@@ -532,6 +529,8 @@ static DataFileColumnStatistics getColumnStatisticsForRewrite(const ParsedManife
             stats.value_counts.emplace_back(field_id, *column_info.rows_count);
         if (column_info.nulls_count.has_value())
             stats.null_value_counts.emplace_back(field_id, *column_info.nulls_count);
+        if (column_info.nans_count.has_value())
+            stats.nan_value_counts.emplace_back(field_id, *column_info.nans_count);
     }
     /// Bounds stay the raw serialized bytes, so they round-trip whatever the column type.
     for (const auto & [field_id, bounds] : entry.value_bounds)
@@ -557,7 +556,9 @@ static DataFileEntryLineage getEntryLineageForRewrite(const ParsedManifestFileEn
 
 static bool writeConsolidatedManifestFile(
     int metadata_version,
+    const String & metadata_file_path,
     Poco::JSON::Object::Ptr metadata_object,
+    const String & base_catalog_metadata_location,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage, ContextPtr context,
     SharedHeader sample_block_,
@@ -851,10 +852,10 @@ static bool writeConsolidatedManifestFile(
     // Create file name generator for new metadata files
     FileNamesGenerator generator(
         path_resolver.getTableLocation(),
-        false,
+        /* use_uuid_in_metadata */ catalog != nullptr,
         compression_method,
         write_format);
-    generator.setVersion(metadata_version + 1);
+    generator.setBaseMetadataFile(metadata_version, metadata_file_path);
 
     MetadataGenerator metadata_generator(metadata_object);
     auto generated_metadata_info = generator.generateMetadataPathWithInfo();
@@ -1055,9 +1056,11 @@ static bool writeConsolidatedManifestFile(
             {
                 auto catalog_filename = path_resolver.resolveForCatalog(generated_metadata_info.path);
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot.snapshot))
+                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot.snapshot, metadata_object))
                 {
                     LOG_INFO(log, "Metadata commit conflict detected via catalog, cleaning up temporary files");
+                    if (!catalog_writes_metadata_file)
+                        removeRejectedMetadataFile(path_resolver, generated_metadata_info, object_storage);
                     cleanup();
                     return false;
                 }
@@ -1135,14 +1138,15 @@ static bool writeMetadataFiles(
 
     ColumnsDescription columns_description = ColumnsDescription::fromNamesAndTypes(sample_block_->getNamesAndTypes());
     auto [metadata_object, metadata_object_str] = createEmptyMetadataFile(table_path, columns_description, nullptr, nullptr, context);
-
-    /// Keep the table-level metadata; only the snapshot state is rebuilt below.
+    /// Keep the table-level metadata; only the snapshot state is rebuilt below. The rewritten data files, manifests
+    /// and manifest list use the source table's field ids and partition specs, so the new metadata must define them.
     static const std::unordered_set<std::string_view> snapshot_state_keys{
         Iceberg::f_snapshots, Iceberg::f_current_snapshot_id, Iceberg::f_refs, Iceberg::f_snapshot_log, Iceberg::f_metadata_log,
         Iceberg::f_last_sequence_number, Iceberg::f_last_updated_ms, Iceberg::f_statistics, Iceberg::f_partition_statistics};
     for (const auto & [key, value] : *plan.initial_metadata_object)
         if (!snapshot_state_keys.contains(key))
             metadata_object->set(key, value);
+    metadata_object->set(Iceberg::f_last_column_id, getLastAssignedFieldId(metadata_object));
 
     auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     Poco::JSON::Object::Ptr current_schema;
@@ -1507,7 +1511,7 @@ static bool writeMetadataFiles(
 
 static std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const String & table_path)
 {
-    auto metadata_files = listFiles(*object_storage, table_path, "metadata", "");
+    auto metadata_files = listFilesNonRecursive(*object_storage, table_path, "metadata", "");
     std::erase_if(metadata_files, [](const String & file)
     {
         return file.ends_with("metadata/version-hint.text");
@@ -1548,7 +1552,7 @@ void compactIcebergManifests(
         if (attempt > 0)
             LOG_INFO(log, "Retrying manifest compaction (attempt {}/{})", attempt + 1, MAX_COMPACTION_RETRIES);
 
-        const auto [metadata_version, metadata_file_path, _] = getLatestMetadataFileAndVersionWithCatalog(
+        const auto [metadata_version, metadata_file_path, _, base_catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage_,
             catalog,
             table_id.getTableName(),
@@ -1593,7 +1597,9 @@ void compactIcebergManifests(
 
         if (writeConsolidatedManifestFile(
                 metadata_version,
+                metadata_file_path,
                 metadata_object,
+                base_catalog_metadata_location,
                 persistent_table_components,
                 object_storage_,
                 context_,
@@ -1663,36 +1669,42 @@ void compactIcebergTable(
             sample_block_->getNamesAndTypesList(),
             /*allow_missing_fields=*/false);
 
-        /// writeMetadataFiles re-tags every rewritten file with the current schema and default spec, so reject
-        /// files written under others. Check before writeDataFiles, which leaves no cleanup behind.
-        auto default_spec_id = plan.initial_metadata_object->getValue<Int32>(f_default_spec_id);
-        auto partitions_specs = plan.initial_metadata_object->getArray(f_partition_specs);
-        Poco::JSON::Object::Ptr default_spec_object;
-        for (size_t i = 0; i < partitions_specs->size(); ++i)
-        {
-            if (partitions_specs->getObject(static_cast<UInt32>(i))->getValue<Int64>(Iceberg::f_spec_id) == default_spec_id)
-            {
-                default_spec_object = partitions_specs->getObject(static_cast<UInt32>(i));
-                break;
-            }
-        }
-        if (!default_spec_object)
+        /// Every data file is rewritten under the default partition spec, so its partition tuple must have that spec's arity.
+        const auto default_spec_id = plan.initial_metadata_object->getValue<Int32>(Iceberg::f_default_spec_id);
+        Poco::JSON::Array::Ptr default_spec_fields;
+        if (const auto partition_specs = plan.initial_metadata_object->getArray(Iceberg::f_partition_specs))
+            for (UInt32 i = 0; i < partition_specs->size(); ++i)
+                if (partition_specs->getObject(i)->getValue<Int32>(Iceberg::f_spec_id) == default_spec_id)
+                    default_spec_fields = partition_specs->getObject(i)->getArray(Iceberg::f_fields);
+        if (!default_spec_fields)
             throw Exception(
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Iceberg table metadata has no partition spec matching default-spec-id {}",
+                "Iceberg table metadata has no partition spec with the default spec id {}",
                 default_spec_id);
-
-        PartitionSpecification default_partition_spec;
+        for (size_t i = 0; i < plan.partitions.size(); ++i)
         {
-            auto default_spec_fields = default_spec_object->getArray(f_fields);
-            for (UInt32 i = 0; default_spec_fields && i < default_spec_fields->size(); ++i)
-            {
-                auto field = default_spec_fields->getObject(i);
-                default_partition_spec.emplace_back(
-                    field->getValue<Int32>(f_source_id),
-                    field->getValue<String>(f_partition_transform),
-                    field->getValue<String>(f_partition_name));
-            }
+            const auto tuple_size = plan.partition_encoder.getPartitionValue(i).size();
+            if (!plan.partitions[i].empty() && tuple_size != default_spec_fields->size())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Iceberg compaction cannot rewrite data file '{}' under the default partition spec {}: its partition tuple has {} "
+                    "values but the spec defines {} fields (e.g. after a partition spec change). The table is left unchanged.",
+                    plan.partitions[i].front()->data_object_info->getPath(),
+                    default_spec_id,
+                    tuple_size,
+                    default_spec_fields->size());
+        }
+
+        /// writeMetadataFiles re-tags every rewritten file with the current schema and default spec, so reject
+        /// files written under others. Check before writeDataFiles, which leaves no cleanup behind.
+        PartitionSpecification default_partition_spec;
+        for (UInt32 i = 0; i < default_spec_fields->size(); ++i)
+        {
+            auto field = default_spec_fields->getObject(i);
+            default_partition_spec.emplace_back(
+                field->getValue<Int32>(f_source_id),
+                field->getValue<String>(f_partition_transform),
+                field->getValue<String>(f_partition_name));
         }
 
         for (const auto & info : plan.data_file_validation_infos)
