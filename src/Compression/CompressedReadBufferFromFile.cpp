@@ -22,7 +22,6 @@ namespace ErrorCodes
 
 bool CompressedReadBufferFromFile::startPartialDecompression(size_t size_decompressed, size_t size_compressed_without_checksum, size_t min_bytes)
 {
-    /// It pays off only if at least one block of the frame is left undecompressed.
     if (!codec || codec->getMethodByte() != static_cast<uint8_t>(CompressionMethodByte::ZSTD)
         || min_bytes + ZstdIncrementalDecompressor::max_block_size >= size_decompressed)
         return false;
@@ -40,7 +39,6 @@ bool CompressedReadBufferFromFile::startPartialDecompression(size_t size_decompr
     {
         own_compressed_buffer.resize(frame_size);
         memcpy(own_compressed_buffer.data(), frame, frame_size);
-        /// The header and the checksum of `own_compressed_buffer` are not valid now.
         own_compressed_buffer_header_init = false;
         partial_decompressor.relocateSource(own_compressed_buffer.data());
     }
@@ -72,9 +70,8 @@ bool CompressedReadBufferFromFile::nextImpl()
     {
         if (partial_decompressor.inProgress())
         {
-            /// Decompress the next part of the block after the decompressed one, which ZSTD needs as the history.
-            /// `working_buffer` keeps starting at the beginning of the block, so skip the old part and compensate `bytes`,
-            /// to which `next` has already added the consumed size.
+            /// `working_buffer` keeps the beginning of the block (ZSTD needs it as the history): skip the old part,
+            /// which `next` has already added to `bytes`.
             const size_t old_size = working_buffer.size();
             continuePartialDecompression(old_size + 1);
             bytes -= old_size;
@@ -140,7 +137,6 @@ void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t
     {
         if (size_compressed && offset_in_compressed_file == file_in.getPosition() - size_compressed)
         {
-            /// Seek within the current block: decompress it up to the required position.
             if (offset_in_decompressed_block > working_buffer.size())
             {
                 const size_t pos_offset = offset();
@@ -200,7 +196,6 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
         {
             if (partial_decompressor.inProgress())
             {
-                /// The requested data continues in the not yet decompressed part of the current block.
                 if (!next())
                     return bytes_read;
                 bytes_read += read(to + bytes_read, std::min(available(), n - bytes_read));
@@ -262,7 +257,6 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
                 chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
                 memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
 
-                /// Only the beginning of this block is needed now: try to decompress just that.
                 if (!startPartialDecompression(size_decompressed, size_compressed_without_checksum, n - bytes_read))
                 {
                     working_buffer = WorkingBuffer::fromPaddedStorage(memory, 0, size_decompressed);
