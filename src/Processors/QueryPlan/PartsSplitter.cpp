@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <list>
+#include <map>
 #include <ranges>
 
 #include <boost/functional/hash.hpp>
@@ -1363,6 +1364,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndex(
     const KeyDescription & primary_key,
     const KeyDescription & sorting_key,
     RangesInDataParts & ranges_in_data_parts,
+    bool within_partition,
     const LoggerPtr & logger)
 {
     bool cannot_sort_primary_key = false;
@@ -1371,6 +1373,26 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndex(
         LOG_TRACE(logger, "Primary key is not sortable, using the ranges selected by the primary key due to exact_mode.");
         cannot_sort_primary_key = true;
     }
-    return findPKRangesForFinalAfterSkipIndexImpl(ranges_in_data_parts, cannot_sort_primary_key, logger);
+
+    if (!within_partition)
+        return findPKRangesForFinalAfterSkipIndexImpl(ranges_in_data_parts, cannot_sort_primary_key, logger);
+
+    std::map<String, RangesInDataParts> parts_by_partition;
+    for (auto & part : ranges_in_data_parts)
+        parts_by_partition[part.data_part->info.getPartitionId()].push_back(std::move(part));
+
+    RangesInDataParts result;
+    for (auto & [_, partition_parts] : parts_by_partition)
+    {
+        auto partition_result = findPKRangesForFinalAfterSkipIndexImpl(partition_parts, cannot_sort_primary_key, logger);
+        std::move(partition_result.begin(), partition_result.end(), std::back_inserter(result));
+    }
+
+    ::stableSort(
+        result.begin(),
+        result.end(),
+        [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
+
+    return result;
 }
 }
