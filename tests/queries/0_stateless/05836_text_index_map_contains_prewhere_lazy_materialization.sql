@@ -5,6 +5,7 @@ SET enable_full_text_index = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 10000;
 SET query_plan_direct_read_from_text_index = 1;
+SET query_plan_text_index_add_hint = 1;
 
 DROP TABLE IF EXISTS tab;
 
