@@ -1,0 +1,36 @@
+-- 1. qualifier is a longer table path, left side
+2
+2
+-- 2. qualifier is a longer table path, right side
+2
+2
+-- 3. comma join
+2
+2
+-- 4. database-qualified
+2
+2
+-- 5. matcher
+2
+2
+-- 6. correlated subquery
+2
+2
+-- 7. JOIN ON
+1
+1
+-- 8. WHERE
+1
+1
+-- 9. shorter table path as qualifier
+1
+1
+-- 10. missing column in a longer table path
+Code: 47
+Code: 47
+-- 11. qualifier is the shorter table path
+1
+1
+-- 12. subcolumn when the longer table path has no such column
+10
+10
