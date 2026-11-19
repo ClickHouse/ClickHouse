@@ -4,9 +4,9 @@ from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs
 from ci.defs.job_configs import JobConfigs
 
 # Weekly Control-Flow Integrity (CFI) check.
-# Builds the monolithic ClickHouse binary with all Clang CFI checks (`ENABLE_CFI`, glibc with
-# `GLIBC_COMPATIBILITY`) using the release compile profile (ThinLTO + -fwhole-program-vtables) and
-# runs integration and stress tests against it. The build uses `ENABLE_CFI_DIAGNOSTICS`: instead of
+# Builds the monolithic ClickHouse binary with all Clang CFI checks (`ENABLE_CFI`, static musl, the
+# default libc) using the release compile profile (ThinLTO + -fwhole-program-vtables) and runs
+# integration and stress tests against it. The build uses `ENABLE_CFI_DIAGNOSTICS`: instead of
 # trapping, a CFI violation is reported through the UBSan runtime (`runtime error: control flow
 # integrity check ...`, then `SUMMARY: UndefinedBehaviorSanitizer`) and the server continues, so one
 # run finds every violation, with its source location and the type that was expected. XRay is
