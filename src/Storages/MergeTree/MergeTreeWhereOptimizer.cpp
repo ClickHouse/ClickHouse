@@ -11,6 +11,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
+#include <Functions/indexHint.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
@@ -253,10 +254,25 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
         }
     }
 
+    /// A written `indexHint` selects granules; an implied one only repeats the other conditions.
+    const bool only_implied_index_hints_left = !optimize_result->where_conditions.empty()
+        && std::ranges::all_of(optimize_result->where_conditions, [](const Condition & condition)
+        {
+            return !condition.nodes.empty() && std::ranges::all_of(condition.nodes, [](const RPNBuilderTreeNode & condition_node)
+            {
+                const auto * dag_node = condition_node.getDAGNode();
+                if (!dag_node || dag_node->type != ActionsDAG::ActionType::FUNCTION)
+                    return false;
+                const auto * index_hint = FunctionIndexHint::tryGet(dag_node->function_base);
+                return index_hint && index_hint->isImplied();
+            });
+        });
+
     return {
         .prewhere_nodes = std::move(prewhere_conditions),
         .prewhere_nodes_list = std::move(prewhere_conditions_list),
-        .fully_moved_to_prewhere = optimize_result->where_conditions.empty()};
+        .fully_moved_to_prewhere = optimize_result->where_conditions.empty(),
+        .only_implied_index_hints_left = only_implied_index_hints_left};
 }
 
 static void collectColumns(
