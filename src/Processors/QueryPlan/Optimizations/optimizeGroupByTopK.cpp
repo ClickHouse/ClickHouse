@@ -361,8 +361,8 @@ static Aggregator::Params::TopKParams topKByAllKeys(size_t num_key_columns, size
 {
     return Aggregator::Params::TopKParams{
         .k = limit,
-        .directions = std::vector<int>(num_key_columns, 1),
-        .nulls_directions = std::vector<int>(num_key_columns, 1),
+        .directions = VectorWithMemoryTracking<int>(num_key_columns, 1),
+        .nulls_directions = VectorWithMemoryTracking<int>(num_key_columns, 1),
         .key_columns = num_key_columns,
         .observation_rows = 0,
         .shared_boundary = settings.top_k_optimization_shared_boundary,
