@@ -323,11 +323,14 @@ size_t GPUGroupingLane::filterGroups(const CompiledGPUExpression & having, const
 
     const cuda::stream_ref own{stream.get()};
     const std::vector<GPUExpressionInput> inputs = inputsOf(having.expression, group_columns, *num_groups);
-    kept.clear();
-    char * const bits = kept.grow(maskBytes(*num_groups));
-    evaluateGPUExpression(having.expression, {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, *num_groups, bits, own);
-    num_groups = group_by.keepGroups({.words = reinterpret_cast<const uint32_t *>(bits), .rows = *num_groups});
-    /// The caller holds the kernel only for this call.
+    /// The caller holds the kernel only for this call, so the stream is drained before it returns, on an exception too.
+    waitOnFailure(own, [&]
+    {
+        kept.clear();
+        char * const bits = kept.grow(maskBytes(*num_groups));
+        evaluateGPUExpression(having.expression, {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, *num_groups, bits, own);
+        num_groups = group_by.keepGroups({.words = reinterpret_cast<const uint32_t *>(bits), .rows = *num_groups});
+    });
     synchronizeStream(own);
 
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
