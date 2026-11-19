@@ -1,0 +1,4 @@
+-- every lazily read value belongs to its row
+3000	24142141	0
+-- the number of readers
+readers_16_narrow	1

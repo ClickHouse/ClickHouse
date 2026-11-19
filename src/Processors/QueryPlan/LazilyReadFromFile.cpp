@@ -67,12 +67,18 @@ LazilyReadFromFile::LazilyReadFromFile(
     std::shared_ptr<StorageFile> storage_,
     ReadFromFormatInfo info_,
     ContextPtr context_,
-    size_t max_block_size_)
+    size_t max_block_size_,
+    size_t main_read_leaf_columns_,
+    std::optional<size_t> lazy_read_leaf_columns_,
+    size_t max_num_streams_)
     : ISourceStep(std::move(header))
     , storage(std::move(storage_))
     , info(std::move(info_))
     , context(std::move(context_))
     , max_block_size(max_block_size_)
+    , main_read_leaf_columns(main_read_leaf_columns_)
+    , lazy_read_leaf_columns(lazy_read_leaf_columns_)
+    , max_num_streams(max_num_streams_)
 {
 }
 
@@ -81,7 +87,7 @@ void LazilyReadFromFile::setLazyMaterializingRows(FileLazyMaterializingRowsPtr l
     lazy_materializing_rows = std::move(lazy_materializing_rows_);
 }
 
-void LazilyReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void LazilyReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     if (!lazy_materializing_rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "LazilyReadFromFile: lazy_materializing_rows is not set");
@@ -92,6 +98,9 @@ void LazilyReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, con
         info,
         context,
         max_block_size,
+        std::min(settings.max_threads, max_num_streams),
+        main_read_leaf_columns,
+        lazy_read_leaf_columns,
         lazy_materializing_rows);
 
     processors.emplace_back(source);

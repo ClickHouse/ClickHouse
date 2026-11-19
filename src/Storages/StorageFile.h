@@ -177,12 +177,14 @@ public:
     /// Lazy materialization (see LazilyReadFromFile): creates a source that reads only the
     /// specified rows of the specified files, in the given file order, rows within a file in
     /// ascending order. Fails close if a file does not match the captured generation token.
+    /// The readers of one lazy read share `parser_shared_resources`.
     static std::shared_ptr<ISource> createLazyRowsSource(
         std::shared_ptr<StorageFile> storage,
         const ReadFromFormatInfo & info,
         const ContextPtr & context,
         size_t max_block_size,
-        VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files);
+        VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files,
+        FormatParserSharedResourcesPtr parser_shared_resources);
 
 protected:
     friend class StorageFileSource;
