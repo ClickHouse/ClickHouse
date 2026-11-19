@@ -95,6 +95,7 @@ std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr ex
     /// by a separate Limit/top-N operator, not by the sorting property.
     ExpressionProperties input_required = expression->properties;
     input_required.sorting = {};
+    input_required.sorting_for_window = false;
     input_required.stream_layout = StreamLayout::Unknown;
     input_required.stream_disjoint_columns.clear();
 
@@ -102,6 +103,9 @@ std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr ex
     /// partition columns.
     ExpressionProperties output_properties = expression->properties;
     output_properties.sorting = sort_desc;
+    /// A sort built for a window differs from a plain sort by the same columns: it must not be dropped as a structural
+    /// duplicate of the plain one, and a sorted gather above it must require the window sort again.
+    output_properties.sorting_for_window = required_properties.sorting_for_window;
     if (partition_by.empty())
     {
         output_properties.stream_layout = StreamLayout::Single;
@@ -113,6 +117,8 @@ std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr ex
     auto sorting_step = partition_by.empty()
         ? std::make_unique<SortingStep>(input_header, sort_desc, /*limit=*/0, sort_settings)
         : std::make_unique<SortingStep>(input_header, sort_desc, partition_by, /*limit=*/0, sort_settings);
+    if (required_properties.sorting_for_window)
+        sorting_step->setWindowSorting();
     auto sort_expr = makeEnforcerExpression(
         expression,
         std::move(sorting_step),

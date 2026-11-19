@@ -165,6 +165,8 @@ void DistributionEnforcer::EnforcerEnumerator::addSortedGather()
 {
     ExpressionProperties input_required = inputAtSourceDistribution();
     input_required.sorting = expression->properties.sorting;
+    /// The per-node sort of a window stays a window sort, otherwise a plain sort by the same columns could be built for it.
+    input_required.sorting_for_window = expression->properties.sorting_for_window;
 
     /// The sorted merge combines the sources into one stream.
     addEnforcer(
