@@ -4179,6 +4179,17 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     }
                 }
 
+                /// A qualifier that matches a table expression names it, see `tryResolveIdentifierFromTableExpression`.
+                if (from_clause_hint.empty())
+                {
+                    if (auto qualifying = IdentifierResolver::tryFindTableExpressionByQualifier(unresolved_identifier, scope); qualifying.node)
+                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Identifier '{}' cannot be resolved from {}{}. In scope {}",
+                            unresolved_identifier.getFullName(),
+                            IdentifierResolver::describeTableExpressionForErrorMessage(qualifying.node, *qualifying.data),
+                            getHintsErrorMessageSuffix(hints),
+                            scope.scope_node->formatASTForErrorMessage());
+                }
+
                 /// The typo hint goes before the formatted query, which can be many kilobytes long, so that
                 /// the actionable part of the message does not end up behind it. The optional `FROM`-clause
                 /// hint is still attached via `addMessage` to keep the number of placeholders in

@@ -1153,7 +1153,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     {
         /** This check is insufficient to determine whether and identifier can be resolved from table expression.
           * A further check will be performed in `tryResolveIdentifierFromStorage` to see if we have such a subcolumn.
-          * In cases where the subcolumn cannot be found we want to have `nullptr` instead of exception.
+          * When the subcolumn cannot be found, the lookup returns nothing, so another table expression is tried.
           * Example: `SELECT t.t from (SELECT 1 as t) AS a FULL JOIN (SELECT 1 as t) as t ON a.t = t.t;`
           * Initially, we will try to resolve t.t from `a` because `t.` is bound to `1 as t`. However, as it is not a nested column, we will need to resolve it from the second table expression.
           */
@@ -1173,7 +1173,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
       * Example: SELECT db1.db1.id FROM db1.db1;
       * Example: SELECT (SELECT db1.tbl.id FROM db2.db1 LIMIT 1) FROM db1.tbl;
       */
-
     /// An alias is a single qualifier part; a table path ("ns.t") consumes as many parts as it has components.
     const bool prefix_matches_alias = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
     const size_t table_name_parts = numberOfPartsMatchingTableName(identifier, 0, table_name, allow_table_paths);
@@ -1219,6 +1218,89 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         if (size_t consumed = numberOfPartsMatchingTableName(identifier, 1, table_name, allow_table_paths);
             consumed > 0 && consumed + 1 < identifier.getPartsSize())
             return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, consumed + 1 /*identifier_column_qualifier_parts*/);
+    }
+
+    return {};
+}
+
+String IdentifierResolver::describeTableExpressionForErrorMessage(
+    const TableExpressionNodePtr & table_expression_node,
+    const AnalysisTableExpressionData & table_expression_data)
+{
+    /// Name the table an alias refers to, so that a lost comma in `FROM date_dim AS dt, store_sales item`
+    /// is visible from "cannot be resolved from table with name item (an alias of store_sales)".
+    String table_expression_source = table_expression_data.table_expression_description;
+    if (table_expression_data.table_expression_name.empty())
+        return table_expression_source;
+
+    table_expression_source += " with name " + table_expression_data.table_expression_name;
+
+    /// Use the CTE name instead of the generated `_materialized_cte_<name>_<rng>` of a materialized CTE.
+    String underlying_name = table_expression_data.table_name;
+    if (const auto * table_node = table_expression_node->as<TableNode>())
+        if (table_node->isMaterializedCTE())
+            underlying_name = table_node->getMaterializedCTE()->cte_name;
+
+    const bool name_is_an_alias = !underlying_name.empty()
+        && table_expression_data.table_expression_name != underlying_name
+        && table_expression_data.table_expression_name != table_expression_data.database_name + "." + underlying_name;
+
+    if (name_is_an_alias)
+        table_expression_source += " (an alias of " + underlying_name + ")";
+
+    return table_expression_source;
+}
+
+IdentifierResolver::QualifyingTableExpression IdentifierResolver::tryFindTableExpressionByQualifier(
+    const Identifier & identifier,
+    const IdentifierResolveScope & scope)
+{
+    const size_t parts_size = identifier.getPartsSize();
+    if (parts_size < 2)
+        return {};
+
+    const auto & path_start = identifier[0];
+
+    for (const auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
+    {
+        TableExpressionNodePtr join_tree_node = current_scope->expression_join_tree_node;
+        if (!join_tree_node)
+            if (const auto * query_node = current_scope->scope_node->as<QueryNode>(); query_node && query_node->getJoinTreeNode())
+                join_tree_node = query_node->getJoinTreeNodeTyped();
+        if (!join_tree_node)
+            continue;
+
+        const bool allow_table_paths = current_scope->context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
+
+        for (const auto & table_expression_node : extractTableExpressions(join_tree_node))
+        {
+            auto it = current_scope->table_expression_node_to_data.find(table_expression_node);
+            if (it == current_scope->table_expression_node_to_data.end())
+                continue;
+
+            const auto & data = it->second;
+
+            bool matches = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
+
+            if (!matches)
+            {
+                const size_t consumed = numberOfPartsMatchingTableName(identifier, 0, data.table_name, allow_table_paths);
+                matches = consumed > 0 && consumed < parts_size;
+            }
+
+            if (!matches)
+                if (const auto * table_node = table_expression_node->as<TableNode>())
+                    matches = table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name;
+
+            if (!matches && !data.database_name.empty() && path_start == data.database_name)
+            {
+                const size_t consumed = numberOfPartsMatchingTableName(identifier, 1, data.table_name, allow_table_paths);
+                matches = consumed > 0 && consumed + 1 < parts_size;
+            }
+
+            if (matches)
+                return {table_expression_node, &data};
+        }
     }
 
     return {};

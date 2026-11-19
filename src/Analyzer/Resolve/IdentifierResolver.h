@@ -155,6 +155,24 @@ public:
         const Identifier & table_identifier,
         const ContextPtr & context);
 
+    /// E.g. "table with name item (an alias of store_sales)".
+    static String describeTableExpressionForErrorMessage(
+        const TableExpressionNodePtr & table_expression_node,
+        const AnalysisTableExpressionData & table_expression_data);
+
+    struct QualifyingTableExpression
+    {
+        TableExpressionNodePtr node;
+        const AnalysisTableExpressionData * data = nullptr;
+    };
+
+    /// The first table expression, in join tree order of `scope` and then of its parent scopes, whose alias,
+    /// table path, materialized CTE name, or database and table path is a proper prefix of `identifier`.
+    /// Returns an empty `node` when there is none.
+    static QualifyingTableExpression tryFindTableExpressionByQualifier(
+        const Identifier & identifier,
+        const IdentifierResolveScope & scope);
+
     QueryTreeNodePtr tryResolveIdentifierFromCompoundExpression(
         const Identifier & expression_identifier,
         size_t identifier_bind_size,
