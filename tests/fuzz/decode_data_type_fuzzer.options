@@ -1,4 +1,0 @@
-[libfuzzer]
-timeout = 20
-use_value_profile = 1
-dict = binary_types.dict

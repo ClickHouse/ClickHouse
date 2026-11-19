@@ -32,7 +32,7 @@ namespace
 {
 
 template <typename Point>
-class FunctionPolygonsEquals final : public IFunction
+class FunctionPolygonsEquals : public IFunction
 {
 public:
     static const char * name;
@@ -59,9 +59,9 @@ public:
         return 2;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        return "(Any, Any) -> UInt8";
+        return std::make_shared<DataTypeUInt8>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -89,13 +89,16 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be Point", getName());
             else
             {
-                CorrectedGeometries<LeftConverter> first(arguments[0].column);
-                CorrectedGeometries<RightConverter> second(arguments[1].column);
+                auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
+                auto second = RightConverter::convert(arguments[1].column->convertToFullColumnIfConst());
 
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
+                    boost::geometry::correct(first[i]);
+                    boost::geometry::correct(second[i]);
+
                     /// Main work here.
-                    res_data.emplace_back(boost::geometry::equals(first.get(i), second.get(i)));
+                    res_data.emplace_back(boost::geometry::equals(first[i], second[i]));
                 }
             }
         }
