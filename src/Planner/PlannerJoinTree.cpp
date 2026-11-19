@@ -1042,7 +1042,11 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
         query_context);
 
     auto filter_query_tree = buildFilterQueryTree(
-        parallel_replicas_custom_filter_ast, table_expression_query_info.table_expression, query_context, /*check_access_rights=*/ true);
+        parallel_replicas_custom_filter_ast,
+        table_expression_query_info.table_expression,
+        query_context,
+        planner_context->isViewSourceInSubqueries(),
+        /*check_access_rights=*/ true);
     checkCustomKeyQueryTreeReadsOnlyRow(filter_query_tree, parallel_replicas_custom_filter_ast);
 
     return buildFilterInfo(std::move(filter_query_tree), table_expression_query_info.table_expression, planner_context, {});
