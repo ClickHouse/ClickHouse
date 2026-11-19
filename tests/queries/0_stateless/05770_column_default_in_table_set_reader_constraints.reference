@@ -4,3 +4,8 @@ user with allow_executable_tables = 0 CONST
 SUPPORT_IS_DISABLED
 SUPPORT_IS_DISABLED
 1
+allow_executable_tables = 0, readonly = 1
+READONLY
+SUPPORT_IS_DISABLED
+SUPPORT_IS_DISABLED
+1

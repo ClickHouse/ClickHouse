@@ -37,6 +37,11 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsUInt64 readonly;
+}
+
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool share_nested_offsets;
@@ -396,16 +401,18 @@ static const std::vector<std::string_view> & getReaderSettingsForDefaultExpressi
 
 /// The settings of the storage context that replace the settings of the reading query must not bypass the constraints
 /// of its user: a setting pinned by a settings profile, such as `allow_executable_tables = 0 READONLY`, restricts what
-/// the user may read, whatever the settings of the storage are. Such a setting keeps the value of the reading query
-/// (or the value clamped to its `MIN` / `MAX` constraint).
+/// the user may read, whatever the settings of the storage are. The same holds for the readonly mode of the reading
+/// query: with `readonly = 1` the user cannot change `allow_executable_tables = 0`, so the settings of the storage must
+/// not change it either. Such a setting keeps the value of the reading query (or the value clamped to its `MIN` / `MAX`
+/// constraint). In the readonly mode this applies to every setting that differs, except the ones `changeable_in_readonly`.
 static void keepReaderSettingsConstraints(Settings & default_expressions_settings, const Context & read_context)
 {
     const auto constraints_and_profiles = read_context.getSettingsConstraintsAndCurrentProfiles();
     const auto & constraints = constraints_and_profiles->constraints;
-    if (constraints.empty())
+    const auto & reader_settings = read_context.getSettingsRef();
+    if (constraints.empty() && reader_settings[Setting::readonly] == 0)
         return;
 
-    const auto & reader_settings = read_context.getSettingsRef();
     SettingsChanges storage_values;
     for (std::string_view name : default_expressions_settings.getAllRegisteredNames())
     {
@@ -416,11 +423,9 @@ static void keepReaderSettingsConstraints(Settings & default_expressions_setting
     if (storage_values.empty())
         return;
 
-    /// These settings are not set by the reading query, so its readonly mode does not apply, only the constraints do.
-    Settings check_settings = reader_settings;
-    check_settings.set("readonly", 0);
+    /// Checked as if the reading query set them, with its readonly mode, which is a restriction of its user as well.
     SettingsChanges allowed_values = storage_values;
-    constraints.clamp(check_settings, allowed_values, SettingSource::QUERY);
+    constraints.clamp(reader_settings, allowed_values, SettingSource::QUERY);
 
     for (const auto & change : storage_values)
     {
