@@ -120,7 +120,7 @@ RelationStats parseTableStatsHint(const String & stats_hint_json, const String &
                 auto & column_stats = stats.column_stats[key];
                 column_stats.min_value = Field(range->get(0).convert<Float64>());
                 column_stats.max_value = Field(range->get(1).convert<Float64>());
-                /// Unlike a hinted distinct count, a hinted range gives no guarantee, see `SyntheticOverride`.
+                /// Trusted as if measured, like a hinted distinct count, see `SyntheticOverride`.
                 column_stats.range_provenance.origin = ColumnStatsOrigin::SyntheticOverride;
             }
         }
