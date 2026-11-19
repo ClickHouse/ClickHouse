@@ -160,7 +160,9 @@ def test_create_table_as_source_on_other_shards_engine_grant(started_cluster):
     node1.query("CREATE USER as_copier")
     node1.query("GRANT CREATE TABLE ON shard_1.* TO as_copier")
     node1.query("GRANT CLUSTER ON *.* TO as_copier")
-    node1.query("GRANT SELECT, SHOW COLUMNS ON shard_1.as_grant_source TO as_copier")
+    # node1 cannot see whether the source on node2 and node3 is an Alias, so it requires SHOW COLUMNS on every table.
+    node1.query("GRANT SELECT ON shard_1.as_grant_source TO as_copier")
+    node1.query("GRANT SHOW COLUMNS ON *.* TO as_copier")
 
     settings = {
         "distributed_ddl_entry_format_version": 2,

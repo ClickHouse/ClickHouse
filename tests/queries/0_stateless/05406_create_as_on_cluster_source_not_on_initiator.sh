@@ -4,8 +4,9 @@
 
 # An entry format before NORMALIZE_CREATE_ON_INITIATOR_VERSION holds the query as written, and the worker
 # builds AS src with no user, so every such query needs SHOW COLUMNS on the source. An initiator that does not
-# hold the source cannot check what the new table inherits, so it also requires SELECT on the source,
-# TABLE ENGINE on every engine and dictGet on every dictionary, unless the query gives its own engine.
+# hold the source cannot check what the new table copies, so it requires SHOW COLUMNS on every table, because the
+# source on the worker may be an Alias. Unless the query gives its own engine, it also requires SELECT on the source,
+# TABLE ENGINE on every engine and dictGet on every dictionary.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -35,7 +36,7 @@ function try_copy()
     ${CLICKHOUSE_CLIENT} --user "${user}" --distributed_ddl_output_mode throw --distributed_ddl_entry_format_version 2 \
         --allow_experimental_time_series_table 1 \
         -q "CREATE TABLE ${db}.${name} ON CLUSTER test_shard_localhost AS ${source} $*" 2>&1 \
-        | grep -oE "necessary to have the grants? [A-Z ]+ ON ${db}[a-z_]*\.[a-z_]+(, TABLE ENGINE ON \*)?|UNKNOWN_DATABASE" \
+        | grep -oE "necessary to have the grants? [A-Z ]+ ON ${db}[a-z_]*\.[a-z_]+(, SHOW COLUMNS ON \*\.\*, TABLE ENGINE ON \*)?|necessary to have the grant SHOW COLUMNS ON \*\.\*|UNKNOWN_DATABASE" \
         | head -n 1 | sed "s/${db}/db/"
 }
 
@@ -48,6 +49,9 @@ try_copy copy_own_engine "${src}" "ENGINE = MergeTree ORDER BY tuple()"
 ${CLICKHOUSE_CLIENT} -q "GRANT SHOW COLUMNS ON ${src} TO ${user}"
 try_copy copy_with_show_columns "${src}"
 try_copy copy_own_engine_with_show_columns "${src}" "ENGINE = MergeTree ORDER BY tuple()"
+
+${CLICKHOUSE_CLIENT} -q "GRANT SHOW COLUMNS ON *.* TO ${user}"
+try_copy copy_own_engine_with_global_show_columns "${src}" "ENGINE = MergeTree ORDER BY tuple()"
 
 # A TimeSeries engine inherits the inner engines of the source even when the query gives the engine itself.
 ${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON TimeSeries TO ${user}"

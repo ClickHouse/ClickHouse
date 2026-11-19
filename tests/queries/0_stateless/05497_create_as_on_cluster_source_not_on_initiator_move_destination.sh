@@ -20,7 +20,8 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE USER ${user};
     GRANT CREATE TABLE ON ${db}.* TO ${user};
     GRANT CLUSTER ON *.* TO ${user};
-    GRANT SHOW COLUMNS, SELECT ON ${src} TO ${user};
+    GRANT SELECT ON ${src} TO ${user};
+    GRANT SHOW COLUMNS ON *.* TO ${user};
     GRANT TABLE ENGINE ON *, dictGet ON *.* TO ${user};
 "
 

@@ -4223,15 +4223,43 @@ BlockIO InterpreterCreateQuery::execute()
                 /// error tells a user who cannot see the source whether it exists.
                 getContext()->checkAccess(AccessType::SHOW_COLUMNS, create.as_database, create.as_table);
 
-                /// A query with its own `ENGINE` inherits no engine definition, so it skips the lookup, which can
-                /// reach the server behind a `Remote` database. A `TimeSeries` engine still inherits the inner
-                /// engines of the source.
+                /// The initiator can read the source only when it holds it. A cross-replication cluster keeps
+                /// each shard in a database the initiator may not have.
+                StoragePtr as_storage = DatabaseCatalog::instance().tryGetTable({create.as_database, create.as_table}, getContext());
+                if (as_storage)
+                {
+                    as_storage = resolveStorageProxyLoading(as_storage);
+                    /// An `Alias` reports its target's metadata, which the worker copies whatever the engine.
+                    if (const auto * alias = as_storage->as<StorageAlias>();
+                        alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
+                        throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}",
+                                        StorageID{create.as_database, create.as_table}.getNameForLogs());
+                }
+
+                /// A query with its own `ENGINE` inherits no engine definition. A `TimeSeries` engine still inherits
+                /// the inner engines of the source.
                 const bool inherits_definition = !create.storage || !create.storage->engine || create.is_time_series_table;
 
-                /// The initiator can read the source definition only when it holds the source. A
-                /// cross-replication cluster keeps each shard in a database the initiator may not have.
-                if (!inherits_definition || DatabaseCatalog::instance().isTableExist({create.as_database, create.as_table}, getContext()))
+                if (!inherits_definition || as_storage)
                 {
+                    /// The source on the worker may be an `Alias` to a table the user cannot describe, so require
+                    /// `SHOW COLUMNS` on every table.
+                    if (!as_storage)
+                    {
+                        AccessRightsElements required_access;
+                        required_access.emplace_back(AccessType::SHOW_COLUMNS);
+                        if (!getContext()->getAccess()->isGranted(required_access))
+                        {
+                            throw Exception(
+                                ErrorCodes::ACCESS_DENIED,
+                                "Not enough privileges. {}.{} is not on this server, so the metadata that the new table "
+                                "copies from it cannot be checked here. To execute this query, it's necessary to have "
+                                "the grant {}",
+                                backQuoteIfNeed(create.as_database), backQuoteIfNeed(create.as_table),
+                                required_access.toStringWithoutOptions());
+                        }
+                    }
+
                     /// OLDEST_VERSION sends no settings, so a worker replaces nothing with Null. check
                     /// what the worker builds, not what our settings give
                     auto preflight_context = Context::createCopy(getContext());
@@ -4269,43 +4297,35 @@ BlockIO InterpreterCreateQuery::execute()
                     checkDictionaryEngineAccess(inherited);
 
                     /// A worker copies the source's indices with no user, so declare their transforms here.
-                    /// A query with its own engine may name a source this server does not hold, and then the
-                    /// worker refuses a copied transform itself.
-                    if (inherited.storage && inherited.storage->engine && endsWith(inherited.storage->engine->name, "MergeTree"))
+                    /// Without the source here, the worker refuses a copied transform itself.
+                    if (as_storage && inherited.storage && inherited.storage->engine && endsWith(inherited.storage->engine->name, "MergeTree"))
                     {
-                        if (StoragePtr as_storage = DatabaseCatalog::instance().tryGetTable({create.as_database, create.as_table}, getContext()))
-                        {
-                            as_storage = resolveStorageProxyLoading(as_storage);
-                            if (const auto * alias = as_storage->as<StorageAlias>();
-                                alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
-                                throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}",
-                                                StorageID{create.as_database, create.as_table}.getNameForLogs());
-                            /// The query dispatches `AS src`, so each host materializes its own source, which
-                            /// may define the transform differently from the one authorized here.
-                            const bool workers_use_initiator_user
-                                = getContext()->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles]
-                                && on_cluster_version >= DDLLogEntry::INITIATOR_USER_VERSION;
+                        /// The query dispatches `AS src`, so each host materializes its own source, which
+                        /// may define the transform differently from the one authorized here.
+                        const bool workers_use_initiator_user
+                            = getContext()->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles]
+                            && on_cluster_version >= DDLLogEntry::INITIATOR_USER_VERSION;
 
-                            auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
-                            for (const auto & index : as_storage_metadata->getSecondaryIndices())
-                            {
-                                if (index.isImplicitlyCreated())
-                                    continue;
-                                if (!workers_use_initiator_user)
-                                    rejectTextIndexTransformWithoutInitiatorUser(index);
-                                checkTextIndexPreAndPostProcessorPermissions(index, getContext());
-                            }
+                        auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
+                        for (const auto & index : as_storage_metadata->getSecondaryIndices())
+                        {
+                            if (index.isImplicitlyCreated())
+                                continue;
+                            if (!workers_use_initiator_user)
+                                rejectTextIndexTransformWithoutInitiatorUser(index);
+                            checkTextIndexPreAndPostProcessorPermissions(index, getContext());
                         }
                     }
                 }
                 else
                 {
                     /// The initiator cannot see the definition the worker inherits, so require `SELECT` on the
-                    /// source, `TABLE ENGINE` on every engine, `dictGet` on every dictionary and the grants of
-                    /// any move destination, which covers any source. The worker refuses a copied text index
-                    /// transform itself.
+                    /// source, `SHOW COLUMNS` on every table, `TABLE ENGINE` on every engine, `dictGet` on every
+                    /// dictionary and the grants of any move destination, which covers any source. The worker
+                    /// refuses a copied text index transform itself.
                     AccessRightsElements required_access;
                     required_access.emplace_back(AccessType::SELECT, create.as_database, create.as_table);
+                    required_access.emplace_back(AccessType::SHOW_COLUMNS);
                     required_access.emplace_back(AccessType::TABLE_ENGINE);
                     required_access.emplace_back(AccessType::dictGet);
                     required_access.append_range(StorageFactory::instance().getExportAccessOfUnknownDefinition());

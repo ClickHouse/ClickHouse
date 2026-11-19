@@ -4,9 +4,9 @@
 # query that scans `system.tables` over all databases would fail while it exists
 # Tag no-replicated-database: a Replicated database does not allow ON CLUSTER
 
-# With an entry format before NORMALIZE_CREATE_ON_INITIATOR_VERSION, CREATE TABLE AS with its own ENGINE inherits
-# no definition from the source, so the initiator does not look the source up. For a `Remote` database that lookup
-# would connect to the server behind it before any grant is checked.
+# With an entry format before NORMALIZE_CREATE_ON_INITIATOR_VERSION, the initiator checks SHOW COLUMNS on the source
+# of CREATE TABLE AS before it looks the source up. For a `Remote` database that lookup connects to the server behind
+# it, so a user without the grant must not reach it.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
