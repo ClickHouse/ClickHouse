@@ -7,8 +7,6 @@ doc_type: 'changelog'
 keywords: ['更新日志', '发布说明', '更新', '新功能', '云端变更', '2024']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <div id="december-20-2024">
   ## 2024 年 12 月 20 日
 </div>
@@ -19,7 +17,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 现在，您可以将新的 Marketplace 订阅关联到现有的 ClickHouse Cloud 组织。完成 Marketplace 订阅流程并跳转到 ClickHouse Cloud 后，您可以把之前创建的现有组织连接到新的 Marketplace 订阅。此后，该组织中的资源将通过 Marketplace 计费。
 
-<Image img="/images/cloud/reference/add_marketplace.webp" size="md" alt="显示如何将 Marketplace 订阅添加到现有组织的 ClickHouse Cloud 界面" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![显示如何将 Marketplace 订阅添加到现有组织的 ClickHouse Cloud 界面](/images/cloud/reference/add_marketplace.webp)
+
+</Frame>
+
+</div>
 
 <div id="force-openapi-key-expiration">
   ### 强制 OpenAPI 密钥到期
@@ -55,7 +61,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 本周，我们很高兴地宣布 ClickHouse Cloud 中的仪表盘正式推出 Beta 版。借助仪表盘，您可以将已保存查询转换为可视化内容，将这些可视化内容组织到仪表盘中，并通过查询参数与仪表盘进行交互。要开始使用，请参阅[仪表盘文档](/zh/products/cloud/features/sql-console-features/dashboards)。
 
-<Image img="/images/cloud/reference/beta_dashboards.webp" size="lg" alt="展示全新仪表盘 Beta 功能及可视化内容的 ClickHouse Cloud 界面" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![展示全新仪表盘 Beta 功能及可视化内容的 ClickHouse Cloud 界面](/images/cloud/reference/beta_dashboards.webp)
+
+</Frame>
+
+</div>
 
 <div id="query-api-endpoints-ga">
   ### 查询 API 端点 (GA)
@@ -73,7 +87,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 要开始使用，请参阅[查询 API 端点文档](/zh/products/cloud/guides/sql-console/query-endpoints)。
 
-<Image img="/images/cloud/reference/api_endpoints.webp" size="lg" alt="显示 API 端点配置及各项设置的 ClickHouse Cloud 界面" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![显示 API 端点配置及各项设置的 ClickHouse Cloud 界面](/images/cloud/reference/api_endpoints.webp)
+
+</Frame>
+
+</div>
 
 <div id="native-json-support-beta">
   ### 原生 JSON 支持 (Beta)
@@ -108,7 +130,15 @@ ClickHouse 已为基于向量的用例提供了强大支持，包括丰富的[�
 
 您现在可以为特定数据源 (如 AWS MSK) 授予单向访问权限。借助 AWS PrivateLink 和 VPC Lattice 提供的跨 VPC 资源访问能力，您可以跨 VPC 和账户边界共享单个资源，甚至可从本地部署网络进行共享，同时在通过公共网络时仍能保障隐私和安全。要开始使用并设置资源共享，您可以阅读这篇[公告文章](https://clickhouse.com/blog/clickpipes-crossvpc-resource-endpoints?utm_medium=web\&utm_source=changelog)。
 
-<Image img="/images/cloud/reference/cross-vpc-clickpipes.webp" size="lg" alt="展示 ClickPipes 连接 AWS MSK 时的跨 VPC 资源访问架构示意图" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![展示 ClickPipes 连接 AWS MSK 时的跨 VPC 资源访问架构示意图](/images/cloud/reference/cross-vpc-clickpipes.webp)
+
+</Frame>
+
+</div>
 
 <div id="clickpipes-now-supports-iam-for-aws-msk">
   ### ClickPipes 现已支持 AWS MSK 的 IAM 身份验证
@@ -134,7 +164,15 @@ ClickHouse 已为基于向量的用例提供了强大支持，包括丰富的[�
 
 该仪表盘可让您在一体化 UI 中查看基于 [system.dashboards](/zh/reference/system-tables/dashboards) 表的查询。立即访问 **Monitoring &gt; Service Health** 页面，开始使用高级可观测性仪表盘。
 
-<Image img="/images/cloud/reference/nov-22-dashboard.webp" size="lg" alt="ClickHouse Cloud 高级可观测性仪表盘，显示服务器指标和资源利用率" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse Cloud 高级可观测性仪表盘，显示服务器指标和资源利用率](/images/cloud/reference/nov-22-dashboard.webp)
+
+</Frame>
+
+</div>
 
 <div id="ai-powered-sql-autocomplete">
   ### AI 驱动的 SQL 自动补全
@@ -142,7 +180,15 @@ ClickHouse 已为基于向量的用例提供了强大支持，包括丰富的[�
 
 我们大幅改进了自动补全功能。借助全新的 AI Copilot，你在编写查询时即可获得行内 SQL 补全建议。对于任何 ClickHouse Cloud 服务，都可以通过切换 **“启用行内代码补全”** 设置来启用此功能。
 
-<Image img="/images/cloud/reference/nov-22-copilot.gif" size="lg" alt="动画演示 AI Copilot 如何在用户输入时提供 SQL 自动补全建议" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![动画演示 AI Copilot 如何在用户输入时提供 SQL 自动补全建议](/images/cloud/reference/nov-22-copilot.gif)
+
+</Frame>
+
+</div>
 
 <div id="new-billing-role">
   ### 新增“Billing”角色
@@ -164,7 +210,15 @@ ClickHouse Cloud 现已针对多种 billing 和扩缩容事件提供控制台内
 
 请参阅 [ClickHouse docs](/zh/products/cloud/features/monitoring/notifications)，了解如何为您的 service 启用通知。
 
-<Image img="/images/cloud/reference/nov-8-notifications.webp" size="lg" alt="显示不同通知类型配置选项的 ClickHouse Cloud 通知中心界面" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![显示不同通知类型配置选项的 ClickHouse Cloud 通知中心界面](/images/cloud/reference/nov-8-notifications.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -208,7 +262,15 @@ ClickPipes for Kafka 现已支持为使用 SASL 和公共 SSL/TLS 的 Kafka 消�
 
 性能可观测性至关重要。ClickPipes 现已提供延迟图表，让您了解消息从生成 (无论来自 Kafka topic 还是 Kinesis Stream) 到摄取至 ClickHouse Cloud 之间的耗时。借助这一新指标，您可以更密切地关注数据管道的性能，并据此进行优化。
 
-<Image img="/images/cloud/reference/oct-4-latency-insights.webp" size="lg" alt="显示数据摄取性能延迟指标图表的 ClickPipes 界面" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![显示数据摄取性能延迟指标图表的 ClickPipes 界面](/images/cloud/reference/oct-4-latency-insights.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -252,7 +314,15 @@ Terraform 可让您以编程方式管理 ClickHouse Cloud 服务，并将配置�
 
 全新的 Compute-compute separation 特性支持你创建多个计算节点组，每个节点组都有各自的端点，同时使用同一个对象存储文件夹，因此共享相同的表、视图等。请在[此处了解有关 Compute-compute separation 的更多信息](/zh/products/cloud/features/infrastructure/warehouses)。如果你希望获得这项私有预览特性的访问权限，请[联系支持团队](https://clickhouse.com/support/program)。
 
-<Image img="/images/cloud/reference/aug-15-compute-compute.webp" size="lg" alt="显示 Compute-compute separation 示例架构的图示，其中包含读写和只读服务组" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![显示 Compute-compute separation 示例架构的图示，其中包含读写和只读服务组](/images/cloud/reference/aug-15-compute-compute.webp)
+
+</Frame>
+
+</div>
 
 <div id="clickpipes-for-s3-and-gcs-now-in-ga-continuous-mode-support">
   ### 适用于 S3 和 GCS 的 ClickPipes 现已正式可用，并支持连续模式
@@ -278,7 +348,15 @@ ClickHouse 提供了诸如 [`DESCRIBE`](/zh/reference/statements/describe-table)
 
 我们最近在 Cloud 控制台中推出了 **表检查器**，让你无需编写 SQL，就能在 UI 中获取重要的表和列信息。你可以前往 Cloud 控制台，为你的服务试用表检查器。它在一个统一界面中集中展示 schema、存储、压缩等信息。
 
-<Image img="/images/cloud/reference/july-18-table-inspector.webp" size="lg" alt="显示详细 schema 和存储信息的 ClickHouse Cloud 表检查器界面" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![显示详细 schema 和存储信息的 ClickHouse Cloud 表检查器界面](/images/cloud/reference/july-18-table-inspector.webp)
+
+</Frame>
+
+</div>
 
 <div id="new-java-client-api">
   ### 全新的 Java Client API
@@ -318,7 +396,15 @@ ClickHouse 提供了诸如 [`DESCRIBE`](/zh/reference/statements/describe-table)
 
 我们在 Cloud 控制台中推出的全新 Query Insights UI，让 ClickHouse 内置的查询日志更易于使用。ClickHouse 的 `system.query_log` 表是查询优化、调试以及监控整体集群健康状况和性能的关键信息来源。唯一需要注意的是：它包含 70 多个字段，而且每个查询会生成多条记录，因此理解查询日志有较高的学习门槛。这个 Query Insights 的初始版本为后续进一步简化查询调试和优化模式提供了蓝图。随着我们持续迭代这一功能，我们非常希望听到你的反馈，欢迎随时联系我们——非常感谢你的意见。
 
-<Image img="/images/cloud/reference/june-28-query-insights.webp" size="lg" alt="显示查询性能指标和分析的 ClickHouse Cloud Query Insights UI" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![显示查询性能指标和分析的 ClickHouse Cloud Query Insights UI](/images/cloud/reference/june-28-query-insights.webp)
+
+</Frame>
+
+</div>
 
 <div id="prometheus-endpoint-for-metrics-private-preview">
   ### Prometheus 指标端点 (私有预览)
@@ -326,7 +412,15 @@ ClickHouse 提供了诸如 [`DESCRIBE`](/zh/reference/statements/describe-table)
 
 这可能是呼声最高的功能之一：您现在可以将 ClickHouse Cloud 中的 [Prometheus](https://prometheus.io/) 指标导出到 [Grafana](https://grafana.com/) 和 [Datadog](https://www.datadoghq.com/) 进行可视化。Prometheus 提供了一种开源方案，可用于监控 ClickHouse 并设置自定义告警。您可以通过 [ClickHouse Cloud API](/zh/products/cloud/features/monitoring/prometheus) 访问您的 ClickHouse Cloud 服务的 Prometheus 指标。该功能目前处于私有预览阶段。如需为您的组织启用此功能，请联系[支持团队](https://clickhouse.com/support/program)。
 
-<Image img="/images/cloud/reference/june-28-prometheus.webp" size="lg" alt="显示来自 ClickHouse Cloud 的 Prometheus 指标的 Grafana 仪表板" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![显示来自 ClickHouse Cloud 的 Prometheus 指标的 Grafana 仪表板](/images/cloud/reference/june-28-prometheus.webp)
+
+</Frame>
+
+</div>
 
 <div id="other-features">
   ### 其他功能
@@ -352,7 +446,15 @@ ClickPipes for Kafka 新增了一项功能，进一步提升了从 Kafka topics 
 * 从最新位置开始：从最新的 offset 开始消费数据。如果你只关心新消息，这个选项很有用。
 * 从某个 timestamp 开始：从在某个指定 timestamp 或之后生成的消息开始消费数据。此功能可实现更精确的控制，让你能够从准确的时间点恢复处理。
 
-<Image img="/images/cloud/reference/june-13-kafka-config.webp" size="lg" alt="显示 offset 选择选项的 ClickPipes Kafka connector 配置界面" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![显示 offset 选择选项的 ClickPipes Kafka connector 配置界面](/images/cloud/reference/june-13-kafka-config.webp)
+
+</Frame>
+
+</div>
 
 <div id="enroll-services-to-the-fast-release-channel">
   ### 将服务加入 Fast 发布渠道
@@ -360,7 +462,15 @@ ClickPipes for Kafka 新增了一项功能，进一步提升了从 Kafka topics 
 
 Fast 发布渠道可让你的服务早于发布计划接收更新。此前，启用此功能需要支持团队协助。现在，你可以直接在 ClickHouse Cloud 控制台中为服务启用该功能。只需前往 **设置**，然后点击 **加入快速发布**。这样一来，你的服务会在有更新可用时立即接收更新。
 
-<Image img="/images/cloud/reference/june-13-fast-releases.webp" size="lg" alt="显示“加入快速发布”选项的 ClickHouse Cloud 设置页面" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![显示“加入快速发布”选项的 ClickHouse Cloud 设置页面](/images/cloud/reference/june-13-fast-releases.webp)
+
+</Frame>
+
+</div>
 
 <div id="terraform-support-for-horizontal-scaling">
   ### Terraform 对横向扩缩容的支持
@@ -382,7 +492,15 @@ ClickHouse Cloud 支持[横向扩缩容](/zh/products/cloud/features/autoscaling
 
 我们很高兴地宣布，你现在可以通过 ClickHouse Cloud 控制台轻松共享查询。在查询编辑器中，你可以直接将查询共享给整个团队，或共享给某位特定的团队成员。你还可以指定他们拥有只读权限还是写入权限。点击查询编辑器中的 **共享** 按钮，立即体验这项新的共享查询功能。
 
-<Image img="/images/cloud/reference/may-30-share-queries.webp" size="lg" alt="显示共享功能及权限选项的 ClickHouse Cloud 查询编辑器" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![显示共享功能及权限选项的 ClickHouse Cloud 查询编辑器](/images/cloud/reference/may-30-share-queries.webp)
+
+</Frame>
+
+</div>
 
 <div id="clickhouse-cloud-for-microsoft-azure-is-now-in-beta">
   ### 适用于 Microsoft Azure 的 ClickHouse Cloud 现已进入 Beta
@@ -402,7 +520,15 @@ ClickHouse Cloud 支持[横向扩缩容](/zh/products/cloud/features/autoscaling
 
 现在，您只需点击几下，即可直接在 ClickHouse Cloud 控制台中配置专用终结点。只需前往您的服务的 **设置**，进入 **安全** 部分，然后点击 **设置专用终结点**。
 
-<Image img="/images/cloud/reference/may-30-private-endpoints.webp" size="lg" alt="ClickHouse Cloud 控制台中“安全”设置里的专用终结点设置界面" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse Cloud 控制台中“安全”设置里的专用终结点设置界面](/images/cloud/reference/may-30-private-endpoints.webp)
+
+</Frame>
+
+</div>
 
 <div id="may-17-2024">
   ## 2024 年 5 月 17 日
@@ -416,7 +542,15 @@ ClickPipes 是 ClickHouse Cloud 提供的一项专属服务，让您无需编写
 
 您可以在 Cloud 控制台中试用 ClickPipes 全新的 Amazon Kinesis 集成：
 
-<Image img="/images/cloud/reference/may-17-kinesis.webp" size="lg" alt="显示 Amazon Kinesis 集成配置选项的 ClickPipes 界面" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![显示 Amazon Kinesis 集成配置选项的 ClickPipes 界面](/images/cloud/reference/may-17-kinesis.webp)
+
+</Frame>
+
+</div>
 
 <div id="configurable-backups-private-preview">
   ### 可配置备份 (私有预览)
@@ -430,7 +564,15 @@ ClickPipes 是 ClickHouse Cloud 提供的一项专属服务，让您无需编写
 
 当你为 ClickHouse 编写 SQL 查询时，仍需要通过驱动程序连接到 ClickHouse，才能让应用程序调用该查询。现在，借助我们全新的 **Query Endpoints** 功能，你无需任何配置即可直接通过 API 执行 SQL 查询。你可以指定查询端点返回 JSON、CSV 或 TSV 格式。点击 Cloud 控制台中的“共享”按钮，即可用你的查询试用这项新功能。有关 Query Endpoints 的更多信息，请参阅[此处](https://clickhouse.com/blog/automatic-query-endpoints)。
 
-<Image img="/images/cloud/reference/may-17-query-endpoints.webp" size="lg" alt="显示 Query Endpoints 配置和输出格式选项的 ClickHouse Cloud 界面" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![显示 Query Endpoints 配置和输出格式选项的 ClickHouse Cloud 界面](/images/cloud/reference/may-17-query-endpoints.webp)
+
+</Frame>
+
+</div>
 
 <div id="official-clickhouse-certification-is-now-available">
   ### 官方 ClickHouse 认证现已开放
@@ -450,7 +592,15 @@ ClickHouse Develop 培训课程包含 12 个免费培训模块。在此之前，
 
 在最近一次 ClickPipes 更新中，我们新增了可直接从亚马逊 S3 和 Google Cloud Storage 上传数据的功能。虽然你仍然可以使用我们内置的表函数，但 ClickPipes 是一项通过 UI 提供的全托管服务，只需点击几下，即可从 S3 和 GCS 摄取数据。该功能目前仍处于私有预览阶段，不过你现在就可以通过 Cloud 控制台试用。
 
-<Image img="/images/cloud/reference/clickpipes-s3-gcs.webp" size="lg" alt="显示从 S3 和 GCS 存储桶加载数据配置选项的 ClickPipes 界面" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![显示从 S3 和 GCS 存储桶加载数据配置选项的 ClickPipes 界面](/images/cloud/reference/clickpipes-s3-gcs.webp)
+
+</Frame>
+
+</div>
 
 <div id="use-fivetran-to-load-data-from-500-sources-into-clickhouse-cloud">
   ### 使用 Fivetran 将来自 500 多个来源的数据加载到 ClickHouse Cloud
@@ -483,7 +633,15 @@ ClickHouse 可以快速查询您的所有大型数据集，但前提是这些数
 
 此次发布为 ClickHouse Cloud 新增了 AWS 东京区域 (`ap-northeast-1`) 。为了让 ClickHouse 成为速度最快的数据库，我们正持续为各个云平台扩展更多区域，以尽可能降低延迟。您现在可以在更新后的 Cloud 控制台中创建位于东京的新服务。
 
-<Image img="/images/cloud/reference/create-tokyo-service.webp" size="lg" alt="显示东京区域选择的 ClickHouse Cloud 服务创建界面" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![显示东京区域选择的 ClickHouse Cloud 服务创建界面](/images/cloud/reference/create-tokyo-service.webp)
+
+</Frame>
+
+</div>
 
 其他变更：
 
@@ -521,7 +679,15 @@ ClickHouse 可以快速查询您的所有大型数据集，但前提是这些数
 
 部分客户将抢先体验全新的 ClickHouse Cloud 控制台——这是一种统一且沉浸式的数据探索与管理方式。如果您希望获得优先访问权限，请通过 support@clickhouse.com 联系我们。
 
-<Image img="/images/cloud/reference/new-cloud-console.webp" size="lg" alt="展示全新 ClickHouse Cloud 控制台界面的动画，其中集成了 SQL 编辑器和管理功能" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![展示全新 ClickHouse Cloud 控制台界面的动画，其中集成了 SQL 编辑器和管理功能](/images/cloud/reference/new-cloud-console.webp)
+
+</Frame>
+
+</div>
 
 <div id="march-28-2024">
   ## 2024年3月28日

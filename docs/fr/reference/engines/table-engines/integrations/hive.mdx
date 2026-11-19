@@ -21,9 +21,7 @@ Le moteur Hive vous permet d’exécuter des requêtes `SELECT` sur une table Hi
 
 * Parquet : prend en charge tous les types de colonnes scalaires simples ; prend uniquement en charge les types complexes comme `array`
 
-<div id="creating-a-table">
-  ## Créer une table
-</div>
+## Créer une table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -51,39 +49,11 @@ La structure de la table peut différer de celle de la table Hive d’origine :
 
 * `table` — Nom de la table distante.
 
-<div id="usage-example">
-  ## Exemple d’utilisation
-</div>
+## Exemple d’utilisation {#usage-example}
 
-<div id="how-to-use-local-cache-for-hdfs-filesystem">
-  ### Comment utiliser le cache local pour le système de fichiers HDFS
-</div>
+### Interroger une table Hive au format d’entrée ORC {#query-hive-table-with-orc-input-format}
 
-Nous vous conseillons vivement d’activer le cache local pour les systèmes de fichiers distants. Les benchmarks montrent que c’est presque deux fois plus rapide avec le cache.
-
-Avant d’utiliser le cache, ajoutez-le à `config.xml`
-
-```xml
-<local_cache_for_remote_fs>
-    <enable>true</enable>
-    <root_dir>local_cache</root_dir>
-    <limit_size>559096952</limit_size>
-    <bytes_read_before_flush>1048576</bytes_read_before_flush>
-</local_cache_for_remote_fs>
-```
-
-* enable: ClickHouse maintiendra un cache local pour le système de fichiers distant (HDFS) après le démarrage si la valeur est `true`.
-* root&#95;dir: Obligatoire. Le répertoire racine dans lequel stocker les fichiers du cache local pour le système de fichiers distant.
-* limit&#95;size: Obligatoire. La taille maximale (en octets) des fichiers du cache local.
-* bytes&#95;read&#95;before&#95;flush: Définit le nombre d’octets lus avant l’écriture vers le système de fichiers local lors du téléchargement d’un fichier depuis le système de fichiers distant. La valeur par défaut est de 1MB.
-
-<div id="query-hive-table-with-orc-input-format">
-  ### Interroger une table Hive au format d’entrée ORC
-</div>
-
-<div id="create-table-in-hive">
-  #### Créer une table dans Hive
-</div>
+#### Créer une table dans Hive {#create-table-in-hive}
 
 ```text
 hive > CREATE TABLE `test`.`test_orc`(
@@ -131,9 +101,7 @@ OK
 Time taken: 0.295 seconds, Fetched: 1 row(s)
 ```
 
-<div id="create-table-in-clickhouse">
-  #### Créer une table dans ClickHouse
-</div>
+#### Créer une table dans ClickHouse {#create-table-in-clickhouse}
 
 Table dans ClickHouse récupérant les données de la table Hive créée ci-dessus :
 
@@ -205,13 +173,9 @@ day:                  2021-09-18
 1 rows in set. Elapsed: 0.078 sec.
 ```
 
-<div id="query-hive-table-with-parquet-input-format">
-  ### Interroger une table Hive avec le format d’entrée Parquet
-</div>
+### Interroger une table Hive avec le format d’entrée Parquet {#query-hive-table-with-parquet-input-format}
 
-<div id="create-table-in-hive">
-  #### Créer une table dans Hive
-</div>
+#### Créer une table dans Hive {#create-table-in-hive-1}
 
 ```text
 hive >
@@ -260,9 +224,7 @@ OK
 Time taken: 0.766 seconds, Fetched: 1 row(s)
 ```
 
-<div id="create-table-in-clickhouse">
-  #### Créer une table dans ClickHouse
-</div>
+#### Créer une table dans ClickHouse {#create-table-in-clickhouse-1}
 
 Table dans ClickHouse récupérant les données de la table Hive créée ci-dessus :
 
@@ -335,13 +297,9 @@ day:                  2021-09-18
 1 rows in set. Elapsed: 0.357 sec.
 ```
 
-<div id="query-hive-table-with-text-input-format">
-  ### Interroger une table Hive avec le format d’entrée Text
-</div>
+### Interroger une table Hive avec le format d’entrée Text {#query-hive-table-with-text-input-format}
 
-<div id="create-table-in-hive">
-  #### Créer une table dans Hive
-</div>
+#### Créer une table dans Hive {#create-table-in-hive-2}
 
 ```text
 hive >
@@ -389,9 +347,7 @@ OK
 Time taken: 0.624 seconds, Fetched: 1 row(s)
 ```
 
-<div id="create-table-in-clickhouse">
-  #### Créer une table dans ClickHouse
-</div>
+#### Créer une table dans ClickHouse {#create-table-in-clickhouse-2}
 
 Table dans ClickHouse permettant de récupérer les données de la table Hive créée ci-dessus :
 

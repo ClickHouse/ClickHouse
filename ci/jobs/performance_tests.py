@@ -31,12 +31,12 @@ from ci.defs.defs import (
 from ci.jobs.scripts import log_export
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.dataset_download import (
+    PERFORMANCE_DATASETS,
     download_and_extract_datasets,
     iceberg_database_queries,
 )
 from ci.jobs.scripts.perf import s3_service, test_discovery
 from ci.praktika._environment import _Environment
-from ci.praktika.cidb import CIDB
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
@@ -159,12 +159,8 @@ CIDB_TEST_CASES_RESULT_NAME = "Tests"
 
 RAW_QUERY_METRICS_TABLE = "query_metric_runs_v1"
 HISTORICAL_DATA_TABLE = "query_metrics_v2"
-
-
-def read_cidb():
-    """The read-only endpoint the job reads the history in `HISTORICAL_DATA_TABLE` from."""
-    url = f"{CIDB.get_read_url(Info())}?user={Settings.CI_DB_READ_USER}"
-    return CIDBCluster(url=url, user="", pwd="")
+# The public read-only endpoint the job reads the history in `HISTORICAL_DATA_TABLE` from.
+PLAY_CIDB_URL = "https://xy8c38q4lw.us-east-2.aws.clickhouse-staging.com/?user=play"
 
 # --- Aggregate report tables on the play cluster --------------------------
 # These capture everything that used to only live in the static HTML report
@@ -766,7 +762,7 @@ def write_iceberg_profile_override():
     return True
 
 
-def build_perf_query_history_link(test_name, check_name, read_url):
+def build_perf_query_history_link(test_name, check_name):
     """Build a ClickHouse Play link showing performance history for a query on master."""
     table = Settings.CI_DB_TABLE_NAME or "checks"
     tn = (test_name or "").replace("'", "''")
@@ -786,7 +782,7 @@ WHERE pull_request_number = 0
     AND test_name = '{tn}'
 ORDER BY test, check_start_time
 """
-    base = read_url
+    base = Settings.CI_DB_READ_URL or ""
     user = Settings.CI_DB_READ_USER or ""
     if user:
         sep = "&" if "?" in base else "?"
@@ -794,7 +790,7 @@ ORDER BY test, check_start_time
     return f"{base}#{Utils.to_base64(query)}"
 
 
-def build_check_results_children(tests_result, check_name_pattern, read_url):
+def build_check_results_children(tests_result, check_name_pattern):
     """Per-query rows for "Check Results": one row per slower/unstable query.
 
     Rows carry compare.sh's verdict, which the report renderer classifies
@@ -819,14 +815,13 @@ def build_check_results_children(tests_result, check_name_pattern, read_url):
     children = []
     for base, (_, tr) in chosen.items():
         sub = Result(name=base, status=tr.status, duration=tr.duration)
-        if read_url:
-            sub.set_label(
-                "query history",
-                # The represented row's own name: CIDB's test_name keeps the side
-                # suffix, and the link filters on an exact match.
-                link=build_perf_query_history_link(tr.name, check_name_pattern, read_url),
-                hint="Performance history for this query on master",
-            )
+        sub.set_label(
+            "query history",
+            # The represented row's own name: CIDB's test_name keeps the side
+            # suffix, and the link filters on an exact match.
+            link=build_perf_query_history_link(tr.name, check_name_pattern),
+            hint="Performance history for this query on master",
+        )
         children.append(sub)
     return children
 
@@ -1432,7 +1427,7 @@ class CHServer:
     # JemallocSample flamegraphs. Must match compare.sh.
     JEMALLOC_PROFILER_SAMPLING_RATE = 16
 
-    def __init__(self, is_left=False, nightly=False):
+    def __init__(self, is_left=False, nightly=False, readiness_timeout=60):
         if is_left:
             server_port = self.LEFT_SERVER_PORT
             keeper_port = self.LEFT_SERVER_KEEPER_PORT
@@ -1451,6 +1446,7 @@ class CHServer:
             log_file = f"{serever_path}/server.log"
 
         self.log_fd = None
+        self.readiness_timeout = readiness_timeout
         self.log_file = log_file
         self.port = server_port
         self.server_path = serever_path
@@ -1521,8 +1517,8 @@ class CHServer:
 
     def wait_ready(self):
         res, out, err = 0, "", ""
-        attempts = 30
         delay = 2
+        attempts = math.ceil(self.readiness_timeout / delay)
         for attempt in range(attempts):
             res, out, err = Shell.get_res_stdout_stderr(
                 f'clickhouse-client --port {self.port} --receive_timeout=5 --query "select 1"', verbose=True
@@ -2211,17 +2207,17 @@ def read_slower_queries(path):
     for line in filter(None, lines):
         fields = line.split("\t")
         if (
-            len(fields) != 9
-            or not _TSV_UINT_RE.fullmatch(fields[5])
-            or not _TSV_UINT_RE.fullmatch(fields[7])
+            len(fields) != 13
+            or not _TSV_UINT_RE.fullmatch(fields[9])
+            or not _TSV_UINT_RE.fullmatch(fields[11])
             or not _TSV_FLOAT_RE.fullmatch(fields[3])
             or not math.isfinite(float(fields[3]))
         ):
             print(f"WARNING: unexpected row in [{path}]: {line[:200]!r}")
             return None
         diff = float(fields[3])
-        if int(fields[5]) and diff >= 0:
-            slower[(fields[6], int(fields[7]))] = (fields[8], diff)
+        if int(fields[9]) and diff >= 0:
+            slower[(fields[10], int(fields[11]))] = (fields[12], diff)
     return slower
 
 
@@ -2246,7 +2242,7 @@ WHERE event_date >= today() - {FALLBACK_SHARED_DAYS + 1}
     AND ({terms})
 GROUP BY test, query_index, query_display_name
 FORMAT TSV"""
-    answer = read_cidb().do_select_query(query, retries=1, timeout=20)
+    answer = CIDBCluster(url=PLAY_CIDB_URL, user="", pwd="").do_select_query(query, retries=1, timeout=20)
     if answer is None:
         return None
     other_prs = {}
@@ -3164,6 +3160,9 @@ def main():
         )
 
     test_keyword = args.test
+    selection_path = Path(temp_dir) / "performance_selection.json"
+    all_query_tests = set()
+    selection_result = None
 
     # Selected up front (after the release_base vintage checkout above): Configure needs the list for the S3 decision.
     test_files = test_discovery.list_test_files("./tests/performance/")
@@ -3201,6 +3200,70 @@ def main():
         else:
             assert pinned, f"No test placed in the job `{job}` exists"
             test_files = pinned
+    elif info.pr_number > 0 and compare_against_master and not info.is_local_run:
+        from ci.jobs.scripts.find_tests import GitHubUnavailableError
+        from ci.jobs.scripts.performance_selection import (
+            PerformanceSelection,
+            full_suite_reason,
+            pr_shards,
+        )
+        from ci.praktika.cidb import CIDBTimeoutError
+
+        assert total_batches == pr_shards(
+            info, test_options[0]
+        ), "Performance shard count differs from the selected run mode"
+        reason = full_suite_reason(info, test_options[0])
+        if reason:
+            selection = {"mode": "full", "reason": reason, "selected": test_files}
+        else:
+            selector = PerformanceSelection(info)
+            try:
+                test_files, all_query_tests = selector.select(test_files)
+            except (CIDBTimeoutError, GitHubUnavailableError) as error:
+                message = f"Performance tests were not run: test selection unavailable: {error}"
+                info.add_workflow_warning(message)
+                skipped = Result(
+                    name="Performance test selection",
+                    status=Result.Status.SKIPPED,
+                    info=message,
+                )
+                skipped.set_comment("Test selection unavailable, rerun to test")
+                skipped.complete_job(do_not_cache=True)
+                return
+            except Exception as error:
+                # An unavailable coverage source must not silently turn this
+                # into an expensive full run or a successful empty selection.
+                selection_path.parent.mkdir(parents=True, exist_ok=True)
+                selection_path.write_text(
+                    json.dumps(selector.selection_diagnostics, indent=2) + "\n"
+                )
+                Result(
+                    name="Performance test selection",
+                    status=Result.Status.ERROR,
+                    info=f"{error}\n{traceback.format_exc()}",
+                    files=[str(selection_path)],
+                ).complete_job()
+                return
+            selection = {"mode": "selected", **selector.selection_diagnostics}
+        test_files = test_files[batch_num::total_batches]
+        selection.update(
+            shard=batch_num + 1,
+            shards=total_batches,
+            shard_tests=test_files,
+            run_all_queries=sorted(all_query_tests & set(test_files)),
+        )
+        selection_path.parent.mkdir(parents=True, exist_ok=True)
+        selection_path.write_text(json.dumps(selection, indent=2) + "\n")
+        selection_result = Result(
+            name="Performance test selection",
+            status=Result.Status.OK,
+            info=f"{selection['mode']}: {len(test_files)} tests on this shard",
+            files=[str(selection_path)],
+        )
+        if not test_files:
+            selection_result.info = "No selected tests assigned to this shard"
+            selection_result.complete_job()
+            return
     else:
         test_files = test_files[batch_num::total_batches]
     if nightly and not TABLE_ENGINE:
@@ -3267,7 +3330,7 @@ def main():
         stages.insert(0, stage)
 
     res = True
-    results = []
+    results = [selection_result] if selection_result else []
     if reference_warning:
         results.append(
             Result(
@@ -3383,7 +3446,7 @@ def main():
     elif res and not info.is_local_run:
 
         def prepare_historical_data():
-            cidb = read_cidb()
+            cidb = CIDBCluster(url=PLAY_CIDB_URL, user="", pwd="")
             if not cidb.is_ready():
                 print(
                     "WARNING: CIDB is not ready, will proceed without historical thresholds"
@@ -3440,15 +3503,7 @@ def main():
         # Retry missing or partially extracted Iceberg fixtures in cached db0.
         if not db_done or (needs_iceberg_read_dataset and (not iceberg_dir.is_dir() or not iceberg_done.is_file())):
             Shell.check(f"mkdir -p {db_path}/data/default/", verbose=True)
-            dataset_paths = {
-                "hits10": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_10m_single.tar",
-                "hits100": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_100m_single.tar",
-                "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
-                "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
-                "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch_sf10.tar",
-                "tpch_ice10": "https://clickhouse-datasets.s3.amazonaws.com/h-ice/10/tpch_ice_sf10.tar",
-                "tpcds1": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
-            }
+            dataset_paths = PERFORMANCE_DATASETS
             if db_done:
                 dataset_paths = {"tpch_ice10": dataset_paths["tpch_ice10"]}
             stop_watch = Utils.Stopwatch()
@@ -3640,7 +3695,7 @@ def main():
             for test in test_files:
                 clean = CHServer.run_test(
                     "./tests/performance/" + test,
-                    max_queries=0 if nightly else 10,
+                    max_queries=0 if nightly or test in all_query_tests else 10,
                     pr_number=info.pr_number,
                     results_path=perf_wd,
                     long=nightly,
@@ -4064,6 +4119,11 @@ def main():
                 tests_result = r
                 break
         if tests_result:
+            # CIDB exports the Tests subtree. Preserve dashboard-only failures
+            # there too, so a later PR selection retains their owning XML tests.
+            tests_result.results.extend(
+                sub for sub in check_sub_results if sub.status == Result.Status.FAIL
+            )
             # Always use master_head runs for the history query — they are
             # the stable baseline.  The CIDB check_name looks like
             # "Performance Comparison (arm_release, master_head, 1/6)".
@@ -4072,9 +4132,7 @@ def main():
             check_sub_results += [
                 sub
                 for sub in build_check_results_children(
-                    tests_result,
-                    f"%Performance%{arch}%master_head%{TABLE_ENGINE or ''}%",
-                    os.environ.get(CIDB.READ_URL_ENV),
+                    tests_result, f"%Performance%{arch}%master_head%{TABLE_ENGINE or ''}%"
                 )
                 if sub.name not in dashboard_names
             ]
@@ -4093,7 +4151,7 @@ def main():
     if needs_s3:
         s3_service.stop()
 
-    files_to_attach = []
+    files_to_attach = [str(selection_path)] if selection_path.is_file() else []
     if res:
         files_to_attach += logs_to_attach
     for report in report_files:

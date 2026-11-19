@@ -449,7 +449,7 @@ doc_type: 'reference'
   Recursos:
 
   * Editor SQL moderno com preenchimento automático e execução de consultas em múltiplas abas.
-  * Navegador de esquema para tabelas, visões e colunas.
+  * Navegador de schemas para tabelas, visões e colunas.
   * Salve e organize suas consultas favoritas.
   * Aplicativo desktop multiplataforma (Windows, macOS, Linux), além de uma edição auto-hospedada/web.
 
@@ -457,17 +457,32 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Tabularis">
-  O [Tabularis](https://github.com/TabularisDB/tabularis) é um espaço de trabalho SQL desktop de código aberto para Windows, macOS e Linux, licenciado sob Apache 2.0. O suporte ao ClickHouse vem de um plugin oficial instalado dentro do próprio aplicativo, que se comunica com a interface HTTP (`8123`, ou `8443` with TLS) por meio do client `clickhouse` em Rust.
+  O [Tabularis](https://github.com/TabularisDB/tabularis) é um espaço de trabalho SQL desktop de código aberto para Windows, macOS e Linux, licenciado sob Apache 2.0. O suporte ao ClickHouse vem de um plugin oficial instalado dentro do próprio aplicativo, que se comunica com a interface HTTP (`8123`, ou `8443` com TLS) por meio do Client `clickhouse` em Rust.
 
   Recursos:
 
   * Navegação por bancos de dados, tabelas e visões com tipos nativos do ClickHouse, incluindo data-skipping indexes com seu tipo, colunas e granularity.
   * Editor SQL baseado no Monaco, com preenchimento automático, execução de múltiplas instruções e resultados paginados.
   * Insert, update e delete inline diretamente na grade de dados; geração de DDL para `CREATE TABLE`, `ALTER TABLE ... ADD/MODIFY/RENAME COLUMN` e `ADD INDEX`.
-  * MCP server integrado, permitindo que AI agents leiam o schema e executem consultas a partir do mesmo aplicativo.
+  * Servidor MCP integrado, permitindo que AI agents leiam o schema e executem consultas a partir do mesmo aplicativo.
   * ClickHouse lado a lado com PostgreSQL, MySQL, SQLite, DuckDB, Redis, MongoDB e outros motores em uma única janela.
 
   [Plugin ClickHouse do Tabularis](https://github.com/TabularisDB/tabularis-clickhouse-plugin) · [Site](https://tabularis.dev)
+</Accordion>
+
+<Accordion title="DBine">
+  O [DBine](https://github.com/addlayer-io/dbine) é um gerenciador de bancos de dados desktop gratuito e de código aberto (Apache 2.0) para Windows, macOS e Linux. Ele se conecta ao ClickHouse pela interface HTTP (`8123`, ou `8443` com TLS), lado a lado com mais de 130 bancos de dados e serviços em nuvem na mesma janela.
+
+  Recursos:
+
+  * Editor SQL com o dialeto do ClickHouse, autocompletar de tabelas e colunas e cancelamento de consultas com `KILL QUERY`.
+  * Navegação por bancos de dados, tabelas, visões e colunas, com grades de resultados, gráficos e exportação para CSV, JSON, XLSX e SQL.
+  * Designer de tabelas com `ENGINE`, `ORDER BY`, `PARTITION BY`, TTL e codecs; as edições de células são geradas como mutações `ALTER TABLE ... UPDATE`, que você revisa antes de executar.
+  * Planos de consulta gerados com `EXPLAIN json = 1, indexes = 1`, uma lista de processos obtida de `system.processes` e um profiler baseado em `system.query_log`.
+  * Comparação de schemas, comparação de dados e notebooks que consultam vários bancos de dados e combinam os resultados com o DuckDB.
+  * Túneis SSH, senhas obtidas de gerenciadores de segredos, conexões somente leitura, um servidor MCP e um assistente de IA que sugere consultas e não executa nada sem a sua aprovação.
+
+  [Site](https://dbine.com) · [Download](https://github.com/addlayer-io/dbine/releases)
 </Accordion>
 
 ## Comercial {#commercial}

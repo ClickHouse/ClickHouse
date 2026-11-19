@@ -1,0 +1,7 @@
+1	12345	Decimal(14, 0)
+2	12345678901234	Decimal(14, 0)
+id	Int64					
+d	Decimal(14, 0)					
+s	String					
+1	12345	Decimal(38, 0)
+2	12345678901234	Decimal(38, 0)

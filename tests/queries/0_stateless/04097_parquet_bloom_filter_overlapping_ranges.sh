@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Random settings limits: input_format_parquet_bloom_filter_push_down=(1, 1); output_format_parquet_bloom_filter_bits_per_value=(10.5, 10.5); output_format_parquet_write_bloom_filter=(1, 1)
 
 # Regression test for a segfault/assertion failure in Parquet bloom filter
 # prefetch range coalescing. When two overlapping prefetch ranges (bloom filter
