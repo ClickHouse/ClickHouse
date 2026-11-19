@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/HashJoin/JoinUsedFlags.h>
-#include <Interpreters/RowRefs.h>
-#include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
+
+#include <array>
+#include <memory>
 
 namespace DB
 {
@@ -35,13 +34,15 @@ private:
     size_t items;
 
 public:
-    /// A holder is constructed for every probe row on the multi-disjunct path, so `array_holder`
-    /// is deliberately left uninitialized (only the first `items` entries are ever read); value-
-    /// initializing 128 bytes per row would be a pure waste.
+    /// `array_holder` is left uninitialized: only its first `items` entries are read.
     KnownRowsHolder() /// NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
         : items(0)
     {
     }
+
+    /// Forgets the rows. It keeps the hash set that it made when the rows outgrew the array, but never reads it again: when the
+    /// rows outgrow the array again, a new set replaces it.
+    void clear() { items = 0; }
 
     template<class InputIt>
     void add(InputIt from, InputIt to)
@@ -89,76 +90,5 @@ public:
         return false;
     }
 };
-
-/// With `claim_flags` set, a row is appended only if this call wins its used flag, so it is emitted
-/// for exactly one left row; pass nullptr when a row may be emitted more than once (ALL joins).
-/// Returns whether anything was appended.
-template <typename Map, bool flag_per_row, typename AddedColumns>
-bool addFoundRowAll(
-    const typename Map::mapped_type & mapped,
-    AddedColumns & added,
-    IColumn::Offset & current_offset,
-    KnownRowsHolder<flag_per_row> & known_rows [[maybe_unused]],
-    JoinStuff::JoinUsedFlags * claim_flags [[maybe_unused]],
-    bool is_last_disjunct [[maybe_unused]])
-{
-    if constexpr (flag_per_row)
-    {
-        std::vector<UInt64> new_known_rows;
-        bool any_row_added = false;
-
-        for (const UInt64 ref_word : refsOf(mapped.word))
-        {
-            if (known_rows.isKnown(ref_word))
-                continue;
-
-            if (claim_flags
-                && !claim_flags->JoinStuff::JoinUsedFlags::setUsedOnce<true, flag_per_row>(
-                    refWordBlockNo(ref_word), refWordRowNo(ref_word), 0))
-                continue;
-
-            added.appendFromBlock(ref_word);
-            ++current_offset;
-            any_row_added = true;
-            if (!is_last_disjunct)
-                new_known_rows.push_back(ref_word);
-        }
-
-        if (!is_last_disjunct)
-            known_rows.add(std::cbegin(new_known_rows), std::cend(new_known_rows));
-
-        return any_row_added;
-    }
-    else if constexpr (AddedColumns::appendsWholeKey())
-    {
-        /// Load-free fast path: the cell word carries the saturating row count, so unique keys
-        /// (inline refs) and duplicate keys are both appended without dereferencing the node.
-        added.appendFromBlock(mapped.word);
-        current_offset += mapped.rows();
-        return true;
-    }
-    else
-    {
-        /// No single-row fast path needed here (unlike the pre-RowRef code): a single ref lives
-        /// inline in the cell word and the iterator decodes it without touching the arena node.
-        for (const UInt64 ref_word : refsOf(mapped.word))
-        {
-            added.appendFromBlock(ref_word);
-            ++current_offset;
-        }
-        return true;
-    }
-}
-
-template <bool add_missing, bool need_offset, typename AddedColumns>
-void addNotFoundRow(AddedColumns & added [[maybe_unused]], IColumn::Offset & current_offset [[maybe_unused]])
-{
-    if constexpr (add_missing)
-    {
-        added.appendDefaultRow();
-        if constexpr (need_offset)
-            ++current_offset;
-    }
-}
 
 }

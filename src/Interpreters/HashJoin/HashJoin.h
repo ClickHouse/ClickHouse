@@ -846,8 +846,6 @@ private:
 
     class ContinuationResult;
 
-    JoinResultPtr runJoinDispatch(ScatteredBlock block);
-
     bool preferUseMapsAll() const;
 
     bool canUseSetMaps() const;
