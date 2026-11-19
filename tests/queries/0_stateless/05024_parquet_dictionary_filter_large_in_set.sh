@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Random settings limits: input_format_parquet_memory_high_watermark=(67108864, None)
 
 # `IN` sets larger than the bloom filter's set-size cap (`bloom_filter_max_set_size`, 100) are hashed
 # only for the exact dictionary filter of the native Parquet reader, so `findAnyHash` gets thousands of

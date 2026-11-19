@@ -27,6 +27,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Databases/IDatabase.h>
 
 
 namespace DB
