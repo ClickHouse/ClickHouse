@@ -2274,6 +2274,67 @@ def test_tags_of_the_version_the_one_format_consumed(started_cluster):
     assert node.query(f"SELECT generation FROM {table_name}_dst") == "old\n"
 
 
+def test_tags_of_the_generation_the_one_format_consumed_unversioned(started_cluster):
+    """On an unversioned bucket the tags of a claimed generation cannot be requested after a rewrite. A row of `One` must
+    not combine the claimed generation with the tags of the rewritten object: the file is reset and read again."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = started_cluster.minio_bucket
+    table_name = f"tags_one_format_unversioned_{token}"
+    files_path = f"{table_name}_data"
+    source_key = f"{files_path}/part.csv"
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+    client.put_object(
+        Bucket=bucket, Key=source_key, Body=b"1,2,3\n", Tagging="generation=old"
+    )
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        format="column1 UInt8",
+        file_format="One",
+        after_processing="delete",
+        bucket=bucket,
+        # The reset file is read again by the next poll.
+        additional_settings={
+            "polling_min_timeout_ms": 100,
+            "polling_max_timeout_ms": 100,
+        },
+    )
+    node.query(
+        f"CREATE TABLE {table_name}_dst (size UInt64, generation String) ENGINE = MergeTree ORDER BY tuple()"
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_BEFORE_TAGS_FETCH_FAILPOINT}")
+    try:
+        node.query(
+            f"CREATE MATERIALIZED VIEW {table_name}_mv TO {table_name}_dst "
+            f"AS SELECT _size AS size, _tags['generation'] AS generation FROM {table_name}"
+        )
+        wait_failpoint_paused(node, PAUSE_BEFORE_TAGS_FETCH_FAILPOINT)
+        # The generation is claimed; the object is rewritten before the tags are fetched.
+        client.put_object(
+            Bucket=bucket, Key=source_key, Body=b"4,5,6,7\n", Tagging="generation=new"
+        )
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_TAGS_FETCH_FAILPOINT}")
+
+    def source_exists():
+        return "Contents" in client.list_objects_v2(Bucket=bucket, Prefix=source_key)
+
+    # Only the rewritten object is ingested, with its own size and tags, and then deleted.
+    wait_until(lambda: not source_exists())
+    assert node.query(f"SELECT size, generation FROM {table_name}_dst") == "8\tnew\n"
+
+
 def test_tags_of_the_version_a_byte_reading_format_consumed(started_cluster):
     """A format that reads bytes learns its version only from the response, after the tags are fetched. Rows must never
     be returned with the tags of another version than the one whose bytes they were read from."""

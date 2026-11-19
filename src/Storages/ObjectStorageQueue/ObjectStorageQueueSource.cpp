@@ -1768,12 +1768,14 @@ Chunk ObjectStorageQueueSource::generateImpl()
         {
             /// The tags were fetched before the read reported its generation. Check them against the generation of the
             /// rows before the rows escape: a rewrite in between attaches the tags of another generation to them.
-            /// The read has got a response by now, as it produced rows.
+            /// The read has got a response by now, as it produced rows. A read that reports no generation (`One` reads
+            /// no bytes) consumed the generation recorded for the file: the claimed one, or else the listed one.
             if (tags_generation)
             {
-                std::optional<String> message;
-                if (auto read_generation = get_read_generation())
-                    message = check_tags_generation(read_generation->etag, read_generation->version_id);
+                auto read_generation = get_read_generation();
+                if (!read_generation)
+                    read_generation = TagsGeneration{.etag = processed_files.back().etag, .version_id = processed_files.back().version_id};
+                auto message = check_tags_generation(read_generation->etag, read_generation->version_id);
                 if (message)
                 {
                     processed_files.back().state = FileState::ErrorOnRead;
