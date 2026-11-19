@@ -79,4 +79,10 @@ SELECT id, k, sum(v) AS sv FROM t_rollup_filter GROUP BY CUBE(id, k) HAVING sv >
 SELECT k, count() AS c FROM (SELECT if(number < 2, 1, 2) AS k FROM numbers(3)) GROUP BY ROLLUP(k) HAVING c = 1 AND intDiv(10, toInt64(k) - 1) > 0 ORDER BY ALL;
 SELECT k, count() AS c FROM (SELECT if(number < 2, 1, 2) AS k FROM numbers(3)) GROUP BY CUBE(k) HAVING c = 1 AND intDiv(10, toInt64(k) - 1) > 0 ORDER BY ALL;
 
+SELECT 'only the conditions without side effects';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k) HAVING id = 4 AND id + sleepEachRow(0) = 4) WHERE explain LIKE '%Condition:%';
+-- a copy below the step sleeps 4 seconds in one block and throws
+SELECT k, count() FROM (SELECT toUInt64(1) AS k FROM numbers(40)) GROUP BY ROLLUP(k) HAVING k = 1 AND k + sleepEachRow(0.1) = 1 ORDER BY ALL SETTINGS max_threads = 1, max_block_size = 1000;
+SELECT k, count() FROM (SELECT toUInt64(1) AS k FROM numbers(40)) GROUP BY CUBE(k) HAVING k = 1 AND k + sleepEachRow(0.1) = 1 ORDER BY ALL SETTINGS max_threads = 1, max_block_size = 1000;
+
 DROP TABLE t_rollup_filter;

@@ -1284,6 +1284,8 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> takeNewConditionsOn(c
         return {};
 
     auto atoms = ActionsDAG::extractConjunctionAtoms(conditions->getOutputs().front());
+    /// a copy runs once for each row below the step, the filter once for each group
+    std::erase_if(atoms, [](const ActionsDAG::Node * atom) { return isSensitiveToEvaluationCount(ActionsDAG::cloneSubDAG({atom}, false)); });
     auto names = atoms | std::views::transform(&ActionsDAG::Node::result_name) | std::ranges::to<NameSet>();
     /// a copy of a part of the filter also runs on the rows that the other part rejects, so then it must not throw
     bool copies_whole_filter = std::ranges::all_of(
