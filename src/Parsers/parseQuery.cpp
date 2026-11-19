@@ -452,6 +452,7 @@ ASTPtr tryParseQuery(
         diagnostics->expected.highlights.clear();
         diagnostics->expected.failed_keyword_readings.reset();
         diagnostics->expected.failed_subquery_readings.reset();
+        diagnostics->expected.failed_literal_readings.reset();
         diagnostics->error_token = Token{};
     }
 
@@ -594,11 +595,13 @@ ASTPtr tryParseQuery(
 
     /// Unmatched parentheses. Skipped for raw-text parsers: `TokenIterator::isValid()` stops at
     /// the first error token, so a lexer-rejected token before a later `)` reads as unmatched.
+    /// Only the parens inside the current statement are reported, so the walk stops after it once every
+    /// bracket is closed: walking the rest of a multi-statement input for each statement is quadratic.
     UnmatchedParentheses unmatched_parens
-        = consumes_raw_text ? UnmatchedParentheses{} : checkUnmatchedParentheses(TokenIterator(tokens));
+        = consumes_raw_text ? UnmatchedParentheses{} : checkUnmatchedParentheses(TokenIterator(tokens), last_token.end);
     if (!unmatched_parens.empty())
     {
-        /// `checkUnmatchedParentheses` walks the entire remaining input, so it can
+        /// `checkUnmatchedParentheses` can walk past the current statement, so it can
         /// report parens that live in later statements. Restrict to parens inside
         /// the current statement; otherwise the highlight loop in
         /// `writeQueryWithHighlightedErrorPositions` asserts on positions past `end`.
