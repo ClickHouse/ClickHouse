@@ -100,6 +100,10 @@ Onboarding with the [Terraform module for Azure](https://github.com/ClickHouse/t
 - **Identity**: Manage user-assigned managed identities and their federated identity credentials inside the subscription.
 - **Authorization**: Manage custom role definitions and role assignments. All permissions are scoped to the target subscription — the role cannot touch resources in other subscriptions or tenants.
 
+The service principal is also granted one Microsoft Graph application permission in your tenant, `Application.ReadWrite.OwnedBy`. ClickHouse uses it to create the workload identity for the BYOC AKS cluster. It allows the service principal to create applications and manage the applications it owns, but not to modify any other application, user, or group in your tenant. It can also list the applications and service principals in your tenant.
+
+Creating this service principal and granting it these permissions requires administrator rights in your tenant and on the subscription, but only for the identity that runs onboarding, and only once. See [Permissions to apply the Azure module](/products/bring-your-own-cloud/onboarding/standard#azure-module-permissions).
+
 ### Additional managed identities created by the controller {#additional-managed-identities-created-by-the-controller}
 
 When you provision BYOC services, ClickHouse's control plane creates user-assigned managed identities in your subscription. Each is federated to a specific Kubernetes service account (workload identity) with a narrow, single-purpose permission set:
