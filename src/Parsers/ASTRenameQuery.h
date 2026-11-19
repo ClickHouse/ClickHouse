@@ -86,6 +86,16 @@ public:
         }
     }
 
+    void resetDatabases()
+    {
+        chassert(!database);
+        for (auto & elem : elements)
+        {
+            reset(elem.from.database);
+            reset(elem.to.database);
+        }
+    }
+
     const Elements & getElements() const { return elements; }
 
     /** Get the text that identifies this element. */
