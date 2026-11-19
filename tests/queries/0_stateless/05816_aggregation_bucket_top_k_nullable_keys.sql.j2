@@ -53,7 +53,7 @@ WHERE explain LIKE '%Bucket top-K%';
 {% set label = key[0] ~ ', ' ~ rank[0] ~ ', ' ~ rank[3] ~ ', adaptive ' ~ adaptive -%}
 {% set query = 'SELECT ' ~ key[1] ~ ', ' ~ rank[1] ~ ' FROM t_bucket_top_k_nullable GROUP BY ' ~ key[2] ~ ' ORDER BY ' ~ rank[2] ~ ' ' ~ rank[3] ~ ' LIMIT 5' -%}
 SELECT '{{ label }}, top_k 1', arraySort(groupArray(tuple(*))) FROM ({{ query }})
-SETTINGS log_comment = '05816_pruned', enable_adaptive_aggregator = {{ adaptive }};
+SETTINGS log_comment = '05816_pruned_adaptive_{{ adaptive }}', enable_adaptive_aggregator = {{ adaptive }};
 SELECT '{{ label }}, top_k 0', arraySort(groupArray(tuple(*))) FROM ({{ query }})
 SETTINGS query_plan_aggregation_bucket_top_k = 0, enable_adaptive_aggregator = {{ adaptive }};
 {% endfor -%}
@@ -78,7 +78,7 @@ SETTINGS query_plan_aggregation_bucket_top_k = 0, enable_adaptive_aggregator = 0
 {% for key in null_default -%}
 {% set query = 'SELECT x, y, count() AS c FROM (SELECT if(number < 100000, ' ~ key[1] ~ ', if(number < 100100, NULL, ' ~ key[2] ~ ')) AS x, ' ~ key[3] ~ ' AS y FROM numbers_mt(100199)) GROUP BY x, y ORDER BY c DESC LIMIT 2' -%}
 SELECT '{{ key[0] }}, NULL and default, adaptive {{ adaptive }}, top_k 1', arraySort(groupArray(tuple(*))) FROM ({{ query }})
-SETTINGS log_comment = '05816_pruned', enable_adaptive_aggregator = {{ adaptive }};
+SETTINGS log_comment = '05816_pruned_adaptive_{{ adaptive }}', enable_adaptive_aggregator = {{ adaptive }};
 SELECT '{{ key[0] }}, NULL and default, adaptive {{ adaptive }}, top_k 0', arraySort(groupArray(tuple(*))) FROM ({{ query }})
 SETTINGS query_plan_aggregation_bucket_top_k = 0, enable_adaptive_aggregator = {{ adaptive }};
 {% endfor -%}
@@ -86,9 +86,11 @@ SETTINGS query_plan_aggregation_bucket_top_k = 0, enable_adaptive_aggregator = {
 
 SYSTEM FLUSH LOGS query_log;
 
+-- An adaptive producer can keep every table single-level (it skips the two-level conversion), and the single-level
+-- merge has no buckets to select from, so only the queries without the adaptive aggregator must convert.
 SELECT count(), countIf(ProfileEvents['AggregationBucketTopKConversions'] > 0)
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05816_pruned';
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05816_pruned_adaptive_0';
 SELECT count(), countIf(ProfileEvents['AggregationThresholdTopKMerges'] > 0)
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05816_threshold';

@@ -93,5 +93,5 @@ nullable_keys128, NULL and default, adaptive 1, top_k 1	[(0,0,99),(NULL,0,100)]
 nullable_keys128, NULL and default, adaptive 1, top_k 0	[(0,0,99),(NULL,0,100)]
 nullable_prealloc_serialized, NULL and default, adaptive 1, top_k 1	[('','0',99),(NULL,'0',100)]
 nullable_prealloc_serialized, NULL and default, adaptive 1, top_k 0	[('','0',99),(NULL,'0',100)]
-44	44
+22	22
 2	2
