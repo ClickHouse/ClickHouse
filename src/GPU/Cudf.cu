@@ -185,19 +185,21 @@ __host__ DeviceFixedColumn deviceViewByBits(const cudf::column_view & column, GP
 }
 
 __host__ std::unique_ptr<cudf::table> keptRows(
-    const cudf::table_view & table, const cudf::bitmask_type * mask, cudf::size_type left_out, rmm::device_buffer & all_true, cuda::stream_ref stream)
+    const cudf::table_view & table, DeviceBitmask kept, cudf::size_type left_out, rmm::device_buffer & all_true, cuda::stream_ref stream)
 {
     const auto rows = static_cast<size_t>(table.num_rows());
+    if (kept.rows != rows)
+        throwGPUError(("a filter of " + std::to_string(kept.rows) + " rows over " + std::to_string(rows)).c_str());
     if (all_true.size() < rows)
     {
         all_true.resize(rows, stream);
         checkCuda(cudaMemsetAsync(all_true.data(), 1, rows, stream.get()), "Cannot fill a mask of the device");
     }
 
-    const cudf::column_view kept(cudf::data_type{cudf::type_id::BOOL8}, table.num_rows(), all_true.data(), mask, left_out);
+    const cudf::column_view mask(cudf::data_type{cudf::type_id::BOOL8}, table.num_rows(), all_true.data(), kept.words, left_out);
     return guarded("compacting " + std::to_string(rows) + " rows to those a filter keeps", [&]
     {
-        return cudf::apply_retention_mask(table, kept, stream);
+        return cudf::apply_retention_mask(table, mask, stream);
     });
 }
 

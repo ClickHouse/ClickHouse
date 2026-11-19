@@ -133,6 +133,15 @@ struct DeviceVariableColumn
     const size_t chars_bytes = 0;
 };
 
+/// The rows of the device that a filter keeps, a bit each in 32-bit words; without words, all of them.
+struct DeviceBitmask
+{
+    const uint32_t * words = nullptr;
+    size_t rows = 0;
+
+    __host__ bool keepsAll() const { return words == nullptr; }
+};
+
 struct DeviceColumnView
 {
     GPUColumnKind kind;

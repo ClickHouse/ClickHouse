@@ -61,7 +61,7 @@ __host__ DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUEle
 __host__ DeviceFixedColumn deviceViewByBits(const cudf::column_view & column, GPUElementType type);
 
 __host__ std::unique_ptr<cudf::table> keptRows(
-    const cudf::table_view & table, const cudf::bitmask_type * mask, cudf::size_type left_out, rmm::device_buffer & all_true, cuda::stream_ref stream);
+    const cudf::table_view & table, DeviceBitmask kept, cudf::size_type left_out, rmm::device_buffer & all_true, cuda::stream_ref stream);
 
 struct DeviceVariableColumnOfCudf
 {

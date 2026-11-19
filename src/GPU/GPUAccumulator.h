@@ -117,7 +117,7 @@ private:
     const std::optional<CompiledGPUExpression> where;
 
     StreamPtr stream;
-    std::unique_ptr<CudfGroupBy> group_by;
+    CudfGroupBy group_by;
     DeviceBuffer kept;
 
     std::optional<size_t> num_groups;

@@ -235,7 +235,7 @@ GPUGroupingLane::GPUGroupingLane(
     , aggregates(aggregatesOrThrow(values.size(), std::move(aggregates_)))
     , where(std::move(where_))
     , stream(createStream())
-    , group_by(createCudfGroupBy(group_keys, values, aggregates, num_parts, cuda::stream_ref{stream.get()}))
+    , group_by(group_keys, values, aggregates, num_parts, cuda::stream_ref{stream.get()})
     , kept(cuda::stream_ref{stream.get()})
 {
     if (where && where->expression.result != GPUExpressionResult::Bitmask)
@@ -264,7 +264,7 @@ void GPUGroupingLane::add(GPUDeviceBatch batch)
     const std::vector<DeviceColumnView> keys(columns.begin(), columns.begin() + num_keys);
     const std::vector<DeviceColumnView> batch_values(columns.begin() + num_keys, columns.begin() + num_keys + num_values);
 
-    const uint32_t * mask = nullptr;
+    DeviceBitmask mask;
     if (where)
     {
         const size_t rows = batch.rows();
@@ -272,10 +272,10 @@ void GPUGroupingLane::add(GPUDeviceBatch batch)
         kept.clear();
         char * const bits = kept.grow(maskBytes(rows));
         evaluateGPUExpression(where->expression, {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, rows, bits, own);
-        mask = reinterpret_cast<const uint32_t *>(bits);
+        mask = {.words = reinterpret_cast<const uint32_t *>(bits), .rows = rows};
     }
 
-    group_by->addBatch(keys, batch_values, mask);
+    group_by.addBatch(keys, batch_values, mask);
 
     ProfileEvents::increment(ProfileEvents::GPUAggregationRows, batch.rows());
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
@@ -285,14 +285,14 @@ void GPUGroupingLane::add(GPUDeviceBatch batch)
 void GPUGroupingLane::absorbPart(const GPUGroupingLane & other, size_t part)
 {
     Stopwatch watch;
-    group_by->absorbPart(*other.group_by, part);
+    group_by.absorbPart(other.group_by, part);
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
 }
 
 size_t GPUGroupingLane::finalize()
 {
     Stopwatch watch;
-    num_groups = group_by->finalize();
+    num_groups = group_by.finalize();
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
     return *num_groups;
 }
@@ -313,9 +313,9 @@ size_t GPUGroupingLane::filterGroups(const CompiledGPUExpression & having, const
     for (const size_t column : columns)
     {
         if (column < group_keys.size())
-            group_columns.push_back(group_by->key(column));
+            group_columns.push_back(group_by.key(column));
         else if (column - group_keys.size() < aggregates.size())
-            group_columns.push_back(group_by->value(column - group_keys.size()));
+            group_columns.push_back(group_by.value(column - group_keys.size()));
         else
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "A `HAVING` over column {} of {} keys and {} aggregates", column, group_keys.size(), aggregates.size());
@@ -324,9 +324,9 @@ size_t GPUGroupingLane::filterGroups(const CompiledGPUExpression & having, const
     const cuda::stream_ref own{stream.get()};
     const std::vector<GPUExpressionInput> inputs = inputsOf(having.expression, group_columns, *num_groups);
     kept.clear();
-    char * const mask = kept.grow(maskBytes(*num_groups));
-    evaluateGPUExpression(having.expression, {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, *num_groups, mask, own);
-    num_groups = group_by->keepGroups(reinterpret_cast<const uint32_t *>(mask));
+    char * const bits = kept.grow(maskBytes(*num_groups));
+    evaluateGPUExpression(having.expression, {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, *num_groups, bits, own);
+    num_groups = group_by.keepGroups({.words = reinterpret_cast<const uint32_t *>(bits), .rows = *num_groups});
     /// The caller holds the kernel only for this call.
     synchronizeStream(own);
 
@@ -361,7 +361,7 @@ void GPUGroupingLane::copyGroupsTo(MutableColumns & key_columns, MutableColumns 
 
     for (size_t i = 0; i < group_keys.size(); ++i)
     {
-        const DeviceColumnView key = group_by->key(i);
+        const DeviceColumnView key = group_by.key(i);
         if (key.rows() != rows)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The device holds {} rows of key {} of {} groups", key.rows(), i, rows);
         from.push_back(key);
@@ -370,7 +370,7 @@ void GPUGroupingLane::copyGroupsTo(MutableColumns & key_columns, MutableColumns 
 
     for (size_t i = 0; i < aggregates.size(); ++i)
     {
-        const DeviceColumnView value = group_by->value(i);
+        const DeviceColumnView value = group_by.value(i);
         if (value.rows() != rows)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The device holds {} rows of aggregate {} of {} groups", value.rows(), i, rows);
         from.push_back(value);

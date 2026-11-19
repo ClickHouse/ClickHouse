@@ -9,33 +9,37 @@
 namespace DB::GPU
 {
 
+namespace cudf_group_by
+{
+class GroupBy;
+}
+
 /// A device `GROUP BY` split by a hash of the keys into parts; of plain types, as both ClickHouse and the cuDF island include it.
 class CudfGroupBy
 {
 public:
-    /// Out of line, so that the vtable is emitted in the island alone.
-    __host__ virtual ~CudfGroupBy();
+    __host__ CudfGroupBy(
+        GPUSpan<GPUElementType> keys, GPUSpan<GPUElementType> values, GPUSpan<GPUGroupByAggregate> aggregates, size_t num_parts, cuda::stream_ref stream);
+    __host__ ~CudfGroupBy();
 
-    /// The columns must stay alive in the order of the stream; `kept` is a device bitmask of the rows to include.
-    virtual void addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values, const uint32_t * kept = nullptr) = 0;
+    CudfGroupBy(const CudfGroupBy &) = delete;
+    CudfGroupBy & operator=(const CudfGroupBy &) = delete;
+
+    /// The columns must stay alive in the order of the stream.
+    __host__ void addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values, DeviceBitmask kept = {});
 
     /// Takes part `part` of `other`, which takes no more batches; several may absorb parts of one `other` at once.
-    virtual void absorbPart(const CudfGroupBy & other, size_t part) = 0;
+    __host__ void absorbPart(const CudfGroupBy & other, size_t part);
 
-    virtual size_t finalize() = 0;
+    __host__ size_t finalize();
 
-    virtual size_t keepGroups(const uint32_t * kept) = 0;
+    __host__ size_t keepGroups(DeviceBitmask kept);
 
-    virtual DeviceColumnView key(size_t index) const = 0;
-    virtual DeviceColumnView value(size_t index) const = 0;
+    __host__ DeviceColumnView key(size_t index) const;
+    __host__ DeviceColumnView value(size_t index) const;
+
+private:
+    cudf_group_by::GroupBy * impl = nullptr;
 };
-
-/// The caller owns the result.
-__host__ CudfGroupBy * createCudfGroupBy(
-    GPUSpan<GPUElementType> keys,
-    GPUSpan<GPUElementType> values,
-    GPUSpan<GPUGroupByAggregate> aggregates,
-    size_t num_parts,
-    cuda::stream_ref stream);
 
 }

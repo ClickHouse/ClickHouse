@@ -59,10 +59,10 @@ constexpr size_t max_rows_to_merge = 1UL << 30;
 
 static_assert(std::is_same_v<cudf::bitmask_type, uint32_t>);
 
-__host__ cudf::column_view withNullMask(const cudf::column_view & column, const cudf::bitmask_type * mask, cudf::size_type null_count)
+__host__ cudf::column_view withNullMask(const cudf::column_view & column, DeviceBitmask kept, cudf::size_type null_count)
 {
     std::vector<cudf::column_view> children(column.child_begin(), column.child_end());
-    return cudf::column_view(column.type(), column.size(), column.head(), mask, null_count, column.offset(), children);
+    return cudf::column_view(column.type(), column.size(), column.head(), kept.words, null_count, column.offset(), children);
 }
 
 /// Widened offsets go into `offsets`, which must outlive the view.
@@ -452,7 +452,7 @@ private:
     size_t rows_grouped = 0;
 };
 
-class GroupBy final : public CudfGroupBy
+class GroupBy
 {
 public:
     __host__ GroupBy(
@@ -475,33 +475,7 @@ public:
     {
     }
 
-    /// What cuDF, rmm and libstdc++ throw does not leave the island: see `guarded`.
-    __host__ void addBatch(GPUSpan<DeviceColumnView> batch_keys, GPUSpan<DeviceColumnView> batch_values, const uint32_t * kept) override
-    {
-        guarded("adding a batch to a `GROUP BY`", [&] { addBatchImpl(batch_keys, batch_values, kept); });
-    }
-
-    __host__ void absorbPart(const CudfGroupBy & other, size_t part) override
-    {
-        guarded("absorbing a part of the groups of a `GROUP BY`", [&] { absorbPartImpl(other, part); });
-    }
-
-    __host__ size_t finalize() override { return guarded("finalizing a `GROUP BY`", [&] { return finalizeImpl(); }); }
-
-    __host__ size_t keepGroups(const uint32_t * kept) override
-    {
-        return guarded("filtering the groups of a `GROUP BY`", [&] { return keepGroupsImpl(kept); });
-    }
-
-    __host__ DeviceColumnView key(size_t index) const override { return guarded("viewing a key of a `GROUP BY`", [&] { return keyImpl(index); }); }
-
-    __host__ DeviceColumnView value(size_t index) const override
-    {
-        return guarded("viewing an aggregate of a `GROUP BY`", [&] { return valueImpl(index); });
-    }
-
-private:
-    __host__ void addBatchImpl(GPUSpan<DeviceColumnView> batch_keys, GPUSpan<DeviceColumnView> batch_values, const uint32_t * kept)
+    __host__ void addBatch(GPUSpan<DeviceColumnView> batch_keys, GPUSpan<DeviceColumnView> batch_values, DeviceBitmask kept)
     {
         if (finalized)
             throwGPUError("a batch after the groups were finalized");
@@ -518,7 +492,7 @@ private:
 
         /// Must live until the batch is aggregated.
         std::unique_ptr<cudf::table> compacted;
-        if (kept && !applyFilter(columns, reinterpret_cast<const cudf::bitmask_type *>(kept), compacted))
+        if (!kept.keepsAll() && !applyFilter(columns, kept, compacted))
             return;
 
         if (strategy == Strategy::Undecided)
@@ -527,36 +501,35 @@ private:
             aggregate(columns);
     }
 
-    __host__ void absorbPartImpl(const CudfGroupBy & other_group_by, size_t part)
+    __host__ void absorbPart(const GroupBy & other, size_t part)
     {
-        const auto * other = dynamic_cast<const GroupBy *>(&other_group_by);
-        if (!other || finalized || parts.size() != 1 || !(partials == other->partials))
+        if (finalized || parts.size() != 1 || !(partials == other.partials))
             throwGPUError("a part of the groups of another `GROUP BY` absorbed into one that cannot take it");
 
         {
-            std::lock_guard lock(other->flushing);
-            other->streaming.flush();
+            std::lock_guard lock(other.flushing);
+            other.streaming.flush();
         }
 
         /// The originals are freed in the order of `other`'s stream, which waits for the copies, on an exception too.
-        waitFor(stream, other->stream);
+        waitFor(stream, other.stream);
         std::vector<std::unique_ptr<cudf::table>> copies;
         try
         {
-            copies = other->parts.copiesOf(part, stream);
+            copies = other.parts.copiesOf(part, stream);
         }
         catch (...)
         {
-            waitFor(other->stream, stream);
+            waitFor(other.stream, stream);
             throw;
         }
-        waitFor(other->stream, stream);
+        waitFor(other.stream, stream);
 
         for (auto & copy : copies)
             parts.add(std::move(copy));
     }
 
-    __host__ size_t finalizeImpl()
+    __host__ size_t finalize()
     {
         if (finalized)
             throwGPUError("the groups were finalized twice");
@@ -567,34 +540,31 @@ private:
         return numGroups();
     }
 
-    __host__ size_t keepGroupsImpl(const uint32_t * kept)
+    __host__ size_t keepGroups(DeviceBitmask kept)
     {
         if (!finalized)
             throwGPUError("the groups were filtered before they were finalized");
         if (numGroups() == 0)
             return 0;
 
-        const auto * mask = reinterpret_cast<const cudf::bitmask_type *>(kept);
-        const cudf::size_type left_out = guarded("counting the groups a filter leaves out", [&]
-        {
-            return cudf::null_count(mask, 0, groups->num_rows(), stream);
-        });
+        const cudf::size_type left_out = leftOut(kept, groups->num_rows());
         if (left_out != 0)
-            groups = keptRows(groups->view(), mask, left_out, all_true, stream);
+            groups = keptRows(groups->view(), kept, left_out, all_true, stream);
         return numGroups();
     }
 
-    __host__ DeviceColumnView keyImpl(size_t index) const
+    __host__ DeviceColumnView key(size_t index) const
     {
         return viewOf(groups.get(), index, keys[index], widened_offsets[index], stream);
     }
 
-    __host__ DeviceColumnView valueImpl(size_t index) const
+    __host__ DeviceColumnView value(size_t index) const
     {
         const size_t column = keys.size() + index;
         return viewOf(groups.get(), column, aggregates[index].result_type, widened_offsets[column], stream);
     }
 
+private:
     enum class Strategy
     {
         Undecided,
@@ -615,12 +585,19 @@ private:
         return cudf::column_view(cudf::data_type{cudf::type_id::INT8}, static_cast<cudf::size_type>(rows), keyless_key.data(), nullptr, 0);
     }
 
-    /// Leaves out the rows that `mask` does not keep, by compacting the columns into `compacted` or by nulls in the first key.
+    __host__ cudf::size_type leftOut(DeviceBitmask kept, cudf::size_type rows) const
+    {
+        if (kept.rows != static_cast<size_t>(rows))
+            throwGPUError(("a filter of " + std::to_string(kept.rows) + " rows over " + std::to_string(rows)).c_str());
+        return cudf::null_count(kept.words, 0, rows, stream);
+    }
+
+    /// Leaves out the rows that `kept` does not keep, by compacting the columns into `compacted` or by nulls in the first key.
     /// Sorted runs are always compacted, as cuDF sorts keys with nulls whatever it is told. Returns whether any row is kept.
-    __host__ bool applyFilter(std::vector<cudf::column_view> & columns, const cudf::bitmask_type * mask, std::unique_ptr<cudf::table> & compacted)
+    __host__ bool applyFilter(std::vector<cudf::column_view> & columns, DeviceBitmask kept, std::unique_ptr<cudf::table> & compacted)
     {
         const cudf::size_type rows = columns[0].size();
-        const cudf::size_type left_out = guarded("counting the rows a filter leaves out", [&] { return cudf::null_count(mask, 0, rows, stream); });
+        const cudf::size_type left_out = leftOut(kept, rows);
         if (left_out == rows)
             return false;
         if (left_out == 0)
@@ -629,13 +606,13 @@ private:
         const bool sorted_runs = strategy == Strategy::Undecided || strategy == Strategy::SortedRuns;
         if (sorted_runs || static_cast<double>(left_out) >= min_left_out_share_to_compact * static_cast<double>(rows))
         {
-            compacted = keptRows(cudf::table_view(columns), mask, left_out, all_true, stream);
+            compacted = keptRows(cudf::table_view(columns), kept, left_out, all_true, stream);
             const cudf::table_view kept_rows = compacted->view();
             columns.assign(kept_rows.begin(), kept_rows.end());
         }
         else
         {
-            columns[0] = withNullMask(columns[0], mask, left_out);
+            columns[0] = withNullMask(columns[0], kept, left_out);
         }
         return true;
     }
@@ -700,9 +677,7 @@ private:
 
 }
 
-__host__ CudfGroupBy::~CudfGroupBy() = default;
-
-__host__ CudfGroupBy * createCudfGroupBy(
+__host__ CudfGroupBy::CudfGroupBy(
     GPUSpan<GPUElementType> keys, GPUSpan<GPUElementType> values, GPUSpan<GPUGroupByAggregate> aggregates, size_t num_parts, cuda::stream_ref stream)
 {
     if (stream.get() == cudaStreamLegacy || stream.get() == nullptr)
@@ -716,7 +691,44 @@ __host__ CudfGroupBy * createCudfGroupBy(
         if ((aggregate.aggregation == GPUAggregationKind::Count) != (aggregate.column == GPUGroupByAggregate::no_column))
             throwGPUError("a `count` of a column, or another aggregate of none");
     }
-    return guarded("making a `GROUP BY`", [&] { return new cudf_group_by::GroupBy(keys, values, aggregates, num_parts, stream); });
+    impl = guarded("making a `GROUP BY`", [&] { return new cudf_group_by::GroupBy(keys, values, aggregates, num_parts, stream); });
+}
+
+__host__ CudfGroupBy::~CudfGroupBy()
+{
+    delete impl;
+}
+
+/// What cuDF, rmm and libstdc++ throw does not leave the island, see `guarded`.
+
+__host__ void CudfGroupBy::addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values, DeviceBitmask kept)
+{
+    guarded("adding a batch to a `GROUP BY`", [&] { impl->addBatch(keys, values, kept); });
+}
+
+__host__ void CudfGroupBy::absorbPart(const CudfGroupBy & other, size_t part)
+{
+    guarded("absorbing a part of the groups of a `GROUP BY`", [&] { impl->absorbPart(*other.impl, part); });
+}
+
+__host__ size_t CudfGroupBy::finalize()
+{
+    return guarded("finalizing a `GROUP BY`", [&] { return impl->finalize(); });
+}
+
+__host__ size_t CudfGroupBy::keepGroups(DeviceBitmask kept)
+{
+    return guarded("filtering the groups of a `GROUP BY`", [&] { return impl->keepGroups(kept); });
+}
+
+__host__ DeviceColumnView CudfGroupBy::key(size_t index) const
+{
+    return guarded("viewing a key of a `GROUP BY`", [&] { return impl->key(index); });
+}
+
+__host__ DeviceColumnView CudfGroupBy::value(size_t index) const
+{
+    return guarded("viewing an aggregate of a `GROUP BY`", [&] { return impl->value(index); });
 }
 
 }
