@@ -2500,8 +2500,8 @@ def test_rabbitmq_detach_after_failed_truncate_keeps_queue(rabbitmq_cluster, db,
 
 
 def test_rabbitmq_drop_table_deletes_all_queues(rabbitmq_cluster, db, unique):
-    # With several queues DROP TABLE must delete every one of them, not only the first.
-    num_queues = 4
+    # DROP TABLE must delete every queue of the table and stop waiting once the last deletion has answered.
+    num_queues = 10
     queue_base = f"{unique}_drop_all"
     instance.query(
         f"""
@@ -2538,6 +2538,12 @@ def test_rabbitmq_drop_table_deletes_all_queues(rabbitmq_cluster, db, unique):
         assert time.monotonic() < deadline, "the table did not declare all its queues"
         time.sleep(0.5)
 
+    # Counted from here, so that a repeated run of this test on the same server does not see older lines.
+    logger = f"StorageRabbitMQ ({db}.rabbitmq_drop_all)"
+    deleted = f"{logger}: Successfully deleted queue"
+    timed_out = f"{logger}: Timed out waiting for queue cleanup"
+    deleted_before, timed_out_before = int(instance.count_in_log(deleted)), int(instance.count_in_log(timed_out))
+
     instance.query(f"DROP TABLE {db}.rabbitmq_drop_all")
 
     deadline = time.monotonic() + 30
@@ -2545,6 +2551,10 @@ def test_rabbitmq_drop_table_deletes_all_queues(rabbitmq_cluster, db, unique):
         assert time.monotonic() < deadline, f"queues still exist 30 s after DROP TABLE: {left}"
         time.sleep(0.5)
     connection.close()
+
+    # The loop must stop on the last answer, not on its timeout.
+    assert int(instance.count_in_log(deleted)) - deleted_before == num_queues
+    assert int(instance.count_in_log(timed_out)) == timed_out_before
 
 
 def test_rabbitmq_queue_settings(rabbitmq_cluster, db, unique):
