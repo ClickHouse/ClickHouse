@@ -1366,6 +1366,7 @@ def test_url_reconnect_in_the_middle(started_cluster):
     assert instance.contains_in_log(
         f"{query_id}.*Using ParallelReadBuffer with 4 workers with chunks of 2097152 bytes"
     )
+    assert instance.contains_in_log(f"{query_id}.*Parallel reading is used")
     assert instance.contains_in_log(f"{query_id}.*Unexpected EOF")
 
 
