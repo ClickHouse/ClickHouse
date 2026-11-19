@@ -469,7 +469,9 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
 
 bool tryMoveFilterToPrewhere(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 {
-    while (tryMergeExpressions(&node, nodes, {}) || tryMergeFilters(&node, nodes, {}))
+    /// Of the filters only the `WHERE` of the query of a view is merged. A row policy or an additional filter must see the rows first.
+    auto is_child_where = [&] { return node.children.size() == 1 && node.children.front()->step->getStepDescription() == "WHERE"; };
+    while (tryMergeExpressions(&node, nodes, {}) || (is_child_where() && tryMergeFilters(&node, nodes, {})))
     {
     }
 

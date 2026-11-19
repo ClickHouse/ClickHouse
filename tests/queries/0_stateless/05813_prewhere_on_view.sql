@@ -115,11 +115,17 @@ SELECT count() FROM v_prewhere_all PREWHERE blockSize() > 5; -- { serverError IL
 CREATE VIEW v_prewhere_none SQL SECURITY NONE AS SELECT * FROM t_prewhere_view WHERE b > 10;
 SELECT count() FROM v_prewhere_none PREWHERE a < 10; -- { serverError ILLEGAL_PREWHERE }
 
--- The condition must not see the rows that a row policy on the view hides.
+-- The condition must not see the rows that a row policy on the view hides, also when another view reads that view.
 DROP ROW POLICY IF EXISTS p_prewhere_view ON v_prewhere_all;
+DROP ROW POLICY IF EXISTS p_prewhere_view ON v_prewhere_columns;
 CREATE ROW POLICY p_prewhere_view ON v_prewhere_all USING a < 50 TO ALL;
+CREATE ROW POLICY p_prewhere_view ON v_prewhere_columns USING x < 50 TO ALL;
 SELECT count() FROM v_prewhere_all PREWHERE a < 10; -- { serverError ILLEGAL_PREWHERE }
+SELECT count() FROM v_prewhere_of_view PREWHERE y >= 50; -- { serverError ILLEGAL_PREWHERE }
 DROP ROW POLICY p_prewhere_view ON v_prewhere_all;
+DROP ROW POLICY p_prewhere_view ON v_prewhere_columns;
+-- The same for a filter of `additional_table_filters` on the table of the view.
+SELECT count() FROM v_prewhere_all PREWHERE a < 10 SETTINGS additional_table_filters = {'t_prewhere_view': 'a < 5'}; -- { serverError ILLEGAL_PREWHERE }
 
 DROP VIEW v_prewhere_all;
 DROP VIEW v_prewhere_columns;
