@@ -1,4 +1,0 @@
-= a filter with a non-deterministic lambda body is not cached =
-0
-= the same filter with a deterministic lambda body is cached =
-1

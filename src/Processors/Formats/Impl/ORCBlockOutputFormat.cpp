@@ -116,12 +116,7 @@ ORCBlockOutputFormat::ORCBlockOutputFormat(WriteBuffer & out_, SharedHeader head
 std::unique_ptr<ORC::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & type, const String & column_path)
 {
     /// Nullable(T) maps to the same ORC node as T; only the Iceberg `required` flag differs.
-    /// A complex container (list/map/struct) is never wrapped in Nullable, so its Iceberg
-    /// optionality is not recoverable from the type: consult the per-path Iceberg metadata when
-    /// present, else fall back to the type (also for non-Iceberg writes and field-id-only mappers).
     bool required = !type->isNullable();
-    if (column_mapper && column_mapper->hasIcebergRequiredInfo())
-        required = !column_mapper->isIcebergOptionalPath(column_path);
     const DataTypePtr unwrapped = removeNullable(type);
 
     std::unique_ptr<ORC::Type> result;
@@ -192,11 +187,7 @@ std::unique_ptr<ORC::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
             break;
         case TypeIndex::String:
         {
-            /// Iceberg `string` and `binary` both read as DataTypeString; force ORC `string` only
-            /// for genuine `string` paths, else fall back to the setting (also for non-Iceberg writes).
             bool force_string = format_settings.orc.output_string_as_string;
-            if (column_mapper && column_mapper->hasIcebergStringInfo())
-                force_string = column_mapper->isIcebergStringPath(column_path);
             result = ORC::Type::createPrimitiveType(force_string ? ORC::TypeKind::STRING : ORC::TypeKind::BINARY);
             break;
         }
@@ -359,10 +350,9 @@ void registerOutputFormatORC(FormatFactory & factory)
             WriteBuffer & buf,
             const Block & sample,
             const FormatSettings & format_settings,
-            FormatFilterInfoPtr format_filter_info)
+            FormatFilterInfoPtr /*format_filter_info*/)
     {
-        ColumnMapperPtr column_mapper = format_filter_info ? format_filter_info->column_mapper : nullptr;
-        return std::make_shared<ORCBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings, column_mapper);
+        return std::make_shared<ORCBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings);
     });
     factory.markFormatHasNoAppendSupport("ORC");
     factory.markOutputFormatPrefersLargeBlocks("ORC");

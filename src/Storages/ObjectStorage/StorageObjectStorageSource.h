@@ -1,95 +1,21 @@
 #pragma once
-
-#include <future>
-#include <mutex>
 #include <optional>
 #include <Common/re2.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
-#include <IO/Archives/ArchiveEntryPositions.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatFilterInfo.h>
-
 namespace DB
 {
 
 class SchemaCache;
 
-struct LazyObjectStorageFileRegistry;
-using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
-class QueryStatus;
-
-/// The query condition cache key of a TopN (`ORDER BY ... LIMIT n`) read. Which row groups of a file
-/// the TopN filter lets through depends on the running threshold, which is established from the rows
-/// of *every* file the query reads, so the key covers the TopK plan, the predicate and the set of files
-/// (see `ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey`). For a data lake, the snapshot
-/// identifies the set of files, as the data files are never modified in place. For plain object
-/// storage, the key covers the ETags of all objects, which are known only once they are listed, see
-/// `ObjectIteratorListingAllForTopKQueryConditionCache`.
-struct ObjectStorageTopKQueryConditionCacheKey
-{
-    /// Unset while the objects are not listed yet, and if they turn out not to be suitable for the key.
-    /// It is assigned before the iterator returns the first object, so a source reading it after having
-    /// received an object sees its final value.
-    std::optional<UInt64> condition_hash;
-    /// The hash of the TopK plan and the predicate, to which the hash of the set of files is added.
-    UInt64 condition_hash_without_files = 0;
-    /// A printable description of the key for `system.query_condition_cache`.
-    String condition;
-    /// The filter info to read a file that uses the key with: the one of the query, but with
-    /// `FormatTopKFilterInfo::track_row_group_best_values`.
-    FormatFilterInfoPtr format_filter_info_tracking_best_values;
-};
-using ObjectStorageTopKQueryConditionCacheKeyPtr = std::shared_ptr<const ObjectStorageTopKQueryConditionCacheKey>;
-
-/// Plain object storage: lists all objects of the query before returning the first one, to make the
-/// TopK query condition cache key from their ETags (see `ObjectStorageTopKQueryConditionCacheKey`).
-/// The objects are listed on the first call of `next`, which happens when the pipeline already runs:
-/// some iterators apply a `_path` / `_file` filter only then. A TopN read reads all objects anyway, so
-/// listing them first costs no extra requests.
-class ObjectIteratorListingAllForTopKQueryConditionCache : public IObjectIterator
-{
-public:
-    /// `query_status_` (if any) is checked between the objects listed ahead, as each of them may take a request.
-    ObjectIteratorListingAllForTopKQueryConditionCache(
-        ObjectIterator iterator_,
-        std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> key_,
-        std::shared_ptr<QueryStatus> query_status_);
-
-    ObjectInfoPtr next(size_t processor) override;
-    size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
-    std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
-
-    void setEmitProfileEvents(bool value) override
-    {
-        emit_profile_events = value;
-        iterator->setEmitProfileEvents(value);
-    }
-
-    /// With more objects, the key is not made, so as not to keep all of them in memory.
-    static constexpr size_t MAX_OBJECTS = 100000;
-
-private:
-    void listObjects(size_t processor);
-
-    const ObjectIterator iterator;
-    const std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> key;
-    const std::shared_ptr<QueryStatus> query_status;
-
-    std::once_flag listed;
-    std::exception_ptr listing_exception;
-    ObjectInfos objects;
-    /// Whether `objects` are all objects of the query. Otherwise the rest comes from `iterator`.
-    bool listed_all = false;
-    std::atomic<size_t> index = 0;
-};
-
-class StorageObjectStorageSource final : public ISource
+class StorageObjectStorageSource : public ISource
 {
     friend class ObjectStorageQueueSource;
 
@@ -100,7 +26,6 @@ public:
     class ArchiveIterator;
 
     StorageObjectStorageSource(
-        const StorageID & storage_id_,
         String name_,
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration,
@@ -112,9 +37,7 @@ public:
         std::shared_ptr<IObjectIterator> file_iterator_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         FormatFilterInfoPtr format_filter_info_,
-        bool need_only_count_,
-        LazyObjectStorageFileRegistryPtr lazy_row_index_registry_ = nullptr,
-        ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr);
+        bool need_only_count_);
 
     ~StorageObjectStorageSource() override;
 
@@ -122,7 +45,7 @@ public:
 
     Chunk generate() override;
 
-    void onFinish() override;
+    void onFinish() override { parser_shared_resources->finishStream(); }
 
     static std::shared_ptr<IObjectIterator> createFileIterator(
         StorageObjectStorageConfigurationPtr configuration,
@@ -141,28 +64,10 @@ public:
         bool skip_object_metadata = false,
         bool with_tags = false);
 
-    /// For a data lake configuration, returns the metadata with `datalake_table_state` set: the given
-    /// one if it already has the state, otherwise a copy with the current snapshot of the table.
-    static StorageMetadataPtr ensureDataLakeTableState(
-        const StorageObjectStorageConfiguration & configuration, StorageMetadataPtr storage_metadata, const ContextPtr & local_context);
-
     static std::string getUniqueStoragePathIdentifier(
         const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);
 
-    static std::optional<ObjectMetadata> tryMakeObjectMetadataFromTableRecords(
-        const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, const StorageID & storage_id);
-
-    /// Compose the Query Condition Cache key (`part_name`) for an object, or return nullopt when the
-    /// object cannot be safely cached and caching must be skipped (fail-close). Exposed for testing:
-    /// the safety-critical contract is that a weak etag (e.g. HDFS) never keys the cache.
-    static std::optional<String> makeQueryConditionCacheKey(
-        const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, const UUID & table_uuid);
-    /// The key for a table with a UUID, from the path of the object within its storage.
-    static std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake);
-    static std::optional<String> makeQueryConditionCacheKey(const String & identifier, const ObjectInfo & object_info, bool is_data_lake);
-
 protected:
-    StorageID storage_id;
     const String name;
     ObjectStoragePtr object_storage;
     const StorageObjectStorageConfigurationPtr configuration;
@@ -173,22 +78,6 @@ protected:
     const bool need_only_count;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
-    /// The `table_id` of the query condition cache entries (see `QueryConditionCache::getTableIdForFileEntries`).
-    UUID query_condition_cache_table_id = UUIDHelpers::Nil;
-    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key;
-
-    /// A file read by a TopN read, whose query condition cache entry is written only when the source
-    /// is destroyed: the row groups without a row of the result are known only once the threshold is
-    /// final, and while the file is read, its rows may still wait for the sorting transforms.
-    struct PendingTopKQueryConditionCacheEntry
-    {
-        String cache_file_key;
-        size_t total_row_groups = 0;
-        std::vector<size_t> matched_row_groups;
-        /// The best value of the sort column in each matched row group, see `IInputFormat::getTopKBestValuesOfBuckets`.
-        std::vector<std::pair<size_t, Field>> best_values;
-    };
-    std::vector<PendingTopKQueryConditionCacheEntry> pending_top_k_query_condition_cache_entries;
 
     ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
@@ -219,15 +108,7 @@ protected:
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
 
         ObjectInfoPtr getObjectInfo() const { return object_info; }
-
-        /// Whether the file is read as a whole (not as a bucket the iterator split it into), so it may
-        /// consult and populate `top_k_query_condition_cache_key`.
-        bool use_top_k_query_condition_cache_key = false;
-        /// Whether the entries under `top_k_query_condition_cache_key` made the file skip row groups that
-        /// the entries of the predicate alone did not.
-        bool skipped_row_groups_by_top_k_entry = false;
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
-        ReadBuffer * readBuffer() const { return read_buf.get(); }
 
     private:
         ObjectInfoPtr object_info;
@@ -241,18 +122,9 @@ protected:
     ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
 
-    /// Lazy materialization: when set, a `__global_row_index` column is appended to every chunk
-    /// (the header must contain it), and every file is registered in the registry so that the
-    /// lazy branch can find it by index. See LazilyReadFromObjectStorage.
-    LazyObjectStorageFileRegistryPtr lazy_row_index_registry;
-    /// The registry index of the file the current `reader` reads. Assigned on the first chunk.
-    std::optional<UInt64> current_file_index;
-
     /// Recreate ReadBuffer and Pipeline for each file.
     static ReaderHolder createReader(
         size_t processor,
-        const StorageID & storage_id,
-        const UUID & query_condition_cache_table_id,
         const std::shared_ptr<IObjectIterator> & file_iterator,
         const StorageObjectStorageConfigurationPtr & configuration,
         const ObjectStoragePtr & object_storage,
@@ -265,20 +137,13 @@ protected:
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
         bool need_only_count,
-        ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key = nullptr,
         bool prefetch_input_format = false);
 
     ReaderHolder createReader(bool prefetch_input_format = false);
 
-    /// Writes `pending_top_k_query_condition_cache_entries` to the query condition cache.
-    void writePendingTopKQueryConditionCacheEntries();
-
     std::future<ReaderHolder> createReaderAsync();
 
     void addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows);
-    /// Add the number of rows of the object recorded in the table metadata (e.g. `record_count` of an
-    /// Iceberg data file) to the total number of rows to read, so that the progress of the query is known.
-    void addTotalRowsApproxFromMetadata(const ObjectInfo & object_info);
     void lazyInitialize();
 };
 
@@ -297,11 +162,7 @@ public:
     size_t estimatedKeysCount() override { return buffer.size(); }
 
 private:
-    ObjectInfoPtr createObjectInfoInArchive(
-        const std::string & path_to_archive,
-        const std::string & path_in_archive,
-        std::optional<size_t> read_source_index,
-        std::optional<size_t> archive_entry_index);
+    ObjectInfoPtr createObjectInfoInArchive(const std::string & path_to_archive, const std::string & path_in_archive);
 
     ClusterFunctionReadTaskCallback callback;
     ObjectInfos buffer;
@@ -355,7 +216,6 @@ private:
     ExpressionActionsPtr filter_expr;
     ObjectStorageIteratorPtr object_storage_iterator;
     bool recursive{false};
-    bool match_web_paths_only{false};
     std::vector<String> expanded_keys;
     std::vector<String>::iterator expanded_keys_iter;
 
@@ -384,12 +244,7 @@ public:
         bool ignore_non_existent_files_,
         bool skip_object_metadata_,
         bool with_tags_,
-        std::function<void(FileProgress)> file_progress_callback = {},
-        ExpressionActionsPtr deferred_filter_actions_ = {},
-        NamesAndTypesList hive_columns_ = {},
-        String object_namespace_ = {},
-        ContextPtr context_ = {},
-        String archive_member_path_ = {});
+        std::function<void(FileProgress)> file_progress_callback = {});
 
     ~KeysIterator() override = default;
 
@@ -406,17 +261,6 @@ private:
     const bool ignore_non_existent_files;
     const bool skip_object_metadata;
     const bool with_tags;
-
-    /// A `_path` / `_file` filter that could not be applied when the iterator was created, because a set
-    /// in it was not ready yet (see `createFileIterator`). It is applied in `next`, when the pipeline
-    /// already runs and the set is ready, before the object metadata is fetched.
-    const ExpressionActionsPtr deferred_filter_actions;
-    const NamesAndTypesList hive_columns;
-    const String object_namespace;
-    const ContextPtr context;
-    /// A known archive member is part of the user-visible `_path` / `_file` value, although the
-    /// iterator itself must fetch the outer archive object.
-    const String archive_member_path;
 };
 
 /*
@@ -457,10 +301,7 @@ public:
             ObjectInfoPtr archive_object_,
             const std::string & path_in_archive_,
             std::shared_ptr<IArchiveReader> archive_reader_,
-            IArchiveReader::FileInfo && file_info_,
-            std::optional<size_t> archive_entry_index_);
-
-        std::unique_ptr<ReadBufferFromFileBase> readFile() const;
+            IArchiveReader::FileInfo && file_info_);
 
         std::string getFileName() const override
         {
@@ -480,8 +321,6 @@ public:
         bool isArchive() const override { return true; }
 
         size_t fileSizeInArchive() const override { return file_info.uncompressed_size; }
-
-        std::shared_ptr<ObjectInfo> clone() const override { return std::make_shared<ObjectInfoInArchive>(*this); }
 
         const ObjectInfoPtr archive_object;
         const std::string path_in_archive;
@@ -509,7 +348,6 @@ private:
     std::shared_ptr<IArchiveReader> archive_reader;
     /// File enumerator inside the archive.
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
-    ArchiveEntryPositions entry_positions;
 
     bool ignore_archive_globs;
 

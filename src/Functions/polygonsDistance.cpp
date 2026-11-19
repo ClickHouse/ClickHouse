@@ -26,7 +26,7 @@ namespace
 {
 
 template <typename Point>
-class FunctionPolygonsDistance final : public IFunction
+class FunctionPolygonsDistance : public IFunction
 {
 public:
     static inline const char * name;
@@ -53,9 +53,9 @@ public:
         return 2;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        return "(Any, Any) -> Float64";
+        return std::make_shared<DataTypeFloat64>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -83,12 +83,15 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be Point", getName());
             else
             {
-                CorrectedGeometries<LeftConverter> first(arguments[0].column);
-                CorrectedGeometries<RightConverter> second(arguments[1].column);
+                auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
+                auto second = RightConverter::convert(arguments[1].column->convertToFullColumnIfConst());
 
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    res_data.emplace_back(boost::geometry::distance(first.get(i), second.get(i)));
+                    boost::geometry::correct(first[i]);
+                    boost::geometry::correct(second[i]);
+
+                    res_data.emplace_back(boost::geometry::distance(first[i], second[i]));
                 }
             }
         });
@@ -158,7 +161,7 @@ Using this type of coordinate system speeds up execution, but of course is not p
 SELECT polygonsDistanceSpherical([[[(0, 0), (0, 0.1), (0.1, 0.1), (0.1, 0)]]], [[[(10., 10.), (10., 40.), (40., 40.), (40., 10.), (10., 10.)]]])
         )",
         R"(
-0.24372872211133823
+0.24372872211133834
         )"
     }
     };

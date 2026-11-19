@@ -1,12 +1,7 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Core/LogsLevel.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/defines.h>
-#include <Common/ConcurrentBoundedQueue.h>
-#include <Common/IThrottler.h>
-#include <Common/FiberLocal.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Scheduler/ResourceLink.h>
 
 #include <memory>
@@ -28,25 +23,6 @@ class QueryStatus;
 struct Progress;
 class InternalTextLogsQueue;
 
-class ThreadStatus;
-class ThreadGroup;
-class ResourceSchedulingContext;
-class MemoryPressureMonitor;
-using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
-using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
-using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue>;
-
-/**
- * We use **constinit** here to tell the compiler the current_thread variable is initialized.
- * If we didn't help the compiler, then it would most likely add a check before every use of the variable to initialize it if needed.
- * Instead it will trust that we are doing the right thing (and we do initialize it to nullptr) and emit more optimal code.
- * This is noticeable in functions like CurrentMemoryTracker::free and CurrentMemoryTracker::allocImpl
- * See also:
- * - https://en.cppreference.com/w/cpp/language/constinit
- * - https://github.com/ClickHouse/ClickHouse/pull/40078
- */
-extern constinit FiberLocal<ThreadStatus *, FiberLocalSlot::CURRENT_THREAD> current_thread;
-
 /** Collection of static methods to work with thread-local objects.
   * Allows to attach and detach query/process (thread group) to a thread
   * (to calculate query-related metrics and to allow to obtain query-related data from a thread).
@@ -65,6 +41,7 @@ public:
     static ThreadGroupPtr getGroup();
 
     /// MemoryTracker for user that owns current thread if any
+    static MemoryTracker * getUserMemoryTracker();
 
     /// Adjust counters in MemoryTracker hierarchy if untracked_memory is not 0.
     static void flushUntrackedMemory();
@@ -73,22 +50,6 @@ public:
     static void attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
                                             LogsLevel client_logs_level);
     static std::shared_ptr<InternalTextLogsQueue> getInternalTextLogsQueue();
-
-    /// Hides the log records of the current thread from the client while alive: detaches the
-    /// internal text logs queue (`send_logs_level`) of the current thread and of its thread group,
-    /// and restores it on exit, so a thread attaching to the group within the scope stays detached
-    /// too. The records still reach the server-side logs. For sections whose diagnostics may carry
-    /// data the client's user has no right to see.
-    struct HideLogsFromClientScope : private boost::noncopyable
-    {
-        HideLogsFromClientScope();
-        ~HideLogsFromClientScope();
-
-    private:
-        std::shared_ptr<InternalTextLogsQueue> logs_queue_to_restore;
-        LogsLevel client_logs_level_to_restore = LogsLevel::none;
-        bool restore = false;
-    };
 
     static void attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & queue);
     static InternalProfileEventsQueuePtr getInternalProfileEventsQueue();
@@ -100,10 +61,12 @@ public:
     static void updatePerformanceCountersIfNeeded();
 
     static ProfileEvents::Counters & getProfileEvents();
-    static MemoryTracker * getMemoryTracker();
-
-    /// The current query's memory-pressure monitor when in a thread group, else the global monitor.
-    static MemoryPressureMonitor & getMemoryPressureMonitor();
+    inline ALWAYS_INLINE static MemoryTracker * getMemoryTracker()
+    {
+        if (!current_thread) [[unlikely]]
+            return nullptr;
+        return &current_thread->memory_tracker;
+    }
 
     /// Update read and write rows (bytes) statistics (used in system.query_thread_log)
     static void updateProgressIn(const Progress & value);
@@ -127,10 +90,6 @@ public:
     static ContextPtr tryGetQueryContext();
 
     static std::string_view getQueryId();
-
-    /// Throws the real cancellation cause of the current query (`TIMEOUT_EXCEEDED`, or an exception
-    /// stored by `QueryStatus::cancelQuery`) if it has been cancelled. No-op otherwise.
-    static void checkIfNotCancelled();
 
     // For IO Scheduling
     static void attachReadResource(ResourceLink link);
