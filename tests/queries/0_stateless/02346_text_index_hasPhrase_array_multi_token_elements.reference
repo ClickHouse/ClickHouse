@@ -1,0 +1,51 @@
+quick brown fox
+[1,3,6,7]
+[1,3,6,7]
+[1,3,6,7]
+brown fox
+[1,2,3,4,6,7]
+[1,2,3,4,6,7]
+[1,2,3,4,6,7]
+fox quick, the last token of an element before the first of the same element
+[5]
+[5]
+[5]
+fox jumps, adjacent only across elements in row 1
+[7]
+[7]
+[7]
+quick brown fox jumps over, longer than any element
+[]
+[]
+[]
+Array phrase of single tokens
+[1,3,6,7]
+[1,3,6,7]
+[1,3,6,7]
+Array phrase with an entry of two tokens, taken verbatim as one token
+[]
+[]
+[]
+Array phrase with one entry of three tokens
+[]
+[]
+[]
+the array tokenizer matches a whole element
+[3,6,7]
+[]
+quick brown fox with a postprocessor
+[1,3]
+[1,3]
+[1,3]
+brown fox with a postprocessor
+[1,2,3]
+[1,2,3]
+[1,2,3]
+Array phrase of single tokens with a postprocessor
+[1,3]
+[1,3]
+[1,3]
+Array phrase with an entry of two tokens with a postprocessor
+[]
+[]
+[]
