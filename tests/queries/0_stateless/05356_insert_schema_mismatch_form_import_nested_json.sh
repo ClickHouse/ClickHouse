@@ -8,6 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # destination only in the `JSONEachRowRowInputFormat` family. `FormRowInputFormat::readField` looks
 # field names up exactly regardless of that setting, so for `Form` the schema-mismatch diagnostic must
 # still explain a genuine mismatch when the setting is enabled and the destination has `Nested` columns.
+# The text `abc` for the `UInt8` column `x` is such a mismatch: it is inferred as a string.
 
 PHRASE="does not match the structure expected by the query"
 
@@ -21,7 +22,7 @@ run() {
 }
 
 echo "-- Form: a mismatch is explained with input_format_import_nested_json disabled"
-run 'n=%7B%22i%22%3A%5B1%5D%7D&x=1.5' 0
+run 'n=%7B%22i%22%3A%5B1%5D%7D&x=abc' 0
 
 echo "-- Form: a mismatch is explained with input_format_import_nested_json enabled"
-run 'n=%7B%22i%22%3A%5B1%5D%7D&x=1.5' 1
+run 'n=%7B%22i%22%3A%5B1%5D%7D&x=abc' 1
