@@ -5349,7 +5349,26 @@ void Changelog::backgroundChangelogOperationsThread()
                 try
                 {
                     /// A failed move is logged, and the changelog stays where it is.
-                    std::ignore = moveChangelogBetweenDisks(changelog->disk, changelog, move_operation->new_disk, move_operation->new_path, keeper_context);
+                    const auto move_result
+                        = moveChangelogBetweenDisks(changelog->disk, changelog, move_operation->new_disk, move_operation->new_path, keeper_context);
+                    /// Unless the destination was published, it must not survive: it may be complete and
+                    /// match its move marker, and the changelog that stays at the source can be rewritten
+                    /// by `writeAt` before the next move, so restart would select the stale destination
+                    /// and restore the overwritten entries. `writeAt` waits for this operation before
+                    /// appending to the changelog, and a failure to remove the destination is reported
+                    /// to it as a failure of the operation.
+                    if (!move_result && move_result.error() != KeeperMoveError::DestinationPublishedSourceRemovalFailed
+                        && changelog->withReadLock([&] { return changelog->disk != move_operation->new_disk; }))
+                    {
+                        LOG_WARNING(
+                            log,
+                            "Removing unpublished copy {} of changelog {} from disk {} after a failed move",
+                            move_operation->new_path,
+                            changelog->getPathSafe(),
+                            move_operation->new_disk->getName());
+                        /// A leftover move marker without its destination is an orphan that startup removes.
+                        removeKeeperFileIfExists(move_operation->new_disk, move_operation->new_path);
+                    }
                 }
                 catch (...)
                 {

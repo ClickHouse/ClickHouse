@@ -262,6 +262,28 @@ private:
     };
 };
 
+/// Fails `getFileSize` of a changelog a given number of times, so a move that completed the copy
+/// fails to validate its destination.
+class ChangelogSizeFailingDisk final : public DB::DiskLocal
+{
+public:
+    using DB::DiskLocal::DiskLocal;
+
+    size_t getFileSize(const String & path) const override
+    {
+        if (path.starts_with("changelog_") && remaining_failures > 0)
+        {
+            --remaining_failures;
+            ++failed_size_requests;
+            throw std::runtime_error("injected changelog size request failure");
+        }
+        return DB::DiskLocal::getFileSize(path);
+    }
+
+    mutable std::atomic<size_t> remaining_failures{0};
+    mutable std::atomic<size_t> failed_size_requests{0};
+};
+
 }
 
 
@@ -5947,3 +5969,48 @@ TYPED_TEST(CoordinationChangelogTest, StartupAfterEmptyChangelogOnObjectStorageS
 }
 
 #endif
+
+TYPED_TEST(CoordinationChangelogTest, FailedBackgroundMoveRemovesUnpublishedDestinationBeforeRewrite)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the move failure behavior is independent of compression";
+
+    ChangelogDirTest regular("./logs_failed_background_move_regular");
+    ChangelogDirTest latest("./logs_failed_background_move_latest");
+    auto regular_disk = std::make_shared<ChangelogSizeFailingDisk>("regular", regular.path);
+    DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("latest", latest.path);
+    const DB::LogFileSettings log_file_settings{
+        .force_sync = false,
+        .compress_logs = false,
+        .rotate_interval = 5,
+        .startup_read_max_streams = 4,
+    };
+    constexpr std::string_view path = "changelog_1_5.bin";
+
+    this->keeper_context->setLogDisk(regular_disk);
+    this->keeper_context->setLatestLogDisk(latest_disk);
+    {
+        DB::Changelog changelog(this->log, log_file_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        changelog.readChangelogAndInitWriter(0, 0);
+
+        /// The rotation after entry 5 copies the changelog to the regular disk, but the validation
+        /// of the copy fails, so the changelog stays on the latest disk.
+        regular_disk->remaining_failures = 1;
+        for (uint64_t index = 1; index <= 6; ++index)
+            changelog.appendEntry(index, getLogEntry("entry_" + std::to_string(index), 1));
+        changelog.flush();
+
+        /// `writeAt` waits for the failed move, which must remove the complete copy that matches its
+        /// move marker: it would restore the rewritten entries on restart.
+        changelog.writeAt(3, getLogEntry("rewritten_3", 2));
+        changelog.flush();
+        EXPECT_EQ(regular_disk->failed_size_requests.load(), 1);
+        EXPECT_FALSE(regular_disk->existsFile(String(path)));
+        EXPECT_TRUE(latest_disk->existsFile(String(path)));
+    }
+
+    DB::Changelog restarted(this->log, log_file_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    ASSERT_NO_THROW(restarted.readChangelogAndInitWriter(0, 0));
+    EXPECT_EQ(restarted.getNextEntryIndex(), 4);
+    EXPECT_EQ(restarted.entryAt(3)->get_term(), 2);
+}
