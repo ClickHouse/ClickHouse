@@ -139,7 +139,6 @@ protected:
         {
             auto execution_context = Context::createCopy(context);
             execution_context->setSetting("enable_parallel_blocks_marshalling", false);
-            execution_context->setPositionalArgumentsAlreadyResolved(false);
 
             auto expression = buildQueryTree(predicate, execution_context);
 
@@ -249,7 +248,7 @@ private:
 class ReadFromMergeTreeAnalyzeIndexes : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromMergeTreeAnalyzeIndexes"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromMergeTreeAnalyzeIndexes"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     ReadFromMergeTreeAnalyzeIndexes(

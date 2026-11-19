@@ -13,6 +13,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ErrnoException.h>
+#include <Common/clearPasswordFromCommandLine.h>
 #include <Parsers/TokenIterator.h>
 #include <Poco/Util/HelpFormatter.h>
 
@@ -771,6 +772,7 @@ int mainEntryClickHouseKeeperClient(int argc, char ** argv)
     {
         DB::KeeperClient client;
         client.init(argc, argv);
+        clearPasswordFromCommandLine(argc, argv);
         return client.run();
     }
     catch (DB::Exception & e)

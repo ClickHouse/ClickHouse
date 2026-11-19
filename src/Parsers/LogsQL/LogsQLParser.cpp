@@ -1759,11 +1759,11 @@ ASTPtr LogsQLParser::makeValueLiteral(const String & text, bool quoted)
 ASTPtr LogsQLParser::makeIntervalAST(Int64 ns)
 {
     if (ns % 1'000'000'000 == 0)
-        return makeASTFunction("toIntervalSecond", make_intrusive<ASTLiteral>(Field(static_cast<Int64>(ns / 1'000'000'000))));
+        return makeASTFunction("toIntervalSecond", make_intrusive<ASTLiteral>(Field(ns / 1'000'000'000)));
     if (ns % 1'000'000 == 0)
-        return makeASTFunction("toIntervalMillisecond", make_intrusive<ASTLiteral>(Field(static_cast<Int64>(ns / 1'000'000))));
+        return makeASTFunction("toIntervalMillisecond", make_intrusive<ASTLiteral>(Field(ns / 1'000'000)));
     if (ns % 1'000 == 0)
-        return makeASTFunction("toIntervalMicrosecond", make_intrusive<ASTLiteral>(Field(static_cast<Int64>(ns / 1'000))));
+        return makeASTFunction("toIntervalMicrosecond", make_intrusive<ASTLiteral>(Field(ns / 1'000)));
     return makeASTFunction("toIntervalNanosecond", make_intrusive<ASTLiteral>(Field(ns)));
 }
 

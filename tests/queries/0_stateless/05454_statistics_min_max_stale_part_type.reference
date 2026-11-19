@@ -1,0 +1,11 @@
+UInt64 to UInt8, 260 reads as 4
+4	250
+4	250
+0
+UInt64
+4	250
+0
+Decimal64(2) to Decimal64(1)
+Decimal(18, 2)
+1.2	5.6
+1.2	5.6

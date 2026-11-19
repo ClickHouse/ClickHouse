@@ -364,6 +364,7 @@ static SQLSet commandGetPrimaryKeys(const arrow::flight::protocol::sql::CommandG
     {"DeltaLakeLocal", "REMOTE TABLE"},
     {"DeltaLakeS3", "REMOTE TABLE"},
     {"Distributed", "REMOTE TABLE"},
+    {"Elasticsearch", "REMOTE TABLE"},
     {"GCS", "REMOTE TABLE"},
     {"HDFS", "REMOTE TABLE"},
     {"Hive", "REMOTE TABLE"},

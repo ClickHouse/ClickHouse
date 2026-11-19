@@ -240,7 +240,7 @@ VirtualColumnsDescription StorageRedis::createVirtuals()
 class ReadFromRedis : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromRedis"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromRedis"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void describeActions(FormatSettings & format_settings) const override;
@@ -385,7 +385,7 @@ namespace
 
             configuration.host = named_collection->getAny<String>({"host", "hostname"});
             configuration.port = static_cast<uint32_t>(named_collection->getOrDefault<UInt64>("port", 6379));
-            configuration.password = named_collection->getOrDefault<String>("password", "");
+            configuration.password = named_collection->getOrDefault<SecretString>("password", SecretString());
             configuration.db_index = static_cast<uint32_t>(named_collection->getOrDefault<UInt64>("db_index", DEFAULT_REDIS_DB_INDEX));
             configuration.pool_size = static_cast<uint32_t>(named_collection->getOrDefault<UInt64>("pool_size", DEFAULT_REDIS_POOL_SIZE));
         }

@@ -33,7 +33,7 @@ struct SkipIndexReadResult
     size_t top_k_primary_key_column_position = 0;
 
     /// Whether every row of the granule lies beyond the running top-K threshold according to the primary index.
-    bool isGranuleBeyondTopKThreshold(size_t mark) const;
+    [[nodiscard]] bool isGranuleBeyondTopKThreshold(size_t mark) const;
 
     /// Whether granules may be dropped by something other than the primary-key top-K check above: skip indexes
     /// (the `minmax` top-K one included) or JOIN runtime filters.
@@ -72,7 +72,8 @@ public:
         const MergeTreeDataPartInfoForReaderPtr & part_info,
         const SkipIndexReadInput & input,
         const StorageMetadataPtr & metadata_snapshot,
-        const NameSet & all_updated_columns);
+        const NameSet & all_updated_columns,
+        const NameSet & value_updated_columns);
 
     /// Whether `read` prunes by JOIN runtime filters. It snapshots them once per part, fail-open,
     /// so its result must not be built before the build side has published the filters.
@@ -83,10 +84,8 @@ public:
     /// `primary_key_column_position`.
     void setTopKPrimaryKeyPruning(size_t primary_key_column_position, TopKThresholdTrackerPtr tracker);
 
-    /// Narrows each part's input ranges by the primary key, with the partition-minmax mapping of the plan-time analysis,
-    /// before reading the skip indexes, for a read whose ranges were not analyzed (see `AnalysisResult::key_condition_not_applied`).
-    void setPrimaryKeyCondition(
-        ConditionTemplate<KeyCondition>::Ptr key_condition_, std::vector<std::optional<size_t>> primary_key_to_minmax_slot_);
+    /// Prunes by the global row index `_part_starting_offset + _part_offset` with the predicate the builder makes on it.
+    void setGlobalRowIndexPruning(DynamicPredicateBuilder predicate_builder);
 
     void cancel() noexcept { is_cancelled = true; }
 
@@ -101,13 +100,16 @@ private:
 
     DynamicPredicateBuilder dynamic_predicate_builder;
     bool prune_primary_key = false;
+    /// Builds the predicate on `_part_starting_offset + _part_offset`, the global row index of the read: a granule is
+    /// dropped if the range of global row indexes of its rows does not satisfy it. Unset if not pruned this way.
+    DynamicPredicateBuilder global_row_index_predicate_builder;
+    /// Computes the global row index from the two virtual columns: the key of the condition that prunes by it.
+    ExpressionActionsPtr global_row_index_key_expression;
     MergeTreeIndices dynamic_skip_indexes;
     DynamicSkipIndexFilter dynamic_skip_index_filter;
 
     std::optional<size_t> top_k_primary_key_column_position;
     TopKThresholdTrackerPtr top_k_threshold_tracker;
-    ConditionTemplate<KeyCondition>::Ptr primary_key_condition;
-    std::vector<std::optional<size_t>> primary_key_to_minmax_slot;
     ContextPtr context;
     LoggerPtr log;
 
@@ -150,8 +152,8 @@ struct ProjectionIndexBitmap
     static ProjectionIndexBitmapPtr create64();
 
     void intersectWith(const ProjectionIndexBitmap & other);
-    size_t cardinality() const;
-    bool empty() const;
+    [[nodiscard]] size_t cardinality() const;
+    [[nodiscard]] bool empty() const;
 
     template <typename Offset>
     bool contains(std::type_identity_t<Offset> value);
@@ -163,7 +165,7 @@ struct ProjectionIndexBitmap
     void addBulk(const std::type_identity_t<Offset> * values, size_t size);
 
     /// Checks whether the bitmap has no bits set in the range [begin, end).
-    bool rangeAllZero(size_t begin, size_t end) const;
+    [[nodiscard]] bool rangeAllZero(size_t begin, size_t end) const;
 
     /// Appends a `PaddedPODArray<UInt8>` in the range [starting_row, starting_row + num_rows)
     /// with `1`s at positions corresponding to values present in the bitmap.
@@ -225,13 +227,13 @@ struct MergeTreeIndexReadResult
     ProjectionIndexBitmapPtr projection_index_read_result;
 
     /// Whether index read result is useful and marks can be skipped.
-    bool canSkipAnyMark() const;
+    [[nodiscard]] bool canSkipAnyMark() const;
 
     /// Like `canSkipAnyMark`, but leaving out the granules skipped by the primary key against a top-K threshold.
-    bool canSkipAnyMarkBesidesTopKPrimaryKey() const;
+    [[nodiscard]] bool canSkipAnyMarkBesidesTopKPrimaryKey() const;
 
     /// Whether all rows of the granule are filtered out by the present index read results.
-    bool canSkipMark(size_t mark, const MergeTreeIndexGranularity & index_granularity) const;
+    [[nodiscard]] bool canSkipMark(size_t mark, const MergeTreeIndexGranularity & index_granularity) const;
 };
 
 using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
@@ -277,7 +279,8 @@ public:
         const SkipIndexReadInput & input,
         const RangesInDataParts & projection_parts,
         const StorageMetadataPtr & metadata_snapshot,
-        const NameSet & all_updated_columns);
+        const NameSet & all_updated_columns,
+        const NameSet & value_updated_columns);
 
     /// Cleans up the cached MergeTreeIndexReadResult for a given part if it exists.
     /// Should be called when the last task for the part has finished.

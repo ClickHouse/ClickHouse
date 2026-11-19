@@ -17,7 +17,7 @@ public:
     using OrGroup = std::set<CNFAtomicFormula>;
     using AndGroup = std::set<OrGroup>;
 
-    std::string dump() const;
+    [[nodiscard]] std::string dump() const;
 
     static constexpr size_t DEFAULT_MAX_GROWTH_MULTIPLIER = 20;
     static constexpr size_t MAX_ATOMS_WITHOUT_CHECK = 200;
@@ -43,9 +43,9 @@ public:
     static std::optional<CNF> tryBuildCNF(const QueryTreeNodePtr & node, ContextPtr context, size_t max_growth_multiplier = DEFAULT_MAX_GROWTH_MULTIPLIER);
     static CNF toCNF(const QueryTreeNodePtr & node, ContextPtr context, size_t max_growth_multiplier = DEFAULT_MAX_GROWTH_MULTIPLIER);
 
-    QueryTreeNodePtr toQueryTree() const;
+    [[nodiscard]] QueryTreeNodePtr toQueryTree() const;
 
-    const auto & getStatements() const
+    [[nodiscard]] const auto & getStatements() const
     {
         return statements;
     }

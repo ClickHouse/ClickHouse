@@ -5,6 +5,7 @@
 #include <Poco/Redis/Array.h>
 #include <Poco/Types.h>
 
+#include <Common/SecretString.h>
 #include <Core/Defines.h>
 #include <base/BorrowedObjectPool.h>
 #include <Core/Names.h>
@@ -34,7 +35,7 @@ struct RedisConfiguration
     String host;
     uint32_t port{};
     uint32_t db_index{};
-    String password;
+    SecretString password;
     RedisStorageType storage_type{};
     uint32_t pool_size{};
 };

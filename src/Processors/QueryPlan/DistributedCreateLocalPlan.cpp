@@ -44,18 +44,14 @@ std::unique_ptr<QueryPlan> createLocalPlan(
         .ignoreASTOptimizations();
 
     select_query_options.build_logical_plan = build_logical_plan;
-    select_query_options.is_local_shard_plan
-        = !build_logical_plan && processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+    select_query_options.is_local_shard_plan = !build_logical_plan
+        && (processed_stage == QueryProcessingStage::WithMergeableState
+            || processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit);
     /// A logical plan is serialized and shipped to a shard, which sends the blocks back over the
     /// network, so it must keep marshalling. Only the plan executed in this process must skip it.
     select_query_options.is_local_plan_for_distributed_query = !build_logical_plan;
 
-    /// Positional arguments in the outer query were already resolved by the initiator.
-    /// Use a context flag instead of disabling enable_positional_arguments so that
-    /// view-inner queries on this node (which were never resolved by the initiator) are
-    /// still processed correctly. See https://github.com/ClickHouse/ClickHouse/issues/62289.
-    new_context->setPositionalArgumentsAlreadyResolved(true);
-    /// The context flag is ignored when this read is itself inside a view body.
+    /// The query is printed from the initiator's resolved query tree.
     select_query_options.positional_arguments_already_resolved = true;
     auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
     query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());

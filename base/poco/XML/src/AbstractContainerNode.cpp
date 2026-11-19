@@ -428,7 +428,7 @@ const Node* AbstractContainerNode::findNode(XMLString::const_iterator& it, const
 				Poco::UnicodeConverter::convert(xmlIndex, index);
 				int i = Poco::NumberParser::parse(index);
 #else
-				int i = Poco::NumberParser::parse(xmlIndex);
+				int i = Poco::NumberParser::parse(fromXMLString(xmlIndex));
 #endif
 				indexBound = true;
 				bool ib;

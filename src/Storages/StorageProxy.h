@@ -3,6 +3,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 
 namespace DB
@@ -47,6 +48,7 @@ public:
     /// storage that opts out of the rewrite (e.g. Distributed) does not re-advertise true.
     bool supportsOptimizationToSubcolumns() const override { return getNested()->supportsOptimizationToSubcolumns(); }
     bool supportsOptimizationToTupleElementSubcolumns() const override { return getNested()->supportsOptimizationToTupleElementSubcolumns(); }
+    bool hasBucketedMapSerialization() const override { return getNested()->hasBucketedMapSerialization(); }
     bool supportsColumnsWithDynamicStructure() const override { return getNested()->supportsColumnsWithDynamicStructure(); }
     /// `ReadFromMerge::getSelectedTables` prunes children by name based on this flag; a lazy
     /// `StorageTableProxy` around a delegating storage (`Distributed`, `Merge`, `Buffer`, `Alias`)
@@ -195,6 +197,7 @@ public:
     void checkTableSizeBelowDropLimit([[ maybe_unused ]] ContextPtr query_context) const override { getNested()->checkTableSizeBelowDropLimit(query_context); }
 
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
+    bool hasUnreplicatedTableDataOnDisk() const override { return getNested()->hasUnreplicatedTableDataOnDisk(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }
     std::optional<UInt64> totalRows(ContextPtr query_context) const override { return getNested()->totalRows(query_context); }
