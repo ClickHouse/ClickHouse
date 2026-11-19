@@ -8,7 +8,6 @@
 #include <Functions/tuple.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinExpressionActions.h>
-#include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
@@ -46,7 +45,9 @@ static InConversion buildInConversion(
     const SharedHeader & lhs_input_header,
     const NamePairs & name_pairs,
     std::unique_ptr<QueryPlan> in_source,
-    FutureSetSettings set_settings)
+    bool transform_null_in,
+    SizeLimits size_limits,
+    size_t max_size_for_index)
 {
     ActionsDAG lhs_dag(lhs_input_header->getColumnsWithTypeAndName());
     std::unordered_map<std::string_view, const ActionsDAG::Node *> lhs_outputs;
@@ -93,12 +94,11 @@ static InConversion buildInConversion(
 
     /// right parameter of IN function
     auto future_set = std::make_shared<FutureSetFromSubquery>(
-        get_random_hash(), nullptr, std::move(in_source), nullptr, nullptr, std::move(set_settings));
+        get_random_hash(), nullptr, std::move(in_source), nullptr, nullptr, transform_null_in, size_limits, max_size_for_index);
 
     ColumnConst::Ptr set_col = ColumnConst::create(ColumnSet::create(1, future_set), 0);
-    /// The set is filled from the right side at execution time, so it is not a constant across queries.
-    const ActionsDAG::Node * in_rhs_arg = &lhs_dag.addColumn(
-        std::move(set_col), std::make_shared<DataTypeSet>(), "set column", /*is_deterministic_constant=*/false);
+    const ActionsDAG::Node * in_rhs_arg =
+        &lhs_dag.addColumn(std::move(set_col), std::make_shared<DataTypeSet>(), "set column");
 
     /// IN function
     auto func_in = FunctionFactory::instance().get("in", nullptr);
@@ -168,7 +168,8 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     /// Let's support only hash algorithm, because full sorting join may be more memory efficient than IN.
     const auto & join_algorithms = join->getJoinSettings().join_algorithms;
-    if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH))
+    if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH) &&
+        !TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARALLEL_HASH))
         return 0;
 
     const auto & join_operator = join->getJoinOperator();
@@ -191,11 +192,6 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     {
         auto [op, lhs, rhs] = predicate.asBinaryPredicate();
         if (op != JoinConditionOperator::Equals)
-            return 0;
-
-        /// `IN` casts the probe key to the type of the set, so `toFixedString('a', 3) IN ('a\0\0')` is false
-        /// while the JOIN matches these keys.
-        if (!JoinCommon::isExactJoinKeyEquality(lhs.getType(), rhs.getType()))
             return 0;
 
         if (lhs.fromLeft() && rhs.fromRight())
@@ -284,18 +280,18 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     makeExpressionNodeOnTopOf(*rhs_in_node, std::move(right_pre_join_actions), nodes, makeDescription("Calculate join right keys"));
     parent_node->children.pop_back();
 
-    auto set_settings = settings.set_settings;
     /// Join equality does not match Nulls.
     /// In case we support NullSafeEquals, we should set transform_null_in = true.
     /// But it would require proper support for sets with multiple keys.
-    set_settings.transform_null_in = false;
-    set_settings.size_limits = settings.network_transfer_limits;
+    bool transform_null_in = false;
 
     auto in_conversion = buildInConversion(
         lhs_in_node->step->getOutputHeader(),
         name_pairs,
         std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes)),
-        std::move(set_settings));
+        transform_null_in,
+        settings.network_transfer_limits,
+        settings.use_index_for_in_with_subqueries_max_values);
 
     {
         auto filter_name = in_conversion.dag.getOutputs().front()->result_name;

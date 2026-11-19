@@ -1,7 +1,5 @@
 #include <Functions/AI/OpenAIProvider.h>
 #include <IO/HTTPCommon.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
 
 #include <Poco/Net/HTTPRequest.h>
@@ -36,7 +34,7 @@ void setCommonHeaders(Poco::Net::HTTPRequest & http_request, const AIRequest & a
 
 }
 
-OpenAIProvider::OpenAIProvider(const String & endpoint_, std::string_view api_key_)
+OpenAIProvider::OpenAIProvider(const String & endpoint_, const String & api_key_)
     : endpoint(endpoint_)
     , api_key(api_key_)
     , uri(endpoint_)
@@ -47,7 +45,7 @@ HTTPHeaderEntries OpenAIProvider::getHeaders() const
 {
     if (api_key.empty()) /// not all providers need API key
         return {};
-    return {{"Authorization", fmt::format("Bearer {}", api_key)}};
+    return {{"Authorization", "Bearer " + api_key}};
 }
 
 void OpenAIProvider::call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response)
@@ -88,19 +86,22 @@ void OpenAIProvider::call(const AIChatRequest & ai_request, const ConnectionTime
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
     for (const auto & header : getHeaders())
-        http_request.set(header.name, String(header.value));
+        http_request.set(header.name, header.value);
     setCommonHeaders(http_request, ai_request);
     http_request.setContentLength(body.size());
 
-    auto request_body = sendHTTPRequest(*session, http_request);
-    writeString(body, *request_body);
-    request_body->finalize();
+    auto & out_stream = session->sendRequest(http_request);
+    out_stream << body;
 
     Poco::Net::HTTPResponse http_response;
-    auto response_stream = receiveHTTPResponse(*session, http_response);
+    auto & in_stream = session->receiveResponse(http_response);
 
     String response_body;
-    readStringUntilEOF(response_body, *response_stream);
+    {
+        std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        ss << in_stream.rdbuf();
+        response_body = std::move(ss).str();
+    }
 
     auto status = http_response.getStatus();
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
@@ -122,8 +123,6 @@ void OpenAIProvider::call(const AIChatRequest & ai_request, const ConnectionTime
         {
             response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
             response.output_tokens = usage->optValue<UInt64>("completion_tokens", 0);
-            if (const auto details = usage->getObject("prompt_tokens_details"))
-                response.cache_read_tokens = details->optValue<UInt64>("cached_tokens", 0);
         }
     }
 
@@ -198,19 +197,22 @@ void OpenAIProvider::embed(
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
     for (const auto & header : getHeaders())
-        http_request.set(header.name, String(header.value));
+        http_request.set(header.name, header.value);
     setCommonHeaders(http_request, ai_embedding_request);
     http_request.setContentLength(body.size());
 
-    auto request_body = sendHTTPRequest(*session, http_request);
-    writeString(body, *request_body);
-    request_body->finalize();
+    auto & out_stream = session->sendRequest(http_request);
+    out_stream << body;
 
     Poco::Net::HTTPResponse http_response;
-    auto response_stream = receiveHTTPResponse(*session, http_response);
+    auto & in_stream = session->receiveResponse(http_response);
 
     String response_body;
-    readStringUntilEOF(response_body, *response_stream);
+    {
+        std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        ss << in_stream.rdbuf();
+        response_body = std::move(ss).str();
+    }
 
     auto status = http_response.getStatus();
     if (status != Poco::Net::HTTPResponse::HTTP_OK)

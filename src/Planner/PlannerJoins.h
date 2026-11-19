@@ -87,7 +87,7 @@ public:
     }
 
     /// Get left key nodes
-    [[nodiscard]] const ActionsDAG::NodeRawConstPtrs & getLeftKeyNodes() const
+    const ActionsDAG::NodeRawConstPtrs & getLeftKeyNodes() const
     {
         return left_key_nodes;
     }
@@ -99,7 +99,7 @@ public:
     }
 
     /// Get right key nodes
-    [[nodiscard]] const ActionsDAG::NodeRawConstPtrs & getRightKeyNodes() const
+    const ActionsDAG::NodeRawConstPtrs & getRightKeyNodes() const
     {
         return right_key_nodes;
     }
@@ -110,25 +110,25 @@ public:
         return right_key_nodes;
     }
 
-    [[nodiscard]] bool isNullsafeCompareKey(size_t idx) const
+    bool isNullsafeCompareKey(size_t idx) const
     {
         return nullsafe_compare_key_indexes.contains(idx);
     }
 
     /// Returns true if JOIN clause has ASOF conditions, false otherwise
-    [[nodiscard]] bool hasASOF() const
+    bool hasASOF() const
     {
         return !asof_conditions.empty();
     }
 
     /// Get ASOF conditions
-    [[nodiscard]] const std::vector<ASOFCondition> & getASOFConditions() const
+    const std::vector<ASOFCondition> & getASOFConditions() const
     {
         return asof_conditions;
     }
 
     /// Get left filter condition nodes
-    [[nodiscard]] const ActionsDAG::NodeRawConstPtrs & getLeftFilterConditionNodes() const
+    const ActionsDAG::NodeRawConstPtrs & getLeftFilterConditionNodes() const
     {
         return left_filter_condition_nodes;
     }
@@ -140,7 +140,7 @@ public:
     }
 
     /// Get right filter condition nodes
-    [[nodiscard]] const ActionsDAG::NodeRawConstPtrs & getRightFilterConditionNodes() const
+    const ActionsDAG::NodeRawConstPtrs & getRightFilterConditionNodes() const
     {
         return right_filter_condition_nodes;
     }
@@ -161,7 +161,7 @@ public:
         residual_filter_condition_nodes.push_back(condition_node);
     }
 
-    [[nodiscard]] const ActionsDAG::NodeRawConstPtrs & getResidualFilterConditionNodes() const
+    const ActionsDAG::NodeRawConstPtrs & getResidualFilterConditionNodes() const
     {
         return residual_filter_condition_nodes;
     }
@@ -170,7 +170,7 @@ public:
     void dump(WriteBuffer & buffer) const;
 
     /// Dump clause
-    [[nodiscard]] String dump() const;
+    String dump() const;
 
     /// Combines two join clauses into a single join clause with `AND` logic.
     /// Example:
@@ -251,7 +251,6 @@ struct JoinAlgorithmParams
     UInt64 max_entries_for_hash_table_stats;
 
     UInt64 parallel_hash_join_threshold;
-    HashJoinLayout hash_join_layout;
 
     UInt64 grace_hash_join_initial_buckets;
     UInt64 grace_hash_join_max_buckets;
@@ -263,8 +262,6 @@ struct JoinAlgorithmParams
 
     bool enable_hash_join_row_store = true;
     Float64 min_rows_ratio_for_hash_join_row_store = 0;
-    UInt64 min_rows_for_packed_string_keys_in_hash_join = 0;
-    UInt64 min_string_column_bytes_for_hash_join_row_store = 0;
 
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout{};

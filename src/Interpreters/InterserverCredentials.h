@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/SecretString.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <unordered_set>
@@ -29,7 +28,7 @@ namespace DB
 class InterserverCredentials
 {
 public:
-    using UserWithPassword = std::pair<std::string, SecretString>;
+    using UserWithPassword = std::pair<std::string, std::string>;
     using CheckResult = std::pair<std::string, bool>;
     using CurrentCredentials = std::vector<UserWithPassword>;
 
@@ -37,30 +36,30 @@ public:
 
     static std::unique_ptr<InterserverCredentials> make(const Poco::Util::AbstractConfiguration & config, const std::string & root_tag);
 
-    InterserverCredentials(const std::string & current_user_, const SecretString & current_password_, const CurrentCredentials & all_users_store_)
+    InterserverCredentials(const std::string & current_user_, const std::string & current_password_, const CurrentCredentials & all_users_store_)
         : current_user(current_user_)
         , current_password(current_password_)
         , all_users_store(all_users_store_)
     {}
 
-    [[nodiscard]] CheckResult isValidUser(const UserWithPassword & credentials) const;
-    [[nodiscard]] CheckResult isValidUser(std::string_view user, std::string_view password) const;
+    CheckResult isValidUser(const UserWithPassword & credentials) const;
+    CheckResult isValidUser(const std::string & user, const std::string & password) const;
 
-    [[nodiscard]] std::string getUser() const { return current_user; }
+    std::string getUser() const { return current_user; }
 
-    [[nodiscard]] const SecretString & getPassword() const { return current_password; }
+    std::string getPassword() const { return current_password; }
 
 
 private:
     std::string current_user;
-    SecretString current_password;
+    std::string current_password;
 
     /// In common situation this store contains one record
     CurrentCredentials all_users_store;
 
     static CurrentCredentials parseCredentialsFromConfig(
         const std::string & current_user_,
-        const SecretString & current_password_,
+        const std::string & current_password_,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & root_tag);
 };

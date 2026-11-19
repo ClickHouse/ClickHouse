@@ -43,23 +43,34 @@ public:
         return std::make_shared<FunctionS2CapUnion>();
     }
 
-    [[nodiscard]] std::string getName() const override
+    std::string getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 4; }
+    size_t getNumberOfArguments() const override { return 4; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(UInt64, Float, UInt64, Float) -> Tuple(UInt64, Float64)";
+        FunctionArgumentDescriptors mandatory_args{
+            {"center1", &isUInt64, nullptr, "UInt64"},
+            {"radius1", &isFloat, nullptr, "Float64"},
+            {"center2", &isUInt64, nullptr, "UInt64"},
+            {"radius2", &isFloat, nullptr, "Float64"}
+        };
+        validateFunctionArguments(*this, arguments, mandatory_args);
+
+        DataTypePtr center = std::make_shared<DataTypeUInt64>();
+        DataTypePtr radius = std::make_shared<DataTypeFloat64>();
+
+        return std::make_shared<DataTypeTuple>(DataTypes{center, radius});
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)

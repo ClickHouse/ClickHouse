@@ -31,6 +31,7 @@ namespace Setting
 {
     extern const SettingsBool allow_url_wildcard_from_index_pages;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsString url_base;
@@ -79,7 +80,7 @@ namespace
             {
                 ASTs equals_args;
                 equals_args.emplace_back(make_intrusive<ASTLiteral>(header_name));
-                equals_args.emplace_back(make_intrusive<ASTLiteral>(String(header_value)));
+                equals_args.emplace_back(make_intrusive<ASTLiteral>(header_value));
                 header_equals.emplace_back(makeASTOperator("equals", std::move(equals_args)));
             }
 
@@ -129,7 +130,6 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 
         filename = configuration.url;
         structure = configuration.structure;
-        is_structure_not_overridable = structure == "auto" && !named_collection->isOverridable("structure", /* default_value= */ true);
         compression_method = configuration.compression_method;
 
         format = configuration.format;
@@ -157,10 +157,6 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         if (headers_ast)
             args.push_back(headers_ast);
     }
-
-    /// `url_base` is not persisted in `CREATE TABLE ... AS url(...)`, so a relative URL may resolve to a different
-    /// backend on another replica or after a restart, see `hasUnreplicatedTableDataOnDisk`.
-    is_relative_url = !StorageURL::isAbsoluteURL(filename);
 
     /// Resolve relative URLs against the url_base setting.
     const auto & url_base = context->getSettingsRef()[Setting::url_base].value;
@@ -284,8 +280,6 @@ StoragePtr TableFunctionURL::executeImpl(
         ContextMutablePtr delegate_context = Context::createCopy(context);
         delegate_context->setSetting("parallel_replicas_for_cluster_engines", false);
 
-        /// The delegate creates the storage, so it needs the `PARTITION BY` expression to write partitions.
-        delegate->setPartitionBy(partition_by);
         return delegate->execute(
             ast_function,
             delegate_context,
@@ -333,13 +327,10 @@ bool TableFunctionURL::hasStaticStructure() const
     return delegate ? delegate->hasStaticStructure() : (structure != "auto");
 }
 
-bool TableFunctionURL::hasUnreplicatedTableDataOnDisk() const
+void TableFunctionURL::setPartitionBy(const ASTPtr & partition_by_)
 {
-    /// A relative URL is rejected conservatively: the backend it dispatches to depends on the `url_base` setting
-    /// of the replica executing the query, which can differ across replicas of a `Replicated` database.
-    if (is_relative_url)
-        return true;
-    return delegate ? delegate->hasUnreplicatedTableDataOnDisk() : ITableFunctionFileLike::hasUnreplicatedTableDataOnDisk();
+    if (delegate)
+        delegate->setPartitionBy(partition_by_);
 }
 
 StoragePtr TableFunctionURL::getStorage(
@@ -357,12 +348,15 @@ StoragePtr TableFunctionURL::getStorage(
     /// old literal/template expansion and read different (or no) files than the non-cluster path.
     const bool use_web_wildcard = !is_insert_query && configuration.http_method.empty() && urlPathHasListableGlobs(source);
 
-    const bool can_use_parallel_replicas = context->canReplaceClusterEngineWithClusterVariant()
+    const bool can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
+        && settings[Setting::parallel_replicas_for_cluster_engines]
+        && context->canUseTaskBasedParallelReplicas()
+        && !context->isDistributed()
         && !is_secondary_query
         && !is_insert_query
         && !use_web_wildcard;
 
-    if (can_use_parallel_replicas && !context->isSQLSecurityOverriddenBody())
+    if (can_use_parallel_replicas)
     {
         return std::make_shared<StorageURLCluster>(
             context,
@@ -371,7 +365,7 @@ StoragePtr TableFunctionURL::getStorage(
             format_,
             compression_method_,
             StorageID(getDatabaseName(), table_name),
-            is_structure_not_overridable ? ColumnsDescription{} : columns,
+            getActualTableStructure(context, true),
             ConstraintsDescription{},
             configuration);
     }
@@ -507,6 +501,9 @@ std::optional<String> TableFunctionURL::tryGetFormatFromFirstArgument()
 void registerTableFunctionURL(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionURL>({.description = R"DOCS_MD(
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
 `url` function creates a table from the `URL` with given `format` and `structure`.
 
 `url` function may be used in `SELECT` and `INSERT` queries on data in [URL](/reference/engines/table-engines/special/url) tables.
@@ -578,20 +575,6 @@ For the same reason, a dispatched `url` call is read on the node that received t
 Patterns in `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](/reference/functions/table-functions/remote#globs-in-addresses) function.
 Character `|` inside patterns is used to specify failover addresses. They are iterated in the same order as listed in the pattern. The number of generated addresses is limited by [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements) setting.
 For path glob syntax in the URL path (such as `*`, `{a,b}`, `{N..M}`, and `**`), see [Globs in path](/reference/functions/table-functions/file#globs-in-path). Note that `?` starts the query string in a URL and cannot be used as a wildcard in the path component.
-
-The addresses are generated one by one as the query reads them, so `glob_expansion_max_elements` limits how many of them a single query may read rather than how large the pattern is. A query that stops early can use a pattern that describes many more addresses than the limit:
-
-```sql
--- Reads a single address, even though the pattern describes 100020001 of them.
-SELECT * FROM url('https://example.com/data-{0..10000}-{0..10000}.tsv', TSV, 'x UInt64') LIMIT 1 SETTINGS max_threads = 1;
-
--- Reading all of them is still rejected.
-SELECT count() FROM url('https://example.com/data-{0..10000}-{0..10000}.tsv', TSV, 'x UInt64');
-```
-
-The example above pins the query to a single stream. A query reading in parallel starts several sources up front, and each of them takes an address from the generator before the `LIMIT` cancels the reading, so a few addresses can be read instead of one; the number of them is bounded by the number of streams, not by the size of the pattern.
-
-A `_path` or `_file` predicate is applied to each address as it is generated, so the addresses it rejects are generated and counted against the limit as well; only the reading of the matching ones is skipped.
 
 ## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
 
@@ -670,6 +653,6 @@ SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
 ## Related {#related}
 
 - [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, urlSecretArguments(0));
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
 }
 }

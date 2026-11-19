@@ -2,11 +2,10 @@
 #include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 
 #include <Storages/StorageMergeTree.h>
-#include <Interpreters/TransactionManager.h>
+#include <Interpreters/TransactionLog.h>
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
-#include <Common/FailPoint.h>
-#include <Common/ThreadStatus.h>
+#include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -22,11 +21,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-namespace FailPoints
-{
-    extern const char mt_mutate_task_pause_before_rename_part[];
 }
 
 
@@ -45,11 +39,11 @@ void MutatePlainMergeTreeTask::prepare()
 {
     future_part = merge_mutate_entry->future_part;
 
+    task_context = createTaskContext();
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_part,
-        task_context,
-        thread_group);
+        task_context);
 
     stopwatch = std::make_unique<Stopwatch>();
 
@@ -62,7 +56,7 @@ void MutatePlainMergeTreeTask::prepare()
 
     write_part_log = [this, mutation_ids] (const ExecutionStatus & execution_status)
     {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
             PartLogElement::MUTATE_PART,
             execution_status,
@@ -97,15 +91,13 @@ void MutatePlainMergeTreeTask::finish()
 bool MutatePlainMergeTreeTask::executeStep()
 {
     auto component_guard = Coordination::setCurrentComponent("MutatePlainMergeTreeTask::executeStep");
-
-    if (!thread_group)
-    {
-        task_context = createTaskContext();
-        thread_group = ThreadGroup::createForMergeMutate(task_context);
-    }
+    /// Metrics will be saved in the local profile_counters.
+    ProfileEventsScope profile_events_scope(&profile_counters);
 
     /// Make out memory tracker a parent of current thread memory tracker
-    ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+    std::optional<ThreadGroupSwitcher> switcher;
+    if (merge_list_entry)
+        switcher.emplace((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     switch (state)
     {
@@ -122,7 +114,7 @@ bool MutatePlainMergeTreeTask::executeStep()
                 if (mutate_task->execute())
                     return true;
 
-                new_part = mutate_task->takeResultPart();
+                new_part = mutate_task->getFuture().get();
                 auto & data_part_storage = new_part->getDataPartStorage();
 #if CLICKHOUSE_CLOUD
                 data_part_storage.setPreferredFileOrder(new_part->getPreferredFileOrder());
@@ -130,18 +122,7 @@ bool MutatePlainMergeTreeTask::executeStep()
                 if (data_part_storage.hasActiveTransaction())
                     data_part_storage.commitTransaction();
 
-                FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_task_pause_before_rename_part);
-
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
-
-                /// `waitForMutation` considers the mutation done as soon as the mutated part is visible,
-                /// and it re-checks on any wakeup (a timeout or an unrelated notification), not only on
-                /// `updateMutationEntriesErrors`. Hold `mutation_wait_mutex` (which the waiter holds while
-                /// checking) from the commit until the part log entry is queued, otherwise a synchronous
-                /// mutation (`mutations_sync`) may return to the client between the two, and a subsequent
-                /// `SYSTEM FLUSH LOGS` misses the `MutatePart` row.
-                std::unique_lock mutation_wait_lock(storage.mutation_wait_mutex);
-
                 /// Hold data_parts_lock across both renameTempPartAndReplace and commit to prevent
                 /// a race with REPLACE PARTITION. Without this, there is a window where the mutation
                 /// result is PreActive (not yet committed): REPLACE PARTITION's
@@ -160,9 +141,6 @@ bool MutatePlainMergeTreeTask::executeStep()
                 /// synchronous mutation (mutations_sync) may return to the client before the
                 /// MutatePart row is queued, so a subsequent SYSTEM FLUSH LOGS misses it.
                 write_part_log({});
-
-                /// `updateMutationEntriesErrors` locks `mutation_wait_mutex` itself to notify the waiters.
-                mutation_wait_lock.unlock();
 
                 storage.updateMutationEntriesErrors(future_part, true, "", "");
 
