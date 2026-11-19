@@ -1,6 +1,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Analyzer/TableQualifiers.h>
 #include <Core/Block.h>

@@ -123,15 +123,14 @@ MutableColumnPtr IDataType::createUninitializedColumnWithSize(size_t size) const
 
 MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) const
 {
-    /// Let the serialization wrap the base column into the layout it deserializes into: ColumnSparse for the
-    /// Sparse kind, ColumnReplicated for Replicated, ColumnBLOB for Detached, and any custom wrapping such as
-    /// the ColumnConst produced by the quantized-vector codebook serialization.
-    return serialization.wrapColumnForDeserialization(createColumn());
+    return serialization.createColumnForDeserialization(*this);
 }
 
 MutableColumnConstPtr IDataType::createColumnConst(size_t size, const Field & field) const
 {
     auto column = createColumn();
+    /// The first push_back into an empty PODArray allocates 4 KiB; a constant needs one row.
+    column->reserve(1);
     column->insert(field);
     return ColumnConst::create(std::move(column), size);
 }

@@ -11,8 +11,8 @@ class SerializationInfoNamed : public SerializationInfo
 public:
     SerializationInfoNamed(MutableSerializationInfos elems_, Names names_, const Settings & settings_ = {});
 
-    bool hasCustomSerialization() const override;
-    bool structureEquals(const SerializationInfo & rhs) const override;
+    [[nodiscard]] bool hasCustomSerialization() const override;
+    [[nodiscard]] bool structureEquals(const SerializationInfo & rhs) const override;
 
     void add(const IColumn & column) override;
     void add(const SerializationInfo & other) override;
@@ -26,12 +26,12 @@ public:
     void toJSON(Poco::JSON::Object & object) const override;
     void fromJSON(const Poco::JSON::Object & object) override;
 
-    const MutableSerializationInfoPtr & getElementInfo(size_t i) const { return elems[i]; }
-    const MutableSerializationInfoPtr & getElementInfo(const String & name) const;
+    [[nodiscard]] const MutableSerializationInfoPtr & getElementInfo(size_t i) const { return elems[i]; }
+    [[nodiscard]] const MutableSerializationInfoPtr & getElementInfo(const String & name) const;
 
 protected:
     void writeJSONFields(WriteBuffer & out, const String * name) const override;
-    MutableSerializationInfos cloneElements() const;
+    [[nodiscard]] MutableSerializationInfos cloneElements() const;
 
     MutableSerializationInfos elems;
     Names names;
@@ -41,6 +41,6 @@ protected:
 };
 
 /// Whether `old_info` can be carried over to `new_info` with `createWithType` when the type of a column changes.
-bool canReuseSerializationInfoForTypeChange(const SerializationInfo & old_info, const SerializationInfo & new_info);
+[[nodiscard]] bool canReuseSerializationInfoForTypeChange(const SerializationInfo & old_info, const SerializationInfo & new_info);
 
 }

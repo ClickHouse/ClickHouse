@@ -80,15 +80,17 @@ bool SerializationSubObject::supportsPooling() const
     return true;
 }
 
-MutableColumnPtr SerializationSubObject::wrapColumnForDeserialization(MutableColumnPtr column) const
+MutableColumnPtr SerializationSubObject::createColumnForDeserialization(const IDataType & type) const
 {
     /// The typed paths that are not SHARED are read into their columns by their own serializations, which may be Sparse.
+    const auto & object_type = assert_cast<const DataTypeObject &>(type);
+    auto column = object_type.createColumn();
     auto & column_object = assert_cast<ColumnObject &>(*column);
     auto & typed_paths = column_object.getTypedPaths();
     for (const auto & [path, serialization] : typed_paths_serializations)
     {
-        auto & path_column = typed_paths.at(path.substr(paths_prefix.size()));
-        path_column = serialization->wrapColumnForDeserialization(path_column->cloneEmpty());
+        auto sub_path = path.substr(paths_prefix.size());
+        typed_paths.at(sub_path) = serialization->createColumnForDeserialization(*object_type.getTypedPaths().at(sub_path));
     }
     column_object.rebuildSortedTypedPathColumns();
     return column;

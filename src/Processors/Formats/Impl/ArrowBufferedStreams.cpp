@@ -1,7 +1,8 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#if USE_ARROW || USE_PARQUET
+#include <Formats/FormatSettings.h>
+#if USE_ARROW_LIBRARY
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <IO/ReadBufferFromFileDescriptor.h>

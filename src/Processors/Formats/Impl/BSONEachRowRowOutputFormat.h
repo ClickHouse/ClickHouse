@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Formats/BSONTypes.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowOutputFormat.h>
@@ -62,7 +63,7 @@ private:
         size_t row_num,
         const String & name,
         const String & path,
-        std::unordered_map<String, size_t> & nested_document_sizes);
+        UnorderedMapWithMemoryTracking<String, size_t> & nested_document_sizes);
 
     /// Count field size in bytes that we will get after serialization in BSON format.
     /// It's needed to calculate document size before actual serialization,
@@ -73,7 +74,7 @@ private:
         size_t row_num,
         const String & name,
         const String & path,
-        std::unordered_map<String, size_t> & nested_document_sizes);
+        UnorderedMapWithMemoryTracking<String, size_t> & nested_document_sizes);
 
     NamesAndTypes fields;
     FormatSettings settings;

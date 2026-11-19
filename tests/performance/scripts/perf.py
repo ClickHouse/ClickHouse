@@ -135,6 +135,19 @@ def stat_threshold(left_times, right_times):
 
 
 parser = argparse.ArgumentParser(description="Run performance test.")
+parser.add_argument(
+    "--coverage-output",
+    help="Collect per-query LLVM coverage into this directory instead of timings. "
+    "Requires a single dedicated instrumented server; clears its coverage tables.",
+)
+parser.add_argument(
+    "--coverage-warm-runs", type=int, default=1,
+    help="Executions after the first execution in coverage mode (default 1).",
+)
+parser.add_argument(
+    "--coverage-cleanup-only", action="store_true",
+    help="Run only this XML's teardown on a restarted dedicated coverage server.",
+)
 # Explicitly decode files as UTF-8 because sometimes we have Russian characters in queries, and LANG=C is set.
 parser.add_argument(
     "file",
@@ -322,6 +335,13 @@ parser.add_argument(
     "with `clickhouse format` of the last --binary.",
 )
 parser.add_argument(
+    "--result-digest",
+    action="store_true",
+    help="Digest the result of every SQL query on its prewarm run and report the "
+    "queries whose results differ between the servers. Costs one more run of every "
+    "`FORMAT Null` query per server, so CI does not enable it.",
+)
+parser.add_argument(
     "--pr-number",
     type=int,
     default=0,
@@ -330,6 +350,16 @@ parser.add_argument(
     "server. With the default 0 no failure is tolerated.",
 )
 args = parser.parse_args()
+
+if args.coverage_cleanup_only and not args.coverage_output:
+    parser.error("--coverage-cleanup-only requires --coverage-output")
+if args.coverage_output:
+    if max(len(args.host), len(args.port)) != 1:
+        parser.error("Coverage collection requires exactly one dedicated server")
+    if args.coverage_warm_runs < 1:
+        parser.error("--coverage-warm-runs must be positive")
+    if args.max_queries or args.queries_to_run or args.keep_created_tables or args.use_existing_tables:
+        parser.error("Coverage collection requires all queries and their setup/teardown")
 
 if args.table_engine:
     # Imported only here: a `release_base` run replaces this directory with the
@@ -721,6 +751,8 @@ extra_drop_queries = []
 #   {"kind": "shell", "script": "..."}      -- run as a bash script, see below.
 test_queries = []
 for e in root.findall("query"):
+    # A disabled query keeps its query_index, the key of the performance history, but is not run.
+    disabled = e.get("disabled", "0") not in ("0", "false", "")
     if e.get("type") == "shell":
         # A shell-script query: a snippet of bash executed for each server and
         # measured by its wall-clock time. This lets us benchmark things the
@@ -737,7 +769,7 @@ for e in root.findall("query"):
         # client arguments inside the script.
         if not e.text or not e.text.strip():
             raise Exception('Empty <query type="shell"> in the test file')
-        test_queries.append({"kind": "shell", "script": e.text})
+        test_queries.append({"kind": "shell", "script": e.text, "disabled": disabled})
         continue
 
     if "file" in e.attrib:
@@ -749,9 +781,11 @@ for e in root.findall("query"):
         for stmt in statements:
             keyword = first_keyword(stmt)
             if keyword in ("CREATE", "ALTER"):
-                extra_create_queries.append(stmt)
+                if not disabled:
+                    extra_create_queries.append(stmt)
             elif keyword in ("DROP", "TRUNCATE"):
-                extra_drop_queries.append(stmt)
+                if not disabled:
+                    extra_drop_queries.append(stmt)
             else:
                 select_stmts.append(stmt)
         # Some benchmark queries (e.g. TPC-DS Q14) have multiple SELECTs in one file.
@@ -763,10 +797,10 @@ for e in root.findall("query"):
         #   zip(*expanded) -> ("SELECT FROM a.x", "SELECT FROM a.y"), ("SELECT FROM b.x", "SELECT FROM b.y")
         expanded = [substitute_parameters([s]) for s in select_stmts]
         for group in zip(*expanded):
-            test_queries.append({"kind": "sql", "statements": list(group)})
+            test_queries.append({"kind": "sql", "statements": list(group), "disabled": disabled})
     else:
         test_queries += [
-            {"kind": "sql", "statements": [s]} for s in substitute_parameters([e.text])
+            {"kind": "sql", "statements": [s], "disabled": disabled} for s in substitute_parameters([e.text])
         ]
 
 
@@ -804,6 +838,11 @@ if args.print_settings:
 
     exit(0)
 
+for i in args.queries_to_run or []:
+    if test_queries[i]["disabled"]:
+        print(f"The query no. {i} is disabled in this test")
+        exit(1)
+
 # Skip long tests
 if not args.long:
     for tag in root.findall(".//tag"):
@@ -835,7 +874,7 @@ if args.table_engine and not root.findall("create_query"):
 # options, fail closed: reject the test up front rather than benchmark the wrong
 # endpoint. (Done after the `--print-queries` / `--print-settings` early exits so
 # those read-only paths are unaffected.)
-has_shell_queries = any(q["kind"] == "shell" for q in test_queries)
+has_shell_queries = any(q["kind"] == "shell" and not q["disabled"] for q in test_queries)
 if has_shell_queries and (args.user != "default" or args.password != "" or args.secure):
     raise Exception(
         'Shell-script queries (<query type="shell">) do not support the '
@@ -945,6 +984,7 @@ stop_merges = (
         q["kind"] == "sql"
         and not any(first_keyword(s) in WRITE_KEYWORDS for s in q["statements"])
         for q in test_queries
+        if not q["disabled"]
     )
 )
 
@@ -957,12 +997,36 @@ servers = [
 ]
 # Setup statements like `OPTIMIZE ... FINAL` are silent for long; raise the 300 s default under `--long`.
 driver_options = {"send_receive_timeout": 30 * 60} if args.long else {}
+if args.coverage_output:
+    if has_shell_queries:
+        # Scripts can start other processes whose coverage is not collected.
+        print("skipped\tShell queries require subprocess coverage collection")
+        sys.exit(0)
+    # Instrumented setup and queries share the wrapper's remaining shard budget.
+    # A release-query or socket timeout must not cut a coverage test short.
+    driver_options.update(send_receive_timeout=None, settings={"max_execution_time": 0})
 # Force settings_is_important to fail queries on unknown settings.
 all_connections = [
     clickhouse_driver.Client(**server, settings_is_important=True, **driver_options) for server in servers
 ]
 # Connection 0 is the reference only in a comparison: a single server is the tested one.
 reference = 0 if len(all_connections) > 1 else None
+
+coverage = None
+if args.coverage_output and not args.coverage_cleanup_only:
+    sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+    from perf_coverage import CoverageCollector
+
+    # A separate control connection keeps XML query settings (e.g. readonly,
+    # output formats, time limits) away from the collector and its exports.
+    coverage = CoverageCollector(
+        clickhouse_driver.Client(
+            **servers[0], send_receive_timeout=None,
+            settings={"max_execution_time": 0, "max_result_rows": 0, "max_result_bytes": 0},
+        ),
+        args.coverage_output, test_name, test_queries, args.coverage_warm_runs,
+    )
+    coverage.start("setup")
 
 drop_query_templates = [q.text for q in root.findall("drop_query")] + extra_drop_queries
 # The connections that run the setup queries, and so the drop queries.
@@ -992,6 +1056,8 @@ def teardown():
     if any(t.is_alive() for t in threads):
         print("teardown-skipped\tsetup workers active")
         return False
+    if coverage:
+        coverage.start("teardown")
     # A drop query that waits for a mutation would hang while merges are stopped.
     if stop_merges:
         for c in (all_connections[i] for i in setup_connections):
@@ -1010,6 +1076,8 @@ def teardown():
                 print(f"drop query failed on server {conn_index}: {q}\n{e}", file=sys.stderr)
                 clean = False
     teardown_clean_result = clean
+    if coverage:
+        coverage.stop()
     return clean
 
 
@@ -1170,6 +1238,10 @@ for i, s in enumerate(servers):
 
 reportStageEnd("connect")
 
+if args.coverage_cleanup_only:
+    setup_connections = list(range(len(all_connections)))
+    sys.exit(0 if teardown() else 1)
+
 # The servers are shared by all tests of the run, so undo a `SYSTEM STOP MERGES`
 # left by a previous test that did not reach its teardown.
 if args.stop_merges:
@@ -1205,6 +1277,8 @@ for conn_index, c in enumerate(all_connections):
         c.settings[s.tag] = s.text
     if args.table_engine:
         c.settings.update(iceberg_engine.SETTINGS)
+    if coverage:
+        c.settings["max_execution_time"] = 0
     # We have to perform a query to make sure the settings work. Otherwise an
     # unknown setting will lead to failing precondition check, and we will skip
     # the test, which is wrong.
@@ -1294,7 +1368,7 @@ if not args.use_existing_tables:
             sys.exit(0)
         # The measured lightweight updates of the rewritten tables too.
         for q_item in test_queries:
-            if q_item["kind"] == "sql":
+            if q_item["kind"] == "sql" and not q_item["disabled"]:
                 q_item["statements"] = [
                     iceberg_engine.rewrite_update(q, args.binary[-1], tables) for q in q_item["statements"]
                 ]
@@ -1310,7 +1384,10 @@ if not args.use_existing_tables:
     def do_create(connection, index, queries):
         for q, tolerate_on_reference in queries:
             try:
-                connection.execute(q)
+                if coverage:
+                    connection.execute(q, settings={"max_execution_time": 0})
+                else:
+                    connection.execute(q)
                 print(f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}")
             except Exception:
                 # Failures on any server other than the reference (connection 0), or of setup queries without the opt-out, stay fatal.
@@ -1358,6 +1435,9 @@ if not args.use_existing_tables:
 
     reportStageEnd("create")
 
+if coverage:
+    coverage.stop()
+
 # The servers hold the same data only when the setup generates it deterministically.
 compare_results = not any(nondeterministic_data(q or "") for q, _ in create_query_templates)
 
@@ -1400,13 +1480,13 @@ if stop_merges:
 os.system("sync")
 reportStageEnd("sync")
 
-# By default, test all queries.
-queries_to_run = range(0, len(test_queries))
+# By default, test all queries that are not disabled.
+queries_to_run = [i for i, q in enumerate(test_queries) if not q["disabled"]]
 
 if args.max_queries and not (args.soft_max_queries and run_all_queries):
     # If specified, test a limited number of queries chosen at random.
     queries_to_run = random.sample(
-        range(0, len(test_queries)), min(len(test_queries), args.max_queries)
+        queries_to_run, min(len(queries_to_run), args.max_queries)
     )
 
 if args.queries_to_run:
@@ -1439,6 +1519,18 @@ for query_index in queries_to_run:
 
     print(f"display-name\t{query_index}\t{tsv_escape(query_display_name)}")
 
+    if coverage:
+        def execute_coverage_query(run):
+            execute_query_group(
+                all_connections[0], q_item["statements"],
+                f"{query_prefix}.coverage{run}",
+                {"max_execution_time": 0},
+            )
+
+        coverage.collect_query(query_index, execute_coverage_query)
+        print(f"coverage-query\t{query_index}\t{1 + args.coverage_warm_runs}")
+        continue
+
     if args.jemalloc_purge in ("before-each-query", "before-each-run"):
         purge_jemalloc_on_all_connections(f"before-query-{query_index}")
 
@@ -1469,7 +1561,7 @@ for query_index in queries_to_run:
                     conn_index, q_item["script"], args.prewarm_max_query_seconds
                 )
             else:
-                prewarm_results = []
+                prewarm_results = [] if args.result_digest else None
                 try:
                     # During the warm-up runs, we will also:
                     # * detect queries that are exceedingly long, to fail fast,
@@ -1498,7 +1590,7 @@ for query_index in queries_to_run:
             print(
                 f"prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{prewarm_elapsed}"
             )
-            if q_item["kind"] == "sql":
+            if args.result_digest and q_item["kind"] == "sql":
                 # Outside of the prewarm time and before the measured runs.
                 digest_settings = {"max_execution_time": args.prewarm_max_query_seconds}
                 try:
@@ -1854,7 +1946,7 @@ if stop_merges:
 
 # Run drop queries
 teardown_clean = True
-if not args.long and not args.keep_created_tables and not args.use_existing_tables:
+if (not args.long or coverage) and not args.keep_created_tables and not args.use_existing_tables:
     teardown_clean = teardown()
     reportStageEnd("drop-2")
 
@@ -1869,3 +1961,6 @@ if failed_queries:
     sys.exit(1)
 if not teardown_clean:
     sys.exit(1)
+
+if coverage:
+    coverage.finish(all_connections[0].settings)

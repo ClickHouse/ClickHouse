@@ -135,7 +135,10 @@ void SerializationInfoNamed::serialializeKindStackBinary(WriteBuffer & out) cons
 void SerializationInfoNamed::deserializeFromKindsBinary(ReadBuffer & in, ISerialization::KindSet allowed_kinds)
 {
     SerializationInfo::deserializeFromKindsBinary(in, allowed_kinds);
-    auto elements_allowed_kinds = allowed_kinds.without(ISerialization::Kind::DETACHED);
+
+    /// `Detached` and `Replicated` always wrap a whole column, never a single element:
+    /// no writer builds such an element, and both are unwrapped only at the top level of a column.
+    auto elements_allowed_kinds = allowed_kinds.without(ISerialization::Kind::DETACHED).without(ISerialization::Kind::REPLICATED);
     for (const auto & elem : elems)
         elem->deserializeFromKindsBinary(in, elements_allowed_kinds);
 }

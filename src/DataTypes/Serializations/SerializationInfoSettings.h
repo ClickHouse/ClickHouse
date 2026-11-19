@@ -42,9 +42,9 @@ struct SerializationInfoSettings
     /// Downgrade `version` to BASIC when all type-level serialization versions are still at their defaults.
     void tryDowngradeToBasic();
 
-    bool isAlwaysDefault() const { return ratio_of_defaults_for_sparse >= 1.0; }
+    [[nodiscard]] bool isAlwaysDefault() const { return ratio_of_defaults_for_sparse >= 1.0; }
 
-    bool canUseSparseSerialization(const IDataType & type) const;
+    [[nodiscard]] bool canUseSparseSerialization(const IDataType & type) const;
 
     /// Whether serialization info is needed either for the column itself or for one of its subcolumns.
     bool shouldCollectSerializationInfo(const IDataType & type) const;

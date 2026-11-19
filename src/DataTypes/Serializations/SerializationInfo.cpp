@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <Formats/FormatSettings.h>
 
 #include <algorithm>
 #include <array>
@@ -285,12 +286,6 @@ void SerializationInfo::checkKindStack(ISerialization::KindSet allowed_kinds) co
 
     for (auto kind : kind_stack)
     {
-        if (!allowed_kinds.contains(kind))
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Unexpected serialization kind {} in the received data",
-                ISerialization::kindToString(kind));
-
         expected = std::find(expected, canonical_kind_order.end(), kind);
         if (expected == canonical_kind_order.end())
             throw Exception(
@@ -300,6 +295,14 @@ void SerializationInfo::checkKindStack(ISerialization::KindSet allowed_kinds) co
 
         ++expected;
     }
+
+    /// A well-formed stack is checked from the outermost kind, the first one a consumer would have to unwrap.
+    for (auto it = kind_stack.rbegin(); it != kind_stack.rend(); ++it)
+        if (!allowed_kinds.contains(*it))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Unexpected serialization kind {} in the received data",
+                ISerialization::kindToString(*it));
 }
 
 void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in, ISerialization::KindSet allowed_kinds)
@@ -797,7 +800,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
             mc.type_name = elem_object->getValue<String>(KEY_MISSING_COL_TYPE);
             if (physical_column_names.contains(mc.name))
                 throw Exception(ErrorCodes::CORRUPTED_DATA, "Column '{}' is both physical and missing in serialization infos", mc.name);
-            DataTypeFactory::instance().get(mc.type_name);
+            (void)DataTypeFactory::instance().get(mc.type_name);
             missing_columns.push_back(std::move(mc));
         }
         infos.setMissingColumns(std::move(missing_columns));
