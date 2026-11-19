@@ -466,7 +466,7 @@ public:
         }
     }
 
-    bool empty() const { return grams.empty(); }
+    [[nodiscard]] bool empty() const { return grams.empty(); }
 
     /// Chooses the gram that occurs the least in a sample of the codes of the block (from its beginning),
     /// and builds the classes of the codes for it.
@@ -685,10 +685,10 @@ public:
         }
     }
 
-    bool empty() const { return conditions.empty(); }
+    [[nodiscard]] bool empty() const { return conditions.empty(); }
 
     /// Whether checking these conditions decides the whole filter.
-    bool decideFilter() const { return all_conditions_are_exact; }
+    [[nodiscard]] bool decideFilter() const { return all_conditions_are_exact; }
 
     void build(const FSST::SymbolTable & table)
     {
@@ -718,7 +718,7 @@ public:
     /// Checks the value of `size` bytes, whose codes are `[begin, end)` (from the index of the values, within the codes).
     /// The codes that are compared are not decoded, so they are not validated: a malformed block can only make
     /// the comparison fail. The decoded part is validated by `FSST::decode`.
-    bool match(const CompressionCodecFSST::EncodedBlock & block, size_t begin, size_t end, size_t size) const
+    [[nodiscard]] bool match(const CompressionCodecFSST::EncodedBlock & block, size_t begin, size_t end, size_t size) const
     {
         const UInt8 * codes = block.codes;
         for (const auto & condition : conditions)
@@ -1802,7 +1802,10 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     {
         /// Check every value against the filter and read non-matching values as empty strings,
         /// rewriting the just-appended offsets accordingly. See the comment for `StringValueFilter`.
-        /// If the data is compressed by `FSST`, the values are checked without decoding them.
+        /// If the data is compressed by `FSST`, the values are checked without decoding them. This needs
+        /// the encoded blocks, so it works only with `CompressedReadBufferFromFile`: with `use_uncompressed_cache`,
+        /// the stream is a `CachedCompressedReadBuffer`, which keeps the decompressed blocks, and the values are
+        /// decoded and checked as for any other codec.
         const auto & filter = *settings.string_value_filter;
         auto * compressed_stream = dynamic_cast<CompressedReadBufferFromFile *>(stream);
         if (compressed_stream)

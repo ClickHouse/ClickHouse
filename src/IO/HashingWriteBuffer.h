@@ -81,7 +81,7 @@ public:
     }
 
     /// The working buffer is the one of `out`, so the offsets in it are the same.
-    bool needsValueBoundaries() const override { return out_with_value_boundaries && out_with_value_boundaries->needsValueBoundaries(); }
+    [[nodiscard]] bool needsValueBoundaries() const override { return out_with_value_boundaries && out_with_value_boundaries->needsValueBoundaries(); }
     void addValueBoundary(size_t offset) override { out_with_value_boundaries->addValueBoundary(offset); }
 
     void sync() override

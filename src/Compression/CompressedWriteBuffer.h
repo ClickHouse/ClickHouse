@@ -53,7 +53,7 @@ public:
     /// Returns the buffer that compressed data is written into.
     WriteBuffer * getNestedBuffer() const { return &out; }
 
-    bool needsValueBoundaries() const override { return codec->needsValueBoundaries(); }
+    [[nodiscard]] bool needsValueBoundaries() const override { return codec->needsValueBoundaries(); }
     void addValueBoundary(size_t offset) override;
 
 private:

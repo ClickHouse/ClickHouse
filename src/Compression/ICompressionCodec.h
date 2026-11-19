@@ -64,7 +64,7 @@ public:
 
     /// Whether the codec uses the boundaries between the values in the data (see `IWriteBufferWithValueBoundaries`),
     /// e.g. to compress every value on its own (`FSST`).
-    virtual bool needsValueBoundaries() const { return false; }
+    [[nodiscard]] virtual bool needsValueBoundaries() const { return false; }
 
     /// The same as `compress`, given the boundaries between the values in the source: the increasing offsets in it,
     /// except 0 and `source_size`. A codec that does not use them compresses the data as `compress` does.

@@ -39,7 +39,7 @@ public:
     [[nodiscard]] bool dependsOnDataType() const override;
 
     /// The boundaries of the values are only known for the source, which is the input of the first stage.
-    bool needsValueBoundaries() const override { return !getCodecs().empty() && getCodecs().front()->needsValueBoundaries(); }
+    [[nodiscard]] bool needsValueBoundaries() const override { return !getCodecs().empty() && getCodecs().front()->needsValueBoundaries(); }
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;

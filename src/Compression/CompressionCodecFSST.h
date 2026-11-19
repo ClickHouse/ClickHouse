@@ -36,18 +36,18 @@ public:
         ENCODED_ALIGNED = 2,
     };
 
-    uint8_t getMethodByte() const override;
-    ASTPtr getCodecDescription() const override;
+    [[nodiscard]] uint8_t getMethodByte() const override;
+    [[nodiscard]] ASTPtr getCodecDescription() const override;
     void updateHash(SipHash & hash) const override;
 
-    bool isCompression() const override { return true; }
-    bool isGenericCompression() const override { return false; }
-    String getDescription() const override
+    [[nodiscard]] bool isCompression() const override { return true; }
+    [[nodiscard]] bool isGenericCompression() const override { return false; }
+    [[nodiscard]] String getDescription() const override
     {
         return "Fast Static Symbol Table string compression; values can be filtered without decompressing them.";
     }
 
-    bool needsValueBoundaries() const override { return true; }
+    [[nodiscard]] bool needsValueBoundaries() const override { return true; }
 
     /// An encoded block: the codes, and the symbol table, which is filled by `parseBlock`.
     struct EncodedBlock
@@ -75,7 +75,7 @@ protected:
     UInt32 doCompressDataWithValueBoundaries(
         const char * source, UInt32 source_size, char * dest, std::span<const UInt32> value_boundaries) const override;
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
+    [[nodiscard]] UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
 private:
     UInt32 compressImpl(const char * source, UInt32 source_size, char * dest, const std::span<const UInt32> * value_boundaries) const;

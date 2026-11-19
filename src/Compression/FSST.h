@@ -42,7 +42,7 @@ struct SymbolTable
     /// of the boundaries between the values in the data), the symbols are learned within the values.
     static SymbolTable build(const char * data, size_t size, const std::span<const UInt32> * value_boundaries = nullptr);
 
-    size_t serializedSize() const;
+    [[nodiscard]] size_t serializedSize() const;
     /// Writes `serializedSize` bytes: the number of symbols, their lengths, and their bytes.
     void serialize(char * dest) const;
     /// Reads a table written by `serialize` and returns the number of bytes read.

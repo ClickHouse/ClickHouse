@@ -19,7 +19,7 @@ public:
     virtual ~IWriteBufferWithValueBoundaries() = default;
 
     /// Whether the boundaries are used. If not, there is no need to report them.
-    virtual bool needsValueBoundaries() const = 0;
+    [[nodiscard]] virtual bool needsValueBoundaries() const = 0;
 
     /// Reports that the position at `offset` in the working buffer is a boundary between two values.
     /// The offsets must not decrease until the working buffer is flushed.
