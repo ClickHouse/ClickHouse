@@ -42,4 +42,12 @@ SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"(a|b|', arrayStri
 SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"a_(', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(150)), '|'), '|total)"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
 SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"(a_total|b_total|', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(150)), '|'), ')"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1;
 
+SELECT '-- groups nested deeper than 32 keep the regex, and a very deep nesting does not overflow the stack';
+SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"', repeat('(', 32), 'a_total|b_total', repeat(')', 32), '"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1;
+SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"', repeat('(', 33), 'a_total|b_total', repeat(')', 33), '"}'), 0, 2000, 'timestamp_and_value');
+SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"', repeat('(', 33), 'a_total|b_total', repeat(')', 33), '"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx, concat('a_total{job=~"', repeat('(', 40), 'api-prod|api-stg', repeat(')', 40), '"}'), 1000) ORDER BY value);
+SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"', repeat('(', 50000), 'a_total', repeat(')', 50000), '"}'), 0, 2000, 'timestamp_and_value'); -- { serverError CANNOT_COMPILE_REGEXP }
+SELECT count() FROM timeSeriesSelector(rx, concat('{job=~"', repeat('(', 50000), 'api', repeat(')', 50000), '"}'), 0, 2000, 'timestamp_and_value'); -- { serverError CANNOT_COMPILE_REGEXP }
+
 DROP TABLE rx;

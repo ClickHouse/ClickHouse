@@ -11,10 +11,13 @@ namespace
 /// so that neither `(a|b)(c|d)...` nor a long literal next to a big group can blow up.
 constexpr size_t MAX_EXPANDED_TERMS = 100;
 
-std::optional<Strings> parseAlternation(std::string_view regex, size_t & pos);
+/// The deepest nesting of groups that is parsed, so that a regex with many nested groups cannot overflow the stack.
+constexpr size_t MAX_GROUP_DEPTH = 32;
+
+std::optional<Strings> parseAlternation(std::string_view regex, size_t & pos, size_t depth);
 
 /// Parses literals and groups up to the next `|`, the `)` closing the current group, or the end of the regex.
-std::optional<Strings> parseConcatenation(std::string_view regex, size_t & pos)
+std::optional<Strings> parseConcatenation(std::string_view regex, size_t & pos, size_t depth)
 {
     Strings terms(1);
     while (pos < regex.size() && regex[pos] != '|' && regex[pos] != ')')
@@ -22,10 +25,12 @@ std::optional<Strings> parseConcatenation(std::string_view regex, size_t & pos)
         char c = regex[pos];
         if (c == '(')
         {
+            if (depth == MAX_GROUP_DEPTH)
+                return {};
             ++pos;
             if (regex.substr(pos).starts_with("?:"))
                 pos += 2;
-            auto group = parseAlternation(regex, pos);
+            auto group = parseAlternation(regex, pos, depth + 1);
             if (!group || pos == regex.size())
                 return {};
             ++pos;
@@ -55,13 +60,13 @@ std::optional<Strings> parseConcatenation(std::string_view regex, size_t & pos)
 }
 
 /// Parses terms separated by `|` up to the `)` closing the current group or the end of the regex.
-std::optional<Strings> parseAlternation(std::string_view regex, size_t & pos)
+std::optional<Strings> parseAlternation(std::string_view regex, size_t & pos, size_t depth)
 {
-    auto terms = parseConcatenation(regex, pos);
+    auto terms = parseConcatenation(regex, pos, depth);
     while (terms && pos < regex.size() && regex[pos] == '|')
     {
         ++pos;
-        auto next_terms = parseConcatenation(regex, pos);
+        auto next_terms = parseConcatenation(regex, pos, depth);
         if (!next_terms)
             return {};
         terms->insert(terms->end(), std::make_move_iterator(next_terms->begin()), std::make_move_iterator(next_terms->end()));
@@ -74,7 +79,7 @@ std::optional<Strings> parseAlternation(std::string_view regex, size_t & pos)
 std::optional<Strings> tryGetLiteralAlternatives(std::string_view regex)
 {
     size_t pos = 0;
-    auto terms = parseAlternation(regex, pos);
+    auto terms = parseAlternation(regex, pos, 0);
     /// The parsing stops before the end at a `)` without a matching `(`.
     if (!terms || pos != regex.size())
         return {};
