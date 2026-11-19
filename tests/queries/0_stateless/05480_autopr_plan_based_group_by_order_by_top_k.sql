@@ -3,6 +3,7 @@
 -- single-node aggregation: automatic parallel replicas matches the two plans, and prices the output of each replica by
 -- the output of the single-node aggregation. Every replica keeps its own `n` groups, so the cost model must not divide
 -- that output between the replicas, the same as for `LIMIT n`. The same for `GROUP BY ... LIMIT` without `ORDER BY`.
+-- Query-based parallel replicas are priced and switched the same way.
 
 DROP TABLE IF EXISTS t_05480;
 CREATE TABLE t_05480 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY v;
@@ -58,6 +59,13 @@ SETTINGS automatic_parallel_replicas_mode = 1, automatic_parallel_replicas_ignor
 SELECT k, count() FROM t_05480 GROUP BY k LIMIT 10
 SETTINGS automatic_parallel_replicas_mode = 1, automatic_parallel_replicas_ignore_thresholds = 1,
     log_comment = 'q05480_priced_no_order_by';
+-- The same with query-based parallel replicas.
+SELECT k, count() FROM t_05480 GROUP BY k ORDER BY k LIMIT 10
+SETTINGS automatic_parallel_replicas_mode = 1, automatic_parallel_replicas_ignore_thresholds = 1,
+    parallel_replicas_plan_based = 0, log_comment = 'q05480_priced_query_based_order_by';
+SELECT k, count() FROM t_05480 GROUP BY k LIMIT 10
+SETTINGS automatic_parallel_replicas_mode = 1, automatic_parallel_replicas_ignore_thresholds = 1,
+    parallel_replicas_plan_based = 0, log_comment = 'q05480_priced_query_based_no_order_by';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
