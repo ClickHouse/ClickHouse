@@ -161,8 +161,13 @@ std::optional<String> tryGetHivePartitioningSamplePathOfFileNameGlobs(const Stor
         return std::nullopt;
 
     const size_t first_glob_pos = path.path.find_first_of("*?{");
-    if (first_glob_pos == std::string::npos || path.path.find('/', first_glob_pos) != std::string::npos
-        || path.path.find("**", first_glob_pos) != std::string::npos)
+    if (first_glob_pos == std::string::npos || path.path.find('/', first_glob_pos) != std::string::npos)
+        return std::nullopt;
+
+    /// In `makeRegexpPatternFromGlobs` a `*` that follows another `*`, with only `?` between them, matches '/'.
+    String file_name_globs = path.path.substr(first_glob_pos);
+    std::erase(file_name_globs, '?');
+    if (file_name_globs.contains("**"))
         return std::nullopt;
 
     re2::RE2 matcher(makeRegexpPatternFromGlobs(path.path));

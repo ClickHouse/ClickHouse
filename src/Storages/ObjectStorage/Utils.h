@@ -38,8 +38,8 @@ void validateSupportedColumns(
     const StorageObjectStorageConfiguration & configuration);
 
 /// The raw path as the hive partitioning sample path when no listing is needed for it: every glob is in the file
-/// name and matched by the reader as a regexp, so every object the reader matches has the directory of the path,
-/// the only part hive partitioning reads. Throws if the reader would refuse the glob. Otherwise std::nullopt.
+/// name and the reader's regexp cannot match '/' there, so every object the reader matches has the directory of the
+/// path, the only part hive partitioning reads. Throws if the reader would refuse the glob. Otherwise std::nullopt.
 std::optional<String> tryGetHivePartitioningSamplePathOfFileNameGlobs(const StorageObjectStorageConfiguration & configuration);
 
 /// Throws `ACCESS_DENIED` if the client of `object_storage` uses the server's own Azure identity or S3 credentials and

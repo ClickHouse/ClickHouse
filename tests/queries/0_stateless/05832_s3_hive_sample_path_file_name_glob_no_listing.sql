@@ -11,6 +11,7 @@ SET s3_truncate_on_insert = 1;
 
 INSERT INTO FUNCTION s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05832/a=1/b=x/f_1.tsv', format = TSV) SELECT 1 AS v;
 INSERT INTO FUNCTION s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05832/a=1/b=x/f_2.tsv', format = TSV) SELECT 2 AS v;
+INSERT INTO FUNCTION s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05832/a=1/f_xy/b=2/f.tsv', format = TSV) SELECT 3 AS v;
 
 SELECT v, a, b, toTypeName(a), toTypeName(b), _file
 FROM s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05832/a=1/b=x/f_*.tsv', format = TSV, structure = 'v UInt64')
@@ -36,6 +37,11 @@ SELECT v, a, b FROM t_05832 ORDER BY v SETTINGS log_comment = '05832:table';
 SELECT v, a
 FROM s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05832/a=*/b=x/f_1.tsv', format = TSV, structure = 'v UInt64')
 ORDER BY v SETTINGS log_comment = '05832:directory_glob';
+
+-- So does a `*` after `*?`: the reader matches it against '/' too, so the pattern reaches a nested directory.
+SELECT v, a, b
+FROM s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05832/a=1/f_*?*.tsv', format = TSV, structure = 'v UInt64')
+ORDER BY v SETTINGS log_comment = '05832:star_question_star';
 
 -- A file name glob that matches no object has the hive columns of its directory, like an explicit key.
 SELECT count()

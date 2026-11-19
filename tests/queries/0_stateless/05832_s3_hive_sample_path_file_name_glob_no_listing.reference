@@ -9,6 +9,7 @@
 1	1	x
 2	1	x
 1	1
+3	1	2
 0
 05832:star	1
 05832:range	1
@@ -16,5 +17,6 @@
 05832:cluster	1
 05832:table	1
 05832:directory_glob	2
+05832:star_question_star	2
 05832:no_match	1
 cluster replica	0
