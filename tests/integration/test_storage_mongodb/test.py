@@ -1016,7 +1016,8 @@ def test_merge_outer_join(started_cluster):
     )
 
     # The row the RIGHT JOIN pads has an empty `description`, so MongoDB must not apply the filter.
-    # The `Merge` table comes first: a remote table that is not the leftmost one is read without the filter.
+    # The `Merge` table is the leftmost one: a remote table elsewhere in the join is read through a subquery
+    # without the filter.
     assert (
         node.query(
             "SELECT o.id FROM merge(currentDatabase(), '^merge_outer_join$') AS p "

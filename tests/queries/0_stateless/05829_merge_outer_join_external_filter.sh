@@ -45,6 +45,9 @@ WHERE p.description IS NULL ORDER BY o.id;
 SELECT 'ASOF JOIN';
 SELECT count() FROM orders AS o ASOF JOIN merge(currentDatabase(), '^p_ext$') AS p ON o.k = p.k AND o.id >= p.id
 WHERE p.description IS NULL SETTINGS join_algorithm = 'hash';
+SELECT 'PASTE JOIN';
+SELECT o.id, p.id FROM orders AS o PASTE JOIN merge(currentDatabase(), '^p_ext$') AS p
+WHERE p.description = 'one' SETTINGS max_threads = 1;
 SELECT 'LEFT JOIN, a local table first';
 SELECT o.id FROM orders AS o LEFT JOIN merge(currentDatabase(), '^(a_local|p_ext)$') AS p ON o.id = p.id
 WHERE p.description IS NULL ORDER BY o.id;
@@ -68,6 +71,18 @@ WHERE p.description = 'one' FORMAT Null;
 echo 'Pushed down under INNER JOIN:'
 ${CLICKHOUSE_LOCAL} --send_logs_level=trace --query="${TABLES}
 SELECT o.id FROM orders AS o INNER JOIN merge(currentDatabase(), '^p_ext$') AS p ON o.id = p.id
+WHERE p.description = 'one' FORMAT Null;
+" 2>&1 | grep -oE 'Query: SELECT .* FROM `p`.*$'
+
+echo 'Pushed down under CROSS JOIN:'
+${CLICKHOUSE_LOCAL} --send_logs_level=trace --query="${TABLES}
+SELECT p.id FROM merge(currentDatabase(), '^p_ext$') AS p CROSS JOIN (SELECT 1) AS x
+WHERE p.description = 'one' FORMAT Null;
+" 2>&1 | grep -oE 'Query: SELECT .* FROM `p`.*$'
+
+echo 'Pushed down under ARRAY JOIN:'
+${CLICKHOUSE_LOCAL} --send_logs_level=trace --query="${TABLES}
+SELECT p.id FROM merge(currentDatabase(), '^p_ext$') AS p ARRAY JOIN [1, 2] AS a
 WHERE p.description = 'one' FORMAT Null;
 " 2>&1 | grep -oE 'Query: SELECT .* FROM `p`.*$'
 

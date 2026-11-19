@@ -11,6 +11,8 @@ LEFT JOIN under CROSS JOIN
 2
 ASOF JOIN
 0
+PASTE JOIN
+2	1
 LEFT JOIN, a local table first
 2
 Strict mode, direct read
@@ -20,6 +22,10 @@ Strict mode
 Pushed down on the preserving side:
 Query: SELECT `id`, `description` FROM `p` WHERE `description` = 'one'
 Pushed down under INNER JOIN:
+Query: SELECT `id`, `description` FROM `p` WHERE `description` = 'one'
+Pushed down under CROSS JOIN:
+Query: SELECT `id`, `description` FROM `p` WHERE `description` = 'one'
+Pushed down under ARRAY JOIN:
 Query: SELECT `id`, `description` FROM `p` WHERE `description` = 'one'
 Not pushed down on the non-preserving side:
 Query: SELECT `id`, `description` FROM `p`
