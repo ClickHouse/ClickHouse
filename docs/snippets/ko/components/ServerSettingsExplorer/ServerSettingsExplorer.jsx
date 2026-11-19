@@ -36,8 +36,9 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "allow_experimental_*",
-      count: 3,
+      count: 4,
       settings: [
+        { name: "allow_experimental_cluster_discovery", path: "/allow-experimental#allow_experimental_cluster_discovery", default: '""' },
         { name: "allow_experimental_executable_udf_drivers", path: "/allow-experimental#allow_experimental_executable_udf_drivers", default: "0" },
         { name: "allow_experimental_webassembly_udf", path: "/allow-experimental#allow_experimental_webassembly_udf", default: "0" },
         { name: "allow_experimental_webterminal", path: "/allow-experimental#allow_experimental_webterminal", default: "1" }
@@ -137,6 +138,19 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       children: []
     },
     {
+      label: "columns_cache_*",
+      count: 6,
+      settings: [
+        { name: "columns_cache_free_memory_ratio", path: "/columns-cache#columns_cache_free_memory_ratio", default: "0.15" },
+        { name: "columns_cache_history_window_ms", path: "/columns-cache#columns_cache_history_window_ms", default: "1000" },
+        { name: "columns_cache_policy", path: "/columns-cache#columns_cache_policy", default: "SLRU" },
+        { name: "columns_cache_size", path: "/columns-cache#columns_cache_size", default: "2147483648" },
+        { name: "columns_cache_size_ratio", path: "/columns-cache#columns_cache_size_ratio", default: "0.5" },
+        { name: "columns_cache_size_to_ram_ratio", path: "/columns-cache#columns_cache_size_to_ram_ratio", default: "0.1" }
+      ],
+      children: []
+    },
+    {
       label: "compiled_expression_*",
       count: 2,
       settings: [
@@ -158,8 +172,9 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "cpu_slot_*",
-      count: 3,
+      count: 4,
       settings: [
+        { name: "cpu_slot_parking", path: "/cpu-slot#cpu_slot_parking", default: "1" },
         { name: "cpu_slot_preemption", path: "/cpu-slot#cpu_slot_preemption", default: "1" },
         { name: "cpu_slot_preemption_timeout_ms", path: "/cpu-slot#cpu_slot_preemption_timeout_ms", default: "1000" },
         { name: "cpu_slot_quantum_ns", path: "/cpu-slot#cpu_slot_quantum_ns", default: "10000000" }
@@ -267,10 +282,13 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "distributed_cache_*",
-      count: 3,
+      count: 6,
       settings: [
         { name: "distributed_cache_apply_throttling_settings_from_client", path: "/distributed-cache#distributed_cache_apply_throttling_settings_from_client", default: "1" },
         { name: "distributed_cache_keep_up_free_connections_ratio", path: "/distributed-cache#distributed_cache_keep_up_free_connections_ratio", default: "0.1" },
+        { name: "distributed_cache_warmer_max_bytes_in_queue", path: "/distributed-cache#distributed_cache_warmer_max_bytes_in_queue", default: "107374182400" },
+        { name: "distributed_cache_warmer_max_file_segment_size", path: "/distributed-cache#distributed_cache_warmer_max_file_segment_size", default: "33554432" },
+        { name: "distributed_cache_warmer_max_segments_in_queue", path: "/distributed-cache#distributed_cache_warmer_max_segments_in_queue", default: "100000" },
         { name: "distributed_cache_write_pool_size", path: "/distributed-cache#distributed_cache_write_pool_size", default: "100" }
       ],
       children: []
@@ -313,9 +331,10 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_*",
-      count: 5,
+      count: 6,
       settings: [
         { name: "enable_azure_sdk_logging", path: "/enable#enable_azure_sdk_logging", default: "0" },
+        { name: "enable_gpu", path: "/enable#enable_gpu", default: "0" },
         { name: "enable_read_through_distributed_cache", path: "/enable#enable_read_through_distributed_cache", default: "0" },
         { name: "enable_silk_runtime", path: "/enable#enable_silk_runtime", default: "0" },
         { name: "enable_webterminal", path: "/enable#enable_webterminal", default: "1" },
@@ -352,6 +371,15 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       children: []
     },
     {
+      label: "gpu_*",
+      count: 2,
+      settings: [
+        { name: "gpu_memory_pool_release_threshold", path: "/gpu#gpu_memory_pool_release_threshold", default: "18446744073709551615" },
+        { name: "gpu_pinned_memory_pool_release_threshold", path: "/gpu#gpu_pinned_memory_pool_release_threshold", default: "1073741824" }
+      ],
+      children: []
+    },
+    {
       label: "graphite_*",
       count: 2,
       settings: [
@@ -364,7 +392,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       label: "http_*",
       count: 4,
       settings: [
-        { name: "http_allow_path_requests", path: "/http#http_allow_path_requests", default: "0" },
+        { name: "http_allow_path_requests", path: "/http#http_allow_path_requests", default: "1" },
         { name: "http_handlers", path: "/http#http_handlers" },
         { name: "http_options_response", path: "/http#http_options_response" },
         { name: "http_server_default_response", path: "/http#http_server_default_response", default: '"Ok.\\n"' }
@@ -545,7 +573,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       count: 2,
       settings: [
         { name: "logger.async", path: "/logger-async#logger.async", default: "1" },
-        { name: "logger.async_queye_max_size", path: "/logger-async#logger.async_queye_max_size", default: "65536" }
+        { name: "logger.async_queue_max_size", path: "/logger-async#logger.async_queue_max_size", default: "65536" }
       ],
       children: []
     },
@@ -774,7 +802,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       label: "memory_worker_*",
       count: 8,
       settings: [
-        { name: "memory_worker_correct_memory_tracker", path: "/memory-worker#memory_worker_correct_memory_tracker", default: "0" },
+        { name: "memory_worker_correct_memory_tracker", path: "/memory-worker#memory_worker_correct_memory_tracker", default: "1" },
         { name: "memory_worker_decay_adjustment_period_ms", path: "/memory-worker#memory_worker_decay_adjustment_period_ms", default: "5000" },
         { name: "memory_worker_dynamic_hard_limit", path: "/memory-worker#memory_worker_dynamic_hard_limit", default: "1" },
         { name: "memory_worker_period_ms", path: "/memory-worker#memory_worker_period_ms", default: "0" },
@@ -1097,6 +1125,17 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       children: []
     },
     {
+      label: "statistics_cache_*",
+      count: 4,
+      settings: [
+        { name: "statistics_cache_policy", path: "/statistics-cache#statistics_cache_policy", default: "SLRU" },
+        { name: "statistics_cache_prewarm_ratio", path: "/statistics-cache#statistics_cache_prewarm_ratio", default: "0.95" },
+        { name: "statistics_cache_size", path: "/statistics-cache#statistics_cache_size", default: "1073741824" },
+        { name: "statistics_cache_size_ratio", path: "/statistics-cache#statistics_cache_size_ratio", default: "0.5" }
+      ],
+      children: []
+    },
+    {
       label: "storage_*",
       count: 3,
       settings: [
@@ -1323,9 +1362,10 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "기타",
-      count: 121,
+      count: 128,
       settings: [
         { name: "abort_on_logical_error", path: "/other#abort_on_logical_error", default: "0" },
+        { name: "ai_function_allow_sql_named_collections", path: "/other#ai_function_allow_sql_named_collections", default: "1" },
         { name: "allowed_disks_for_table_engines", path: "/other#allowed_disks_for_table_engines", default: '""' },
         { name: "auth_use_forwarded_address", path: "/other#auth_use_forwarded_address", default: "false" },
         { name: "bcrypt_workfactor", path: "/other#bcrypt_workfactor", default: "12" },
@@ -1334,6 +1374,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "cache_size_to_ram_max_ratio", path: "/other#cache_size_to_ram_max_ratio", default: "0.5" },
         { name: "cannot_allocate_thread_fault_injection_probability", path: "/other#cannot_allocate_thread_fault_injection_probability", default: "0" },
         { name: "cgroups_memory_usage_observer_wait_time", path: "/other#cgroups_memory_usage_observer_wait_time", default: "15" },
+        { name: "collect_connection_metrics", path: "/other#collect_connection_metrics", default: "0" },
         { name: "compression", path: "/other#compression" },
         { name: "config-file", path: "/other#config-file", default: "config.xml" },
         { name: "config_reload_interval_ms", path: "/other#config_reload_interval_ms", default: "2000" },
@@ -1392,6 +1433,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "openSSL.client.cacheSessions", path: "/other#openssl.client.cachesessions", default: "0" },
         { name: "openSSL.client.certificateFile", path: "/other#openssl.client.certificatefile", default: '""' },
         { name: "openSSL.client.cipherList", path: "/other#openssl.client.cipherlist", default: "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" },
+        { name: "openSSL.client.cipherSuites", path: "/other#openssl.client.ciphersuites", default: '""' },
         { name: "openSSL.client.disableProtocols", path: "/other#openssl.client.disableprotocols", default: '""' },
         { name: "openSSL.client.extendedVerification", path: "/other#openssl.client.extendedverification", default: "1" },
         { name: "openSSL.client.fips", path: "/other#openssl.client.fips", default: "0" },
@@ -1406,6 +1448,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "openSSL.server.cacheSessions", path: "/other#openssl.server.cachesessions", default: "0" },
         { name: "openSSL.server.certificateFile", path: "/other#openssl.server.certificatefile", default: '""' },
         { name: "openSSL.server.cipherList", path: "/other#openssl.server.cipherlist", default: "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" },
+        { name: "openSSL.server.cipherSuites", path: "/other#openssl.server.ciphersuites", default: '""' },
         { name: "openSSL.server.disableProtocols", path: "/other#openssl.server.disableprotocols", default: '""' },
         { name: "openSSL.server.extendedVerification", path: "/other#openssl.server.extendedverification", default: "0" },
         { name: "openSSL.server.fips", path: "/other#openssl.server.fips", default: "0" },
@@ -1423,6 +1466,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "part_log", path: "/other#part_log" },
         { name: "path", path: "/other#path", default: "/var/lib/clickhouse/" },
         { name: "per_cpu_untracked_memory_thread_buffer", path: "/other#per_cpu_untracked_memory_thread_buffer", default: "32768" },
+        { name: "placement", path: "/other#placement" },
         { name: "point_in_polygon_cache_size", path: "/other#point_in_polygon_cache_size", default: "268435456" },
         { name: "prefixes_deserialization_thread_pool_thread_pool_queue_size", path: "/other#prefixes_deserialization_thread_pool_thread_pool_queue_size", default: "10000" },
         { name: "prepare_system_log_tables_on_startup", path: "/other#prepare_system_log_tables_on_startup", default: "0" },
@@ -1435,11 +1479,13 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "replica_group_name", path: "/other#replica_group_name", default: '""' },
         { name: "replicated_merge_tree", path: "/other#replicated_merge_tree" },
         { name: "restore_threads", path: "/other#restore_threads", default: "16" },
+        { name: "seccomp", path: "/other#seccomp", default: "log" },
         { name: "send_crash_reports", path: "/other#send_crash_reports" },
         { name: "series_keeper_path", path: "/other#series_keeper_path", default: "/clickhouse/series" },
         { name: "ssh_server", path: "/other#ssh_server" },
         { name: "table_engines_require_grant", path: "/other#table_engines_require_grant", default: "false" },
         { name: "tcp_ssh_port", path: "/other#tcp_ssh_port" },
+        { name: "tcp_with_proxy_allow_interserver_mode", path: "/other#tcp_with_proxy_allow_interserver_mode", default: "1" },
         { name: "text_log", path: "/other#text_log" },
         { name: "thread_pool_queue_size", path: "/other#thread_pool_queue_size", default: "10000" },
         { name: "throw_on_unknown_workload", path: "/other#throw_on_unknown_workload", default: "0" },

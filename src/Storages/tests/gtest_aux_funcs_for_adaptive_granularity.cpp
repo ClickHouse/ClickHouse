@@ -30,7 +30,7 @@ TEST(AdaptiveIndexGranularity, FillGranularityToyTests)
     { /// Granularity bytes are not set. Take default index_granularity.
         MergeTreeIndexGranularityAdaptive index_granularity;
         auto granularity = computeIndexGranularity(block1.rows(), block1.bytes(), 0, 100, false, false);
-        fillIndexGranularityImpl(index_granularity, 0, granularity, block1.rows());
+        fillIndexGranularityForWidePart(index_granularity, 0, granularity, block1.rows());
         EXPECT_EQ(index_granularity.getMarksCount(), 1);
         EXPECT_EQ(index_granularity.getMarkRows(0), 100);
     }
@@ -38,7 +38,7 @@ TEST(AdaptiveIndexGranularity, FillGranularityToyTests)
     { /// Granule size is less than block size. Block contains multiple granules.
         MergeTreeIndexGranularityAdaptive index_granularity;
         auto granularity = computeIndexGranularity(block1.rows(), block1.bytes(), 16, 100, false, true);
-        fillIndexGranularityImpl(index_granularity, 0, granularity, block1.rows());
+        fillIndexGranularityForWidePart(index_granularity, 0, granularity, block1.rows());
         EXPECT_EQ(index_granularity.getMarksCount(), 5); /// First granule with 8 rows, and second with 1 row
         for (size_t i = 0; i < index_granularity.getMarksCount(); ++i)
             EXPECT_EQ(index_granularity.getMarkRows(i), 2);
@@ -48,7 +48,7 @@ TEST(AdaptiveIndexGranularity, FillGranularityToyTests)
 
         MergeTreeIndexGranularityAdaptive index_granularity;
         auto granularity = computeIndexGranularity(block1.rows(), block1.bytes(), 512, 100, false, true);
-        fillIndexGranularityImpl(index_granularity, 0, granularity, block1.rows());
+        fillIndexGranularityForWidePart(index_granularity, 0, granularity, block1.rows());
         EXPECT_EQ(index_granularity.getMarksCount(), 1);
         for (size_t i = 0; i < index_granularity.getMarksCount(); ++i)
             EXPECT_EQ(index_granularity.getMarkRows(i), 64);
@@ -58,7 +58,7 @@ TEST(AdaptiveIndexGranularity, FillGranularityToyTests)
 
         MergeTreeIndexGranularityAdaptive index_granularity;
         auto granularity = computeIndexGranularity(block1.rows(), block1.bytes(), 1, 100, true, true);
-        fillIndexGranularityImpl(index_granularity, 0, granularity, block1.rows());
+        fillIndexGranularityForWidePart(index_granularity, 0, granularity, block1.rows());
         EXPECT_EQ(index_granularity.getMarksCount(), 1);
         for (size_t i = 0; i < index_granularity.getMarksCount(); ++i)
             EXPECT_EQ(index_granularity.getMarkRows(i), block1.rows());
@@ -67,7 +67,7 @@ TEST(AdaptiveIndexGranularity, FillGranularityToyTests)
     { /// Shift in index offset
         MergeTreeIndexGranularityAdaptive index_granularity;
         auto granularity = computeIndexGranularity(block1.rows(), block1.bytes(), 16, 100, false, true);
-        fillIndexGranularityImpl(index_granularity, 6, granularity, block1.rows());
+        fillIndexGranularityForWidePart(index_granularity, 6, granularity, block1.rows());
         EXPECT_EQ(index_granularity.getMarksCount(), 2);
         for (size_t i = 0; i < index_granularity.getMarksCount(); ++i)
             EXPECT_EQ(index_granularity.getMarkRows(i), 2);
@@ -85,7 +85,7 @@ TEST(AdaptiveIndexGranularity, FillGranularitySequenceOfBlocks)
         for (const auto & block : {block1, block2, block3})
         {
             auto granularity = computeIndexGranularity(block.rows(), block.bytes(), 1024, 8192, false, true);
-            fillIndexGranularityImpl(index_granularity, 0, granularity, block.rows());
+            fillIndexGranularityForWidePart(index_granularity, 0, granularity, block.rows());
         }
 
         EXPECT_EQ(index_granularity.getMarksCount(), 192); /// granules
@@ -101,7 +101,7 @@ TEST(AdaptiveIndexGranularity, FillGranularitySequenceOfBlocks)
         for (const auto & block : {block1, block2, block3})
         {
             auto granularity = computeIndexGranularity(block.rows(), block.bytes(), 1024, 8192, false, true);
-            fillIndexGranularityImpl(index_granularity, 0, granularity, block.rows());
+            fillIndexGranularityForWidePart(index_granularity, 0, granularity, block.rows());
         }
 
         EXPECT_EQ(index_granularity.getMarksCount(), 98); /// granules
@@ -121,7 +121,7 @@ TEST(AdaptiveIndexGranularity, FillGranularitySequenceOfBlocks)
         for (const auto & block : {block1, block2, block3})
         {
             auto granularity = computeIndexGranularity(block.rows(), block.bytes(), 16384, 8192, false, true);
-            fillIndexGranularityImpl(index_granularity, index_offset, granularity, block.rows());
+            fillIndexGranularityForWidePart(index_granularity, index_offset, granularity, block.rows());
             index_offset = index_granularity.getLastMarkRows() - block.rows();
         }
         EXPECT_EQ(index_granularity.getMarksCount(), 1); /// granules

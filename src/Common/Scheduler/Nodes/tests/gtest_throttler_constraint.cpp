@@ -22,7 +22,7 @@ ThrottlerConstraint & parkOneRequest(ResourceTest & t, EventQueue::TimePoint sta
 {
     t.process(start, 0);
     t.add<ThrottlerConstraint>("/", SchedulerNodeInfo{}, max_speed, /*max_burst=*/ 0.0);
-    t.add<FifoQueue>("/A");
+    t.add<RequestQueue>("/A");
     t.enqueue("/A", {1});
     t.process(start);
     t.consumed("A", 1);

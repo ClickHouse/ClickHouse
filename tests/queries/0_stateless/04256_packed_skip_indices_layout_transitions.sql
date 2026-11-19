@@ -48,8 +48,7 @@ FROM system.parts WHERE database = currentDatabase() AND table = 't_pack_trans' 
 SELECT 'phase1_filtered_lookup', count() FROM t_pack_trans WHERE w = '7919';
 SELECT 'phase1_index_in_plan',
        countIf(explain LIKE '%Name: bf_w%')
-FROM (EXPLAIN indexes = 1 SELECT * FROM t_pack_trans WHERE w = '7919') AS s
-SETTINGS allow_experimental_analyzer = 1;
+FROM (EXPLAIN indexes = 1 SELECT * FROM t_pack_trans WHERE w = '7919') AS s;
 CHECK TABLE t_pack_trans SETTINGS check_query_single_value_result = 1;
 
 -- ---------------------------------------------------------------------------------------------

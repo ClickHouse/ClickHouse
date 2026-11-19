@@ -283,18 +283,8 @@ void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size
 
     IColumn::Filter filter(block.rows(), 0);
 
-    bool has_new_data = false;
-    switch (data.type)
-    {
-        case ClearableSetVariants::Type::EMPTY:
-            break;
-#define M(NAME) \
-        case ClearableSetVariants::Type::NAME: \
-            has_new_data = buildFilter(*data.NAME, index_column_ptrs, filter, *pos, rows_read, data); \
-            break;
-        APPLY_FOR_SET_VARIANTS(M)
-#undef M
-    }
+    const bool has_new_data
+        = data.callOnMethod([&](auto & method) { return buildFilter(method, index_column_ptrs, filter, *pos, rows_read, data); });
 
     if (has_new_data)
     {
@@ -348,7 +338,7 @@ bool MergeTreeIndexAggregatorSet::buildFilter(
     ClearableSetVariants & variants) const
 {
     /// Like DistinctSortedStreamTransform.
-    typename Method::State state(column_ptrs, key_sizes, nullptr);
+    ColumnsHashing::SubRangeState<typename Method::State> state(column_ptrs, key_sizes, nullptr, {pos, pos + limit});
 
     bool has_new_data = false;
     for (size_t i = 0; i < limit; ++i)
@@ -375,17 +365,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
 {
     auto granule = std::make_shared<MergeTreeIndexGranuleSet>(index_name, index_sample_block, max_rows, std::move(columns), std::move(set_hyperrectangle));
 
-    switch (data.type)
-    {
-        case ClearableSetVariants::Type::EMPTY:
-            break;
-#define M(NAME) \
-        case ClearableSetVariants::Type::NAME: \
-            data.NAME->data.clear(); \
-            break;
-        APPLY_FOR_SET_VARIANTS(M)
-#undef M
-    }
+    data.callOnMethod([](auto & method) { method.data.clear(); });
 
     columns = index_sample_block.cloneEmptyColumns();
 
@@ -583,10 +563,12 @@ static const ActionsDAG::NodeRawConstPtrs & getArguments(const ActionsDAG::Node 
     if (!result_dag_or_null)
         return index_hint.getActions().getOutputs();
 
-    /// Import the DAG and map argument pointers.
+    /// Nodes are not bound by name: a name in the hint need not denote the same value as in the
+    /// filter (an alias can be named like a column). Key columns are bound by `atomFromDAG`.
     auto actions_clone = index_hint.getActions().clone();
     chassert(storage);
-    result_dag_or_null->mergeNodes(std::move(actions_clone), storage);
+    *storage = actions_clone.getOutputs();
+    result_dag_or_null->unite(std::move(actions_clone));
     return *storage;
 }
 
@@ -683,6 +665,11 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
             return &result_dag.addColumn(node_to_check->column, node_to_check->result_type, node_to_check->result_name);
         return &node;
     }
+
+    /// The condition is computed on the values the index stores rather than on the rows, so it cannot use a
+    /// function that can return another value on each evaluation, such as `rand`.
+    if (node_to_check->type == ActionsDAG::ActionType::FUNCTION && !node_to_check->function_base->isDeterministicInScopeOfQuery())
+        return nullptr;
 
     RPNBuilderTreeNode tree_node(node_to_check, context);
 
@@ -851,6 +838,8 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     {
         return !atomic && tryGetConstantCondition(node).value_or(true);
     }
+    if (node_to_check->type == ActionsDAG::ActionType::FUNCTION && !node_to_check->function_base->isDeterministicInScopeOfQuery())
+        return true;
     if (node.type == ActionsDAG::ActionType::FUNCTION)
     {
         auto column_name = tree_node.getColumnName();

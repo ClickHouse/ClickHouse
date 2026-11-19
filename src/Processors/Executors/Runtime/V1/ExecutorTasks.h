@@ -1,12 +1,14 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/QueueWithMemoryTracking.h>
 #include <Processors/Executors/Runtime/V1/ExecutionThreadContext.h>
 #include <Processors/Executors/Runtime/V1/PollingQueue.h>
 #include <Processors/Executors/Runtime/V1/ThreadsQueue.h>
 #include <Processors/Executors/Runtime/V1/TasksQueue.h>
-#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/ISlotControl.h>
 #include <Common/Logger.h>
+#include <Common/Scheduler/MemoryReservation.h>
 
 #include <atomic>
 #include <memory>
@@ -14,7 +16,6 @@
 #include <queue>
 #include <vector>
 
-#include <boost/container/devector.hpp>
 
 namespace DB
 {
@@ -26,13 +27,13 @@ namespace Runtime::V1
 {
 
 /// Manage tasks which are ready for execution. Used in PipelineExecutor.
-class ExecutorTasks
+class ExecutorTasks : public ISpillRequestListener
 {
     /// If query is finished (or cancelled).
     std::atomic_bool finished = false;
 
     /// Contexts for every executing thread.
-    std::vector<std::unique_ptr<ExecutionThreadContext>> executor_contexts;
+    VectorWithMemoryTracking<std::unique_ptr<ExecutionThreadContext>> executor_contexts;
     /// This mutex protects only executor_contexts vector. Needed to avoid race between init() and finish().
     std::mutex executor_contexts_mutex;
 
@@ -47,6 +48,7 @@ class ExecutorTasks
     /// So we have a separate queue specifically for them.
     TaskQueue<IProcessor> fast_task_queue;
     std::atomic_bool has_fast_tasks = false; // Required only to enable local task optimization
+    std::atomic_bool spill_requested = false;
 
     /// Queue which stores tasks where processors returned Async status after prepare.
     /// If multiple threads are used, main thread will wait for async tasks.
@@ -60,7 +62,7 @@ class ExecutorTasks
     size_t use_threads = 0;
 
     /// Reference counters for thread CPU slots to handle race conditions between upscale/downscale.
-    std::vector<size_t> slot_count;
+    VectorWithMemoryTracking<size_t> slot_count;
 
     /// Total number of non-preempted slots.
     size_t total_slots = 0;
@@ -71,19 +73,46 @@ class ExecutorTasks
     /// CPU slots for each thread.
     SlotAllocationPtr cpu_slots;
 
+    /// Requested threads (for queued tasks or in place of downscaled ones) that wait for a CPU slot.
+    /// Changed under `mutex`, read without it after every task, so it has its own cache line.
+    alignas(64) std::atomic<size_t> threads_to_spawn = 0;
+
     /// Threshold found by rolling dice.
     const static size_t TOO_MANY_IDLE_THRESHOLD = 4;
 
+    /// Pipeline width not taken by started threads. Requires `mutex`.
+    size_t widthLeft() const;
+    /// Add to `threads_to_spawn`, up to `widthLeft`. Requires `mutex`.
+    void addThreadsToSpawn(size_t threads);
+
+    /// Current `setMax` target of the CPU slots. Only grows. Changed under `mutex`.
+    std::atomic<size_t> desired_threads = 1;
+
+    /// Orders `setMax` calls. Not `mutex`: the allocation takes its own locks, and it calls `resume` under them.
+    std::mutex set_max_mutex;
+
+    /// Raise the `setMax` target by `threads`, up to `num_threads`. Returns whether it changed. Requires `mutex`.
+    bool growDesiredThreads(size_t threads);
+    /// Pass the current target to `setMax`. Must not be called under `mutex`.
+    void applyDesiredThreads(ISlotAllocation & slots);
+
 public:
-    /// This queue can grow a lot and lead to OOM. That is why we use non-default
-    /// allocator for container which throws exceptions in operator new
-    using DequeWithMemoryTracker = boost::container::devector<IProcessor *, AllocatorWithMemoryTracking<IProcessor *>>;
-    using Queue = std::queue<IProcessor *, DequeWithMemoryTracker>;
+    void notifySpillRequested() override;
+    bool takeSpillNotification()
+    {
+        return spill_requested.load(std::memory_order_relaxed) && spill_requested.exchange(false, std::memory_order_acq_rel);
+    }
+
+    /// This queue can grow a lot and lead to OOM, so it is allocated through a tracking
+    /// allocator that throws instead of overcommitting.
+    using Queue = DevectorQueueWithMemoryTracking<IProcessor *>;
+
+    void pushSpillTasks(Queue & queue, size_t thread_number);
 
     void finish();
     bool isFinished() const { return finished; }
 
-    void rethrowFirstThreadException(const LoggerPtr & log);
+    void logLogicalErrors(const LoggerPtr & log);
 
     void tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & self, std::unique_lock<std::mutex> & lock);
     void tryWakeUpAnyOtherThreadWithTasksInQueue(ExecutionThreadContext & self, TaskQueue<IProcessor> & queue, std::unique_lock<std::mutex> & lock);
@@ -104,11 +133,16 @@ public:
     // Local task optimization: the first regular task could be placed directly into thread to be executed next.
     // For async tasks proessor->schedule() is called.
     // If non-local tasks were added, wake up one thread to process them.
-    // Returns the number of additional threads the caller should try to spawn (0 if idle
-    // threads can cover the push, or no new tasks were added).
-    size_t pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
+    // Requests a thread for every new task that idle threads can't cover, within the pipeline width not taken
+    // by started threads: adds them to `threads_to_spawn` and raises the `setMax` target of the CPU slots by as much.
+    void pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
-    void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback, StepProfiler * step_profiler);
+    /// Set the initial `setMax` target: the pipeline width for the eager allocation,
+    /// enough threads for the `initial_parallel` initial tasks for the lazy one.
+    void initDesiredThreads(bool lazy_allocation, size_t initial_parallel);
+
+    void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors,
+        bool trace_processors, ReadProgressCallback * callback, StepProfiler * step_profiler, QueryStatus * process_list_element);
 
     /// Push initial tasks. Returns the count of tasks pushed (regular + async) — used by
     /// `PipelineExecutor::initializeExecution` to size the slot-allocation ceiling via
@@ -120,13 +154,21 @@ public:
     void freeCPU();
 
     /// Upscale to include slot_id. Updates use_threads to max(use_threads, slot_id + 1).
+    /// The new thread is one of `threads_to_spawn`.
     /// Returns the number of additional threads the caller may try to spawn next (0 means
-    /// "stop spawning": either pipeline width is saturated or enough idle threads can absorb
-    /// the work). Callers should still spawn one at a time and re-call upscale after each.
+    /// "stop spawning": either pipeline width is saturated, and the rest of `threads_to_spawn` is dropped,
+    /// or enough idle threads can absorb the work). Callers should still spawn one at a time and
+    /// re-call upscale after each.
     size_t upscale(size_t slot_id);
 
     /// Downscale by removing slot_id from active slots. Updates use_threads to highest active slot + 1
     void downscale(size_t slot_id);
+
+    /// Request `threads` more threads (e.g. for the initial tasks), clamped to the pipeline width.
+    void requestThreads(size_t threads);
+
+    /// Whether requested threads wait for a CPU slot. Lock-free, so it is checked after every task.
+    bool hasThreadsToSpawn() const { return threads_to_spawn.load(std::memory_order_relaxed) > 0; }
 
     /// Temporarily release slot_id without downscale. Later either downscale() or resume() is called.
     void preempt(size_t slot_id);
