@@ -1,4 +1,4 @@
-<test>
+<test iceberg="0">
     <!-- PREWHERE orders conditions by cost per rejected row. Each query has a condition whose columns
          compress far better than they decode or that runs a conversion chain, and a selective cheap one. -->
 
