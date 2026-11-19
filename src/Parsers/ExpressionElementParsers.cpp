@@ -1220,8 +1220,8 @@ static bool scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & l
 
     struct Bracket
     {
-        TokenType type;
-        const char * begin;
+        TokenType type{};
+        const char * begin = nullptr;
         /// Whether a comma, and a number, string or `NULL`, sit directly inside it.
         bool holds_comma = false;
         bool holds_scalar = false;
