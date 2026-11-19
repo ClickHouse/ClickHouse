@@ -1,0 +1,6 @@
+-- without the failpoint
+original error present
+explanation present
+-- with a failure while preparing the explanation
+original error present
+explanation missing

@@ -1976,16 +1976,19 @@ String getInsertDataSchemaMismatchDescription(
     /// not bound such allocations, so run the whole diagnostic under a memory tracker with a hard limit
     /// proportional to the sample: the tracker rejects an allocation over the limit before it is made,
     /// and the explanation is then omitted.
-    std::unique_ptr<MemoryTracker> diagnostic_memory_tracker = tryCreateMemoryTrackerUnderCurrentQuery(VariableContext::Process);
-    if (diagnostic_memory_tracker)
-    {
-        diagnostic_memory_tracker->setDriftExpected();
-        diagnostic_memory_tracker->setHardLimit(static_cast<Int64>(std::max<size_t>(data.size() * 16, 64_MiB)));
-        diagnostic_memory_tracker->setDescription("(for insert schema mismatch diagnostic)");
-    }
-
+    /// The tracker is declared before the switcher, so it outlives the switch to it.
+    std::unique_ptr<MemoryTracker> diagnostic_memory_tracker;
     try
     {
+        /// Setting up the tracker allocates as well, so it is inside the `try` too.
+        diagnostic_memory_tracker = tryCreateMemoryTrackerUnderCurrentQuery(VariableContext::Process);
+        if (diagnostic_memory_tracker)
+        {
+            diagnostic_memory_tracker->setDriftExpected();
+            diagnostic_memory_tracker->setHardLimit(static_cast<Int64>(std::max<size_t>(data.size() * 16, 64_MiB)));
+            diagnostic_memory_tracker->setDescription("(for insert schema mismatch diagnostic)");
+        }
+
         std::optional<MemoryTrackerSwitcher> switcher;
         if (diagnostic_memory_tracker)
             switcher.emplace(diagnostic_memory_tracker.get());
@@ -2072,20 +2075,20 @@ String getInsertDataSchemaMismatchDescriptionFromFile(
     const ContextPtr & context,
     std::optional<size_t> rows_reached_by_parser)
 {
-    if (format_name.empty() || !FormatFactory::instance().checkIfFormatHasSchemaReader(format_name))
-        return {};
-
-    /// Only a regular file can be read a second time. A named pipe or a character device (e.g.
-    /// `/dev/stdin`) was consumed by the failed attempt, and opening a FIFO again blocks until
-    /// another writer appears, so the original exception would never be reported.
-    std::error_code ec;
-    if (!std::filesystem::is_regular_file(file_path, ec))
-        return {};
-
     String prefix;
     bool prefix_is_truncated = false;
     try
     {
+        if (format_name.empty() || !FormatFactory::instance().checkIfFormatHasSchemaReader(format_name))
+            return {};
+
+        /// Only a regular file can be read a second time. A named pipe or a character device (e.g.
+        /// `/dev/stdin`) was consumed by the failed attempt, and opening a FIFO again blocks until
+        /// another writer appears, so the original exception would never be reported.
+        std::error_code ec;
+        if (!std::filesystem::is_regular_file(file_path, ec))
+            return {};
+
         /// Decompress the same way the INSERT itself does (see getReadBufferFromASTInsertQuery), so the
         /// prefix given to schema inference is the actual data.
         auto buffer = wrapReadBufferWithCompressionMethod(
@@ -2110,8 +2113,9 @@ String getInsertDataSchemaMismatchDescriptionFromFile(
     catch (...) // NOLINT(bugprone-empty-catch)
     {
         /// Best-effort: the path may be a glob matching several files, or the file may have become
-        /// unreadable since the failed attempt to insert it. A diagnostic must not raise a new error,
-        /// so it is Ok to ignore the exception here and simply skip the extra explanation.
+        /// unreadable since the failed attempt to insert it, or reading the prefix may exceed the memory
+        /// limit. A diagnostic must not raise a new error, so it is Ok to ignore the exception here and
+        /// simply skip the extra explanation.
         return {};
     }
 

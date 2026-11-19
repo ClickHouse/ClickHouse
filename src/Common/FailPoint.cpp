@@ -41,6 +41,7 @@ static struct InitFiu
     ONCE(transaction_metadata_store_fail) \
     ONCE(transaction_mutation_csn_store_fail) \
     REGULAR(executing_graph_build_fail) \
+    REGULAR(insert_schema_mismatch_diagnostic_fail) \
     PAUSEABLE_ONCE(polling_queue_before_try_poll) \
     ONCE(transaction_mutation_csn_store_fail_after_write) \
     ONCE(local_directory_sync_fail) \
