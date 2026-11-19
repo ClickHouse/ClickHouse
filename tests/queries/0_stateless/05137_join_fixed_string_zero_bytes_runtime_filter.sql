@@ -51,11 +51,14 @@ SELECT count() FROM s JOIN (SELECT toNullable(x) AS x FROM fs) AS fsn ON s.y = f
 SELECT count() FROM s JOIN (SELECT toLowCardinality(x) AS x FROM fs) AS fsl ON s.y = fsl.x;
 
 SELECT '-- the runtime filter is built and applied on the normalized keys';
+-- Plan-based parallel replicas prints the shipped plan fragment in the description of `ReadFromParallelReplicas`, cut at
+-- `query_plan_max_step_description_length`. Without blocks marshalling the fragment is shorter, and the description of
+-- its `BuildRuntimeFilter` step fits under the cut, so it is printed twice.
 SELECT replaceRegexpOne(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ' from \\w+\\.\\w+', '')
-FROM (EXPLAIN actions = 1 SELECT count() FROM s JOIN fs ON s.y = fs.x SETTINGS enable_parallel_replicas = 0)
+FROM (EXPLAIN actions = 1 SELECT count() FROM s JOIN fs ON s.y = fs.x SETTINGS enable_parallel_blocks_marshalling = 1)
 WHERE explain LIKE '%Build runtime join filter on%' OR explain LIKE '%Filter column: RF%';
 SELECT replaceRegexpOne(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ' from \\w+\\.\\w+', '')
-FROM (EXPLAIN actions = 1 SELECT count() FROM s JOIN fs ON tuple(s.y) = tuple(fs.x) SETTINGS enable_parallel_replicas = 0)
+FROM (EXPLAIN actions = 1 SELECT count() FROM s JOIN fs ON tuple(s.y) = tuple(fs.x) SETTINGS enable_parallel_blocks_marshalling = 1)
 WHERE explain LIKE '%Build runtime join filter on%' OR explain LIKE '%Filter column: RF%';
 
 DROP TABLE fs;
