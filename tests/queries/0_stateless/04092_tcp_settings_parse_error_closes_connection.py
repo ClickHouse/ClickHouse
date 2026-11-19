@@ -229,7 +229,7 @@ def test_connection_closed_after_bad_settings():
         WITH anchor AS (
             SELECT thread_id, event_time_microseconds AS t
             FROM system.text_log
-            WHERE event_date >= yesterday() AND event_time >= now() - 600 AND {recent}
+            WHERE {recent}
             AND message LIKE '%{setting_name}%'
             ORDER BY event_time_microseconds DESC
             LIMIT 1

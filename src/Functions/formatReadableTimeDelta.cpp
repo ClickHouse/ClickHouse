@@ -40,30 +40,39 @@ public:
     static constexpr auto name = "formatReadableTimeDelta";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatReadableTimeDelta>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
+    bool isVariadic() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// `Interval` arguments are accepted in addition to numbers (master added
-        /// `formatReadableTimeDelta(INTERVAL ...)`); the value is converted to seconds in `executeImpl`.
-        return "(Number, [const StringOrFixedString], [const StringOrFixedString]) -> String"
-               " OR (Interval, [const StringOrFixedString], [const StringOrFixedString]) -> String";
+        FunctionArgumentDescriptors mandatory_args{
+            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(
+                +[](const IDataType & type) { return isNumber(type) || isInterval(type); }), nullptr, "Number or Interval"},
+        };
+
+        FunctionArgumentDescriptors optional_args{
+            {"maximum_unit", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
+            {"minimum_unit", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     enum Unit
     {
@@ -78,7 +87,7 @@ public:
         Years = 9
     };
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         std::string_view maximum_unit_str;
         std::string_view minimum_unit_str;
@@ -235,9 +244,8 @@ public:
 
             if (!num_units)
             {
-                /// Zero units, no need to print. But if it's seconds and no other unit is printed, print "0 seconds" nevertheless.
-                if (unit_multiplier != 1 || has_output
-                    || fractional_str.substr(0, (4 - min_unit) * 3) != std::string((4 - min_unit) * 3, '0'))
+                /// Zero units, no need to print. But if it's the last (seconds) and the only unit, print "0 seconds" nevertheless.
+                if (unit_multiplier != 1 || has_output)
                     return;
             }
 
@@ -299,7 +307,7 @@ private:
         return std::string(buffer, builder.position()).substr(2);   /// do not return `0.` -- we don't need it
     }
 
-    [[nodiscard]] Unit dispatchUnit(const std::string_view & unit_str, const Unit default_unit, const std::string & bound_name) const
+    Unit dispatchUnit(const std::string_view & unit_str, const Unit default_unit, const std::string & bound_name) const
     {
         if (unit_str.empty())
             return default_unit;
@@ -358,11 +366,11 @@ SELECT
     formatReadableTimeDelta(elapsed) AS time_delta
         )",
         R"(
-┌───elapsed─┬─time_delta──────────────────────────────────────────────────────┐
-│       100 │ 1 minute and 40 seconds                                         │
-│     12345 │ 3 hours, 25 minutes and 45 seconds                              │
-│ 432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds │
-└───────────┴─────────────────────────────────────────────────────────────────┘
+┌────elapsed─┬─time_delta─────────────────────────────────────────────────────┐
+│        100 │ 1 minute and 40 seconds                                        │
+│      12345 │ 3 hours, 25 minutes and 45 seconds                             │
+│  432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds│
+└────────────┴────────────────────────────────────────────────────────────────┘
         )"
     },
     {

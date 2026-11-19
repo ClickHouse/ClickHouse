@@ -31,9 +31,7 @@ public:
         const std::string update_field;
         const UInt64 update_lag;
         const HTTPHeaderEntries header_entries;
-        /// Whether the dictionary was created via DDL (`CREATE DICTIONARY`). For such dictionaries the
-        /// source URL is untrusted, so every HTTP request (including redirect hops) must be validated
-        /// against `remote_url_allow_hosts`.
+        /// Whether the dictionary was created via DDL (`CREATE DICTIONARY`).
         const bool created_from_ddl = false;
     };
 
@@ -55,15 +53,15 @@ public:
 
     BlockIO loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows) override;
 
-    [[nodiscard]] bool isModified() const override;
+    bool isModified() const override;
 
-    [[nodiscard]] bool supportsSelectiveLoad() const override;
+    bool supportsSelectiveLoad() const override;
 
-    [[nodiscard]] bool hasUpdateField() const override;
+    bool hasUpdateField() const override;
 
-    [[nodiscard]] DictionarySourcePtr clone() const override;
+    DictionarySourcePtr clone() const override;
 
-    [[nodiscard]] std::string toString() const override;
+    std::string toString() const override;
 
 private:
     void getUpdateFieldAndDate(Poco::URI & uri);
@@ -75,7 +73,7 @@ private:
 
     LoggerPtr log;
 
-    [[nodiscard]] LocalDateTime getLastModification() const;
+    LocalDateTime getLastModification() const;
 
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;

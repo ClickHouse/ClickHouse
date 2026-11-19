@@ -64,11 +64,21 @@ To use JSON-typed schemas instead of the [default `Map`-based schemas](/clicksta
 | Variable | Set on | Purpose |
 |----------|--------|---------|
 | `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` | OTel collector | Creates schemas in ClickHouse using the JSON type. |
-| `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true` | ClickStack UI | Enables the application layer to query JSON-typed schemas. ClickStack Open Source only. |
+| `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true` | HyperDX (ClickStack UI) | Enables the application layer to query JSON-typed schemas. ClickStack Open Source only. |
 
-<a id="oss-clickstack" />
+### Managed ClickStack {#managed-clickstack}
 
-Set `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` on any deployment that includes the collector, and `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true` on the ClickStack UI application layer so it can query the JSON-typed schemas.
+To enable JSON support in Managed ClickStack, contact support@clickhouse.com prior to configuring the collector. The feature must also be enabled in the ClickStack UI (HyperDX) in ClickHouse Cloud.
+
+Set `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` on the collector. For example:
+
+```shell
+docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+```
+
+### Open source ClickStack {#oss-clickstack}
+
+Set `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` on any deployment that includes the collector, and `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true` on the HyperDX application layer so it can query the JSON-typed schemas.
 
 For example:
 
@@ -91,7 +101,7 @@ To migrate from the [default Map-based schemas](/clickstack/ingesting-data/schem
 </Step>
 <Step title="Rename existing tables and update sources" id="rename-existing-tables-sources">
 
-Rename existing tables and update data sources in ClickStack UI.
+Rename existing tables and update data sources in HyperDX.
 
 For example:
 
@@ -104,7 +114,7 @@ RENAME TABLE otel_metrics TO otel_metrics_map;
 
 Deploy the collector with `OTEL_AGENT_FEATURE_GATE_ARG` set.
 </Step>
-<Step title="Restart the ClickStack UI container with JSON schema support" id="restart-the-hyperdx-container">
+<Step title="Restart the HyperDX container with JSON schema support" id="restart-the-hyperdx-container">
 
 ```shell
 export BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true
@@ -112,7 +122,7 @@ export BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true
 </Step>
 <Step title="Create new data sources" id="create-new-data-sources">
 
-Create new data sources in ClickStack UI pointing to the JSON tables.
+Create new data sources in HyperDX pointing to the JSON tables.
 </Step>
 </Steps>
 

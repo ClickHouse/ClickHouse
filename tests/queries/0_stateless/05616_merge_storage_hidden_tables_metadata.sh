@@ -59,7 +59,7 @@ SELECT 'a_m', count() FROM a_m SETTINGS ${trivial};
 SELECT 'mm', count() FROM mm SETTINGS ${trivial};
 "
 
-for table in m m_func a_m mm
+for table in m a_m mm
 do
     ${CLICKHOUSE_CLIENT} --user "${user}" --password "${user}" --multiline -q "
     SELECT '${table}', total_rows, total_bytes = (SELECT total_bytes FROM system.tables WHERE database = currentDatabase() AND name = 't_visible')

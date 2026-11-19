@@ -22,12 +22,13 @@ description: 'Найдите решения самых распростране�
 
 Возникли проблемы с ClickHouse? Здесь вы найдете решения типичных проблем.
 
-## Производительность и ошибки {#performance-and-errors}
+<div id="performance-and-errors">
+  ## Производительность и ошибки
+</div>
 
 Медленные запросы, тайм-ауты или сообщения об ошибках вроде &quot;Memory limit exceeded&quot; или &quot;Connection refused.&quot;
 
 <Accordion title="Показать решения по производительности и ошибкам">
-  <a id="query-performance" />
   ### Производительность запросов
 
   * [Узнайте, какие запросы потребляют больше всего ресурсов](/ru/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries)
@@ -37,7 +38,6 @@ description: 'Найдите решения самых распростране�
 
   <br />
 
-  <a id="data-insertion-performance" />
   ### Производительность вставки данных
 
   * [Ускорьте вставку данных](/ru/concepts/features/operations/insert/bulkinserts)
@@ -45,7 +45,6 @@ description: 'Найдите решения самых распростране�
 
   <br />
 
-  <a id="advanced-analysis-tools" />
   ### Инструменты расширенного анализа
 
   {/* - [Профилирование с помощью LLVM XRay](/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray) */}
@@ -55,7 +54,6 @@ description: 'Найдите решения самых распростране�
 
   <br />
 
-  <a id="error-messages" />
   ### Сообщения об ошибках
 
   * **&quot;Memory limit exceeded&quot;** → [Разбор ошибок превышения лимита памяти](/ru/concepts/features/performance/troubleshoot/debugging-memory-issues)
@@ -67,12 +65,13 @@ description: 'Найдите решения самых распростране�
   * **Other issues** → [Отслеживайте ошибки во всем кластере](/ru/reference/system-tables/errors)
 </Accordion>
 
-## Память и ресурсы {#memory-and-resources}
+<div id="memory-and-resources">
+  ## Память и ресурсы
+</div>
 
 Высокое использование памяти, сбои из-за нехватки памяти или нужна помощь с выбором размера для развертывания ClickHouse.
 
 <Accordion title="Показать решения, связанные с памятью">
-  <a id="memory-debugging-and-monitoring" />
   ### Отладка и мониторинг памяти:
 
   * [Определите, что использует память](/ru/concepts/features/performance/troubleshoot/debugging-memory-issues)
@@ -82,7 +81,6 @@ description: 'Найдите решения самых распростране�
 
   <br />
 
-  <a id="memory-configuration" />
   ### Конфигурация памяти:
 
   * [Настройте лимиты памяти](/ru/concepts/features/configuration/settings/memory-overcommit)
@@ -91,19 +89,19 @@ description: 'Найдите решения самых распростране�
 
   <br />
 
-  <a id="scaling-and-sizing" />
   ### Масштабирование и подбор размера:
 
   * [Подберите оптимальный размер для вашего сервиса](/ru/guides/oss/best-practices/tips)
   * [Настройте автомасштабирование](/ru/products/cloud/features/autoscaling/overview)
 </Accordion>
 
-## Подключения и аутентификация {#connections-and-authentication}
+<div id="connections-and-authentication">
+  ## Подключения и аутентификация
+</div>
 
 Не удается подключиться к ClickHouse, возникают ошибки аутентификации, ошибки SSL-сертификатов или проблемы с настройкой клиента.
 
 <Accordion title="Показать решения для подключения">
-  <a id="basic-connection-issues" />
   ### Основные проблемы с подключением
 
   * [Устранение проблем с HTTP-интерфейсом](/ru/concepts/features/interfaces/http)
@@ -112,7 +110,6 @@ description: 'Найдите решения самых распростране�
 
   <br />
 
-  <a id="client-interfaces" />
   ### Клиентские интерфейсы
 
   * [Нативные клиенты ClickHouse](/ru/concepts/features/interfaces/native-clients-interfaces-index)
@@ -123,19 +120,19 @@ description: 'Найдите решения самых распростране�
 
   <br />
 
-  <a id="network-and-data" />
   ### Сеть и данные
 
   * [Настройки сетевой безопасности](/ru/reference/settings/server-settings/settings)
   * [Проблемы с разбором форматов данных](/ru/reference/formats/index)
 </Accordion>
 
-## Настройка и конфигурация {#setup-and-configuration}
+<div id="setup-and-configuration">
+  ## Настройка и конфигурация
+</div>
 
 Первоначальная установка, настройка сервера, создание базы данных, проблемы с ингестией данных или настройка репликации.
 
 <Accordion title="Показать решения по настройке и конфигурации">
-  <a id="initial-setup" />
   ### Первоначальная настройка
 
   * [Выполните настройку сервера](/ru/reference/settings/server-settings/settings)
@@ -144,7 +141,6 @@ description: 'Найдите решения самых распростране�
 
   <br />
 
-  <a id="database-management" />
   ### Управление базами данных
 
   * [Создавайте базы данных и управляйте ими](/ru/reference/statements/create/database)
@@ -154,7 +150,6 @@ description: 'Найдите решения самых распростране�
 
   <br />
 
-  <a id="data-operations" />
   ### Операции с данными
 
   * [Оптимизируйте массовую вставку данных](/ru/concepts/features/operations/insert/bulkinserts)
@@ -164,7 +159,6 @@ description: 'Найдите решения самых распростране�
 
   <br />
 
-  <a id="advanced-configuration" />
   ### Расширенная конфигурация
 
   * [Настройте репликацию данных](/ru/reference/engines/table-engines/mergetree-family/replication)
@@ -176,11 +170,13 @@ description: 'Найдите решения самых распростране�
   * [Настройте мониторинг](/ru/reference/system-tables/overview)
 </Accordion>
 
-## Всё ещё нужна помощь? {#still-need-help}
+<div id="still-need-help">
+  ## Всё ещё нужна помощь?
+</div>
 
 Если вы не можете найти решение:
 
-1. **Спросите ИИ** - <button type="button" data-docs-ai-entry="troubleshooting" onClick={() => { if (typeof window !== 'undefined' && window.Kapa && typeof window.Kapa.open === 'function') window.Kapa.open({ mode: 'ai' }); }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>Спросить ИИ</button>, чтобы сразу получить ответ.
+1. **Спросите ИИ** - <button type="button" onClick={() => { if (typeof window !== 'undefined' && window.Kapa && typeof window.Kapa.open === 'function') window.Kapa.open({ mode: 'ai' }); }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>Спросить ИИ</button>, чтобы сразу получить ответ.
 2. **Проверьте системные таблицы** - [Обзор](/ru/reference/system-tables/overview)
 3. **Просмотрите журналы сервера** - Поищите сообщения об ошибках в журналах ClickHouse
 4. **Обратитесь к сообществу** - [Присоединяйтесь к нашему сообществу в Slack](https://clickhouse.com/slack), [Обсуждения GitHub](https://github.com/ClickHouse/ClickHouse/discussions)

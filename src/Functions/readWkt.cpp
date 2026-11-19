@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int CANNOT_PARSE_TEXT;
 }
 
@@ -79,24 +80,29 @@ public:
 
     static constexpr const char * name = NameHolder::name;
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(String) -> " + DataTypeName{}.getName();
+        if (checkAndGetDataType<DataTypeString>(arguments[0].get()) == nullptr)
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be String");
+        }
+
+        return DataTypeFactory::instance().get(DataTypeName().getName());
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         const auto & column_string = checkAndGetColumn<ColumnString>(*arguments[0].column);
 
@@ -114,7 +120,7 @@ public:
         return serializer.finalize();
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override
+    bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
@@ -144,15 +150,23 @@ public:
 
     static constexpr const char * name = "readWKT";
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override { return "(String) -> Geometry"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (checkAndGetDataType<DataTypeString>(arguments[0].get()) == nullptr)
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be String");
+        }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+        return DataTypeFactory::instance().get("Geometry");
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         const auto & column_string = checkAndGetColumn<ColumnString>(*arguments[0].column);
 
@@ -269,7 +283,7 @@ public:
         return ColumnVariant::create(std::move(discriminators_column), result_columns);
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionReadWKTCommon>(); }
 };
@@ -458,9 +472,9 @@ SELECT
     toTypeName(readWKTPolygon('POLYGON((2 0,10 0,10 10,0 10,2 0))')) AS type,
     readWKTPolygon('POLYGON((2 0,10 0,10 10,0 10,2 0))') AS output
         )",
-        R"DOCS_MD(
-Polygon	[[(2,0),(10,0),(10,10),(0,10),(2,0)]]
-        )DOCS_MD"
+        R"(
+[[(2,0),(10,0),(10,10),(0,10),(2,0)]]
+        )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_polygon = {21, 4};
@@ -484,9 +498,9 @@ SELECT
     toTypeName(readWKTMultiPolygon('MULTIPOLYGON(((2 0,10 0,10 10,0 10,2 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))')) AS type,
     readWKTMultiPolygon('MULTIPOLYGON(((2 0,10 0,10 10,0 10,2 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))') AS output
         )",
-        R"DOCS_MD(
-MultiPolygon	[[[(2,0),(10,0),(10,10),(0,10),(2,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]],[[(-10,-10),(-10,-9),(-9,10),(-10,-10)]]]
-        )DOCS_MD"
+        R"(
+[[[(2,0),(10,0),(10,10),(0,10),(2,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]],[[(-10,-10),(-10,-9),(-9,10),(-10,-10)]]]
+        )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_multipolygon = {21, 4};

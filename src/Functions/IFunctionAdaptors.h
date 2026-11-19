@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Functions/IFunction.h>
-#include <DataTypes/IDataType.h>
-#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -14,30 +12,27 @@ class FunctionToExecutableFunctionAdaptor final : public IExecutableFunction
 public:
     explicit FunctionToExecutableFunctionAdaptor(std::shared_ptr<IFunction> function_) : function(std::move(function_)) {}
 
-    [[nodiscard]] String getName() const override { return function->getName(); }
+    String getName() const override { return function->getName(); }
     void cancelExecution() const override { function->cancelExecution(); }
 
 protected:
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final;
-    [[nodiscard]] ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final;
+    ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final;
 
-    [[nodiscard]] bool useDefaultImplementationForNulls() const final { return function->useDefaultImplementationForNulls(); }
-    [[nodiscard]] bool isNullPropagating(const DataTypePtr & result_type) const final { return function->isNullPropagating(result_type); }
-    [[nodiscard]] bool useDefaultImplementationForNothing() const final { return function->useDefaultImplementationForNothing(); }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const final { return function->useDefaultImplementationForLowCardinalityColumns(); }
-    [[nodiscard]] bool useDefaultImplementationForSparseColumns() const final { return function->useDefaultImplementationForSparseColumns(); }
-    [[nodiscard]] bool useDefaultImplementationForReplicatedColumns() const final { return function->useDefaultImplementationForReplicatedColumns(); }
+    bool useDefaultImplementationForNulls() const final { return function->useDefaultImplementationForNulls(); }
+    bool useDefaultImplementationForNothing() const final { return function->useDefaultImplementationForNothing(); }
+    bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
+    bool useDefaultImplementationForLowCardinalityColumns() const final { return function->useDefaultImplementationForLowCardinalityColumns(); }
+    bool useDefaultImplementationForSparseColumns() const final { return function->useDefaultImplementationForSparseColumns(); }
+    bool useDefaultImplementationForReplicatedColumns() const final { return function->useDefaultImplementationForReplicatedColumns(); }
 
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return function->getArgumentsThatAreAlwaysConstant(); }
-    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return function->canBeExecutedOnDefaultArguments(); }
-    [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override { return function->canBeExecutedOnDefaultArguments(arguments); }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return function->getArgumentsThatAreAlwaysConstant(); }
+    bool canBeExecutedOnDefaultArguments() const override { return function->canBeExecutedOnDefaultArguments(); }
     /// TODO: most functions still answer this through `isSuitableForShortCircuitArgumentsExecution`
     /// (see `IFunction::canThrow`). Once enough of them describe it on their own, the default
     /// should become the conservative `true` instead of that approximation.
-    [[nodiscard]] bool canThrow(const DataTypesWithConstInfo & arguments) const override { return function->canThrow(arguments); }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override { return function->canThrow(arguments); }
 
 private:
     std::shared_ptr<IFunction> function;
@@ -52,27 +47,6 @@ public:
             : function(std::move(function_)), arguments(std::move(arguments_)), result_type(std::move(result_type_)) {}
 
     String getName() const override { return function->getName(); }
-
-    bool isEqual(const IFunctionBase & rhs) const override
-    {
-        const auto * other = typeid_cast<const FunctionToFunctionBaseAdaptor *>(&rhs);
-        if (!other)
-            return false;
-        if (function.get() != other->function.get())
-            return false;
-        if (!result_type->equals(*other->result_type))
-            return false;
-        if (arguments.size() != other->arguments.size())
-            return false;
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            if (!arguments[i]->equals(*other->arguments[i]))
-                return false;
-        }
-        return true;
-    }
-
-    void updateHash(SipHash & hash) const override { function->updateHash(hash); }
 
     const DataTypes & getArgumentTypes() const override { return arguments; }
     const DataTypePtr & getResultType() const override { return result_type; }
@@ -129,17 +103,9 @@ public:
 
     bool isServerConstant() const override  { return function->isServerConstant(); }
 
-    bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
-    {
-        return function->isShortCircuitForArgumentTypes(settings, arguments);
-    }
+    bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override { return function->isShortCircuit(settings, number_of_arguments); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & args) const override { return function->isSuitableForShortCircuitArgumentsExecution(args); }
-
-    /// Unlike `FunctionToExecutableFunctionAdaptor::canThrow`, it does not fall back to the approximation by
-    /// `isSuitableForShortCircuitArgumentsExecution`: it is used to reorder the arguments of `and`/`or`,
-    /// which must never introduce an exception.
-    bool canThrow(const DataTypesWithConstInfo & args) const override { return function->canThrowIfKnown(args).value_or(true); }
 
     bool isNameInsensitive() const override { return function->isNameInsensitive(); }
 
@@ -195,11 +161,6 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override { return function->getReturnTypeImpl(arguments); }
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override { return function->getReturnTypeImpl(arguments); }
-    String getSignatureString() const override { return function->getSignatureString(); }
-    int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const override
-    {
-        return function->getWrongNumberOfArgumentsErrorCode(number_of_arguments);
-    }
 
     bool useDefaultImplementationForNulls() const override { return function->useDefaultImplementationForNulls(); }
     bool useDefaultImplementationForNothing() const override { return function->useDefaultImplementationForNothing(); }
