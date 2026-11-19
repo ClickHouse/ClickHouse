@@ -142,7 +142,7 @@ std::unique_ptr<ReadWriteBufferFromHTTP> sendTaskIds(const String & endpoint_uri
     if (!credentials->getUser().empty())
     {
         creds.setUsername(credentials->getUser());
-        creds.setPassword(credentials->getPassword());
+        creds.setPassword(String(credentials->getPassword()));
     }
 
     Poco::URI uri(endpoint_uri);
