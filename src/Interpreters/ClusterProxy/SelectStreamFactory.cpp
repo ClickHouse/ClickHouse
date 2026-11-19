@@ -202,35 +202,6 @@ SelectStreamFactory::SelectStreamFactory(
 
 void SelectStreamFactory::createForShard(
     const Cluster::ShardInfo & shard_info,
-    const ASTPtr & query_ast,
-    const StorageID & main_table,
-    const ASTPtr & table_func_ptr,
-    ContextPtr context,
-    QueryPlanPtrs & local_plans,
-    Shards & remote_shards,
-    UInt32 shard_count,
-    bool parallel_replicas_enabled,
-    AdditionalShardFilterGenerator shard_filter_generator,
-    const UnavailableShardTrackerPtr & unavailable_shard_tracker)
-{
-    createForShardImpl(
-        shard_info,
-        query_ast,
-        {},
-        main_table,
-        table_func_ptr,
-        std::move(context),
-        local_plans,
-        remote_shards,
-        shard_count,
-        parallel_replicas_enabled,
-        std::move(shard_filter_generator),
-        unavailable_shard_tracker);
-}
-
-void SelectStreamFactory::createForShardImpl(
-    const Cluster::ShardInfo & shard_info,
-    const ASTPtr & query_ast,
     const QueryTreeNodePtr & query_tree,
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
@@ -241,8 +212,50 @@ void SelectStreamFactory::createForShardImpl(
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator,
     const UnavailableShardTrackerPtr & unavailable_shard_tracker,
-    const StorageID * table_filtered_by_partition_id) const
+    const Strings * partitions_to_skip)
 {
+    if (query.tree != query_tree)
+    {
+        /// Convert grouping function specializations (e.g. __groupingForGroupingSets -> grouping)
+        /// so the AST contains the generic function name that the shard's analyzer can re-resolve.
+        /// Use a clone to keep the original query_tree with specialized functions intact,
+        /// since it is reused later for getSampleBlock / plan building.
+        auto query_tree_for_ast = query_tree->clone();
+        removeGroupingFunctionSpecializations(query_tree_for_ast);
+
+        query = {.tree = query_tree, .ast = queryNodeToDistributedSelectQuery(query_tree_for_ast), .header = {}, .planner_context = {}};
+    }
+
+    /// The query of this shard: the shared one, unless some partitions are skipped on this shard.
+    ASTPtr query_ast = query.ast;
+    /// A query that reads `_partition_id` itself keeps the access check of the column.
+    const bool check_partition_id = !partitions_to_skip || hasPartitionIdColumn(query_ast);
+    if (partitions_to_skip)
+    {
+        query_ast = query_ast->clone();
+        size_t found = skipPartitionsInQueryForShard(query_ast, main_table, *partitions_to_skip);
+        if (!found)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot find table {} in the query for a shard while its partitions are moved between shards", main_table.getNameForLogs());
+
+        /// Each table is judged by its own place: a direct read and a table without `FROM` together keep the totals equal.
+        TablesOfShardQuery tables;
+        countTablesOfShardQuery(query_tree, main_table, false, tables);
+
+        /// A direct read of the table by the query is not told from a read through the `Distributed` table by its name.
+        if (tables.direct || found > tables.replaced)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Table {} is read directly by a query that reads it through a `Distributed` table while its partitions are moved between shards",
+                main_table.getNameForLogs());
+
+        /// A table that is the right argument of `IN` has no `WHERE` to put the condition to.
+        if (tables.without_from || found < tables.replaced)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Table {} is read by a query for a shard without a `FROM` clause while its partitions are moved between shards",
+                main_table.getNameForLogs());
+    }
+    const StorageID * table_filtered_by_partition_id = check_partition_id ? nullptr : &main_table;
+
     ContextPtr context_without_parallel_replicas;
 
     /// `local_storage` is the table the local plan will read, null when it is not resolved.
@@ -268,7 +281,7 @@ void SelectStreamFactory::createForShardImpl(
         }
 
         local_plans.emplace_back(createLocalPlan(
-            query_ast, *header, local_context, processed_stage, shard_info.shard_num, shard_count, false, {}, table_filtered_by_partition_id));
+            query_ast->clone(), *header, local_context, processed_stage, shard_info.shard_num, shard_count, false, {}, table_filtered_by_partition_id));
     };
 
     // If lazy is true, a lazy pipe will be created. It will try to use the local replica and, if not possible, will use DelayedSource for reading from remote replica.
@@ -285,14 +298,19 @@ void SelectStreamFactory::createForShardImpl(
         if (settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
         {
             query_plan = createLocalPlan(
-                query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database,
+                query_ast->clone(), *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database,
                 table_filtered_by_partition_id);
 
             shard_header = query_plan->getCurrentHeader();
         }
         else
         {
-            std::tie(shard_header, planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
+            /// The same for all shards with this query tree, so do not plan the query again for each of them.
+            if (!query.header)
+                std::tie(query.header, query.planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
+
+            shard_header = query.header;
+            planner_context = query.planner_context;
         }
 
         /// Strip initiator-only settings from the query text forwarded to the shard. The AST carries them
@@ -300,7 +318,7 @@ void SelectStreamFactory::createForShardImpl(
         /// which `queryNodeToDistributedSelectQuery` (`QueryNode::toAST`) materializes into the SELECT's
         /// `SETTINGS`. They are irrelevant to the remote query and can trip `UNKNOWN_SETTING` on an older
         /// shard during a rolling upgrade; the inter-server settings packet is stripped separately in
-        /// `updateSettings`. The local plan (`emplace_local_stream`) keeps the unstripped `query_ast`.
+        /// `updateSettings`. The local plan (`emplace_local_stream`) keeps the unstripped query.
         auto forwarded_query = query_ast->clone();
         stripInitiatorOnlySettingsFromQuery(forwarded_query);
 
@@ -428,70 +446,6 @@ void SelectStreamFactory::createForShardImpl(
     }
     else
         emplace_remote_stream();
-}
-
-void SelectStreamFactory::createForShard(
-    const Cluster::ShardInfo & shard_info,
-    const QueryTreeNodePtr & query_tree,
-    const StorageID & main_table,
-    const ASTPtr & table_func_ptr,
-    ContextPtr context,
-    QueryPlanPtrs & local_plans,
-    Shards & remote_shards,
-    UInt32 shard_count,
-    bool parallel_replicas_enabled,
-    AdditionalShardFilterGenerator shard_filter_generator,
-    const UnavailableShardTrackerPtr & unavailable_shard_tracker,
-    const Strings * partitions_to_skip)
-{
-    /// Convert grouping function specializations (e.g. __groupingForGroupingSets -> grouping)
-    /// so the AST contains the generic function name that the shard's analyzer can re-resolve.
-    /// Use a clone to keep the original query_tree with specialized functions intact,
-    /// since it is reused later for getSampleBlock / plan building.
-    auto query_tree_for_ast = query_tree->clone();
-    removeGroupingFunctionSpecializations(query_tree_for_ast);
-
-    auto query_ast = queryNodeToDistributedSelectQuery(query_tree_for_ast);
-    /// A query that reads `_partition_id` itself keeps the access check of the column.
-    const bool check_partition_id = !partitions_to_skip || hasPartitionIdColumn(query_ast);
-    if (partitions_to_skip)
-    {
-        size_t found = skipPartitionsInQueryForShard(query_ast, main_table, *partitions_to_skip);
-        if (!found)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Cannot find table {} in the query for a shard while its partitions are moved between shards", main_table.getNameForLogs());
-
-        /// Each table is judged by its own place: a direct read and a table without `FROM` together keep the totals equal.
-        TablesOfShardQuery tables;
-        countTablesOfShardQuery(query_tree, main_table, false, tables);
-
-        /// A direct read of the table by the query is not told from a read through the `Distributed` table by its name.
-        if (tables.direct || found > tables.replaced)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Table {} is read directly by a query that reads it through a `Distributed` table while its partitions are moved between shards",
-                main_table.getNameForLogs());
-
-        /// A table that is the right argument of `IN` has no `WHERE` to put the condition to.
-        if (tables.without_from || found < tables.replaced)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Table {} is read by a query for a shard without a `FROM` clause while its partitions are moved between shards",
-                main_table.getNameForLogs());
-    }
-
-    createForShardImpl(
-        shard_info,
-        query_ast,
-        query_tree,
-        main_table,
-        table_func_ptr,
-        std::move(context),
-        local_plans,
-        remote_shards,
-        shard_count,
-        parallel_replicas_enabled,
-        std::move(shard_filter_generator),
-        unavailable_shard_tracker,
-        check_partition_id ? nullptr : &main_table);
 }
 
 

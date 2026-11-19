@@ -628,15 +628,20 @@ void executeQuery(
         }
     }
 
+    /// All shards share the query tree, so that the query is planned once, unless it is rewritten for the shard.
+    const auto query_for_all_shards = query_info.query_tree->clone();
+
     for (size_t i = 0, s = cluster->getShardsInfo().size(); i < s; ++i)
     {
         const auto & shard_info = cluster->getShardsInfo()[i];
 
-        auto query_for_shard = query_info.query_tree->clone();
+        auto query_for_shard = query_for_all_shards;
         if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1 &&
             /// TODO: support composite sharding key
             sharding_key_expr->getRequiredColumns().size() == 1)
         {
+            query_for_shard = query_for_shard->clone();
+
             OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
                 sharding_key_expr,
                 sharding_key_column_name,
@@ -923,13 +928,8 @@ static std::pair<ClusterPtr, size_t> prepareClusterForParallelReplicas(const Log
     return {new_cluster, shard_num};
 }
 
-/// Returns per-replica liveness for the parallel replicas cluster, aligned with the cluster's replica order
-/// (the same `is_active` signal that is reported in `system.clusters`). Returns an empty vector when the
-/// liveness is unknown - in that case all replicas are considered usable, which preserves the previous behaviour.
-static std::vector<bool> getActiveReplicasForParallelReplicas(const ContextPtr & context, const ClusterPtr & cluster)
+std::vector<bool> getReplicasLiveness(const String & cluster_name, const ClusterPtr & cluster)
 {
-    const String cluster_name = context->getSettingsRef()[Setting::cluster_for_parallel_replicas];
-
     ReplicasInfo replicas_info;
 #if CLICKHOUSE_CLOUD
     /// The shared catalog cluster is exposed in `system.clusters` both under its plain name and under the
@@ -960,11 +960,11 @@ static std::vector<bool> getActiveReplicasForParallelReplicas(const ContextPtr &
         if (auto database = DatabaseCatalog::instance().tryGetDatabase(database_name))
             if (const auto * replicated = typeid_cast<const DatabaseReplicated *>(database.get()))
             {
-                /// `cluster_for_parallel_replicas` is resolved by `Context::getCluster`, which prefers a
+                /// The cluster name is resolved by `Context::getCluster`, which prefers a
                 /// configured or discovered cluster over a `Replicated` database of the same name. When such a
                 /// cluster shadows the database, the resolved `cluster` is not the database's own cluster: its
                 /// replica names do not match the database's ZooKeeper nodes, so `tryGetReplicasInfo` would
-                /// report every replica inactive and the coordinator would collapse onto the local replica.
+                /// report every replica inactive and the caller would collapse onto the local replica.
                 /// Only trust the database liveness when the resolved cluster really is this database's own
                 /// cluster (`system.clusters` likewise reports such configured clusters with unknown `is_active`).
                 const ClusterPtr database_cluster = all_groups ? replicated->tryGetAllGroupsCluster() : replicated->tryGetCluster();
@@ -990,7 +990,7 @@ static std::pair<VectorWithMemoryTracking<ConnectionPoolPtr>, size_t> prepareCon
     /// The reading coordinator distributes mark segments by hashing over the number of replicas, so counting
     /// replicas that never participate leaves "phantom" segments that only the source replica picks up, which
     /// produces a severe work-distribution skew. See `is_active` in `system.clusters`.
-    std::vector<bool> is_active = getActiveReplicasForParallelReplicas(context, cluster);
+    std::vector<bool> is_active = getReplicasLiveness(settings[Setting::cluster_for_parallel_replicas], cluster);
     if (!is_active.empty() && is_active.size() != shard.getAllNodeCount())
         is_active.clear(); /// Liveness does not match the cluster definition; fall back to using all replicas.
 
