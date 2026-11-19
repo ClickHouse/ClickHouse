@@ -2601,7 +2601,12 @@ bool TCPHandler::skipDataPacket(QueryState & state)
     else
         maybe_compressed_in = in;
 
-    NativeReader skip_block_in(*maybe_compressed_in, client_tcp_protocol_version);
+    /// Skipped data is held to the same serialization kinds as data that `initBlockInput` reads.
+    NativeReader skip_block_in(
+        *maybe_compressed_in,
+        client_tcp_protocol_version,
+        /*format_settings_=*/ std::nullopt,
+        ISerialization::KindSet{ISerialization::Kind::DEFAULT});
     bool has_rows = !skip_block_in.read().empty();
 
     state.at_packet_boundary = true;
@@ -2627,11 +2632,15 @@ void TCPHandler::initBlockInput(QueryState & state)
         else if (state.need_receive_data_for_input)
             header = state.input_header;
 
+        /// Only the default kind: senders materialize, and the consumers `assert_cast` columns to the declared type.
+        /// No peer is exempt: `query_kind` is declared by the client, and an initiator forwards client data to shards.
         state.block_in = std::make_unique<NativeReader>(
             *state.maybe_compressed_in,
             header,
             client_tcp_protocol_version,
-            getFormatSettings(state.query_context));
+            getFormatSettings(state.query_context),
+            /*block_missing_values_=*/ nullptr,
+            ISerialization::KindSet{ISerialization::Kind::DEFAULT});
     }
 }
 

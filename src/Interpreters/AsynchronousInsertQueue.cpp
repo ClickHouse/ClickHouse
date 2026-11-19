@@ -5,11 +5,13 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledQuota.h>
+#include <Columns/ColumnBLOB.h>
 #include <Columns/IColumn.h>
 #include <Common/ThreadStatus.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
+#include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Core/DeduplicateInsert.h>
 #include <Core/ServerSettings.h>
@@ -514,8 +516,31 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
     return pushDataChunk(std::move(query), std::move(bytes), std::move(query_context));
 }
 
+/// Whether the column, or a subcolumn at any nesting depth, is a `ColumnBLOB`, `ColumnConst`, `ColumnReplicated`
+/// or `ColumnSparse`. `LowCardinality` does not count: it is a part of the type, not a representation.
+static bool hasWrappedColumn(const IColumn & column)
+{
+    if (typeid_cast<const ColumnBLOB *>(&column) || column.isConst() || column.isReplicated() || column.isSparse())
+        return true;
+
+    bool res = false;
+    column.forEachSubcolumn([&](const IColumn::WrappedPtr & subcolumn) { res = res || hasWrappedColumn(*subcolumn); });
+    return res;
+}
+
 AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context)
 {
+    /// The flush copies queued blocks into full columns with `insertRangeFrom`, whose `assert_cast` would misread a
+    /// wrapped column (`Sparse`, `Replicated`, ...) at any nesting depth. Every producer materializes before queuing.
+    /// An insert without data queues a block without columns.
+    for (const auto & elem : block)
+        if (elem.column && hasWrappedColumn(*elem.column))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Async insert block column '{}' must be materialized before queuing, but has a "
+                "non-default serialization representation: {}",
+                elem.name, elem.column->dumpStructure());
+
     query = query->clone();
     preprocessInsertQuery(query, query_context);
     return pushDataChunk(std::move(query), std::move(block), std::move(query_context));
