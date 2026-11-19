@@ -23,6 +23,7 @@
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Databases/IDatabase.h>
 
 
 namespace DB
@@ -245,6 +246,8 @@ public:
 
         auto insert_context = Context::createCopy(getContext());
         insert_context->makeQueryContext();
+        /// A part of the outer query: plan it from the same snapshot.
+        insert_context->shareQueryMaxThreadsSnapshot(*getContext());
         if (getContext()->hasQueryContext())
             insert_context->setQueryAccessInfo(getContext()->getQueryContext()->getQueryAccessInfoPtr());
         addInterpreterContext(insert_context);
@@ -583,7 +586,7 @@ struct AliasCheckTasks : IStorage::DataValidationTasksBase
         chassert(inner);
     }
 
-    size_t size() const override { return inner->size(); }
+    [[nodiscard]] size_t size() const override { return inner->size(); }
 };
 
 }
