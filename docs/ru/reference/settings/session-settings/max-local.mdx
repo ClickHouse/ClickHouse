@@ -12,17 +12,15 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="max_local_read_bandwidth">
-  ## max_local_read_bandwidth
-</div>
+## max_local_read_bandwidth {#max_local_read_bandwidth}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Максимальная скорость локального чтения в байтах в секунду.
 
-<div id="max_local_write_bandwidth">
-  ## max_local_write_bandwidth
-</div>
+Ограничение применяется к данным, считываемым с блочных устройств: чтения, обслуживаемые из кэша страниц ОС, не учитываются, если метод чтения способен их распознать (это относится к используемому по умолчанию `local_filesystem_read_method = 'pread_threadpool'`, к `pread`, а также к чтению файлов файлового кэша).
+
+## max_local_write_bandwidth {#max_local_write_bandwidth}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
