@@ -1755,6 +1755,10 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
             && (isNumber(removeNullable(removeLowCardinality(element_arg->getResultType())))
                 || isBool(removeNullable(removeLowCardinality(element_arg->getResultType())))
                 || isStringOrFixedString(removeNullable(removeLowCardinality(element_arg->getResultType())))
+                || isEnum(removeNullable(removeLowCardinality(element_arg->getResultType())))
+                || isUUID(removeNullable(removeLowCardinality(element_arg->getResultType())))
+                || isIPv4(removeNullable(removeLowCardinality(element_arg->getResultType())))
+                || isIPv6(removeNullable(removeLowCardinality(element_arg->getResultType())))
                 || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(removeNullable(removeLowCardinality(element_arg->getResultType()))))
             && (isDynamic(removeNullable(removeLowCardinality(source_array_type->getNestedType())))
                 || isVariant(removeNullable(removeLowCardinality(source_array_type->getNestedType())))))
@@ -3834,7 +3838,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         && ((numeric_left && (has_numeric_carrier || has_temporal_source || (has_numeric_source
                                 && (isBool(left_value_type)
                                     || !getLeastSupertypeForInArrayElements(source_elements, in_first_argument, false)))))
-                            || (temporal_left && has_numeric_carrier) || identifier_sources))
+                            || (temporal_left && has_numeric_carrier) || identifier_sources
+                            || (isEnum(left_value_type) && has_numeric_carrier)))
                     {
                         auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
                         QueryTreeNodes arrays;
@@ -3974,7 +3979,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     if (use_standard_null_semantics)
                     {
                         std::erase_if(matchable_elements, [](const auto & arg) { return isNullConstant(arg) || arg->getResultType()->onlyNull(); });
-                        if (isStringOrFixedString(left_complex_type))
+                        if (isStringOrFixedString(left_complex_type) || isEnum(left_complex_type))
                         {
                             std::erase_if(matchable_elements, [&](const auto & arg)
                             {
@@ -4147,6 +4152,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             left_type->getName(), non_const_set_candidate->getResultType()->getName());
                     if (use_standard_null_semantics
                         && (isNumber(left_bare_type) || isBool(left_bare_type) || isStringOrFixedString(left_bare_type)
+                            || isEnum(left_bare_type)
                             || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_bare_type)
                             || isUUID(left_bare_type) || isIPv4(left_bare_type) || isIPv6(left_bare_type))
                         && (isDynamic(right_bare_type) || isVariant(right_bare_type)))

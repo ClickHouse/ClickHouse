@@ -190,11 +190,11 @@ public:
     [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto left_type = removeNullable(removeLowCardinality(arguments[0]));
-        if (!isNumber(left_type) && !isBool(left_type) && !isStringOrFixedString(left_type)
+        if (!isNumber(left_type) && !isBool(left_type) && !isStringOrFixedString(left_type) && !isEnum(left_type)
             && !isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_type)
             && !isUUID(left_type) && !isIPv4(left_type) && !isIPv6(left_type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be numeric, Bool, String, temporal, UUID or IP", getName());
+                "First argument for function {} must be numeric, Bool, String, Enum, temporal, UUID or IP", getName());
         const auto source_type = removeNullable(removeLowCardinality(arguments[1]));
         if (!isDynamic(source_type) && !isVariant(source_type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -726,10 +726,11 @@ public:
                     || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(key_type));
             check_numeric_probe_exactness = isNumber(left_type) && isNumber(key_type)
                 && !left_type->equals(*key_type);
-            /// A set containing only `NULL` has no numeric key whose type-sensitive hash
+            /// A set containing only `NULL` has no key whose type-sensitive hash
             /// could miss a match. Leave it to the ordinary unknown-result handling.
             const bool only_null_key = set_types[0]->onlyNull() || (set->hasNull() && set->getTotalRowCount() == 1);
-            if ((isNumber(left_type) || isBool(left_type)) && (isDynamic(key_type) || isVariant(key_type)) && !only_null_key)
+            if (!isDynamic(left_type) && !isVariant(left_type)
+                && (isDynamic(key_type) || isVariant(key_type)) && !only_null_key)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",

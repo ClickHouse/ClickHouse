@@ -485,7 +485,7 @@ ASTPtr makeNumericNonConstantInReplacement(
             any_match = any_match ? makeASTFunction("or", std::move(any_match), std::move(match)) : std::move(match);
             continue;
         }
-        if ((isNumber(left_bare_type) || isBool(left_bare_type) || isStringOrFixedString(left_bare_type)
+        if ((isNumber(left_bare_type) || isBool(left_bare_type) || isStringOrFixedString(left_bare_type) || isEnum(left_bare_type)
                 || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_bare_type)
                 || isUUID(left_bare_type) || isIPv4(left_bare_type) || isIPv6(left_bare_type))
             && (isDynamic(element_bare_type) || isVariant(element_bare_type)))
@@ -1813,6 +1813,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         && (isNumber(removeNullable(removeLowCardinality(left_argument_type)))
                             || isBool(removeNullable(removeLowCardinality(left_argument_type)))
                             || isStringOrFixedString(removeNullable(removeLowCardinality(left_argument_type)))
+                            || isEnum(removeNullable(removeLowCardinality(left_argument_type)))
                             || isUUID(removeNullable(removeLowCardinality(left_argument_type)))
                             || isIPv4(removeNullable(removeLowCardinality(left_argument_type)))
                             || isIPv6(removeNullable(removeLowCardinality(left_argument_type)))
@@ -1829,7 +1830,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         });
                     const bool compare_numeric_array_sources = use_standard_null_semantics && right_argument_is_array
                         && left_bare_type && (isNumber(left_bare_type) || isBool(left_bare_type)
-                            || isStringOrFixedString(left_bare_type) || isUUID(left_bare_type)
+                            || isStringOrFixedString(left_bare_type) || isEnum(left_bare_type) || isUUID(left_bare_type)
                             || isIPv4(left_bare_type) || isIPv6(left_bare_type) || left_is_temporal) && right_array_type
                         && [&]
                         {
