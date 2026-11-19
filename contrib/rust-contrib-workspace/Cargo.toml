@@ -1,7 +1,6 @@
 # workspace is required to vendor crates for all packages.
 [workspace]
 members = [
-    "../skim-cmake",
     "../prql-cmake",
     "../polyglot-cmake",
     "../vortex-cmake",
@@ -23,7 +22,6 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [features]
-skim = ["dep:_ch_rust_skim_rust"]
 prql = ["dep:_ch_rust_prql"]
 polyglot = ["dep:_ch_rust_polyglot"]
 vortex = ["dep:_ch_rust_vortex"]
@@ -33,7 +31,6 @@ delta_kernel = ["dep:_ch_rust_delta_kernel"]
 chdig = ["dep:_ch_rust_chdig"]
 
 [dependencies]
-_ch_rust_skim_rust = { path = "../skim-cmake", optional = true }
 _ch_rust_prql = { path = "../prql-cmake", optional = true }
 _ch_rust_polyglot = { path = "../polyglot-cmake", optional = true }
 _ch_rust_vortex = { path = "../vortex-cmake", optional = true }

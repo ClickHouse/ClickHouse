@@ -11,6 +11,7 @@
 #include <Parsers/SyncReplicaMode.h>
 #include <QueryPipeline/BlockIO.h>
 #include <base/defines.h>
+#include <Common/SecretString.h>
 #include <Common/ZooKeeper/IKeeper.h>
 
 
@@ -205,8 +206,8 @@ private:
     struct
     {
         String cluster_username{"default"};
-        String cluster_password;
-        String cluster_secret;
+        SecretString cluster_password;
+        SecretString cluster_secret;
         bool cluster_secure_connection{false};
     } cluster_auth_info;
 
