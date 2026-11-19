@@ -2,6 +2,7 @@
 #if USE_AVRO
 
 #include <chrono>
+#include <filesystem>
 #include <unordered_set>
 
 #include <Common/Exception.h>
@@ -12,6 +13,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -120,11 +122,35 @@ OrphanScanResult findOrphanFiles(
 {
     OrphanScanResult scan;
 
+    /// A filesystem names `a//b` and `a/./b` as `a/b`; an object key is a byte string.
+    const auto storage_type = object_storage->getType();
+    const bool is_filesystem = storage_type == ObjectStorageType::Local || storage_type == ObjectStorageType::HDFS;
+    const String key_prefix = object_storage->getCommonKeyPrefix();
+    /// The local storage opens a relative key as `resolvePathRelativelyToBase` maps it, from the current directory.
+    auto normalize = [&](const String & path)
+    {
+        std::filesystem::path file(path);
+        if (storage_type == ObjectStorageType::Local && file.is_relative())
+            file = std::filesystem::absolute(resolvePathRelativelyToBase(path, key_prefix));
+        return file.lexically_normal().string();
+    };
+    std::unordered_set<String> normalized_reachable;
+    if (is_filesystem)
+        for (const auto & reachable_path : reachable)
+            normalized_reachable.insert(normalize(reachable_path));
+
+    auto is_reachable = [&](const String & path)
+    {
+        if (is_filesystem)
+            return normalized_reachable.contains(normalize(path));
+        return reachable.contains(path);
+    };
+
     for (const auto & file_ptr : actual_files)
     {
         const String & path = file_ptr->relative_path;
 
-        if (reachable.contains(path))
+        if (is_reachable(path))
             continue;
 
         std::optional<ObjectMetadata> fetched_metadata;
@@ -318,7 +344,7 @@ Pipe executeRemoveOrphanFiles(
     /// between queries. Resolve the same metadata file the scan below roots at, so the
     /// gate and the scan judge one table state.
     auto log = getLogger("IcebergRemoveOrphanFiles");
-    auto [_metadata_version, latest_metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+    auto [_metadata_version, latest_metadata_path, compression_method, _] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
         catalog,
         table_name,
