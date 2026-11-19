@@ -485,6 +485,7 @@ bool writeMetadataFile(
     }
     catch (...)
     {
+        /// Ok: the outcome decides, and `decideByWriteOutcome` rethrows or logs.
         if (!write_outcome)
             throwCommitOutcomeUnknown(storage_metadata_path, ", because the storage reports no outcome of the write");
         return decideByWriteOutcome(*write_outcome, storage_metadata_path);
