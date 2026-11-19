@@ -164,8 +164,11 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
             }
             case AuthenticationType::JWT:
             {
-                prefix = jwt_use_authenticator ? "AUTHENTICATOR" : "CLAIMS";
-                parameter = true;
+                if (numPayloadChildren() != 0)
+                {
+                    prefix = jwt_use_authenticator ? "AUTHENTICATOR" : "CLAIMS";
+                    parameter = true;
+                }
                 break;
             }
             case AuthenticationType::LDAP:

@@ -200,7 +200,8 @@
                 },
                 "concepts/features/security/external-authenticators/http",
                 "concepts/features/security/external-authenticators/kerberos",
-                "concepts/features/security/external-authenticators/jwt"
+                "concepts/features/security/external-authenticators/jwt",
+                "concepts/features/security/external-authenticators/tokens"
               ]
             }
           ]

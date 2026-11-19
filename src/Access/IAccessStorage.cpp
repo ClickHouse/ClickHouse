@@ -3,6 +3,7 @@
 #include <Access/Common/AuthenticationType.h>
 #include <Access/Credentials.h>
 #include <Access/User.h>
+#include <Access/ExternalAuthenticators.h>
 #include <Access/AccessBackup.h>
 #include <algorithm>
 #include <Backups/BackupEntriesCollector.h>
@@ -36,6 +37,7 @@ namespace ErrorCodes
     extern const int ACCESS_ENTITY_NOT_FOUND;
     extern const int ACCESS_STORAGE_READONLY;
     extern const int ACCESS_STORAGE_DOESNT_ALLOW_BACKUP;
+    extern const int AUTHENTICATION_FAILED;
     extern const int REQUIRED_SECOND_FACTOR;
     extern const int WRONG_PASSWORD;
     extern const int IP_ADDRESS_NOT_ALLOWED;
@@ -666,6 +668,16 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
     bool allow_no_password,
     bool allow_plaintext_password) const
 {
+    // Resolve TokenCredentials on-demand if not ready yet
+    if (auto * token_credentials = typeid_cast<TokenCredentials *>(const_cast<Credentials *>(&credentials)))
+    {
+        if (!token_credentials->isReady())
+        {
+            if (!external_authenticators.checkTokenCredentials(*token_credentials))
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Could not resolve username from token");
+        }
+    }
+
     if (auto id = find<User>(credentials.getUserName()))
     {
         if (auto user = tryRead<User>(*id))

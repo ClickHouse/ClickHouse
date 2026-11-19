@@ -85,6 +85,11 @@ public:
     [[nodiscard]] time_t getValidUntil() const { return valid_until; }
     void setValidUntil(time_t valid_until_) { valid_until = valid_until_; }
 
+    const String & getJWTClaims() const { return jwt_claims; }
+    void setJWTClaims(const String & jwt_claims_) { jwt_claims = jwt_claims_; }
+
+    const String & getTokenProcessorName() const { return token_processor_name; }
+    void setTokenProcessorName(const String & token_processor_name_) { token_processor_name = token_processor_name_; }
     /// If not empty, the access rights of a user authenticated with this method
     /// are limited to the intersection with these elements (the GRANTS clause).
     [[nodiscard]] const AccessRightsElements & getGrants() const { return grants; }
@@ -140,6 +145,8 @@ private:
     String http_auth_server_name;
     HTTPAuthenticationScheme http_auth_scheme = HTTPAuthenticationScheme::BASIC;
     time_t valid_until = 0;
+    String jwt_claims;
+    String token_processor_name;
     AccessRightsElements grants;
 };
 

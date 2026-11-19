@@ -19,7 +19,7 @@
 #    include <Common/Crypto/X509Certificate.h>
 #endif
 
-
+const String BEARER_PREFIX = "bearer ";
 namespace DB
 {
 
@@ -152,6 +152,7 @@ bool authenticateUserByHTTP(
     /// its own configured credentials, an `Authorization` header is still rejected as a mix of
     /// authentication methods, regardless of the query parameters (see below).
     bool has_http_credentials = has_authorization_header && !has_credentials_in_query_params;
+    String bearer_token;
 
     std::string spnego_challenge;
 #if USE_SSL
@@ -270,6 +271,12 @@ bool authenticateUserByHTTP(
             if (spnego_challenge.empty())
                 throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: SPNEGO challenge is empty");
         }
+        else if (Poco::icompare(scheme, "Bearer") == 0)
+        {
+            bearer_token = auth_info;
+            if (bearer_token.empty())
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: Bearer token is empty");
+        }
         else
         {
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: '{}' HTTP Authorization scheme is not supported", scheme);
@@ -346,6 +353,11 @@ bool authenticateUserByHTTP(
         }
     }
 #endif
+    else if (!bearer_token.empty() && Poco::toLower(bearer_token).starts_with(BEARER_PREFIX))
+    {
+        // Token resolution and validation will happen in IAccessStorage::authenticate() when the username is needed for user lookup.
+        current_credentials = std::make_unique<TokenCredentials>(bearer_token.substr(BEARER_PREFIX.length()));
+    }
     else // I.e., now using user name and password strings ("Basic").
     {
         if (!current_credentials)

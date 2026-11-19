@@ -397,7 +397,10 @@ Authentication::CredentialsCheckResult Authentication::areCredentialsValid(
     const ClientInfo & client_info,
     SettingsChanges & settings)
 {
-    if (!credentials.isReady())
+    /// It is OK for TokenCredentials to be not ready:
+    /// When auth request happens, we do not even know the username.
+    /// Token is resolved a bit later and the user information will be put in credentials
+    if (!typeid_cast<const TokenCredentials *>(&credentials) && !credentials.isReady())
         return CredentialsCheckResult::Fail;
 
     if (const auto * gss_acceptor_context = typeid_cast<const GSSAcceptorContext *>(&credentials))
@@ -444,6 +447,15 @@ Authentication::CredentialsCheckResult Authentication::areCredentialsValid(
             CredentialsCheckResult::Success : CredentialsCheckResult::Fail;
     }
 #endif
+
+    if (const auto * token_credentials = typeid_cast<const TokenCredentials *>(&credentials))
+    {
+        if (authentication_method.getType() != AuthenticationType::JWT)
+            return CredentialsCheckResult::Fail;
+
+        return external_authenticators.checkTokenCredentials(*token_credentials) ?
+            CredentialsCheckResult::Success : CredentialsCheckResult::Fail;
+    }
 
     if ([[maybe_unused]] const auto * always_allow_credentials = typeid_cast<const AlwaysAllowCredentials *>(&credentials))
         return CredentialsCheckResult::Success;
