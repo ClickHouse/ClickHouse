@@ -26,6 +26,8 @@ ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 16;
 -- The first part is written before the index is added, so it has no index file and is read in full.
 CREATE TABLE fact_added_index (id UInt64, s String, v UInt64)
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 16;
+-- A merge would build the index for the first part too.
+SYSTEM STOP MERGES fact_added_index;
 CREATE TABLE dim (s String, tag String) ENGINE = MergeTree ORDER BY s;
 
 INSERT INTO fact_array SELECT number, concat('k', leftPad(toString(number), 5, '0')), number FROM numbers(2000);
@@ -51,6 +53,10 @@ SETTINGS log_comment = '05830_preprocessor';
 -- Not pruned: the runtime filter does not keep the exact values, and a `text` index cannot use a range.
 SELECT sum(f.v) FROM fact_array AS f INNER JOIN dim AS d ON f.s = d.s WHERE d.tag = 'hot'
 SETTINGS log_comment = '05830_no_exact_values', join_runtime_filter_exact_values_limit = 10;
+
+-- Not pruned: the runtime filter keeps the exact values, but more than `join_runtime_filter_exact_values_limit / 100`.
+SELECT sum(f.v) FROM fact_array AS f INNER JOIN dim AS d ON f.s = d.s WHERE d.tag = 'hot'
+SETTINGS log_comment = '05830_over_cap', join_runtime_filter_exact_values_limit = 6000;
 
 -- Not pruned: the index is ignored by name.
 SELECT sum(f.v) FROM fact_array AS f INNER JOIN dim AS d ON f.s = d.s WHERE d.tag = 'hot'
@@ -85,7 +91,7 @@ FROM
         argMax(ProfileEvents['RuntimeFilterGranulesDropped'], event_time) AS dropped
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-        AND log_comment IN ('05830_array', '05830_split', '05830_preprocessor', '05830_no_exact_values', '05830_ignored', '05830_added_index')
+        AND log_comment IN ('05830_array', '05830_split', '05830_preprocessor', '05830_no_exact_values', '05830_over_cap', '05830_ignored', '05830_added_index')
     GROUP BY log_comment
 )
 ORDER BY log_comment;

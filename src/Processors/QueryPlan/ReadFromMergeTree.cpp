@@ -6221,16 +6221,16 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                     return buildRuntimeRangePredicate(*lookup, descriptors, dag, ctx);
                 };
 
-        /// A `bloom_filter` index is only worth checking for a small `IN` set. A `text` index can only use an `IN`
-        /// set (it does not support the range predicate of a filter that did not keep the exact values); the set
-        /// is bounded by `join_runtime_filter_exact_values_limit`, like an `IN` set in a query.
-        const UInt64 bloom_filter_in_cap = context->getSettingsRef()[Setting::join_runtime_filter_exact_values_limit] / 100;
+        /// A `bloom_filter` or `text` index is only worth checking for a small `IN` set: both check every value of
+        /// the set for each granule or range they consider, so the cost grows with the number of values times the
+        /// number of granules, and with many values it exceeds the cost of reading the granules. A `text` index also
+        /// cannot use the range predicate of a filter that did not keep the exact values.
+        const UInt64 in_set_cap = context->getSettingsRef()[Setting::join_runtime_filter_exact_values_limit] / 100;
         dynamic_skip_index_filter =
-            [lookup = runtime_filter_lookup, descriptors = std::move(key_descriptors), bloom_filter_in_cap]
+            [lookup = runtime_filter_lookup, descriptors = std::move(key_descriptors), in_set_cap]
             (const IMergeTreeIndex & index) -> bool
             {
-                const bool is_bloom_filter = index.index.type == "bloom_filter";
-                if (!is_bloom_filter && index.index.type != "text")
+                if (index.index.type != "bloom_filter" && index.index.type != "text")
                     return true;
                 for (const auto & descr : descriptors)
                 {
@@ -6240,7 +6240,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                     if (!filter)
                         return false;
                     auto values = filter->getRecordedKeyValues();
-                    return values && (!is_bloom_filter || values->size() <= bloom_filter_in_cap);
+                    return values && values->size() <= in_set_cap;
                 }
                 return false;
             };
