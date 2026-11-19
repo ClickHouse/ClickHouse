@@ -36,6 +36,11 @@
 
 using namespace Coordination::Storage;
 
+namespace DB::ErrorCodes
+{
+    extern const int CORRUPTED_DATA;
+}
+
 namespace DB::CoordinationSetting
 {
     extern const CoordinationSettingsBool storage_memory_only;
@@ -830,6 +835,78 @@ TEST(KeeperStorage, WriteThrottling)
     storage.sorted_runs.clear();
     storage.recalculateWriteThrottling();
     EXPECT_EQ(storage.write_throttling_us.load(), 0u);
+}
+
+/// A block as `SortedFile::loadBlockGroup` produces it from a file: capacity is exactly the block size,
+/// and the header is parsed from the bytes.
+static BlockPtr makeBlockFromFileBytes(const std::string & bytes)
+{
+    BlockPtr block = BlockData::create(bytes.size());
+    memcpy(block->data(), bytes.data(), bytes.size());
+    block->size = static_cast<uint32_t>(bytes.size());
+    block->serialization_version = SERIALIZATION_VERSION_LATEST;
+    block->parseHeader();
+    return block;
+}
+
+/// A block header with no base path, whose first record starts at `header_size`.
+static std::string makeBlockHeader(uint32_t header_size)
+{
+    std::string header(header_size, '\0');
+    memcpy(header.data(), &header_size, sizeof(header_size));
+    return header;
+}
+
+static void expectCorruptedRecord(const std::string & bytes, bool read_full_node)
+{
+    BlockPtr block = makeBlockFromFileBytes(bytes);
+    NodeRef ref{.action = NodeAction::Create, .offset = block->entries_start, .block = block};
+    try
+    {
+        std::string path_buf;
+        if (read_full_node)
+        {
+            FullNode node;
+            ref.read(node, path_buf);
+        }
+        else
+        {
+            NodePath path;
+            uint32_t serialized_size = 0;
+            NodeAction action = NodeAction::Remove;
+            ref.readPath(path, path_buf, serialized_size, action);
+        }
+        ADD_FAILURE() << "expected CORRUPTED_DATA";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::CORRUPTED_DATA) << e.message();
+    }
+}
+
+/// Records of a block read from a file may be corrupted. Decoding them must fail with `CORRUPTED_DATA`
+/// and must not read past the block's allocation (run under ASan to catch such reads).
+TEST(KeeperStorage, ReadNodeRejectsMalformedRecords)
+{
+    /// The first record starts at the last byte of the block: no room for the varints-size byte.
+    expectCorruptedRecord(makeBlockHeader(127) + std::string(1, '\0'), /*read_full_node=*/ false);
+
+    /// The varints area extends past the end of the block.
+    expectCorruptedRecord(makeBlockHeader(28) + std::string{'\x00', '\xc8', '\x00', '\x00'}, /*read_full_node=*/ false);
+
+    /// The first group varint fits in the varints area but ends at the last byte of the block; decoding
+    /// it without a check would read up to 4 bytes past `capacity`.
+    expectCorruptedRecord(makeBlockHeader(28) + std::string{'\x00', '\x01', '\x00'}, /*read_full_node=*/ false);
+
+    /// The first group varint claims more bytes (1 + 4 * 4) than the varints area holds (1).
+    expectCorruptedRecord(makeBlockHeader(28) + std::string{'\x00', '\x01', '\xff'} + std::string(32, '\0'), /*read_full_node=*/ false);
+
+    /// A `Create` record at the end of the block: three empty 4 x u32 groups, then an 8 x u64 group that
+    /// claims more bytes than the varints area holds; decoding it without a check would read up to 67
+    /// bytes, past `capacity`.
+    std::string record = {'\x02', '\x06', '\x00', '\x00', '\x00', '\xff', '\xff', '\xff'};
+    record += std::string(8, '\0'); /// digest
+    expectCorruptedRecord(makeBlockHeader(28) + record, /*read_full_node=*/ true);
 }
 
 #endif
