@@ -17,6 +17,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -244,7 +245,8 @@ std::optional<SubstitutionConversion> classifySubstitutionConversion(const DataT
     /// assume; the cross-base cast is unfaithful too (`accurateCastOrNull` into `Bool` maps every
     /// non-zero value to `true`). The custom name is load-bearing: reconstruction into `Bool`
     /// requires a `Bool` member.
-    if (isBool(correlated_base) && !isBool(member_base))
+    if ((isBool(correlated_base) || isSimpleAggregateFunctionOfBool(*correlated_base))
+        && member_base->getName() != correlated_base->getName())
         return std::nullopt;
 
     /// `IDataType::equals` compares the storage type and ignores semantically significant
