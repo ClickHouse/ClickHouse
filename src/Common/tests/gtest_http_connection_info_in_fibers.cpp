@@ -6,6 +6,7 @@
 
 #include <Common/HTTPConnectionInfo.h>
 #include <Common/Silk/FiberScheduler.h>
+#include <Common/Silk/tests/gtest_fiber_barrier.h>
 #include <Common/Silk/tests/gtest_silk_scheduler.h>
 
 #include <silk/fibers/future.h>
@@ -14,15 +15,15 @@
 #include <vector>
 
 /// Each fiber publishes its own connection inside its own scope and takes it back after all fibers have published.
-/// There are more fibers than scheduler threads, of which there is one per CPU, so at least two of them publish
-/// on the same thread: with state per thread they would overwrite each other's connection and scope counters.
+/// There are more fibers than the threads that may run them, so at least two of them publish on the same thread:
+/// with state per thread they would overwrite each other's connection and scope counters.
 TEST(HTTPConnectionInfo, ScopesOfConcurrentFibersDoNotMix)
 {
     initializeFiberSchedulerForTests();
 
-    const size_t fiber_count = 2 * std::max(1U, std::thread::hardware_concurrency()) + 1;
-    FiberBarrier published(fiber_count);
-    FiberBarrier taken(fiber_count);
+    const size_t fiber_count = 4 * std::max(1U, std::thread::hardware_concurrency()) + 1;
+    SilkTests::FiberBarrier published(fiber_count);
+    SilkTests::FiberBarrier taken(fiber_count);
     std::vector<DB::HTTPConnectionInfo> results(fiber_count);
     std::vector<silk::FiberFuture> futures(fiber_count);
 
