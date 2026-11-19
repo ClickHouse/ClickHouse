@@ -7,7 +7,7 @@ GROUP BY
     1,
     isNullable(1)
     WITH TOTALS
-ORDER BY 1 ASC;
+ORDER BY 1 ASC SETTINGS enable_analyzer = 1;
 
 -- Simplified version of the above query
 SELECT number FROM numbers(10, 14630045721179951620, 6670599363308407409);

@@ -99,7 +99,7 @@ protected:
         auto component_guard = Coordination::setCurrentComponent("MergeTreeCodecBlockCountsSource::generate");
 
         /// One part per call. generate is called repeatedly until it returns an empty chunk.
-        /// Thus we skip parts with empty ColumnsSubstreams (e.g. written by an older version) and parts
+        /// Thus we skip parts with empty ColumnsSubstreams (e.g. Compact without substream marks) and parts
         /// where keys_filter drops every row, instead of returning an empty chunk for them.
         while (part_index < data_parts.size())
         {
@@ -253,7 +253,7 @@ public:
     {
     }
 
-    [[nodiscard]] std::string getName() const override { return "ReadFromMergeTreeCodecBlockCounts"; }
+    std::string getName() const override { return "ReadFromMergeTreeCodecBlockCounts"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 

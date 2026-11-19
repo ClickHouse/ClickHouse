@@ -42,12 +42,12 @@ public:
         , all_users_store(all_users_store_)
     {}
 
-    [[nodiscard]] CheckResult isValidUser(const UserWithPassword & credentials) const;
-    [[nodiscard]] CheckResult isValidUser(const std::string & user, const std::string & password) const;
+    CheckResult isValidUser(const UserWithPassword & credentials) const;
+    CheckResult isValidUser(const std::string & user, const std::string & password) const;
 
-    [[nodiscard]] std::string getUser() const { return current_user; }
+    std::string getUser() const { return current_user; }
 
-    [[nodiscard]] std::string getPassword() const { return current_password; }
+    std::string getPassword() const { return current_password; }
 
 
 private:

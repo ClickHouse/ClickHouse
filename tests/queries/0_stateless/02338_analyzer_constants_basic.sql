@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 
 DESCRIBE (SELECT 1);
 SELECT 1;

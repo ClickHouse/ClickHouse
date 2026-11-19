@@ -6,7 +6,6 @@
 #cmakedefine01 CLICKHOUSE_CLOUD
 #cmakedefine01 USE_CPUID
 #cmakedefine01 USE_SIMDUTF
-#cmakedefine01 USE_GPU
 #cmakedefine01 USE_SSL
 #cmakedefine01 USE_OPENSSL_FIPS
 #cmakedefine01 USE_SSH
@@ -48,7 +47,6 @@
 #cmakedefine01 USE_PARQUET
 #cmakedefine01 USE_ORC
 #cmakedefine01 USE_ARROW
-#cmakedefine01 USE_ARROW_LIBRARY
 #cmakedefine01 USE_PROTOBUF
 #cmakedefine01 USE_MSGPACK
 #cmakedefine01 USE_ICU
@@ -74,7 +72,6 @@
 #cmakedefine01 USE_SKIM
 #cmakedefine01 USE_PRQL
 #cmakedefine01 USE_POLYGLOT
-#cmakedefine01 USE_VORTEX
 #cmakedefine01 USE_PCO
 #cmakedefine01 USE_ULID
 #cmakedefine01 USE_LIBFIU

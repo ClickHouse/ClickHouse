@@ -14,7 +14,7 @@ namespace DB
 /// Compact enum storage with efficient lookups.
 /// - Strings stored in values vector (sorted by value for compatibility)
 /// - Name-to-value: binary search on sorted name index (O(log N))
-/// - Value-to-name: direct array lookup (O(1)) for small or dense ranges, binary search otherwise
+/// - Value-to-name: direct array lookup (O(1)) for small ranges, binary search for large ranges
 template <typename T>
 class EnumValues : public IHints<>
 {
@@ -39,7 +39,7 @@ private:
 
     /// Value-to-name lookup strategy.
     /// For Enum8: always direct (max 256 entries of `uint16_t` = 512 bytes).
-    /// For Enum16: direct if range <= `DIRECT_LOOKUP_THRESHOLD` or at most twice the number of values, otherwise binary search.
+    /// For Enum16: direct if range <= `DIRECT_LOOKUP_THRESHOLD`, otherwise binary search.
     bool use_direct_value_lookup = true;
 
     /// Direct lookup array: `value_to_index[value - min_value]` = index into `values`.
@@ -62,42 +62,42 @@ private:
     /// Value-to-name lookup, `nullptr` if not found. Returns a pointer rather than filling an out
     /// parameter so that callers keep no address-taken local, which costs a canary under
     /// `-fstack-protector-strong`.
-    [[nodiscard]] const std::string * findNameForValue(T value) const;
+    const std::string * findNameForValue(T value) const;
 
 public:
     explicit EnumValues(const Values & values_, ValidationMode validation_mode = ValidationMode::Normal);
     ~EnumValues() override;
 
-    [[nodiscard]] const Values & getValues() const { return values; }
+    const Values & getValues() const { return values; }
 
     /// Approximate number of heap-allocated bytes owned by this object:
     /// the `values` vector (including each name's string capacity) plus the
     /// `name_sorted_index` and `value_to_index` lookup vectors.
-    [[nodiscard]] size_t allocatedBytes() const;
+    size_t allocatedBytes() const;
 
     /// Check if value exists in enum
-    [[nodiscard]] bool hasValue(T value) const;
+    bool hasValue(T value) const;
 
     /// Get name for value, throws if not found
-    [[nodiscard]] std::string_view getNameForValue(T value) const;
+    std::string_view getNameForValue(T value) const;
 
     /// Get name for value, returns false if not found
     bool getNameForValue(T value, std::string_view & result) const;
 
     /// Get value for name, throws if not found
-    [[nodiscard]] T getValue(std::string_view field_name) const;
+    T getValue(std::string_view field_name) const;
 
     /// Get value for name, returns false if not found
     bool tryGetValue(T & x, std::string_view field_name) const;
 
     template <typename TValues>
-    [[nodiscard]] bool containsAll(const TValues & rhs_values) const;
+    bool containsAll(const TValues & rhs_values) const;
 
-    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
-    [[nodiscard]] std::unordered_set<String> getSetOfAllNames(bool to_lower) const;
+    std::unordered_set<String> getSetOfAllNames(bool to_lower) const;
 
-    [[nodiscard]] std::unordered_set<T> getSetOfAllValues() const;
+    std::unordered_set<T> getSetOfAllValues() const;
 };
 
 }
