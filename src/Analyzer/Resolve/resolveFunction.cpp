@@ -1818,6 +1818,29 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
         if (match_result->as<FunctionNode>())
             resolveFunction(match_result, scope);
 
+        /// An equal-depth `Array(Dynamic)` may be a single array value or a list
+        /// of carried array values. Check both shapes without matching an empty set.
+        const auto * left_array_type = typeid_cast<const DataTypeArray *>(
+            removeNullable(removeLowCardinality(element_arg->getResultType())).get());
+        if (source_array_type && left_array_type
+            && source_array_type->getNumberOfDimensions() == left_array_type->getNumberOfDimensions()
+            && (isDynamic(removeNullable(removeLowCardinality(source_array_type->getNestedType())))
+                || isVariant(removeNullable(removeLowCardinality(source_array_type->getNestedType())))))
+        {
+            auto whole_array_equals = buildNumericInEquality(
+                element_arg, source_array->clone(), element_arg->getResultType(), source_array->getResultType());
+            auto non_null_equals = std::make_shared<FunctionNode>("ifNull");
+            non_null_equals->getArguments().getNodes() = {std::move(whole_array_equals), std::make_shared<ConstantNode>(Field{0u})};
+            auto nonempty = std::make_shared<FunctionNode>("notEmpty");
+            nonempty->getArguments().getNodes().push_back(source_array->clone());
+            auto single_member_match = std::make_shared<FunctionNode>("and");
+            single_member_match->getArguments().getNodes() = {std::move(nonempty), std::move(non_null_equals)};
+            auto either_shape = std::make_shared<FunctionNode>("or");
+            either_shape->getArguments().getNodes() = {std::move(match_result), std::move(single_member_match)};
+            match_result = std::move(either_shape);
+            resolveFunction(match_result, scope);
+        }
+
         if (extra_match_predicate)
         {
             auto either_match = std::make_shared<FunctionNode>("or");
@@ -3625,6 +3648,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                 in_first_argument->getResultType()->getName(), non_const_set_candidate->getResultType()->getName());
                         if (rhs_array && lhs_array
                             && rhs_array->getNumberOfDimensions() == lhs_array->getNumberOfDimensions()
+                            && !isCompoundCarrierForIn(in_first_argument->getResultType(), rhs_array->getNestedType())
                             && !(isIncompatibleNullableScalarForComplexIn(rhs_array->getNestedType())
                                 && !tryGetLeastSupertype(DataTypes{in_first_argument->getResultType(), non_const_set_candidate->getResultType()})))
                         {
