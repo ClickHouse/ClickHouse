@@ -365,7 +365,8 @@ across up to this many threads.
 
 Destinations whose results depend on insertion order keep a single write stream when the input has one stream:
 `CollapsingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree`, `ReplacingMergeTree`
-(including their replicated variants) and `EmbeddedRocksDB`. A `SELECT` with multiple output streams has no input order
+(including their replicated variants), `MergeTree` tables with a `UNIQUE KEY`, `EmbeddedRocksDB`, and `Distributed`
+(the engine of the table on the shard is not known). A `SELECT` with multiple output streams has no input order
 to preserve, so these destinations can retain parallel sinks. `KeeperMap` always keeps a single write stream.
 These restrictions also apply to destinations reached through a materialized view or an `Alias` table.
 
