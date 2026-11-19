@@ -491,7 +491,7 @@ std::optional<Chunk> StreamingExchangeSource::readChunk()
     }
     else
     {
-        auto packet = StreamingExchangeProtocol::readDataPacketBody(*packet_in, output.getHeader(), stream_name);
+        auto packet = StreamingExchangeProtocol::readDataPacketBody(*packet_in, output.getHeader(), stream_name, &type_cache);
         rows_read += packet.chunk.getNumRows();
         if (packet.end_of_stream)
             finished_reading = true;

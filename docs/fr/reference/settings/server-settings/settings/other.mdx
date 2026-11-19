@@ -18,6 +18,14 @@ Ces paramètres configurent le serveur ClickHouse et sont générés automatique
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Oui" />Fait planter le serveur en cas d’exception LOGICAL&#95;ERROR. Réservé aux experts.
 
+## ai_function_allow_sql_named_collections {#ai_function_allow_sql_named_collections}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
+
+Permet aux fonctions d’IA (telles que `aiGenerate`, `aiEmbed`, `aiSimilarity`) d’utiliser les collections nommées créées avec `CREATE NAMED COLLECTION`.
+Lorsque ce paramètre est désactivé, les fonctions d’IA n’acceptent que les collections nommées définies dans le fichier de configuration du serveur, et toute autre collection lève une exception.
+Cela s’applique aussi bien au paramètre `credentials` qu’aux paramètres `ai_function_text_default_credentials` et `ai_function_embedding_default_credentials`.
+
 ## allowed_disks_for_table_engines {#allowed_disks_for_table_engines}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Liste des disques pouvant être utilisés avec Iceberg
@@ -94,6 +102,30 @@ ClickHouse recharge les dictionnaires intégrés toutes les x secondes. Cela per
 Intervalle, en secondes, pendant lequel la consommation mémoire maximale autorisée du serveur est ajustée en fonction du seuil correspondant dans les cgroups.
 
 Pour désactiver l&#39;observateur de cgroups, définissez cette valeur sur `0`.
+
+## collect_connection_metrics {#collect_connection_metrics}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />Active la collecte des connexions pour la table `system.connections`. Cette table affiche les connexions des interfaces de requête TCP natif et HTTP. Elle n&#39;affiche pas les connexions MySQL, PostgreSQL, gRPC ni celles d&#39;autres protocoles.
+
+Lorsque ce paramètre est défini sur `true`, le serveur conserve en mémoire une liste des connexions :
+
+* Le serveur ajoute une connexion TCP native à la liste après l&#39;authentification.
+* Le serveur ajoute une connexion HTTP à la liste lorsque celle-ci reçoit sa première requête.
+* Le serveur retire une connexion de la liste lorsqu&#39;elle se ferme. Entre deux requêtes, une connexion HTTP keep-alive a le statut `idle`.
+
+Chaque connexion et chaque requête entraînent un léger coût de synchronisation. C&#39;est pourquoi la valeur par défaut est `false`.
+
+Un utilisateur ne disposant pas du privilège `SHOW CONNECTIONS` ne voit que ses propres connexions.
+
+Vous pouvez modifier ce paramètre sans redémarrage. Lorsque vous le définissez sur `false`, `system.connections` se vide et le serveur cesse d&#39;enregistrer les nouvelles connexions. Lorsque vous le définissez sur `true`, une connexion déjà ouverte apparaît dans `system.connections` lors de sa requête suivante.
+
+Exemple de configuration :
+
+```xml
+<collect_connection_metrics>true</collect_connection_metrics>
+```
+
+Voir aussi : `system.connections`, `system.processes`.
 
 ## compression {#compression}
 
@@ -1159,14 +1191,14 @@ Paramètres de la table système [`opentelemetry_span_log`](/fr/reference/system
 
 <SystemLogParameters />
 
-Exemple :
+Exemple :
 
 ```xml
 <opentelemetry_span_log>
     <engine>
         engine MergeTree
-        partition by toYYYYMM(finish_date)
-        order by (finish_date, finish_time_us, trace_id)
+        partition by toYYYYMM(event_date)
+        order by (event_date, finish_time_us, trace_id)
     </engine>
     <database>system</database>
     <table>opentelemetry_span_log</table>
@@ -1552,27 +1584,31 @@ Pour plus d&#39;informations, consultez le fichier d’en-tête MergeTreeSetting
 
 Détermine comment le noyau Linux réagit lorsque le serveur effectue un appel système qui lui est interdit.
 
-Au démarrage, le serveur installe un filtre [`seccomp`](https://man7.org/linux/man-pages/man2/seccomp.2.html) qui n&#39;autorise que les appels système utilisés par ClickHouse. Un attaquant qui parvient à exécuter du code dans le processus serveur n&#39;a alors plus accès aux interfaces du noyau qui lui permettraient d&#39;aller plus loin : charger des modules du noyau, redémarrer le système, monter des systèmes de fichiers, utiliser `chroot`, changer l&#39;identité du processus, créer des namespaces, utiliser `ptrace` et lire la mémoire d&#39;un autre processus, utiliser eBPF, le trousseau de clés du noyau, `userfaultfd` et `vmsplice`, les handles de fichiers, `fanotify`, le contrôle du swap et des quotas, régler l&#39;horloge système ou le nom d&#39;hôte, ainsi que les files de messages System V et POSIX. Les deux requêtes `ioctl` qui permettent à un processus de prendre le contrôle du terminal auquel il est rattaché, `TIOCSTI` et `TIOCLINUX`, sont également refusées. Les appels système `io_uring` sont autorisés, car `local_filesystem_read_method = io_uring` les utilise. Le filtre ne voit pas les opérations soumises par l&#39;intermédiaire d&#39;un anneau : les opérations prises en charge par `io_uring`, notamment celles portant sur les attributs étendus, restent donc accessibles par ce biais, même si les appels système correspondants sont refusés. Dans tous les modes sauf `disabled`, le serveur définit également `PR_SET_NO_NEW_PRIVS`, afin que ni lui ni les programmes qu&#39;il lance ne puissent acquérir des privilèges en exécutant un programme setuid.
+Au démarrage, le serveur installe un filtre [`seccomp`](https://man7.org/linux/man-pages/man2/seccomp.2.html) qui n&#39;autorise que les appels système utilisés par ClickHouse. Un attaquant qui parvient à exécuter du code dans le processus serveur n&#39;a alors plus accès aux interfaces du noyau qui lui permettraient d&#39;aller plus loin : charger des modules du noyau, redémarrer le système, monter des systèmes de fichiers, utiliser `chroot`, changer l&#39;identité du processus, créer des namespaces, utiliser `ptrace` et lire la mémoire d&#39;un autre processus, utiliser eBPF, le trousseau de clés du noyau, `userfaultfd` et `vmsplice`, les handles de fichiers, `fanotify`, le contrôle du swap et des quotas, régler l&#39;horloge système ou le nom d&#39;hôte, ainsi que les files de messages System V et POSIX. Les deux requêtes `ioctl` qui permettent à un processus de prendre le contrôle du terminal auquel il est rattaché, `TIOCSTI` et `TIOCLINUX`, sont également refusées. Les appels système `io_uring` sont autorisés, car `local_filesystem_read_method = io_uring` les utilise. Le filtre ne voit pas les opérations soumises par l&#39;intermédiaire d&#39;un anneau : les opérations prises en charge par `io_uring`, notamment celles portant sur les attributs étendus, restent donc accessibles par ce biais, même si les appels système correspondants sont refusés. Dans tous les modes sauf `disabled`, le serveur définit également `PR_SET_NO_NEW_PRIVS`, afin que ni lui ni les programmes qu&#39;il lance ne puissent acquérir des privilèges en exécutant un programme setuid.
 
-La création d&#39;un namespace est refusée sous toutes ses formes : `unshare` et `setns` ne sont jamais autorisés, un appel à `clone` qui demande la création d&#39;un namespace dans ses indicateurs est refusé, et `clone3` — dont les arguments se trouvent dans une structure que le filtre ne peut pas lire, ce qui l&#39;empêche de distinguer la création d&#39;un namespace de celle d&#39;un thread — est entièrement refusé, avec `ENOSYS`. Une bibliothèque libc comprend ainsi qu&#39;elle doit utiliser `clone` à la place, ce qui permet de continuer à créer des threads et des processus ; `docker` et `systemd` refusent `clone3` de la même manière dans leurs propres politiques.
+La création d&#39;un namespace est refusée sous toutes ses formes : `unshare` et `setns` ne sont jamais autorisés, un appel à `clone` qui demande la création d&#39;un namespace dans ses indicateurs est refusé, et `clone3` — dont les arguments se trouvent dans une structure que le filtre ne peut pas lire, ce qui l&#39;empêche de distinguer la création d&#39;un namespace de celle d&#39;un thread — est entièrement refusé, avec `ENOSYS`. Une bibliothèque libc comprend ainsi qu&#39;elle doit utiliser `clone` à la place, ce qui permet de continuer à créer des threads et des processus ; `docker` et `systemd` refusent `clone3` de la même manière dans leurs propres politiques.
 
-Valeurs possibles :
+Les appels système portant sur les attributs étendus sont également refusés avec `ENOSYS`. ClickHouse ne les utilise pas, mais les modules NSS de l&#39;hôte s&#39;exécutent dans le processus serveur, et le module `nss-resolve` de `systemd` vérifie s&#39;il peut apposer un attribut sur son socket avant de le faire ; il interprète `ENOSYS` comme un « non » et poursuit sans cet attribut, alors que `SIGSYS` en mode `trap` mettrait fin au serveur dès la première résolution de nom d&#39;hôte.
 
-* `trap` - le noyau envoie `SIGSYS` au thread fautif. ClickHouse le traite comme tout autre signal fatal : le numéro de l&#39;appel système et une trace de pile sont écrits dans le journal, puis le serveur s&#39;arrête.
+Valeurs possibles :
+
+* `trap` - le noyau envoie `SIGSYS` au thread fautif. ClickHouse le traite comme tout autre signal fatal : le numéro de l&#39;appel système et une trace de pile sont écrits dans le journal, puis le serveur s&#39;arrête.
 * `kill` - le noyau met immédiatement fin à l&#39;ensemble du processus. Rien n&#39;est écrit dans le journal, car aucun gestionnaire de signal ne peut s&#39;exécuter.
 * `errno` - l&#39;appel système échoue avec `EPERM` et le serveur continue de fonctionner. Le code à l&#39;origine de l&#39;appel reçoit une erreur à laquelle il ne s&#39;attend probablement pas.
-* `log` - l&#39;appel système est autorisé et simplement consigné. Aucun appel système n&#39;est refusé : ce mode n&#39;applique donc aucune politique ; utilisez-le pour vérifier que la politique est compatible avec votre charge de travail avant de l&#39;activer. `PR_SET_NO_NEW_PRIVS` reste défini dans ce mode, car le noyau l&#39;exige pour accepter le filtre ; un programme setuid lancé par le serveur ne peut donc pas acquérir de privilèges supplémentaires, même dans ce mode.
+* `log` - l&#39;appel système est autorisé et simplement consigné. Aucun appel système n&#39;est refusé : ce mode n&#39;applique donc aucune politique ; utilisez-le pour vérifier que la politique est compatible avec votre charge de travail avant de l&#39;activer. `PR_SET_NO_NEW_PRIVS` reste défini dans ce mode, car le noyau l&#39;exige pour accepter le filtre ; un programme setuid lancé par le serveur ne peut donc pas acquérir de privilèges supplémentaires, même dans ce mode.
 * `disabled` - aucun filtre n&#39;est installé.
 
-La valeur par défaut est `log`, afin que la politique n&#39;impose aucune restriction tant qu&#39;elle n&#39;a pas été validée avec une charge de travail : exécutez le serveur dans ce mode, surveillez le journal d&#39;audit du noyau pour repérer les appels système non couverts par la politique, puis seulement passez le paramètre à `trap`, `kill` ou `errno`.
+La valeur par défaut est `log`, afin que la politique n&#39;impose aucune restriction tant qu&#39;elle n&#39;a pas été validée avec une charge de travail : exécutez le serveur dans ce mode, surveillez le journal d&#39;audit du noyau pour repérer les appels système non couverts par la politique, puis seulement passez le paramètre à `trap`, `kill` ou `errno`. Le fichier de configuration fourni avec les paquets du serveur et l&#39;image Docker le définit à `trap`.
 
-Lorsque le noyau ne peut pas installer un filtre avec l&#39;action `log` — parce qu&#39;il est antérieur à Linux 4.14, qu&#39;il a été compilé sans `CONFIG_SECCOMP_FILTER` ou qu&#39;un environnement isolé externe, tel qu&#39;un environnement d&#39;exécution de conteneurs, refuse l&#39;appel système `seccomp` — le mode `log` consigne un avertissement indiquant la raison, puis le serveur s&#39;exécute sans filtre, puisque celui-ci n&#39;aurait imposé aucune restriction. `PR_SET_NO_NEW_PRIVS` est tout de même défini. Il en va autrement des modes qui appliquent la politique : si leur filtre ne peut pas être installé, le serveur ne démarre pas.
+Lorsque le noyau ne peut pas installer un filtre avec l&#39;action `log` — parce qu&#39;il est antérieur à Linux 4.14, qu&#39;il a été compilé sans `CONFIG_SECCOMP_FILTER` ou qu&#39;un environnement isolé externe, tel qu&#39;un environnement d&#39;exécution de conteneurs, refuse l&#39;appel système `seccomp` — le mode `log` consigne un avertissement indiquant la raison, puis le serveur s&#39;exécute sans filtre, puisque celui-ci n&#39;aurait imposé aucune restriction. `PR_SET_NO_NEW_PRIVS` est tout de même défini. Il en va autrement des modes qui appliquent la politique : si leur filtre ne peut pas être installé, le serveur ne démarre pas.
 
 Dans tous les modes sauf `disabled`, le noyau consigne également l&#39;appel système fautif dans son journal d&#39;audit, avec le nom du processus et le numéro de l&#39;appel système. C&#39;est la seule trace laissée en mode `kill`, dans lequel le serveur ne peut pas écrire dans son propre journal.
 
-Une fois installé, un filtre ne peut être ni supprimé ni assoupli. Il est hérité après `fork` comme après `execve` et s&#39;applique donc aussi aux dictionnaires exécutables et aux fonctions exécutables définies par l&#39;utilisateur, aux ponts de bibliothèque et ODBC, ainsi qu&#39;au processus sentinelle OOM. Tout script lancé par l&#39;un de ces composants est soumis à la même politique ; gardez-le à l&#39;esprit s&#39;il effectue des opérations inhabituelles.
+Une fois installé, un filtre ne peut être ni supprimé ni assoupli. Il est hérité après `fork` comme après `execve` et s&#39;applique donc aussi aux dictionnaires exécutables et aux fonctions exécutables définies par l&#39;utilisateur, aux ponts de bibliothèque et ODBC, ainsi qu&#39;au processus sentinelle OOM. Tout script lancé par l&#39;un de ces composants est soumis à la même politique ; gardez-le à l&#39;esprit s&#39;il effectue des opérations inhabituelles.
 
-La politique n&#39;est implémentée que pour x86-64 et AArch64, car il s&#39;agit d&#39;une liste de numéros d&#39;appels système propres à chaque architecture. Sur toute autre architecture, le serveur consigne un avertissement dans son journal au démarrage et s&#39;exécute sans filtre ; `PR_SET_NO_NEW_PRIVS`, qui ne dépend pas de l&#39;architecture, reste toutefois activé dans tous les modes, sauf `disabled`.
+La politique n&#39;est implémentée que pour x86-64 et AArch64, car elle consiste en une liste de numéros d&#39;appels système propres à chaque architecture. Sur toute autre architecture, le serveur consigne un avertissement au démarrage et s&#39;exécute sans filtre, mais `PR_SET_NO_NEW_PRIVS`, qui ne dépend pas de l&#39;architecture, reste défini dans tous les modes sauf `disabled`. seccomp est une fonctionnalité du noyau Linux : sur les autres systèmes d&#39;exploitation, le serveur consigne un avertissement au démarrage dans tous les modes sauf `disabled` et s&#39;exécute sans filtre.
+
+`system.server_settings` indique le mode du filtre effectivement en vigueur, et non le mode configuré : `disabled` partout où le serveur s&#39;exécute sans filtre — sur un système d&#39;exploitation autre que Linux, sur une architecture dépourvue de politique, ou en mode `log` lorsque le noyau ne peut pas installer son filtre — et, dans les autres cas, le mode défini au démarrage, même si la configuration est rechargée avec une autre valeur.
 
 **Exemple**
 
@@ -1647,6 +1683,12 @@ Exemple :
 ```xml
 <tcp_ssh_port>9022</tcp_ssh_port>
 ```
+
+## tcp_with_proxy_allow_interserver_mode {#tcp_with_proxy_allow_interserver_mode}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
+
+Autorise les clients connectés via `tcp_with_proxy_port` à utiliser le mode interserveur du protocole natif. Désactivez ce paramètre lorsque `tcp_with_proxy_port` est exposé à des clients non fiables par l&#39;intermédiaire d&#39;un proxy. Les connexions à `tcp_port` et `tcp_port_secure` ne sont pas concernées.
 
 ## text_log {#text_log}
 
