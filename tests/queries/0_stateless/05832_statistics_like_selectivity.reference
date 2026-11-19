@@ -1,7 +1,11 @@
 exact LIKE	1
+exact NOT LIKE	1
 LIKE %	1
 NOT LIKE %	1
 prefix LIKE	1
 suffix LIKE	1
 startsWith empty	1
-startsWith Array	0
+FixedString LIKE %	1
+FixedString startsWith empty	1
+Enum LIKE %	1
+startsWith Array	1
