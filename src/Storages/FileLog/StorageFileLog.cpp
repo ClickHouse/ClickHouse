@@ -1208,13 +1208,13 @@ A table on `FileLog('/var/lib/clickhouse/user_files/my_app/*.log', 'JSONEachRow'
 
 ## Streaming queries {#streaming-queries}
 
-A streaming query (`SELECT ... FROM file_log STREAM`, an experimental feature enabled by `enable_streaming_queries`) reads the files with its own readers. Unlike a direct `SELECT`, it does not move the read positions stored in the metadata of the table and does not need `stream_like_engine_allow_direct_select`. The cursor is a map from the file name to the offset of the last read record, and can be reconstructed from the `_filename` and `_offset` virtual columns:
+A streaming query (`SELECT ... FROM file_log STREAM`, an experimental feature enabled by `enable_streaming_queries`) reads the files with its own readers. Unlike a direct `SELECT`, it does not move the read positions stored in the metadata of the table and does not need `stream_like_engine_allow_direct_select`. The cursor is a map from the file name to the offset of the last read record, and can be reconstructed from the `_filename` and `_offset` virtual columns. The cursor splits its keys by dots, so a dot in a file name is written as `%2E` (and a percent sign as `%25`):
 
 ```sql
-SELECT _filename, _offset, * FROM file_log STREAM CURSOR {'app.log': 1024}
+SELECT _filename, _offset, * FROM file_log STREAM CURSOR {'app%2Elog': 1024}
 ```
 
-A file without an entry in the cursor is read from the beginning, and only complete records (ending with a newline) are read. An unbounded stream checks the files for new data every `poll_timeout_ms`; a file replaced by another one with the same name is read from the beginning. `STREAM BOUNDED` reads the files up to their sizes at the start of the query, so a `FileLog` table can be the source of an incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`). The cursor that it keeps has the inode of every file too (`{'app.log': {'offset': 1024, 'inode': 123}}`), so a file replaced by log rotation or truncated is read from the beginning by the next refresh. `WATERMARK` is not supported.
+A file without an entry in the cursor is read from the beginning, and only complete records (ending with a newline) are read. The files are identified by their inodes: a file renamed by log rotation keeps its read position, and a file with several names (hard links) is read once. An unbounded stream checks the files for new data every `poll_timeout_ms`; a file replaced by another one with the same name or truncated is read from the beginning, and a file that leaves the directory is closed after its remaining records are read. `STREAM BOUNDED` reads the records that are complete within the sizes of the files at the start of the query, so a `FileLog` table can be the source of an incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`). The cursor that it keeps has the inode of every file and the position after its last read record too (`{'app%2Elog': {'offset': 1024, 'inode': 123, 'end': 1100}}`), so a file renamed by log rotation keeps its position, and a file replaced or truncated is read from the beginning by the next refresh. `WATERMARK` is not supported.
 
 ## Virtual columns {#virtual-columns}
 
