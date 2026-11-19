@@ -1,5 +1,6 @@
 #include "config.h"
 #include <Poco/URI.h>
+#include <Disks/IDisk.h>
 
 
 #if USE_AZURE_BLOB_STORAGE

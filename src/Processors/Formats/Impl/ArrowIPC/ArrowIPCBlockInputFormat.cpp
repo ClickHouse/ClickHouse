@@ -329,12 +329,12 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
     batch_decoder.validateBatchLayout(*dict_batch.data(), value_fields);
     message_reader->readBody(*dict_batch.data(), body_length, body_buffer);
 
-    /// Decode the values once for each use (position and hint) of a field encoding this dictionary, so every field gets
-    /// the decoding it would get for inline values in a record batch. The registered type must describe the
-    /// registered column: the raw-byte rewrite the record-batch columns go through reinterprets
-    /// fixed_size_binary values under an IPv6 / big-integer hint and re-declares values the decoder already
-    /// converted or read raw, so `decodeDictionary` later builds its `LowCardinality` from a consistent
-    /// (values, type) pair.
+    /// Decode the values once for each use of this dictionary (the position of a field encoding it, with the
+    /// requested type the field resolves there), so every field gets the decoding it would get for inline
+    /// values in a record batch. The registered type must describe the registered column: the raw-byte
+    /// rewrite the record-batch columns go through reinterprets fixed_size_binary values under an IPv6 /
+    /// big-integer hint and re-declares values the decoder already converted or read raw, so
+    /// `decodeDictionary` later builds its `LowCardinality` from a consistent (values, type) pair.
     for (const ArrowIPC::DictionaryUse & use : dictionary_uses.at(id))
     {
         auto decoded = batch_decoder.decodeDictionaryValues(

@@ -13,6 +13,7 @@
 #include <Poco/URI.h>
 
 #include <optional>
+#include <vector>
 
 namespace DB
 {
@@ -46,6 +47,7 @@ private:
     void handleTableExists(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
     void handleDropTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, const Poco::URI & uri, HTTPServerResponse & response, const Context & context) const;
     void handleUpdateTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, const String & body, HTTPServerResponse & response, const Context & context) const;
+    void handleCommitTransaction(const IcebergRESTCatalogWarehouse & warehouse, const String & body, HTTPServerResponse & response, const Context & context) const;
     void handleRenameTable(const IcebergRESTCatalogWarehouse & warehouse, const String & body, HTTPServerResponse & response, const Context & context) const;
     void handleReportMetrics(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
 
@@ -67,15 +69,34 @@ private:
         const Poco::JSON::Object::Ptr & metadata,
         CompressionMethod compression_method) const;
 
-    /// Writes the new metadata file and moves the table pointer to it with a version check. Sends the response.
-    void commitTableMetadata(
+    /// One table of a commit after its requirements passed and its updates were applied in memory.
+    struct PreparedTableCommit
+    {
+        IcebergNamespaceName ns;
+        String table;
+        IcebergTablePointer current;
+        Poco::JSON::Object::Ptr metadata;
+        CompressionMethod compression_method = CompressionMethod::None;
+        /// Empty when `updates` was empty: nothing to write, nothing to move.
+        String new_location;
+    };
+
+    /// Checks requirements and applies updates in memory. Sends the error response and returns nullopt on a client error.
+    std::optional<PreparedTableCommit> prepareTableCommit(
         const IcebergRESTCatalogWarehouse & warehouse,
         const IcebergNamespaceName & ns,
         const String & table,
         const IcebergTablePointer & pointer,
-        const Poco::JSON::Object::Ptr & metadata,
-        CompressionMethod compression_method,
+        const Poco::JSON::Array & requirements,
+        const Poco::JSON::Array & updates,
         HTTPServerResponse & response) const;
+
+    /// Writes the new metadata files, then moves every table pointer in one Keeper multi with a version check.
+    /// Returns true when the commit was applied. Otherwise removes the written files, sends the error response and returns false.
+    bool commitPreparedTables(
+        const IcebergRESTCatalogWarehouse & warehouse, const std::vector<PreparedTableCommit> & prepared, HTTPServerResponse & response) const;
+    static void sendUpdateTableError(
+        HTTPServerResponse & response, IcebergRESTCatalogWarehouse::UpdateTableResult result, const IcebergNamespaceName & ns, const String & table);
 
     /// Warehouse management API (issue #127488).
     void handleCreateWarehouse(const String & body, HTTPServerResponse & response, const Context & context) const;

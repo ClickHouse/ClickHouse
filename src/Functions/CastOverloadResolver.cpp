@@ -13,6 +13,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
+#include <Common/DateLUTImpl.h>
 
 
 namespace DB
