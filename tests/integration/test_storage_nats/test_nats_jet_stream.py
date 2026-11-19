@@ -3066,6 +3066,61 @@ def test_nats_stream_cursor(nats_cluster):
     )
 
 
+def test_nats_stream_concurrent_publishing(nats_cluster):
+    """A bounded `STREAM` finishes at the end of the stream at its start while publishing continues, and an
+    unbounded one returns the messages as they arrive, even if they are fewer than the block size."""
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
+
+    instance.query(
+        """
+        CREATE TABLE test.nats (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow';
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
+
+    preloaded = 1000
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject",
+                                 [json.dumps({"key": i, "value": i}) for i in range(preloaded)]))
+
+    stop = threading.Event()
+
+    def publish_continuously():
+        key = preloaded
+        while not stop.is_set():
+            asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject",
+                                         [json.dumps({"key": key + i, "value": 0}) for i in range(10)]))
+            key += 10
+            stop.wait(0.05)
+
+    publisher = threading.Thread(target=publish_continuously)
+    publisher.start()
+    try:
+        settings = {"enable_streaming_queries": 1}
+        result = instance.query("SELECT count(), min(key) FROM test.nats STREAM BOUNDED", settings=settings, timeout=120)
+        count, min_key = map(int, result.split())
+        assert min_key == 0 and count >= preloaded
+
+        # Far fewer messages than `nats_max_block_size` arrive during a poll interval.
+        assert instance.query(
+            f"SELECT key >= {preloaded} FROM test.nats STREAM CURSOR {{'test_stream': {preloaded}}} LIMIT 1",
+            settings=settings, timeout=60) == "1\n"
+    finally:
+        stop.set()
+        publisher.join()
+
+    # The consumers created by the streaming reads are deleted, only the durable consumer of the table remains.
+    deadline = time.monotonic() + 30
+    while asyncio.run(get_stream_info(cluster, "test_stream")).state.consumer_count != 1:
+        assert time.monotonic() < deadline
+        time.sleep(0.5)
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

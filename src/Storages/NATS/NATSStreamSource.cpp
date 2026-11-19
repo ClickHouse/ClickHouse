@@ -12,6 +12,8 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/logger_useful.h>
 
+#include <chrono>
+
 namespace DB
 {
 
@@ -28,6 +30,18 @@ namespace
 using MessagePtr = std::unique_ptr<natsMsg, decltype(&natsMsg_Destroy)>;
 using MetaDataPtr = std::unique_ptr<jsMsgMetaData, decltype(&jsMsgMetaData_Destroy)>;
 using ConsumerInfoPtr = std::unique_ptr<jsConsumerInfo, decltype(&jsConsumerInfo_Destroy)>;
+using StreamInfoPtr = std::unique_ptr<jsStreamInfo, decltype(&jsStreamInfo_Destroy)>;
+
+struct MessageListHolder
+{
+    natsMsgList list{};
+    ~MessageListHolder() { natsMsgList_Destroy(&list); }
+};
+
+/// One hour.
+constexpr int64_t consumer_inactive_threshold_ns = 3600LL * 1000 * 1000 * 1000;
+/// The maximum number of messages in one fetch, which bounds the memory used by the fetched messages.
+constexpr size_t max_fetch_batch = 1024;
 
 }
 
@@ -53,9 +67,18 @@ NATSStreamSource::NATSStreamSource(
 
 NATSStreamSource::~NATSStreamSource()
 {
-    /// Unsubscribing deletes the ephemeral consumer on the server.
     if (subscription)
         natsSubscription_Unsubscribe(subscription.get());
+
+    /// The consumer was created by us, not by the subscription, so the subscription does not delete it.
+    /// If deleting fails, the server deletes the consumer after `consumer_inactive_threshold_ns`.
+    if (!consumer_name.empty() && jet_stream_ctx)
+    {
+        jsErrCode error_code{};
+        const auto status = js_DeleteConsumer(jet_stream_ctx.get(), params.stream_name.c_str(), consumer_name.c_str(), nullptr, &error_code);
+        if (status != NATS_OK)
+            LOG_WARNING(log, "Failed to delete the consumer {} of the NATS stream {}: {}", consumer_name, params.stream_name, natsStatus_GetText(status));
+    }
 }
 
 void NATSStreamSource::start()
@@ -86,50 +109,96 @@ void NATSStreamSource::start()
     if (status != NATS_OK)
         throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Failed to create a NATS JetStream context: {}", natsStatus_GetText(status));
 
-    jsSubOptions subscribe_options;
-    status = jsSubOptions_Init(&subscribe_options);
-    if (status != NATS_OK)
-        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Failed to create NATS JetStream subscribe options: {}", natsStatus_GetText(status));
+    if (!stream_settings.subscribe_for_updates)
+    {
+        /// A bounded read finishes at the last message of the stream at its start, even if publishing continues.
+        jsStreamInfo * stream_info = nullptr;
+        jsErrCode error_code{};
+        status = js_GetStreamInfo(&stream_info, jet_stream_ctx.get(), params.stream_name.c_str(), &jet_stream_options, &error_code);
+        StreamInfoPtr stream_info_holder(stream_info, &jsStreamInfo_Destroy);
+        if (status != NATS_OK)
+            throw Exception(ErrorCodes::CANNOT_CONNECT_NATS,
+                "Failed to get the information of the NATS stream {}: {} (JetStream error code {})",
+                params.stream_name, natsStatus_GetText(status), static_cast<int>(error_code));
+        end_sequence = stream_info->State.LastSeq;
 
-    /// An ordered consumer is ephemeral, does not need acknowledgements, and delivers the messages in the order of the stream.
-    subscribe_options.Stream = params.stream_name.c_str();
-    subscribe_options.Ordered = true;
+        if (end_sequence <= last_sequence)
+        {
+            LOG_DEBUG(log, "NATS stream {} has no messages after sequence {}", params.stream_name, last_sequence);
+            finish();
+            return;
+        }
+    }
+
+    /// An ephemeral pull consumer without acknowledgements, which delivers the messages in the order of the stream.
+    /// The messages are fetched on demand, in batches no larger than the rest of the output block, so a query that
+    /// stops reading (e.g. because of a slow client) does not accumulate the messages in memory.
+    jsConsumerConfig consumer_config;
+    status = jsConsumerConfig_Init(&consumer_config);
+    if (status != NATS_OK)
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Failed to create a NATS JetStream consumer config: {}", natsStatus_GetText(status));
+
+    consumer_config.AckPolicy = js_AckNone;
+    consumer_config.MemoryStorage = true;
+    consumer_config.Replicas = 1;
+    /// The server deletes the consumer if the query is gone without deleting it (e.g. the server was killed).
+    consumer_config.InactiveThreshold = consumer_inactive_threshold_ns;
     if (last_sequence > 0)
     {
-        subscribe_options.Config.DeliverPolicy = js_DeliverByStartSequence;
-        subscribe_options.Config.OptStartSeq = last_sequence + 1;
+        consumer_config.DeliverPolicy = js_DeliverByStartSequence;
+        consumer_config.OptStartSeq = last_sequence + 1;
     }
     else
-        subscribe_options.Config.DeliverPolicy = js_DeliverAll;
+        consumer_config.DeliverPolicy = js_DeliverAll;
 
     std::vector<const char *> subjects;
     subjects.reserve(params.subjects.size());
     for (const auto & subject : params.subjects)
         subjects.push_back(subject.c_str());
+    if (subjects.size() == 1)
+        consumer_config.FilterSubject = subjects.front();
+    else
+    {
+        consumer_config.FilterSubjects = subjects.data();
+        consumer_config.FilterSubjectsLen = static_cast<int>(subjects.size());
+    }
+
+    {
+        jsConsumerInfo * consumer_info = nullptr;
+        jsErrCode error_code{};
+        status = js_AddConsumer(&consumer_info, jet_stream_ctx.get(), params.stream_name.c_str(), &consumer_config, &jet_stream_options, &error_code);
+        ConsumerInfoPtr consumer_info_holder(consumer_info, &jsConsumerInfo_Destroy);
+        if (status != NATS_OK)
+            throw Exception(ErrorCodes::CANNOT_CONNECT_NATS,
+                "Failed to create a consumer of the NATS stream {}: {} (JetStream error code {}): {}",
+                params.stream_name, natsStatus_GetText(status), static_cast<int>(error_code), nats_GetLastError(nullptr));
+        consumer_name = consumer_info->Name;
+    }
+
+    jsSubOptions subscribe_options;
+    status = jsSubOptions_Init(&subscribe_options);
+    if (status != NATS_OK)
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Failed to create NATS JetStream subscribe options: {}", natsStatus_GetText(status));
+    subscribe_options.Stream = params.stream_name.c_str();
+    subscribe_options.Consumer = consumer_name.c_str();
+    /// The subscription checks that its config matches the config of the consumer it binds to.
+    subscribe_options.Config.MemoryStorage = consumer_config.MemoryStorage;
 
     natsSubscription * new_subscription = nullptr;
     jsErrCode error_code{};
-    status = js_SubscribeSyncMulti(
-        &new_subscription, jet_stream_ctx.get(), subjects.data(), static_cast<int>(subjects.size()),
-        &jet_stream_options, &subscribe_options, &error_code);
+    status = js_PullSubscribe(&new_subscription, jet_stream_ctx.get(), nullptr, nullptr, &jet_stream_options, &subscribe_options, &error_code);
     subscription.reset(new_subscription);
     if (status != NATS_OK)
         throw Exception(ErrorCodes::CANNOT_CONNECT_NATS,
-            "Failed to subscribe to the subjects of the NATS stream {}: {} (JetStream error code {}): {}",
-            params.stream_name, natsStatus_GetText(status), static_cast<int>(error_code), nats_GetLastError(nullptr));
+            "Failed to subscribe to the consumer {} of the NATS stream {}: {} (JetStream error code {}): {}",
+            consumer_name, params.stream_name, natsStatus_GetText(status), static_cast<int>(error_code), nats_GetLastError(nullptr));
 
-    natsSubscription_SetPendingLimits(subscription.get(), -1, -1);
-
-    LOG_DEBUG(log, "Streaming NATS stream {} after sequence {}", params.stream_name, last_sequence);
+    LOG_DEBUG(log, "Streaming NATS stream {} after sequence {}{}", params.stream_name, last_sequence,
+        stream_settings.subscribe_for_updates ? "" : fmt::format(" up to sequence {}", end_sequence));
 }
 
 bool NATSStreamSource::hasNothingPending()
 {
-    int pending_messages = 0;
-    int pending_bytes = 0;
-    if (natsSubscription_GetPending(subscription.get(), &pending_messages, &pending_bytes) == NATS_OK && pending_messages > 0)
-        return false;
-
     jsConsumerInfo * info = nullptr;
     jsErrCode error_code{};
     const auto status = natsSubscription_GetConsumerInfo(&info, subscription.get(), nullptr, &error_code);
@@ -138,8 +207,18 @@ bool NATSStreamSource::hasNothingPending()
         throw Exception(ErrorCodes::CANNOT_CONNECT_NATS,
             "Failed to get the information of the consumer of the NATS stream {}: {}", params.stream_name, natsStatus_GetText(status));
 
-    /// The consumer sequence counts the messages delivered to the consumer, so all of them were received.
-    return info->NumPending == 0 && info->Delivered.Consumer <= received_messages;
+    if (info->NumPending != 0)
+        return false;
+
+    /// The consumer sequence counts the messages delivered to the consumer. A message delivered after its fetch
+    /// expired is received by the next fetch, so wait for it.
+    return info->Delivered.Consumer <= received_messages;
+}
+
+void NATSStreamSource::finish()
+{
+    reportFinalCursor();
+    stream_finished = true;
 }
 
 void NATSStreamSource::reportFinalCursor() const
@@ -207,48 +286,42 @@ Chunk NATSStreamSource::generate()
     const Field table_name = params.table_name;
     size_t total_rows = 0;
 
-    while (!isCancelled() && total_rows < params.max_block_size)
+    /// Collecting a block takes at most the poll timeout, so that a steady stream of messages, slower than
+    /// the block size, is returned as it arrives.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(params.poll_timeout_ms);
+
+    auto process_message = [&](natsMsg * message)
     {
-        natsMsg * raw_message = nullptr;
-        const auto status = natsSubscription_NextMsg(&raw_message, subscription.get(), static_cast<int64_t>(params.poll_timeout_ms));
-        MessagePtr message(raw_message, &natsMsg_Destroy);
-
-        if (status == NATS_TIMEOUT)
-        {
-            if (total_rows)
-                break;
-
-            if (bounded && hasNothingPending())
-            {
-                reportFinalCursor();
-                stream_finished = true;
-            }
-            break;
-        }
-
-        if (status != NATS_OK)
-            throw Exception(ErrorCodes::CANNOT_CONNECT_NATS,
-                "Failed to read a message of the NATS stream {}: {}", params.stream_name, natsStatus_GetText(status));
-
         jsMsgMetaData * raw_meta = nullptr;
-        const auto meta_status = natsMsg_GetMetaData(&raw_meta, message.get());
+        const auto meta_status = natsMsg_GetMetaData(&raw_meta, message);
         MetaDataPtr meta(raw_meta, &jsMsgMetaData_Destroy);
         if (meta_status != NATS_OK)
             throw Exception(ErrorCodes::CANNOT_CONNECT_NATS,
                 "Failed to get the metadata of a message of the NATS stream {}: {}", params.stream_name, natsStatus_GetText(meta_status));
 
-        const UInt64 sequence = meta->Sequence.Stream;
+        /// The consumer does not redeliver the messages, so a gap means that some messages were lost.
+        if (meta->Sequence.Consumer != received_messages + 1)
+            throw Exception(ErrorCodes::CANNOT_CONNECT_NATS,
+                "Lost messages of the NATS stream {}: expected the consumer sequence {}, but got {}",
+                params.stream_name, received_messages + 1, meta->Sequence.Consumer);
         ++received_messages;
-        const bool caught_up = meta->NumPending == 0;
+
+        const UInt64 sequence = meta->Sequence.Stream;
+        if (bounded && sequence > end_sequence)
+        {
+            /// Published after the start of a bounded read.
+            finish();
+            return;
+        }
 
         exception_message.reset();
-        const char * data = natsMsg_GetData(message.get());
-        const int data_length = natsMsg_GetDataLength(message.get());
+        const char * data = natsMsg_GetData(message);
+        const int data_length = natsMsg_GetDataLength(message);
         ReadBufferFromMemory buf(data, data_length);
         const size_t new_rows = data_length > 0 ? executor.execute(buf) : 0;
         last_sequence = sequence;
 
-        const String subject = natsMsg_GetSubject(message.get());
+        const String subject = natsMsg_GetSubject(message);
         for (size_t i = 0; i < new_rows; ++i)
         {
             for (size_t column_index = 0; column_index < virtual_columns.size(); ++column_index)
@@ -269,12 +342,39 @@ Chunk NATSStreamSource::generate()
         }
         total_rows += new_rows;
 
-        if (bounded && caught_up)
+        if (bounded && (sequence >= end_sequence || meta->NumPending == 0))
+            finish();
+    };
+
+    while (!stream_finished && !isCancelled() && total_rows < params.max_block_size)
+    {
+        const auto remaining_ms = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+        if (remaining_ms <= 0)
         {
-            reportFinalCursor();
-            stream_finished = true;
+            if (!total_rows && bounded && hasNothingPending())
+                finish();
             break;
         }
+
+        MessageListHolder messages;
+        const auto batch = std::min(max_fetch_batch, params.max_block_size - total_rows);
+        const auto status = natsSubscription_Fetch(&messages.list, subscription.get(), static_cast<int>(batch), remaining_ms, nullptr);
+
+        if (status == NATS_TIMEOUT)
+        {
+            if (!total_rows && bounded && hasNothingPending())
+                finish();
+            break;
+        }
+
+        if (status != NATS_OK)
+            throw Exception(ErrorCodes::CANNOT_CONNECT_NATS,
+                "Failed to read the messages of the NATS stream {}: {}", params.stream_name, natsStatus_GetText(status));
+
+        /// The consumer has already sent the fetched messages, so process all of them, even if the block becomes
+        /// larger than `max_block_size` (a message can have several rows).
+        for (int i = 0; i < messages.list.Count && !stream_finished; ++i)
+            process_message(messages.list.Msgs[i]);
     }
 
     if (!total_rows)

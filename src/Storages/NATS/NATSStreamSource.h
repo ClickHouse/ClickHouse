@@ -26,7 +26,8 @@ namespace DB
 ///     {'<stream name>': <stream sequence of the last read message>}
 /// Without the cursor, the stream is read from the beginning.
 ///
-/// A bounded stream (`STREAM BOUNDED`) finishes once it has read all the messages pending at that moment.
+/// A bounded stream (`STREAM BOUNDED`) finishes once it has read all the messages of the stream at its start;
+/// the messages published later are not read.
 class NATSStreamSource final : public ISource
 {
 public:
@@ -61,6 +62,7 @@ private:
     void start();
     bool hasNothingPending();
     void reportFinalCursor() const;
+    void finish();
 
     Params params;
     StorageSnapshotPtr storage_snapshot;
@@ -74,8 +76,13 @@ private:
     std::unique_ptr<jsCtx, decltype(&jsCtx_Destroy)> jet_stream_ctx;
     std::unique_ptr<natsSubscription, decltype(&natsSubscription_Destroy)> subscription;
 
+    /// The name of the ephemeral consumer created for this read.
+    String consumer_name;
+
     /// The stream sequence of the last read message (or of the cursor), 0 if nothing was read.
     UInt64 last_sequence = 0;
+    /// For a bounded read, the last stream sequence at its start: later messages are not read.
+    UInt64 end_sequence = 0;
     /// The number of messages received by the consumer.
     UInt64 received_messages = 0;
     bool started = false;
