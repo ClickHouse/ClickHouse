@@ -349,7 +349,11 @@ def test_dynamic_gcs_disk_rejects_service_account_key_shadowed_by_include(
 
 
 def test_dynamic_gcs_disk_allows_literal_header_with_unrelated_include(started_cluster):
-    """A literal SQL header remains valid when `include` contributes unrelated disk settings."""
+    """Literal SQL headers remain valid when `include` contributes unrelated disk settings.
+
+    The header is repeated: `Poco::Util::XMLConfiguration` exposes the second one as `header[1]`, which must
+    still be recognized as a literal from the SQL definition.
+    """
     node = started_cluster.instances["node"]
     node.query("DROP TABLE IF EXISTS gcs_literal_header SYNC")
     node.query(
@@ -362,6 +366,7 @@ def test_dynamic_gcs_disk_allows_literal_header_with_unrelated_include(started_c
         f"  endpoint = '{gcs_url('literal-header/')}',"
         "  no_sign_request = true,"
         "  header = 'X-ClickHouse-Native-GCS-Literal: 1',"
+        "  header = 'X-ClickHouse-Native-GCS-Literal-Second: 2',"
         "  include = 'gcs_included_without_headers'"
         ")",
         settings={"dynamic_disk_allow_include": 1, "use_native_gcs": 1},

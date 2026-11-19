@@ -70,7 +70,8 @@ struct DynamicS3DiskCredentialInfo
     /// `include` precedes it in the SQL definition. A resolved field that does not match the literal came from
     /// the included (server-side) configuration, i.e. it is server-managed auth material.
     std::unordered_map<String, String> ast_gcs_credentials;
-    /// Literal native GCS authentication headers supplied by the SQL AST. The post-`include` validation
+    /// Literal native GCS authentication headers supplied by the SQL AST, by their name in the resolved configuration
+    /// (`header`, `header[1]`, ... for repeated ones). The post-`include` validation
     /// compares these with the resolved configuration so an unrelated `include` does not reject them.
     std::unordered_map<String, String> ast_gcs_headers;
     /// The SQL AST supplied a `header` or `access_header` through `from_env`/`from_zk`. The placeholder resolves

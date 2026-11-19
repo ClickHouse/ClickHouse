@@ -156,6 +156,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(
     bool has_gcs_access_token = false;
     std::unordered_map<String, String> ast_gcs_credentials;
     std::unordered_map<String, String> ast_gcs_headers;
+    /// The number of occurrences of each `header*` key so far, to name them as `Poco::Util::XMLConfiguration` does.
+    std::unordered_map<String, size_t> gcs_header_occurrences;
 
     /// `from_env`/`from_zk` substitute the value from a server-side source (an environment variable or a
     /// ZooKeeper node), so for credential/auth/type fields the literal placeholder must not be treated as a
@@ -245,8 +247,14 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(
             ast_gcs_credentials.emplace(key, value_str);
         if (indirect && (startsWith(key, "header") || startsWith(key, "access_header")))
             has_indirect_gcs_header = true;
-        if (!indirect && (startsWith(key, "header") || startsWith(key, "access_header")))
-            ast_gcs_headers.emplace(key, value_str);
+        if (startsWith(key, "header") || startsWith(key, "access_header"))
+        {
+            /// `Poco::Util::XMLConfiguration` names the repeated siblings `header`, `header[1]`, `header[2]`, ...
+            /// Every occurrence takes a position, including an indirect one, so the names match the resolved ones.
+            const size_t occurrence = gcs_header_occurrences[key]++;
+            if (!indirect)
+                ast_gcs_headers.emplace(occurrence == 0 ? key : fmt::format("{}[{}]", key, occurrence), value_str);
+        }
 
         /// Every `include` is resolved, not only the first one.
         if (key == "include")
