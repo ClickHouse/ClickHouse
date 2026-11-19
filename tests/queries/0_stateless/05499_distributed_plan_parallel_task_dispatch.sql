@@ -65,7 +65,7 @@ FROM
 LEFT JOIN
 (
     SELECT query_id, message FROM system.text_log
-    WHERE event_date >= yesterday() AND message LIKE 'Queueing task %'
+    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND message LIKE 'Queueing task %'
 ) AS t ON t.query_id = q.query_id
 GROUP BY q.log_comment, q.remote_tasks, q.batches
 ORDER BY q.log_comment;

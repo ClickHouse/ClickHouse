@@ -1,5 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- Tag no-parallel: the failpoint is global.
+-- Tag no-fasttest: a test that enables a failpoint runs alone, which is left to the full stateless jobs.
 
 -- An exception while the local tasks of a distributed plan stage are being started must fail the query instead of
 -- aborting the server. The tasks once copied the stage's plan and hit `max_memory_usage` here; they share one copy now,
