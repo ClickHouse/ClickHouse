@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationReplicated.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/IColumn.h>
@@ -82,9 +83,9 @@ ISerialization::KindStack SerializationReplicated::getKindStack() const
     return kind_stack;
 }
 
-MutableColumnPtr SerializationReplicated::wrapColumnForDeserialization(MutableColumnPtr column) const
+MutableColumnPtr SerializationReplicated::createColumnForDeserialization(const IDataType & type) const
 {
-    return ColumnReplicated::create(nested->wrapColumnForDeserialization(std::move(column)), ColumnUInt8::create());
+    return ColumnReplicated::create(nested->createColumnForDeserialization(type), ColumnUInt8::create());
 }
 
 SerializationPtr SerializationReplicated::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
