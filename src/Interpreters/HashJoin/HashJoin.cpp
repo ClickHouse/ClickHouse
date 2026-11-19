@@ -49,6 +49,7 @@
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/HashJoinTable.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
+#include <Interpreters/HashJoin/LeftBlockState.h>
 #include <Interpreters/HashJoin/gatherJoinOutputColumns.h>
 
 #include <numeric>
@@ -1458,12 +1459,13 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
 
 /// Keeps selector-backed probe continuations inside HashJoin so an unprocessed left suffix
 /// is not materialized and resubmitted while preserving the joined-block size limit.
+/// It owns the `LeftBlockState` that all the probe calls of its left block share.
 class HashJoin::ContinuationResult final : public IJoinResult
 {
 public:
-    ContinuationResult(HashJoin & join_, JoinResultPtr current_result_)
+    ContinuationResult(HashJoin & join_, ScatteredBlock block)
         : join(join_)
-        , current_result(std::move(current_result_))
+        , current_result(probe(std::move(block)))
     {
     }
 
@@ -1476,7 +1478,7 @@ public:
             addMatchedRightRows(matched_right_rows, current_result->getMatchedRightRows());
 
             if (result.next_block)
-                current_result = join.runJoinDispatch(std::move(*result.next_block));
+                current_result = probe(std::move(*result.next_block));
             else
                 current_result.reset();
         }
@@ -1490,7 +1492,28 @@ public:
     }
 
 private:
+    JoinResultPtr probe(ScatteredBlock block)
+    {
+        JoinResultPtr res;
+        const bool joined = dispatchJoinShape(
+            join.kind,
+            join.strictness,
+            join.getMapsKind(),
+            [&]<JoinKind kind_, JoinStrictness strictness_, typename Maps>()
+            {
+                res = HashJoinMethods<kind_, strictness_, Maps>::joinBlockImpl(
+                    join, std::move(block), join.sample_block_with_columns_to_add, left_block_state);
+            });
+
+        if (!joined)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", join.strictness, join.kind);
+
+        return res;
+    }
+
     HashJoin & join;
+    /// Declared before `current_result`, because the constructor uses it to make `current_result`.
+    JoinProbe::LeftBlockState left_block_state;
     JoinResultPtr current_result;
     std::optional<size_t> matched_right_rows = 0;
 };
@@ -1509,24 +1532,7 @@ JoinResultPtr HashJoin::joinBlock(Block block)
 
     materializeColumnsFromLeftBlock(block);
 
-    auto result = runJoinDispatch(ScatteredBlock(std::move(block)));
-    return std::make_unique<ContinuationResult>(*this, std::move(result));
-}
-
-JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)
-{
-    JoinResultPtr res;
-    const bool joined = dispatchJoinShape(
-        kind,
-        strictness,
-        getMapsKind(),
-        [&]<JoinKind kind_, JoinStrictness strictness_, typename Maps>()
-        { res = HashJoinMethods<kind_, strictness_, Maps>::joinBlockImpl(*this, std::move(block), sample_block_with_columns_to_add); });
-
-    if (!joined)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
-
-    return res;
+    return std::make_unique<ContinuationResult>(*this, ScatteredBlock(std::move(block)));
 }
 
 HashJoin::~HashJoin()
@@ -2062,7 +2068,7 @@ void HashJoin::validateAdditionalFilterExpression(ExpressionActionsPtr additiona
     }
 
     /// `arrayJoin` changes the number of rows, but `buildAdditionalFilter` evaluates this expression
-    /// per probe batch and `joinRightColumnsWithAdditionalFilter` indexes the result by row position,
+    /// per probe batch and `JoinProbe::addMatchesWithAdditionalFilter` indexes the result by row position,
     /// so the expression must preserve the number of rows.
     if (additional_filter_expression->hasArrayJoin())
     {

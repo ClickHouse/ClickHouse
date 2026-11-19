@@ -1,0 +1,80 @@
+-- When the row limit `max_joined_block_size_rows` stops the probe of a left block, the next call of the probe goes on with the
+-- rest of the block. All the calls of a block share what the first one built: the key columns of each ON disjunct, the key
+-- getter and the skip bytes. Every join below runs without the limit, and on blocks that the limit cuts into many calls. The
+-- runs must give the same result.
+
+-- One thread keeps the test fast under sanitizers. `joined_block_split_single_row = 1` rejects the runs without a row limit.
+SET max_threads = 1, join_algorithm = 'hash', join_use_nulls = 0, query_plan_join_swap_table = 0, enable_join_runtime_filters = 0, joined_block_split_single_row = 0;
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
+
+-- 6000 keys with four rows each, `t` from 0 to 3.
+CREATE TABLE r
+(
+    k UInt64,
+    k2 UInt32,
+    a UInt32,
+    s String,
+    lc LowCardinality(String),
+    lcn LowCardinality(Nullable(String)),
+    c UInt32,
+    t UInt32,
+    v UInt64
+) ENGINE = Memory;
+INSERT INTO r SELECT intDiv(number, 4) AS k, toUInt32(k % 100), toUInt32(intDiv(k, 100)), toString(k), toString(k), toString(k), 5, toUInt32(number % 4), number
+FROM numbers(24000);
+
+CREATE TABLE results (name String, block UInt32, rows UInt64, checksum UInt64) ENGINE = Memory;
+
+-- 25000 left rows with keys below 7000 in random order, so some keys are not in `r`. The left blocks have `max_block_size`
+-- rows. `(a, k2)` and `(k, k2)` are keys of two columns; `lc_next` is the key after `lc`; `nk` and `nk2` are `k` and `k2`
+-- with some NULLs; `cond` is a `Nullable(UInt8)` condition; `c` is a constant.
+{% set l = '(SELECT intHash64(number) % 7000 AS k, toUInt32(k % 100) AS k2, toUInt32(intDiv(k, 100)) AS a, toString(k) AS s, toLowCardinality(s) AS lc, toLowCardinality(toString(k + 1)) AS lc_next, toLowCardinality(if(number % 17 = 0, NULL, s)) AS lcn, if(number % 11 = 0, NULL, k) AS nk, if(number % 13 = 0, NULL, k2) AS nk2, if(number % 7 = 0, NULL, toUInt8(number % 5 != 0)) AS cond, 5 AS c, toUInt32(number % 4) AS t, number AS x FROM numbers(25000)) AS l' -%}
+
+-- An ANY join may take any row of a key, so its checksum reads only what the rows of a key share.
+{% set pairs = 'count(), sum(cityHash64(l.x, r.v))' -%}
+{% set left_row_and_key = 'count(), sum(cityHash64(l.x, r.k))' -%}
+-- `l.t <= r.t` is an additional filter, and the limit counts the four pairs per left row that match on the keys. An INNER
+-- join would apply such a filter after the join, so these joins are LEFT, RIGHT and FULL. The joins with OR disjuncts and no
+-- filter repeat a left row for each match, so the limit cuts them too, except the ANY join.
+{% set cases = [
+    ('keys64', pairs, 'LEFT JOIN r ON l.a = r.a AND l.k2 = r.k2 AND l.t <= r.t', ''),
+    ('keys128', pairs, 'LEFT JOIN r ON l.k = r.k AND l.k2 = r.k2 AND l.t <= r.t', ''),
+    ('keys128, two disjuncts', pairs, 'INNER JOIN r ON (l.k = r.k AND l.k2 = r.k2) OR (l.k + 1 = r.k AND l.a = r.a)', ''),
+    ('key64', pairs, 'LEFT JOIN r ON l.k = r.k AND l.t <= r.t', ''),
+    ('hashed', pairs, 'LEFT JOIN r ON l.k = r.k AND l.s = r.s AND l.t <= r.t', ''),
+    ('packed string', pairs, 'LEFT JOIN r ON l.s = r.s AND l.t <= r.t',
+        'enable_packed_string_keys_in_hash_join = 1, min_rows_for_packed_string_keys_in_hash_join = 0'),
+    ('string', pairs, 'LEFT JOIN r ON l.s = r.s AND l.t <= r.t', 'enable_packed_string_keys_in_hash_join = 0'),
+    ('low cardinality', pairs, 'LEFT JOIN r ON l.lc = r.lc AND l.t <= r.t', ''),
+    ('low cardinality nullable', pairs, 'LEFT JOIN r ON l.lcn = r.lcn AND l.t <= r.t', ''),
+    ('low cardinality, two disjuncts', pairs, 'INNER JOIN r ON l.lc = r.lc OR l.lc_next = r.lc', ''),
+    ('low cardinality, two disjuncts, left any', left_row_and_key, 'ANY LEFT JOIN r ON l.lc = r.lc OR l.lc_next = r.lc', ''),
+    ('constant key column', pairs, 'LEFT JOIN r ON l.k = r.k AND l.c = r.c AND l.t <= r.t', ''),
+    ('two nullable keys', pairs, 'LEFT JOIN r ON l.nk = r.k AND l.nk2 = r.k2 AND l.t <= r.t', ''),
+    ('nullable condition on the left table', pairs, 'LEFT JOIN r ON l.k = r.k AND l.cond AND l.t <= r.t', ''),
+    ('right', pairs, 'RIGHT JOIN r ON l.k = r.k AND l.t <= r.t', ''),
+    ('full', pairs, 'FULL JOIN r ON l.k = r.k AND l.t <= r.t', ''),
+    ('right, two disjuncts', pairs, 'RIGHT JOIN r ON l.k = r.k OR l.k + 1 = r.k', ''),
+    ('grace hash', pairs, 'LEFT JOIN r ON l.k = r.k AND l.k2 = r.k2 AND l.t <= r.t',
+        "join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 4, max_threads = 4, max_bytes_before_external_join = 100000000"),
+] -%}
+
+{% for block, limit in [(4097, 0), (4097, 499), (20001, 997), (65409, 8192)] -%}
+SET max_block_size = {{ block }}, max_joined_block_size_rows = {{ limit }};
+{% for name, columns, join, settings in cases -%}
+INSERT INTO results SELECT '{{ name }}', {{ block }}, {{ columns }} FROM {{ l }} {{ join }}{% if settings %} SETTINGS {{ settings }}{% endif %};
+{% endfor -%}
+{% endfor %}
+-- The name of the join, its runs, their distinct results, and the result.
+SELECT name, count(), uniqExact((rows, checksum)), any(rows), any(checksum) FROM results GROUP BY name ORDER BY name;
+
+SET max_block_size = 4097, max_joined_block_size_rows = 61;
+
+-- A query that stops reading in the middle of a block drops the probe of the block between two calls.
+SELECT count() FROM (SELECT l.x FROM {{ l }} LEFT JOIN r ON l.k = r.k AND l.k2 = r.k2 AND l.t <= r.t LIMIT 3);
+
+-- Every left key is in `r`, so each call finishes about 16 rows. The filter throws in about the 250th call of the first
+-- block. `r.t < 100` is true for every right row; it makes the filter read the right table.
+SELECT count()
+FROM (SELECT intHash64(number) % 6000 AS k, toUInt32(number % 4) AS t, number AS x FROM numbers(25000)) AS l
+LEFT JOIN r ON l.k = r.k AND l.t <= r.t AND throwIf(l.x = 4000 AND r.t < 100) = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
