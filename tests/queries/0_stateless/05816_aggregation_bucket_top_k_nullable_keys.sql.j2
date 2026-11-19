@@ -1,0 +1,62 @@
+-- `GROUP BY ... ORDER BY <count or uniqExact> LIMIT n` keeps only the best n groups of each two-level bucket for several
+-- keys of which some are `Nullable`: their methods pack the null map into the key and have no null-key cell. Each pair
+-- prints the pruned top-5 (`top_k 1`) and the full one (`top_k 0`). The heaviest and the lightest group have a NULL key,
+-- and the five heaviest and lightest groups have unique counts, so both print the same rows. A single `Nullable` key keeps
+-- the full conversion.
+
+SET query_plan_enable_optimizations = 1, query_plan_push_down_limit = 1, query_plan_aggregation_bucket_top_k = 1;
+SET max_threads = 4, max_block_size = 8192, group_by_two_level_threshold = 100;
+SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0, max_rows_to_group_by = 0;
+SET collect_hash_table_stats_during_aggregation = 0, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+SET log_queries = 1;
+
+DROP TABLE IF EXISTS t_bucket_top_k_nullable;
+CREATE TABLE t_bucket_top_k_nullable
+(
+    k UInt64,
+    v UInt64,
+    k3 UInt64 DEFAULT k * 3,
+    n Nullable(UInt32) DEFAULT if(k IN (1000004, 2000000), NULL, toUInt32(k)),
+    ns Nullable(String) DEFAULT if(k IN (1000004, 2000000), NULL, toString(k))
+)
+ENGINE = Memory;
+
+-- 20000 groups of 6 rows, five heavy groups of 100..104 rows and five light groups of 1..5 rows.
+INSERT INTO t_bucket_top_k_nullable (k, v) SELECT number % 20000, number FROM numbers(120000);
+INSERT INTO t_bucket_top_k_nullable (k, v) SELECT 1000000 + i, j FROM (SELECT number AS i FROM numbers(5)) ARRAY JOIN range(100 + i) AS j;
+INSERT INTO t_bucket_top_k_nullable (k, v) SELECT 2000000 + i, j FROM (SELECT number AS i FROM numbers(5)) ARRAY JOIN range(1 + i) AS j;
+
+SELECT count() FROM (EXPLAIN actions = 1 SELECT n, k % 7 AS m, count() AS c FROM t_bucket_top_k_nullable GROUP BY n, m ORDER BY c DESC LIMIT 5)
+WHERE explain LIKE '%Bucket top-K: 5 descending%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT n, count() AS c FROM t_bucket_top_k_nullable GROUP BY n ORDER BY c DESC LIMIT 5)
+WHERE explain LIKE '%Bucket top-K%';
+
+{% set key_sets = [
+    ('nullable_keys128', 'n, toUInt8(k % 7) AS m', 'n, m'),
+    ('nullable_keys256', 'n, k AS m, k3', 'n, m, k3'),
+    ('nullable_prealloc_serialized', 'ns, k % 7 AS m', 'ns, m'),
+] -%}
+{% set ranks = [
+    ('count', 'count() AS c', 'c', 'DESC'),
+    ('count and others', 'count() AS c, sum(v) AS s, uniqExact(v) AS u', 'c', 'DESC'),
+    ('uniqExact', 'uniqExact(v) AS u', 'u', 'DESC'),
+    ('count', 'count() AS c', 'c', 'ASC'),
+] -%}
+{% for adaptive in [0, 1] -%}
+{% for key, rank in product(key_sets, ranks) -%}
+{% set label = key[0] ~ ', ' ~ rank[0] ~ ', ' ~ rank[3] ~ ', adaptive ' ~ adaptive -%}
+{% set query = 'SELECT ' ~ key[1] ~ ', ' ~ rank[1] ~ ' FROM t_bucket_top_k_nullable GROUP BY ' ~ key[2] ~ ' ORDER BY ' ~ rank[2] ~ ' ' ~ rank[3] ~ ' LIMIT 5' -%}
+SELECT '{{ label }}, top_k 1', arraySort(groupArray(tuple(*))) FROM ({{ query }})
+SETTINGS log_comment = '05816_pruned', enable_adaptive_aggregator = {{ adaptive }};
+SELECT '{{ label }}, top_k 0', arraySort(groupArray(tuple(*))) FROM ({{ query }})
+SETTINGS query_plan_aggregation_bucket_top_k = 0, enable_adaptive_aggregator = {{ adaptive }};
+{% endfor -%}
+{% endfor -%}
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT count(), countIf(ProfileEvents['AggregationBucketTopKConversions'] > 0)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05816_pruned';
+
+DROP TABLE t_bucket_top_k_nullable;
