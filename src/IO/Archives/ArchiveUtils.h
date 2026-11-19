@@ -36,5 +36,21 @@ std::pair<std::string, std::string> splitToArchivePathAndPathInArchive(const std
 /// exist. A member glob (e.g. `*.csv`) matches a dynamic set of files, possibly empty, so such a
 /// name is reported as present without reading the archive, the way a glob over paths is.
 bool archiveContainsFile(const std::string & path_to_archive, const std::string & path_in_archive);
+/// A `::` after `?` or `#` is an archive separator only when the URL path itself looks like
+/// a supported archive path, or contains `*` - a wildcard archive proves nothing about its type, the object
+/// it expands to does. This keeps `/api?x=::1` literal while allowing
+/// `/archive.zip?token=x::member.csv` without requiring spaces around `::`.
+///
+/// A `::` with whitespace on either side is the separator the user wrote, because a URL cannot contain
+/// it, so it outranks an unspaced `::` that belongs to the URL: `/archive.zip?sig=abc::def :: m.csv`
+/// keeps its signature. `getURIAndArchivePattern`, which serves `s3`, recognizes and trims only a space;
+/// this URL-specific splitter recognizes and trims any ASCII whitespace, and the same characters are
+/// removed from both halves. `file()` is served by `splitToArchivePathAndPathInArchive`, which trims the
+/// whitespace around the separator it picks but does not let whitespace choose it. The whitespace only decides which `::` is the separator: when a `?` or
+/// `#` precedes it, whether the source is an archive at all is still decided by the path, so
+/// `/a.csv?x=1 :: y=2` stays literal. Without a query the left side is taken as the archive, as
+/// `getURIAndArchivePattern` already does for a spaced separator, and the reader reports a path that is
+/// not an archive.
+std::pair<std::string, std::optional<std::string>> getURLAndArchivePattern(std::string_view source);
 
 }

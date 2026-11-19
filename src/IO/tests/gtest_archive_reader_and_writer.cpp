@@ -110,6 +110,285 @@ private:
 };
 
 
+/// A task path of a distributed Web read is relative and can carry a query or a fragment, which the archive
+/// splitter has to recognize as part of the archive path rather than as a literal URL.
+TEST(ArchiveUtils, SplitsRelativeWebTaskPathWithQueryOrFragment)
+{
+    const auto [with_query_archive, with_query_member] = getURLAndArchivePattern("data/a.zip?token=x::value.tsv");
+    EXPECT_EQ(with_query_archive, "data/a.zip?token=x");
+    EXPECT_EQ(with_query_member, "value.tsv");
+
+    const auto [with_fragment_archive, with_fragment_member] = getURLAndArchivePattern("data/a.zip#v2::value.tsv");
+    EXPECT_EQ(with_fragment_archive, "data/a.zip#v2");
+    EXPECT_EQ(with_fragment_member, "value.tsv");
+
+    /// A path without a query or a fragment keeps the plain form.
+    const auto [plain_archive, plain_member] = getURLAndArchivePattern("data/a.zip::value.tsv");
+    EXPECT_EQ(plain_archive, "data/a.zip");
+    EXPECT_EQ(plain_member, "value.tsv");
+
+    /// A top-level archive listed by an index page has no directory in its task path.
+    const auto [top_level_archive, top_level_member] = getURLAndArchivePattern("a.zip?token=x::value.tsv");
+    EXPECT_EQ(top_level_archive, "a.zip?token=x");
+    EXPECT_EQ(top_level_member, "value.tsv");
+
+    /// A `::` in a query of a path that is not an archive stays literal.
+    const auto [literal, no_member] = getURLAndArchivePattern("data/a.csv?x=::1");
+    EXPECT_EQ(literal, "data/a.csv?x=::1");
+    EXPECT_FALSE(no_member.has_value());
+
+    /// A space cannot appear in a URL, so a `::` with a space on either side is the separator the user
+    /// wrote, even when the URL itself contains an unspaced `::` earlier: a signed archive URL keeps its
+    /// signature instead of being split inside it.
+    const auto [signed_archive, signed_member] = getURLAndArchivePattern("http://host/archive.zip?sig=abc::def :: member.csv");
+    EXPECT_EQ(signed_archive, "http://host/archive.zip?sig=abc::def");
+    EXPECT_EQ(signed_member, "member.csv");
+
+    const auto [signed_fragment_archive, signed_fragment_member]
+        = getURLAndArchivePattern("http://host/archive.zip#sig=abc::def :: member.csv");
+    EXPECT_EQ(signed_fragment_archive, "http://host/archive.zip#sig=abc::def");
+    EXPECT_EQ(signed_fragment_member, "member.csv");
+
+    /// The explicit separator also wins over an IPv6 literal, which is skipped by the plain scan anyway.
+    const auto [ipv6_explicit_archive, ipv6_explicit_member]
+        = getURLAndArchivePattern("http://[::1]:8123/a.zip :: member.csv");
+    EXPECT_EQ(ipv6_explicit_archive, "http://[::1]:8123/a.zip");
+    EXPECT_EQ(ipv6_explicit_member, "member.csv");
+
+    /// The space decides which `::` is the separator, not whether the source is an archive: after a query
+    /// the path still has to look like one, so a plain CSV with a spaced separator stays literal exactly
+    /// like the unspaced form above.
+    const auto [spaced_literal, spaced_no_member] = getURLAndArchivePattern("data/a.csv?x=1 :: y=2");
+    EXPECT_EQ(spaced_literal, "data/a.csv?x=1 :: y=2");
+    EXPECT_FALSE(spaced_no_member.has_value());
+
+    /// The explicit separator is searched past the authority, so a `::` of a userinfo is not taken for it.
+    const auto [userinfo_explicit_archive, userinfo_explicit_member]
+        = getURLAndArchivePattern("http://user:p::q@host/a.zip :: member.csv");
+    EXPECT_EQ(userinfo_explicit_archive, "http://user:p::q@host/a.zip");
+    EXPECT_EQ(userinfo_explicit_member, "member.csv");
+
+    /// A `://` inside the query is not the scheme of the task path: the path before the query still names
+    /// the archive, so the member has to be split off rather than dropped.
+    const auto [url_in_query_archive, url_in_query_member] = getURLAndArchivePattern("data/a.zip?token=http://h/x::value.tsv");
+    EXPECT_EQ(url_in_query_archive, "data/a.zip?token=http://h/x");
+    EXPECT_EQ(url_in_query_member, "value.tsv");
+
+    /// A host that ends with an archive suffix is not a path either.
+    const auto [host_only, host_only_member] = getURLAndArchivePattern("http://example.zip?x=::1");
+    EXPECT_EQ(host_only, "http://example.zip?x=::1");
+    EXPECT_FALSE(host_only_member.has_value());
+
+    /// A `*` is always a wildcard for `url`, so a wildcard path proves nothing about the archive type: the
+    /// object it expands to carries the suffix. Reading it as a literal URL would return the archive bytes.
+    const auto [wildcard_archive, wildcard_member] = getURLAndArchivePattern("data/part*?token=x::value.tsv");
+    EXPECT_EQ(wildcard_archive, "data/part*?token=x");
+    EXPECT_EQ(wildcard_member, "value.tsv");
+
+    const auto [wildcard_fragment_archive, wildcard_fragment_member]
+        = getURLAndArchivePattern("data/part*#v2::value.tsv");
+    EXPECT_EQ(wildcard_fragment_archive, "data/part*#v2");
+    EXPECT_EQ(wildcard_fragment_member, "value.tsv");
+
+    /// A `{...}` group is shard syntax and does not settle the type, so it stays literal.
+    const auto [brace_literal, brace_no_member] = getURLAndArchivePattern("data/part{1,2}.csv?x=::1");
+    EXPECT_EQ(brace_literal, "data/part{1,2}.csv?x=::1");
+    EXPECT_FALSE(brace_no_member.has_value());
+
+    /// A relative path may carry a `://` of its own; only one that starts the source is a scheme, so the
+    /// member is still split off and both splitters agree on the string.
+    const auto [relative_scheme_archive, relative_scheme_member] = getURLAndArchivePattern("data/http://a.zip::m");
+    EXPECT_EQ(relative_scheme_archive, "data/http://a.zip");
+    EXPECT_EQ(relative_scheme_member, "m");
+
+    const auto [uri_relative_scheme_archive, uri_relative_scheme_member] = getURIAndArchivePattern("data/http://a.zip::m");
+    EXPECT_EQ(uri_relative_scheme_archive, "data/http://a.zip");
+    EXPECT_EQ(uri_relative_scheme_member, "m");
+
+    /// A `::` inside the userinfo is not the separator either: the authority ends at the first `/`.
+    const auto [userinfo_archive, userinfo_member] = getURLAndArchivePattern("http://user:pw@host/a.zip::m");
+    EXPECT_EQ(userinfo_archive, "http://user:pw@host/a.zip");
+    EXPECT_EQ(userinfo_member, "m");
+
+    /// A host that ends with an archive suffix is not a path even without a query, so the `::` stays literal.
+    const auto [host_only_no_query, host_only_no_query_member] = getURLAndArchivePattern("http://example.zip::m");
+    EXPECT_EQ(host_only_no_query, "http://example.zip::m");
+    EXPECT_FALSE(host_only_no_query_member.has_value());
+
+    /// A key of a non-Web storage may contain `?` itself, and its splitter does not treat it as a query.
+    const auto [key_archive, key_member] = getURIAndArchivePattern("s3://bucket/dir/a?b.zip::value.tsv");
+    EXPECT_EQ(key_archive, "s3://bucket/dir/a?b.zip");
+    EXPECT_EQ(key_member, "value.tsv");
+}
+
+/// A host template can carry several bracketed IPv6 literals, and none of their `::` is the separator.
+TEST(ArchiveUtils, KeepsIPv6LiteralsOfAHostTemplateOutOfTheSeparator)
+{
+    const auto [template_archive, template_member]
+        = getURLAndArchivePattern("http://{[::1]:8123|[::2]:8123}/a.zip::value.tsv");
+    EXPECT_EQ(template_archive, "http://{[::1]:8123|[::2]:8123}/a.zip");
+    EXPECT_EQ(template_member, "value.tsv");
+
+    /// The same holds when only one alternative of the template is a literal.
+    const auto [mixed_archive, mixed_member] = getURLAndArchivePattern("http://{[::1]|host}/a.zip::value.tsv");
+    EXPECT_EQ(mixed_archive, "http://{[::1]|host}/a.zip");
+    EXPECT_EQ(mixed_member, "value.tsv");
+
+    /// A single bracketed host keeps working, with and without a userinfo.
+    const auto [bracketed_archive, bracketed_member]
+        = getURLAndArchivePattern("http://user:pass@[::1]:8123/a.zip::value.tsv");
+    EXPECT_EQ(bracketed_archive, "http://user:pass@[::1]:8123/a.zip");
+    EXPECT_EQ(bracketed_member, "value.tsv");
+
+    /// An unclosed bracket still ends the authority, so the `::` inside it is not the separator: the rest of
+    /// an authority with an unclosed bracket is not a host either.
+    const auto [unclosed_archive, unclosed_member] = getURLAndArchivePattern("http://[::1/a.zip::value.tsv");
+    EXPECT_EQ(unclosed_archive, "http://[::1/a.zip");
+    EXPECT_EQ(unclosed_member, "value.tsv");
+
+    const auto [unclosed_template_archive, unclosed_template_member]
+        = getURLAndArchivePattern("http://{[::1|host}/a.zip::value.tsv");
+    EXPECT_EQ(unclosed_template_archive, "http://{[::1|host}/a.zip");
+    EXPECT_EQ(unclosed_template_member, "value.tsv");
+}
+
+/// The same splitter serves `s3` and `s3Cluster` through `getURIAndArchivePattern`, so the IPv6 literal and
+/// the userinfo of the authority stay out of the separator there as well.
+TEST(ArchiveUtils, KeepsTheAuthorityOfAnS3SourceOutOfTheSeparator)
+{
+    const auto [ipv6_archive, ipv6_member] = getURIAndArchivePattern("s3://[::1]/bucket/a.zip::m.csv");
+    ASSERT_EQ(ipv6_archive, "s3://[::1]/bucket/a.zip");
+    ASSERT_EQ(ipv6_member, "m.csv");
+
+    const auto [userinfo_archive, userinfo_member] = getURIAndArchivePattern("s3://user:p::q@bucket/a.zip::m.csv");
+    ASSERT_EQ(userinfo_archive, "s3://user:p::q@bucket/a.zip");
+    ASSERT_EQ(userinfo_member, "m.csv");
+}
+
+TEST(ArchiveUtils, OnlyASchemeBeforeTheSeparatorIsAScheme)
+{
+    /// A member path may itself look like a URL. The `://` inside it must not be taken for the scheme of the
+    /// source, which would push the search past the real separator and leave the whole source literal.
+    const auto [nested_archive, nested_member] = getURLAndArchivePattern("a.zip::http://host/x");
+    EXPECT_EQ(nested_archive, "a.zip");
+    EXPECT_EQ(nested_member, "http://host/x");
+
+    const auto [nested_uri_archive, nested_uri_member] = getURIAndArchivePattern("dir/a.zip::m/http://host/x");
+    EXPECT_EQ(nested_uri_archive, "dir/a.zip");
+    EXPECT_EQ(nested_uri_member, "m/http://host/x");
+
+    /// A `://` inside a query value is not the scheme either, so the separator after it is still found.
+    const auto [query_url_archive, query_url_member] = getURLAndArchivePattern("data/a.zip?u=http://host::m@x");
+    EXPECT_EQ(query_url_archive, "data/a.zip?u=http://host");
+    EXPECT_EQ(query_url_member, "m@x");
+
+    /// A real scheme still wins, and its bracketed host is still skipped.
+    const auto [scheme_archive, scheme_member] = getURLAndArchivePattern("http://[::1]:8123/a.zip::value.tsv");
+    EXPECT_EQ(scheme_archive, "http://[::1]:8123/a.zip");
+    EXPECT_EQ(scheme_member, "value.tsv");
+}
+
+/// The splitter has to leave an empty side alone: the distributed task protocol relies on
+/// `<archive>::` naming the archive itself, and a member path may contain `::` of its own.
+TEST(ArchiveUtils, RejectsAnEmptySideAndKeepsTheRestOfTheMemberPath)
+{
+    for (const auto * source : {"data/a.zip::", "data/a.zip ::", "::data/a.zip", " :: data/a.zip"})
+    {
+        const auto [whole, no_member] = getURLAndArchivePattern(source);
+        EXPECT_EQ(whole, source) << source;
+        EXPECT_FALSE(no_member.has_value()) << source;
+    }
+
+    /// Only the first `::` is the separator, so a member path keeps the rest.
+    const auto [nested_archive, nested_member] = getURLAndArchivePattern("a.zip::dir::file.csv");
+    EXPECT_EQ(nested_archive, "a.zip");
+    EXPECT_EQ(nested_member, "dir::file.csv");
+
+    /// The suffix is matched case-sensitively, like `file()` and `s3()` match it.
+    const auto [upper_archive, upper_member] = getURLAndArchivePattern("data/a.ZIP::m.csv");
+    EXPECT_EQ(upper_archive, "data/a.ZIP::m.csv");
+    EXPECT_FALSE(upper_member.has_value());
+
+    /// Without a query the left side of a spaced separator is taken as the archive, as
+    /// `getURIAndArchivePattern` already does for `s3` and `file`; the reader then reports a path that is
+    /// not an archive instead of silently reading the container as data.
+    const auto [spaced_archive, spaced_member] = getURLAndArchivePattern("a.csv :: m");
+    EXPECT_EQ(spaced_archive, "a.csv");
+    EXPECT_EQ(spaced_member, "m");
+
+    /// An explicit separator that is not the first candidate and has no query before it does not move the
+    /// separator there either: the path before the first `::` carries no archive evidence, so the whole
+    /// source stays literal. This is the exit the `url` page documents for `data::v1.zip :: m.csv`.
+    const auto [late_explicit_literal, late_explicit_no_member] = getURLAndArchivePattern("data::v1.zip :: m.csv");
+    EXPECT_EQ(late_explicit_literal, "data::v1.zip :: m.csv");
+    EXPECT_FALSE(late_explicit_no_member.has_value());
+
+    /// A source without any separator is returned unchanged.
+    const auto [plain_literal, plain_no_member] = getURLAndArchivePattern("data/a.csv");
+    EXPECT_EQ(plain_literal, "data/a.csv");
+    EXPECT_FALSE(plain_no_member.has_value());
+
+    /// A `::` with whitespace inside the member name does not move the separator there: the whitespace
+    /// argument holds only for the URL part, so the first candidate stays the separator and the member keeps
+    /// its own `::`, the way `file()` and `s3()` read it.
+    const auto [member_space_archive, member_space_member] = getURLAndArchivePattern("a.zip::my file :: copy.csv");
+    EXPECT_EQ(member_space_archive, "a.zip");
+    EXPECT_EQ(member_space_member, "my file :: copy.csv");
+
+    /// A one-sided space is enough, because a URL cannot contain a space on either side.
+    const auto [left_space_archive, left_space_member] = getURLAndArchivePattern("data/a.zip ::m.csv");
+    EXPECT_EQ(left_space_archive, "data/a.zip");
+    EXPECT_EQ(left_space_member, "m.csv");
+
+    /// Any whitespace counts as the separator's, and the same characters are trimmed from both halves.
+    const auto [tab_archive, tab_member] = getURLAndArchivePattern("data/a.zip\t::\tm.csv");
+    EXPECT_EQ(tab_archive, "data/a.zip");
+    EXPECT_EQ(tab_member, "m.csv");
+
+    /// A `::` inside a query value is the separator only when no later explicit one exists, so the member
+    /// of `a.zip?sig=abc::def` is `def`: the signature has to be percent-encoded to stay literal.
+    const auto [query_value_archive, query_value_member] = getURLAndArchivePattern("data/a.zip?sig=abc::def");
+    EXPECT_EQ(query_value_archive, "data/a.zip?sig=abc");
+    EXPECT_EQ(query_value_member, "def");
+}
+
+/// A `{...}` of the path is shard or failover syntax for `url`, not evidence of an archive, so a source
+/// whose path is not an archive keeps its literal meaning even when the left side contains one.
+TEST(ArchiveUtils, DoesNotTreatABraceTemplateAsArchiveEvidence)
+{
+    for (const auto * source : {"http://{h1,h2}/data/file::1.csv",
+                                "http://{r1|r2}/data/file::1.csv",
+                                "http://h/data{0,1}.csv::m"})
+    {
+        const auto [whole, no_member] = getURLAndArchivePattern(source);
+        EXPECT_EQ(whole, source) << source;
+        EXPECT_FALSE(no_member.has_value()) << source;
+    }
+
+    /// A brace template over an archive path is still an archive: the suffix is the evidence there.
+    const auto [template_archive, template_member] = getURLAndArchivePattern("http://{h1,h2}/data/a.zip::m.csv");
+    EXPECT_EQ(template_archive, "http://{h1,h2}/data/a.zip");
+    EXPECT_EQ(template_member, "m.csv");
+
+    /// A spaced separator is evidence by itself, as it already is for `s3` and `file`.
+    const auto [spaced_archive, spaced_member] = getURLAndArchivePattern("http://{h1,h2}/data/file :: 1.csv");
+    EXPECT_EQ(spaced_archive, "http://{h1,h2}/data/file");
+    EXPECT_EQ(spaced_member, "1.csv");
+}
+
+/// `splitToArchivePathAndPathInArchive` serves `file()`, and it now shares the authority-aware scan with the
+/// URL splitter, so the two agree on which `::` is the separator. It has no whitespace rule of its own.
+TEST(ArchiveUtils, SplitsTheFileStylePathAtTheSameSeparator)
+{
+    const auto [archive_path, path_in_archive] = splitToArchivePathAndPathInArchive("dir/a.zip::m.csv");
+    EXPECT_EQ(archive_path, "dir/a.zip");
+    EXPECT_EQ(path_in_archive, "m.csv");
+
+    const auto [whole, no_member] = splitToArchivePathAndPathInArchive("dir/a.csv::m.csv");
+    EXPECT_EQ(whole, "");
+    EXPECT_EQ(no_member, "dir/a.csv::m.csv");
+}
+
 TEST_P(ArchiveReaderAndWriterTest, EmptyArchive)
 {
     /// Make an archive.
