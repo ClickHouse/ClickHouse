@@ -5,7 +5,8 @@ SET join_runtime_filter_min_probe_rows = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET optimize_move_to_prewhere = 1;
 SET join_algorithm = 'hash';
-SET enable_join_fixed_hash_table_conversion = 1, join_runtime_filter_from_fixed_hash_table = 1;
+-- A shipped join has no estimate of its right side, so `auto` builds two-level maps, which never become `FixedHashMap`.
+SET hash_join_layout = 'serial';
 -- Materialized statistics let Cascades ship the join and both reads.
 SET use_statistics = 1, materialize_statistics_on_insert = 1;
 
