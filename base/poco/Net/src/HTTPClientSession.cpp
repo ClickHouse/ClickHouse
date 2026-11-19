@@ -193,7 +193,7 @@ void HTTPClientSession::setProxyTunnel(bool tunnel)
 void HTTPClientSession::setProxyCredentials(const std::string& username, const std::string& password)
 {
 	_proxyConfig.username = username;
-	_proxyConfig.password = password;
+	_proxyConfig.password.assign(password.begin(), password.end());
 }
 
 
@@ -205,7 +205,7 @@ void HTTPClientSession::setProxyUsername(const std::string& username)
 
 void HTTPClientSession::setProxyPassword(const std::string& password)
 {
-	_proxyConfig.password = password;
+	_proxyConfig.password.assign(password.begin(), password.end());
 }
 
 
@@ -769,7 +769,7 @@ void HTTPClientSession::proxyAuthenticateImpl(HTTPRequest& request)
 {
 	if (!_proxyConfig.username.empty())
 	{
-		HTTPBasicCredentials creds(_proxyConfig.username, _proxyConfig.password);
+		HTTPBasicCredentials creds(_proxyConfig.username, getProxyPassword());
 		creds.proxyAuthenticate(request);
 	}
 }
