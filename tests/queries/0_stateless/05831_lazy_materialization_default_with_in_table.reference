@@ -1,0 +1,11 @@
+order by
+999	1	1	1	1
+998	0	0	1	0
+997	0	0	0	0
+Lazily read columns: c, c1
+join
+999	1	1	1	1	999
+998	0	0	1	0	998
+997	0	0	0	0	997
+Lazily read columns: c, c1
+Lazily read columns: payload

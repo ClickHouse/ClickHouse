@@ -10,6 +10,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/misc.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -771,7 +772,7 @@ void fillMissingColumns(
 }
 
 /// Whether `ast` calls a function whose result its arguments do not determine. A function that is not known here, such
-/// as a user-defined one, is taken as one, and a subquery as well.
+/// as a user-defined one, is taken as one, and a subquery and an `IN` with a set read from a table as well.
 static bool callsNonDeterministicFunction(const IAST & ast, const ContextPtr & context)
 {
     if (ast.as<ASTSubquery>())
@@ -779,6 +780,20 @@ static bool callsNonDeterministicFunction(const IAST & ast, const ContextPtr & c
 
     if (const auto * function = ast.as<ASTFunction>(); function && function->name != "lambda")
     {
+        /// The set of `IN` is constant only when it is written in the expression, such as in `k IN (1, 2)`. A set
+        /// read from a table, such as one of the `Set` engine, can change between two reads.
+        if (functionIsInOrGlobalInOperator(function->name))
+        {
+            const auto * arguments = function->arguments ? function->arguments->as<ASTExpressionList>() : nullptr;
+            if (!arguments || arguments->children.size() != 2)
+                return true;
+
+            const auto & set = arguments->children[1];
+            const auto * set_function = set->as<ASTFunction>();
+            if (!set->as<ASTLiteral>() && !(set_function && set_function->name == "tuple"))
+                return true;
+        }
+
         /// These are as deterministic as the aggregate function their arguments name, such as an unseeded
         /// `groupArraySample`, which is known only with the types of its arguments.
         static const NameSet functions_of_aggregate_functions{"arrayReduce", "arrayReduceInRanges", "initializeAggregation"};
