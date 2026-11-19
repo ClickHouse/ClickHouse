@@ -1364,6 +1364,10 @@ Do Parquet encoding in multiple threads.
     DECLARE(UInt64, output_format_parquet_data_page_size, 1024 * 1024, R"(
 Target page size in bytes, before compression.
 )", 0) \
+    DECLARE(UInt64, output_format_parquet_data_page_row_limit, 20000, R"(
+Maximum number of rows in a data page, checked every [output_format_parquet_batch_size](#output_format_parquet_batch_size) values; a page also ends at [output_format_parquet_data_page_size](#output_format_parquet_data_page_size). Without it a column that compresses well, such as a sorted one, fits a whole row group in one page, and the page index cannot skip any part of it. 0 means no limit.
+)", 0, \
+        {"26.11", 0, 20000, "New setting: end a Parquet data page after 20000 rows, as parquet-mr and Arrow do, so the page index can skip parts of columns that compress well."}) \
     DECLARE(NonZeroUInt64, output_format_parquet_batch_size, 1024, R"(
 Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.
 )", 0) \
