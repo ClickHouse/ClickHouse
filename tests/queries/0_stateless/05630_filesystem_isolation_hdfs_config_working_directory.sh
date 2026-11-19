@@ -74,8 +74,10 @@ if ! grep -q 'Ready for connections' "$DIR/log/server.log" 2>/dev/null || ! grep
     cat "$DIR/server.out" "$DIR/log/server.err.log" >&2
     exit 1
 fi
-# The supervisor stays outside of the namespaces, and its child, the init of the PID namespace, is inside.
-INSIDE=$(cut -d' ' -f1 "/proc/$PID/task/$PID/children")
+# With `CAP_SYS_ADMIN`, the supervisor stays outside of the namespaces, and its child, the init of the PID
+# namespace, is inside. Otherwise that process is inside.
+INSIDE=$PID
+[ "$(cat "/proc/$PID/comm")" = clickhouse-isol ] && INSIDE=$(cut -d' ' -f1 "/proc/$PID/task/$PID/children")
 
 echo "in the working directory: $([ -f "/proc/$INSIDE/root$DIR/work/client/hdfs-site.xml" ] && echo visible || echo invisible)"
 echo "keytab: $([ -f "/proc/$INSIDE/root$DIR/keys/client.keytab" ] && echo visible || echo invisible)"
