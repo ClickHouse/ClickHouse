@@ -1,9 +1,10 @@
 SET in_null_as_unknown = 1;
 
 SELECT
-    isNull([toUInt8(0)] IN ('[256]', NULL)),
     isNull([toUInt8(0)] IN (materialize('[256]'), NULL)),
     [toUInt8(0)] IN materialize('[256]');
+
+SELECT [toUInt8(0)] IN ('[256]', NULL); -- { serverError TYPE_MISMATCH }
 
 SELECT count() FROM values('a Array(UInt8)', ([0]))
 WHERE a IN (materialize('[256]'), NULL);
