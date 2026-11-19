@@ -26,6 +26,7 @@ class ClickHouseTable:
         self.table_engine = _table_engine
         self.first_hash = None
         self.mutation_ids = set()
+        self.write_marker = 0
 
     def set_first_hash(self, _first_hash: Optional[str]):
         self.first_hash = _first_hash
@@ -37,6 +38,16 @@ class ClickHouseTable:
         )
         rows = [line.split("\t") for line in res.split("\n") if line]
         return {r[0] for r in rows}, sum(1 for r in rows if r[1] == "0")
+
+    def get_write_marker(self, client: Client, rename=None) -> int:
+        """Grows with every insert: the highest block number of a MergeTree table (merges keep it), the rows of a Log one"""
+        table = rename if rename is not None else self.table_name
+        if "MergeTree" in self.table_engine:
+            query = f"SELECT max(max_block_number) FROM system.parts WHERE database = '{self.schema_name}' AND table = '{table}' AND active"
+        else:
+            query = f"SELECT total_rows FROM system.tables WHERE database = '{self.schema_name}' AND name = '{table}'"
+        res = client.query(query).strip()
+        return int(res) if res.isdigit() else 0
 
     def get_sql_escaped_full_name(self, rename=None) -> str:
         return f"`{self.schema_name}`.`{rename if rename is not None else self.table_name}`"
@@ -127,8 +138,11 @@ class ElOraculoDeTablas:
                     f"SYSTEM SYNC REPLICA {next_tbl.get_sql_escaped_full_name(self.get_current_table_name())};"
                 )
             # A mutation finishing between the two hashes changes the data, and RENAME keeps the queued ones.
-            # A mutation submitted before the RENAME may still be registered later, the second hash checks for it.
+            # A mutation or insert submitted before the RENAME may still land later, the second hash checks for it.
             next_tbl.mutation_ids, unfinished = next_tbl.get_mutations(
+                client, self.get_current_table_name()
+            )
+            next_tbl.write_marker = next_tbl.get_write_marker(
                 client, self.get_current_table_name()
             )
             if unfinished > 0:
@@ -176,9 +190,16 @@ class ElOraculoDeTablas:
                         ]
                         - next_tbl.mutation_ids
                     )
+                    write_marker = next_tbl.get_write_marker(
+                        client, self.get_current_table_name()
+                    )
                     if new_mutations:
                         logger.info(
                             f"Skipping hash comparison of table {next_tbl.get_sql_escaped_full_name()}: mutation(s) {', '.join(sorted(new_mutations))} registered after the first hash"
+                        )
+                    elif write_marker > next_tbl.write_marker:
+                        logger.info(
+                            f"Skipping hash comparison of table {next_tbl.get_sql_escaped_full_name()}: an insert landed after the first hash"
                         )
                     else:
                         next_hash = second_hash
