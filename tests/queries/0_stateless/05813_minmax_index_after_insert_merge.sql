@@ -21,3 +21,16 @@ INSERT INTO t_versioned (c2) VALUES (84);
 SELECT max(c2) = finalizeAggregation(arrayReduce('maxState', groupArray(c2))) FROM t_versioned;
 SELECT min(c2), max(c2) FROM t_versioned;
 DROP TABLE t_versioned;
+
+-- The old format restores the min/max index of the date column from the part name when the part is loaded.
+DROP TABLE IF EXISTS t_legacy;
+SET allow_deprecated_syntax_for_merge_tree = 1;
+CREATE TABLE t_legacy (d Date, id UInt64, ver UInt64) ENGINE = ReplacingMergeTree(d, id, 8192, ver);
+INSERT INTO t_legacy VALUES ('2024-01-05', 1, 1), ('2024-01-20', 1, 2);
+SELECT min(d), max(d) FROM t_legacy;
+ALTER TABLE t_legacy DETACH PARTITION 202401;
+ALTER TABLE t_legacy ATTACH PARTITION 202401;
+SELECT min(d), max(d) FROM t_legacy;
+SELECT min(d), max(d) FROM t_legacy SETTINGS optimize_use_implicit_projections = 0;
+SELECT name FROM system.parts WHERE database = currentDatabase() AND table = 't_legacy' AND active;
+DROP TABLE t_legacy;
