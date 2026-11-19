@@ -301,6 +301,10 @@ bool ZstdIncrementalDecompressor::start(const char * source, size_t source_size,
     if (ZSTD_findFrameCompressedSize(source, source_size) != source_size)
         return false;
 
+    /// The one-shot path checks the decompressed size of every block, and this path may never reach the end of the frame.
+    if (ZSTD_getFrameContentSize(source, source_size) != dest_size)
+        return false;
+
     if (num_incremental_frames.fetch_add(1) >= max_incremental_frames_per_core * getNumberOfCPUCoresToUse())
     {
         --num_incremental_frames;

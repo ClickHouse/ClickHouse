@@ -23,9 +23,9 @@ public:
 
     /// Starts decompressing the frame of `source_size` bytes at `source` into `dest`, which must have room for its whole
     /// decompressed data of `dest_size` bytes. Nothing is decompressed yet. Returns false, leaving no frame in progress, if
-    /// the data should be decompressed at once instead: it is not a single frame this path handles, too many frames are
-    /// already in progress, or the previous frames of this decompressor were read to the end. `source` must stay valid while
-    /// the frame is in progress (see `relocateSource`).
+    /// the data should be decompressed at once instead: it is not a single frame of `dest_size` bytes that this path handles,
+    /// too many frames are already in progress, or the previous frames of this decompressor were read to the end. `source`
+    /// must stay valid while the frame is in progress (see `relocateSource`).
     bool start(const char * source, size_t source_size, char * dest, size_t dest_size);
 
     /// Decompresses the next blocks until at least `min_bytes` bytes (and at least one more block) of the destination are
