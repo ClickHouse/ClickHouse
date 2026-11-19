@@ -18,6 +18,7 @@
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseReplicatedHelpers.h>
+#include <Databases/IDatabase.h>
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>
@@ -208,8 +209,6 @@ void registerStorageS3Queue(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-import ScalePlanFeatureBadge from '@theme/badges/ScalePlanFeatureBadge'
-
 # S3Queue table engine
 
 This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ecosystem and allows streaming import. This engine is similar to the [Kafka](/reference/engines/table-engines/integrations/kafka), [RabbitMQ](/reference/engines/table-engines/integrations/rabbitmq) engines, but provides S3-specific features.

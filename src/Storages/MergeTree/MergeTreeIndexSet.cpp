@@ -563,10 +563,12 @@ static const ActionsDAG::NodeRawConstPtrs & getArguments(const ActionsDAG::Node 
     if (!result_dag_or_null)
         return index_hint.getActions().getOutputs();
 
-    /// Import the DAG and map argument pointers.
+    /// Nodes are not bound by name: a name in the hint need not denote the same value as in the
+    /// filter (an alias can be named like a column). Key columns are bound by `atomFromDAG`.
     auto actions_clone = index_hint.getActions().clone();
     chassert(storage);
-    result_dag_or_null->mergeNodes(std::move(actions_clone), storage);
+    *storage = actions_clone.getOutputs();
+    result_dag_or_null->unite(std::move(actions_clone));
     return *storage;
 }
 
@@ -663,6 +665,11 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
             return &result_dag.addColumn(node_to_check->column, node_to_check->result_type, node_to_check->result_name);
         return &node;
     }
+
+    /// The condition is computed on the values the index stores rather than on the rows, so it cannot use a
+    /// function that can return another value on each evaluation, such as `rand`.
+    if (node_to_check->type == ActionsDAG::ActionType::FUNCTION && !node_to_check->function_base->isDeterministicInScopeOfQuery())
+        return nullptr;
 
     RPNBuilderTreeNode tree_node(node_to_check, context);
 
@@ -831,6 +838,8 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     {
         return !atomic && tryGetConstantCondition(node).value_or(true);
     }
+    if (node_to_check->type == ActionsDAG::ActionType::FUNCTION && !node_to_check->function_base->isDeterministicInScopeOfQuery())
+        return true;
     if (node.type == ActionsDAG::ActionType::FUNCTION)
     {
         auto column_name = tree_node.getColumnName();

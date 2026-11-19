@@ -30,6 +30,29 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
+}
+
+namespace
+{
+
+/// PostgreSQL itself does not allow more than 6 dimensions (MAXDIM). The number comes from the remote server,
+/// and each dimension is one more level of `Array`, so refuse absurd values instead of building a type
+/// so deep that working with it exhausts the stack.
+constexpr Int64 MAX_POSTGRESQL_ARRAY_DIMENSIONS = 100;
+
+DataTypePtr wrapInArrays(DataTypePtr type, Int64 dimensions)
+{
+    if (dimensions < 1 || dimensions > MAX_POSTGRESQL_ARRAY_DIMENSIONS)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "PostgreSQL array has unsupported number of dimensions: {} (must be from 1 to {})",
+            dimensions, MAX_POSTGRESQL_ARRAY_DIMENSIONS);
+
+    for (Int64 i = 0; i < dimensions; ++i)
+        type = std::make_shared<DataTypeArray>(type);
+    return type;
+}
+
 }
 
 
@@ -213,8 +236,7 @@ DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> reche
         }
         else
         {
-            while (dimensions--)
-                res = std::make_shared<DataTypeArray>(res);
+            res = wrapInArrays(res, dimensions);
         }
     }
 
@@ -332,9 +354,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             int dimensions = result[0][1].as<int>();
 
             /// It is always 1d array if it is in recheck.
-            DataTypePtr type = assert_cast<const DataTypeArray *>(name_and_type.type.get())->getNestedType();
-            while (dimensions--)
-                type = std::make_shared<DataTypeArray>(type);
+            DataTypePtr type = wrapInArrays(assert_cast<const DataTypeArray *>(name_and_type.type.get())->getNestedType(), dimensions);
 
             columns[i] = NameAndTypePair(name_and_type.name, type);
         }
@@ -506,7 +526,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
                 "format_type(a.atttypid, a.atttypmod) AS data_type " /// data type
                 "FROM pg_index i "
                 "JOIN pg_attribute a ON a.attrelid = i.indrelid "
-                "AND a.attnum = ANY(i.indkey) "
+                "AND a.attnum = ANY(i.indkey[0:i.indnkeyatts - 1]) " /// key columns only, indkey also lists the INCLUDE columns
                 "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) AND i.indisprimary "
                 "ORDER BY array_position(i.indkey::int2[], a.attnum)", where); /// in the order of the index columns
 
@@ -529,7 +549,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "t.oid = ix.indrelid "
             "and i.oid = ix.indexrelid "
             "and a.attrelid = t.oid "
-            "and a.attnum = ANY(ix.indkey) "
+            "and a.attnum = ANY(ix.indkey[0:ix.indnkeyatts - 1]) " /// key columns only, as above
             "and t.relkind in ('r', 'p') " /// simple tables
             "and t.relname = {} " /// Connection is already done to a needed database, only table name is needed.
             "and t.relnamespace = {} "
