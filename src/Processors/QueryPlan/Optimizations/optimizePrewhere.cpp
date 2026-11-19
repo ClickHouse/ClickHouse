@@ -495,7 +495,7 @@ bool tryMoveFilterToPrewhere(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     /// A function that depends on other rows, like `rowNumberInAllBlocks`, would see only the rows that pass the filter.
     auto & filter_step = typeid_cast<FilterStep &>(*node.step);
     auto & dag = filter_step.getExpression();
-    if (dag.hasArrayJoin() || dag.hasStatefulFunctions() || dagContainsNonDeterministicFunction(dag))
+    if (dag.hasArrayJoin() || isSensitiveToEvaluationCount(dag))
         return false;
 
     const auto & condition = dag.findInOutputs(filter_step.getFilterColumnName());
