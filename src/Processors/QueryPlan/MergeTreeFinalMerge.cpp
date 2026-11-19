@@ -2,7 +2,12 @@
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/Exception.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <Formats/FormatSettings.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -37,6 +42,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -184,6 +190,61 @@ Pipe buildFullFinalMergePipe(
         out_projection = createProjection(pipe.getHeader());
     addMergingFinal(pipe, sort_description, merging_params, metadata_snapshot, max_block_size_rows, enable_vertical_final);
     return pipe;
+}
+
+void DistributedReadBucket::serialize(WriteBuffer & out, const KeyDescription & primary_key) const
+{
+    marks.serialize(out, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+    writeBinary(static_cast<UInt8>(kind), out);
+    if (!hasBorders())
+        return;
+
+    FormatSettings format_settings;
+    const size_t border_size = borders.empty() ? 0 : borders.front().size();
+    writeVarUInt(border_size, out);
+    writeVarUInt(borders.size(), out);
+    for (const auto & border : borders)
+        for (size_t i = 0; i < border_size; ++i)
+            primary_key.data_types[i]->getDefaultSerialization()->serializeBinary(border[i], out, format_settings);
+    writeVarUInt(index, out);
+}
+
+void DistributedReadBucket::deserialize(ReadBuffer & in, const KeyDescription & primary_key)
+{
+    marks.deserialize(in, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+    UInt8 kind_value = 0;
+    readBinary(kind_value, in);
+    if (kind_value > static_cast<UInt8>(Kind::Trim))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Distributed read: unknown kind {} of a read bucket", static_cast<UInt32>(kind_value));
+    kind = static_cast<Kind>(kind_value);
+    if (!hasBorders())
+        return;
+
+    FormatSettings format_settings;
+    size_t border_size = 0;
+    readVarUInt(border_size, in);
+    if (border_size > primary_key.data_types.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Distributed read: a border of a read bucket has {} values, the primary key has {} columns", border_size, primary_key.data_types.size());
+    size_t borders_count = 0;
+    readVarUInt(borders_count, in);
+    borders.assign(borders_count, VectorWithMemoryTracking<Field>(border_size));
+    for (auto & border : borders)
+        for (size_t i = 0; i < border_size; ++i)
+            primary_key.data_types[i]->getDefaultSerialization()->deserializeBinary(border[i], in, format_settings);
+    readVarUInt(index, in);
+}
+
+void addKeyRangeTrimToPipe(
+    Pipe & pipe, const DistributedReadBucket & bucket, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+{
+    if (bucket.kind != DistributedReadBucket::Kind::Trim)
+        return;
+
+    /// The coordinator makes such buckets only for key columns with one sort direction.
+    const auto & reverse_flags = metadata_snapshot->getSortingKey().reverse_flags;
+    const bool in_reverse_order = !reverse_flags.empty() && reverse_flags.front();
+    addLayerRangeFilterToPipe(pipe, metadata_snapshot->getPrimaryKey(), bucket.borders, bucket.index, in_reverse_order, context);
 }
 
 Pipe buildDistributedFinalPipe(

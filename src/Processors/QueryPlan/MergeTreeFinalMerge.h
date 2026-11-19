@@ -51,7 +51,19 @@ struct DistributedReadBucket
     size_t index = 0;
 
     [[nodiscard]] bool hasBorders() const { return kind != Kind::Plain; }
+
+    /// The format of one lane in the task parameter of a distributed read: the marks, the kind, and for a
+    /// lane with borders the borders (as values of the first columns of `primary_key`) and the index.
+    void serialize(WriteBuffer & out, const KeyDescription & primary_key) const;
+    void deserialize(ReadBuffer & in, const KeyDescription & primary_key);
 };
+
+/// For a bucket of a read divided by ranges of key values (`Kind::Trim`): keeps in `pipe` only the rows of
+/// the range of the bucket. The marks of such a bucket also hold the granules that cross a border of the
+/// range, and without this the rows of such a granule would come from two tasks. Does nothing for another
+/// bucket. The rows of each chunk of the pipe must be in the order of the primary key, as a part stores them.
+void addKeyRangeTrimToPipe(
+    Pipe & pipe, const DistributedReadBucket & bucket, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
 
 /// Reads one lane's marks into a pipe -- the part-source-specific seam of `buildDistributedFinalPipe`.
 using DistributedFinalReadStepGetter = std::function<Pipe(const RangesInDataPartsDescription & marks)>;
