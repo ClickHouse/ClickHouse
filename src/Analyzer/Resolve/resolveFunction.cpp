@@ -1987,8 +1987,9 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
                     std::make_shared<LambdaArgumentsNode>(Names{candidate_name}), std::move(is_array_type), false /*is_operator*/);
                 auto is_list = std::make_shared<FunctionNode>("arrayExists");
                 is_list->getArguments().getNodes() = {std::move(lambda), source_array->clone()};
-                auto single_member = std::make_shared<FunctionNode>("__arrayValueEqualsForIn");
-                single_member->getArguments().getNodes() = {element_arg, source_array->clone()};
+                auto single_member_function = std::make_shared<FunctionNode>("__arrayValueEqualsForIn");
+                single_member_function->getArguments().getNodes() = {element_arg, source_array->clone()};
+                QueryTreeNodePtr single_member = std::move(single_member_function);
                 if (is_not_in)
                     single_member = createNotWrapper(std::move(single_member));
                 auto single_nullable = std::make_shared<FunctionNode>("toNullable");
