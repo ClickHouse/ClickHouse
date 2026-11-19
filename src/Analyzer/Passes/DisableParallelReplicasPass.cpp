@@ -76,7 +76,7 @@ public:
             union_node->getMutableContext()->setSetting("allow_experimental_parallel_reading_from_replicas", String("0"));
     }
 
-    bool disablesEverywhere() const { return is_correlated && !kept_in_some_query && !reads_storage_with_own_query; }
+    [[nodiscard]] bool disablesEverywhere() const { return is_correlated && !kept_in_some_query && !reads_storage_with_own_query; }
 
 private:
     const bool dry_run;
