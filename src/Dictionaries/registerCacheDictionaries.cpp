@@ -2,6 +2,7 @@
 #include <Dictionaries/CacheDictionaryStorage.h>
 #include <Dictionaries/SSDCacheDictionaryStorage.h>
 #include <Common/filesystemHelpers.h>
+#include <base/arithmeticOverflow.h>
 #include <Core/Settings.h>
 
 #include <Dictionaries/ClickHouseDictionarySource.h>
@@ -69,49 +70,53 @@ static SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
 
     static constexpr size_t DEFAULT_PARTITIONS_COUNT = 16;
 
-    size_t max_partitions_count = config.getInt64(dictionary_layout_prefix + ".max_partitions_count", DEFAULT_PARTITIONS_COUNT);
+    /// All sizes must be positive: zero `block_size` leads to division by zero below, zero `write_buffer_size`
+    /// leads to a null memory buffer, and negative values would wrap around when converted to `size_t`.
+    auto get_positive_setting = [&](const String & setting_name, Int64 default_value) -> size_t
+    {
+        Int64 value = config.getInt64(dictionary_layout_prefix + "." + setting_name, default_value);
+        if (value <= 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "{}: dictionary of layout '{}' setting '{}' must be greater than 0",
+                full_name,
+                layout_type,
+                setting_name);
+        return static_cast<size_t>(value);
+    };
 
-    size_t block_size = config.getInt64(dictionary_layout_prefix + ".block_size", DEFAULT_SSD_BLOCK_SIZE_BYTES);
-    size_t file_size = config.getInt64(dictionary_layout_prefix + ".file_size", DEFAULT_FILE_SIZE_BYTES);
+    size_t max_partitions_count = get_positive_setting("max_partitions_count", static_cast<Int64>(DEFAULT_PARTITIONS_COUNT));
+
+    size_t block_size = get_positive_setting("block_size", static_cast<Int64>(DEFAULT_SSD_BLOCK_SIZE_BYTES));
+    size_t file_size = get_positive_setting("file_size", static_cast<Int64>(DEFAULT_FILE_SIZE_BYTES));
     if (file_size % block_size != 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "{}: dictionary of layout '{}' setting 'file_size' must be a multiple of block_size",
             full_name,
             layout_type);
 
-    size_t read_buffer_size = config.getInt64(dictionary_layout_prefix + ".read_buffer_size", DEFAULT_READ_BUFFER_SIZE_BYTES);
+    size_t read_buffer_size = get_positive_setting("read_buffer_size", static_cast<Int64>(DEFAULT_READ_BUFFER_SIZE_BYTES));
     if (read_buffer_size % block_size != 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "{}: dictionary of layout '{}' setting 'read_buffer_size' must be a multiple of block_size",
             full_name,
             layout_type);
 
-    size_t write_buffer_size = config.getInt64(dictionary_layout_prefix + ".write_buffer_size", DEFAULT_WRITE_BUFFER_SIZE_BYTES);
-    if (write_buffer_size == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "{}: dictionary of layout '{}' setting 'write_buffer_size' must be greater than 0",
-            full_name,
-            layout_type);
-
-    if (write_buffer_size == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "{}: dictionary of layout '{}' setting 'write_buffer_size' must be greater than 0",
-            full_name,
-            layout_type);
-
+    size_t write_buffer_size = get_positive_setting("write_buffer_size", static_cast<Int64>(DEFAULT_WRITE_BUFFER_SIZE_BYTES));
     if (write_buffer_size % block_size != 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "{}: dictionary of layout '{}' setting 'write_buffer_size' must be a multiple of block_size",
             full_name,
             layout_type);
 
-    if (write_buffer_size > max_partitions_count * file_size)
+    /// A write buffer larger than the total capacity of the cache file can never be flushed.
+    size_t max_file_capacity = 0;
+    if (!common::mulOverflow(max_partitions_count, file_size, max_file_capacity) && write_buffer_size > max_file_capacity)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "{}: dictionary of layout '{}' setting 'write_buffer_size' ({}) cannot be greater than maximum file capacity (max_partitions_count * file_size = {})",
             full_name,
             layout_type,
             write_buffer_size,
-            max_partitions_count * file_size);
+            max_file_capacity);
 
     auto file_path = config.getString(dictionary_layout_prefix + ".path");
     if (file_path.empty())
