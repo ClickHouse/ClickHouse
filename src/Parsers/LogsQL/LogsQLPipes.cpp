@@ -1947,19 +1947,29 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
                     else
                         throwSyntaxError(fmt::format("cannot parse the time bucket step {}", bucket));
 
+                    /// The start of the bucket of `time`. A week starts on Monday regardless of `week_functions_starting_day`.
+                    /// `toMonday` is used and cast to the same type that `toStartOfInterval` returns for a week, which depends
+                    ///  on `to_start_of_interval_preserves_argument_type`.
+                    const bool is_week_step = Poco::toLower(bucket) == "week";
+                    auto make_bucket_start = [&](ASTPtr time) -> ASTPtr
+                    {
+                        if (!is_week_step)
+                            return makeASTFunction("toStartOfInterval", std::move(time), interval);
+                        ASTPtr type_name = makeASTFunction("toTypeName", makeASTFunction("toStartOfInterval", time->clone(), interval));
+                        return makeASTFunction("CAST", makeASTFunction("toMonday", std::move(time)), std::move(type_name));
+                    };
+
                     if (bucket_offset)
                     {
                         /// A timezone-like shift of the bucket boundaries.
                         auto offset_duration = tryParseDuration(*bucket_offset);
                         if (!offset_duration)
                             throwSyntaxError(fmt::format("cannot parse the bucket offset {} for the _time field", *bucket_offset));
-                        key = shiftTime(
-                            makeASTFunction("toStartOfInterval", shiftTime(columnExpr(name), *offset_duration), interval),
-                            -*offset_duration);
+                        key = shiftTime(make_bucket_start(shiftTime(columnExpr(name), *offset_duration)), -*offset_duration);
                     }
                     else
                     {
-                        key = makeASTFunction("toStartOfInterval", columnExpr(name), interval);
+                        key = make_bucket_start(columnExpr(name));
                     }
                 }
                 else if (bucket.starts_with('/'))

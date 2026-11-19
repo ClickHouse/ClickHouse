@@ -1,0 +1,11 @@
+week_range, weeks from Tuesday
+2
+1
+stats by week, weeks from Sunday
+2024-01-01 00:00:00	3
+2024-01-08 00:00:00	1
+2023-12-26 00:00:00	1
+2024-01-02 00:00:00	3
+stats by week, weeks from Sunday, legacy result type
+2024-01-01	3
+2024-01-08	1
