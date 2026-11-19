@@ -2,6 +2,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/Allocator.h>
 #include <Formats/ColumnNameMaps.h>
@@ -88,6 +89,8 @@ namespace ProfileEvents
     extern const Event ParquetPagesDecompressedToSkipRows;
     extern const Event ColumnsCacheHits;
     extern const Event ColumnsCacheMisses;
+    extern const Event ParquetFilteredColumnsCacheHits;
+    extern const Event ParquetFilteredColumnsCacheMisses;
     extern const Event ParquetRuntimeFilterPrunedRowGroups;
     extern const Event ParquetRuntimeFilterPrunedPages;
     extern const Event ParquetTopKRowGroupsBoundedByDictionary;
@@ -3907,7 +3910,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         /// (only for the columns of the sample block, and only with `input_format_defaults_for_omitted_fields`),
         /// which the columns cache does not keep, so such a column is not written to the cache.
         bool has_substituted_defaults = false;
-        if (!row_group.columns_cache_writes.empty())
+        if (!row_group.columns_cache_writes.empty() || subchunk.filtered_cache_identity != 0)
         {
             const OutputColumnInfo & output_info = output_columns.at(output_idx.value());
             if (output_info.is_primitive)
@@ -3925,6 +3928,8 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
         if (!row_group.columns_cache_writes.empty())
             addToColumnsCacheWrite(row_group, row_subgroup, column_info.idx_in_output_block, state.column, has_substituted_defaults);
+        if (subchunk.filtered_cache_identity != 0 && !has_substituted_defaults)
+            addFilteredColumnToCache(row_group, row_subgroup, column_info.idx_in_output_block, subchunk.filtered_cache_identity, state.column);
     }
 }
 
@@ -5374,6 +5379,147 @@ void Reader::withdrawColumnsCacheWrites()
                 withdrawColumnsCacheWrite(write);
         row_group.columns_cache_writes.clear();
     }
+}
+
+void Reader::initFilteredColumnsCache()
+{
+    /// A top-K threshold moves while the query runs, so the rows that pass it differ between runs.
+    filtered_columns_cache_possible = !steps.empty() && !columns_cache_identities.empty()
+        && (options.columns_cache->enable_reads || columns_cache_writes_possible)
+        && !(format_filter_info->top_k_filter && format_filter_info->top_k_filter->filter_rows);
+}
+
+bool Reader::canCacheFilteredColumn(size_t primitive_idx) const
+{
+    const PrimitiveColumnInfo & pc = primitive_columns.at(primitive_idx);
+    if (pc.idx_in_output_block >= columns_cache_identities.size() || columns_cache_identities[pc.idx_in_output_block] == 0)
+        return false;
+    /// Decoded into values only this query may see: '' for strings its filter rejects, or a `ColumnReplicated`.
+    if (pc.string_value_filter || pc.decode_dictionary_as_replicated || pc.levels.back().rep != 0)
+        return false;
+    const auto & output_idx = sample_block_to_output_columns_idx.at(pc.idx_in_output_block);
+    if (!output_idx.has_value())
+        return false;
+    const OutputColumnInfo & info = output_columns.at(*output_idx);
+    return info.is_primitive && !info.is_missing_column && !info.nullable_group && info.primitive_start == primitive_idx
+        && info.primitive_start + 1 == info.primitive_end;
+}
+
+void Reader::lookUpFilteredColumns(const RowGroup & row_group, RowSubgroup & row_subgroup, size_t step_idx)
+{
+    /// The columns of the first step, and of a subgroup that passed in full, are cached in whole chunks.
+    const RowSet & filter = row_subgroup.filter;
+    if (!filtered_columns_cache_possible || step_idx == 1 || filter.rows_pass == 0 || filter.rows_pass == filter.rows_total)
+        return;
+    chassert(filter.filter.size() == filter.rows_total);
+
+    const ColumnsCacheOptions & cache_options = *options.columns_cache;
+    ColumnsCache & cache = *cache_options.cache;
+
+    /// Keyed by the set of rows, not by the condition: the same rows have the same values whichever condition,
+    /// even a nondeterministic one, selected them.
+    std::optional<UInt128> rows_hash;
+    auto get_rows_hash = [&]
+    {
+        if (!rows_hash)
+        {
+            SipHash hash;
+            hash.update(row_group.row_group_idx);
+            hash.update(row_subgroup.start_row_idx);
+            hash.update(filter.rows_total);
+            hash.update(filter.rows_pass);
+            const UInt8 * mask = filter.filter.data();
+            size_t i = 0;
+            for (; i + 64 <= filter.rows_total; i += 64)
+                hash.update(bytes64MaskToBits64Mask(mask + i));
+            for (; i < filter.rows_total; ++i)
+                hash.update(UInt8(mask[i] != 0));
+            rows_hash = hash.get128();
+        }
+        return *rows_hash;
+    };
+
+    const size_t stripe = row_group.row_group_idx * COLUMNS_CACHE_MAX_CHUNKS_PER_ROW_GROUP + row_subgroup.start_row_idx / COLUMNS_CACHE_CHUNK_ROWS;
+    size_t hits = 0;
+    size_t misses = 0;
+    for (size_t i = 0; i < primitive_columns.size(); ++i)
+    {
+        if (primitive_columns[i].first_step_to_calculate != step_idx || row_group.columns.at(i).served_from_cache
+            || !canCacheFilteredColumn(i))
+            continue;
+
+        const size_t idx_in_output_block = primitive_columns[i].idx_in_output_block;
+        SipHash hash;
+        hash.update(columns_cache_identities[idx_in_output_block]);
+        hash.update(get_rows_hash());
+        const UInt128 identity = hash.get128();
+
+        ColumnSubchunk & subchunk = row_subgroup.columns.at(i);
+        if (cache_options.enable_reads)
+        {
+            auto entries = cache.getMany(identity, stripe, stripe + 1);
+            if (!entries.empty() && entries[0] && entries[0]->rows == filter.rows_pass && entries[0]->column->size() == filter.rows_pass)
+            {
+                OutputColumnState & state = row_subgroup.output.at(idx_in_output_block);
+                chassert(!state.column);
+                state.column = entries[0]->column;
+                state.primitive_columns_remaining.store(0);
+                subchunk.from_filtered_cache = true;
+                ++hits;
+                continue;
+            }
+            ++misses;
+        }
+
+        if (columns_cache_writes_possible && canWriteToColumnsCache() && cache.shouldAdmit())
+            subchunk.filtered_cache_identity = identity;
+    }
+
+    ProfileEvents::increment(ProfileEvents::ParquetFilteredColumnsCacheHits, hits);
+    ProfileEvents::increment(ProfileEvents::ParquetFilteredColumnsCacheMisses, misses);
+}
+
+void Reader::addFilteredColumnToCache(
+    const RowGroup & row_group, const RowSubgroup & row_subgroup, size_t idx_in_output_block, UInt128 identity, ColumnPtr & column) const
+{
+    if (column->size() != row_subgroup.filter.rows_pass || !canWriteToColumnsCache())
+        return;
+
+    /// See `addToColumnsCacheWrite`.
+    if (column->use_count() == 1 && column->allocatedBytes() >= column->byteSize() + min_bytes_to_free_by_shrinking)
+    {
+        /// The shrink is charged its new size, at most the current allocation, before the old allocation is released, so a
+        /// write the query cannot afford is skipped.
+        /// The bytes this thread has not reported to its memory tracker yet are flushed first, so that the check counts them.
+        CurrentThread::flushUntrackedMemory();
+        if (auto available = getCurrentQueryAvailableMemory(); available && *available < column->allocatedBytes())
+            return;
+        auto mutable_column = IColumn::mutate(std::move(column));
+        mutable_column->shrinkToFit();
+        column = std::move(mutable_column);
+    }
+
+    const ColumnsCacheOptions & cache_options = *options.columns_cache;
+    auto entry = makeColumnsCacheEntry();
+    {
+        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+        entry->part_name = cache_options.file_path;
+        entry->column_name = extended_sample_block.getByPosition(idx_in_output_block).name;
+    }
+    entry->table_uuid = cache_options.table_uuid;
+    entry->source = cache_options.source;
+    entry->schema_identity = cache_options.file_identity;
+    entry->first_mark = 0;
+    entry->end_mark = 1;
+    entry->row_begin = row_group.start_global_row_idx + row_subgroup.start_row_idx;
+    entry->rows = row_subgroup.filter.rows_pass;
+    entry->rows_span = row_subgroup.filter.rows_total;
+    entry->key = ColumnsCacheKey{identity, row_group.row_group_idx * COLUMNS_CACHE_MAX_CHUNKS_PER_ROW_GROUP + row_subgroup.start_row_idx / COLUMNS_CACHE_CHUNK_ROWS};
+    entry->column = column;
+
+    const size_t bytes_admitted = cache_options.cache->setMany({entry}, columns_cache_generation);
+    if (bytes_admitted)
+        cache_options.write_budget->bytes_written.fetch_add(bytes_admitted, std::memory_order_relaxed);
 }
 
 Reader::PrimitiveColumnInfo::~PrimitiveColumnInfo() = default;

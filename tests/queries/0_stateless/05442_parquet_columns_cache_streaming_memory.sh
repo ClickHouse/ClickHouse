@@ -45,10 +45,34 @@ echo "--- the same limit, served from the cache"
 $CLICKHOUSE_CLIENT -q "${QUERY}, ${LIMIT}, ${CACHE}"
 
 echo "--- the chunks of a column that cannot be written in full are taken back"
-# The first four chunks of `s` pass `PREWHERE` in full and are written, the next ones are filtered. The chunks of `id`,
-# the column of the filter, are all read in full: the filter cannot skip any page by the column index.
+# The first four chunks of `s` pass `PREWHERE` in full and are written, the next ones are filtered: only the rows of
+# these that pass are kept, under their set. The chunks of `id`, the column of the filter, are all read in full: the
+# filter cannot skip any page by the column index.
 $CLICKHOUSE_CLIENT -q "SYSTEM DROP COLUMNS CACHE"
 $CLICKHOUSE_CLIENT -q "SELECT count(), sum(id), sum(length(s)) FROM file('${FILE}', Parquet, 'id UInt64, s String') PREWHERE id < 262144 OR id % 2 = 0 SETTINGS max_threads = 1, ${CACHE}"
 $CLICKHOUSE_CLIENT -q "${ENTRIES}"
 
 rm -f "${FILE_PATH}"
+
+echo "--- under a memory limit, the query does not fail for the copy that shrinks the rows that passed"
+# All rows of `s` but one pass, so its decoded rows take about a quarter of the limit, and the set of `NOT IN` takes
+# most of the rest: the query fits its limit, but not with a second copy of `s`. Whether the rows of `s` are written
+# under the limit depends on how much memory the build tracks at that point, so only the result is checked.
+WIDE="${CLICKHOUSE_TEST_UNIQUE_NAME}_wide.parquet"
+$CLICKHOUSE_CLIENT -q "
+    INSERT INTO FUNCTION file('${WIDE}', Parquet)
+    SELECT number AS id, concat(leftPad(toString(number), 10, '0'), repeat('x', 503)) AS s FROM numbers(65536)
+    SETTINGS output_format_parquet_row_group_size = 1000000, output_format_parquet_max_dictionary_size = 0, engine_file_truncate_on_insert = 1"
+touch -d "1 minute ago" "${USER_FILES_PATH}/${WIDE}"
+WIDE_QUERY="SELECT count(), sum(length(s)) FROM file('${WIDE}', Parquet, 'id UInt64, s String')
+    PREWHERE id != 0 AND id NOT IN (SELECT number + 1000000000 FROM numbers(2000000)) SETTINGS max_threads = 1, ${CACHE}"
+WIDE_ENTRIES="SELECT column, count(), sum(rows) FROM system.columns_cache WHERE database = '' AND endsWith(part, '/${WIDE}') GROUP BY column ORDER BY column"
+$CLICKHOUSE_CLIENT -q "SYSTEM DROP COLUMNS CACHE"
+$CLICKHOUSE_CLIENT -q "${WIDE_QUERY}, max_memory_usage = '141Mi'"
+$CLICKHOUSE_CLIENT -q "SELECT column, count(), sum(rows) FROM system.columns_cache WHERE database = '' AND endsWith(part, '/${WIDE}') AND column = 'id' GROUP BY column"
+
+echo "--- without the limit, they are written"
+$CLICKHOUSE_CLIENT -q "${WIDE_QUERY}"
+$CLICKHOUSE_CLIENT -q "${WIDE_ENTRIES}"
+
+rm -f "${USER_FILES_PATH}/${WIDE}"

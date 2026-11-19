@@ -94,7 +94,7 @@ $CLICKHOUSE_CLIENT -q "${DENSE_QUERY} SETTINGS use_columns_cache = 1"
 run after_dense "use_columns_cache = 1"
 events after_dense
 
-echo "--- PREWHERE: the columns of the filter are written, the columns read after it are not"
+echo "--- PREWHERE: the columns of the filter are written in chunks, the columns read after it only for the rows that passed"
 $CLICKHOUSE_CLIENT -q "SYSTEM DROP COLUMNS CACHE"
 PREWHERE_QUERY="SELECT sum(id), sum(length(s)), count() FROM file('${FILE}') PREWHERE id % 7 = 0"
 $CLICKHOUSE_CLIENT -q "${PREWHERE_QUERY} SETTINGS use_columns_cache = 0"

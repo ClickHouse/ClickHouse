@@ -135,6 +135,9 @@ struct ColumnsCacheEntry
     size_t end_mark = 0;
     size_t row_begin = 0;
     size_t rows = 0;
+    /// 0 if the entry holds the `rows` rows from `row_begin`. Otherwise it holds `rows` of the `rows_span` rows from
+    /// `row_begin`, the ones a filter kept; its key names that set of rows, and it is never merged with another entry.
+    size_t rows_span = 0;
 
     /// The key the entry is stored under. The eviction callback of the cache does not receive
     /// the key, and the cache has to know which entries of a part it holds, see `removePart`.
@@ -349,6 +352,7 @@ public:
         size_t row_begin = 0;
         size_t rows = 0;
         size_t bytes = 0;
+        size_t rows_span = 0;
     };
 
     /// Get metadata for all cache entries for introspection (system.columns_cache table).

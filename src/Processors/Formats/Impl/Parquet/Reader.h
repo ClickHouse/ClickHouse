@@ -468,6 +468,11 @@ struct Reader
         /// Covers `column`, `arrays_offsets`, and also RowSubgroup::output (data can be moved from
         /// the former to the latter).
         MemoryUsageToken column_and_offsets_memory;
+
+        /// See `Reader::lookUpFilteredColumns`: taken from the columns cache, or else the identity under which the
+        /// decoded rows are written to it (0 if they are not).
+        bool from_filtered_cache = false;
+        UInt128 filtered_cache_identity = 0;
     };
 
     struct OutputColumnState
@@ -685,6 +690,8 @@ struct Reader
     bool columns_cache_writes_possible = false;
     /// Captured once, before anything is read, see `ColumnsCache::getInvalidationGeneration`.
     UInt64 columns_cache_generation = 0;
+    /// Whether the columns decoded for only some rows of a subgroup use the columns cache, see `lookUpFilteredColumns`.
+    bool filtered_columns_cache_possible = false;
 
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 
@@ -839,6 +846,12 @@ struct Reader
     /// e.g. because of `LIMIT`. Called when the reading is finished or abandoned.
     void withdrawColumnsCacheWrites();
 
+    /// Called once the steps are known.
+    void initFilteredColumnsCache();
+    /// Takes each column of step `step_idx` from the columns cache if a read of the same rows of the subgroup has left
+    /// it there, or else plans to write those rows once they are decoded.
+    void lookUpFilteredColumns(const RowGroup & row_group, RowSubgroup & row_subgroup, size_t step_idx);
+
     void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx);
 
 private:
@@ -884,6 +897,10 @@ private:
     void addToColumnsCacheWrite(
         RowGroup & row_group, const RowSubgroup & row_subgroup, size_t idx_in_output_block, ColumnPtr & column, bool has_substituted_defaults);
     void withdrawColumnsCacheWrite(RowGroup::ColumnsCacheWrite & write) const;
+    /// Whether the primitive column can be taken from and written to the columns cache by its rows, see `lookUpFilteredColumns`.
+    bool canCacheFilteredColumn(size_t primitive_idx) const;
+    void addFilteredColumnToCache(
+        const RowGroup & row_group, const RowSubgroup & row_subgroup, size_t idx_in_output_block, UInt128 identity, ColumnPtr & column) const;
     void initializePrefetches();
     double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
     void decodeDictionaryPageImpl(
