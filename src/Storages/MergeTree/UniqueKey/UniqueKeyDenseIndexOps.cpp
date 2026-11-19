@@ -77,12 +77,11 @@ enum class DenseIndexSSTStatus
 /// row and rejects Nullable UK columns, so an entry-count mismatch flags exactly
 /// that stale case.
 /// `reason` is filled for the log/exception message.
-DenseIndexSSTStatus classifyDenseIndexSST(
-    const DataPartStoragePtr & storage, UInt64 expected_rows, const ReadSettings & read_settings, String & reason)
+DenseIndexSSTStatus classifyDenseIndexSST(const DataPartStoragePtr & storage, UInt64 expected_rows, String & reason)
 {
     try
     {
-        auto reader = openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME, read_settings);
+        auto reader = openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME);
 
         auto verify_status = reader->verifyChecksum();
         if (!verify_status.ok())
@@ -163,8 +162,7 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
         /// validity/generation marker written alongside it, so an unchanged file
         /// loads without a full re-read.
         String reason;
-        switch (classifyDenseIndexSST(
-            part->getDataPartStoragePtr(), part->rows_count, data.getContext()->getReadSettings(), reason))
+        switch (classifyDenseIndexSST(part->getDataPartStoragePtr(), part->rows_count, reason))
         {
             case DenseIndexSSTStatus::Valid:
                 return;

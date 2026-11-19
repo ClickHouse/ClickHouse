@@ -14,6 +14,7 @@
 #include <Common/Exception.h>
 
 #include <algorithm>
+#include <utility>
 
 #include <base/unaligned.h>
 
@@ -60,15 +61,77 @@ namespace
         return unalignedLoadBigEndian<UInt32>(data);
     }
 
-    /// `FSRandomAccessFile` backed by a `ReadBuffer`. `readBigAt` is positional
-    /// and lock-free, so concurrent RocksDB reads need no serialization. The
-    /// buffer must support positional reads; that is enforced at open time by
-    /// `NewRandomAccessFile`, so the ctor can assume it here.
+    /// `readBigAt` is missing in async buffers, and O_DIRECT rejects unaligned reads;
+    /// force plain `pread`, no direct IO, no reader executor.
+    /// TODO(unique-key): adapt to those paths and drop this.
+    ReadSettings adjustReadSettings(ReadSettings settings)
+    {
+        settings.local_fs_settings.method = LocalFSReadMethod::pread;
+        settings.local_fs_settings.direct_io_threshold = 0;
+        settings.reader_executor.enabled = false;
+        return settings;
+    }
+
+    std::unique_ptr<SeekableReadBuffer> openPositionalBuffer(
+        const IDataPartStorage & storage, const String & file_name, const ReadSettings & settings)
+    {
+        auto buffer = storage.readFile(file_name, adjustReadSettings(settings), /*read_hint=*/std::nullopt);
+        if (!buffer->supportsReadAt())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "UNIQUE KEY SST cannot be read from `{}`: the storage does not support "
+                "positional reads (readBigAt), required for concurrent index probing",
+                file_name);
+        return buffer;
+    }
+
+    /// Reuses one lazily-opened buffer for a single reader operation. RocksDB
+    /// calls `Read` without operation context, so the current wrapper is found
+    /// through a thread-local pointer; nested wrappers restore the previous one.
+    class ReadBufferWrapper;
+    thread_local ReadBufferWrapper * current_read_wrapper = nullptr;
+
+    class ReadBufferWrapper
+    {
+    public:
+        ReadBufferWrapper() : previous(current_read_wrapper) { current_read_wrapper = this; }
+        ~ReadBufferWrapper() { current_read_wrapper = previous; }
+
+        ReadBufferWrapper(const ReadBufferWrapper &) = delete;
+        ReadBufferWrapper & operator=(const ReadBufferWrapper &) = delete;
+
+        size_t readAt(
+            const void * owner,
+            const IDataPartStorage & storage,
+            const String & file_name,
+            uint64_t offset,
+            char * to,
+            size_t n)
+        {
+            if (buffer_owner != owner)
+            {
+                buffer = openPositionalBuffer(storage, file_name, getReadSettings());
+                buffer_owner = owner;
+            }
+            return buffer->readBigAt(to, n, offset, {});
+        }
+
+    private:
+        ReadBufferWrapper * previous;
+        const void * buffer_owner = nullptr;
+        std::unique_ptr<SeekableReadBuffer> buffer;
+    };
+
+    /// `FSRandomAccessFile` over `IDataPartStorage`. Keeps no buffer between
+    /// reader operations: within one operation a buffer is reused (see
+    /// `ReadBufferWrapper`), opened with the reading thread's settings
+    /// (`getReadSettings`), so a reader shared through the cache carries no
+    /// query's state into another.
     class ReadBufferBasedRandomAccessFile : public rocksdb::FSRandomAccessFile
     {
     public:
-        ReadBufferBasedRandomAccessFile(std::unique_ptr<SeekableReadBuffer> buffer_, uint64_t file_size_)
-            : buffer(std::move(buffer_))
+        ReadBufferBasedRandomAccessFile(DataPartStoragePtr storage_, String file_name_, uint64_t file_size_)
+            : storage(std::move(storage_))
+            , file_name(std::move(file_name_))
             , file_size(file_size_)
         {
         }
@@ -94,7 +157,16 @@ namespace
                 }
                 n = std::min(n, static_cast<size_t>(file_size - offset));
 
-                size_t bytes_read = buffer->readBigAt(scratch, n, offset, {});
+                size_t bytes_read = 0;
+                if (current_read_wrapper)
+                {
+                    bytes_read = current_read_wrapper->readAt(this, *storage, file_name, offset, scratch, n);
+                }
+                else
+                {
+                    auto buffer = openPositionalBuffer(*storage, file_name, getReadSettings());
+                    bytes_read = buffer->readBigAt(scratch, n, offset, {});
+                }
                 *result = rocksdb::Slice(scratch, bytes_read);
                 return rocksdb::IOStatus::OK();
             }
@@ -105,7 +177,8 @@ namespace
         }
 
     private:
-        std::unique_ptr<SeekableReadBuffer> buffer;
+        DataPartStoragePtr storage;
+        String file_name;
         uint64_t file_size;
     };
 
@@ -115,16 +188,9 @@ namespace
     class ReadBufferFileSystem : public rocksdb::FileSystem
     {
     public:
-        ReadBufferFileSystem(DataPartStoragePtr storage_, ReadSettings read_settings_)
+        explicit ReadBufferFileSystem(DataPartStoragePtr storage_)
             : storage(std::move(storage_))
-            , read_settings(std::move(read_settings_))
         {
-            /// `readBigAt` is missing in async buffers, and O_DIRECT rejects unaligned reads;
-            /// force plain `pread`, no direct IO, no reader executor.
-            /// TODO(unique-key): adapt to those paths and drop this.
-            read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-            read_settings.local_fs_settings.direct_io_threshold = 0;
-            read_settings.reader_executor.enabled = false;
         }
 
         [[nodiscard]] const char * Name() const override { return "ReadBufferFileSystem"; }
@@ -137,18 +203,8 @@ namespace
         {
             try
             {
-                auto buffer = storage->readFile(f, read_settings, /*read_hint=*/std::nullopt);
-                /// Fail closed: without positional reads (`readBigAt`) the only
-                /// alternative is a `seek`+`read` fallback under a mutex, which
-                /// serializes every SST read. Reject such storage instead of
-                /// silently degrading concurrency.
-                if (!buffer->supportsReadAt())
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "UNIQUE KEY SST cannot be read from `{}`: the storage does not support "
-                        "positional reads (readBigAt), required for concurrent index probing",
-                        f);
                 const uint64_t file_size = storage->getFileSize(f);
-                *r = std::make_unique<ReadBufferBasedRandomAccessFile>(std::move(buffer), file_size);
+                *r = std::make_unique<ReadBufferBasedRandomAccessFile>(storage, f, file_size);
                 return rocksdb::IOStatus::OK();
             }
             catch (...)
@@ -227,15 +283,15 @@ namespace
 
     private:
         DataPartStoragePtr storage;
-        ReadSettings read_settings;
     };
 }
 
 #undef ROCKSDB_IO_NOT_SUPPORTED
 
-SSTFileReader::SSTFileReader(const DataPartStoragePtr & storage, const String & sst_file_name, const ReadSettings & read_settings)
+SSTFileReader::SSTFileReader(const DataPartStoragePtr & storage, const String & sst_file_name)
 {
-    sst_env = rocksdb::NewCompositeEnv(std::make_shared<ReadBufferFileSystem>(storage, read_settings));
+    ReadBufferWrapper read_wrapper;
+    sst_env = rocksdb::NewCompositeEnv(std::make_shared<ReadBufferFileSystem>(storage));
 
     /// Bloom policy must match `SSTIndexWriter`.
     rocksdb::Options options;
@@ -254,6 +310,11 @@ SSTFileReader::SSTFileReader(const DataPartStoragePtr & storage, const String & 
         throw Exception(status.IsCorruption() ? ErrorCodes::CORRUPTED_DATA : ErrorCodes::CANNOT_OPEN_FILE,
             "Failed to open UNIQUE KEY SST `{}`: {}", sst_file_name, status.ToString());
     index_reader = std::move(reader);
+
+    /// `no_block_cache` preloads the SST's index + filter blocks into this reader;
+    /// record that resident size as the reader cache's weight.
+    if (auto properties = index_reader->GetTableProperties())
+        memory_usage = properties->index_size + properties->filter_size;
 }
 
 std::vector<rocksdb::Status> SSTFileReader::multiGet(
@@ -293,15 +354,13 @@ std::shared_ptr<const rocksdb::TableProperties> SSTFileReader::getProperties() c
 
 rocksdb::Status SSTFileReader::verifyChecksum() const
 {
+    ReadBufferWrapper read_wrapper;
     return index_reader->VerifyChecksum();
 }
 
-SSTFileReaderPtr openSSTReaderFromStorage(
-    const DataPartStoragePtr & storage,
-    const String & sst_file_name,
-    const ReadSettings & read_settings)
+SSTFileReaderPtr openSSTReaderFromStorage(const DataPartStoragePtr & storage, const String & sst_file_name)
 {
-    return std::make_shared<SSTFileReader>(storage, sst_file_name, read_settings);
+    return std::make_shared<SSTFileReader>(storage, sst_file_name);
 }
 
 SSTProbeTargetPart::SSTProbeTargetPart(
@@ -325,6 +384,8 @@ void SSTProbeTargetPart::findRowIndexBatch(
     if (!reader)
         throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
             "UNIQUE KEY SST probe target has no readable index (invalid reader)");
+
+    ReadBufferWrapper read_wrapper;
 
     /// Chunk buffers are reused across chunks; all state is call-local.
     std::vector<rocksdb::Slice> chunk_keys;
