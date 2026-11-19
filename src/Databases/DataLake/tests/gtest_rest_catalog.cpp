@@ -13,6 +13,8 @@
 #include <Interpreters/Context.h>
 
 #include <Poco/AutoPtr.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/HTTPServer.h>
@@ -28,7 +30,9 @@
 #include <atomic>
 #include <iterator>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <vector>
 
 using namespace DataLake;
 
@@ -133,6 +137,9 @@ struct RequestCounters
     /// Load-table requests for `namespace.snapshots_table`, by their `snapshots` query parameter.
     std::atomic<size_t> load_table_refs{0};
     std::atomic<size_t> load_table_without_snapshots_param{0};
+    /// Bodies of the commit requests for `namespace.commit_table`, in arrival order.
+    std::mutex commit_bodies_mutex;
+    std::vector<std::string> commit_bodies;
 };
 
 void writeJSON(Poco::Net::HTTPServerResponse & response, const std::string & body, Poco::Net::HTTPResponse::HTTPStatus status = Poco::Net::HTTPResponse::HTTP_OK)
@@ -418,6 +425,18 @@ public:
                 response,
                 R"({"metadata-location":"s3://bucket/snapshots_table/metadata/v1.metadata.json",)"
                 R"("metadata":{"table-uuid":"22222222-3333-4444-5555-666666666666","location":"s3://bucket/snapshots_table"}})");
+            return;
+        }
+
+        if (path == "/v1/namespaces/namespace/tables/commit_table" && request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
+        {
+            std::string request_body(std::istreambuf_iterator<char>(request.stream()), {});
+            if (counters)
+            {
+                std::lock_guard lock(counters->commit_bodies_mutex);
+                counters->commit_bodies.push_back(std::move(request_body));
+            }
+            writeJSON(response, "{}");
             return;
         }
 
@@ -914,6 +933,62 @@ TEST(RestCatalog, LoadTableFollowsSnapshotLoadingModeOfCatalogConfig)
         CatalogShape::SnapshotLoadingModeUnknownOverride, DB::DatabaseDataLakeSnapshotLoadingMode::REFS));
 }
 
+TEST(RestCatalog, CommitAssertsMainSnapshotOrItsAbsence)
+{
+    RequestCounters counters;
+    RestCatalogTestServer server(CatalogShape::TopLevelTable, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    /// Commits `snapshot` and returns the only requirement of the request the catalog received.
+    auto commit_requirement = [&](const std::string & snapshot) -> Poco::JSON::Object::Ptr
+    {
+        EXPECT_TRUE(catalog->updateMetadata(
+            "namespace", "commit_table", /* new_metadata_path */ "", /* base_catalog_metadata_location */ "",
+            Poco::JSON::Parser().parse(snapshot).extract<Poco::JSON::Object::Ptr>(), /* new_metadata */ nullptr));
+
+        std::string body;
+        {
+            std::lock_guard lock(counters.commit_bodies_mutex);
+            if (counters.commit_bodies.empty())
+            {
+                ADD_FAILURE() << "the commit did not reach the catalog";
+                return nullptr;
+            }
+            body = counters.commit_bodies.back();
+        }
+
+        auto requirements = Poco::JSON::Parser().parse(body).extract<Poco::JSON::Object::Ptr>()->getArray("requirements");
+        if (!requirements || requirements->size() != 1)
+        {
+            ADD_FAILURE() << "expected exactly one requirement: " << body;
+            return nullptr;
+        }
+        auto requirement = requirements->getObject(0);
+        EXPECT_EQ(requirement->getValue<std::string>("type"), "assert-ref-snapshot-id") << body;
+        EXPECT_EQ(requirement->getValue<std::string>("ref"), "main") << body;
+        return requirement;
+    };
+
+    /// A root snapshot, written with `parent-snapshot-id: -1` or without the field, asserts that `main` does not exist yet.
+    for (const auto * root_snapshot : {R"({"snapshot-id": 2, "parent-snapshot-id": -1})", R"({"snapshot-id": 3})"})
+    {
+        auto requirement = commit_requirement(root_snapshot);
+        ASSERT_TRUE(requirement) << root_snapshot;
+        EXPECT_TRUE(requirement->has("snapshot-id")) << root_snapshot;
+        EXPECT_TRUE(requirement->isNull("snapshot-id")) << root_snapshot;
+    }
+
+    auto requirement = commit_requirement(R"({"snapshot-id": 5, "parent-snapshot-id": 4})");
+    ASSERT_TRUE(requirement);
+    ASSERT_TRUE(requirement->has("snapshot-id"));
+    EXPECT_EQ(requirement->getValue<Int64>("snapshot-id"), 4);
+
+    std::lock_guard lock(counters.commit_bodies_mutex);
+    EXPECT_EQ(counters.commit_bodies.size(), 3u);
+}
+
 /// The schemas of a table returned by the catalog are checked like those of a metadata file.
 TEST(RestCatalog, TryGetTableMetadataChecksTheSchemas)
 {
@@ -1255,7 +1330,7 @@ TEST(RestCatalog, ApplySettingsChangesCredentialMode)
 
     const auto snapshot = catalog.getStateSnapshot();
     EXPECT_EQ(snapshot->client_id, "client-2");
-    EXPECT_EQ(snapshot->client_secret, "secret-2");
+    EXPECT_EQ(std::string_view(snapshot->client_secret), "secret-2");
 
     DB::SettingsChanges mode_switch;
     mode_switch.emplace_back("auth_header", "Authorization: Bearer token");
@@ -1326,7 +1401,7 @@ TEST(RestCatalog, OneLakeApplySettingsChangesBearerMode)
 
     const auto snapshot_before = catalog.getStateSnapshot();
     EXPECT_EQ(snapshot_before->tenant_id, "tenant-1");
-    EXPECT_EQ(snapshot_before->bearer_token, "token-1");
+    EXPECT_EQ(std::string_view(snapshot_before->bearer_token), "token-1");
     ASSERT_TRUE(snapshot_before->auth_header.has_value());
     EXPECT_EQ(snapshot_before->auth_header->value, "Bearer token-1");
 
@@ -1337,12 +1412,12 @@ TEST(RestCatalog, OneLakeApplySettingsChangesBearerMode)
 
     const auto snapshot_after = catalog.getStateSnapshot();
     EXPECT_EQ(snapshot_after->tenant_id, "tenant-2");
-    EXPECT_EQ(snapshot_after->bearer_token, "token-2");
+    EXPECT_EQ(std::string_view(snapshot_after->bearer_token), "token-2");
     ASSERT_TRUE(snapshot_after->auth_header.has_value());
     EXPECT_EQ(snapshot_after->auth_header->value, "Bearer token-2");
 
     EXPECT_EQ(snapshot_before->tenant_id, "tenant-1");
-    EXPECT_EQ(snapshot_before->bearer_token, "token-1");
+    EXPECT_EQ(std::string_view(snapshot_before->bearer_token), "token-1");
 
     DB::SettingsChanges mode_switch;
     mode_switch.emplace_back("onelake_tenant_id", "tenant-3");
@@ -1442,7 +1517,7 @@ TEST(RestCatalog, OneLakeRefreshTokenTransparentRenewal)
 
     const auto requests_before_storage_token = server.tokenRequests();
     const auto [storage_token, expires_on] = catalog.getCurrentAccessToken();
-    EXPECT_TRUE(storage_token.starts_with("mock-access-token-"));
+    EXPECT_TRUE(std::string_view(storage_token).starts_with("mock-access-token-"));
     EXPECT_GT(server.tokenRequests(), requests_before_storage_token);
 }
 
@@ -1510,7 +1585,7 @@ TEST(RestCatalog, OneLakeApplySettingsChangesRefreshMode)
     DB::SettingsChanges changes;
     changes.emplace_back("onelake_refresh_token", "another-good-refresh");
     catalog.applySettingsChanges(changes);
-    EXPECT_EQ(catalog.getStateSnapshot()->refresh_token, "another-good-refresh");
+    EXPECT_EQ(std::string_view(catalog.getStateSnapshot()->refresh_token), "another-good-refresh");
 
     /// The mode is fixed: a bearer token cannot be set on a refresh-token catalog.
     DB::SettingsChanges mode_switch;
@@ -1521,7 +1596,7 @@ TEST(RestCatalog, OneLakeApplySettingsChangesRefreshMode)
     DB::SettingsChanges expired;
     expired.emplace_back("onelake_refresh_token", "expired-refresh");
     expectThrowsCode([&] { catalog.applySettingsChanges(expired); }, DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
-    EXPECT_EQ(catalog.getStateSnapshot()->refresh_token, "another-good-refresh");
+    EXPECT_EQ(std::string_view(catalog.getStateSnapshot()->refresh_token), "another-good-refresh");
 }
 
 TEST(RestCatalog, HorizonParseCredentialKeepsColonsInSecret)
@@ -1529,13 +1604,13 @@ TEST(RestCatalog, HorizonParseCredentialKeepsColonsInSecret)
     {
         const auto [client_id, client_secret] = HorizonCatalog::parseHorizonCredential("my-pat-token");
         EXPECT_TRUE(client_id.empty());
-        EXPECT_EQ(client_secret, "my-pat-token");
+        EXPECT_EQ(std::string_view(client_secret), "my-pat-token");
     }
     {
         /// Snowflake PATs may contain `:`; Horizon must not split them into client_id/client_secret.
         const auto [client_id, client_secret] = HorizonCatalog::parseHorizonCredential("ver:1-hint:abc:rest-of-token");
         EXPECT_TRUE(client_id.empty());
-        EXPECT_EQ(client_secret, "ver:1-hint:abc:rest-of-token");
+        EXPECT_EQ(std::string_view(client_secret), "ver:1-hint:abc:rest-of-token");
     }
     {
         const auto [client_id, client_secret] = HorizonCatalog::parseHorizonCredential("");
@@ -1564,7 +1639,7 @@ TEST(RestCatalog, HorizonCatalogAuthenticatesWithBarePAT)
 
     EXPECT_EQ(catalog.getCatalogType(), DB::DatabaseDataLakeCatalogType::ICEBERG_HORIZON);
     EXPECT_TRUE(catalog.getStateSnapshot()->client_id.empty());
-    EXPECT_EQ(catalog.getStateSnapshot()->client_secret, "horizon-pat-without-colon");
+    EXPECT_EQ(std::string_view(catalog.getStateSnapshot()->client_secret), "horizon-pat-without-colon");
     EXPECT_FALSE(catalog.empty());
 
     TableMetadata metadata;
@@ -1620,7 +1695,7 @@ TEST(RestCatalog, HorizonApplySettingsChangesBarePAT)
     changes.emplace_back("catalog_credential", "pat-two");
     catalog.applySettingsChanges(changes);
     EXPECT_TRUE(catalog.getStateSnapshot()->client_id.empty());
-    EXPECT_EQ(catalog.getStateSnapshot()->client_secret, "pat-two");
+    EXPECT_EQ(std::string_view(catalog.getStateSnapshot()->client_secret), "pat-two");
 
     /// Mode is fixed: cannot switch to auth_header on a credential catalog.
     DB::SettingsChanges mode_switch;

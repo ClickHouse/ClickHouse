@@ -427,11 +427,31 @@ void SignalListener::run()
 {
     setThreadName(ThreadName::SIGNAL_LISTENER);
     /// Pre-warm the symbol index and this thread's compact-name workspace so symbolizing a fatal signal
-    /// performs no allocations on the signal path. The guard is ELF-only because Mach-O binaries never carry
-    /// the compact section, so on Darwin the index stays lazily initialized.
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+    /// performs no allocations on the signal path. Mach-O binaries never carry the compact section, so on Darwin
+    /// this only builds the index.
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     if (daemon)
-        SymbolIndex::instance().warmUp();
+    {
+        /// The daemon does not build the index at initialization, so this is the first time it is built,
+        /// and it can fail (for example, on a corrupted `clickhouse.debug` next to the executable).
+        /// The exception must not leave this thread: it would reach the Poco error handler, and the server
+        /// would be left without signal processing or hang in `std::terminate`. Instead, it is handed to the
+        /// main thread, which rethrows it from `waitForTerminationRequest` and exits with this error.
+        try
+        {
+            SymbolIndex::instance().warmUp();
+        }
+        catch (...)
+        {
+            /// Without the stack trace: symbolizing it would try to build the index again.
+            LOG_FATAL(log, "Cannot build the symbol index, the server will be terminated: {}", getCurrentExceptionMessage(false));
+            {
+                std::lock_guard lock(terminate_request_mutex);
+                symbol_index_exception = std::current_exception();
+            }
+            terminate_request_cv.notify_all();
+        }
+    }
 #endif
 
     if (daemon)
@@ -570,7 +590,7 @@ void SignalListener::run()
 bool SignalListener::waitForTerminationRequest(std::chrono::milliseconds timeout)
 {
     std::unique_lock lock(terminate_request_mutex);
-    auto condition = [&] { return terminate_requested > 0; };
+    auto condition = [&] { return terminate_requested > 0 || symbol_index_exception; };
     bool res = true;
 
     /// condition_variable::wait_for probably doesn't check for overflow, so we can't just pass max() to it.
@@ -578,6 +598,9 @@ bool SignalListener::waitForTerminationRequest(std::chrono::milliseconds timeout
         terminate_request_cv.wait(lock, condition);
     else
         res = terminate_request_cv.wait_for(lock, timeout, condition);
+
+    if (symbol_index_exception)
+        std::rethrow_exception(symbol_index_exception);
 
     return res;
 }
