@@ -135,10 +135,13 @@ FormSchemaReader::FormSchemaReader(ReadBuffer & in_, const FormatSettings & form
 static NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & in, const FormatSettings & settings)
 {
     NamesAndTypesList names_and_types;
-    String value;
-    String decoded_value;
     do
     {
+        /// Declared inside the loop: `readStringUntilAmpersand` appends to its argument, so a buffer
+        /// kept across iterations carries the previous fields into this one and makes the inferred
+        /// type of a field depend on the fields before it.
+        String value;
+        String decoded_value;
         auto name = readFieldName(in);
         readStringUntilAmpersand(value,in);
         Poco::URI::decode(value, decoded_value);
