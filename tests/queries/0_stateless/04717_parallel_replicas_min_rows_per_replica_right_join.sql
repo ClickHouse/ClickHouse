@@ -26,6 +26,10 @@ SET enable_parallel_replicas = 1, max_parallel_replicas = 3,
     parallel_replicas_local_plan = 1,
     automatic_parallel_replicas_mode = 0,
     parallel_replicas_min_number_of_rows_per_replica = 100;
+-- Both settings below are randomized. Pinning them makes the test fail on every plan-based parallel replicas run,
+-- so it stays in the plan-based blacklist until https://github.com/ClickHouse/ClickHouse/issues/131858 is fixed.
+-- Otherwise, the test will fail randomly under plan-based parallel replicas
+SET use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100;
 
 -- Liveness oracle: the results below are also produced by plain execution, so assert that the
 -- query really runs with parallel replicas. Prints 1; prints 0 if the path is ever bypassed.
