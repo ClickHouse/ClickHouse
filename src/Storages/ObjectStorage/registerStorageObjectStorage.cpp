@@ -2677,6 +2677,24 @@ The `DeltaLake` table engine and table function support data caching, the same a
 }
 #endif
 
+#if USE_AWS_S3
+namespace
+{
+
+/// A table keeps the structure of its creation, and the types of the schema of a Hudi commit are not the types that the
+/// base files get. So the engine takes its structure from the query or from a base file, as it did before the table
+/// function could take it from a commit.
+class StorageS3HudiEngineConfiguration : public StorageS3HudiConfiguration
+{
+public:
+    using StorageS3HudiConfiguration::StorageS3HudiConfiguration;
+
+    std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr /*local_context*/) const override { return std::nullopt; }
+};
+
+}
+#endif
+
 void registerStorageHudi(StorageFactory & factory);
 void registerStorageHudi(StorageFactory & factory)
 {
@@ -2686,7 +2704,7 @@ void registerStorageHudi(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            auto configuration = std::make_shared<StorageS3HudiConfiguration>(storage_settings);
+            auto configuration = std::make_shared<StorageS3HudiEngineConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
         DataLake::withSecretSettings(s3TableEngineSecretArguments()),
