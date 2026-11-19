@@ -126,8 +126,8 @@ public:
         chassert(size <= storage.size() - offset);
     }
 
-    const char * begin() const { return begin_pos; }
-    const char * end() const { return end_pos; }
+    [[nodiscard]] const char * begin() const { return begin_pos; }
+    [[nodiscard]] const char * end() const { return end_pos; }
 
 private:
     const char * begin_pos;
