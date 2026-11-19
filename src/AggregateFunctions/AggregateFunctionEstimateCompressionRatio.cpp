@@ -250,8 +250,7 @@ static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
         if (param.getType() == Field::Types::String)
         {
             const auto & value = param.safeGet<String>();
-            /// No codec is named like a type, so a string that names a type is the target type. A string that starts with the
-            /// name of a type but is not a valid type gets the error of that type, not of a codec.
+            /// No codec is named like a type. A string that starts with a type name gets the error of that type.
             auto type = DataTypeFactory::instance().tryGet(value);
             String family = value.substr(0, value.find('('));
             boost::algorithm::trim(family);
@@ -311,9 +310,8 @@ static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
         return createAggregateFunctionEstimateCompressionRatioWithTarget(
             name, arguments, parameters, std::move(target_type), codec, block_size_bytes, settings);
 
-    /// The function without a target type gets its codec at the first row. A query checks it here as well, so that a
-    /// misspelled codec, or a type name taken for a codec, is an error also without rows. Loading a table does not, so that
-    /// the server starts with a stored state type that names such a codec (its states are empty: any row fails).
+    /// A query checks the codec here too, so that a misspelled one is an error without rows. Loading a table does not, so
+    /// that the server starts with a stored state type that names such a codec.
     if (codec && settings)
     {
         try

@@ -45,10 +45,8 @@ extern const int NOT_IMPLEMENTED;
 namespace
 {
 
-/// Not a `MergeTree` setting: the most bytes of rows a state keeps before it writes them, which bounds the memory per group. A
-/// granule wider than this is written in pieces. What a serialization writes once per call is then written once per piece,
-/// where the writer writes it once per granule: the header of a `LowCardinality` column (16 bytes), the end of a granule of a
-/// sparse column, the mode of compact `Variant` discriminators.
+/// The most bytes of pending rows; bounds the memory of a state. A wider granule is written in pieces, and what a serialization
+/// writes per call (a `LowCardinality` header, a sparse granule end, the compact `Variant` mode) is written once per piece.
 constexpr size_t PENDING_BYTES = DBMS_DEFAULT_BUFFER_SIZE;
 
 /// Converts rows as `ALTER TABLE ... MODIFY COLUMN` does, with `_CAST` and the settings of the query that creates it (of the
@@ -98,34 +96,25 @@ using ConversionPtr = std::shared_ptr<const Conversion>;
 
 struct EstimateCompressionRatioWithTargetData
 {
-    /// The bytes of the rows in their own type, of the rows written and of the merged states.
+    /// In the source type, of the rows written and of the merged states.
     UInt64 source_bytes = 0;
-    /// The compressed bytes in the target type, of the finished parts and of the merged states.
+    /// Of the finished parts and of the merged states.
     UInt64 compressed_bytes = 0;
-    /// The rows not written yet, in their own type, and how to convert them. All pending rows share one conversion.
+    /// In the source type. All of them convert with `conversion`.
     MutableColumnPtr pending;
     /// The rows that `pending` takes before it completes the open granule, read at every row. Set with `pending`: the part
     /// does not change while it lives.
     size_t pending_granule_rows = 0;
     ConversionPtr conversion;
-    /// The part the rows are written to, until the state is read.
     std::unique_ptr<CompressionEstimatePartWriter> part;
-    /// A state kept in a `Memory` table outlives its query and is read by later queries: maybe several at once (`mutex`: a
-    /// read changes the state, as it finishes the part), maybe after a read that failed half-way (`broken`: set while the
-    /// part changes, it stays set if that fails, and the state cannot be read then).
+    /// A state kept in a `Memory` table is read by later queries, maybe at once, maybe after a read that failed half-way.
     bool broken = false;
     std::mutex mutex;
 };
 
-/// `estimateCompressionRatio` with a `target_type`: the bytes of the rows in their own type, divided by the bytes they would
-/// take compressed as a column of `target_type` in a wide part of a new `MergeTree` table. The numerator depends only on the
-/// rows, so the ratios of several targets for the same rows rank the targets.
-///
-/// A state keeps the rows it gets as pending rows, in their own type. When they fill a granule (`index_granularity` rows) or
-/// `PENDING_BYTES`, they are converted to the target type and written to the part of the state: a `CompressedSizeCalculator`
-/// per stream and one serialization state, as the writer has them. A granule wider than `PENDING_BYTES` is written in
-/// pieces. Reading the state (its result, its serialization, a merge of a state that has opened a part) finishes the part,
-/// and the next rows start a new one.
+/// `estimateCompressionRatio` with a `target_type`: the bytes of the rows in their own type, divided by their compressed bytes
+/// as `target_type` in a part of a new `MergeTree` table. Rows wait in their own type until they fill a granule or
+/// `PENDING_BYTES`. Reading the state finishes its part.
 class AggregateFunctionEstimateCompressionRatioWithTarget final
     : public IAggregateFunctionDataHelper<EstimateCompressionRatioWithTargetData, AggregateFunctionEstimateCompressionRatioWithTarget>
 {
@@ -149,11 +138,9 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    /// The function is registered as a window function, so the factory never wraps it in the `Null` combinator, and its rows
-    /// keep their NULLs (measured as a null map, or an error for a type that cannot hold NULL). Returning itself as its own
-    /// `Null` adapter tells `RewriteAggregateFunctionWithIfPass` not to turn `f(if(c, NULL, x))` into `fIf(x, not c)`, which
-    /// would drop them. The `chassert` checks the registration, not the properties argument: the rewrite pass passes default
-    /// ones.
+    /// Registered as a window function, so the factory adds no `Null` combinator and NULLs reach the function. Returning itself
+    /// stops `RewriteAggregateFunctionWithIfPass` from turning `f(if(c, NULL, x))` into `fIf(x, not c)`, which drops them.
+    /// That pass gives default properties, so the `chassert` checks the registration.
     AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function, const DataTypes &, const Array &, const AggregateFunctionProperties &) const override
     {
@@ -190,7 +177,7 @@ public:
         addRows(data(place), *rows, 0, rows->size(), conversion);
     }
 
-    /// The default adds the values first and the default rows after them, and the order of the rows matters to compression.
+    /// The default adds the default rows after the values, and row order matters to compression.
     void addBatchSparseSinglePlace(
         size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena *) const override
     {
@@ -198,11 +185,8 @@ public:
         addRows(data(place), *rows, 0, rows->size(), conversion);
     }
 
-    /// The other state is often another thread's share of the same group. If it has not opened a part, its rows are added to
-    /// this state, so that they are written to the same part: the block headers and dictionaries of a part of its own would
-    /// outweigh a few hundred rows. A state that has opened a part has compressed its rows already, so it is finished as a
-    /// separate part, and the result of a larger group still depends on the threads. The rows passed on keep their
-    /// conversion. The other state is not changed otherwise, so a state kept in a `Memory` table can be read again.
+    /// The rows of a state without a part (often another thread's share of a group) join this state's part; a state with a
+    /// part is finished as a separate part. `rhs` is not changed otherwise, so a `Memory` table state can be read again.
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & rhs_ref = data(const_cast<AggregateDataPtr>(rhs));
@@ -218,8 +202,7 @@ public:
             addRows(data_ref, *rhs_ref.pending, 0, rhs_ref.pending->size(), rhs_ref.conversion);
     }
 
-    /// A state that has not opened a part keeps its rows, so that writing it out (a `-State` column, `hex`, an output format)
-    /// does not change how it merges afterwards.
+    /// Leaves a state without a part as it is, so that writing it out does not change how it merges later.
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
     {
         auto [source_bytes, compressed_bytes] = read(place, /*keep_pending_rows=*/true);
@@ -243,8 +226,7 @@ public:
     }
 
 private:
-    /// The pending rows, to add rows that convert with `rows_conversion`. Pending rows of another conversion are written first,
-    /// so that all pending rows share one (a state merged with a state added by another query).
+    /// For rows that convert with `rows_conversion`. Pending rows of another conversion are written first.
     IColumn & pendingOf(Data & data_ref, const ConversionPtr & rows_conversion) const
     {
         if (data_ref.conversion != rows_conversion)
@@ -256,23 +238,21 @@ private:
         if (!data_ref.pending)
         {
             data_ref.pending = source_type->createColumn();
-            /// Otherwise the first row allocates 4 KiB, which a group of a few rows does not need.
+            /// The first row would allocate 4 KiB otherwise.
             data_ref.pending->reserve(1);
             data_ref.pending_granule_rows = data_ref.part ? data_ref.part->rowsLeftInGranule() : layout.granuleRows();
         }
         return *data_ref.pending;
     }
 
-    /// Whether the pending rows complete the open granule by rows, or reach `PENDING_BYTES`. Where a granule ends by bytes
-    /// depends on the converted rows, and the part finds it.
+    /// The part finds where a granule ends by bytes.
     bool isPendingFull(const Data & data_ref) const
     {
         return data_ref.pending->size() >= data_ref.pending_granule_rows || data_ref.pending->byteSize() >= PENDING_BYTES;
     }
 
-    /// Adds the rows as `add` adds them one by one: the pending rows are written right after the row that fills them, so the
-    /// result does not depend on the blocks the rows come in. The rows go in as ranges that fit the room left, guessed from
-    /// their average size; a range that overfills the pending rows by bytes is taken back and added row by row.
+    /// As `add` row by row, so that the result does not depend on the blocks. Ranges are sized from the average row; a range
+    /// that overfills `PENDING_BYTES` is taken back and added row by row.
     void addRows(Data & data_ref, const IColumn & column, size_t row_begin, size_t row_end, const ConversionPtr & rows_conversion) const
     {
         if (row_begin == row_end)
@@ -304,7 +284,6 @@ private:
         }
     }
 
-    /// Converts the pending rows and writes them to the part.
     void writePending(Data & data_ref) const
     {
         throwIfBroken(data_ref);
@@ -322,11 +301,8 @@ private:
         data_ref.broken = false;
     }
 
-    /// The numerator of the rows: their bytes serialized in their own type, as the function without a target type counts them.
-    /// The prefix and suffix of the serialization (for example, the mode of `Variant` discriminators) are counted once per part,
-    /// with its first rows, so that the numerator does not depend on where the granules of the target end. The rows themselves
-    /// write nothing per call: the source types that would (`LowCardinality`, sparse, `Dynamic`) are removed by the factory,
-    /// made dense in `addBatchSparseSinglePlace`, or rejected in the constructor.
+    /// The serialization prefix and suffix count once per part, so the numerator does not depend on where granules end. Source
+    /// types that write per call are removed by the factory, made dense, or rejected at creation.
     UInt64 sourceBytes(const IColumn & rows, bool first_in_part) const
     {
         NullWriteBufferWithMemory out(16384);
@@ -342,7 +318,7 @@ private:
         return first_in_part ? out.count() : rows_end - prefix_end;
     }
 
-    /// Writes the pending rows and finishes the part. Reading the state again then gives the same totals.
+    /// Reading the state again then gives the same totals.
     void finish(Data & data_ref) const
     {
         throwIfBroken(data_ref);
@@ -357,8 +333,7 @@ private:
         data_ref.broken = false;
     }
 
-    /// The totals of the state, after its part is finished. With `keep_pending_rows`, a state that has not opened a part is
-    /// left as it is, and its pending rows are finished in a copy.
+    /// With `keep_pending_rows`, a state without a part is finished in a copy.
     std::pair<UInt64, UInt64> read(ConstAggregateDataPtr __restrict place, bool keep_pending_rows = false) const
     {
         auto & data_ref = data(const_cast<AggregateDataPtr>(place));
