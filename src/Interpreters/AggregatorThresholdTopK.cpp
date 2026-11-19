@@ -125,8 +125,8 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
     std::atomic<int> * threshold_top_k_verdict,
     size_t * merged_group_count) const
 {
-    /// The plan never requests the threshold merge for nullable or low-cardinality keys (their
-    /// tables carry a special null-key cell the walk below does not visit), but the dispatch
+    /// The plan never requests the threshold merge for a single nullable key or low-cardinality keys
+    /// (their tables carry a special null-key cell the walk below does not visit), but the dispatch
     /// above instantiates this template for every two-level method.
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
         return std::nullopt;

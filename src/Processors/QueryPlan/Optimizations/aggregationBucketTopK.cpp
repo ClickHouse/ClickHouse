@@ -112,14 +112,15 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         || params.keys_size == 0)
         return 0;
 
-    /// The selection handles no null-key cell, so nullable keys stay on the ordinary conversion. `LowCardinality` keys get
-    /// the selection only: the threshold merge below does not serve them.
+    /// The selection handles no null-key cell, which only the methods of a single nullable key have: the methods of
+    /// several keys pack the null map into the key. `LowCardinality` keys get the selection only: the threshold merge
+    /// below does not serve them.
     const auto & header = node->step->getOutputHeader();
     bool has_low_cardinality_key = false;
     for (const auto & key : params.keys)
     {
         const auto & type = header->getByName(key).type;
-        if (type->isNullable() || type->isLowCardinalityNullable())
+        if (params.keys_size == 1 && (type->isNullable() || type->isLowCardinalityNullable()))
             return 0;
         if (typeid_cast<const DataTypeLowCardinality *>(type.get()))
             has_low_cardinality_key = true;
