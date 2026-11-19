@@ -179,6 +179,23 @@ local_query "CREATE TABLE t_add (id Int64) ENGINE = IcebergLocal('${WORK_DIR}/t_
     INSERT INTO t_add SELECT number + 1000, number % 7 FROM numbers(1000);"
 stats t_add "id c"
 
+echo "a column added with an initial-default gets the sketch of the new rows and the default"
+local_query "CREATE TABLE t_default (id Int64) ENGINE = IcebergLocal('${WORK_DIR}/t_default/');
+    INSERT INTO t_default SELECT number FROM numbers(1000);
+    ALTER TABLE t_default ADD COLUMN c Nullable(Int32);"
+# ClickHouse cannot add a field with a default: give the added field one, as another engine would.
+python3 - "$(find "${WORK_DIR}/t_default/metadata/" -name '*.metadata.json' | sort -V | tail -n 1)" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+metadata = json.load(open(path))
+schema = next(s for s in metadata['schemas'] if s['schema-id'] == metadata['current-schema-id'])
+next(f for f in schema['fields'] if f['name'] == 'c')['initial-default'] = 5
+json.dump(metadata, open(path, 'w'))
+PYEOF
+local_query "CREATE TABLE t_default ENGINE = IcebergLocal('${WORK_DIR}/t_default/');
+    INSERT INTO t_default SELECT number + 1000, number % 3 FROM numbers(1000);"
+stats t_default "id c"
+
 echo "a promoted column gets no sketch: its parent sketch hashes the narrower type"
 local_query "CREATE TABLE t_promote (id Int64, n Int32) ENGINE = IcebergLocal('${WORK_DIR}/t_promote/');
     INSERT INTO t_promote SELECT number, number % 7 FROM numbers(1000);

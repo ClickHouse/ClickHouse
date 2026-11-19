@@ -2,6 +2,7 @@
 
 #if USE_AVRO
 
+#include <Columns/ColumnConst.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -17,6 +18,7 @@
 #include <Processors/Formats/Impl/Puffin/PuffinReader.h>
 #include <Processors/Formats/Impl/Puffin/PuffinWriter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
 
@@ -108,6 +110,8 @@ struct SchemaChanges
 {
     /// Absent from it and without an `initial-default`: NULL in all its rows.
     std::unordered_set<Int32> null_fields;
+    /// Absent from it, with an `initial-default`: the serialized sketch of that default, the value of all its rows.
+    std::map<Int32, String> default_sketches;
     /// With another type in it (a promotion such as `int` to `long`): its sketches hash other bytes.
     std::unordered_set<Int32> retyped_fields;
 };
@@ -117,7 +121,8 @@ struct ParentSketches
     bool has_rows = false;
     /// Serialized, by field id.
     std::map<Int32, String> sketches;
-    /// Fields added after the parent without an `initial-default`: a sketch of the new rows is complete for them.
+    /// Fields added after the parent without an `initial-default`: a sketch of the new rows is complete for them. A field
+    /// added with one has the sketch of its default in `sketches`.
     std::unordered_set<Int32> fields_null_in_parent;
 };
 
@@ -161,7 +166,8 @@ public:
         PuffinReader reader(*buf);
         auto changes = schemaChanges(parent_snapshot);
         const auto listed_fields = listedSketchFields(parent_entry, parent_snapshot_id);
-        ParentSketches parent{.has_rows = true, .sketches = {}, .fields_null_in_parent = std::move(changes.null_fields)};
+        ParentSketches parent{
+            .has_rows = true, .sketches = std::move(changes.default_sketches), .fields_null_in_parent = std::move(changes.null_fields)};
         for (const auto & blob : reader.getBlobs())
         {
             /// A file can keep the blobs of an earlier snapshot (Trino's `ANALYZE` of some columns): they miss later rows.
@@ -265,13 +271,29 @@ private:
             const auto id = field->getValue<Int32>(Iceberg::f_id);
             if (const auto type = snapshot_types.find(id); type == snapshot_types.end())
             {
-                if (!field->has(Iceberg::f_initial_default))
+                if (!field->has(Iceberg::f_initial_default) || field->get(Iceberg::f_initial_default).isEmpty())
                     changes.null_fields.insert(id);
+                else if (auto sketch = initialDefaultSketch(field))
+                    changes.default_sketches.emplace(id, std::move(*sketch));
             }
             else if (type->second != field->get(Iceberg::f_type).toString())
                 changes.retyped_fields.insert(id);
         }
         return changes;
+    }
+
+    /// The sketch of the `initial-default` of the primitive field `field`, or nothing for another type.
+    [[nodiscard]] static std::optional<String> initialDefaultSketch(const Poco::JSON::Object::Ptr & field)
+    {
+        const auto iceberg_type = field->get(Iceberg::f_type);
+        if (!iceberg_type.isString())
+            return {};
+        const auto type = Iceberg::IcebergSchemaProcessor::getSimpleType(iceberg_type.extract<String>());
+        if (!PuffinColumnThetaSketch::isSupportedType(type))
+            return {};
+        PuffinColumnThetaSketch sketch(type);
+        sketch.update(*type->createColumnConst(1, *Iceberg::getIcebergInitialDefault(field, type)));
+        return sketch.serialize().bytes;
     }
 
     /// The fields of the theta sketches of `snapshot_id` that the statistics entry lists, as readers take them.
