@@ -228,13 +228,21 @@ static bool isNamedTupleElementPath(const IDataType & type, std::string_view pat
     return false;
 }
 
+/// The header column named `name`, else the only one whose name differs from it only by case.
+static const ColumnWithTypeAndName * findHeaderColumn(const Block & header, const String & name, bool ignore_case)
+{
+    bool ambiguous = false;
+    const auto position = DataTypeTuple::matchElementsByName(header.getNames(), {name}, ignore_case, &ambiguous).front();
+    return position ? &header.getByPosition(*position) : nullptr;
+}
+
 /// Resolves a named tuple element and retains its declared type before ancestor wrappers are applied.
 static std::optional<ORCPredicateColumnTypes> findTupleElementKeyTypes(
     const Block & header, const String & name, bool ignore_case)
 {
     for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
     {
-        const auto * column = header.findByName(String(column_name), ignore_case);
+        const auto * column = findHeaderColumn(header, String(column_name), ignore_case);
         if (!column || !isNamedTupleElementPath(*column->type, subcolumn_name, ignore_case))
             continue;
         if (auto subcolumn = column->type->tryGetSubcolumnInfo(subcolumn_name))
@@ -254,7 +262,7 @@ static std::optional<ORCPredicateColumnTypes> findTupleElementKeyTypes(
 static std::optional<ORCPredicateColumnTypes> findHeaderTypesByPath(
     const Block & header, const String & name, bool ignore_case)
 {
-    if (const auto * column = header.findByName(name, ignore_case))
+    if (const auto * column = findHeaderColumn(header, name, ignore_case))
         return ORCPredicateColumnTypes{column->type, column->type, column, {}};
     return findTupleElementKeyTypes(header, name, ignore_case);
 }
