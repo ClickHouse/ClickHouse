@@ -184,8 +184,12 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::storeEnt
     auto component_guard = Coordination::setCurrentComponent("WorkloadEntityKeeperStorage::storeEntityImpl");
     LOG_DEBUG(log, "Storing workload entity {}", backQuote(entity_name));
 
-    String new_data = serializeLocalEntities(Event{entity_type, entity_name, create_entity_query});
+    Int32 validated_version = current_version;
     auto zookeeper = getZooKeeper();
+    if (current_version != validated_version)
+        return OperationResult::Retry; /// A new session has refreshed the entities, so the caller's validation is stale
+
+    String new_data = serializeLocalEntities(Event{entity_type, entity_name, create_entity_query});
 
     Coordination::Stat stat;
     auto code = zookeeper->trySet(zookeeper_path, new_data, current_version, &stat);
@@ -212,8 +216,12 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::removeEn
     auto component_guard = Coordination::setCurrentComponent("WorkloadEntityKeeperStorage::removeEntityImpl");
     LOG_DEBUG(log, "Removing workload entity {}", backQuote(entity_name));
 
-    String new_data = serializeLocalEntities(Event{entity_type, entity_name, {}});
+    Int32 validated_version = current_version;
     auto zookeeper = getZooKeeper();
+    if (current_version != validated_version)
+        return OperationResult::Retry; /// A new session has refreshed the entities, so the caller's validation is stale
+
+    String new_data = serializeLocalEntities(Event{entity_type, entity_name, {}});
 
     Coordination::Stat stat;
     auto code = zookeeper->trySet(zookeeper_path, new_data, current_version, &stat);
