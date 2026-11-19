@@ -42,12 +42,12 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     ParquetFileBucketInfo(UInt64 offset, UInt64 length);
     void serialize(WriteBuffer & buffer, size_t protocol_version) const override;
     void deserialize(ReadBuffer & buffer, size_t protocol_version) override;
-    String getIdentifier() const override;
-    String getFormatName() const override
+    [[nodiscard]] String getIdentifier() const override;
+    [[nodiscard]] String getFormatName() const override
     {
         return "Parquet";
     }
-    std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices & matching_row_groups) const override;
+    [[nodiscard]] std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices & matching_row_groups) const override;
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 
@@ -103,7 +103,7 @@ public:
     std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> getMatchedBuckets() const override;
     VectorWithMemoryTracking<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override;
     bool isTopKFilterApplied() const override;
-    bool isJoinRuntimeFilterApplied() const override;
+    [[nodiscard]] bool isJoinRuntimeFilterApplied() const override;
     bool isMinMaxFromStatisticsApplied() const override { return min_max_from_statistics; }
 
     void cacheFilterColumnStatistics() override;

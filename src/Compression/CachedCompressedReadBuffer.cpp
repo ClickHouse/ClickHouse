@@ -5,6 +5,7 @@
 #include <Compression/LZ4_decompress_faster.h>
 
 #include <utility>
+#include <IO/ByteRangeSet.h>
 
 
 namespace DB
@@ -31,6 +32,10 @@ void CachedCompressedReadBuffer::initInput()
 
 void CachedCompressedReadBuffer::prefetch(Priority priority)
 {
+    /// The next block is served from the cache without touching the file, see `nextImpl`.
+    if (!(read_until_position && file_pos >= *read_until_position) && cache->contains(UncompressedCache::hash(path, file_pos)))
+        return;
+
     initInput();
     file_in->prefetch(priority);
 }
@@ -123,6 +128,13 @@ void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t o
         /// the next ReadBuffer::next() call
         nextimpl_working_buffer_offset = offset_in_decompressed_block;
     }
+}
+
+
+void CachedCompressedReadBuffer::setRequestMap(ByteRangeSet ranges)
+{
+    initInput();
+    file_in->setRequestMap(std::move(ranges));
 }
 
 }
