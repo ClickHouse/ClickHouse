@@ -960,8 +960,8 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
             return {};
     }
 
-    // ORDER BY, SHUFFLE
-    if (query_node.hasOrderBy() || query_node.isShuffle())
+    // ORDER BY
+    if (query_node.hasOrderBy())
         return default_stage;
 
     // LIMIT
@@ -2632,7 +2632,7 @@ void registerStorageDistributed(StorageFactory & factory)
         if (engine_args.size() >= 5)
         {
             engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], local_context);
-            storage_policy = checkAndGetLiteralArgument<String>(engine_args[4], "storage_policy");
+            storage_policy = args.getStoragePolicy(checkAndGetLiteralArgument<String>(engine_args[4], "storage_policy"))->getName();
         }
 
         /// TODO: move some arguments from the arguments to the SETTINGS.

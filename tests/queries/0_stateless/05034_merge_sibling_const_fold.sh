@@ -4,6 +4,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The old analyzer rejects a `merge()` child that lacks a selected column with UNKNOWN_IDENTIFIER,
+# and the two system siblings below have no column in common with the fixture table.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_analyzer 1"
+
 # merge()'s REGEXP argument only accepts a string literal, so the database name has to be
 # interpolated by the shell rather than computed with currentDatabase(). Anchoring both regexps
 # keeps a concurrent copy of this test, which creates the same table name in its own database,

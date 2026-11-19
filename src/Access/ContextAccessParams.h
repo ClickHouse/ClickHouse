@@ -65,6 +65,10 @@ public:
     /// Initial user is used to combine row policies with.
     const std::optional<UUID> initial_user_id;
 
+    /// Names of the roles the initial query was running with (set by `SET ROLE`), as forwarded by the initiator.
+    /// If not null, the row policies of the initial user are taken for these roles instead of the default roles.
+    const std::optional<std::vector<String>> initial_user_current_roles;
+
     /// Outputs `ContextAccessParams` to string for logging.
     String toString() const;
 

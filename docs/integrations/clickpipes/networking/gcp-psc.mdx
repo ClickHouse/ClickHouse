@@ -137,25 +137,6 @@ To change an endpoint's custom private DNS mappings, use the [Cloud API](/integr
 
 If an endpoint shows `Rejected` or `Failed`, read the message under its status: it distinguishes a connection the producer rejected from one that was closed or that needs attention. Both usually mean the accept list of the service attachment doesn't include the ClickPipes consumer project. To see the status GCP reports for the endpoint, describe the  `connectedEndpoints` for the service attachment.
 
-## Automatic cleanup of inactive endpoints {#automatic-cleanup}
-
-Reverse private endpoints that remain in a terminal state are automatically removed after a defined grace period.
-This ensures unused or misconfigured endpoints do not persist indefinitely.
-
-The following grace periods apply based on the endpoint status:
-
-| Status | Grace Period | Description |
-|---|---|---|
-| **Failed** | 7 days | The endpoint encountered an error during provisioning. |
-| **Pending Acceptance** | 1 day | The endpoint connection has not been accepted by the service owner. This mostly applies to producer-owned PSC. Native PSC endpoints auto-accept. |
-| **Rejected** | 1 day | The endpoint connection was rejected by the service owner. |
-
-Once the grace period elapses, the endpoint and all associated resources are automatically deleted.
-
-To prevent automatic removal, resolve the underlying issue before the grace period expires.
-For example, add the ClickPipes consumer project to the accept list of the service attachment as described in [Approving producer-owned connections](#producer-owned),
-or recreate the endpoint if it has entered a failed state.
-
 ## Known limitations {#limitations}
 
 - A PSC service attachment can only be claimed by one ClickHouse Cloud service at a time; it cannot be reused across multiple services. To move a service attachment to a different service, [Contact ClickHouse support](https://clickhouse.com/support/program) to release the existing claim.

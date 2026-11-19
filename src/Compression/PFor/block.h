@@ -53,7 +53,13 @@ inline ALWAYS_INLINE void unpackBase(const uint8_t * p, unsigned cnt, unsigned b
 template <typename T>
 inline size_t blockEncode(const T * residuals, unsigned cnt, uint8_t * out) noexcept
 {
-    const bool all_equal = std::ranges::all_of(residuals + 1, residuals + cnt, [first = residuals[0]](T value) { return value == first; });
+    bool all_equal = true;
+    for (unsigned i = 1; i < cnt; ++i)
+        if (residuals[i] != residuals[0])
+        {
+            all_equal = false;
+            break;
+        }
     if (all_equal)
     {
         const T constant = residuals[0];

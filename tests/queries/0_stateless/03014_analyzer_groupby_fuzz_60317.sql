@@ -5,7 +5,8 @@ SELECT
     makeDate(materialize(_CAST(30, 'LowCardinality(UInt8)')), 10, _CAST(30, 'Nullable(UInt8)')) as c
 FROM system.one
 GROUP BY
-    _CAST(30, 'Nullable(UInt8)');
+    _CAST(30, 'Nullable(UInt8)')
+SETTINGS enable_analyzer = 1;
 
 -- WITH CUBE (note that result is different with the analyzer (analyzer is correct including all combinations)
 SELECT
@@ -22,4 +23,5 @@ GROUP BY
     materialize(30),
     _CAST(30, 'Nullable(UInt8)')
 WITH CUBE
-WITH TOTALS;
+WITH TOTALS
+SETTINGS enable_analyzer = 1;

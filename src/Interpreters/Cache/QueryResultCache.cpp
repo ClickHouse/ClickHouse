@@ -40,7 +40,6 @@ namespace ProfileEvents
     extern const Event QueryCacheMisses;
     extern const Event QueryCacheOnDiskHits;
     extern const Event QueryCacheOnDiskMisses;
-    extern const Event QueryCacheOnDiskReadBytes;
     extern const Event QueryCacheAgeSeconds;
     extern const Event QueryCacheReadRows;
     extern const Event QueryCacheReadBytes;
@@ -91,12 +90,6 @@ struct HasNonDeterministicFunctionsMatcher
     {
         if (data.has_non_deterministic_functions)
             return;
-
-        if (const auto * select = node->as<ASTSelectQuery>(); select && select->shuffle)
-        {
-            data.has_non_deterministic_functions = true;
-            return;
-        }
 
         if (const auto * function = node->as<ASTFunction>())
         {
@@ -1022,10 +1015,8 @@ void QueryResultCacheReader::buildSourceFromChunks(SharedHeader header, Chunks &
         total_rows += chunk.getNumRows();
         total_bytes += chunk.bytes();
     }
-    /// Recorded by `hasCacheEntryForKey`, not here: a query whose quota over profile events is exhausted probes the cache, but is
-    /// rejected before it reads the result, so it must not be charged with these events.
-    read_rows = total_rows;
-    read_bytes = total_bytes;
+    ProfileEvents::increment(ProfileEvents::QueryCacheReadRows, total_rows);
+    ProfileEvents::increment(ProfileEvents::QueryCacheReadBytes, total_bytes);
 
     source_from_chunks = std::make_unique<SourceFromChunks>(header, std::move(chunks));
 
@@ -1053,20 +1044,14 @@ QueryResultCacheReader::QueryResultCacheReader(
     Source source_,
     SharedHeader header,
     QueryResultCache::Entry && entry,
-    ResultColumnOrigins && result_column_origins_,
     std::chrono::time_point<std::chrono::system_clock> created_at_,
-    std::chrono::time_point<std::chrono::system_clock> expires_at_,
-    bool ignore_quota_,
-    size_t on_disk_read_bytes_)
+    std::chrono::time_point<std::chrono::system_clock> expires_at_)
     : source(source_)
-    , on_disk_read_bytes(on_disk_read_bytes_)
 {
     buildSourceFromChunks(header, std::move(entry.chunks), entry.totals, entry.extremes);
 
     created_at = created_at_;
     expires_at = expires_at_;
-    ignore_quota = ignore_quota_;
-    result_column_origins = std::move(result_column_origins_);
 }
 
 QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &)
@@ -1132,8 +1117,6 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
 
     created_at = entry_key.created_at;
     expires_at = entry_key.expires_at;
-    ignore_quota = entry_key.ignore_quota;
-    result_column_origins = entry_key.result_column_origins;
 
     LOG_TRACE(logger, "Query result found for query {}", doubleQuoteString(key.query_string));
 }
@@ -1149,14 +1132,6 @@ bool QueryResultCacheReader::hasCacheEntryForKey(bool update_profile_events) con
         /// both backends enabled, a miss in memory followed by a hit on disk is a hit of the query result cache.
         if (source == Source::OnDisk)
             ProfileEvents::increment(has_entry ? ProfileEvents::QueryCacheOnDiskHits : ProfileEvents::QueryCacheOnDiskMisses);
-
-        if (has_entry)
-        {
-            ProfileEvents::increment(ProfileEvents::QueryCacheReadRows, read_rows);
-            ProfileEvents::increment(ProfileEvents::QueryCacheReadBytes, read_bytes);
-            if (on_disk_read_bytes)
-                ProfileEvents::increment(ProfileEvents::QueryCacheOnDiskReadBytes, on_disk_read_bytes);
-        }
 
         /// The age of the entry is a property of the hit and not of the backend that served it, so it is recorded for both.
         if (has_entry)
@@ -1174,13 +1149,6 @@ void QueryResultCacheReader::recordProbeResult(bool has_entry)
     ProfileEvents::increment(has_entry ? ProfileEvents::QueryCacheHits : ProfileEvents::QueryCacheMisses);
 }
 
-void QueryResultCacheReader::recordMiss(bool probed_on_disk)
-{
-    if (probed_on_disk)
-        ProfileEvents::increment(ProfileEvents::QueryCacheOnDiskMisses);
-    recordProbeResult(false);
-}
-
 
 std::chrono::time_point<std::chrono::system_clock> QueryResultCacheReader::entryCreatedAt()
 {
@@ -1192,18 +1160,6 @@ std::chrono::time_point<std::chrono::system_clock> QueryResultCacheReader::entry
 {
     chassert(hasCacheEntryForKey(false));
     return expires_at;
-}
-
-bool QueryResultCacheReader::entryIgnoresQuota() const
-{
-    chassert(hasCacheEntryForKey(false));
-    return ignore_quota;
-}
-
-const ResultColumnOrigins & QueryResultCacheReader::entryResultColumnOrigins() const
-{
-    chassert(hasCacheEntryForKey(false));
-    return result_column_origins;
 }
 
 std::unique_ptr<SourceFromChunks> QueryResultCacheReader::getSource()
