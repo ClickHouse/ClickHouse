@@ -41,3 +41,17 @@ SELECT CAST('{"a":"bad"}'::JSON(a String), 'JSON(a IPv6)') SETTINGS input_format
 -- A number outside the Bool range is rejected like the parser, not normalized by a CAST.
 SELECT CAST('{"a":-1}'::JSON, 'JSON(a Bool)'); -- { serverError INCORRECT_DATA }
 SELECT CAST('{"a":-1}'::JSON, 'JSON(a Bool)') SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
+
+-- A date-time string is not a date: a CAST reads its date part, while the parser requires the whole
+-- string to be a date, so both routes reject it (changed typed path and a dynamic path).
+SELECT CAST('{"a":"2024-01-15 12:30:00"}'::JSON(a String), 'JSON(a Date)'); -- { serverError INCORRECT_DATA }
+SELECT CAST('{"a":"2024-01-15 12:30:00"}'::JSON(a String), 'JSON(a Date)') SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
+SELECT CAST('{"a":"2024-01-15 12:30:00"}'::JSON(a String), 'JSON(a Date32)'); -- { serverError INCORRECT_DATA }
+SELECT CAST('{"a":"2024-01-15 12:30:00"}'::JSON(a String), 'JSON(a Date32)') SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
+SELECT CAST('{"a":"2024-01-15 12:30:00"}'::JSON, 'JSON(a Date)') SETTINGS input_format_try_infer_datetimes = 0; -- { serverError INCORRECT_DATA }
+SELECT CAST('{"a":"2024-01-15 12:30:00"}'::JSON, 'JSON(a Date)') SETTINGS input_format_try_infer_datetimes = 0, json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
+
+-- date_time_overflow_behavior = 'throw' makes an out-of-range date-time string reject on both routes
+-- (the direct CAST throws VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, the parser INCORRECT_DATA).
+SELECT CAST('{"a":"2280-01-01 00:00:00"}'::JSON(a String), 'JSON(a DateTime)') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST('{"a":"2280-01-01 00:00:00"}'::JSON(a String), 'JSON(a DateTime)') SETTINGS date_time_overflow_behavior = 'throw', json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }

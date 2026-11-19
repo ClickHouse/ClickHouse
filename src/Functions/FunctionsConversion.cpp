@@ -6,6 +6,7 @@
 #include <Common/iota.h>
 #include <Common/re2.h>
 #include <DataTypes/NullableUtils.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <Interpreters/castColumn.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/JSONExtractTree.h>
@@ -2178,9 +2179,11 @@ DataTypePtr getPromotedTypeForDynamicImpl(const DataTypePtr & type, const Format
             return type; /// Already canonical.
         case TypeIndex::UInt8:
         {
-            /// Bool is represented as UInt8 — keep it as-is (canonical).
+            /// Bool, and SimpleAggregateFunction(any, Bool), serialize true/false, which the parser infers as Bool.
             if (isBool(type))
                 return type;
+            if (isSimpleAggregateFunctionOfBool(*type))
+                return DataTypeFactory::instance().get("Bool");
             return std::make_shared<DataTypeInt64>();
         }
         /// The parser infers Int64 for every integer that fits it, and UInt64 only above Int64 range, so a
@@ -2485,7 +2488,9 @@ bool isDynamicElementToTypedCastSafe(const DataTypePtr & from_type, const DataTy
 
     /// From String → any simple non-nested type. Both paths go through text parsing, and the CAST
     /// is built with date_time_input_format (see castColumnWithSettings), so semantics match.
-    if (isStringOrFixedString(*from_inner) && isSimpleNonNested(*to_inner))
+    /// Date/Date32 are excluded: a CAST reads the date out of a longer date-time string, while the
+    /// parser requires the whole string to be a date, so they stay on the format+parse route.
+    if (isStringOrFixedString(*from_inner) && isSimpleNonNested(*to_inner) && !isDateOrDate32(*to_inner))
         return true;
 
     /// Any simple non-nested → String.
@@ -2576,6 +2581,11 @@ bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const 
             return true;
         return isDateTimeOrDateTime64(*to_inner) && all_values_convert_exactly();
     }
+
+    /// A CAST reads the date out of a longer date-time string, while the parser requires the whole string
+    /// to be a date, so a String source to Date/Date32 goes through the parser.
+    if (isStringOrFixedString(*from) && isDateOrDate32(*to_inner))
+        return false;
 
     if (!isNumber(*to_inner) || from->equals(*to_inner))
         return true;
@@ -3777,14 +3787,17 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
             && cast_type != CastType::accurateOrNull)
         {
             auto captured_format_settings = settings.format_settings;
-            /// The nested CASTs must reproduce what the JSON parser would do, so they parse
-            /// date/time with date_time_input_format rather than cast_string_to_date_time_mode.
-            /// The other two arguments keep the semantics castColumn() gave those CASTs before:
-            /// saturating overflow, and NULLs in a Dynamic becoming defaults instead of throwing.
+            /// The nested CASTs must reproduce what the JSON parser would do, so they parse date/time with
+            /// date_time_input_format rather than cast_string_to_date_time_mode, and follow the parser's
+            /// overflow policy: it throws only when date_time_overflow_behavior is 'throw' and otherwise
+            /// saturates (see JSONExtractTree). NULLs in a Dynamic become defaults instead of throwing.
             /// The constructor drops the CAST-only flags that the parser does not honour.
+            auto overflow_behavior = captured_format_settings.throwOnDateTimeOverflow()
+                ? FormatSettings::DateTimeOverflowBehavior::Throw
+                : FormatSettings::DateTimeOverflowBehavior::Saturate;
             auto captured_convert_settings = std::make_shared<const FunctionConvertSettings>(
                 settings,
-                FormatSettings::DateTimeOverflowBehavior::Saturate,
+                overflow_behavior,
                 captured_format_settings.date_time_input_format,
                 /*cast_keep_nullable_=*/false);
             return [this, requested_result_is_nullable, captured_plan = std::move(plan), captured_format_settings, captured_convert_settings]

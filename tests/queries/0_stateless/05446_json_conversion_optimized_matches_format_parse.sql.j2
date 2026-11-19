@@ -57,6 +57,17 @@ SETTINGS json_use_optimized_type_conversion = {{ optimized }}{{ ', ' ~ settings 
 {{ check('removed ' ~ type, 'JSON(a ' ~ type ~ ')', 'JSON', rows, 'allow_suspicious_low_cardinality_types = 1') }}
 {% endfor %}
 
+-- SimpleAggregateFunction(any, Bool) serializes true/false like Bool, so the parser infers Bool, not Int64.
+{{ check('removed SimpleAggregateFunction(any, Bool)', 'JSON(a SimpleAggregateFunction(any, Bool))', 'JSON', ['{"a": true}', '{"a": false}']) }}
+{{ check('removed SimpleAggregateFunction(any, Bool) to shared data',
+         'JSON(max_dynamic_paths = 0, a SimpleAggregateFunction(any, Bool))', 'JSON(max_dynamic_paths = 0)', ['{"a": true}']) }}
+{{ check('removed Array(SimpleAggregateFunction(any, Bool))', 'JSON(a Array(SimpleAggregateFunction(any, Bool)))', 'JSON', ['{"a": [true, false]}']) }}
+
+-- A changed String path to Date goes through the parser (a CAST would read the date out of a longer string).
+{{ check('changed String to Date full date', 'JSON(a String)', 'JSON(a Date)', ['{"a": "2024-01-15"}', '{"a": "1970-01-01"}']) }}
+-- A changed String path to DateTime follows the parser's overflow policy: it saturates by default.
+{{ check('changed String to DateTime overflow saturates by default', 'JSON(a String)', 'JSON(a DateTime)', ['{"a": "2024-01-15 12:30:00"}', '{"a": "2280-01-01 00:00:00"}']) }}
+
 SELECT name, optimized, result FROM results
 WHERE name IN (SELECT name FROM results GROUP BY name HAVING uniqExact(result) > 1)
 ORDER BY name, optimized DESC;
