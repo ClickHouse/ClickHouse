@@ -36,3 +36,13 @@ pending	1	[7,8,9]	3
 pending	2	[5,5]	2
 materialized	1	[7,8,9]	3
 materialized	2	[5,5]	2
+a lightweight update overwritten by the pending UPDATE, patch parts v1
+pending	0	(500,501)	500
+pending	1	(101,201)	101
+materialized	0	(500,501)	500
+materialized	1	(101,201)	101
+a lightweight update overwritten by the pending UPDATE, patch parts v2
+pending	0	(500,501)	500
+pending	1	(101,201)	101
+materialized	0	(500,501)	500
+materialized	1	(101,201)	101

@@ -127,5 +127,34 @@ SYSTEM START MERGES t_stale_subcolumn_patch;
 ALTER TABLE t_stale_subcolumn_patch UPDATE y = y WHERE 1 SETTINGS mutations_sync = 2;
 SELECT 'materialized', id, a, a.size0 FROM t_stale_subcolumn_patch ORDER BY id;
 
+SELECT 'a lightweight update overwritten by the pending UPDATE, patch parts v1';
+
+DROP TABLE IF EXISTS t_stale_subcolumn_overwritten_v1;
+CREATE TABLE t_stale_subcolumn_overwritten_v1 (id UInt8, b Tuple(x UInt32, y UInt32), v UInt8) ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 0, patch_parts_version = 'v1';
+INSERT INTO t_stale_subcolumn_overwritten_v1 VALUES (0, (100, 200), 0), (1, (101, 201), 0);
+SYSTEM STOP MERGES t_stale_subcolumn_overwritten_v1;
+UPDATE t_stale_subcolumn_overwritten_v1 SET b = tuple(900, 901) WHERE id = 0;
+ALTER TABLE t_stale_subcolumn_overwritten_v1 UPDATE b = tuple(500, 501) WHERE id = 0;
+SELECT 'pending', id, b, b.x FROM t_stale_subcolumn_overwritten_v1 ORDER BY id;
+SYSTEM START MERGES t_stale_subcolumn_overwritten_v1;
+ALTER TABLE t_stale_subcolumn_overwritten_v1 UPDATE v = v WHERE 1 SETTINGS mutations_sync = 2;
+SELECT 'materialized', id, b, b.x FROM t_stale_subcolumn_overwritten_v1 ORDER BY id;
+
+SELECT 'a lightweight update overwritten by the pending UPDATE, patch parts v2';
+
+DROP TABLE IF EXISTS t_stale_subcolumn_overwritten_v2;
+CREATE TABLE t_stale_subcolumn_overwritten_v2 (id UInt8, b Tuple(x UInt32, y UInt32), v UInt8) ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 0, patch_parts_version = 'v2';
+INSERT INTO t_stale_subcolumn_overwritten_v2 VALUES (0, (100, 200), 0), (1, (101, 201), 0);
+SYSTEM STOP MERGES t_stale_subcolumn_overwritten_v2;
+UPDATE t_stale_subcolumn_overwritten_v2 SET b = tuple(900, 901) WHERE id = 0;
+ALTER TABLE t_stale_subcolumn_overwritten_v2 UPDATE b = tuple(500, 501) WHERE id = 0;
+SELECT 'pending', id, b, b.x FROM t_stale_subcolumn_overwritten_v2 ORDER BY id;
+SYSTEM START MERGES t_stale_subcolumn_overwritten_v2;
+ALTER TABLE t_stale_subcolumn_overwritten_v2 UPDATE v = v WHERE 1 SETTINGS mutations_sync = 2;
+SELECT 'materialized', id, b, b.x FROM t_stale_subcolumn_overwritten_v2 ORDER BY id;
+
 DROP TABLE t_stale_subcolumn, t_stale_subcolumn_wide, t_stale_subcolumn_map, t_stale_subcolumn_delete,
-    t_stale_subcolumn_nested, t_stale_subcolumn_missing, t_stale_subcolumn_partial, t_stale_subcolumn_patch;
+    t_stale_subcolumn_nested, t_stale_subcolumn_missing, t_stale_subcolumn_partial, t_stale_subcolumn_patch,
+    t_stale_subcolumn_overwritten_v1, t_stale_subcolumn_overwritten_v2;
