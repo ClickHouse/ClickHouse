@@ -672,9 +672,14 @@ std::pair<size_t, size_t> MergeTreeReaderStreamAllOfMultipleColumns::estimateMar
         return estimateMarkRangeBytesOneColumn(mark_ranges, 0);
 
     /// The stream reads all columns, and all columns of a stripe lie together in the file, from the mark of the first
-    /// column to the start of the next stripe. So estimate whole stripes instead of every column separately: that costs
-    /// the number of marks, not the number of marks times the number of columns, which is in the thousands for a part
-    /// with a `JSON` column with many paths and substream marks.
+    /// column to the start of the next stripe. So walk whole stripes instead of estimating every column separately for
+    /// every mark: that costs the number of stripes times the number of columns, not the number of marks times the number
+    /// of columns with a search of the stripe end for each, which is slow for a part with a `JSON` column with many paths
+    /// and substream marks (thousands of columns).
+    ///
+    /// The sum is the size of the whole stripes. The maximum sizes the read buffer, and the reader seeks to every column
+    /// it reads, skipping the others, so it is the largest span of a single column in a stripe, not the whole stripe:
+    /// otherwise reading one column of many separately compressed ones would read the whole stripe.
     const size_t last_column = num_columns - 1;
     size_t max_range_bytes = 0;
     size_t sum_range_bytes = 0;
@@ -697,9 +702,23 @@ std::pair<size_t, size_t> MergeTreeReaderStreamAllOfMultipleColumns::estimateMar
                 ? file_size
                 : marks_getter->getMark(next_stripe, 0).offset_in_compressed_file;
 
-            const size_t current_range_bytes = end_offset - begin_offset;
-            max_range_bytes = std::max(max_range_bytes, current_range_bytes);
-            sum_range_bytes += current_range_bytes;
+            sum_range_bytes += end_offset - begin_offset;
+
+            /// A column of the stripe ends where the next column starts, the last one ends at the start of the next stripe.
+            /// If `mark` is in the middle of the stripe, the next column starts before its mark at `mark`, so this is an
+            /// upper bound of the span.
+            size_t column_begin = begin_offset;
+            for (size_t column = 0; column < num_columns; ++column)
+            {
+                const size_t column_end = column == last_column
+                    ? end_offset
+                    : marks_getter->getMark(mark, column + 1).offset_in_compressed_file;
+
+                if (column_end > column_begin)
+                    max_range_bytes = std::max(max_range_bytes, column_end - column_begin);
+
+                column_begin = std::max(column_begin, column_end);
+            }
 
             mark = next_stripe;
         }
