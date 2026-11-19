@@ -131,19 +131,19 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 الأوضاع المدعومة:
 
 * match&#95;case: طابِق مع مراعاة حالة الأحرف
-  * ignore&#95;case: طابِق دون مراعاة حالة الأحرف
-  * auto: يحاول أولاً المطابقة مع مراعاة حالة الأحرف، وإذا فشل، يحاول المطابقة دون مراعاة حالة الأحرف.
+* ignore&#95;case: طابِق دون مراعاة حالة الأحرف
+* auto: يحاول أولاً المطابقة مع مراعاة حالة الأحرف، وإذا فشل، يحاول المطابقة دون مراعاة حالة الأحرف.
 
 ## input_format_connection_handling {#input_format_connection_handling}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "إعداد جديد يتيح تحليل البيانات المتبقية في المخزن المؤقت ومعالجتها إذا أُغلِق الاتصال بشكل غير متوقع"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "إعداد جديد يتيح التحليل النحوي للبيانات المتبقية في المخزن المؤقت ومعالجتها إذا أُغلِق الاتصال بشكل غير متوقع"}]}]} />
 
-عند تمكين هذا الخيار، إذا أُغلِق الاتصال بشكل غير متوقع، فسيتم تحليل أي بيانات متبقية في المخزن المؤقت ومعالجتها بدلًا من التعامل معها على أنها خطأ
+عند تمكين هذا الخيار، إذا أُغلِق الاتصال بشكل غير متوقع، فسيتم التحليل النحوي لأي بيانات متبقية في المخزن المؤقت ومعالجتها بدلًا من التعامل معها على أنها خطأ
 
 <Note>
-  يؤدي تمكين هذا الخيار إلى تعطيل التحليل المتوازي ويجعل إلغاء التكرار غير ممكن
+  يؤدي تمكين هذا الخيار إلى تعطيل التحليل النحوي المتوازي ويجعل إلغاء التكرار غير ممكن
 </Note>
 
 ## input_format_csv_allow_cr_end_of_line {#input_format_csv_allow_cr_end_of_line}
@@ -856,7 +856,7 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "إعداد جديد لاستخدام الأعمدة الجغرافية في ملف Parquet"}]}]} />
 
-استخدم محلّل الأعمدة الجغرافية لتحويل Array(UInt8) إلى أنواع Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon
+عند قراءة ملفات Parquet، يُفَك ترميز أعمدة البيانات الهندسية إلى أنواع البيانات الهندسية في ClickHouse (`Point` أو `MultiPoint` أو `LineString` أو `Polygon` أو `MultiLineString` أو `MultiPolygon` أو `Geometry`). ينطبق ذلك على الأعمدة الموصوفة في البيانات الوصفية `geo` الخاصة بـ GeoParquet، وعلى الأعمدة المُعلَّمة بالنوع المنطقي `GEOMETRY` أو `GEOGRAPHY` في Parquet. إذا كان هذا الإعداد معطّلًا، فتُقرأ هذه الأعمدة بنوع `String` يحتوي على بايتات WKB (أو WKT) الخام، ما لم يُطلب نوع بيانات جغرافي صراحةً.
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 
@@ -879,6 +879,14 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 تجاهل حالة الأحرف عند مطابقة أعمدة Parquet بأعمدة CH.
+
+## input_format_parquet_detect_variant_by_structure {#input_format_parquet_detect_variant_by_structure}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد جديد لقراءة أعمدة variant التي يكتبها Spark دون النوع المنطقي `VARIANT` بوصفها `Dynamic` بدلاً من `Tuple`"}]}]} />
+
+يقرأ مجموعة Parquet التي لا تحمل النوع المنطقي `VARIANT` لكنها تتبع تخطيط variant غير مُجزّأ (حقل `metadata` وحقل `value` من النوع `BYTE_ARRAY`) على أنها variant، أي بوصفها `Dynamic` بدلاً من `Tuple`. وبهذه الطريقة يكتب Spark 4.0 أعمدة variant. أما المجموعات الموسومة بالنوع المنطقي `VARIANT` فتُقرأ دائماً على أنها variant.
 
 ## input_format_parquet_dictionary_filter_push_down {#input_format_parquet_dictionary_filter_push_down}
 
@@ -914,9 +922,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد لتجاوز الحجم التكيفي للقراءة الأولية لتذييل Parquet واستبداله بعدد ثابت من البايتات؛ القيمة 0 تُبقي على السلوك التكيفي."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد لحجم القراءة الأولية لتذييل Parquet؛ القيمة 0 تقرأ 64 KiB من الملف المحلي وتُحدِّد حجم القراءة تكيفيًا للمصادر الأخرى."}]}]} />
 
-حجم القراءة الأولية (بالبايت) من نهاية الملف، والتي تجلب تذييل Parquet (`FileMetaData`) عند فتح ملف باستخدام القارئ v3. عند استخدام القيمة `0` (الافتراضية)، يُحدَّد حجم القراءة تكيفيًا بحسب الملف، أي 1% من حجم الملف مقيَّدًا ضمن النطاق `[128 KiB, 2 MiB]`، بحيث تغطي القراءة عادةً التذييل بأكمله دفعةً واحدة، حتى في الملفات العريضة التي تحتوي على مئات الأعمدة. اضبط قيمة غير صفرية لفرض حجم ثابت للقراءة الأولية بدلًا من الحجم التكيفي؛ ويفيد ذلك مع التخزين الكائني ذي زمن الاستجابة المرتفع جدًا، إذ إن قراءة جزء أكبر من نهاية الملف منذ البداية تُغني عن رحلة ذهاب وإياب ثانية. تُقيَّد القيمة بحجم الملف.
+حجم القراءة الأولية (بالبايت) من نهاية الملف، والتي تجلب تذييل Parquet (`FileMetaData`) عند فتح ملف باستخدام القارئ v3. عند استخدام القيمة `0` (الافتراضية)، تُقرأ 64 KiB من نهاية الملف عند قراءته مباشرةً من نظام الملفات المحلي، أما بالنسبة إلى المصادر الأخرى (التخزين الكائني، وURL، وHDFS) فيُحدَّد حجم القراءة تكيفيًا، أي 1% من حجم الملف مقيَّدًا ضمن النطاق `[128 KiB, 2 MiB]`، بحيث تغطي القراءة عادةً التذييل بأكمله دفعةً واحدة، حتى في الملفات العريضة التي تحتوي على مئات الأعمدة. اضبط قيمة غير صفرية لفرض حجم ثابت للقراءة الأولية بدلًا من الحجم التكيفي؛ ويفيد ذلك مع التخزين الكائني ذي زمن الاستجابة المرتفع جدًا، إذ إن قراءة جزء أكبر من نهاية الملف منذ البداية تُغني عن رحلة ذهاب وإياب ثانية. تُقيَّد القيمة بحجم الملف.
 
 ## input_format_parquet_local_file_min_bytes_for_seek {#input_format_parquet_local_file_min_bytes_for_seek}
 

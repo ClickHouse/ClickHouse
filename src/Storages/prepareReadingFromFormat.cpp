@@ -1,9 +1,11 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
 #include <Core/Settings.h>
@@ -334,6 +336,7 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
         new_info.source_header.insert({column_from_file_path.type->createColumn(), column_from_file_path.type, column_from_file_path.name});
 
     new_info.requested_virtual_columns = info.requested_virtual_columns;
+    new_info.columns_read_under_other_names = info.columns_read_under_other_names;
     for (const auto & requested_virtual_column : new_info.requested_virtual_columns)
         new_info.source_header.insert({requested_virtual_column.type->createColumn(), requested_virtual_column.type, requested_virtual_column.name});
 
@@ -440,6 +443,17 @@ std::shared_ptr<const ActionsDAG> ReadFromFormatInfo::getFormatFilter(const std:
     return std::make_shared<const ActionsDAG>(std::move(*dag));
 }
 
+bool ReadFromFormatInfo::canSkipDataByStatisticsOf(const ColumnWithTypeAndName & column) const
+{
+    if (formatReadsHivePartitionColumns())
+        return false;
+    const auto * format_column = format_header.findByName(column.name);
+    if (!format_column || !format_column->type->equals(*column.type) || columns_description.hasDefault(column.name))
+        return false;
+    WhichDataType which(removeLowCardinalityAndNullable(column.type));
+    return which.isNativeInteger() || which.isDate() || which.isDate32() || which.isDecimal();
+}
+
 void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
     source_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
@@ -520,6 +534,11 @@ bool formatNeedsEagerKeyConditionSets(const String & format_name)
     return boost::iequals(format_name, "Parquet")
         || boost::iequals(format_name, "ORC")
         || boost::iequals(format_name, "Vortex");
+}
+
+bool formatSkipsDataByStatistics(const String & format_name, const FormatSettings & format_settings)
+{
+    return boost::iequals(format_name, "Parquet") && format_settings.parquet.filter_push_down;
 }
 
 void prepareEagerKeyConditionSets(

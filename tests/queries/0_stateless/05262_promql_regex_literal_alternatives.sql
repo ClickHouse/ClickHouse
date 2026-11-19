@@ -2,6 +2,9 @@
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
 SET enable_time_series_table = 1;
+-- A plan-based parallel replica cannot find the tags collected by `timeSeriesStoreTags`:
+-- https://github.com/ClickHouse/ClickHouse/issues/131138
+SET parallel_replicas_plan_based = 0;
 
 DROP TABLE IF EXISTS rx;
 CREATE TABLE rx ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0;

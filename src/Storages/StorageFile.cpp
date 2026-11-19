@@ -81,6 +81,7 @@
 #include <Common/re2.h>
 #include <Common/ErrnoException.h>
 #include <Common/saturatedDuration.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <base/defines.h>
 
@@ -156,6 +157,7 @@ namespace ErrorCodes
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int READONLY;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;
@@ -872,7 +874,7 @@ namespace
             StorageFile::getSchemaCache(getContext()).addColumns(cache_key, columns);
         }
 
-        String getLastFilePath() const override
+        [[nodiscard]] String getLastFilePath() const override
         {
             if (current_index != 0)
                 return paths[current_index - 1];
@@ -884,7 +886,7 @@ namespace
             format = format_name;
         }
 
-        bool supportsLastReadBufferRecreation() const override { return true; }
+        [[nodiscard]] bool supportsLastReadBufferRecreation() const override { return true; }
 
         std::unique_ptr<ReadBuffer> recreateLastReadBuffer() override
         {
@@ -1155,12 +1157,12 @@ namespace
             format = format_name;
         }
 
-        String getLastFilePath() const override
+        [[nodiscard]] String getLastFilePath() const override
         {
             return last_read_file_path;
         }
 
-        bool supportsLastReadBufferRecreation() const override { return true; }
+        [[nodiscard]] bool supportsLastReadBufferRecreation() const override { return true; }
 
         std::unique_ptr<ReadBuffer> recreateLastReadBuffer() override
         {
@@ -1649,13 +1651,15 @@ StorageFileSource::FilesIterator::FilesIterator(
     const NamesAndTypesList & hive_columns_,
     const ContextPtr & context_,
     bool distributed_processing_,
-    String archive_member_path_)
+    String archive_member_path_,
+    std::optional<FormatSettings> format_settings_)
     : WithContext(context_)
     , files(files_)
     , archive_info(std::move(archive_info_))
     , distributed_processing(distributed_processing_)
     , virtual_columns(virtual_columns_)
     , hive_columns(hive_columns_)
+    , format_settings(std::move(format_settings_))
     , archive_member_path(std::move(archive_member_path_))
 {
     std::optional<ActionsDAG> filter_dag;
@@ -1681,7 +1685,7 @@ StorageFileSource::FilesIterator::FilesIterator(
                 filter_sources,
                 VirtualColumnUtils::getFilterByPathAndFileIndexes(
                     filter_paths, actions, virtual_columns_, hive_columns_, context_,
-                    /*format_settings=*/std::nullopt,
+                    format_settings,
                     archive_member_path.empty() ? nullptr : &archive_member_names));
         }
         else
@@ -1725,7 +1729,7 @@ String StorageFileSource::FilesIterator::next()
                 filtered_files,
                 VirtualColumnUtils::getFilterByPathAndFileIndexes(
                     filter_paths, deferred_filter_actions, virtual_columns, hive_columns, getContext(),
-                    /*format_settings=*/std::nullopt,
+                    format_settings,
                     archive_member_path.empty() ? nullptr : &archive_member_names));
             if (filtered_files.empty())
                 continue;
@@ -2811,6 +2815,12 @@ bool ReadFromFile::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_
     return !info.columns_description.hasDefault(sort_column.name);
 }
 
+bool ReadFromFile::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const
+{
+    const auto settings = storage->format_settings ? *storage->format_settings : getFormatSettings(getContext());
+    return formatSkipsDataByStatistics(storage->format_name, settings) && info.canSkipDataByStatisticsOf(column);
+}
+
 bool ReadFromFile::supportsMinMaxFromStatistics() const
 {
     if (!boost::iequals(storage->format_name, "Parquet") || storage->archive_info || need_only_count)
@@ -2940,6 +2950,23 @@ std::unique_ptr<LazilyReadFromFile> ReadFromFile::keepOnlyRequiredColumnsAndCrea
     return lazy_step;
 }
 
+void StorageFile::checkAccessForRenamingFiles(const ContextPtr & context)
+{
+    const auto access = context->getAccess();
+    access->checkAccessWithFilter(AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+
+    /// The readonly gate does not refuse `WRITE` on a source, which also authorizes `BACKUP` destinations.
+    const auto & params = access->getParams();
+    if (!params.readonly || params.full_access)
+        return;
+    if (params.interface == ClientInfo::Interface::HTTP && params.http_method == ClientInfo::HTTPMethod::GET)
+        throw Exception(ErrorCodes::READONLY,
+            "{}: Cannot execute query in readonly mode. "
+            "For queries over HTTP, method GET implies readonly. "
+            "You should use method POST for modifying queries", access->getUserName());
+    throw Exception(ErrorCodes::READONLY, "{}: Cannot execute query in readonly mode", access->getUserName());
+}
+
 void StorageFile::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -2954,8 +2981,7 @@ void StorageFile::read(
     /// (`StorageFileSource::beforeDestroy`), so reading it needs `WRITE` on the source besides `READ`.
     /// This context is the reading query's, not that of the query which built the storage.
     if (!file_renamer.isEmpty())
-        context->getAccess()->checkAccessWithFilter(
-            AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+        checkAccessForRenamingFiles(context);
 
     if (distributed_processing && context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = clampClusterFunctionNumStreams(
@@ -3012,7 +3038,8 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         info.hive_partition_columns_to_read_from_file_path,
         context,
         storage->distributed_processing,
-        storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{});
+        storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{},
+        storage->format_settings);
 }
 
 StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryConditionCacheKey() const
@@ -3330,6 +3357,16 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
     if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports < resize_to)
         pipe.resize(resize_to);
+    /// The sources of a split file read whole buckets, and the rows passing a filter may all be in one of them.
+    else if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && split_file && output_ports > 1)
+    {
+        /// The setting's default (24) splits only from 48 streams, but one `Resize` over 16 or 32 streams already slows short queries.
+        static constexpr UInt64 split_file_min_streams_per_resize = 8;
+        pipe.resize(
+            resize_to,
+            /*strict=*/ false,
+            std::min<UInt64>(build_settings.min_outstreams_per_resize_after_split, split_file_min_streams_per_resize));
+    }
 
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
@@ -3352,7 +3389,7 @@ public:
         ReadFromFormatInfo info_,
         const ContextPtr & context_,
         size_t max_block_size_,
-        std::vector<FileLazyMaterializingRows::FileRows> files_)
+        VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files_)
         : ISource(std::move(header), false)
         , WithContext(context_)
         , storage(std::move(storage_))
@@ -3522,7 +3559,7 @@ private:
     std::shared_ptr<StorageFile> storage;
     ReadFromFormatInfo info;
     size_t max_block_size;
-    std::vector<FileLazyMaterializingRows::FileRows> files;
+    VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files;
     size_t next_file_index = 0;
 
     FormatParserSharedResourcesPtr parser_shared_resources;
@@ -3539,7 +3576,7 @@ std::shared_ptr<ISource> StorageFile::createLazyRowsSource(
     const ReadFromFormatInfo & info,
     const ContextPtr & context,
     size_t max_block_size,
-    std::vector<FileLazyMaterializingRows::FileRows> files)
+    VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files)
 {
     return std::make_shared<StorageFileLazyRowsSource>(
         std::make_shared<const Block>(info.source_header), storage, info, context, max_block_size, std::move(files));
@@ -3667,6 +3704,17 @@ public:
             return;
 
         finalizeBuffers();
+        releaseBuffers();
+    }
+
+    void onPipelineFinished() override
+    {
+        /// A `timeout_overflow_mode = 'break'` stop cancels the sink before `onFinish` but is a successful exit.
+        if (isCancelled() && stage != Stage::Exception)
+        {
+            finalizeBuffers();
+            releaseBuffers();
+        }
     }
 
 private:
@@ -3772,6 +3820,12 @@ public:
             format_name,
             context,
             flags);
+    }
+
+    void onPipelineFinished() override
+    {
+        if (isCancelled() && stage != Stage::Exception)
+            PartitionedSink::onFinish();
     }
 
 private:
@@ -4010,6 +4064,8 @@ void registerStorageFile(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::FILE,
         .has_builtin_setting_fn = Settings::hasBuiltin,
+        .stores_data_on_disk = true,
+        .supports_temporary = true,
     };
 
     factory.registerStorage(
@@ -4127,7 +4183,7 @@ void registerStorageFile(StorageFactory & factory)
         storage_features,
         Documentation{
             .description = R"DOCS_MD(
-The File table engine keeps the data in a file in one of the supported [file formats](/reference/formats#formats-overview) (`TabSeparated`, `Native`, etc.).
+The File table engine keeps the data in a file in one of the supported [file formats](/reference/formats/index#formats-overview) (`TabSeparated`, `Native`, etc.).
 
 Usage scenarios:
 
@@ -4148,7 +4204,7 @@ File(Format)
 The `Format` parameter specifies one of the available file formats. To perform
 `SELECT` queries, the format must be supported for input, and to perform
 `INSERT` queries – for output. The available formats are listed in the
-[Formats](/reference/formats#formats-overview) section.
+[Formats](/reference/formats/index#formats-overview) section.
 
 ClickHouse does not allow specifying filesystem path for `File`. It will use folder defined by [path](/reference/settings/server-settings/settings/other#path) setting in server configuration.
 

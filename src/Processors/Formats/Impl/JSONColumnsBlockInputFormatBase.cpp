@@ -206,7 +206,10 @@ Chunk JSONColumnsBlockInputFormatBase::read()
         {
             if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(fields[i].type))
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column `{}` of type '{}'", fields[i].name, fields[i].type->getName());
-            columns[i]->insertManyDefaults(rows);
+            if (fields[i].type->isDefaultInsertTrivial())
+                columns[i]->insertManyDefaults(rows);
+            else
+                fields[i].type->insertManyDefaultsInto(*columns[i], rows);
             if (format_settings.defaults_for_omitted_fields)
                 block_missing_values.setBits(i, rows);
         }
