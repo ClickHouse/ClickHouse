@@ -70,6 +70,17 @@ tupleElement((number), \'1\')
 0
 [11]
 [22]
+-- nor a SQL UDF call in an APPLY lambda or in the body of a SQL UDF passed by name: CREATE keeps them too
+tupleElement((a), \'1\')
+11
+tupleElement((a), \'1\')
+11
+quantile(apply_lambda_05813(__projection_name_placeholder, 0))(a)
+2
+arrayMap(lambda(tuple(__function_ref_arg_0), tupleElement((arrayMap(lambda(tuple(y), tupleElement((x), \'1\')), [x])), \'1\')), [11])
+[[11]]
+11
+33
 -- an alias still names the columns
 a.1	b.1
 11	22

@@ -151,8 +151,9 @@ struct IdentifierResolveScope
     /// The inlined call is a SQL UDF call, or a SQL UDF call was inlined while resolving within this scope.
     bool inlines_sql_udf = false;
 
-    /// The inlined call is a SQL UDF call made from the function's name (`arrayMap(f, arr)`, `APPLY(f)`), not written as a call.
-    bool inlines_sql_udf_by_name = false;
+    /// `CREATE` does not substitute the SQL UDF calls under this scope, so stored definitions keep them: the scope is the body
+    /// of a SQL UDF called by its name (`arrayMap(f, arr)`, `APPLY(f)`) or resolves an `APPLY` transformer.
+    bool sql_udf_calls_not_substituted = false;
 
     /** Names from `expression_argument_name_to_node` that are temporarily invisible.
       * Set while an expression bound to an alias of an outer scope is resolved through this

@@ -3070,8 +3070,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             lambda_expression_untyped = tryGetLambdaFromUserDefinedSQLFunctions(user_defined_function, scope.context);
             inlines_sql_udf_by_name = lambda_expression_untyped && !function_node.hasOriginalAST();
             inlines_sql_udf = lambda_expression_untyped && !inlines_sql_udf_by_name;
-            for (auto * current_scope = &scope; inlines_sql_udf && current_scope && !current_scope->inlines_sql_udf_by_name;
-                 current_scope = current_scope->parent_scope)
+            for (auto * current_scope = &scope; inlines_sql_udf && current_scope; current_scope = current_scope->parent_scope)
+                inlines_sql_udf = !current_scope->sql_udf_calls_not_substituted;
+            for (auto * current_scope = &scope; inlines_sql_udf && current_scope; current_scope = current_scope->parent_scope)
                 if (current_scope->inlined_call_arguments_projection_names)
                     current_scope->inlines_sql_udf = true;
         }
@@ -3106,7 +3107,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             IdentifierResolveScope & lambda_scope = createIdentifierResolveScope(lambda_expression_clone, &scope /*parent_scope*/);
             lambda_scope.inlined_call_arguments_projection_names = arguments_projection_names;
             lambda_scope.inlines_sql_udf = inlines_sql_udf;
-            lambda_scope.inlines_sql_udf_by_name = inlines_sql_udf_by_name;
+            lambda_scope.sql_udf_calls_not_substituted = inlines_sql_udf_by_name;
             ProjectionNames lambda_projection_names = resolveLambda(lambda_expression_untyped, lambda_expression_clone, function_arguments, lambda_scope);
 
             /// Stored view definitions keep `WITH` lambdas and SQL UDF names, and their columns depend on these names. SQL UDF
