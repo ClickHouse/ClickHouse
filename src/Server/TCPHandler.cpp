@@ -1700,8 +1700,14 @@ void TCPHandler::processInsertQuery(QueryState & state)
 
     bool async_insert_enabled = settings[Setting::async_insert];
     if (insert_query.table_id)
+    {
         if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query.table_id, state.query_context))
+        {
+            /// `areAsynchronousInsertsEnabled` loads a lazily loaded table, see `checkAccessBeforeLoadingLazyTable`.
+            checkAccessBeforeLoadingLazyTable(table, insert_query.table_id, state.query_context, {AccessType::INSERT});
             async_insert_enabled |= table->areAsynchronousInsertsEnabled();
+        }
+    }
 
     if (insert_queue && async_insert_enabled && !insert_query.select
         && !AsynchronousInsertQueue::checkInsideTransaction(state.query_context))
