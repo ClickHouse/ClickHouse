@@ -1,8 +1,11 @@
 #include <DataTypes/subcolumnResolution.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Common/Exception.h>
 
+#include <algorithm>
 #include <optional>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace DB
@@ -236,10 +239,11 @@ std::unique_ptr<IDataType::SubcolumnInfo> findSubcolumn(
     std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null)
 {
     std::optional<SubstreamPath> found_path;
-    /// A substream that owns a prefix of the requested name and whose type can resolve the rest as a
-    /// dynamic subcolumn, e.g. `a` of JSON(`a` JSON) for a.some.path.
-    std::optional<SubstreamPath> dynamic_parent_path;
-    std::string_view dynamic_subcolumn_name;
+    /// Substreams owning a prefix of the requested name whose type may resolve the rest as a dynamic
+    /// subcolumn, e.g. `a` of JSON(`a` JSON) for a.some.path. The predicate is coarse - for `Dynamic` it
+    /// only checks the leading type name - so a prefix may qualify yet fail to resolve, and the rest it
+    /// leaves is kept to retry a shorter one.
+    std::vector<std::pair<SubstreamPath, std::string_view>> dynamic_parents;
 
     auto collect = [&](const SubstreamPath & path, size_t prefix_len, const String & name)
     {
@@ -255,18 +259,11 @@ std::unique_ptr<IDataType::SubcolumnInfo> findSubcolumn(
 
             found_path = copyPathPrefix(path, prefix_len);
         }
-        /// On a prefix match the rest of the name may be a dynamic subcolumn of this substream. Of
-        /// several matching prefixes the most specific one wins, and it leaves the shortest rest: for
-        /// `a.b.some.path` of Tuple(`a` JSON, `a.b` JSON) the declared `a.b` answers, not `a`.
         else if (subcolumn_name.starts_with(name + ".") && path[prefix_len - 1].data.type)
         {
             auto name_in_parent = subcolumn_name.substr(name.size() + 1);
-            if ((!dynamic_parent_path || name_in_parent.size() < dynamic_subcolumn_name.size())
-                && path[prefix_len - 1].data.type->canResolveDynamicSubcolumn(name_in_parent))
-            {
-                dynamic_parent_path = copyPathPrefix(path, prefix_len);
-                dynamic_subcolumn_name = name_in_parent;
-            }
+            if (path[prefix_len - 1].data.type->canResolveDynamicSubcolumn(name_in_parent))
+                dynamic_parents.emplace_back(copyPathPrefix(path, prefix_len), name_in_parent);
         }
     };
 
@@ -275,9 +272,16 @@ std::unique_ptr<IDataType::SubcolumnInfo> findSubcolumn(
     if (found_path)
         return makeSubcolumnInfo(*found_path, found_path->size(), nullptr);
 
-    if (dynamic_parent_path)
+    /// The most specific prefix leaves the shortest rest; of several, the one that actually resolves
+    /// wins: for `a.b.some.path` of Tuple(`a` JSON, `a.b` JSON) the declared `a.b` answers, not `a`.
+    std::stable_sort(
+        dynamic_parents.begin(),
+        dynamic_parents.end(),
+        [](const auto & lhs, const auto & rhs) { return lhs.second.size() < rhs.second.size(); });
+
+    for (const auto & [parent_path, name_in_parent] : dynamic_parents)
     {
-        if (auto res = resolveDynamicSubcolumn(*dynamic_parent_path, dynamic_subcolumn_name, initial_array_level))
+        if (auto res = resolveDynamicSubcolumn(parent_path, name_in_parent, initial_array_level))
             return res;
     }
 

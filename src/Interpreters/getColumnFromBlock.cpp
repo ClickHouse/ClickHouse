@@ -47,7 +47,12 @@ ColumnPtr tryDecompressSubcolumn(const IDataType & type, const IColumn & column,
         case TypeIndex::Array:
         {
             const auto * parts = getCompressedParts(column, 2);
-            if (parts && subcolumn_name == "size0")
+            if (!parts || subcolumn_name != "size0")
+                return nullptr;
+            /// `size0` names this array's sizes only when nothing nested claims it, e.g. not for
+            /// Array(JSON) or Array(Tuple(size0 ...)) where it resolves to the element instead.
+            auto info = type.tryGetSubcolumnInfo(subcolumn_name);
+            if (info && SerializationArray::isArraySizesSubcolumn(info->substreams_path))
                 return arrayOffsetsToSizes(*(*parts)[1]->decompress());
             return nullptr;
         }

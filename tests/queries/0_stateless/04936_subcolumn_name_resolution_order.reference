@@ -47,3 +47,12 @@ Dynamic
 wide	Array(UInt32)	[10,20]	2
 compact, missed column	Array(UInt32)	[0,0]	2
 log	Array(UInt32)	[10,20]	2
+--- compressed Memory reads the declared element, not the array sizes ---
+Array(UInt64)	[100,200]
+Array(UInt64)	[300]
+1
+2
+UInt64	1
+UInt64	3
+--- a shorter prefix resolves when the more specific one cannot ---
+7

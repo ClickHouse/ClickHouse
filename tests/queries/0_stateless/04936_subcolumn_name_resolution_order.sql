@@ -144,3 +144,31 @@ CREATE TABLE t_nested_log (n Nested(`j` Tuple(`size0` UInt32), `x` String)) ENGI
 INSERT INTO t_nested_log VALUES ([(10), (20)], ['a', 'b']);
 SELECT 'log', toTypeName(n.j.size0), n.j.size0, n.x.size0 FROM t_nested_log;
 DROP TABLE t_nested_log;
+
+SELECT '--- compressed Memory reads the declared element, not the array sizes ---';
+
+-- The compressed-Memory fast path decompresses the array offsets for `size0`; it must do so only when
+-- `size0` really is the array sizes, not when the element declares the name.
+DROP TABLE IF EXISTS t_compressed;
+CREATE TABLE t_compressed (c Array(Tuple(`size0` UInt64))) ENGINE = Memory SETTINGS compress = 1;
+INSERT INTO t_compressed VALUES ([(100), (200)]), ([(300)]);
+SELECT toTypeName(c.size0), c.size0 FROM t_compressed ORDER BY ALL;
+SELECT length(c) FROM t_compressed ORDER BY ALL;
+DROP TABLE t_compressed;
+
+-- A plain array still takes the fast path: `size0` is the array sizes.
+DROP TABLE IF EXISTS t_compressed_plain;
+CREATE TABLE t_compressed_plain (c Array(UInt64)) ENGINE = Memory SETTINGS compress = 1;
+INSERT INTO t_compressed_plain VALUES ([10, 20, 30]), ([40]);
+SELECT toTypeName(c.size0), c.size0 FROM t_compressed_plain ORDER BY ALL;
+DROP TABLE t_compressed_plain;
+
+SELECT '--- a shorter prefix resolves when the more specific one cannot ---';
+
+-- `a` (JSON) resolves `b.String.x` and `a.b` (Dynamic) matches `String.x` by type name but cannot
+-- resolve it. The more specific `a.b` is tried first; when it fails the `a` candidate must remain.
+DROP TABLE IF EXISTS t_overlap;
+CREATE TABLE t_overlap (c Tuple(`a` JSON, `a.b` Dynamic)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_overlap VALUES (('{"b":{"String":{"x":7}}}', 'abc'));
+SELECT c.a.b.String.x FROM t_overlap;
+DROP TABLE t_overlap;
