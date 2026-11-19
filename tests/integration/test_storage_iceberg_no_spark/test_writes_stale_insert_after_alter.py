@@ -54,9 +54,9 @@ def create_table(cluster, table_name, format, schema="(a Int32, b Nullable(Strin
     instance.query(f"INSERT INTO {table_name} SELECT number, NULL, number * 100 FROM numbers(3)")
 
 
-def assert_refused(error, files_before, files_after, column):
-    assert "INCORRECT_DATA" in error, error
-    assert f"Column '{column}' has no field id in the Iceberg schema being written" in error, error
+def assert_refused(error, files_before, files_after, message):
+    assert "BAD_ARGUMENTS" in error, error
+    assert f"Cannot write into Iceberg table: {message}" in error, error
     assert files_after == files_before
 
 
@@ -93,7 +93,7 @@ def test_stale_insert_after_drop_column(started_cluster_iceberg_no_spark, format
         lambda: instance.query(f"ALTER TABLE {table_name} DROP COLUMN b"),
         f"INSERT INTO {table_name} SELECT number + 10, 'x', 5000 + number FROM numbers(3)",
     )
-    assert_refused(*result, "b")
+    assert_refused(*result, "the input has 3 column(s) but the current table schema (schema-id 1) has 2 field(s)")
     assert instance.query(f"SELECT count() FROM {table_name}") == "3\n"
 
     instance.query(f"INSERT INTO {table_name} SELECT number + 20, 6000 + number FROM numbers(3)")
@@ -119,7 +119,7 @@ def test_stale_insert_after_drop_and_add_column(started_cluster_iceberg_no_spark
         alter,
         f"INSERT INTO {table_name} SELECT number + 10, 'x', 5000 + number FROM numbers(3)",
     )
-    assert_refused(*result, "b")
+    assert_refused(*result, "input column 'b' of type Nullable(String) has no field of that name")
     assert instance.query(
         f"SELECT count() FROM {table_name} WHERE d IS NULL", settings={"use_iceberg_partition_pruning": 1}
     ) == "3\n"
@@ -139,7 +139,7 @@ def test_stale_insert_after_rename_column(started_cluster_iceberg_no_spark, form
         lambda: instance.query(f"ALTER TABLE {table_name} RENAME COLUMN b TO b2"),
         f"INSERT INTO {table_name} SELECT number + 10, 'x', 5000 + number FROM numbers(3)",
     )
-    assert_refused(*result, "b")
+    assert_refused(*result, "input column 'b' of type Nullable(String) has no field of that name")
     assert instance.query(f"SELECT count() FROM {table_name}") == "3\n"
 
 
@@ -159,7 +159,7 @@ def test_stale_insert_after_nested_field_rename(started_cluster_iceberg_no_spark
         lambda: rename_nested_field(instance, table_name, "s", "x", "y"),
         f"INSERT INTO {table_name} SELECT number + 10, tuple(number + 10) FROM numbers(3)",
     )
-    assert_refused(*result, "s.x")
+    assert_refused(*result, "input column 's' of type Tuple(x Int32) does not match field 's' of type Tuple(y Int32)")
     assert instance.query(f"SELECT count() FROM {table_name}") == "3\n"
 
 
