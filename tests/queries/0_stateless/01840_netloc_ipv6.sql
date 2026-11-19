@@ -4,3 +4,7 @@ SELECT netloc('http://user:pass@[::ffff:192.168.0.1]:8080/');
 SELECT netloc('http://user:pass@example.com:8080/path');
 SELECT netloc('https://example.com/');
 SELECT netloc('http://user@example.com?x=1');
+SELECT netloc('http://[fe80::a%25en1]:8080/path');
+SELECT netloc('http://user:pass@[fe80::a%25en1]:8080/path');
+SELECT netloc('http://[fe80::1%25eth0]/');
+SELECT netloc('https://[fe80::a%25en1]?x=1');

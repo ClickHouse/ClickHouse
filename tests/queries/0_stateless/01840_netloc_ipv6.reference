@@ -4,3 +4,7 @@ user:pass@[::ffff:192.168.0.1]:8080
 user:pass@example.com:8080
 example.com
 user@example.com
+[fe80::a%25en1]:8080
+user:pass@[fe80::a%25en1]:8080
+[fe80::1%25eth0]
+[fe80::a%25en1]
