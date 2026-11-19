@@ -38,9 +38,12 @@ SELECT CAST('{"a":"bad"}'::JSON(a String), 'JSON(a IPv4)') SETTINGS input_format
 SELECT CAST('{"a":"bad"}'::JSON(a String), 'JSON(a IPv6)') SETTINGS input_format_ipv6_default_on_conversion_error = 1; -- { serverError CANNOT_PARSE_IPV6 }
 SELECT CAST('{"a":"bad"}'::JSON(a String), 'JSON(a IPv6)') SETTINGS input_format_ipv6_default_on_conversion_error = 1, json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
 
--- A number outside the Bool range is rejected like the parser, not normalized by a CAST.
+-- A number outside the Bool range is rejected like the parser, not normalized by a CAST. This holds for
+-- the SimpleAggregateFunction(any, Bool) wrapper too, which is a Boolean despite its UInt8 type id.
 SELECT CAST('{"a":-1}'::JSON, 'JSON(a Bool)'); -- { serverError INCORRECT_DATA }
 SELECT CAST('{"a":-1}'::JSON, 'JSON(a Bool)') SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
+SELECT CAST('{"a":-1}'::JSON, 'JSON(a SimpleAggregateFunction(any, Bool))'); -- { serverError INCORRECT_DATA }
+SELECT CAST('{"a":-1}'::JSON, 'JSON(a SimpleAggregateFunction(any, Bool))') SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
 
 -- A date-time string is not a date: a CAST reads its date part, while the parser requires the whole
 -- string to be a date, so both routes reject it (changed typed path and a dynamic path).

@@ -2564,9 +2564,10 @@ bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const 
         return isStringOrFixedString(*from);
 
     /// Bool is UInt8, but a CAST normalizes any nonzero to 1 while the parser builds it through UInt8
-    /// (0 and 1 only), so only a Bool source matches; a number goes through the parser.
-    if (isBool(to_inner))
-        return isBool(from);
+    /// (truncating), so only a Boolean source matches; a number goes through the parser. The wrapper
+    /// SimpleAggregateFunction(any, Bool) is a Boolean too (its serializer writes true/false).
+    if (isBool(to_inner) || isSimpleAggregateFunctionOfBool(*to_inner))
+        return isBool(from) || isSimpleAggregateFunctionOfBool(*from);
 
     auto all_values_convert_exactly = [&]
     {
@@ -2684,6 +2685,42 @@ struct ObjectConversionPlan
     }
 };
 
+/// IDataType::equals treats Bool, UInt8 and SimpleAggregateFunction(any, Bool) as the same type, but they
+/// serialize and normalize differently (a CAST maps any nonzero to 1, the parser truncates). For two
+/// already-equal types, returns false if they disagree on Boolean-ness anywhere in the tree. Expects the
+/// two types to be structurally equal, so the parallel descent is sound.
+bool haveSameBoolSemantics(const DataTypePtr & lhs, const DataTypePtr & rhs)
+{
+    auto is_logical_bool = [](const DataTypePtr & t) { return isBool(t) || isSimpleAggregateFunctionOfBool(*t); };
+    if (is_logical_bool(lhs) != is_logical_bool(rhs))
+        return false;
+
+    if (const auto * lhs_nullable = typeid_cast<const DataTypeNullable *>(lhs.get()))
+        return haveSameBoolSemantics(lhs_nullable->getNestedType(), assert_cast<const DataTypeNullable &>(*rhs).getNestedType());
+    if (const auto * lhs_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(lhs.get()))
+        return haveSameBoolSemantics(lhs_low_cardinality->getDictionaryType(), assert_cast<const DataTypeLowCardinality &>(*rhs).getDictionaryType());
+    if (const auto * lhs_array = typeid_cast<const DataTypeArray *>(lhs.get()))
+        return haveSameBoolSemantics(lhs_array->getNestedType(), assert_cast<const DataTypeArray &>(*rhs).getNestedType());
+    if (const auto * lhs_map = typeid_cast<const DataTypeMap *>(lhs.get()))
+    {
+        const auto & rhs_map = assert_cast<const DataTypeMap &>(*rhs);
+        return haveSameBoolSemantics(lhs_map->getKeyType(), rhs_map.getKeyType())
+            && haveSameBoolSemantics(lhs_map->getValueType(), rhs_map.getValueType());
+    }
+    if (const auto * lhs_tuple = typeid_cast<const DataTypeTuple *>(lhs.get()))
+    {
+        const auto & lhs_elements = lhs_tuple->getElements();
+        const auto & rhs_elements = assert_cast<const DataTypeTuple &>(*rhs).getElements();
+        if (lhs_elements.size() != rhs_elements.size())
+            return false;
+        for (size_t i = 0; i < lhs_elements.size(); ++i)
+            if (!haveSameBoolSemantics(lhs_elements[i], rhs_elements[i]))
+                return false;
+        return true;
+    }
+    return true;
+}
+
 ObjectConversionPlan buildObjectConversionPlan(
     const DataTypeObject & src_type,
     const DataTypeObject & dst_type)
@@ -2707,15 +2744,22 @@ ObjectConversionPlan buildObjectConversionPlan(
             if (isStructuralTypeForJSON(dst_path_type))
                 plan.has_structural_type_change = true;
         }
-        else if (!it->second->equals(*dst_path_type))
-        {
-            plan.changed_typed_paths[path] = {it->second, dst_path_type};
-            if (isStructuralTypeForJSON(it->second) || isStructuralTypeForJSON(dst_path_type))
-                plan.has_structural_type_change = true;
-        }
         else
         {
-            plan.unchanged_typed_paths.insert(path);
+            const bool equal = it->second->equals(*dst_path_type);
+            /// A path whose Boolean-ness changes is a real conversion even when equals reports no change
+            /// (equals ignores the Bool wrapper). Force the format+parse fallback so the values normalize.
+            const bool bool_mismatch = equal && !haveSameBoolSemantics(it->second, dst_path_type);
+            if (!equal || bool_mismatch)
+            {
+                plan.changed_typed_paths[path] = {it->second, dst_path_type};
+                if (isStructuralTypeForJSON(it->second) || isStructuralTypeForJSON(dst_path_type) || bool_mismatch)
+                    plan.has_structural_type_change = true;
+            }
+            else
+            {
+                plan.unchanged_typed_paths.insert(path);
+            }
         }
     }
 

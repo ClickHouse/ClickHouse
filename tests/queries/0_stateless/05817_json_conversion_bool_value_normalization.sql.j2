@@ -1,0 +1,36 @@
+-- The optimized JSON-to-JSON conversion must store the same values as format+parse, including the Boolean
+-- byte. JSON text shows any nonzero Bool as `true` and hides the stored value, so this test reads the
+-- numeric value of the converted path under both json_use_optimized_type_conversion values and prints only
+-- the cases that differ; the reference is empty. Covers the Bool wrapper and the Bool-vs-UInt8 distinction.
+
+SET session_timezone = 'UTC';
+
+DROP TABLE IF EXISTS bool_results;
+CREATE TABLE bool_results (optimized UInt8, name String, result String) ENGINE = Memory;
+
+{% macro check(name, src, dst, json, expr) -%}
+{% for optimized in [1, 0] -%}
+INSERT INTO bool_results
+SELECT {{ optimized }}, '{{ name }}', toString(({{ expr }}))
+FROM (SELECT CAST(CAST('{{ json }}' AS {{ src }}) AS {{ dst }}) AS j)
+SETTINGS json_use_optimized_type_conversion = {{ optimized }};
+{% endfor -%}
+{%- endmacro %}
+
+-- A UInt8 typed path changed to Bool: equals treats UInt8 and Bool as the same type, so the path must not
+-- be reused unchanged. Reparsing it (forced here by the extra path b) normalizes the value.
+{{ check('UInt8 to Bool with new path', 'JSON(a UInt8)', 'JSON(a Bool, b Int8)', '{"a": 42}', 'toUInt8(j.a)') }}
+{{ check('UInt8 to Bool', 'JSON(a UInt8)', 'JSON(a Bool)', '{"a": 42}', 'toUInt8(j.a)') }}
+{{ check('UInt8 to Bool to shared data', 'JSON(max_dynamic_paths = 0, a UInt8)', 'JSON(max_dynamic_paths = 0, a Bool)', '{"a": 42}', 'toUInt8(j.a)') }}
+{{ check('Array(UInt8) to Array(Bool)', 'JSON(a Array(UInt8))', 'JSON(a Array(Bool))', '{"a": [42, 0]}', 'arrayMap(x -> toUInt8(x), j.a)') }}
+
+-- SimpleAggregateFunction(any, Bool) is a Boolean too, so a numeric value goes through the parser.
+{{ check('numeric to SimpleAggregateFunction(any, Bool)', 'JSON', 'JSON(a SimpleAggregateFunction(any, Bool))', '{"a": 0.58}', 'toUInt8(j.a)') }}
+{{ check('numeric to SimpleAggregateFunction(any, Bool) in shared data', 'JSON(max_dynamic_paths = 0)', 'JSON(max_dynamic_paths = 0, a SimpleAggregateFunction(any, Bool))', '{"a": 0.58}', 'toUInt8(j.a)') }}
+{{ check('numeric to SimpleAggregateFunction(any, Bool) in shared variant', 'JSON(max_dynamic_types = 0)', 'JSON(max_dynamic_types = 0, a SimpleAggregateFunction(any, Bool))', '{"a": 0.58}', 'toUInt8(j.a)') }}
+
+SELECT name, optimized, result FROM bool_results
+WHERE name IN (SELECT name FROM bool_results GROUP BY name HAVING uniqExact(result) > 1)
+ORDER BY name, optimized DESC;
+
+DROP TABLE bool_results;
