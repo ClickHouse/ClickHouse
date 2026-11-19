@@ -65,16 +65,6 @@ __host__ cudf::column_view withNullMask(const cudf::column_view & column, const 
     return cudf::column_view(column.type(), column.size(), column.head(), mask, null_count, column.offset(), children);
 }
 
-__host__ void waitFor(cuda::stream_ref waiting, cuda::stream_ref stream)
-{
-    cudaEvent_t event = nullptr;
-    checkCuda(cudaEventCreateWithFlags(&event, cudaEventDisableTiming), "Cannot create a CUDA event");
-    const cudaError_t recorded = cudaEventRecord(event, stream.get());
-    const cudaError_t waited = recorded == cudaSuccess ? cudaStreamWaitEvent(waiting.get(), event, 0) : recorded;
-    cudaEventDestroy(event);
-    checkCuda(waited, "Cannot make a stream wait for another");
-}
-
 /// Widened offsets go into `offsets`, which must outlive the view.
 __host__ DeviceColumnView viewOf(
     const cudf::table * table, size_t index, GPUElementType type, std::unique_ptr<cudf::column> & offsets, cuda::stream_ref stream)

@@ -25,6 +25,17 @@ __host__ inline void checkCuda(cudaError_t status, const char * message)
         throwCudaError(status, message);
 }
 
+/// Makes `waiting` wait for what is queued on `stream` so far, without the host waiting.
+__host__ inline void waitFor(cuda::stream_ref waiting, cuda::stream_ref stream)
+{
+    cudaEvent_t event = nullptr;
+    checkCuda(cudaEventCreateWithFlags(&event, cudaEventDisableTiming), "Cannot create a CUDA event");
+    const cudaError_t recorded = cudaEventRecord(event, stream.get());
+    const cudaError_t waited = recorded == cudaSuccess ? cudaStreamWaitEvent(waiting.get(), event, 0) : recorded;
+    cudaEventDestroy(event);
+    checkCuda(waited, "Cannot make a stream wait for another");
+}
+
 __host__ bool isClickHouseException(const std::exception & exception);
 
 /// Shared by code of libstdc++ and libc++, whose `std::span` differ.
