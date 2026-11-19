@@ -64,12 +64,14 @@
 -- an element matches as a whole token, and the index answers it
 [1]
 [1]
--- adjacent elements
-[1]
-[1]
+-- adjacent elements are not a phrase
+[]
+[]
 -- a token that no element holds
 [2]
 -- the array tokenizer with support_phrase_search
+[]
+[]
 [1]
 [1]
 -- Array phrase

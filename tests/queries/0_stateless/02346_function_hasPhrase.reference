@@ -56,9 +56,10 @@ Default tokenizer (splitByNonAlpha)
 0
 -- a phrase does not span elements
 0
--- with the array tokenizer every element is one token, so a phrase spans elements
-1
+-- with the array tokenizer every element is one token, so only a phrase of one token matches
 0
+0
+1
 -- the internal __hasPhraseInTokenSequences matches a phrase within one token sequence
 1
 0

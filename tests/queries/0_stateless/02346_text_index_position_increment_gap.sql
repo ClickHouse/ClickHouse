@@ -122,7 +122,7 @@ INSERT INTO tab_string VALUES (1, 'hello clickhouse world');
 
 SELECT row_id, token, positions FROM mergeTreeTextIndex(currentDatabase(), tab_string, idx) ORDER BY row_id, token;
 
-SELECT 'the array tokenizer: every element is one token and a phrase spans elements';
+SELECT 'the array tokenizer: every element is one token, and the gap separates them as well';
 CREATE TABLE tab_array_tokenizer
 (
     id UInt32,
@@ -138,12 +138,12 @@ INSERT INTO tab_array_tokenizer VALUES (1, ['hello', 'clickhouse', 'world']);
 SELECT row_id, token, positions FROM mergeTreeTextIndex(currentDatabase(), tab_array_tokenizer, idx) ORDER BY row_id, token;
 SELECT count() FROM tab_array_tokenizer WHERE hasPhrase(arr, ['hello', 'clickhouse']);
 SELECT count() FROM tab_array_tokenizer WHERE hasPhrase(arr, ['hello', 'world']);
+SELECT count() FROM tab_array_tokenizer WHERE hasPhrase(arr, ['clickhouse']);
 
 SELECT 'invalid arguments';
 CREATE TABLE tab_err (arr Array(String), INDEX idx(arr) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1, position_increment_gap = 0)) ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_phrase_search = 1; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE tab_err (arr Array(String), INDEX idx(arr) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1, position_increment_gap = 128)) ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_phrase_search = 1; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE tab_err (arr Array(String), INDEX idx(arr) TYPE text(tokenizer = splitByNonAlpha, position_increment_gap = 1)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
-CREATE TABLE tab_err (arr Array(String), INDEX idx(arr) TYPE text(tokenizer = array, support_phrase_search = 1, position_increment_gap = 1)) ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_phrase_search = 1; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE tab_err (arr Array(String), INDEX idx(arr) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1, position_increment_gap = 127)) ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_phrase_search = 1;
 
 DROP TABLE tab;

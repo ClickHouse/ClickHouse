@@ -219,7 +219,7 @@ INSERT INTO tab VALUES (1, ['quick brown', 'fox']), (2, ['quick', 'brown']);
 SELECT '-- an element matches as a whole token, and the index answers it';
 SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, ['quick brown']) SETTINGS force_data_skipping_indices = 'idx_tags';
 SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, ['quick brown']) SETTINGS use_skip_indexes = 0;
-SELECT '-- adjacent elements';
+SELECT '-- adjacent elements are not a phrase';
 SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, ['quick brown', 'fox']) SETTINGS force_data_skipping_indices = 'idx_tags';
 SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, ['quick brown', 'fox']) SETTINGS use_skip_indexes = 0;
 SELECT '-- a token that no element holds';
@@ -243,6 +243,8 @@ INSERT INTO tab VALUES (1, ['quick brown', 'fox']), (2, ['quick', 'brown']);
 
 SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, ['quick brown', 'fox']);
 SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, ['quick brown', 'fox']) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, ['quick brown']);
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, ['quick brown']) SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab;
 
