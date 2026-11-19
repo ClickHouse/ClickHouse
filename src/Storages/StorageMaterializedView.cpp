@@ -199,21 +199,7 @@ namespace
                 "Incremental refresh source table {} has engine {}, which does not report the cursor of a streaming read",
                 source->getStorageID().getNameForLogs(), source->getName());
 
-        /// The cursor is expressed in _block_number/_block_offset, stable across merges only when these are persisted.
-        const auto * merge_tree = castStorage<MergeTreeData>(source, DeferredTable::Load).get();
-        if (merge_tree)
-        {
-            if (merge_tree->merging_params.mode != MergeTreeData::MergingParams::Ordinary)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Incremental refresh source table {} uses a merging engine that rewrites historical rows on merge; only plain MergeTree is supported",
-                    source->getStorageID().getNameForLogs());
-
-            const auto settings = merge_tree->getSettings();
-            if (!(*settings)[MergeTreeSetting::enable_block_number_column] || !(*settings)[MergeTreeSetting::enable_block_offset_column])
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Incremental refresh source table {} must set enable_block_number_column = 1 and enable_block_offset_column = 1",
-                    source->getStorageID().getNameForLogs());
-        }
+        source->checkStreamingCursorForIncrementalRefresh();
     }
 
     /// Attach `STREAM BOUNDED UNORDERED [CURSOR {...}]` to the single source table of an incremental refresh's

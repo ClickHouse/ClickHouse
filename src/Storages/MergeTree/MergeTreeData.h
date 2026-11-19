@@ -622,6 +622,8 @@ public:
 
     bool supportsTTL() const override { return true; }
 
+    void checkStreamingCursorForIncrementalRefresh() const override;
+
     bool supportsStatistics() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
