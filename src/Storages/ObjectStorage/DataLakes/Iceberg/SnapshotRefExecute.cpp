@@ -302,11 +302,8 @@ Pipe executeCreateSnapshotRef(
         /// Evaluate the current snapshot only when `snapshot_id` was omitted.
         /// `optional::value_or` would call it even for an explicit id, and a table can have
         /// snapshots with no current snapshot.
-        Int64 snapshot_id;
-        if (options.snapshot_id)
-            snapshot_id = *options.snapshot_id;
-        else
-            snapshot_id = currentSnapshotIdOrThrow(metadata, "create_snapshot_ref");
+        const Int64 snapshot_id = options.snapshot_id ? *options.snapshot_id
+                                                      : currentSnapshotIdOrThrow(metadata, "create_snapshot_ref");
         if (!snapshotIdExists(metadata, snapshot_id))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "create_snapshot_ref snapshot id {} does not exist", snapshot_id);
 
