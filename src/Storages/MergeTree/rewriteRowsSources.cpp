@@ -104,8 +104,9 @@ size_t MergeTask::rewriteRowsSources(
         if (!parts.empty())
         {
             const size_t part_index = row_source.getSourceNum();
-            chassert(part_index < parts.size(),
-                fmt::format("rows_sources of a vertical merge refers to part {} of a merge of {} parts", part_index, parts.size()));
+            if (part_index >= parts.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "rows_sources of a vertical merge refers to part {} of a merge of {} parts", part_index, parts.size());
             write_dropped_input_rows(part_index);
             auto & part = *parts[part_index];
             if (!part.hasRow())
