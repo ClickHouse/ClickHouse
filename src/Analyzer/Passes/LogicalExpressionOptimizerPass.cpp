@@ -480,6 +480,13 @@ static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant
     return converted;
 }
 
+/// `=` and `!=` read a string constant as an `Enum` number under `input_format_tsv_enum_as_number`,
+/// `tryConvertToColumnType` and an `IN` set read it as a name.
+static bool equalityReadsStringAsEnumNumber(const DataTypePtr & constant_type, const DataTypePtr & expr_type, const ContextPtr & context)
+{
+    return getFormatSettings(context).tsv.enum_as_number && comparesStringWithEnum(constant_type, expr_type);
+}
+
 /// A comparison of `DateTime` or a lower-scale `DateTime64` with a `DateTime64` widens the former to the latter's scale.
 static bool isLowerScaleTimePoint(const DataTypePtr & from, const DataTypePtr & to)
 {
@@ -927,10 +934,9 @@ static AddComparisonFilterResult addComparisonFilter(
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
     /// A string ordered against an `Enum` constant, also in a tuple element, compares by value, not by the converted name.
-    /// `=` and `!=` read a string constant as an `Enum` number under `input_format_tsv_enum_as_number`, the conversion above reads a name.
     const bool is_equality = new_filter.function == ComparisonFunction::EQUALS || new_filter.function == ComparisonFunction::NOT_EQUALS;
     const auto & constant_type = new_filter.constant_node->getResultType();
-    if (is_equality ? getFormatSettings(context).tsv.enum_as_number && comparesStringWithEnum(constant_type, expr_type)
+    if (is_equality ? equalityReadsStringAsEnumNumber(constant_type, expr_type, context)
                     : comparesStringWithEnum(expr_type, constant_type))
         new_filter.converted_value.reset();
 
@@ -1160,7 +1166,8 @@ static void convertNotEqualsChainToNotIn(
 
             /// The set converts each element to the expression's type, while the comparison it
             /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
-            if (!tryConvertToColumnType(literal, expr_type))
+            if (!tryConvertToColumnType(literal, expr_type)
+                || equalityReadsStringAsEnumNumber(literal->getResultType(), expr_type, context))
                 all_constants_convert_losslessly = false;
         }
 
@@ -2949,7 +2956,8 @@ private:
                 /// The set converts each element to the expression's type, while the comparison it
                 /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
                 /// A NULL constant is excluded above, so it never reaches this check.
-                if (!tryConvertToColumnType(literal, expr_type))
+                if (!tryConvertToColumnType(literal, expr_type)
+                    || equalityReadsStringAsEnumNumber(literal->getResultType(), expr_type, getContext()))
                     all_constants_convert_losslessly = false;
             }
 
