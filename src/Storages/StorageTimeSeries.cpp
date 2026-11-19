@@ -720,16 +720,16 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
 
     if (has_settings_changes)
     {
-        chassert(new_metadata.settings_changes);
+        chassert(new_metadata.hasSettingsChanges());
         /// Round-trip through `TimeSeriesSettings` to validate the names/values and
         /// to write them back in a canonical form.
         new_settings = std::make_unique<TimeSeriesSettings>();
-        new_settings->applyChanges(new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
+        new_settings->applyChanges(new_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes);
         checkTimeSeriesSettings(*new_settings);
         auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         settings_ast->changes = new_settings->changes();
-        new_metadata.settings_changes = settings_ast;
+        new_metadata.setSettingsChanges(settings_ast);
     }
 
     auto time_series_table_id = getStorageID();
@@ -1019,8 +1019,8 @@ CREATE TABLE my_table ENGINE=TimeSeries
 ```
 
 Then this table can be used with the following protocols (a port must be assigned in the server configuration):
-- [prometheus remote-write](/concepts/features/interfaces/prometheus#remote-write)
-- [prometheus remote-read](/concepts/features/interfaces/prometheus#remote-read)
+- [prometheus remote-write](/concepts/features/connect-to-clickhouse/prometheus#remote-write)
+- [prometheus remote-read](/concepts/features/connect-to-clickhouse/prometheus#remote-read)
 
 ### Outer columns {#outer-columns}
 

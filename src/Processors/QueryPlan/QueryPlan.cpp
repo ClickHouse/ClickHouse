@@ -17,6 +17,9 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 
 #include <Processors/ConcatProcessor.h>
 #include <Processors/IProcessor.h>
@@ -246,7 +249,8 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
 QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     const QueryPlanOptimizationSettings & optimization_settings,
     const BuildQueryPipelineSettings & build_pipeline_settings,
-    bool do_optimize)
+    bool do_optimize,
+    QueryPlanLogCapture * log_capture)
 {
     checkInitialized();
 
@@ -259,6 +263,14 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 
     if (effective_settings.make_distributed_plan)
         convertToDistributed(effective_settings);
+
+    /// Read while the `ActionsDAG`s are still in the steps: building the pipeline below moves them
+    /// into the `ExpressionActions`, and the names are derived from them. Only over the child plans
+    /// the steps already hold, unlike `explainPlan`: asking a step to build one would make
+    /// capturing the plan change the work the query does.
+    PrettyNamesPerPlan pretty_names;
+    if (log_capture)
+        pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this, /*only_built_child_plans=*/ true);
 
     struct Frame
     {
@@ -304,6 +316,31 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
     last_pipeline->addResources(resources);
     last_pipeline->setConcurrencyControl(getConcurrencyControl());
+
+    /// The last moment the plan is worth reading: the index analysis and the child plans built
+    /// along the way exist now, and nothing after this needs the plan at all.
+    ///
+    /// The two readings are owned differently. The captured plan goes to the log capture, which the
+    /// `Context` holds, because the query log still needs it once the pipeline is gone. The clocks
+    /// and analyzers go to the pipeline, which is their only owner, so that they are freed with it.
+    if (log_capture)
+    {
+        /// Profiling is a diagnostic and does not get to fail a query that would otherwise run.
+        MemoryTrackerBlockerInThread block_memory_tracker;
+
+        try
+        {
+            const PlanWalk walk = PlanWalk::of(*this, /*only_built_child_plans=*/ true);
+
+            log_capture->capturePlanStructure(walk, pretty_names, optimization_settings.max_step_description_length);
+            last_pipeline->setStepProfiler(std::make_shared<StepProfiler>(walk, /*collect_work_intervals_=*/ false));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            log_capture->dropCapturedPlan();
+        }
+    }
 
     return last_pipeline;
 }
@@ -385,7 +422,7 @@ JSONBuilder::ItemPtr QueryPlan::explainPlanSteps(const ExplainPlanOptions & opti
     auto steps = std::make_unique<JSONBuilder::JSONArray>();
 
     /// Pre-order: the inputs of a node and then its nested plans are pushed in reverse, so they are popped in order.
-    std::vector<const Node *> stack{root};
+    VectorWithMemoryTracking<const Node *> stack{root};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -726,7 +763,7 @@ void QueryPlan::explainPlan(
     PrettyNamesPerPlan local_pretty_names;
     if (options.pretty && !precomputed_pretty_names)
     {
-        local_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this);
+        local_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this, /*only_built_child_plans=*/ false);
         precomputed_pretty_names = &local_pretty_names;
     }
 
@@ -989,7 +1026,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     if (effective_settings.remove_redundant_sorting)
         QueryPlanOptimizations::tryRemoveRedundantSorting(root);
 
-    QueryPlanOptimizations::optimizeTreeFirstPass(effective_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTreeFirstPass(effective_settings, *root, nodes, *this);
     QueryPlanOptimizations::optimizeTreeSecondPass(effective_settings, *root, nodes, *this);
 
     /// Defer set/CTE expansion: a distributed plan builds the sets on the initiator and ships
@@ -1315,6 +1352,21 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
 //         if (!used.contains(node))
 //             throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} {} is not used", node->step->getName(), reinterpret_cast<const void *>(node));
 // }
+
+QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes, const QueryPlan & source_plan)
+{
+    auto new_plan = extractSubplan(root, nodes);
+
+    /// The subplan may be executed after `source_plan` has been consumed into a pipeline (e.g. the
+    /// right side of a `JOIN` converted to `IN` is built later as a set), so it must keep the same
+    /// execution limits and hold the same table locks, storage holders and interpreter contexts.
+    /// append copies the shared handles, so ownership is only shared, never moved out of the source.
+    new_plan.max_threads = source_plan.max_threads;
+    new_plan.concurrency_control = source_plan.concurrency_control;
+    new_plan.resources.append(source_plan.resources);
+
+    return new_plan;
+}
 
 QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes)
 {

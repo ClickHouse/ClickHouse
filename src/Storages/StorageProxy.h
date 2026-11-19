@@ -4,6 +4,7 @@
 #include <base/isSharedPtrUnique.h>
 #include <Storages/SelectQueryInfo.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 
 namespace DB
