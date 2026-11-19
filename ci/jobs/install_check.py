@@ -127,6 +127,13 @@ resolved=$(clickhouse-client -q "
 journalctl -u clickhouse-server > /packages/clickhouse-server.service.log || :
 journalctl -u clickhouse-keeper > /packages/clickhouse-keeper.service.log || :
 cp /var/log/clickhouse-server/clickhouse-server.* /packages/ || :
+# A server that fails before it opens its log, as in the isolation of its filesystem at startup,
+# leaves its error only on stderr, which the journal of the container does not keep and `--daemon`
+# closes. Run it once more in the foreground as its user to keep the error.
+if [ -x /usr/bin/clickhouse-server ] && ! ls /var/log/clickhouse-server/clickhouse-server.log >/dev/null 2>&1; then
+    timeout 30 su -s /bin/sh clickhouse -c 'CLICKHOUSE_WATCHDOG_ENABLE=0 /usr/bin/clickhouse-server --config-file=/etc/clickhouse-server/config.xml' \
+        > /packages/clickhouse-server.foreground.log 2>&1 < /dev/null || :
+fi
 cp /var/log/clickhouse-keeper/clickhouse-keeper.* /packages/ || :
 chmod a+rw -R /packages
 exit 1
@@ -160,7 +167,7 @@ bash -ex /packages/symbols_test.sh""",
 apt-get install /packages/clickhouse-{server,client,common-static}_*deb -y
 bash -ex /packages/initd_test.sh""",
         "Install keeper deb": r"""#!/bin/bash -ex
-apt-get install /packages/clickhouse-keeper*deb -y
+apt-get install /packages/clickhouse-{common-static,keeper}_*deb -y
 bash -ex /packages/keeper_test.sh""",
     }
     return test_install(image, tests)
@@ -175,7 +182,7 @@ yum localinstall --disablerepo=* --allowerasing -y /packages/clickhouse-{server,
 echo CLICKHOUSE_WATCHDOG_ENABLE=0 > /etc/default/clickhouse-server
 bash -ex /packages/server_test.sh""",
         "Install keeper rpm": r"""#!/bin/bash -ex
-yum localinstall --disablerepo=* --allowerasing -y /packages/clickhouse-keeper*rpm
+yum localinstall --disablerepo=* --allowerasing -y /packages/clickhouse-{common-static,keeper}-[0-9]*rpm
 bash -ex /packages/keeper_test.sh""",
     }
     return test_install(image, tests)
@@ -205,9 +212,9 @@ def test_install_tgz(image: DockerImage, debug_symbols: bool) -> List[Result]:
         if debug_symbols
         else "clickhouse-{common-static,client,server}-[0-9]*tgz"
     )
-    keeper_packages = (
-        "clickhouse-keeper*tgz" if debug_symbols else "clickhouse-keeper-[0-9]*tgz"
-    )
+    # There is no separate debug symbols package for `clickhouse-keeper` anymore, and
+    # `clickhouse-common-static-dbg` is already covered by the server test.
+    keeper_packages = "clickhouse-{common-static,keeper}-[0-9]*tgz"
     tests = {
         f"Install server tgz in {image}": r"""#!/bin/bash -ex
 [ -f /etc/debian_version ] && CONFIGURE=configure || CONFIGURE=

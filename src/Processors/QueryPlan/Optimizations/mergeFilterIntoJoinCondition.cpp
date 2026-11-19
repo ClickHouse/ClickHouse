@@ -379,7 +379,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
                 || conjunct->function_base->getName() == "greaterOrEquals")
             && conjunct->children.size() == 2;
         if (!block_range_predicates && is_range && is_cross_side(conjunct->children[0], conjunct->children[1])
-            && ActionsDAG::canBeMovedToTheFrontOfAndChain(conjunct))
+            && canBeMovedToTheFrontOfAndChain(conjunct))
         {
             result.emplace_back(ActionsDAG::cloneSubDAG({ conjunct }, true));
             conjuncts_to_replace.insert(conjunct);
