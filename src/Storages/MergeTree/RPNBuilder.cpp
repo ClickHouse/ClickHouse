@@ -199,16 +199,6 @@ String getColumnNameWithoutAlias(const ActionsDAG::Node & node, const ContextPtr
     return std::move(out.str());
 }
 
-const ActionsDAG::Node * getNodeWithoutAlias(const ActionsDAG::Node * node)
-{
-    const ActionsDAG::Node * result = node;
-
-    while (result->type == ActionsDAG::ActionType::ALIAS)
-        result = result->children[0];
-
-    return result;
-}
-
 }
 
 RPNBuilderTreeNode::RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, const ContextPtr & query_context_)
@@ -230,25 +220,25 @@ std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
 
 bool RPNBuilderTreeNode::isFunction() const
 {
-    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+    const auto * node_without_alias = dag_node->getWithoutAlias();
     return node_without_alias->type == ActionsDAG::ActionType::FUNCTION;
 }
 
 bool RPNBuilderTreeNode::isConstant() const
 {
-    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+    const auto * node_without_alias = dag_node->getWithoutAlias();
     return node_without_alias->column != nullptr;
 }
 
 bool RPNBuilderTreeNode::isNullable() const
 {
-    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+    const auto * node_without_alias = dag_node->getWithoutAlias();
     return node_without_alias->result_type && node_without_alias->result_type->isNullable();
 }
 
 bool RPNBuilderTreeNode::isSubqueryOrSet() const
 {
-    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+    const auto * node_without_alias = dag_node->getWithoutAlias();
     return node_without_alias->result_type->getTypeId() == TypeIndex::Set;
 }
 
@@ -257,7 +247,7 @@ ColumnWithTypeAndName RPNBuilderTreeNode::getConstantColumn() const
     if (!isConstant())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RPNBuilderTree node is not a constant");
 
-    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+    const auto * node_without_alias = dag_node->getWithoutAlias();
 
     ColumnWithTypeAndName result;
     result.type = node_without_alias->result_type;
@@ -278,7 +268,7 @@ static DataTypePtr getTypeOfConstantValue(const Field & value, const DataTypePtr
 
 bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & output_type) const
 {
-    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+    const auto * node_without_alias = dag_node->getWithoutAlias();
     if (!node_without_alias->column)
         return false;
 
@@ -305,7 +295,7 @@ FutureSetPtr tryGetSetFromDAGNode(const ActionsDAG::Node * dag_node)
 
 FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet() const
 {
-    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+    const auto * node_without_alias = dag_node->getWithoutAlias();
     return tryGetSetFromDAGNode(node_without_alias);
 }
 
@@ -314,7 +304,7 @@ RPNBuilderFunctionTreeNode RPNBuilderTreeNode::toFunctionNode() const
     if (!isFunction())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RPNBuilderTree node is not a function");
 
-    return RPNBuilderFunctionTreeNode(getNodeWithoutAlias(dag_node), getContext());
+    return RPNBuilderFunctionTreeNode(dag_node->getWithoutAlias(), getContext());
 }
 
 std::optional<RPNBuilderFunctionTreeNode> RPNBuilderTreeNode::toFunctionNodeOrNull() const
@@ -322,12 +312,12 @@ std::optional<RPNBuilderFunctionTreeNode> RPNBuilderTreeNode::toFunctionNodeOrNu
     if (!isFunction())
         return {};
 
-    return RPNBuilderFunctionTreeNode(getNodeWithoutAlias(dag_node), getContext());
+    return RPNBuilderFunctionTreeNode(dag_node->getWithoutAlias(), getContext());
 }
 
 std::optional<RPNBuilderTreeNode> RPNBuilderTreeNode::getArrayJoinArgument() const
 {
-    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+    const auto * node_without_alias = dag_node->getWithoutAlias();
     if (node_without_alias->type == ActionsDAG::ActionType::ARRAY_JOIN && node_without_alias->children.size() == 1)
         return RPNBuilderTreeNode(node_without_alias->children[0], getContext());
 
@@ -438,7 +428,7 @@ RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node, boo
 
 const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node, bool allow_drop_nullable)
 {
-    const auto * node_without_alias = getNodeWithoutAlias(node);
+    const auto * node_without_alias = node->getWithoutAlias();
 
     if (!isLosslessConversionFunction(*node_without_alias, allow_drop_nullable))
         return node;

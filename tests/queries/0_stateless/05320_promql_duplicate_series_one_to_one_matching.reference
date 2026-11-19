@@ -1,0 +1,21 @@
+-- one-to-one matching merges series with values at different steps
+[('dc','x')]	[('1970-01-01 00:01:40.000',101),('1970-01-01 00:03:20.000',202)]
+-- one-to-one matching still reports series with values at the same step
+-- the same for series of the right side
+-- duplicates on the right side do not matter at steps where the matched left series has no value
+[('dc','x')]	[('1970-01-01 00:03:20.000',1002)]
+-- duplicates on the left side do not matter at steps where the matched right series has no value
+[('dc','x')]	[('1970-01-01 00:03:20.000',1002)]
+-- the same when the left side keeps the metric name
+[('__name__','a'),('dc','x')]	[('1970-01-01 00:03:20.000',2)]
+-- a comparison keeps the metric name of its left side, series which get the same tags at different steps are still merged
+[('__name__','a'),('dc','x')]	[('1970-01-01 00:01:40.000',1),('1970-01-01 00:03:20.000',2)]
+-- a comparison with `on` keeps only the listed labels
+[('dc','x')]	[('1970-01-01 00:01:40.000',1),('1970-01-01 00:03:20.000',2)]
+-- series with different metric names give different result series
+[('__name__','a'),('dc','x')]	[('1970-01-01 00:03:20.000',2)]
+[('__name__','b'),('dc','x')]	[('1970-01-01 00:01:40.000',20)]
+-- series with different metric names are still duplicates if they have values at the same step
+-- series of the left side with values at the same step are duplicates even if the comparison keeps only one of them
+-- a series without values on the left side of a comparison is skipped
+[('__name__','a'),('dc','x')]	[('1970-01-01 00:01:40.000',1)]

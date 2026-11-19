@@ -129,6 +129,9 @@ struct DivideIntegralImpl
     /// 384 B (x86-64-v2) to 1088 B (x86-64-v3) before this flag was added.
     static constexpr bool no_vectorize = true;
 
+    /// Documentation-only — see `PlusImpl::signature_documentation`.
+    static constexpr auto signature_documentation = "(Any, Any) -> Any";
+
     template <typename Result = ResultType>
     static Result apply(A a, B b)
     {
@@ -206,6 +209,10 @@ struct ModuloImpl
     /// SIMD benefit, only code bloat.  But the float path (a - trunc(a/b)*b)
     /// vectorizes well (divpd/roundpd are 2x throughput of divsd/roundsd).
     static constexpr bool no_vectorize = !is_floating_point<typename NumberTraits::ResultOfModulo<A, B>::Type>;
+
+    /// Documentation-only — see `PlusImpl::signature_documentation`.
+    /// Covers `modulo`, `moduloLegacy`, `moduloOrNull` (via inheritance).
+    static constexpr auto signature_documentation = "(Any, Any) -> Any";
 
     template <typename Result = ResultType>
     static Result apply(A a, B b)

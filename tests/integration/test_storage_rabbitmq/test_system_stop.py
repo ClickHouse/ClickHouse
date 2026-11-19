@@ -3,6 +3,7 @@
 import json
 import threading
 import time
+import uuid
 
 import pika
 import pytest
@@ -27,7 +28,7 @@ single_worker_instance = cluster.add_instance(
         "configs/macros.xml",
         "configs/single_message_broker_worker.xml",
     ],
-    # parallel_view_processing=0 so the per-consumer sources share one pipeline thread and run serially.
+    # parallel_view_processing=0: the insert into materialized views gets a single pipeline thread.
     user_configs=["configs/users_serial_views.xml"],
     with_rabbitmq=True,
     stay_alive=True,
@@ -652,16 +653,28 @@ def test_cancel_wakes_flush_wait_promptly(rabbitmq_cluster):
     time.sleep(5)  # let the source read the rows and settle into the flush wait
 
     # CANCEL must wake that wait and abort the in-flight block well within the 30s flush interval.
-    t0 = time.time()
-    instance.query(f"SYSTEM CANCEL test.{table}")
-    instance.wait_for_log_line(
-        f"{table}.*Consumption interrupted: discarding in-flight block",
-        look_behind_lines=5000,
-        timeout=45,
-    )
-    elapsed = time.time() - t0
-    assert elapsed < 10, (
-        f"SYSTEM CANCEL took {elapsed:.1f}s to abort the in-flight block; it should wake the flush "
+    cancel_query_id = f"cancel_wake_{uuid.uuid4().hex}"
+    instance.query(f"SYSTEM CANCEL test.{table}", query_id=cancel_query_id)
+
+    # Measured between server-side events, so harness latency (client start, docker exec) is excluded.
+    aborts, wake_ms = instance.query_with_retry(
+        f"""
+        SYSTEM FLUSH LOGS query_log, text_log;
+        WITH (SELECT query_start_time_microseconds FROM system.query_log
+              WHERE query_id = '{cancel_query_id}' AND type = 'QueryStart') AS cancel_time
+        SELECT count(), dateDiff('millisecond', cancel_time, min(event_time_microseconds))
+        FROM system.text_log
+        WHERE logger_name = 'StorageRabbitMQ (test.{table})'
+          AND message LIKE 'Consumption interrupted: discarding in-flight block%'
+          AND event_time_microseconds >= cancel_time
+        """,
+        check_callback=lambda res: int(res.split()[0]) > 0,
+        retry_count=45,
+        sleep_time=1,
+    ).split()
+    assert int(aborts) > 0, "SYSTEM CANCEL did not abort the in-flight block"
+    assert int(wake_ms) < 10000, (
+        f"SYSTEM CANCEL took {int(wake_ms) / 1000:.1f}s to abort the in-flight block; it should wake the flush "
         "wait promptly instead of waiting out rabbitmq_flush_interval_ms"
     )
 
@@ -776,8 +789,8 @@ def test_refresh_drains_backlog_with_single_broker_worker(rabbitmq_cluster):
     # The blocked-REFRESH cycle waits for delivery from the AMQP looping task, which runs in the same
     # pool; with a single worker it never gets CPU while the streaming task waits, so the source must
     # drive the loop itself, otherwise the REFRESH permit is spent on a zero-row timeout and the
-    # backlog stays queued. Two consumers exercise the shared-pipeline-thread case: the sources run
-    # serially, so each must get its own drain budget rather than the first exhausting a shared one.
+    # backlog stays queued. Two consumers: each source must get its own drain budget rather than the
+    # first exhausting a shared one.
     node = single_worker_instance
     table = "rabbitmq_starve"
     exchange = "starve_exchange"
@@ -786,7 +799,7 @@ def test_refresh_drains_backlog_with_single_broker_worker(rabbitmq_cluster):
     # backlog, not cut it off at a fixed wall-clock budget. This is deterministic (no whole-cycle cap
     # to race) and regresses if the self-driving cycle ever reintroduces a finite whole-cycle deadline
     # for flush=0 (a paced single-worker drain of a larger backlog would then be truncated mid-cycle).
-    # num_consumers=2 keeps the serial per-source path (each source drives its own backlog).
+    # num_consumers=2: each source drives its own backlog.
     setup_consuming_table(
         table, exchange, node=node, flush_interval_ms=0, num_consumers=2
     )
