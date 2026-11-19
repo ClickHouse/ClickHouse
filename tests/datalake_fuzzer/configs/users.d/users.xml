@@ -5,7 +5,7 @@
             <allow_delta_lake_create_table>1</allow_delta_lake_create_table>
             <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
             <allow_experimental_iceberg_compaction>1</allow_experimental_iceberg_compaction>
-            <allow_experimental_paimon_storage_engine>1</allow_experimental_paimon_storage_engine>
+            <enable_paimon_storage_engine>1</enable_paimon_storage_engine>
             <allow_database_iceberg>1</allow_database_iceberg>
         </default>
     </profiles>

@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Common/typeid_cast.h>
 #include <memory>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -23,22 +24,22 @@ namespace DB
 class DistinctImplementation : public IOptimizationRule
 {
 public:
-    String getName() const override { return "Distinct"; }
+    [[nodiscard]] String getName() const override { return "Distinct"; }
 
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
+    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
     {
         const auto * step = typeid_cast<const DistinctStep *>(expression->getQueryPlanStep());
         return step && !step->isPreliminary() && expression->strategy == nullptr;
     }
 
-    Promise getPromise() const override { return 3000; }
-    bool isTransformation() const override { return false; }
+    [[nodiscard]] Promise getPromise() const override { return 3000; }
+    [[nodiscard]] bool isTransformation() const override { return false; }
 
 protected:
-    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
+    GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
     {
         const auto & step = *typeid_cast<const DistinctStep *>(expression->getQueryPlanStep());
-        std::vector<GroupExpressionPtr> result;
+        GroupExpressions result;
 
         auto add_alternative = [&](ImplementationStrategyPtr strategy, const DistributionDescription & distribution, String strategy_name)
         {
