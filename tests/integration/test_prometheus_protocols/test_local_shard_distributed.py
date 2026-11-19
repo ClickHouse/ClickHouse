@@ -187,6 +187,17 @@ def start_cluster():
         node.query(
             f"GRANT INSERT ON metrics.prom_mixed_by_tags TO {MIXED_INSERT_USER}"
         )
+        # The same shards under a key that reads a column a samples-only request leaves to a random default.
+        node.query(
+            "CREATE TABLE metrics.prom_mixed_by_random_family AS metrics.ts_mixed "
+            "ENGINE = Distributed(mixed_local_remote_dist, '', ts_mixed, cityHash64(metric_family))"
+        )
+        node.query(
+            "ALTER TABLE metrics.prom_mixed_by_random_family MODIFY COLUMN metric_family DEFAULT toString(rand64())"
+        )
+        node.query(
+            f"GRANT INSERT ON metrics.prom_mixed_by_random_family TO {MIXED_INSERT_USER}"
+        )
 
         node.query(
             f"CREATE USER {SWAP_DENIED_USER} IDENTIFIED WITH no_password DEFAULT DATABASE metrics"
@@ -394,6 +405,24 @@ def test_a_metadata_only_write_is_routed_with_the_tags_the_insert_fills_in():
     )
     assert families("remote_shard.ts_mixed", "remote_routed_sql") == "1"
     assert families("metrics.ts_mixed", "remote_routed_sql") == "0"
+
+
+def test_a_write_routed_by_a_random_default_asks_for_the_local_grant_up_front():
+    """The sharding key reads `metric_family`, which a samples-only request leaves to `rand64`. The insert
+    evaluates that default again, so any row may reach the local shard: the write is refused with nothing written,
+    also when both evaluations would have picked the remote shard.
+    """
+    for attempt in range(5):
+        metric_name = f"random_family_metric_{attempt}"
+        response = get_response_to_remote_write(
+            node.ip_address,
+            9093,
+            f"/mixed_by_random_family/write?user={MIXED_INSERT_USER}&password=",
+            one_sample(metric_name, REMOTE_HOST),
+        )
+        assert response.status_code == 403, response.text
+        assert "metrics.ts_mixed" in response.text, response.text
+        assert mixed_counts(metric_name) == [0, 0]
 
 
 def test_remote_write_is_still_refused_when_a_row_routes_to_the_local_shard():

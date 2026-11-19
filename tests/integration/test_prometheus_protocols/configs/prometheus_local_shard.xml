@@ -51,6 +51,13 @@
                     <table>metrics.prom_mixed_by_tags</table>
                 </handler>
             </mixed_by_tags_write>
+            <mixed_by_random_family_write>
+                <url>/mixed_by_random_family/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>metrics.prom_mixed_by_random_family</table>
+                </handler>
+            </mixed_by_random_family_write>
             <!-- The remote shard under an interserver secret. -->
             <secret_write>
                 <url>/secret/write</url>

@@ -641,11 +641,18 @@ void checkPrometheusQueryDistributedWrite(
     {
         try
         {
-            /// Routed as the insert routes it: with the defaults of the columns the request leaves out.
-            Block completed_block = block;
-            ExpressionActions(addMissingDefaults(block, block_to_send.getNamesAndTypesList(), metadata->columns, context))
-                .execute(completed_block);
-            receives_rows = distributed.getShardsReceivingRows(cluster, completed_block);
+            /// Routed as the insert routes it: with the defaults of the columns the request leaves out. The insert evaluates
+            /// them again, so the routing is known here only if the defaults the sharding key reads are deterministic.
+            const auto & sharding_key_expr = distributed.getShardingKeyExpr();
+            if (sharding_key_expr
+                && !addMissingDefaults(block, sharding_key_expr->getRequiredColumnsWithTypes(), metadata->columns, context)
+                        .hasNonDeterministic())
+            {
+                Block completed_block = block;
+                ExpressionActions(addMissingDefaults(block, block_to_send.getNamesAndTypesList(), metadata->columns, context))
+                    .execute(completed_block);
+                receives_rows = distributed.getShardsReceivingRows(cluster, completed_block);
+            }
         }
         catch (...) /// NOLINT(bugprone-empty-catch)
         {
