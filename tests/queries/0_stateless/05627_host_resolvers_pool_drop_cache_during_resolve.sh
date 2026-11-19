@@ -10,12 +10,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Any address in 127.0.0.0/8 is local, so a random one is a host that no other request has resolved yet.
+# The log message is matched by the host and not by `query_id`, because with parallel replicas
+# the request is sent by a query of a replica.
 host="127.$((RANDOM % 250 + 1)).$((RANDOM % 250 + 1)).$((RANDOM % 250 + 1))"
-query_id="${CLICKHOUSE_DATABASE}_$RANDOM$RANDOM"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT host_resolvers_pool_pause_before_insert"
 
-$CLICKHOUSE_CLIENT --query_id "$query_id" -q "SELECT * FROM url('http://${host}:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+1', 'TSV', 'x UInt8')" &
+$CLICKHOUSE_CLIENT -q "SELECT * FROM url('http://${host}:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+1', 'TSV', 'x UInt8')" &
 pid=$!
 
 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT host_resolvers_pool_pause_before_insert PAUSE"
@@ -27,5 +28,5 @@ wait "$pid"
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS text_log"
 $CLICKHOUSE_CLIENT -q "
     SELECT count() > 0 FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND query_id = '$query_id'
+    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE
         AND message = 'Not caching the resolver for host ${host}, because the cache was dropped during the resolution'"
