@@ -252,6 +252,7 @@ void HashedJoinKey::markRepeatedRows(size_t begin, size_t end, UInt8 * skip) con
     /// `repeated[i]`: row `begin + i` has the bytes that `hash128` hashes for row `begin + i - 1`. Each part is compared for
     /// all the rows, so that the loops over fixed-size values vectorize.
     PaddedPODArray<UInt8> repeated;
+    repeated.reserve_exact(end - begin);
     repeated.resize_fill(end - begin, 1);
     repeated[0] = 0;
     UInt8 * __restrict same = repeated.data() - begin;
@@ -269,6 +270,7 @@ void HashedJoinKey::markRepeatedRows(size_t begin, size_t end, UInt8 * skip) con
         UInt8 * __restrict compared = same;
         if (part.null_map)
         {
+            values_same.reserve_exact(end - begin);
             values_same.resize_fill(end - begin, 1);
             compared = values_same.data() - begin;
         }

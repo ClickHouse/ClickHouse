@@ -1668,11 +1668,12 @@ void RadixUniqExactState<UInt128>::routeColumn(size_t stream, const IColumn & co
         /// The hashes of `uniqExact` (`ColumnsHashing::hash128`), which `HashedJoinKey` computes for many rows at once for
         /// tuples, `Nullable` values, strings and numbers. The rows that repeat the bytes of the previous routed row are
         /// skipped before they are hashed, as their hash is the same.
-        PaddedPODArray<UInt8> skip;
+        /// Allocated exactly, as `resize` would round it up to a power of two.
+        PaddedPODArray<UInt8> skip(column.size());
         if (null_map)
-            skip.assign(null_map, null_map + column.size());
+            memcpy(skip.data(), null_map, column.size());
         else
-            skip.resize_fill(column.size(), 0);
+            memset(skip.data(), 0, column.size());
         key.markRepeatedRows(0, column.size(), skip.data());
 
         PaddedPODArray<UInt128> hashes(column.size());
