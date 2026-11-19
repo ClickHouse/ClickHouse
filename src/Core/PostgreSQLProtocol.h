@@ -306,7 +306,7 @@ public:
 class IMessage
 {
 public:
-    virtual MessageType getMessageType() const = 0;
+    [[nodiscard]] virtual MessageType getMessageType() const = 0;
 
     virtual ~IMessage() = default;
 };
@@ -318,7 +318,7 @@ public:
     virtual void serialize(WriteBuffer & out) const = 0;
 
     /** Size of the message in bytes including message length part (4 bytes) */
-    virtual Int32 size() const = 0;
+    [[nodiscard]] virtual Int32 size() const = 0;
 
     ISerializable() = default;
 
@@ -409,7 +409,7 @@ public:
         readBinaryBigEndian(secret_key, in);
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::CANCEL_REQUEST;
     }
@@ -427,7 +427,7 @@ private:
 
     String enum_to_string[8] = {"ERROR", "FATAL", "PANIC", "WARNING", "NOTICE", "DEBUG", "INFO", "LOG"};
 
-    char isErrorOrNotice() const
+    [[nodiscard]] char isErrorOrNotice() const
     {
         switch (severity)
         {
@@ -468,7 +468,7 @@ public:
         out.write(0);
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         // message length part + (1 + sizes of other fields + 1) + null byte in the end of the message
         return static_cast<Int32>(
@@ -479,7 +479,7 @@ public:
             1);
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         if (isErrorOrNotice() == 'E')
             return MessageType::ERROR_RESPONSE;
@@ -498,12 +498,12 @@ public:
         out.write('I');
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         return 4 + 1;
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::READY_FOR_QUERY;
     }
@@ -517,7 +517,7 @@ public:
         deserializePayload(in, "Terminate message", [](ReadBuffer &) {});
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::TERMINATE;
     }
@@ -586,7 +586,7 @@ public:
         }
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::STARTUP_MESSAGE;
     }
@@ -602,13 +602,13 @@ public:
         writeBinaryBigEndian(static_cast<Int32>(3), out); // specifies that a clear-text password is required (by protocol)
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         // length of message + special int32
         return 4 + 4;
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::AUTHENTICATION_CLEARTEXT_PASSWORD;
     }
@@ -628,12 +628,12 @@ public:
         out.write(0);
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         return 4 + 4 + supported_method.size() + 1 + 1;
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::AUTHENTICATION_SASL;
     }
@@ -661,7 +661,7 @@ public:
         }, max_unauthenticated_message_size);
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::SASL_INITIAL_RESPONSE;
     }
@@ -685,12 +685,12 @@ public:
         out.write(data.data(), data.size());
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         return 4 + 4 + static_cast<Int32>(data.size());
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::AUTHENTICATION_SASL_CONTINUE;
     }
@@ -709,7 +709,7 @@ public:
         }, max_unauthenticated_message_size);
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::SASL_RESPONSE;
     }
@@ -725,13 +725,13 @@ public:
         writeBinaryBigEndian(0, out); // specifies that the authentication was successful (by protocol)
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         // length of message + special int32
         return 4 + 4;
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::AUTHENTICATION_OK;
     }
@@ -750,7 +750,7 @@ public:
         }, max_unauthenticated_message_size);
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::PASSWORD_MESSAGE;
     }
@@ -776,12 +776,12 @@ public:
         writeNullTerminatedString(value, out);
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         return static_cast<Int32>(4 + name.size() + 1 + value.size() + 1);
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::PARAMETER_STATUS;
     }
@@ -807,12 +807,12 @@ public:
         writeBinaryBigEndian(secret_key, out);
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         return 4 + 4 + 4;
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::BACKEND_KEY_DATA;
     }
@@ -831,7 +831,7 @@ public:
         });
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::QUERY;
     }
@@ -866,7 +866,7 @@ public:
         });
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::PARSE;
     }
@@ -883,12 +883,12 @@ public:
         writeBinaryBigEndian(size(), out);
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         return 4;
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::PARSE_COMPLETE;
     }
@@ -966,7 +966,7 @@ public:
         });
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::BIND;
     }
@@ -983,12 +983,12 @@ public:
         writeBinaryBigEndian(size(), out);
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         return 4;
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::BIND_COMPLETE;
     }
@@ -1009,7 +1009,7 @@ public:
         });
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::DESCRIBE;
     }
@@ -1031,7 +1031,7 @@ public:
         });
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::BIND;
     }
@@ -1047,12 +1047,12 @@ public:
         writeBinaryBigEndian(size(), out);
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         return 4;
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::EMPTY_QUERY_RESPONSE;
     }
@@ -1082,7 +1082,7 @@ public:
         });
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::CLOSE;
     }
@@ -1101,12 +1101,12 @@ public:
         writeBinaryBigEndian(size(), out);
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         return 4;
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::CLOSE_COMPLETE;
     }
@@ -1124,7 +1124,7 @@ public:
                             "Wrong message length {} in Sync message, it must be 4", size);
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::SYNC;
     }
@@ -1155,7 +1155,7 @@ public:
         writeBinaryBigEndian(static_cast<Int16>(format_code), out);
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         // size of name (C string)
         // + object ID of the table (Int32 and always zero) + attribute number of the column (Int16 and always zero)
@@ -1182,7 +1182,7 @@ public:
             field.serialize(out);
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         Int32 sz = 4 + 2; // size of message + number of fields
         for (const FieldDescription & field : fields_descr)
@@ -1190,7 +1190,7 @@ public:
         return sz;
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::ROW_DESCRIPTION;
     }
@@ -1208,7 +1208,7 @@ public:
         writeString(str, out);
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         return static_cast<Int32>(str.size());
     }
@@ -1219,7 +1219,7 @@ class NullField : public ISerializable
 public:
     void serialize(WriteBuffer & /* out */) const override {}
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         return -1;
     }
@@ -1247,7 +1247,7 @@ public:
         }
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         Int32 sz = 4 + 2; // size of message + number of fields
         /// If values is NULL, field size is -1 and data not added.
@@ -1256,7 +1256,7 @@ public:
         return sz;
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::DATA_ROW;
     }
@@ -1275,7 +1275,7 @@ public:
         });
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::COPY_DATA;
     }
@@ -1301,12 +1301,12 @@ public:
             writeBinaryBigEndian(static_cast<Int16>(FormatCode::TEXT), out);
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         return 4 + 1 + 2 + 2 * num_columns;
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::COPY_IN_RESPONSE;
     }
@@ -1331,12 +1331,12 @@ public:
             writeBinaryBigEndian(static_cast<Int16>(FormatCode::TEXT), out);
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         return 4 + 1 + 2 + 2 * num_columns;
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::COPY_OUT_RESPONSE;
     }
@@ -1355,7 +1355,7 @@ public:
         });
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::COPY_DATA;
     }
@@ -1373,7 +1373,7 @@ public:
                             "Wrong message length {} in CopyDone message, it must be 4", size);
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::COPY_DONE;
     }
@@ -1400,7 +1400,7 @@ public:
             message.pop_back();
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::COPY_FAIL;
     }
@@ -1422,12 +1422,12 @@ public:
         out.write(data.data(), data.size());
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         return 4 + static_cast<Int32>(data.size());
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::COPY_DATA;
     }
@@ -1442,12 +1442,12 @@ public:
         writeBinaryBigEndian(size(), out);
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         return 4;
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::COPY_DATA;
     }
@@ -1462,12 +1462,12 @@ public:
         writeBinaryBigEndian(size(), out);
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         return 4;
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::COPY_DONE;
     }
@@ -1549,12 +1549,12 @@ public:
         writeNullTerminatedString(value, out);
     }
 
-    Int32 size() const override
+    [[nodiscard]] Int32 size() const override
     {
         return static_cast<Int32>(4 + value.size() + 1);
     }
 
-    MessageType getMessageType() const override
+    [[nodiscard]] MessageType getMessageType() const override
     {
         return MessageType::COMMAND_COMPLETE;
     }
@@ -1671,7 +1671,7 @@ public:
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) = 0;
 
-    virtual AuthenticationType getType() const = 0;
+    [[nodiscard]] virtual AuthenticationType getType() const = 0;
 
     virtual ~AuthenticationMethod() = default;
 };
@@ -1688,7 +1688,7 @@ public:
         setPassword(user_name, "", session, address);
     }
 
-    AuthenticationType getType() const override
+    [[nodiscard]] AuthenticationType getType() const override
     {
         return AuthenticationType::NO_PASSWORD;
     }
@@ -1717,7 +1717,7 @@ public:
                     static_cast<Int32>(type));
     }
 
-    AuthenticationType getType() const override
+    [[nodiscard]] AuthenticationType getType() const override
     {
         return AuthenticationType::PLAINTEXT_PASSWORD;
     }
@@ -2019,7 +2019,7 @@ public:
         session.authenticate(credentials, address);
     }
 
-    AuthenticationType getType() const override
+    [[nodiscard]] AuthenticationType getType() const override
     {
         return AuthenticationType::SCRAM_SHA256_PASSWORD;
     }

@@ -151,7 +151,7 @@ struct StatisticsFixedStringRef
 
     void clear() { min = max = nullptr; }
 
-    parq::Statistics get(const WriteOptions & options) const
+    [[nodiscard]] parq::Statistics get(const WriteOptions & options) const
     {
         parq::Statistics s;
         if (min == nullptr || fixed_string_size > options.max_statistics_size)
@@ -201,7 +201,7 @@ struct StatisticsFixedStringCopy
 
     void clear() { empty = true; }
 
-    parq::Statistics get(const WriteOptions &) const
+    [[nodiscard]] parq::Statistics get(const WriteOptions &) const
     {
         parq::Statistics s;
         if (empty)
@@ -254,7 +254,7 @@ struct StatisticsStringRef
 
     void clear() { *this = {}; }
 
-    parq::Statistics get(const WriteOptions & options) const
+    [[nodiscard]] parq::Statistics get(const WriteOptions & options) const
     {
         parq::Statistics s;
         if (min.ptr == nullptr)
@@ -315,7 +315,7 @@ struct StatisticsStringCopy
 
     void clear() { *this = {}; }
 
-    parq::Statistics get(const WriteOptions & options) const
+    [[nodiscard]] parq::Statistics get(const WriteOptions & options) const
     {
         parq::Statistics s;
         if (empty)
@@ -410,13 +410,13 @@ struct StatisticsGeometry
         *this = StatisticsGeometry();
     }
 
-    parq::Statistics get(const WriteOptions &) const
+    [[nodiscard]] parq::Statistics get(const WriteOptions &) const
     {
         return {};
     }
 
     /// Returns nullopt if a value could not be parsed as WKB, then no statistics are written.
-    std::optional<parq::GeospatialStatistics> getGeospatial() const
+    [[nodiscard]] std::optional<parq::GeospatialStatistics> getGeospatial() const
     {
         if (!is_valid)
             return std::nullopt;
@@ -451,7 +451,7 @@ struct StatisticsGeometry
 
 private:
     /// The bound is neither empty (no coordinates seen) nor invalid (NaN).
-    bool hasBound(size_t i) const
+    [[nodiscard]] bool hasBound(size_t i) const
     {
         return !std::isinf(min[i] - max[i]) && !std::isnan(min[i]) && !std::isnan(max[i]);
     }
@@ -1348,7 +1348,7 @@ public:
         }
     }
 
-    size_t estimatedDataEncodedSize() const { return buf.size(); }
+    [[nodiscard]] size_t estimatedDataEncodedSize() const { return buf.size(); }
 
     /// Appends the encoded values to `out` and starts a new page.
     void flush(PODArray<char> & out)
@@ -1383,13 +1383,13 @@ public:
             indexes[pos + i] = getOrInsert(values[i]);
     }
 
-    size_t numEntries() const { return dictionary.size(); }
+    [[nodiscard]] size_t numEntries() const { return dictionary.size(); }
 
     /// The size of the PLAIN-encoded dictionary, which `writeDictionary` writes.
-    size_t dictionaryEncodedSize() const { return dictionary_encoded_size; }
+    [[nodiscard]] size_t dictionaryEncodedSize() const { return dictionary_encoded_size; }
 
     /// An upper bound of the size of what `flush` writes.
-    size_t estimatedDataEncodedSize() const { return 1 + maxRLESize(bitWidth(), indexes.size()); }
+    [[nodiscard]] size_t estimatedDataEncodedSize() const { return 1 + maxRLESize(bitWidth(), indexes.size()); }
 
     /// Appends the encoded indexes to `out` and starts a new page: the bit width as a byte, and the
     /// RLE / bit-packed hybrid encoding of the indexes.
@@ -1441,7 +1441,7 @@ private:
     using DictionaryValue = std::conditional_t<is_byte_array, std::string_view, T>;
 
     /// Ceiling of log2 of the number of entries, but at least 1 for a single entry.
-    size_t bitWidth() const
+    [[nodiscard]] size_t bitWidth() const
     {
         size_t num_entries = dictionary.size();
         if (num_entries <= 1)
@@ -2160,6 +2160,7 @@ void writeColumnImpl(
         /// Pick enough data for a page.
         size_t next_def_offset = def_offset;
         size_t next_data_offset = data_offset;
+        size_t page_rows = 0;
         while (true)
         {
             /// Bite off a batch of defs and corresponding data values.
@@ -2303,6 +2304,15 @@ void writeColumnImpl(
 
             with_encoder([&](auto & encoder) { encoder.put(converted, data_count); });
 
+            if (options.data_page_row_limit)
+            {
+                if (s.max_rep == 0)
+                    page_rows += def_count;
+                else
+                    for (size_t i = 0; i < def_count; ++i)
+                        page_rows += s.rep[next_def_offset + i] == 0;
+            }
+
             next_def_offset += def_count;
             next_data_offset += data_count;
 
@@ -2317,7 +2327,8 @@ void writeColumnImpl(
                 || s.rep[next_def_offset] == 0;
             const size_t page_target = std::min(options.data_page_size, max_record_bytes);
             if (next_def_offset == num_values ||
-                (at_record_boundary && estimated_data_encoded_size() >= page_target))
+                (at_record_boundary && (estimated_data_encoded_size() >= page_target
+                    || (options.data_page_row_limit && page_rows >= options.data_page_row_limit))))
             {
                 flush_page(next_def_offset - def_offset, next_data_offset - data_offset);
                 break;
