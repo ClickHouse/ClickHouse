@@ -35,7 +35,7 @@ class ReadCancellation final
 public:
     explicit ReadCancellation(const ContextPtr & context);
 
-    const CancelHandlePtr & handle() const { return cancel_handle; }
+    [[nodiscard]] const CancelHandlePtr & handle() const { return cancel_handle; }
     void requestCancel() noexcept;
 
 private:
@@ -53,8 +53,8 @@ public:
     virtual std::optional<Scan::Batch> nextBatch() = 0;
     virtual void releaseBatch(UInt64 bytes) noexcept = 0;
     virtual void requestCancel() noexcept = 0;
-    virtual const std::shared_ptr<arrow::Schema> & schema() const = 0;
-    virtual Scan::Stats stats() const noexcept = 0;
+    [[nodiscard]] virtual const std::shared_ptr<arrow::Schema> & schema() const = 0;
+    [[nodiscard]] virtual Scan::Stats stats() const noexcept = 0;
 };
 
 class ScanCoordinator final : public std::enable_shared_from_this<ScanCoordinator>
@@ -78,9 +78,9 @@ public:
         Batch & operator=(Batch && other) noexcept;
         ~Batch();
 
-        const std::shared_ptr<arrow::RecordBatch> & recordBatch() const { return record_batch; }
-        UInt64 rows() const { return batch_rows; }
-        UInt64 bytes() const { return batch_bytes; }
+        [[nodiscard]] const std::shared_ptr<arrow::RecordBatch> & recordBatch() const { return record_batch; }
+        [[nodiscard]] UInt64 rows() const { return batch_rows; }
+        [[nodiscard]] UInt64 bytes() const { return batch_bytes; }
 
     private:
         friend class ScanCoordinator;
@@ -146,7 +146,7 @@ struct ColumnInDataset
     /// Empty for the whole column.
     String subcolumn_name;
 
-    DataTypePtr getType() const;
+    [[nodiscard]] DataTypePtr getType() const;
 };
 
 /// Finds the column among the top-level `columns` of a dataset that `name` refers to.

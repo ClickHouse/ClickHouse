@@ -60,7 +60,7 @@ struct DatasetOptions
 
     /// Stable cache key for query-scoped dataset reuse (includes credentials fingerprint).
     /// Timeouts are intentionally excluded: they do not change dataset identity.
-    String identityKey() const;
+    [[nodiscard]] String identityKey() const;
 };
 
 struct FragmentInfo
@@ -88,7 +88,7 @@ public:
     CancelHandle & operator=(CancelHandle && other) noexcept;
 
     void requestCancel() noexcept;
-    ch_lance_cancel_handle * raw() const { return handle; }
+    [[nodiscard]] ch_lance_cancel_handle * raw() const { return handle; }
 
 private:
     ch_lance_cancel_handle * handle = nullptr;
@@ -110,27 +110,27 @@ public:
 
     explicit operator bool() const { return static_cast<bool>(impl); }
 
-    const DatasetOptions & options() const;
-    String identityKey() const;
+    [[nodiscard]] const DatasetOptions & options() const;
+    [[nodiscard]] String identityKey() const;
 
-    TableStateSnapshot currentSnapshot(const CancelHandlePtr & cancel = {}) const;
+    [[nodiscard]] TableStateSnapshot currentSnapshot(const CancelHandlePtr & cancel = {}) const;
     NamesAndTypesList tableSchema(
         const TableStateSnapshot & snapshot,
         ContextPtr context,
         const CancelHandlePtr & cancel = {},
         std::unordered_set<String> * utf8_columns = nullptr) const;
-    std::optional<size_t> totalRows(const TableStateSnapshot & snapshot, const CancelHandlePtr & cancel = {}) const;
-    std::optional<size_t> countRows(
+    [[nodiscard]] std::optional<size_t> totalRows(const TableStateSnapshot & snapshot, const CancelHandlePtr & cancel = {}) const;
+    [[nodiscard]] std::optional<size_t> countRows(
         const TableStateSnapshot & snapshot,
         const std::optional<String> & predicate,
         const std::vector<UInt64> & fragment_ids = {},
         const CancelHandlePtr & cancel = {}) const;
-    std::optional<size_t> totalBytes() const;
+    [[nodiscard]] std::optional<size_t> totalBytes() const;
     /// Lists fragments for the pinned snapshot version (exact checkout).
-    std::vector<FragmentInfo> listFragments(const TableStateSnapshot & snapshot, const CancelHandlePtr & cancel = {}) const;
-    Scan planScan(const ScanDescription & scan_description, const CancelHandlePtr & cancel = {}) const;
+    [[nodiscard]] std::vector<FragmentInfo> listFragments(const TableStateSnapshot & snapshot, const CancelHandlePtr & cancel = {}) const;
+    [[nodiscard]] Scan planScan(const ScanDescription & scan_description, const CancelHandlePtr & cancel = {}) const;
 
-    ch_lance_dataset * raw() const;
+    [[nodiscard]] ch_lance_dataset * raw() const;
 
 private:
     struct Impl
@@ -169,9 +169,9 @@ public:
     /// Thread-safe cooperative cancel. Wakes a pending nextBatch; does not free the scan.
     void requestCancel() noexcept;
 
-    std::optional<Batch> nextBatch() const;
+    [[nodiscard]] std::optional<Batch> nextBatch() const;
     void releaseBatch(UInt64 bytes) const noexcept;
-    const std::shared_ptr<arrow::Schema> & schema() const { return projected_schema; }
+    [[nodiscard]] const std::shared_ptr<arrow::Schema> & schema() const { return projected_schema; }
 
     struct Stats
     {
@@ -192,7 +192,7 @@ public:
         UInt64 producer_cancel = 0;
     };
 
-    Stats stats() const noexcept;
+    [[nodiscard]] Stats stats() const noexcept;
 
 private:
     /// Holds the dataset alive for the stream lifetime (scan must outlive free of dataset).

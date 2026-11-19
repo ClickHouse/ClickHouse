@@ -49,7 +49,7 @@ public:
         std::shared_ptr<const arrow::KeyValueMetadata> metadata,
         BlockMissingValues * block_missing_values = nullptr);
 
-    bool hasRecordBatchFieldMapping() const { return record_batch_schema != nullptr; }
+    [[nodiscard]] bool hasRecordBatchFieldMapping() const { return record_batch_schema != nullptr; }
 
     /// Validate that every validity bitmap in the record batch (recursively, including nested
     /// children and dictionaries) covers its declared rows.  Must be called before building an
@@ -96,8 +96,8 @@ private:
     using RecordBatchFieldMappings = VectorWithMemoryTracking<RecordBatchFieldMapping>;
     using NameToArrowColumn = UnorderedMapWithMemoryTracking<std::string, ArrowColumn>;
 
-    RecordBatchFieldMappings buildRecordBatchFieldMapping(const arrow::Schema & schema) const;
-    NameToArrowColumn mapRecordBatchColumns(
+    [[nodiscard]] RecordBatchFieldMappings buildRecordBatchFieldMapping(const arrow::Schema & schema) const;
+    [[nodiscard]] NameToArrowColumn mapRecordBatchColumns(
         const arrow::RecordBatch & batch,
         const RecordBatchFieldMappings & field_mapping) const;
 

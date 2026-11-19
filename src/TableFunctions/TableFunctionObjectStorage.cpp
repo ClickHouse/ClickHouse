@@ -121,7 +121,6 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
 
                     configuration = std::make_shared<StorageS3LanceConfiguration>(settings);
                 }
-                else
 #endif
 #if USE_LANCE
                 if constexpr (std::is_same_v<Configuration, StorageLocalLanceConfiguration>)
@@ -131,60 +130,60 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
 
                     configuration = std::make_shared<StorageLocalLanceConfiguration>(settings);
                 }
-                else
 #endif
+                if (!configuration)
                 {
-                switch (object_storage_type)
-                {
+                    switch (object_storage_type)
+                    {
 #if USE_AWS_S3 && USE_AVRO
-                case ObjectStorageType::S3:
-                    if (Definition::object_storage_type != "s3")
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
+                    case ObjectStorageType::S3:
+                        if (Definition::object_storage_type != "s3")
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
-                    if (is_iceberg)
-                        configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
+                        if (is_iceberg)
+                            configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
-                    else if (is_delta_lake)
-                        configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(settings);
+                        else if (is_delta_lake)
+                            configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(settings);
 #endif
-                    break;
+                        break;
 #endif
 #if USE_AZURE_BLOB_STORAGE && USE_AVRO
-                case ObjectStorageType::Azure:
-                    if (Definition::name != "iceberg" &&
-                        Definition::name != "icebergCluster" &&
-                        Definition::name != "deltaLake" &&
-                        Definition::name != "deltaLakeCluster" &&
-                        Definition::object_storage_type != "azure")
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
+                    case ObjectStorageType::Azure:
+                        if (Definition::name != "iceberg" &&
+                            Definition::name != "icebergCluster" &&
+                            Definition::name != "deltaLake" &&
+                            Definition::name != "deltaLakeCluster" &&
+                            Definition::object_storage_type != "azure")
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
-                    if (is_iceberg)
-                        configuration = std::make_shared<StorageAzureIcebergConfiguration>(settings);
+                        if (is_iceberg)
+                            configuration = std::make_shared<StorageAzureIcebergConfiguration>(settings);
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
-                    else if (is_delta_lake)
-                        configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(settings);
+                        else if (is_delta_lake)
+                            configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(settings);
 #endif
-                    break;
+                        break;
 #endif
 #if USE_AVRO
-                case ObjectStorageType::Local:
-                    if (Definition::name != "iceberg" &&
-                        Definition::name != "icebergCluster" &&
-                        Definition::name != "deltaLake" &&
-                        Definition::name != "deltaLakeCluster" &&
-                        Definition::object_storage_type != "local")
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
-                    if (is_iceberg)
-                        configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
+                    case ObjectStorageType::Local:
+                        if (Definition::name != "iceberg" &&
+                            Definition::name != "icebergCluster" &&
+                            Definition::name != "deltaLake" &&
+                            Definition::name != "deltaLakeCluster" &&
+                            Definition::object_storage_type != "local")
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
+                        if (is_iceberg)
+                            configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
-                    else if (is_delta_lake)
-                        configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(settings);
+                        else if (is_delta_lake)
+                            configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(settings);
 #endif
-                    break;
+                        break;
 #endif
-                default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", Definition::name, object_storage_type);
-                }
+                    default:
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", Definition::name, object_storage_type);
+                    }
                 }
 
                 if (!configuration)

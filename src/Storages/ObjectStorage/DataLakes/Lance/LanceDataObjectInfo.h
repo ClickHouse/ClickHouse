@@ -55,11 +55,11 @@ struct LanceDatasetObjectInfo final : public ObjectInfo
     /// Reconstruct from a cluster task without a live DatasetHandle.
     explicit LanceDatasetObjectInfo(const RelativePathWithMetadata & path_, const Lance::LanceObjectSerializableInfo & info_);
 
-    Lance::LanceObjectSerializableInfo toSerializableInfo() const;
+    [[nodiscard]] Lance::LanceObjectSerializableInfo toSerializableInfo() const;
 
-    std::optional<std::string> getPathForVirtualColumns() const override { return dataset_path; }
-    std::optional<std::string> getFileNameForVirtualColumns() const override;
-    std::optional<UInt64> getSnapshotVersionForVirtualColumns() const override { return snapshot.version; }
+    [[nodiscard]] std::optional<std::string> getPathForVirtualColumns() const override { return dataset_path; }
+    [[nodiscard]] std::optional<std::string> getFileNameForVirtualColumns() const override;
+    [[nodiscard]] std::optional<UInt64> getSnapshotVersionForVirtualColumns() const override { return snapshot.version; }
 
     const Lance::TableStateSnapshot snapshot;
     /// Empty handle is valid on workers after cluster deserialization; open via session/snapshot.

@@ -216,8 +216,8 @@ public:
         shared_state->condition.notify_all();
     }
 
-    const std::shared_ptr<arrow::Schema> & schema() const override { return projected_schema; }
-    Lance::Scan::Stats stats() const noexcept override
+    [[nodiscard]] const std::shared_ptr<arrow::Schema> & schema() const override { return projected_schema; }
+    [[nodiscard]] Lance::Scan::Stats stats() const noexcept override
     {
         std::lock_guard lock(shared_state->mutex);
         return producer_stats;
@@ -456,8 +456,8 @@ public:
 
     void releaseBatch(UInt64) noexcept override { }
     void requestCancel() noexcept override { }
-    const std::shared_ptr<arrow::Schema> & schema() const override { return projected_schema; }
-    Lance::Scan::Stats stats() const noexcept override
+    [[nodiscard]] const std::shared_ptr<arrow::Schema> & schema() const override { return projected_schema; }
+    [[nodiscard]] Lance::Scan::Stats stats() const noexcept override
     {
         std::lock_guard lock(mutex);
         return producer_stats;

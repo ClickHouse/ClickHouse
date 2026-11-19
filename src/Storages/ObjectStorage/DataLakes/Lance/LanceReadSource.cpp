@@ -104,8 +104,8 @@ public:
     std::optional<Scan::Batch> nextBatch() override { return scan.nextBatch(); }
     void releaseBatch(UInt64 bytes) noexcept override { scan.releaseBatch(bytes); }
     void requestCancel() noexcept override { scan.requestCancel(); }
-    const std::shared_ptr<arrow::Schema> & schema() const override { return scan.schema(); }
-    Scan::Stats stats() const noexcept override { return scan.stats(); }
+    [[nodiscard]] const std::shared_ptr<arrow::Schema> & schema() const override { return scan.schema(); }
+    [[nodiscard]] Scan::Stats stats() const noexcept override { return scan.stats(); }
 
 private:
     Scan scan;

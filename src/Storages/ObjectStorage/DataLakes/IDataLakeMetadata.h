@@ -110,7 +110,7 @@ public:
     /// Distributed table-function workers receive an explicit schema from the initiator.
     /// Return true when individual task objects also carry the exact data snapshot needed
     /// by the custom reader, so the worker must not replace that schema with its local latest one.
-    virtual bool supportsDistributedReadWithExplicitSchema() const { return false; }
+    [[nodiscard]] virtual bool supportsDistributedReadWithExplicitSchema() const { return false; }
 
     /// Read schema is the schema of actual data files,
     /// which can differ from table schema from data lake metadata.
@@ -129,7 +129,7 @@ public:
     /// a custom read pipeline instead of asking FormatFactory to read a single object.
     /// `limit` is an optional row upper bound (typically limit+offset from SourceStepWithFilter).
     /// Default implementations ignore it; engines that can stop early (e.g. Lance) may consume it.
-    virtual std::optional<Pipe> read(
+    [[nodiscard]] virtual std::optional<Pipe> read(
         ObjectInfoPtr,
         const ReadFromFormatInfo &,
         const std::optional<FormatSettings> &,
@@ -145,7 +145,7 @@ public:
     }
 
     /// Dataset formats may provide one logical read pipeline before file iteration.
-    virtual std::optional<Pipe> readDataset(
+    [[nodiscard]] virtual std::optional<Pipe> readDataset(
         const StorageSnapshotPtr &,
         const ReadFromFormatInfo &,
         const std::optional<FormatSettings> &,
@@ -160,7 +160,7 @@ public:
         return std::nullopt;
     }
 
-    virtual std::optional<size_t> getMaxCustomReadThreads(bool) const { return std::nullopt; }
+    [[nodiscard]] virtual std::optional<size_t> getMaxCustomReadThreads(bool) const { return std::nullopt; }
 
     /// Whether current metadata object is updateable (instead of recreation from scratch)
     /// to the latest version of table state in data lake.
