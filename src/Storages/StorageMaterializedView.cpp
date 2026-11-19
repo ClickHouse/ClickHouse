@@ -62,6 +62,8 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsDouble limit;
+    extern const SettingsDouble offset;
 }
 
 namespace ServerSetting
@@ -177,6 +179,16 @@ namespace
         if (countTableExpressions(*select_with_union) != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Incremental refresh requires exactly one source table, but the query references other tables (in a JOIN or a subquery)");
+
+        /// A streaming read reports its cursor once it has read everything up to the end of the bounded stream. A `LIMIT`
+        /// stops the read earlier and may drop the rows of an already read chunk, so the next refresh would start from
+        /// a cursor that does not match the appended rows (and append the same rows again, or skip some of them).
+        const auto & select = *select_with_union->as<ASTSelectWithUnionQuery &>().list_of_selects->children[0]->as<ASTSelectQuery>();
+        if (select.limitLength() || select.limitOffset() || select.limitAfter() || select.limitUntil())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT and OFFSET are not supported in the query of an incremental refresh");
+        if (context->getSettingsRef()[Setting::limit] != 0 || context->getSettingsRef()[Setting::offset] != 0)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "The settings `limit` and `offset` are not supported in the query of an incremental refresh");
 
         const auto * identifier = source_table_expr.database_and_table_name->as<ASTTableIdentifier>();
         if (!identifier)
