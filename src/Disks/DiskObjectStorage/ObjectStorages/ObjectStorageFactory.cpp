@@ -149,7 +149,7 @@ S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::st
     if (config.has(config_prefix + ".endpoint_subpath"))
         endpoint_subpath = context->getMacros()->expand(config.getString(config_prefix + ".endpoint_subpath"));
 
-    S3::URI uri(fs::path(endpoint) / endpoint_subpath, false, true, uri_style);
+    S3::URI uri((fs::path(endpoint) / endpoint_subpath).string(), false, true, uri_style);
 
     /// An empty key remains empty.
     if (!uri.key.empty() && !uri.key.ends_with('/'))
@@ -319,12 +319,17 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
                 "loading instead.",
                 name);
 
+        /// As for the `AzureBlobStorage` table engine, a connection string is described by its blob service URL.
+        String description = std::holds_alternative<AzureBlobStorage::ConnectionString>(params.auth_method)
+            ? params.getConnectionURLWithoutQuery()
+            : params.endpoint.getServiceEndpoint().substr(0, params.endpoint.getServiceEndpoint().find_first_of("?#"));
+
         return std::make_shared<AzureObjectStorage>(
             name,
             /// A client without credentials must not probe or create the container: the denied request would fail the load.
             AzureBlobStorage::getContainerClient(params, /*readonly=*/ drop_credentials), std::move(azure_settings),
             params, params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
-            params.endpoint.getServiceEndpoint(), common_key_prefix);
+            description, common_key_prefix);
     };
 
     factory.registerObjectStorageType("azure_blob_storage", creator);
