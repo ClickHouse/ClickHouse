@@ -39,6 +39,7 @@
 #include <Storages/System/ServerSettingColumnsParams.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #    include <Disks/IO/WriteBufferFromDistributedCache.h>
+#    include <Server/DistributedCache/DistributedCacheServerConnectionRegistry.h>
 #endif
 #include <base/sanitizer_defs.h>
 #include <base/sort.h>
@@ -322,17 +323,17 @@ The setting is applied on the fly: it is re-read on every update of the asynchro
 )", 0) \
     DECLARE(String, default_database, "default", R"(The default database name.)", 0) \
     DECLARE(String, default_session_user, "default", R"(
-The user name that is used for authentication when a client connects without specifying a user name: an HTTP request without the `user` parameter and `X-ClickHouse-User` header, a native protocol `Hello` packet with an empty user name, a MySQL or PostgreSQL handshake with an empty user name, a gRPC query without `user_name`, an Arrow Flight call without an `authorization` header (or with Basic credentials with an empty user name), or a [web terminal](/interfaces/web-terminal) WebSocket `auth` message with an omitted or empty `user` field.
+The user name that is used for authentication when a client connects without specifying a user name: an HTTP request without the `user` parameter and `X-ClickHouse-User` header, a native protocol `Hello` packet with an empty user name, a MySQL or PostgreSQL handshake with an empty user name, a gRPC query without `user_name`, an Arrow Flight call without an `authorization` header (or with Basic credentials with an empty user name), or a [web terminal](/concepts/features/interfaces/web-terminal) WebSocket `auth` message with an omitted or empty `user` field.
 
 The empty user name is resolved to this value before authentication, so the connection is still subject to the substituted user's authentication: the password, network, and other access checks apply as usual. An empty user name is merely an alias for the configured user name, and accepting it grants no access beyond what specifying the same user name explicitly already gives. In versions before this setting was introduced, the fallback of an empty user name to `default` existed only for the plain HTTP query-parameter path, gRPC queries, Arrow Flight calls, and the web terminal, while the native, MySQL, and PostgreSQL protocols rejected an empty user name; now all of them accept it. HTTP Basic authentication with an empty user name and requests with `X-ClickHouse-Key` but without `X-ClickHouse-User` also rejected an empty user name before this setting was introduced.
 
 If set to an empty string, connections without a user name are rejected. HTTP handlers with a fixed user (the `user` key inside `handler` of an `http_handlers` rule, or the `user` key inside `handler` of a `prometheus.handlers` rule) authenticate as their configured user and are not affected.
 
-When the `session_log` section is enabled in the server configuration, every such reject is recorded in [`system.session_log`](/operations/system-tables/session_log) as a `LoginFailure` event with an empty `user`, so that prohibited connections without a user name can be audited on every interface.
+When the `session_log` section is enabled in the server configuration, every such reject is recorded in [`system.session_log`](/reference/system-tables/session_log) as a `LoginFailure` event with an empty `user`, so that prohibited connections without a user name can be audited on every interface.
 
 The default session user is never applied to interserver connections: they identify themselves with a special marker instead of a user name and are authenticated by the cluster secret and the initial user.
 
-The value can be overridden for a specific endpoint of a composable protocol with the `default_session_user` key in the `protocols` section, see [Composable protocols](/operations/settings/composable-protocols).
+The value can be overridden for a specific endpoint of a composable protocol with the `default_session_user` key in the `protocols` section, see [Composable protocols](/concepts/features/configuration/server-config/composable-protocols).
 )", 0) \
     DECLARE(String, tmp_policy, "", R"(
 Policy for storage with temporary data. All files with `tmp` prefix will be removed at start.
@@ -356,7 +357,7 @@ For more information see the [MergeTree Table Engine](/reference/engines/table-e
 
 When `/disk1` is full, temporary data will be stored on `/disk2`.
 
-```xml
+```xml highlight={13-20,24}
 <clickhouse>
 <storage_configuration>
     <disks>
@@ -369,7 +370,6 @@ When `/disk1` is full, temporary data will be stored on `/disk2`.
     </disks>
 
     <policies>
-        <!-- highlight-start -->
         <tmp_two_disks>
             <volumes>
                 <main>
@@ -378,13 +378,10 @@ When `/disk1` is full, temporary data will be stored on `/disk2`.
                 </main>
             </volumes>
         </tmp_two_disks>
-        <!-- highlight-end -->
     </policies>
 </storage_configuration>
 
-<!-- highlight-start -->
 <tmp_policy>tmp_two_disks</tmp_policy>
-<!-- highlight-end -->
 </clickhouse>
 ```
 )", 0) \
@@ -413,7 +410,7 @@ Only one option can be used to configure temporary data storage: `tmp_path` ,`tm
 
 Both the cache for `local_disk`, and temporary data will be stored in `/tiny_local_cache` on the filesystem, managed by `tiny_local_cache`.
 
-```xml
+```xml highlight={9-16,20}
 <clickhouse>
 <storage_configuration>
     <disks>
@@ -422,7 +419,6 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
             <path>/local_disk/</path>
         </local_disk>
 
-        <!-- highlight-start -->
         <tiny_local_cache>
             <type>cache</type>
             <disk>local_disk</disk>
@@ -431,13 +427,10 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
             <max_file_segment_size>1M</max_file_segment_size>
             <cache_on_write_operations>1</cache_on_write_operations>
         </tiny_local_cache>
-        <!-- highlight-end -->
     </disks>
 </storage_configuration>
 
-<!-- highlight-start -->
 <temporary_data_in_cache>tiny_local_cache</temporary_data_in_cache>
-<!-- highlight-end -->
 </clickhouse>
 ```
 )", 0) \
@@ -469,7 +462,7 @@ A value of `0` (default) preserves the legacy behaviour: implicit `operator new`
 Note, to avoid side effects it is recommended to set value greater then `max_untracked_memory`.
 )", 0) \
     DECLARE(UInt64, min_allocation_size_to_log_stack_trace, 0, R"(
-Minimum size, in bytes, of a single charge to the global (server-wide) memory tracker for which a stack trace is captured, written to the server log at `Warning` level and inserted into [`system.trace_log`](/operations/system-tables/trace_log) with trace type `MemoryLargeAllocation`.
+Minimum size, in bytes, of a single charge to the global (server-wide) memory tracker for which a stack trace is captured, written to the server log at `Warning` level and inserted into [`system.trace_log`](/reference/system-tables/trace_log) with trace type `MemoryLargeAllocation`.
 
 The size compared against the threshold, and reported, is what one tracker call charges, which is not necessarily one allocation: a thread defers its small allocations and flushes them as a single charge, so the reported size can exceed the allocation at the top of the reported stack by up to `max_untracked_memory`. Keeping the threshold well above `max_untracked_memory` keeps that difference immaterial.
 
@@ -477,7 +470,7 @@ This is a diagnostic for a global tracked total that has grown far beyond the pr
 
 At most 10 traces are captured per server run, because capturing and symbolizing a stack is expensive and the trigger tends to repeat. Changing this setting at runtime, in either direction, does not raise that bound.
 
-Requires `trace_log` to be configured. Without a running trace collector the value is ignored and reported as `0` in [`system.server_settings`](/operations/system-tables/server_settings), since the trace could only be captured and discarded. A trace the collector processes before that table is attached, which happens late in startup, reaches the server log only.
+Requires `trace_log` to be configured. Without a running trace collector the value is ignored and reported as `0` in [`system.server_settings`](/reference/system-tables/server_settings), since the trace could only be captured and discarded. A trace the collector processes before that table is attached, which happens late in startup, reaches the server log only.
 
 A value of `0` (default) disables the diagnostic. Set it well above the largest allocation the server legitimately makes, otherwise ordinary large allocations are logged too and startup can spend the whole budget.
 )", 0) \
@@ -667,7 +660,7 @@ This setting can be modified at runtime and will take effect immediately.
     DECLARE(Double, uncompressed_cache_size_ratio, DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the uncompressed cache relative to the cache's total size.)", 0) \
     DECLARE(String, mark_cache_policy, DEFAULT_MARK_CACHE_POLICY, R"(Cache eviction policy for the mark cache (index of MergeTree family tables). Possible values: `LRU`, `SLRU`, `SIEVE`. See [`mark_cache_size`](#mark_cache_size) for cache capacity and [`mark_cache_size_ratio`](#mark_cache_size_ratio) for the protected queue size in SLRU policy.)", 0) \
     DECLARE(UInt64, mark_cache_size, DEFAULT_MARK_CACHE_MAX_SIZE, R"(
-Maximum size of cache for marks (index of [`MergeTree`](/reference/engines/table-engines/mergetree-family) family of tables).
+Maximum size of cache for marks (index of [`MergeTree`](/reference/engines/table-engines/mergetree-family/index) family of tables).
 
 <Note>
 This setting can be modified at runtime and will take effect immediately.
@@ -707,6 +700,10 @@ This setting can be modified at runtime and will take effect immediately.
 
 <Note>
 This setting can be modified at runtime and will take effect immediately.
+</Note>
+
+<Note>
+In ClickHouse Cloud, the maximum cache size depends on the pod size. The exact size can be checked in `system.server_settings`. As server settings cannot be changed from SQL or the console, contact support to configure a bigger size.
 </Note>
 )", 0) \
     DECLARE(UInt64, vector_similarity_index_cache_max_entries, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_ENTRIES, "Size of cache for vector similarity index in entries. Zero means disabled.", 0) \
@@ -758,11 +755,11 @@ reports the same quantity per entry, and `CurrentMetrics.ColumnsCacheBytes` its 
 rest of the server is short of memory, see `columns_cache_free_memory_ratio`; that value is published separately
 as `CurrentMetrics.ColumnsCacheSizeLimit`.
 
-:::note
+<Note>
 A value of `0` means disabled.
 
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 )", 0) \
     DECLARE(Double, columns_cache_size_to_ram_ratio, 0.1, R"(
 The size of the columns cache as a fraction of the memory available to the server. It is used when `columns_cache_size`
@@ -1161,8 +1158,8 @@ Possible values:
 - `shortest_task_first` — Always execute smaller merge or mutation. Merges and mutations are assigned priorities based on their resulting size. Merges with smaller sizes are strictly preferred over bigger ones. This policy ensures the fastest possible merge of small parts but can lead to indefinite starvation of big merges in partitions heavily overloaded by `INSERT`s.
 )", 0) \
     DECLARE(UInt64, background_move_pool_size, 8, R"(The maximum number of threads that will be used for moving data parts to another disk or volume for *MergeTree-engine tables in a background.)", 0) \
-    DECLARE(UInt64, background_fetches_pool_size, 16, R"(The maximum number of threads that will be used for fetching data parts from another replica for [*MergeTree-engine](/reference/engines/table-engines/mergetree-family) tables in the background.)", 0) \
-    DECLARE(UInt64, background_common_pool_size, 8, R"(The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/reference/engines/table-engines/mergetree-family) tables in the background.)", 0) \
+    DECLARE(UInt64, background_fetches_pool_size, 16, R"(The maximum number of threads that will be used for fetching data parts from another replica for [*MergeTree-engine](/reference/engines/table-engines/mergetree-family/index) tables in the background.)", 0) \
+    DECLARE(UInt64, background_common_pool_size, 8, R"(The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/reference/engines/table-engines/mergetree-family/index) tables in the background.)", 0) \
     DECLARE(UInt64, background_buffer_flush_schedule_pool_size, 16, R"(The maximum number of threads that will be used for performing flush operations for [Buffer-engine tables](/reference/engines/table-engines/special/buffer) in the background.)", 0) \
     DECLARE(UInt64, background_schedule_pool_size, 512, R"(The cap on the number of threads used to execute lightweight periodic operations for replicated tables, Kafka streaming, DNS cache updates, and similar tasks. Threads are spawned lazily on demand up to this cap, so a server with light background load uses far fewer threads than this number.)", 0) \
     DECLARE(UInt64, background_schedule_pool_initial_size, 16, R"(Initial number of worker threads allocated for each background schedule pool. Each pool grows lazily up to its configured cap (`background_schedule_pool_size` and friends) when demand exceeds the current set of workers. Lower values reduce startup overhead and idle thread counts; higher values eliminate first-task scheduling latency on busy servers.)", 0) \
@@ -1239,7 +1236,7 @@ Default: `10485760` (10 MiB).
     DECLARE(Bool, http_allow_path_requests, true, R"(
 Allow the HTTP interface to route path-style requests (such as `/my_db/my_table.csv`) to the query handler.
 
-This flag gates the routing decision only, which is made before the request is authenticated, so it cannot depend on a per-user setting. After routing, the per-user settings [`http_allow_database_as_path`](/operations/settings/settings#http_allow_database_as_path), [`http_allow_table_as_file`](/operations/settings/settings#http_allow_table_as_file), and [`http_allow_filters_as_path`](/operations/settings/settings#http_allow_filters_as_path) control whether the routed path is actually interpreted for the authenticated user. When this flag is off, unknown paths return a plain `404`.
+This flag gates the routing decision only, which is made before the request is authenticated, so it cannot depend on a per-user setting. After routing, the per-user settings [`http_allow_database_as_path`](/reference/settings/session-settings#http_allow_database_as_path), [`http_allow_table_as_file`](/reference/settings/session-settings#http_allow_table_as_file), and [`http_allow_filters_as_path`](/reference/settings/session-settings#http_allow_filters_as_path) control whether the routed path is actually interpreted for the authenticated user. When this flag is off, unknown paths return a plain `404`.
 
 Enabled by default. Set it to `0` to restore the previous behavior, in which every path that is not a configured handler returns `404`.
 
@@ -1455,22 +1452,18 @@ Comma-separated list of users to ignore an early memory limit check. If user is 
 If true, ClickHouse creates all configured `system.*_log` tables before the startup. It can be helpful if some startup scripts depend on these tables.
 )", 0) \
     DECLARE(Bool, use_shared_merge_tree_log_pipeline, false, R"(
-Only available on ClickHouse Cloud. When enabled, `system.*_log` tables are backed by `SharedMergeTree` via an S3-based pipeline.
-For each log `<log>`, the following objects are created automatically on startup:
+Only available on ClickHouse Cloud. When enabled, the system logs are written through a `SharedMergeTree` pipeline
+and the `system` database becomes a Shared database, so every replica sees the same log tables.
 
-- `system.<log>_s3` — an `S3`-backed table that is the direct flush target; each
-  `SYSTEM FLUSH LOGS` call writes a new partitioned file here.
-- `system.<log>_s3queue` — an `S3Queue` table (ordered mode) that picks up files from
-  `<log>_s3` and streams rows downstream. Each node processes only its own files via
-  `partition_regex`-based partitioning.
-- `system.<log>_mv` — a `MATERIALIZED VIEW` that routes rows from `<log>_s3queue` into
-  the final `SharedMergeTree` table.
-- `system.<log>` — the final `SharedMergeTree` table where rows accumulate and are queried.
+Each flush of a log writes a `Native` file with the `s3` (or `azureBlobStorage`) table function into the folder of the
+log's generation, the hash of its columns and keys. Per generation the pipeline keeps the queue `system._<log>_s3queue_<hash>`
+reading that folder, the materialized view `system._<log>_mv_<hash>` and the `SharedMergeTree` table `system.<log>_<hash>`.
+`system.<log>` is a `Merge` table over the generations. A new schema creates a new generation; settings, TTL and indices
+come from the `smt_settings`, `smt_ttl` and `smt_indices` keys of the log's configuration and are changed in place.
+The objects are created on the first flush of a log, or at startup with `prepare_system_log_tables_on_startup`.
 
-On schema or settings change, the affected table is renamed to `<log>_0`, `<log>_1`, etc.
-and recreated, consistent with the existing `SystemLog` rotation behavior.
-
-Requires `<shared_log_pipeline><endpoint>` to be set in the server configuration.
+The local `system` database is renamed to `system_local` while the setting is enabled. Requires `shared_database_catalog`
+and `<shared_log_pipeline><endpoint>` in the server configuration.
 See also: `shared_log_pipeline.enable_sync_flush`, `shared_log_pipeline.flush_timeout_seconds`.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, config_reload_interval_ms, 2000, R"(
@@ -1547,8 +1540,8 @@ Threads for cleanup of shared merge tree parts killer threads. Only available in
     DECLARE(NonZeroUInt64, parts_killer_max_condemned_parts_per_batch, 100000, R"(
 Maximum number of condemned parts a SharedMergeTree table fetches from Keeper in a single cleanup cycle. Bounding the batch keeps the listing and multi-get within the Keeper operation timeout, so cleanup keeps making progress even when a table has accumulated a very large condemned-parts backlog. Must be greater than zero: a value of `0` would make Keeper return an empty listing every cycle, permanently stalling cleanup. Only available in ClickHouse Cloud
 )", 0) \
-    DECLARE(UInt64, snapshot_cleaner_period, 120, R"(
-Period to completely remove snapshot parts for SharedMergeTree. Only available in ClickHouse Cloud
+    DECLARE(UInt64, snapshot_cleaner_period, 3600, R"(
+Period in seconds to completely remove snapshot parts for SharedMergeTree. Only available in ClickHouse Cloud
 )", 0) \
     DECLARE(UInt64, snapshot_cleaner_pool_size, 128, R"(
 Threads for cleanup of shared merge tree snapshot cleaner threads. Only available in ClickHouse Cloud
@@ -1590,6 +1583,7 @@ Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching
     DECLARE(NonZeroUInt64, distributed_cache_warmer_max_file_segment_size, 32_MiB, R"(Only has an effect in ClickHouse Cloud. The size of the ranges in which the cache warmer reads a fetched part into the distributed cache when the disk of the part has no local filesystem cache (with a local cache the warmer uses its `max_file_segment_size`).)", 0) \
     DECLARE(UInt64, distributed_cache_warmer_max_bytes_in_queue, 100_GiB, R"(Only has an effect in ClickHouse Cloud. The maximum total size of the ranges the cache warmer keeps queued for a disk without a local filesystem cache; the oldest ranges are discarded beyond it (with a local cache the warmer uses its `max_size`). Zero means unlimited.)", 0) \
     DECLARE(UInt64, distributed_cache_warmer_max_segments_in_queue, 100000, R"(Only has an effect in ClickHouse Cloud. The maximum number of ranges the cache warmer keeps queued for a disk without a local filesystem cache; the oldest ranges are discarded beyond it (with a local cache the warmer uses its `max_elements`). Zero means unlimited.)", 0) \
+    DECLARE(Bool, distributed_cache_warmer_skip_parts_produced_in_current_availability_zone, true, R"(Only has an effect in ClickHouse Cloud. When the cache warmer warms the distributed cache alone (the part's disk has no local filesystem cache, or the cache is disabled for reads), skip the parts that were produced by a replica in the current availability zone: written through the distributed cache, they are already in the cache of this zone. Parts of unknown origin are always warmed.)", 0) \
     DECLARE(Bool, enable_write_through_distributed_cache, false, R"(Only has an effect in ClickHouse Cloud. Allow writing to distributed cache (writing to s3 will also be done by distributed cache). This is a server-level switch, applied without a restart, so that background operations which do not have a query profile of their own (merges, mutations, `Buffer` table flushes) follow it as well. Individual queries can deviate from it with the `force_write_through_distributed_cache` setting.)", 0) \
     DECLARE(UInt32, allow_feature_tier, 0, R"(
 Controls if the user can change settings related to the different feature tiers.
@@ -1677,6 +1671,12 @@ Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirt
 See [Controlling behavior on server CPU overload](/concepts/features/configuration/settings/server-overload) for more details.
 )", 0) \
     DECLARE(Float, distributed_cache_keep_up_free_connections_ratio, 0.1f, "Soft limit for number of active connection distributed cache will try to keep free. After the number of free connections goes below distributed_cache_keep_up_free_connections_ratio * max_connections, connections with oldest activity will be closed until the number goes above the limit.", 0) \
+    DECLARE(UInt64, distributed_cache_stuck_request_no_progress_timeout_ms, 10000, R"(Distributed cache server closes a connection whose request exchanged no data for this many milliseconds, not counting time spent waiting for the client. The value 0 disables this limit; the stuck-request scan stops only when `distributed_cache_max_request_processing_time_ms` is 0 as well.)", 0) \
+    DECLARE(UInt64, distributed_cache_max_request_processing_time_ms, 60000, R"(Distributed cache server ends a request it has been processing for this many milliseconds since the request's last `StartRequest` or `ContinueRequest`, not counting time spent waiting for the client; a new read range starts a new budget. The request is ended as soon as the server can report it, and a request that never gets there has its connection closed `distributed_cache_stuck_request_scan_interval_ms` later. The value 0 means unbounded.)", 0) \
+    DECLARE(NonZeroUInt64, distributed_cache_stuck_request_scan_interval_ms, 5000, R"(Interval of the distributed cache server's stuck-request scan, in milliseconds.)", 0) \
+    DECLARE(Double, distributed_cache_slow_down_stuck_requests_ratio, 0.2, R"(Distributed cache server asks a client to slow down once at least this share of its in-flight requests is stuck; idle connections do not count. The value 0 never asks.)", 0) \
+    DECLARE(UInt64, distributed_cache_slow_down_min_stuck_requests, 10, R"(Distributed cache server asks a client to slow down only once at least this many of its requests are stuck, so that a client with a couple of requests in flight is not asked over a single one. The values 0 and 1 leave the decision to `distributed_cache_slow_down_stuck_requests_ratio` alone.)", 0) \
+    DECLARE(UInt64, distributed_cache_slow_down_window_ms, 10000, R"(How long a distributed cache server asks a client to stay away once too many of its requests are stuck, in milliseconds. Must be at least twice `distributed_cache_stuck_request_scan_interval_ms`, so that a window lapses only when a scan does not renew it; the value 0 is rejected.)", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_num, 0, R"(Maximum number of queries allowed per TCP connection before the connection is closed. Set to 0 for unlimited queries.)", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_seconds, 0, R"(Maximum lifetime of a TCP connection in seconds before it is closed. Set to 0 for unlimited connection lifetime.)", 0) \
     DECLARE(Bool, tcp_with_proxy_allow_interserver_mode, true, R"(
@@ -2087,8 +2087,8 @@ Whether the server isolates itself from the filesystem of the host at startup, k
 
 At startup, before it starts any thread, the server moves itself into a new [mount namespace](https://man7.org/linux/man-pages/man7/mount_namespaces.7.html) whose root is an empty read-only `tmpfs`, bind-mounts into it, at their usual locations, only the paths it needs, and removes the original root with `pivot_root`. What stays visible:
 
-- The paths from the configuration that the server writes: `path`, `tmp_path`, `user_files_path`, `format_schema_path`, `filesystem_caches_path`, the directories of the local disks and of the metadata of the other disks in `storage_configuration`, the directories of the log files, of the pid file and of `core_path`, the storage directories of the embedded Keeper, `access_control_path`, the paths of all the `local_directory` entries in `user_directories`, `user_defined_path`, `workload_path`, `named_collections_storage.path`, `backups.allowed_path`. They are mounted read-write, but with `noexec`, so that nothing written there can be executed.
-- The paths from the configuration that the server only reads, mounted read-only: the directory of the configuration file, the directories of the included files and of the targets of the symbolic links among the configuration files, `users_config`, `user_scripts_path` (programs in it can be executed), `top_level_domains_path`, `google_protos_path`, the directories of the TLS certificates and keys in `openSSL`, `grpc`, `ldap_servers`, the Kerberos keytab, and the `clickhouse-odbc-bridge` program next to the server's executable, with its dynamic loader and the shared libraries it needs, as the dynamic loader finds them. The locations of the logs of the bridge (`logger.odbc_bridge_log`, `logger.odbc_bridge_errlog`, `logger.odbc_bridge_stdout`, `logger.odbc_bridge_stderr`) are writable.
+- The paths from the configuration that the server writes: `path`, `tmp_path`, `user_files_path`, `format_schema_path`, `filesystem_caches_path`, the directories of the local disks and of the metadata of the other disks in `storage_configuration`, the directories of the log files, of the pid file and of `core_path`, the storage directories of the embedded Keeper, `access_control_path`, the paths of all the `local_directory` entries in `user_directories`, `user_defined_path`, `workload_path`, `named_collections_storage.path`, `backups.allowed_path`, the working directory of every `distributed_cache_server` section and the cache directory of each. They are mounted read-write, but with `noexec`, so that nothing written there can be executed.
+- The paths from the configuration that the server only reads, mounted read-only: the directory of the configuration file, the directories of the included files and of the targets of the symbolic links among the configuration files, `users_config`, `user_scripts_path` (programs in it can be executed), `top_level_domains_path`, `google_protos_path`, the directories of the TLS certificates and keys in `openSSL`, `grpc`, `ldap_servers`, of the certificate and the key of every `distributed_cache_server` section and of the certificate chain of `distributed_cache_client`, the Kerberos keytab, and the `clickhouse-odbc-bridge` program next to the server's executable, with its dynamic loader and the shared libraries it needs, as the dynamic loader finds them. The locations of the logs of the bridge (`logger.odbc_bridge_log`, `logger.odbc_bridge_errlog`, `logger.odbc_bridge_stdout`, `logger.odbc_bridge_stderr`) are writable.
 - The executable of the server and the shared libraries it is linked with, with the symbolic links next to them that name them (such as `libc.so.6`), and the directory of the heap profiles of jemalloc if its `prof_prefix` option is set.
 - What a program on Linux needs: `/proc` (with `/proc/sys`, `/proc/sysrq-trigger`, `/proc/bus`, `/proc/fs` and `/proc/irq` and the mounts inside them read-only, as in the containers of Docker), `/sys` (read-only), `/dev/null`, `/dev/zero`, `/dev/full`, `/dev/random`, `/dev/urandom`, a private instance of `devpts` at `/dev/pts` with `/dev/ptmx` for the pseudoterminals of the web terminal and the SSH server, the network configuration in `/etc` (`hosts`, `resolv.conf`, `nsswitch.conf`, `host.conf`, `gai.conf`, `services`, `protocols`), `/etc/passwd`, `/etc/group`, `/etc/localtime`, the time zone database and the CA certificates (`/etc/ssl`, `/etc/pki`, `/etc/ca-certificates`, `/usr/share/ca-certificates`, `/usr/local/share/ca-certificates`) with the targets of the links inside them, as in a CA directory given in `caConfig`, `/usr/lib/debug` for the symbols in stack traces, the socket of the service manager from the `NOTIFY_SOCKET` environment variable, and `/dev/log` if `logger.use_syslog` is enabled. If `/dev/log` is a symbolic link, as `/dev/log -> /run/systemd/journal/dev-log` with systemd, the directory of its target is visible, so that a socket recreated there by a restarted service is seen. A socket directly in `/dev` that the syslog daemon recreates when it restarts is not seen again until the server restarts, because the `/dev` of the host is not visible.
 - A private empty `/tmp`.
@@ -2441,7 +2441,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                     known_keys.insert(path);
             }
         }
-        for (const auto & [alias, _] : ServerSettingsTraits::aliases_to_settings)
+        for (const auto & [alias, _] : ServerSettingsTraits::aliasesToSettings())
             known_keys.insert(String(alias));
     }
 
@@ -2759,6 +2759,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
 
         /// Startup
         "startup_scripts",
+#if CLICKHOUSE_CLOUD
+        "predefined_system_tables",
+#endif
         "fail_points_active",
 
         /// SSL and security
@@ -2820,7 +2823,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
     /// imported tag as an exemption: otherwise a dotted section would be stored raw as `my.payload`
     /// while its top-level key is `my\.payload`, and the valid, in-use key would be wrongly rejected
     /// with `UNKNOWN_ELEMENT_IN_CONFIG`.
-    auto escape_dom_name_as_config_key = [](const String & name) -> String
+    auto escape_dom_name_as_config_key = [](std::string_view name) -> String
     {
         String escaped;
         escaped.reserve(name.size());
@@ -3014,7 +3017,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// name passes), never rejects a valid config, so it fails open; tightening it is intentionally
         /// left to a full merge replay rather than a partial one that could refuse to start a valid
         /// config.
-        std::unordered_set<std::string> top_level_include_refs;
+        std::unordered_set<Poco::XML::XMLString> top_level_include_refs;
 
         /// Whether a server-config file contains a *top-level* `<include from_zk="..."/>`. Such an
         /// element imports the children of a ZooKeeper node as top-level keys, but resolving it would
@@ -3124,7 +3127,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 auto * root = doc->documentElement();
                 if (!root)
                     return false;
-                const String root_name = root->nodeName();
+                const auto & root_name = root->nodeName();
                 if (root_name != "clickhouse" && root_name != "yandex")
                     return false;
                 /// Pick up a top-level `<include_from>` so we can later parse the source.
@@ -3171,7 +3174,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                             std::vector<std::pair<String, String>> identity_attrs;
                             for (const auto * attr = attrs->item(0); attr; attr = attr->nextSibling())
                             {
-                                const String & attr_name = attr->nodeName();
+                                const auto & attr_name = attr->nodeName();
                                 if (attr_name == "remove" || attr_name == "replace"
                                     || std::find(
                                            ConfigProcessor::SUBSTITUTION_ATTRS.begin(),
@@ -3206,7 +3209,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                         {
                             /// Resolved later against each `<include_from>` source (a lookup table),
                             /// exactly as `doIncludesRecursive` resolves an `incl` reference.
-                            String ref = elem->getAttribute("incl");
+                            auto ref = elem->getAttribute("incl");
                             if (!ref.empty())
                                 top_level_include_refs.insert(std::move(ref));
                         }
@@ -3215,7 +3218,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                             /// `from_env` is fully resolvable here: the processor wraps the environment
                             /// variable's value as `<from_env>VALUE</from_env>` and imports its
                             /// children, so parse it the same way and exempt those imported keys.
-                            const String env_name = elem->getAttribute("from_env");
+                            const auto & env_name = elem->getAttribute("from_env");
                             if (const char * env_val = std::getenv(env_name.c_str())) // NOLINT(concurrency-mt-unsafe)
                             {
                                 try
@@ -4149,6 +4152,25 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
         changeable_settings.insert(
             {"parquet_metadata_cache_size",
              {std::to_string(context->getParquetMetadataCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
+#endif
+
+#if ENABLE_DISTRIBUTED_CACHE
+    /// Pushed to the connection registry at startup and on each reload whose values are valid.
+    if (const auto scan_settings = DistributedCacheServerConnectionRegistry::instance().getStuckRequestScanSettings())
+    {
+        changeable_settings.insert({"distributed_cache_stuck_request_no_progress_timeout_ms",
+            {std::to_string(scan_settings->no_progress_timeout_ms), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert({"distributed_cache_max_request_processing_time_ms",
+            {std::to_string(scan_settings->max_processing_time_ms), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert({"distributed_cache_stuck_request_scan_interval_ms",
+            {std::to_string(scan_settings->scan_interval_ms), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert({"distributed_cache_slow_down_stuck_requests_ratio",
+            {fmt::format("{}", scan_settings->slow_down_stuck_requests_ratio), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert({"distributed_cache_slow_down_min_stuck_requests",
+            {std::to_string(scan_settings->slow_down_min_stuck_requests), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert({"distributed_cache_slow_down_window_ms",
+            {std::to_string(scan_settings->slow_down_window_ms), ChangeableWithoutRestart::Yes}});
+    }
 #endif
 
     /// The seccomp filter is installed once at startup and cannot be changed afterwards, so a reloaded

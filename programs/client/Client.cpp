@@ -35,6 +35,7 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/SecretArgumentsRegistry.h>
 #include <Parsers/SecretArguments.h>
 
 #include <Client/JWTProvider.h>
@@ -44,9 +45,12 @@
 #include <Core/Defines.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Databases/registerDatabases.h>
+#include <Dictionaries/registerDictionaries.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
 #include <Functions/registerFunctions.h>
+#include <Storages/registerStorages.h>
 #include <TableFunctions/registerTableFunctions.h>
 
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -416,11 +420,12 @@ try
     registerFormats();
     registerFunctions();
     registerAggregateFunctions();
-    /// The schema dumper asks TableFunctionFactory whether a cluster() argument is a nested table
-    /// function; without this the factory is empty here and valid schemas are refused over TCP.
+    /// Hiding the secrets of engine arguments needs the engines, which declare them.
     registerTableFunctions();
-    /// The engines are not registered, so the secrets of their arguments are shown.
-    setSecretArgumentsFinder(&NoSecretArgumentsFinder::instance());
+    registerDatabases();
+    registerStorages();
+    registerDictionaries();
+    setSecretArgumentsFinder(&SecretArgumentsRegistry::instance());
 
     processConfig();
     adjustSettings(client_context);

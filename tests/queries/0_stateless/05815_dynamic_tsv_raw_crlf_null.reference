@@ -1,0 +1,11 @@
+Dynamic null detection
+1	1	None
+2	0	String
+Nullable(String) oracle
+1	1
+2	0
+Non-null value keeps the carriage return
+68656C6C6F0D
+Dynamic, custom null representation
+1	1	None
+2	0	String

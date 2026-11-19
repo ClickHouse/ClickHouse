@@ -59,7 +59,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-static const std::string named_collections_storage_config_path = "named_collections_storage";
+[[clang::no_destroy]] static const std::string named_collections_storage_config_path = "named_collections_storage";
 
 namespace
 {
@@ -579,15 +579,15 @@ private:
                 getHexUIntLowercase(key_fingerprint));
     }
 
-    [[nodiscard]] std::vector<uint8_t> calculateBackupMAC(const std::string & stored) const
+    [[nodiscard]] std::vector<uint8_t, NoDumpAllocator<uint8_t>> calculateBackupMAC(const std::string & stored) const
     {
         /// Domain separation from the encryption use of the key.
         const auto auth_key = hmacSHA256(
-            std::vector<uint8_t>(key.begin(), key.end()), "ClickHouse named collections backup entry v1");
+            std::vector<uint8_t>(key.data(), key.data() + key.size()), "ClickHouse named collections backup entry v1");
         return hmacSHA256(auth_key, stored);
     }
 
-    std::string key;
+    SecretString key;
     UInt128 key_fingerprint{};
     FileEncryption::Algorithm algorithm;
 };
