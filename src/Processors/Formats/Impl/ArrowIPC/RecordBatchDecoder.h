@@ -152,6 +152,8 @@ private:
     /// Requested column types by normalized (dotted) name, for the recursive `date32` numeric type hint;
     /// null when the caller did not provide them. Points at the caller's map for the call's duration.
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr;
+    /// Set while decoding the children of a union (see `decodeUnion`): `target_types` is not consulted there.
+    bool decoding_below_union = false;
     /// The buffers to decode from: either views into the message body, or into `decompressed_body`.
     VectorWithMemoryTracking<Slice> buffer_slices;
     PODArray<char> decompressed_body;
