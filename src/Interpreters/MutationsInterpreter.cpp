@@ -1180,6 +1180,27 @@ void MutationsInterpreter::prepare(bool dry_run)
         columns_for_dependencies.insert(type_changed_columns.begin(), type_changed_columns.end());
         columns_for_dependencies.insert(all_affected_materialized.begin(), all_affected_materialized.end());
         dependencies = getAllColumnDependencies(metadata_snapshot, columns_for_dependencies, has_dependency);
+
+        /// getColumnDependencies compares an index's required columns by raw name, so a mutation of a
+        /// parent column (`t`) is not recognized as affecting an index on its subcolumn (`t.a`), and the
+        /// index's other inputs (e.g. `y` in `t.a + y`) never enter the read set. Resolve each index's
+        /// required columns to their storage columns; when the mutation touches any of them, read all of
+        /// them, so the index recalculation downstream has every input.
+        for (const auto & index : metadata_snapshot->getSecondaryIndices())
+        {
+            if (!source.hasSecondaryIndex(index.name, metadata_snapshot))
+                continue;
+
+            auto index_storage_columns = expressionSourceColumnsInStorage(index.expression_list_ast, columns_for_analysis, context);
+            bool affected = std::any_of(
+                index_storage_columns.begin(),
+                index_storage_columns.end(),
+                [&](const auto & col) { return columns_for_dependencies.contains(col); });
+
+            if (affected)
+                for (const auto & col : index_storage_columns)
+                    dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
+        }
     }
 
     bool need_rebuild_indexes = false;

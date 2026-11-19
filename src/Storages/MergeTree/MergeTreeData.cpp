@@ -6757,9 +6757,12 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     Names key_materialized_columns;
     for (const auto & column : old_metadata.getColumns())
     {
-        /// column_to_subcolumns_used_in_keys catches a key that is a subcolumn of this column (`ORDER BY m.a`).
+        /// A key subcolumn of this column (`ORDER BY m.a`) via column_to_subcolumns_used_in_keys, and the
+        /// engine's sign/version columns, which fix merge semantics like a key and are likewise not
+        /// recomputed in an existing part (getKeyColumns excludes them from recomputation too).
         if (column.default_desc.kind == ColumnDefaultKind::Materialized && column.default_desc.expression
-            && (columns_in_keys.contains(column.name) || column_to_subcolumns_used_in_keys.contains(column.name)))
+            && (columns_in_keys.contains(column.name) || column_to_subcolumns_used_in_keys.contains(column.name)
+                || column.name == merging_params.sign_column || column.name == merging_params.version_column))
             key_materialized_columns.push_back(column.name);
     }
 
