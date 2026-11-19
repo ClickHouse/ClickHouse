@@ -11,38 +11,48 @@ doc_type: 'reference'
 
 ### Bootstrap IAM role {#bootstrap-iam-role}
 
-The bootstrap IAM role has the following permissions:
+The bootstrap IAM role, `ClickHouseManagementRole`, has the following policies. Most write permissions apply only to resources that have the tag `clickhouse-byoc=true` or a name that starts with `clickhouse-cloud-`.
 
-- **EC2 and VPC operations**: Required for setting up VPC and EKS clusters.
-- **S3 operations (e.g., `s3:CreateBucket`)**: Needed to create buckets for ClickHouse BYOC storage.
-- **IAM operations (e.g., `iam:CreatePolicy`)**: Needed for controllers to create additional roles (see the next section for details).
-- **EKS operations**: Limited to resources with names starting with the `clickhouse-cloud` prefix.
+| Policy | Permissions | Scope | Purpose |
+|---|---|---|---|
+| `BasePolicy` (inline) | Get the identity of the caller. Read the service quotas and the AWS default service quotas. | All resources. Read only. | Health checks and quota checks before provisioning |
+| `ClickHouse-IAM-Base-Policy` | Read IAM roles, policies, and instance profiles. Pass roles to AWS services. Create service-linked roles. Create, tag, and delete the OpenID Connect (OIDC) provider of the cluster. | Read: all IAM roles and policies. Pass roles: only the BYOC role names (for example `*-k8s-worker`, `*-karpenter-node`, `*-CH-S3-Role`), and only to EKS, EKS Pod Identity, and EC2. Service-linked roles: only for EKS, EKS node groups, and VPC Lattice. OIDC provider: only with the tag `clickhouse-byoc=true`. | Read IAM state. Give the BYOC roles to EKS and EC2. |
+| `ClickHouse-IAM-Extended-Policy` (optional, on by default) | Create, change, and delete IAM roles, policies, and instance profiles | Only resources with the tag `clickhouse-byoc=true`. Not limited: removal of a role from an instance profile. | Create the additional roles (see the next section for details). You do not need it if you [bring your own IAM roles](/products/bring-your-own-cloud/onboarding/customization-aws#customer-managed-iam-roles). |
+| `ClickHouse-S3-Policy` | Create buckets. Read and set the bucket configuration: tags, lifecycle, encryption, ownership, public access block, and metrics. List the objects in a bucket. No object read or write. No bucket deletion. | Only buckets named `*.*.aws.clickhouse.cloud-shared`, `*.*.aws.clickhouse.cloud-backup`, and `*.*.aws.clickhouse.cloud-monitoring` | Manage buckets that store ClickHouse table data, backups, and monitoring data |
+| `ClickHouse-EKS-Policy` | Create, change, and delete EKS clusters, add-ons, node groups, and Pod Identity associations. Read all EKS resources. | Write: only resources whose names start with `clickhouse-cloud-`. Read: all EKS resources. | Manage the EKS cluster, its add-ons, and its node groups |
+| `ClickHouse-EC2-Policy` | Read EC2, Elastic Load Balancing, and Auto Scaling. Launch instances. Manage launch templates, network interfaces, security groups, and Elastic IPs. Change volume attributes. | Security groups: only with the tag `clickhouse-byoc=true` or with the tag `aws:eks:cluster-name` = `clickhouse-cloud-*`. Elastic IPs and tags: only with the tag `clickhouse-byoc=true`. Not limited: instance launch, launch templates, network interfaces, and volume attributes. | Manage the nodes and security groups that control network access to the cluster |
+| `ClickHouse-VPCWrite-Policy` (optional, on by default) | Create, change, and delete VPCs, subnets, NAT gateways, internet gateways, route tables, and VPC endpoints | Only resources with the tag `clickhouse-byoc=true` | The BYOC VPC. You do not need it if you [bring your own VPC](/products/bring-your-own-cloud/onboarding/customization-aws#customer-managed-vpc-aws). |
+| `ClickHouse-VPCPrivateLink-Policy` | Create, change, and delete VPC endpoint services | Only resources with the tag `clickhouse-byoc=true` | AWS PrivateLink endpoints for your services |
+| `ClickHouse-VPCLattice-Policy` | Create, change, and delete VPC Lattice resource gateways and resource configurations, and AWS RAM resource shares. Read VPC Lattice and AWS RAM. | Write: only resources with the tag `clickhouse-byoc=true`. Read: all VPC Lattice and AWS RAM resources. | Private access to the EKS API |
+| `ClickHouse-CloudWatch-Policy` | Read CloudWatch Logs. Create log groups. Tag log groups and set their retention. | Create: only with the tag `clickhouse-byoc=true`. Tag and retention: only log groups `/aws/eks/clickhouse-cloud-*`. Read: all log groups. | EKS control plane logs |
+| `ClickHouse-KMS-Policy` (optional, off by default) | Read key details. Create grants on keys. | Only KMS keys in the ClickHouse BYOC AWS account | EKS secret encryption |
+| `ClickHouse-KMSTDE-Policy` (optional, off by default) | Create KMS keys. Read keys and key policies. Turn on key rotation. Tag keys. No encrypt, decrypt, key policy change, or key deletion. | Only keys with the tag `clickhouse-byoc=true` | Keys for Transparent Data Encryption (TDE) |
+
+For the exact policy documents, see the [Terraform module](https://github.com/ClickHouse/terraform-byoc-onboarding/blob/main/modules/aws/main.tf) or the [CloudFormation template](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc_v2.yaml).
 
 ### Additional IAM roles created by the controller {#additional-iam-roles-created-by-the-controller}
 
 In addition to the `ClickHouseManagementRole` created via CloudFormation, the controller will create several additional roles.
 
-These roles are assumed by applications running within the customer's EKS cluster:
+ClickHouse creates these roles for each BYOC infrastructure. `<infra>` is the name of your BYOC infrastructure, and `<region>` is the AWS region.
 
-- **State Exporter Role**
-  - ClickHouse component that reports service health information to ClickHouse Cloud.
-  - Requires permission to write to an SQS queue owned by ClickHouse Cloud.
-- **Load-Balancer Controller**
-  - Standard AWS load balancer controller.
-  - EBS CSI Controller to manage volumes for ClickHouse services.
-- **External-DNS**
-  - Propagates DNS configurations to Route 53.
-- **Cert-Manager**
-  - Provisions TLS certificates for BYOC service domains.
-- **Cluster Autoscaler**
-  - Adjusts the node group size as needed.
-- **Monitoring storage (Thanos)**
-  - Assumed by the Prometheus and Thanos workloads in your cluster.
-  - Writes and reads long-term metric retention, scoped to the monitoring bucket in your own account.
+| Role | Permissions | Purpose |
+|---|---|---|
+| `<infra>-<region>-data-plane-mgmt` | Read EKS. List and delete objects, and set encryption, versioning, and lifecycle, on the BYOC buckets. Read load balancers and Auto Scaling groups. The ClickHouse management service assumes it, with your external ID. | Day-to-day management of your ClickHouse services and the cluster |
+| `<infra>-<region>-k8s-control-plane` | AWS managed `AmazonEKSClusterPolicy`, `AmazonEKSServicePolicy`, `AmazonEKSVPCResourceController`. Only EKS can assume it. | EKS cluster role |
+| `<infra>-<region>-k8s-worker` | AWS managed `AmazonEKSWorkerNodePolicy`, `AmazonEKS_CNI_Policy`, `AmazonEC2ContainerRegistryReadOnly`. Assume a read-only role to pull ClickHouse container images. Only EC2 can assume it. | Node role for the system nodes |
+| `<infra>-<region>-karpenter-node` (role and instance profile) | Same as `k8s-worker`, plus `AmazonSSMManagedInstanceCore`. Only EC2 can assume it. | Node role for the ClickHouse server and Keeper nodes |
+| `<infra>-<region>-karpenter-controller` | Launch and terminate EC2 instances that have the tags of this cluster. Read EC2 in the BYOC region. Pass only the `karpenter-node` role. Read prices and the EKS AMI parameters. | Karpenter: adds and removes nodes for ClickHouse |
+| `<infra>-<region>-cluster-autoscaler` | Read Auto Scaling groups. Set the desired capacity and terminate instances in Auto Scaling groups. | Scales the system node groups |
+| `<infra>-<region>-load-balancer-controller` | The AWS Load Balancer Controller policy that AWS publishes. Changes to load balancers need the tag of this cluster. | Creates the network load balancers for your service endpoints |
+| `<infra>-<region>-ebs-csi-driver` | The EBS CSI driver policy that AWS publishes. Volume and snapshot deletion needs the driver tags. | Disks for ClickHouse and Keeper |
+| `<infra>-<region>-CH-S3-Role` | All S3 actions, only under the ClickHouse prefixes in the BYOC shared and backup buckets. Assume roles that you set up for ClickHouse S3 access. Assume a role to send usage data to ClickHouse. | Identity of the ClickHouse server pods. Reads and writes table data and backups. |
+| `<infra>-<region>-thanos` | List, read, write, and delete objects in the BYOC monitoring bucket | Stores metrics for monitoring |
+| `<infra>-<region>-state-exporter` | Assume a ClickHouse role. No other permissions. | Sends the health of the infrastructure to ClickHouse |
+| `<infra>-<region>-clickhouse-scraper` | Assume a ClickHouse role. No other permissions. | Sends usage data for billing to ClickHouse |
+| `<infra>-<region>-kube-metric-forwarder-asc` | Assume a ClickHouse role. No other permissions. | Sends Kubernetes metrics to ClickHouse for autoscaling |
 
-**K8s-control-plane** and **k8s-worker** roles are meant to be assumed by AWS EKS services.
-
-Lastly, **`data-plane-mgmt`** allows a ClickHouse Cloud Control Plane component to reconcile necessary custom resources, such as `ClickHouseCluster` and the Istio Virtual Service/Gateway.
+For the exact policy documents, see the [Terraform module](https://github.com/ClickHouse/terraform-byoc-onboarding/blob/main/modules/aws-per-infra-iam/main.tf).
 
 ## GCP service accounts {#gcp-service-accounts}
 
