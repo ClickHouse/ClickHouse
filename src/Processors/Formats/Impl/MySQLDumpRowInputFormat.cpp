@@ -351,6 +351,11 @@ static MySQLQueryType skipToInsertOrCreateQuery(String & table_name, ReadBuffer 
         current_table_name = readTableName(in);
         if (table_name.empty())
             table_name = current_table_name;
+        else if (current_table_name != table_name)
+        {
+            /// The keyword scan splits at spaces, so it must start at a statement: skip the rest of this one.
+            skipQuery(in);
+        }
     } while (current_table_name != table_name);
 
     /// Note that now position in the buffer is located in CREATE/INSERT query after table name.
