@@ -30,12 +30,12 @@ namespace DB
 size_t getCascadesPlanningNodeCount(ContextPtr context);
 
 /// Network endpoint of a worker, resolved on the initiator from the cluster config (and
-/// server-level defaults). Both ports may differ per node so several workers can share a host.
+/// server-level defaults). The port may differ per node so several workers can share a host.
 struct WorkerAddress
 {
     String host;
-    UInt16 stateless_worker_port = 0;    /// interserver HTTP port the initiator dispatches tasks to
-    UInt16 streaming_exchange_port = 0;  /// port this node accepts streaming-exchange peer connections on
+    /// Dialed by the worker's exchange peers and by the control connection of its tasks.
+    UInt16 streaming_exchange_port = 0;
 };
 
 /// Producer endpoint of an exchange stream, shipped to consumers so they dial the producer's
@@ -61,6 +61,8 @@ public:
     [[nodiscard]] const UnorderedMapWithMemoryTracking<String, WorkerIndex> & getTaskWorkerIndices() const { return task_worker_indices; }
     [[nodiscard]] WorkerIndex getTaskWorkerIndex(const String & task_id) const { return task_worker_indices.at(task_id); }
     [[nodiscard]] const UnorderedMapWithMemoryTracking<String, StreamSourceAddress> & getExchangeStreamSourceHosts() const { return exchange_stream_source_hosts; }
+    /// The token the control connections present to the workers, empty for none.
+    [[nodiscard]] String getAuthToken() const;
 
 private:
     void fillWorkerAddresses(ContextPtr context);
@@ -182,7 +184,7 @@ protected:
 
     virtual void startStage(const String & stage_name, const DistributedQueryStage & stage) = 0;
     virtual bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) = 0;
-    /// Hands the tasks that `startStage` only queued to the senders; called before a wait for a stage and at the end of `start`.
+    /// Sends the tasks that `startStage` only queued; called before a wait for a stage and at the end of `start`.
     virtual void dispatchQueuedTasks() {}
 
     [[nodiscard]] virtual bool waitsForFilterOnlyStages() const { return false; }
@@ -238,7 +240,7 @@ struct DistributedQueryTaskDescription
     UInt64 serialization_version = DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION;
 };
 
-/// The tasks of one query sent to one worker in one `start_tasks` request. Each stage's plan is written once,
+/// The tasks of one query sent to one worker in one `StartTasks` request. Each stage's plan is written once,
 /// before that stage's tasks.
 struct DistributedQueryTaskBatch
 {

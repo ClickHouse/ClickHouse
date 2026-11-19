@@ -2,12 +2,12 @@
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
 --
 -- A distributed plan query (make_distributed_plan = 1) dispatches its tasks to stateless workers
--- over HTTP. The trace context travels with the dispatch request as W3C `traceparent` /
--- `tracestate` headers, so the worker's task span joins the initiator's trace:
+-- on their control connections. The trace context travels in each `StartTasks` frame, so the worker's
+-- task span joins the initiator's trace:
 --
 --   query (initiator)
---   └── StatelessWorkerClient::sendTaskBatch [CLIENT]
---       └── InterserverIOHTTPHandler [SERVER]
+--   └── WorkerControlConnection::startTasks [CLIENT]
+--       └── StatelessWorkerControlServer::startTasks [SERVER]
 --           └── (worker thread pool span)
 --               └── DistributedPlanTask::execute [SERVER]
 --
@@ -36,9 +36,9 @@ SELECT x, count() FROM t_dp_otel GROUP BY x FORMAT Null;
 SET log_comment = 'otel worker spans: local execution', distributed_plan_execute_locally = 1;
 SELECT x, count() FROM t_dp_otel GROUP BY x FORMAT Null;
 
--- A traced request that fails on the worker before any task starts leaves the request span as its
--- only worker-side trace, so the span must carry the failure. `url` forwards the trace context of
--- its query the same way the dispatch does.
+-- A traced HTTP request that fails on the server leaves the request span as its only server-side
+-- trace, so the span must carry the failure. `url` forwards the trace context of its query as W3C
+-- `traceparent` / `tracestate` headers.
 SET log_comment = 'otel worker spans: failed request', make_distributed_plan = 0, http_max_tries = 1, http_make_head_request = 0;
 SELECT * FROM url('http://localhost:' || toString(getServerPort('interserver_http_port')) || '/?endpoint=no_such_endpoint&compress=false', RawBLOB, 'd String'); -- { serverError RECEIVED_ERROR_FROM_REMOTE_IO_SERVER }
 
@@ -107,11 +107,22 @@ SELECT DISTINCT
     'target_host: ' || if(attribute['clickhouse.target_host'] != '', 'set', 'MISSING'),
     'exception: ' || if(mapContains(attribute, 'clickhouse.exception'), attribute['clickhouse.exception'], 'none')
 FROM spans
-WHERE operation_name = 'StatelessWorkerClient::sendTaskBatch'
+WHERE operation_name = 'WorkerControlConnection::startTasks'
 ORDER BY ALL;
 
--- The parent of a dispatch request is the dispatch span; the failed request is a child of some span
--- of the initiator query (the thread that reads the URL), which does not matter here.
+-- The parent of the worker's span of a `StartTasks` is the dispatch span.
+SELECT 'worker start spans:';
+SELECT DISTINCT
+    s.label, s.operation_name, s.kind,
+    'parent: ' || multiIf(p.operation_name LIKE 'WorkerControl%', p.operation_name, p.span_id != 0, 'another span', 'MISSING'),
+    'exception: ' || if(mapContains(s.attribute, 'clickhouse.exception'), s.attribute['clickhouse.exception'], 'none')
+FROM spans AS s
+LEFT JOIN spans AS p ON p.span_id = s.parent_span_id
+WHERE s.operation_name = 'StatelessWorkerControlServer::startTasks'
+ORDER BY ALL;
+
+-- The failed request is a child of some span of the initiator query (the thread that reads the URL), which does not
+-- matter here.
 SELECT 'request spans:';
 SELECT DISTINCT
     s.label, s.operation_name, s.kind,
@@ -144,7 +155,7 @@ WHERE operation_name = 'DistributedPlanTask::execute'
 ORDER BY ALL;
 
 -- Every task span must reach the initiator's `query` span through its parents. Printed are the
--- distributed-plan spans met on the way: through the dispatch request for a worker, and nothing at
+-- distributed-plan spans met on the way: through the `StartTasks` spans for a worker, and nothing at
 -- all for in-process execution. The depth of the chain depends on the thread pools in between.
 SELECT 'ancestors of the task spans:';
 WITH RECURSIVE chain AS
@@ -156,7 +167,8 @@ WITH RECURSIVE chain AS
     SELECT
         c.label, c.task_span_id,
         if(s.is_initiator, 0, s.parent_span_id),
-        if(s.is_initiator OR s.operation_name LIKE 'Distributed%' OR s.operation_name LIKE 'StatelessWorker%' OR s.operation_name = 'InterserverIOHTTPHandler',
+        if(s.is_initiator OR s.operation_name LIKE 'Distributed%' OR s.operation_name LIKE 'StatelessWorker%'
+                OR s.operation_name LIKE 'WorkerControl%' OR s.operation_name = 'InterserverIOHTTPHandler',
             arrayPushBack(c.path, s.operation_name), c.path),
         c.depth + 1
     FROM chain AS c
@@ -168,7 +180,8 @@ FROM chain
 WHERE next_span_id = 0 OR next_span_id NOT IN (SELECT span_id FROM spans)
 ORDER BY ALL;
 
-SELECT 'spans dispatched by the local execution:', countIf(operation_name = 'StatelessWorkerClient::sendTask'), countIf(operation_name = 'InterserverIOHTTPHandler')
+SELECT 'spans dispatched by the local execution:', countIf(operation_name = 'WorkerControlConnection::startTasks'),
+    countIf(operation_name = 'StatelessWorkerControlServer::startTasks')
 FROM spans WHERE label = 'local execution';
 
 DROP TABLE t_dp_otel;

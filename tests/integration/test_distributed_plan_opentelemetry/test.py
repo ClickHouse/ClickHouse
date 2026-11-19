@@ -2,11 +2,11 @@
 OpenTelemetry trace propagation from the initiator of a distributed plan query
 (`make_distributed_plan = 1`) to the stateless workers executing its tasks, across real hosts.
 
-The initiator (node1) samples a trace and dispatches the tasks to node1 and node2 over HTTP with
-W3C `traceparent` headers. node2 must record the `InterserverIOHTTPHandler` request spans and the
-`DistributedPlanTask::execute` task spans under the initiator's trace id, and the request spans'
-parents must be the `StatelessWorkerClient::sendTask` spans recorded on node1: that is the hop
-the header carries.
+The initiator (node1) samples a trace and sends the tasks to node1 and node2 on their control
+connections, with the trace context in each `StartTasks` frame. node2 must record the
+`StatelessWorkerControlServer::startTasks` spans and the `DistributedPlanTask::execute` task spans
+under the initiator's trace id, and the start spans' parents must be the
+`WorkerControlConnection::startTasks` spans recorded on node1: that is the hop the frame carries.
 """
 
 import time
@@ -103,15 +103,15 @@ def test_worker_task_spans_join_initiator_trace(started_cluster):
 
     trace_id = _wait_until(initiator_trace_id)
 
-    # One CLIENT dispatch span per task on the initiator, at least one of them aimed at node2.
+    # One CLIENT dispatch span per batch of tasks on the initiator, at least one of them aimed at node2.
     def dispatch_span_ids():
         rows = _span_rows(
             INITIATOR,
             trace_id,
             "span_id, attribute['clickhouse.target_host']",
-            f"""operation_name = 'StatelessWorkerClient::sendTask' AND kind = 'CLIENT'
+            f"""operation_name = 'WorkerControlConnection::startTasks' AND kind = 'CLIENT'
                 AND attribute['clickhouse.initial_query_id'] = '{query_id}'
-                AND attribute['clickhouse.distributed.task_id'] != ''""",
+                AND attribute['clickhouse.distributed.task_count'] != ''""",
         )
         if not any(target_host.startswith("node2") for _, target_host in rows):
             return None
@@ -119,17 +119,16 @@ def test_worker_task_spans_join_initiator_trace(started_cluster):
 
     _wait_until(dispatch_span_ids)
 
-    # The worker side of the same trace on node2: every request span must be parented by one of the
-    # initiator's dispatch spans, which proves the context crossed the HTTP hop. Only the start
-    # request carries the context (cancel and forget do not), so no request span may have another
-    # parent. Both logs are flushed by background threads, so poll until the whole request set is
-    # covered.
+    # The worker side of the same trace on node2: every start span must be parented by one of the
+    # initiator's dispatch spans, which proves the context crossed the control connection. Only
+    # `StartTasks` carries the context, so no start span may have another parent. Both logs are
+    # flushed by background threads, so poll until the whole set of starts is covered.
     def start_requests_under_dispatch_spans():
         rows = _span_rows(
             node2,
             trace_id,
             "parent_span_id",
-            "operation_name = 'InterserverIOHTTPHandler' AND kind = 'SERVER'",
+            "operation_name = 'StatelessWorkerControlServer::startTasks' AND kind = 'SERVER'",
         )
         request_parent_ids = {parent_span_id for (parent_span_id,) in rows}
         if not request_parent_ids:

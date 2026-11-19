@@ -1,5 +1,5 @@
--- The coordinator sends the `start_tasks` batches of `distributed_plan_task_dispatch_threads` workers at once (0: all of them,
--- 1: one worker after another); the results must equal local execution.
+-- The coordinator sends the `StartTasks` batches of all the query's workers at once, each on the worker's control connection;
+-- the results must equal local execution.
 
 SET enable_analyzer = 1;
 SET max_rows_to_group_by = 0;
@@ -19,39 +19,24 @@ SELECT count() FROM t_parallel_dispatch WHERE v IN (SELECT number * 2 FROM numbe
 -- Shuffle aggregation: 4 read tasks feed 4 aggregation tasks over streaming exchanges.
 SELECT 'aggregation';
 SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM t_parallel_dispatch GROUP BY k)
-SETTINGS make_distributed_plan = 1, distributed_plan_task_dispatch_threads = 0, distributed_plan_default_reader_bucket_count = 4,
+SETTINGS make_distributed_plan = 1, distributed_plan_default_reader_bucket_count = 4,
     distributed_plan_default_shuffle_join_bucket_count = 4, distributed_plan_force_shuffle_aggregation = 1,
-    log_comment = '05499-aggregation-0';
-SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM t_parallel_dispatch GROUP BY k)
-SETTINGS make_distributed_plan = 1, distributed_plan_task_dispatch_threads = 1, distributed_plan_default_reader_bucket_count = 4,
-    distributed_plan_default_shuffle_join_bucket_count = 4, distributed_plan_force_shuffle_aggregation = 1,
-    log_comment = '05499-aggregation-1';
-SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM t_parallel_dispatch GROUP BY k)
-SETTINGS make_distributed_plan = 1, distributed_plan_task_dispatch_threads = 8, distributed_plan_default_reader_bucket_count = 4,
-    distributed_plan_default_shuffle_join_bucket_count = 4, distributed_plan_force_shuffle_aggregation = 1,
-    log_comment = '05499-aggregation-8';
+    log_comment = '05499-aggregation';
 
 -- Shuffle join: two read stages feed one join stage.
 SELECT 'join';
 SELECT count(), sum(a.k) FROM t_parallel_dispatch AS a INNER JOIN t_parallel_dispatch AS b ON a.v = b.v
-SETTINGS make_distributed_plan = 1, distributed_plan_task_dispatch_threads = 0, distributed_plan_default_reader_bucket_count = 4,
+SETTINGS make_distributed_plan = 1, distributed_plan_default_reader_bucket_count = 4,
     distributed_plan_default_shuffle_join_bucket_count = 4, distributed_plan_max_rows_to_broadcast = 0,
-    log_comment = '05499-join-0';
-SELECT count(), sum(a.k) FROM t_parallel_dispatch AS a INNER JOIN t_parallel_dispatch AS b ON a.v = b.v
-SETTINGS make_distributed_plan = 1, distributed_plan_task_dispatch_threads = 8, distributed_plan_default_reader_bucket_count = 4,
-    distributed_plan_default_shuffle_join_bucket_count = 4, distributed_plan_max_rows_to_broadcast = 0,
-    log_comment = '05499-join-8';
+    log_comment = '05499-join';
 
 -- A set shipped in every read task's description.
 SELECT 'set';
 SELECT count() FROM t_parallel_dispatch WHERE v IN (SELECT number * 2 FROM numbers(50000))
-SETTINGS make_distributed_plan = 1, distributed_plan_task_dispatch_threads = 0, distributed_plan_default_reader_bucket_count = 4,
-    log_comment = '05499-set-0';
-SELECT count() FROM t_parallel_dispatch WHERE v IN (SELECT number * 2 FROM numbers(50000))
-SETTINGS make_distributed_plan = 1, distributed_plan_task_dispatch_threads = 8, distributed_plan_default_reader_bucket_count = 4,
-    log_comment = '05499-set-8';
+SETTINGS make_distributed_plan = 1, distributed_plan_default_reader_bucket_count = 4,
+    log_comment = '05499-set';
 
--- Every query ran remote tasks, queued and sent in batches whatever the number of threads.
+-- Every query ran remote tasks, queued and sent in batches.
 SYSTEM FLUSH LOGS query_log, text_log;
 SELECT q.log_comment, q.remote_tasks > 0, q.batches > 0, countIf(t.message LIKE 'Queueing task %') > 0
 FROM

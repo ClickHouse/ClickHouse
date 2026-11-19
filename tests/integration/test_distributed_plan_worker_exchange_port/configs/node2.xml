@@ -1,8 +1,9 @@
 <clickhouse>
-    <!-- This node's task-dispatch (interserver) port; matches its stateless_worker_port in the cluster. -->
+    <!-- This node's interserver port, for the replication of the table. -->
     <interserver_http_port>9010</interserver_http_port>
     <distributed_query>
-        <!-- This node's own streaming-exchange listener; matches its streaming_exchange_port in the cluster. -->
+        <!-- This node's own streaming-exchange listener, which also serves the control connections; matches its
+             streaming_exchange_port in the cluster. -->
         <streaming_exchange_port>9224</streaming_exchange_port>
         <streaming_exchange_listen_host>0.0.0.0</streaming_exchange_listen_host>
         <temporary_files_storage>

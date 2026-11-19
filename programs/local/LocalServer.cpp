@@ -100,6 +100,7 @@
 #include <Server/TCPHandlerFactory.h>
 #include <Server/TCPServer.h>
 #include <Server/ServerType.h>
+#include <Server/StatelessWorker/WorkerControlLoop.h>
 #include <Poco/Net/HTTPServerParams.h>
 #include <Poco/ThreadPool.h>
 
@@ -1176,6 +1177,12 @@ void LocalServer::cleanup()
             suggest.reset();
 
         client_context.reset();
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        /// After the queries, whose control connections to stateless workers it runs, and before the global thread pool,
+        /// which joins its thread.
+        WorkerControlLoop::instance().shutdown();
+#endif
 
         if (global_context)
         {

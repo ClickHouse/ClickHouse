@@ -46,8 +46,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
-#include <Poco/URI.h>
-#include <Server/StatelessWorker/StatelessWorkerClient.h>
+#include <Server/StatelessWorker/WorkerControlLoop.h>
 #include <Server/DistributedQuery/StreamingExchangeLookup.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Processors/Transforms/MergeRuntimeFiltersTransform.h>
@@ -55,6 +54,7 @@
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/executeQuery.h>
@@ -73,16 +73,6 @@
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Message.h>
 
-
-namespace CurrentMetrics
-{
-    extern const Metric TaskTrackerThreads;
-    extern const Metric TaskTrackerThreadsActive;
-    extern const Metric TaskTrackerThreadsScheduled;
-    extern const Metric DistributedPlanTaskDispatchThreads;
-    extern const Metric DistributedPlanTaskDispatchThreadsActive;
-    extern const Metric DistributedPlanTaskDispatchThreadsScheduled;
-}
 
 namespace ProfileEvents
 {
@@ -105,7 +95,6 @@ static_assert(MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES == StreamingExchangePro
 
 namespace Setting
 {
-    extern const SettingsUInt64 distributed_plan_task_dispatch_threads;
     extern const SettingsBool distributed_plan_task_dispatch_batching;
     extern const SettingsUInt64 distributed_plan_task_dispatch_stages_per_flush;
     extern const SettingsBool distributed_plan_execute_locally;
@@ -129,6 +118,9 @@ namespace ErrorCodes
     extern const int FAULT_INJECTED;
     extern const int SW_SERVER_NO_WORKERS_AVAILABLE;
     extern const int EXCHANGE_PEER_DISCONNECTED;
+    extern const int INCORRECT_DATA;
+    extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
+    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
 }
 
 namespace FailPoints
@@ -1382,8 +1374,7 @@ private:
 
 /// Resolve a worker's endpoint on the initiator from the cluster config (with server-level
 /// fallbacks). The single place a future port source would plug in.
-static WorkerAddress resolveWorkerAddress(
-    const String & host, UInt16 cluster_stateless_worker_port, UInt16 cluster_streaming_exchange_port, ContextPtr context)
+static WorkerAddress resolveWorkerAddress(const String & host, UInt16 cluster_streaming_exchange_port, ContextPtr context)
 {
     WorkerAddress address;
     address.host = host;
@@ -1396,18 +1387,10 @@ static WorkerAddress resolveWorkerAddress(
     address.streaming_exchange_port = cluster_streaming_exchange_port != 0
         ? cluster_streaming_exchange_port
         : static_cast<UInt16>(server_level_exchange_port);
-
-    /// Fall back to the global client port, then the interserver port (read lazily, since
-    /// getInterserverIOAddress throws when unconfigured, so an explicit per-node port avoids it).
-    UInt64 dispatch_port = cluster_stateless_worker_port;
-    if (dispatch_port == 0)
-        dispatch_port = context->getConfigRef().getUInt("stateless_worker_client.port", 0);
-    if (dispatch_port == 0)
-        dispatch_port = context->getInterserverIOAddress().second;
-    if (dispatch_port == 0 || dispatch_port > 65535)
+    if (address.streaming_exchange_port == 0)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-            "Resolved stateless worker port for host '{}' must be in range 1..65535, got {}", host, dispatch_port);
-    address.stateless_worker_port = static_cast<UInt16>(dispatch_port);
+            "Stateless worker '{}' has no streaming-exchange port, which the control connection of its tasks dials: set its "
+            "`streaming_exchange_port` in the cluster or `distributed_query.streaming_exchange_port`", host);
 
     return address;
 }
@@ -1453,6 +1436,11 @@ size_t getCascadesPlanningNodeCount(ContextPtr context)
 
 TaskToHostMap::~TaskToHostMap() = default;
 
+String TaskToHostMap::getAuthToken() const
+{
+    return worker_allocation ? worker_allocation->getAuthToken() : String{};
+}
+
 String makeUniqueTaskId(const UUID & unique_query_id, const String & task_id)
 {
     return makeUniqueTaskId(toString(unique_query_id), task_id);
@@ -1471,7 +1459,7 @@ void TaskToHostMap::fillWorkerAddresses(ContextPtr context)
     worker_allocation = context->getOrCreateStatelessWorkerAllocation();
     for (const auto & addr : worker_allocation->getAddresses())
         worker_addresses.push_back(
-            resolveWorkerAddress(addr.host, addr.stateless_worker_port, addr.streaming_exchange_port, context));
+            resolveWorkerAddress(addr.host, addr.streaming_exchange_port, context));
     if (worker_addresses.empty())
         throw Exception(ErrorCodes::SW_SERVER_NO_WORKERS_AVAILABLE, "No stateless workers available");
 }
@@ -1494,6 +1482,8 @@ void TaskToHostMap::assignHostsForTasks(const DistributedQueryPlan & distributed
 }
 
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+
 /// Sends tasks to remote nodes.
 class DistributedQueryPlanExecutorRemote final : public DistributedQueryPlanExecutor
 {
@@ -1507,20 +1497,13 @@ public:
         StageWakeupPtr stage_wakeup_)
         : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, std::move(context_), std::move(cancellation_), std::move(stage_wakeup_))
         , task_to_host_map(std::move(task_to_host_map_))
-        , running_tasks(std::max<size_t>(task_to_host_map->getWorkerAddresses().size(), 1), context, cancellation, stage_wakeup, logger)
+        , running_tasks(task_to_host_map, unique_query_id, context, cancellation, stage_wakeup, logger)
         , batch_dispatch(context->getSettingsRef()[Setting::distributed_plan_task_dispatch_batching])
         , stages_per_flush(stagesPerFlush(context))
     {
         /// A null map belongs to an in-process plan, which createDistributedQueryExecutor routes to
         /// the local executor instead.
         chassert(task_to_host_map);
-        /// One sender per worker at a time, so more threads than workers would stay idle.
-        const size_t workers = std::max<size_t>(task_to_host_map->getWorkerAddresses().size(), 1);
-        const UInt64 dispatch_threads = context->getSettingsRef()[Setting::distributed_plan_task_dispatch_threads];
-        const size_t sender_threads = dispatch_threads == 0 ? workers : std::min<size_t>(dispatch_threads, workers);
-        task_senders.emplace(CurrentMetrics::DistributedPlanTaskDispatchThreads, CurrentMetrics::DistributedPlanTaskDispatchThreadsActive,
-            CurrentMetrics::DistributedPlanTaskDispatchThreadsScheduled, sender_threads, sender_threads, /*queue_size=*/ 0);
-        QueryStatusPtr query_status = context->getProcessListElement();
         Strings worker_hosts;
         for (const auto & worker : task_to_host_map->getWorkerAddresses())
             worker_hosts.push_back(worker.host);
@@ -1529,68 +1512,58 @@ public:
         for (const auto & [task_id, worker_index] : task_to_host_map->getTaskWorkerIndices())
             distinct_hosts.insert(task_to_host_map->getWorkerAddresses()[worker_index].host);
         ProfileEvents::increment(ProfileEvents::DistributedPlanHostsUsed, distinct_hosts.size());
-
-        String default_endpoint = context->getConfigRef().getString("stateless_worker_server.endpoint", "localhost");
-        auto endpoint = context->getConfigRef().getString("stateless_worker_client.endpoint", "stateless_worker/" + default_endpoint);
-        for (const auto & worker : task_to_host_map->getWorkerAddresses())
-        {
-            Poco::URI stateless_worker_uri;
-            /// Match the interserver scheme so a server with interserver_https_port is not sent plaintext.
-            stateless_worker_uri.setScheme(context->getInterserverScheme());
-            stateless_worker_uri.setHost(worker.host);
-            stateless_worker_uri.setPort(worker.stateless_worker_port);
-            stateless_worker_uri.addQueryParameter("endpoint", endpoint);
-            worker_endpoint_uris.push_back(stateless_worker_uri.toString());
-        }
     }
 
     void cleanup() override
     {
         running_tasks.cancel();
-#if defined(OS_LINUX) || defined(OS_DARWIN)
         /// Drop any still-pending exchange connection slots that belong to this query
         /// (the peer was cancelled or never arrived). Without this they would leak
         /// FutureConnection/eventfd entries in the ExchangeConnections singleton for
         /// the lifetime of the server.
         ExchangeConnections::instance()->cleanupQuery(toString(unique_query_id));
-#endif
     }
 
 protected:
     struct RunningTaskInfo
     {
-        String endpoint_uri;
+        WorkerIndex worker = 0;
         String task_id;
     };
 
-    /// Tracks the statuses of running tasks in parallel, collects progress counters.
+    static String describeWorker(const WorkerAddress & address)
+    {
+        return fmt::format("{}:{}", address.host, address.streaming_exchange_port);
+    }
+
+    /// Tracks the tasks of the query on its workers over one control connection per worker, which the worker's first batch
+    /// opens, and collects their progress for the query thread. The replies are handled on the `WorkerControlLoop` thread.
     class TaskTracker
     {
     public:
-        /// One status poller per worker runs at a time.
-        TaskTracker(size_t workers, ContextPtr context_, DistributedQueryCancellationPtr cancellation_, StageWakeupPtr stage_wakeup_, LoggerPtr logger_)
-            : context(std::move(context_))
+        TaskTracker(TaskToHostMapPtr task_to_host_map_, const UUID & unique_query_id_, ContextPtr context_,
+            DistributedQueryCancellationPtr cancellation_, StageWakeupPtr stage_wakeup_, LoggerPtr logger_)
+            : task_to_host_map(std::move(task_to_host_map_))
+            , unique_query_id(toString(unique_query_id_))
+            , context(std::move(context_))
             , query_status(context->getProcessListElement())
             , cancellation(std::move(cancellation_))
             , stage_wakeup(std::move(stage_wakeup_))
-            , thread_pool(CurrentMetrics::TaskTrackerThreads, CurrentMetrics::TaskTrackerThreadsActive, CurrentMetrics::TaskTrackerThreadsScheduled,
-                workers, workers, /*queue_size=*/ 0)
             , logger(std::move(logger_))
-        {}
+        {
+            const auto & addresses = task_to_host_map->getWorkerAddresses();
+            std::lock_guard g(lock);
+            worker_states.resize(addresses.size());
+            for (WorkerIndex worker = 0; worker < addresses.size(); ++worker)
+                channels.push_back(std::make_unique<WorkerChannel>(*this, worker, describeWorker(addresses[worker])));
+        }
 
         ~TaskTracker()
         {
-            /// wait() joins the status-check threads (needed: it runs while logger/lock/context are
-            /// still alive), but it can rethrow a stored worker exception, which must not escape a
-            /// destructor.
-            try
-            {
-                thread_pool.wait();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
+            /// Before the members that the callbacks use are destroyed.
+            for (const auto & channel : channels)
+                if (channel->connection)
+                    channel->connection->detach();
         }
 
         /// Whether forwarded worker logs have somewhere to go: the initiator's `send_logs_level` queue.
@@ -1610,41 +1583,61 @@ protected:
             all_stages[stage_name]->started_tasks++;
         }
 
-        /// Polls a registered task once its worker has replied to the start: before that the worker answers `Unknown task`.
-        void startPolling(const String & stage_name, const String & task_name)
+        /// Sends `batch` on the control connection of `worker`, opened by its first batch; the reply makes its tasks polled.
+        void startTasks(WorkerIndex worker, DistributedQueryTaskBatch batch)
         {
-            String endpoint_uri;
+            WorkerChannel & channel = *channels.at(worker);
+            if (!channel.connection)
+                channel.connection = WorkerControlLoop::instance().open(makeConnectionParams(worker), channel);
+
+            StartRequest request;
+            for (const auto & batch_stage : batch.stages)
+                for (const auto & batch_task : batch_stage.tasks)
+                    request.tasks.push_back({batch_stage.name, {worker, makeUniqueTaskId(unique_query_id, batch_task.task.task_id)}});
+            LOG_DEBUG(logger, "Sending a batch of {} tasks of {} stages to {}", request.tasks.size(), batch.stages.size(), channel.description);
+
+            StatelessWorkerControlProtocol::StartTasks message{
+                .request_id = 0,
+                .temp_path = unique_query_id,
+                .collectors = {.logs = receivesWorkerLogs()},
+                .trace_context = {},
+                .batch = std::move(batch),
+            };
+            if (OpenTelemetry::CurrentContext().isTraceEnabled())
             {
-                std::lock_guard g(lock);
-                if (cancel_started)
-                    return;
-                auto stage_it = stage_tasks.find(stage_name);
-                if (stage_it == stage_tasks.end())
-                    return;
-                auto task_it = stage_it->second.find(task_name);
-                if (task_it == stage_it->second.end())
-                    return;
-                auto & worker = polled_workers[task_it->second.endpoint_uri];
-                worker.tasks.push_back({stage_name, task_it->second});
-                if (worker.polling)
-                    return;
-                worker.polling = true;
-                endpoint_uri = task_it->second.endpoint_uri;
+                /// Finished at the reply, so the worker's spans hang under it.
+                request.span = std::make_unique<OpenTelemetry::ManualSpan>("WorkerControlConnection::startTasks", OpenTelemetry::SpanKind::CLIENT);
+                request.span->addAttribute("clickhouse.distributed.query_id", unique_query_id);
+                request.span->addAttribute("clickhouse.distributed.task_count", request.tasks.size());
+                request.span->addAttribute("clickhouse.distributed.stage_count", message.batch.stages.size());
+                request.span->addAttribute("clickhouse.initial_query_id", message.batch.initial_query_id);
+                request.span->addAttribute("clickhouse.target_host", channel.description);
+                message.trace_context = OpenTelemetry::CurrentContext();
+                message.trace_context.span_id = request.span->getSpanId();
             }
 
+            /// Queued before the send, as the reply can come before `startTasks` returns.
+            {
+                std::lock_guard g(lock);
+                auto & state = worker_states[worker];
+                if (state.ended)
+                {
+                    if (state.lost)
+                        std::rethrow_exception(state.lost);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "A batch for stateless worker {} after its control connection ended", channel.description);
+                }
+                state.start_requests.push_back(std::move(request));
+            }
             try
             {
-                /// `this`: the destructor joins `thread_pool` before the members are destroyed.
-                thread_pool.scheduleOrThrow([this, endpoint_uri]
-                {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);
-                    pollWorker(endpoint_uri);
-                });
+                channel.connection->startTasks(std::move(message));
             }
             catch (...)
             {
-                stopPolling(endpoint_uri);
-                recordFailure(std::current_exception());
+                /// Not sent, so no reply took it.
+                std::lock_guard g(lock);
+                worker_states[worker].start_requests.pop_back();
+                throw;
             }
         }
 
@@ -1652,6 +1645,7 @@ protected:
         bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms)
         {
             LOG_TRACE(logger, "Waiting for stage {} to finish", stage_name);
+            applyProgress();
 
             std::shared_future<void> finished;
             {
@@ -1680,84 +1674,525 @@ protected:
                 /// Poll with timeout instead of blocking indefinitely, so that
                 /// checkCancelled can detect worker failures stored in first_exception.
                 while (finished.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready)
+                {
+                    applyProgress();
                     checkCancelled();
+                }
                 stage_finished = true;
             }
+            applyProgress();
             checkCancelled();
             return stage_finished;
         }
 
-        /// Cancels the tasks still tracked when the query ends, once: `cleanup` calls this once, and the tasks leave
-        /// `stage_tasks` here, so a second call finds none. Collects them under the lock and sends the requests without
-        /// it, so that the pollers can observe the cancellation and exit. Each worker is torn down in parallel.
-        /// This can run on a thread of the killed query itself (whichever thread takes the source's `executor_mutex`
-        /// first runs the teardown). An HTTP request from such a thread is stopped before it is sent, so the worker
-        /// client sends `cancel`, `forget` and the cleanup polls with `withoutQueryCancellationCheck`.
+        /// Cancels the tasks still tracked when the query ends, once: `cleanup` calls this once. Each worker cancels its
+        /// tasks, is polled until they end, forgets those that did and closes its connection, all on the loop; this thread waits
+        /// for the connections to close for `TEARDOWN_TIMEOUT` and aborts the rest, whose workers reclaim the tasks.
         void cancel()
         {
-            VectorWithMemoryTracking<RunningTaskInfo> tasks_to_cancel;
+            /// The thread of a `KILL QUERY` can run this, and the requests and logs still belong to this query.
+            ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK, /*allow_existing_group=*/ true);
+            try
+            {
+                applyProgress();
+            }
+            catch (...)
+            {
+                recordFailure(std::current_exception());
+            }
+
             {
                 std::lock_guard g(lock);
+                if (cancel_started)
+                    return;
                 cancel_started = true;
                 for (auto & [stage_name, started_tasks] : stage_tasks)
                 {
                     for (auto & [task_name, task_info] : started_tasks)
-                        tasks_to_cancel.push_back(task_info);
+                        worker_states[task_info.worker].teardown_running.push_back(std::move(task_info));
                     started_tasks.clear();
                 }
-                for (auto & [_, worker] : polled_workers)
-                    worker.tasks.clear();
+                for (WorkerIndex worker = 0; worker < channels.size(); ++worker)
+                    beginTeardownLocked(worker);
             }
 
-            if (tasks_to_cancel.empty())
-                return;
-            MapWithMemoryTracking<String, VectorWithMemoryTracking<RunningTaskInfo>> tasks_by_worker;
-            for (auto & task : tasks_to_cancel)
-                tasks_by_worker[task.endpoint_uri].push_back(std::move(task));
-
-            ThreadPool teardown_pool(CurrentMetrics::TaskTrackerThreads, CurrentMetrics::TaskTrackerThreadsActive, CurrentMetrics::TaskTrackerThreadsScheduled,
-                tasks_by_worker.size(), /*max_free_threads=*/ 0, /*queue_size=*/ 0);
-            for (auto & [endpoint_uri, tasks] : tasks_by_worker)
             {
-                try
+                std::unique_lock g(lock);
+                teardown_progress.wait_until(g, std::chrono::steady_clock::now() + TEARDOWN_TIMEOUT,
+                    [this]() TSA_NO_THREAD_SAFETY_ANALYSIS { return allConnectionsEndedLocked(); });
+            }
+
+            VectorWithMemoryTracking<WorkerIndex> unfinished;
+            {
+                std::lock_guard g(lock);
+                for (WorkerIndex worker = 0; worker < channels.size(); ++worker)
                 {
-                    teardown_pool.scheduleOrThrow([this, endpoint_uri, worker_tasks = std::move(tasks)] mutable
-                    {
-                        ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);
-                        tearDownWorker(endpoint_uri, std::move(worker_tasks));
-                    });
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Cannot tear down the tasks on {}; leaving them for the worker to reclaim", endpoint_uri));
+                    auto & state = worker_states[worker];
+                    if (!channels[worker]->connection || state.ended)
+                        continue;
+                    LOG_WARNING(logger, "The control connection to {} did not close within {} ms after cancellation; aborting it, "
+                        "so the worker reclaims {} tasks", channels[worker]->description, TEARDOWN_TIMEOUT.count(), state.teardown_running.size());
+                    state.ended = true;
+                    unfinished.push_back(worker);
                 }
             }
-            teardown_pool.wait();
+
+            /// Without the lock: `abort` waits for a running callback, which takes it.
+            for (const WorkerIndex worker : unfinished)
+                channels[worker]->connection->abort();
         }
 
     private:
+        struct PolledTask
+        {
+            String stage_name;
+            RunningTaskInfo info;
+        };
+
+        struct StartRequest
+        {
+            VectorWithMemoryTracking<PolledTask> tasks;
+            /// Null when the query is not traced.
+            std::unique_ptr<OpenTelemetry::ManualSpan> span;
+        };
+
+        struct StatusRequest
+        {
+            UInt64 request_id = 0;
+            Strings task_ids;
+        };
+
+        /// What the tracker knows of a worker and its control connection.
+        struct WorkerState
+        {
+            /// The `StartTasks` sent and not answered, in order: the worker answers them in order.
+            DequeWithMemoryTracking<StartRequest> start_requests;
+            /// The tasks the worker started that have not ended; polled together.
+            VectorWithMemoryTracking<PolledTask> polled_tasks;
+            /// At most one `GetStatuses` is in flight.
+            std::optional<StatusRequest> status_request;
+            /// The `CancelTasks` and `ForgetTasks` in flight.
+            UnorderedSetWithMemoryTracking<UInt64> other_requests;
+            /// The connection ended: closed, refused, lost or aborted. No callback follows.
+            bool ended = false;
+            /// Why the connection ended, if it was refused or lost.
+            std::exception_ptr lost;
+            /// `close` was called, so no request may follow.
+            bool close_sent = false;
+            /// From `cancel` on: the cancelled tasks that have not ended, those that ended, and the polls sent for them.
+            bool tearing_down = false;
+            VectorWithMemoryTracking<RunningTaskInfo> teardown_running;
+            Strings teardown_ended;
+            size_t teardown_polls = 0;
+        };
+
+        /// The handler of the control connection of one worker.
+        class WorkerChannel final : public IWorkerControlHandler
+        {
+        public:
+            WorkerChannel(TaskTracker & tracker_, WorkerIndex worker_, String description_)
+                : tracker(tracker_), worker(worker_), description(std::move(description_))
+            {
+            }
+
+            void onHelloAccepted(const StatelessWorkerControlProtocol::ControlHelloReply &) override {}
+            void onHelloRefused(const StatelessWorkerControlProtocol::ControlHelloReply & reply) override { tracker.onHelloRefused(worker, reply); }
+            void onStartTasksReply(const StatelessWorkerControlProtocol::StartTasksReply & reply) override { tracker.onStartTasksReply(worker, reply); }
+            void onGetStatusesReply(StatelessWorkerControlProtocol::GetStatusesReply & reply) override { tracker.onGetStatusesReply(worker, reply); }
+            void onCancelTasksReply(UInt64 request_id) override { tracker.onRequestAnswered(worker, request_id); }
+            void onForgetTasksReply(UInt64 request_id) override { tracker.onRequestAnswered(worker, request_id); }
+            void onError(const StatelessWorkerControlProtocol::Error & error) override { tracker.onError(worker, error); }
+            void onBroken(std::exception_ptr exception) override { tracker.onConnectionEnded(worker, exception); }
+            void onClosed() override { tracker.onConnectionEnded(worker, nullptr); }
+
+            TaskTracker & tracker;
+            const WorkerIndex worker;
+            /// `host:port` of the worker.
+            const String description;
+            /// Set by the query thread before its first request; only the callbacks that answer a request use it.
+            WorkerControlConnectionPtr connection;
+        };
+
+        using StatusEntries = decltype(StatelessWorkerControlProtocol::GetStatusesReply::entries);
+
+        static constexpr UInt64 STATUS_WAIT_MILLISECONDS = 300;
+        static constexpr size_t MAX_TEARDOWN_POLLS = 10;
+        static constexpr std::chrono::milliseconds TEARDOWN_TIMEOUT{5000};
+
+        WorkerControlConnectionParams makeConnectionParams(WorkerIndex worker) const
+        {
+            const auto & address = task_to_host_map->getWorkerAddresses().at(worker);
+            const auto credentials = context->getInterserverCredentials();
+            return WorkerControlConnectionParams{
+                .unique_query_id = unique_query_id,
+                .host = address.host,
+                .port = address.streaming_exchange_port,
+                .auth_token = task_to_host_map->getAuthToken(),
+                .user = credentials->getUser(),
+                .password = String(credentials->getPassword()),
+                .initiator = getFQDNOrHostName(),
+                .thread_group = thread_group,
+            };
+        }
+
+        /// Hands the progress the workers reported to the query's callback, on the query thread: the callback can write to the
+        /// client's connection.
+        void applyProgress()
+        {
+            Progress progress = pending_progress.fetchAndResetPiecewiseAtomically();
+            if (progress.empty())
+                return;
+            if (auto progress_callback = context->getProgressCallback())
+                progress_callback(progress);
+        }
+
+        /// A refusal for `max_queries` reads as a busy server.
+        static int refusalErrorCode(int code)
+        {
+            return code == ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS : code;
+        }
+
+        void onHelloRefused(WorkerIndex worker, const StatelessWorkerControlProtocol::ControlHelloReply & reply)
+        {
+            onConnectionEnded(worker, std::make_exception_ptr(Exception(refusalErrorCode(reply.code),
+                "Stateless worker {} refused the control connection: {}", channels[worker]->description, reply.message)));
+        }
+
+        void onStartTasksReply(WorkerIndex worker, const StatelessWorkerControlProtocol::StartTasksReply & reply)
+        {
+            std::lock_guard g(lock);
+            auto & state = worker_states[worker];
+            StartRequest request = takeStartRequestLocked(worker);
+            if (reply.code != 0)
+            {
+                failStartLocked(worker, request, reply.code, reply.message);
+                return;
+            }
+            if (request.span)
+                request.span->finish();
+            ProfileEvents::increment(ProfileEvents::DistributedPlanTaskBatches);
+            /// The teardown polls every registered task.
+            if (state.tearing_down)
+                return;
+            for (auto & task : request.tasks)
+                state.polled_tasks.push_back(std::move(task));
+            sendStatusRequestLocked(worker);
+        }
+
+        void onGetStatusesReply(WorkerIndex worker, StatelessWorkerControlProtocol::GetStatusesReply & reply)
+        {
+            std::lock_guard g(lock);
+            auto & state = worker_states[worker];
+            if (!state.status_request || state.status_request->request_id != reply.request_id)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Stateless worker {} answered `GetStatuses` {}, which is not in flight",
+                    channels[worker]->description, reply.request_id);
+            const Strings task_ids = std::move(state.status_request->task_ids);
+            state.status_request.reset();
+            if (reply.entries.size() != task_ids.size())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Stateless worker {} returned {} statuses for {} tasks",
+                    channels[worker]->description, reply.entries.size(), task_ids.size());
+
+            if (state.tearing_down)
+                handleTeardownStatusesLocked(worker, task_ids, reply.entries);
+            else
+                handleStatusesLocked(worker, task_ids, reply.entries);
+        }
+
+        void onRequestAnswered(WorkerIndex worker, UInt64 request_id)
+        {
+            std::lock_guard g(lock);
+            worker_states[worker].other_requests.erase(request_id);
+        }
+
+        void onError(WorkerIndex worker, const StatelessWorkerControlProtocol::Error & error)
+        {
+            std::lock_guard g(lock);
+            auto & state = worker_states[worker];
+            const String & description = channels[worker]->description;
+            if (state.status_request && state.status_request->request_id == error.request_id)
+            {
+                state.status_request.reset();
+                auto exception = std::make_exception_ptr(Exception(error.code, "Stateless worker {} failed `GetStatuses`: {}", description, error.message));
+                if (state.tearing_down)
+                {
+                    tryLogException(exception, logger, "Waiting for the cancelled tasks to end", LogsLevel::warning);
+                    finishTeardownLocked(worker);
+                }
+                else
+                {
+                    recordFailure(exception);
+                }
+                return;
+            }
+            if (state.other_requests.erase(error.request_id))
+            {
+                LOG_WARNING(logger, "Stateless worker {} failed a request to cancel or forget tasks: {}", description, error.message);
+                return;
+            }
+            if (state.start_requests.empty())
+            {
+                recordFailure(std::make_exception_ptr(Exception(error.code, "Stateless worker {} failed request {}: {}", description, error.request_id, error.message)));
+                return;
+            }
+            /// The worker answers the `StartTasks` in order, so this one is the oldest in flight.
+            StartRequest request = takeStartRequestLocked(worker);
+            failStartLocked(worker, request, error.code, error.message);
+        }
+
+        /// `exception` is null for a connection that closed after the teardown.
+        void onConnectionEnded(WorkerIndex worker, std::exception_ptr exception)
+        {
+            std::lock_guard g(lock);
+            auto & state = worker_states[worker];
+            state.ended = true;
+            state.lost = exception;
+            if (exception)
+            {
+                const String message = getExceptionMessage(exception, /*with_stacktrace=*/ false);
+                for (auto & request : state.start_requests)
+                {
+                    if (!request.span)
+                        continue;
+                    request.span->addAttribute("clickhouse.exception", message);
+                    request.span->finish(OpenTelemetry::SpanStatus::ERROR, message);
+                }
+                /// The teardown leaves the tasks of a lost connection to the worker, which cancels them when the connection closes.
+                if (cancel_started)
+                    LOG_DEBUG(logger, "{}; the worker reclaims its tasks", message);
+                else
+                    recordFailure(exception);
+            }
+            state.start_requests.clear();
+            state.polled_tasks.clear();
+            state.status_request.reset();
+            state.other_requests.clear();
+            teardown_progress.notify_all();
+        }
+
+        StartRequest takeStartRequestLocked(WorkerIndex worker) TSA_REQUIRES(lock)
+        {
+            auto & state = worker_states[worker];
+            if (state.start_requests.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Stateless worker {} answered a `StartTasks` that is not in flight", channels[worker]->description);
+            StartRequest request = std::move(state.start_requests.front());
+            state.start_requests.pop_front();
+            return request;
+        }
+
+        void failStartLocked(WorkerIndex worker, StartRequest & request, int code, const String & message) TSA_REQUIRES(lock)
+        {
+            const String text = fmt::format("Stateless worker {} did not start {} tasks: {}", channels[worker]->description, request.tasks.size(), message);
+            if (request.span)
+            {
+                request.span->addAttribute("clickhouse.exception", text);
+                request.span->finish(OpenTelemetry::SpanStatus::ERROR, text);
+            }
+            recordFailure(std::make_exception_ptr(Exception(refusalErrorCode(code), "{}", text)));
+        }
+
+        /// Polls the worker's unfinished tasks, or the cancelled ones in the teardown, unless a poll is in flight.
+        void sendStatusRequestLocked(WorkerIndex worker) TSA_REQUIRES(lock)
+        {
+            auto & state = worker_states[worker];
+            if (state.status_request || state.ended || state.close_sent)
+                return;
+            /// A cancelled query stops polling until its teardown.
+            if (!state.tearing_down && cancellation->isCancelled())
+                return;
+
+            Strings task_ids;
+            if (state.tearing_down)
+            {
+                for (const auto & task : state.teardown_running)
+                    task_ids.push_back(task.task_id);
+                ++state.teardown_polls;
+            }
+            else
+            {
+                for (const auto & task : state.polled_tasks)
+                    task_ids.push_back(task.info.task_id);
+            }
+            if (task_ids.empty())
+                return;
+
+            ProfileEvents::increment(ProfileEvents::DistributedPlanTaskStatusRequests);
+            const UInt64 request_id = channels[worker]->connection->getStatuses(STATUS_WAIT_MILLISECONDS, task_ids);
+            state.status_request = StatusRequest{.request_id = request_id, .task_ids = std::move(task_ids)};
+        }
+
+        void sendForgetLocked(WorkerIndex worker, Strings task_ids) TSA_REQUIRES(lock)
+        {
+            auto & state = worker_states[worker];
+            if (state.ended || state.close_sent)
+                return;
+            ProfileEvents::increment(ProfileEvents::DistributedPlanTaskForgetRequests);
+            state.other_requests.insert(channels[worker]->connection->forgetTasks(std::move(task_ids)));
+        }
+
+        void closeLocked(WorkerIndex worker) TSA_REQUIRES(lock)
+        {
+            auto & state = worker_states[worker];
+            if (state.ended || state.close_sent)
+                return;
+            state.close_sent = true;
+            channels[worker]->connection->close();
+        }
+
+        /// The statuses of the polled tasks, which are the first `task_ids.size()` of them: new tasks are appended and only
+        /// this removes any.
+        void handleStatusesLocked(WorkerIndex worker, const Strings & task_ids, StatusEntries & entries) TSA_REQUIRES(lock)
+        {
+            auto & state = worker_states[worker];
+            Strings ended_ids;
+            VectorWithMemoryTracking<PolledTask> finished;
+            bool has_progress = false;
+            for (size_t i = 0; i < task_ids.size(); ++i)
+            {
+                const PolledTask & task = state.polled_tasks.at(i);
+                if (task.info.task_id != task_ids[i])
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Task {} is polled on {} in place of {}", task.info.task_id, channels[worker]->description, task_ids[i]);
+
+                auto & task_status = entries[i].status;
+                handleWorkerLogsLocked(task.info, task_status);
+                has_progress |= pending_progress.incrementPiecewiseAtomically(task_status.progress);
+                if (task_status.status != "Finished" && task_status.status != "Running")
+                    recordTaskFailureOnceLocked(task.info, task_status);
+                if (!isTerminalTaskStatus(task_status.status))
+                    continue;
+                ended_ids.push_back(task.info.task_id);
+                if (task_status.status == "Finished")
+                    finished.push_back(task);
+            }
+
+            if (!ended_ids.empty())
+            {
+                /// Only after recording the failures: a forgotten task answers the teardown's poll with "Unknown task", which
+                /// carries none.
+                const UnorderedSetWithMemoryTracking<String> ended(ended_ids.begin(), ended_ids.end());
+                sendForgetLocked(worker, std::move(ended_ids));
+                std::erase_if(state.polled_tasks, [&ended](const PolledTask & task) { return ended.contains(task.info.task_id); });
+                for (const auto & task : finished)
+                    setTaskFinishedLocked(task.stage_name, task.info.task_id);
+            }
+            /// The waiting source applies the progress.
+            if (has_progress)
+                notifyStageWakeup(stage_wakeup);
+            sendStatusRequestLocked(worker);
+        }
+
+        /// The statuses of a poll that the teardown found in flight cover only some of the cancelled tasks, so they are
+        /// matched by id.
+        void handleTeardownStatusesLocked(WorkerIndex worker, const Strings & task_ids, StatusEntries & entries) TSA_REQUIRES(lock)
+        {
+            auto & state = worker_states[worker];
+            UnorderedMapWithMemoryTracking<String, size_t> entry_of_task;
+            for (size_t i = 0; i < task_ids.size(); ++i)
+                entry_of_task.emplace(task_ids[i], i);
+
+            VectorWithMemoryTracking<RunningTaskInfo> running;
+            for (auto & task : state.teardown_running)
+            {
+                auto entry = entry_of_task.find(task.task_id);
+                if (entry == entry_of_task.end())
+                {
+                    running.push_back(std::move(task));
+                    continue;
+                }
+                auto & task_status = entries[entry->second].status;
+                /// A task cancelled early (e.g. LIMIT satisfied) still delivers its logs through the cleanup polls.
+                handleWorkerLogsLocked(task, task_status);
+                if (isTerminalTaskStatus(task_status.status))
+                {
+                    /// Its failure can be the root cause of the teardown: the initiator often sees an effect first, e.g. the
+                    /// result reader's socket closing.
+                    if (task_status.status != "Finished" && task_status.status != "Unknown task")
+                        recordTaskFailureOnceLocked(task, task_status);
+                    state.teardown_ended.push_back(task.task_id);
+                    continue;
+                }
+                /// Freeing the resources of a failing task can take longer than this wait.
+                if (task_status.status == "Failing")
+                    recordTaskFailureOnceLocked(task, task_status);
+                running.push_back(std::move(task));
+            }
+            state.teardown_running = std::move(running);
+
+            if (state.teardown_running.empty() || state.teardown_polls >= MAX_TEARDOWN_POLLS)
+                finishTeardownLocked(worker);
+            else
+                sendStatusRequestLocked(worker);
+        }
+
+        /// Cancels the tasks of the worker and polls them, or closes the connection at once when the worker has none.
+        void beginTeardownLocked(WorkerIndex worker) TSA_REQUIRES(lock)
+        {
+            auto & state = worker_states[worker];
+            const WorkerChannel & channel = *channels[worker];
+            state.polled_tasks.clear();
+            if (!channel.connection || state.ended)
+            {
+                if (!state.teardown_running.empty())
+                    LOG_DEBUG(logger, "Leaving {} tasks to stateless worker {}, whose control connection ended", state.teardown_running.size(), channel.description);
+                state.teardown_running.clear();
+                return;
+            }
+
+            state.tearing_down = true;
+            if (state.teardown_running.empty())
+            {
+                closeLocked(worker);
+                return;
+            }
+
+            Strings task_ids;
+            for (const auto & task : state.teardown_running)
+            {
+                LOG_TRACE(logger, "Cancelling task {} on host {}", task.task_id, channel.description);
+                task_ids.push_back(task.task_id);
+            }
+            ProfileEvents::increment(ProfileEvents::DistributedPlanTaskCancelRequests);
+            state.other_requests.insert(channel.connection->cancelTasks(std::move(task_ids)));
+            /// A poll in flight is answered first, and its reply sends the next one.
+            sendStatusRequestLocked(worker);
+        }
+
+        /// `forget` drops the worker's only handle to a task, so forgetting one that is still running would orphan a fragment
+        /// that keeps writing exchange and temporary outputs. So only the ended tasks are forgotten; the connection closes after
+        /// that, and the worker cancels and reclaims the rest.
+        void finishTeardownLocked(WorkerIndex worker) TSA_REQUIRES(lock)
+        {
+            auto & state = worker_states[worker];
+            if (!state.teardown_ended.empty())
+                sendForgetLocked(worker, std::exchange(state.teardown_ended, {}));
+            for (const auto & task : state.teardown_running)
+                LOG_WARNING(logger, "Task {} on {} did not reach a terminal state after cancellation; leaving it for the worker to reclaim",
+                    task.task_id, channels[worker]->description);
+            closeLocked(worker);
+        }
+
+        bool allConnectionsEndedLocked() const TSA_REQUIRES(lock)
+        {
+            for (WorkerIndex worker = 0; worker < channels.size(); ++worker)
+                if (channels[worker]->connection && !worker_states[worker].ended)
+                    return false;
+            return true;
+        }
+
         /// Record a task's failed status under the worker's error code, so the client sees it and the
         /// record can rank it. A status other than `Failed` or `Failing` carries no code and gets the
         /// generic remote error code, which ranks below a known root cause. A failing task reports its
         /// failure on every poll until it ends, but it is recorded once.
-        void recordTaskFailureOnce(const RunningTaskInfo & task, const DistributedQueryTaskStatus & task_status)
+        void recordTaskFailureOnceLocked(const RunningTaskInfo & task, const DistributedQueryTaskStatus & task_status) TSA_REQUIRES(lock)
         {
-            {
-                std::lock_guard g(lock);
-                if (tasks_with_recorded_failure.contains(task.task_id))
-                    return;
-            }
+            if (!tasks_with_recorded_failure.insert(task.task_id).second)
+                return;
             const int code = task_status.error_code != 0 ? task_status.error_code : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
             recordFailure(std::make_exception_ptr(Exception(code, "Task {} did not finish successfully (status: {}): {}",
                 task.task_id, task_status.status, task_status.error_message)));
-            /// Mark only after the record, otherwise a concurrent poll could skip the task before its failure is recorded.
-            std::lock_guard g(lock);
-            tasks_with_recorded_failure.insert(task.task_id);
         }
 
-        /// Log the exception, record it as the query's failure, and request cancellation. The status
-        /// check threads call it from their catch blocks, so a failure there surfaces through
-        /// `checkCancelled` instead of escaping the thread and terminating the server.
+        /// Log the exception, record it as the query's failure, and request cancellation, so a failure on the loop surfaces
+        /// through `checkCancelled`.
         void recordFailure(std::exception_ptr exception)
         {
             /// A consequence is expected while the query stops; only a root cause is worth an error entry.
@@ -1788,9 +2223,8 @@ protected:
                 initiator_logs_queue->pushMessage(Poco::Message::PRIO_WARNING, source, query_id, text);
         }
 
-        /// Forwards the batch and warns about lines lost to a retried poll (a gap before `begin_offset`) and
-        /// about lines dropped on the worker. After `cancel`, polls of one task can overlap, so only rows are forwarded.
-        void handleWorkerLogs(const RunningTaskInfo & task, DistributedQueryTaskStatus & task_status)
+        /// Forwards the batch and warns about lines missing before `begin_offset` and about lines dropped on the worker.
+        void handleWorkerLogsLocked(const RunningTaskInfo & task, DistributedQueryTaskStatus & task_status) TSA_REQUIRES(lock)
         {
             if (!initiator_logs_queue || !task_status.logs)
                 return;
@@ -1803,197 +2237,28 @@ protected:
 
             UInt64 lost_in_transit = 0;
             UInt64 newly_dropped = 0;
+            auto & cursor = worker_log_cursors[task.task_id];
+
+            if (logs.begin_offset >= cursor.expected_offset)
             {
-                std::lock_guard g(lock);
-
-                if (cancel_started)
-                    return;
-
-                auto & cursor = worker_log_cursors[task.task_id];
-
-                if (logs.begin_offset >= cursor.expected_offset)
-                {
-                    lost_in_transit = logs.begin_offset - cursor.expected_offset;
-                    cursor.expected_offset = logs.begin_offset + num_rows;
-                }
-
-                if (logs.dropped_total > cursor.dropped_reported)
-                {
-                    newly_dropped = logs.dropped_total - cursor.dropped_reported;
-                    cursor.dropped_reported = logs.dropped_total;
-                }
+                lost_in_transit = logs.begin_offset - cursor.expected_offset;
+                cursor.expected_offset = logs.begin_offset + num_rows;
             }
 
+            if (logs.dropped_total > cursor.dropped_reported)
+            {
+                newly_dropped = logs.dropped_total - cursor.dropped_reported;
+                cursor.dropped_reported = logs.dropped_total;
+            }
+
+            const String & description = channels[task.worker]->description;
             if (lost_in_transit != 0)
                 pushInitiatorLogLine(task.task_id, fmt::format(
-                    "{} worker log line(s) from {} were lost in transit (status poll retry)",
-                    lost_in_transit, task.endpoint_uri));
+                    "{} worker log line(s) from {} were lost in transit", lost_in_transit, description));
 
             if (newly_dropped != 0)
                 pushInitiatorLogLine(task.task_id, fmt::format(
-                    "{} worker log line(s) were dropped on {} because the forwarding buffer was full",
-                    newly_dropped, task.endpoint_uri));
-        }
-
-        /// Polls the unfinished tasks of one worker together until none is left; a later start on the worker starts it again.
-        void pollWorker(const String & endpoint_uri)
-        {
-            while (true)
-            {
-                VectorWithMemoryTracking<PolledTask> tasks;
-                {
-                    std::lock_guard g(lock);
-                    auto & worker = polled_workers[endpoint_uri];
-                    if (cancel_started || worker.tasks.empty())
-                    {
-                        worker.polling = false;
-                        return;
-                    }
-                    tasks = worker.tasks;
-                }
-
-                try
-                {
-                    checkCancelled();
-                    Strings task_ids;
-                    for (const auto & task : tasks)
-                        task_ids.push_back(task.info.task_id);
-                    ProfileEvents::increment(ProfileEvents::DistributedPlanTaskStatusRequests);
-                    auto statuses = getTaskStatuses(endpoint_uri, task_ids, /*wait_for_ms=*/ 300, context);
-
-                    Strings ended_ids;
-                    VectorWithMemoryTracking<const PolledTask *> finished;
-                    for (size_t i = 0; i < tasks.size(); ++i)
-                    {
-                        auto & task_status = statuses[i].status;
-                        handleWorkerLogs(tasks[i].info, task_status);
-                        if (auto progress_callback = context->getProgressCallback())
-                            progress_callback(task_status.progress);
-                        if (task_status.status != "Finished" && task_status.status != "Running")
-                            recordTaskFailureOnce(tasks[i].info, task_status);
-                        if (!isTerminalTaskStatus(task_status.status))
-                            continue;
-                        ended_ids.push_back(tasks[i].info.task_id);
-                        if (task_status.status == "Finished")
-                            finished.push_back(&tasks[i]);
-                    }
-                    if (ended_ids.empty())
-                        continue;
-
-                    /// Only after recording the failures: a forgotten task answers the teardown's poll with "Unknown task", which
-                    /// carries none.
-                    tryForgetTasks(endpoint_uri, ended_ids);
-                    {
-                        std::lock_guard g(lock);
-                        const UnorderedSetWithMemoryTracking<String> ended(ended_ids.begin(), ended_ids.end());
-                        std::erase_if(polled_workers[endpoint_uri].tasks, [&ended](const PolledTask & task) { return ended.contains(task.info.task_id); });
-                    }
-                    for (const auto * task : finished)
-                        setTaskFinished(task->stage_name, task->info.task_id);
-                }
-                catch (...)
-                {
-                    stopPolling(endpoint_uri);
-                    /// recordFailure logs and stores the exception; the query stops.
-                    recordFailure(std::current_exception());
-                    return;
-                }
-            }
-        }
-
-        void stopPolling(const String & endpoint_uri)
-        {
-            std::lock_guard g(lock);
-            polled_workers[endpoint_uri].polling = false;
-        }
-
-        /// Cancels the tasks of one worker, waits a bounded time for them to end and forgets those that did.
-        void tearDownWorker(const String & endpoint_uri, VectorWithMemoryTracking<RunningTaskInfo> tasks) noexcept
-        {
-            Strings task_ids;
-            for (const auto & task : tasks)
-            {
-                LOG_TRACE(logger, "Cancelling task {} on host {}", task.task_id, endpoint_uri);
-                task_ids.push_back(task.task_id);
-            }
-            try
-            {
-                ProfileEvents::increment(ProfileEvents::DistributedPlanTaskCancelRequests);
-                cancelTasks(endpoint_uri, task_ids, context);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("cancelTasks on {}", endpoint_uri));
-            }
-
-            /// `forget` drops the worker's only handle to a task, so forgetting one that is still running would orphan a fragment
-            /// that keeps writing exchange and temporary outputs. `cancel` only requests termination, so wait for the terminal
-            /// state before forgetting, and leave a task that does not settle for the worker to reclaim on shutdown.
-            Strings ended_ids;
-            constexpr size_t max_polls = 10;
-            for (size_t poll = 0; poll < max_polls && !tasks.empty(); ++poll)
-            {
-                try
-                {
-                    task_ids.clear();
-                    for (const auto & task : tasks)
-                        task_ids.push_back(task.task_id);
-                    ProfileEvents::increment(ProfileEvents::DistributedPlanTaskStatusRequests);
-                    auto statuses = getTaskStatuses(endpoint_uri, task_ids, /*wait_for_ms=*/ 300, context, /*for_cleanup=*/ true);
-
-                    VectorWithMemoryTracking<RunningTaskInfo> running;
-                    for (size_t i = 0; i < tasks.size(); ++i)
-                    {
-                        auto & task_status = statuses[i].status;
-                        /// A task cancelled early (e.g. LIMIT satisfied) still delivers its logs through the cleanup polls.
-                        handleWorkerLogs(tasks[i], task_status);
-                        if (isTerminalTaskStatus(task_status.status))
-                        {
-                            /// Its failure can be the root cause of the teardown: the initiator often sees an effect first, e.g. the
-                            /// result reader's socket closing.
-                            if (task_status.status != "Finished" && task_status.status != "Unknown task")
-                                recordTaskFailureOnce(tasks[i], task_status);
-                            ended_ids.push_back(tasks[i].task_id);
-                            continue;
-                        }
-                        /// Freeing the resources of a failing task can take longer than this wait.
-                        if (task_status.status == "Failing")
-                            recordTaskFailureOnce(tasks[i], task_status);
-                        running.push_back(std::move(tasks[i]));
-                    }
-                    tasks = std::move(running);
-                }
-                catch (const Poco::TimeoutException &)
-                {
-                    /// A cleanup poll has a short receive timeout, so a slow worker is expected to exceed it.
-                    tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Waiting for the tasks on {} to end", endpoint_uri), LogsLevel::warning);
-                    break;
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Waiting for the tasks on {} to end", endpoint_uri));
-                    break;
-                }
-            }
-
-            if (!ended_ids.empty())
-                tryForgetTasks(endpoint_uri, ended_ids);
-            for (const auto & task : tasks)
-                LOG_WARNING(logger, "Task {} on {} did not reach a terminal state after cancellation; leaving it for the worker to reclaim",
-                    task.task_id, endpoint_uri);
-        }
-
-        void tryForgetTasks(const String & endpoint_uri, const Strings & task_ids) noexcept
-        {
-            try
-            {
-                ProfileEvents::increment(ProfileEvents::DistributedPlanTaskForgetRequests);
-                forgetTasks(endpoint_uri, task_ids, context);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("forgetTasks on {}", endpoint_uri));
-            }
+                    "{} worker log line(s) were dropped on {} because the forwarding buffer was full", newly_dropped, description));
         }
 
         /// The task has ended on the worker. A `Failing` task has not: it still frees its resources.
@@ -2002,9 +2267,8 @@ protected:
             return status != "Running" && status != "Failing";
         }
 
-        void setTaskFinished(const String & stage_name, const String & task_name)
+        void setTaskFinishedLocked(const String & stage_name, const String & task_name) TSA_REQUIRES(lock)
         {
-            std::lock_guard g(lock);
             auto & stage = all_stages[stage_name];
             stage->finished_tasks++;
 
@@ -2032,6 +2296,8 @@ protected:
 
         using StageInfoPtr = std::shared_ptr<StageInfo>;
 
+        const TaskToHostMapPtr task_to_host_map;
+        const String unique_query_id;
         ContextPtr context;
         QueryStatusPtr query_status;
 
@@ -2046,32 +2312,27 @@ protected:
             UInt64 dropped_reported = 0;
         };
         UnorderedMapWithMemoryTracking<String, WorkerLogCursor> worker_log_cursors TSA_GUARDED_BY(lock);
-        /// Set by `cancel`: status polls of one task may overlap from then on, see `handleWorkerLogs`.
         bool cancel_started TSA_GUARDED_BY(lock) = false;
-        /// Tasks whose failure is recorded, see `recordTaskFailureOnce`.
+        /// Tasks whose failure is recorded, see `recordTaskFailureOnceLocked`.
         UnorderedSetWithMemoryTracking<String> tasks_with_recorded_failure TSA_GUARDED_BY(lock);
-        struct PolledTask
-        {
-            String stage_name;
-            RunningTaskInfo info;
-        };
-        /// The unfinished tasks of a worker that its poller asks about, and whether the poller runs.
-        struct PolledWorker
-        {
-            VectorWithMemoryTracking<PolledTask> tasks;
-            bool polling = false;
-        };
-        UnorderedMapWithMemoryTracking<String, PolledWorker> polled_workers TSA_GUARDED_BY(lock);
         UnorderedMapWithMemoryTracking<String, std::shared_future<void>> stage_results TSA_GUARDED_BY(lock);
+        /// Indexed by `WorkerIndex`.
+        VectorWithMemoryTracking<WorkerState> worker_states TSA_GUARDED_BY(lock);
+        /// Notified when a connection ends, for `cancel`.
+        std::condition_variable teardown_progress;
+        /// Summed on the loop, taken by `applyProgress`.
+        Progress pending_progress;
         DistributedQueryCancellationPtr cancellation;
         StageWakeupPtr stage_wakeup;
-        ThreadPool thread_pool;
         LoggerPtr logger;
 
         /// Initiator logs queue captured at construction so it is tied to the main query's thread
         InternalTextLogsQueuePtr initiator_logs_queue = CurrentThread::getInternalTextLogsQueue();
-        /// The query's, so the requests of the pollers and the teardown count in its profile events.
+        /// The query's, so the work of its control connections counts in its profile events.
         ThreadGroupPtr thread_group = CurrentThread::getGroup();
+
+        /// Indexed by `WorkerIndex`; never resized after the constructor. Last, so the connections are destroyed first.
+        VectorWithMemoryTracking<std::unique_ptr<WorkerChannel>> channels;
     };
 
     static std::optional<UInt64> stagesPerFlush(const ContextPtr & query_context)
@@ -2079,11 +2340,6 @@ protected:
         if (const UInt64 stages = query_context->getSettingsRef()[Setting::distributed_plan_task_dispatch_stages_per_flush])
             return stages;
         return std::nullopt;
-    }
-
-    RunningTaskInfo buildTaskInfo(const String & task_id) const
-    {
-        return {worker_endpoint_uris.at(task_to_host_map->getTaskWorkerIndex(task_id)), makeUniqueTaskId(unique_query_id, task_id)};
     }
 
     void startStage(const String & stage_name, const DistributedQueryStage & stage) override
@@ -2139,21 +2395,13 @@ protected:
         return running_tasks.waitForStage(stage_name, timeout_ms);
     }
 
-    /// Upper bound of the plans in one `start_tasks` batch; a single larger plan goes alone.
+    /// Upper bound of the plans in one `StartTasks` batch; a single larger plan goes alone.
     static constexpr size_t MAX_TASK_BATCH_PLAN_BYTES = 100 * 1024 * 1024;
 
     struct QueuedBatch
     {
         DistributedQueryTaskBatch batch;
         size_t plan_bytes = 0;
-    };
-
-    /// The batches of one worker, sent by one sender at a time, so the worker gets them in order.
-    struct WorkerSendQueue
-    {
-        std::mutex mutex;
-        DequeWithMemoryTracking<QueuedBatch> batches TSA_GUARDED_BY(mutex);
-        bool sending TSA_GUARDED_BY(mutex) = false;
     };
 
     using StagePerWorker = MapWithMemoryTracking<WorkerIndex, DistributedQueryTaskBatch::Stage>;
@@ -2217,19 +2465,20 @@ protected:
         return queued;
     }
 
+    /// Sends the queued batches of every worker; the sends do not wait for the workers.
     void dispatchQueuedTasks() override
     {
         for (auto & [worker, batches] : queued_batches)
         {
-            /// This is processing batches queued for one worker now
+            const String description = describeWorker(task_to_host_map->getWorkerAddresses().at(worker));
             for (const auto & queued : batches)
             {
                 for (const auto & batch_stage : queued.batch.stages)
                 {
                     for (const auto & batch_task : batch_stage.tasks)
                     {
-                        auto task_info = buildTaskInfo(batch_task.task.task_id);
-                        LOG_DEBUG(logger, "Queueing task {} for {}", task_info.task_id, task_info.endpoint_uri);
+                        RunningTaskInfo task_info{.worker = worker, .task_id = makeUniqueTaskId(unique_query_id, batch_task.task.task_id)};
+                        LOG_DEBUG(logger, "Queueing task {} for {}", task_info.task_id, description);
                         /// Before the send, so the teardown cancels a task whose start is in flight.
                         running_tasks.registerTask(batch_stage.name, std::move(task_info));
                         ProfileEvents::increment(ProfileEvents::DistributedPlanRemoteTasks);
@@ -2237,114 +2486,23 @@ protected:
                 }
             }
 
-            auto & queue = send_queues[worker];
-            if (!queue)
-                queue = std::make_shared<WorkerSendQueue>();
-            bool start_sender = false;
-            {
-                std::lock_guard lock(queue->mutex);
-                for (auto & queued : batches)
-                    queue->batches.push_back(std::move(queued));
-                start_sender = !std::exchange(queue->sending, true);
-            }
-
-            if (!start_sender)
-                continue;
-
-            try
-            {
-                /// `this` for `running_tasks`: `task_senders` is declared after it, so its jobs are joined first. The queue by value:
-                /// the query thread may add workers to `send_queues` meanwhile.
-                task_senders->scheduleOrThrow(
-                    [this, worker, queue, query_cancellation = cancellation, task_logger = logger, thread_group = CurrentThread::getGroup()]
-                    {
-                        ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);
-                        try
-                        {
-                            sendQueuedBatches(worker, queue);
-                        }
-                        catch (...)
-                        {
-                            tryLogCurrentException(task_logger, fmt::format("Cannot send a batch of tasks to {}", worker_endpoint_uris[worker]));
-                            query_cancellation->recordCurrentException();
-                        }
-                    });
-            }
-            catch (...)
-            {
-                /// The tasks are tracked, so the teardown cancels them on their worker.
-                {
-                    std::lock_guard lock(queue->mutex);
-                    queue->batches.clear();
-                    queue->sending = false;
-                }
-                cancellation->recordCurrentException();
-                throw;
-            }
+            for (auto & queued : batches)
+                running_tasks.startTasks(worker, std::move(queued.batch));
         }
         queued_batches.clear();
     }
 
-    /// Sends the batches of one worker in order until its queue is empty.
-    void sendQueuedBatches(const WorkerIndex worker, const std::shared_ptr<WorkerSendQueue> & queue)
-    {
-        TaskCollectors collectors;
-        collectors.logs = running_tasks.receivesWorkerLogs();
-        const String unique_query_id_string = toString(unique_query_id);
-        try
-        {
-            while (true)
-            {
-                QueuedBatch queued;
-                {
-                    std::lock_guard lock(queue->mutex);
-                    /// A cancelled query needs no more tasks; the teardown cancels the tracked ones on their worker.
-                    if (queue->batches.empty() || cancellation->isCancelled())
-                    {
-                        queue->batches.clear();
-                        queue->sending = false;
-                        return;
-                    }
-                    queued = std::move(queue->batches.front());
-                    queue->batches.pop_front();
-                }
-
-                size_t task_count = 0;
-                for (const auto & batch_stage : queued.batch.stages)
-                    task_count += batch_stage.tasks.size();
-                LOG_DEBUG(logger, "Sending a batch of {} tasks of {} stages to {}", task_count, queued.batch.stages.size(), worker_endpoint_uris[worker]);
-                sendTaskBatch(worker_endpoint_uris[worker], unique_query_id_string, queued.batch, unique_query_id_string, collectors, context);
-                ProfileEvents::increment(ProfileEvents::DistributedPlanTaskBatches);
-                for (const auto & batch_stage : queued.batch.stages)
-                    for (const auto & batch_task : batch_stage.tasks)
-                        running_tasks.startPolling(batch_stage.name, makeUniqueTaskId(unique_query_id, batch_task.task.task_id));
-            }
-        }
-        catch (...)
-        {
-            std::lock_guard lock(queue->mutex);
-            queue->batches.clear();
-            queue->sending = false;
-            throw;
-        }
-    }
-
     TaskToHostMapPtr task_to_host_map;
-    /// The stateless worker endpoint of each worker, in the order of `TaskToHostMap::getWorkerAddresses`.
-    VectorWithMemoryTracking<String> worker_endpoint_uris;
     TaskTracker running_tasks;
     const bool batch_dispatch;
     const std::optional<UInt64> stages_per_flush;
     /// Stages queued since `startStage` last flushed; query thread only.
     size_t stages_since_flush = 0;
-    /// The batches `startStage` built and `dispatchQueuedTasks` has not handed over yet; query thread only.
+    /// The batches `startStage` built and `dispatchQueuedTasks` has not sent yet; query thread only.
     UnorderedMapWithMemoryTracking<WorkerIndex, VectorWithMemoryTracking<QueuedBatch>> queued_batches;
-    /// The send queue of each worker that got batches; query thread only, a sender job holds its own queue.
-    UnorderedMapWithMemoryTracking<WorkerIndex, std::shared_ptr<WorkerSendQueue>> send_queues;
-    /// Sends the batches, so the query thread never waits for a worker; set in the constructor. Declared last, so its jobs are
-    /// joined before the other members are destroyed.
-    std::optional<ThreadPool> task_senders;
 };
+
+#endif
 
 
 DistributedQueryCancellation::DistributedQueryCancellation()
@@ -2593,7 +2751,13 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
         executor = std::make_unique<DistributedQueryPlanExecutorLocal>(unique_query_id, distributed_query_plan, context, cancellation, stage_wakeup);
     }
     else
+    {
+#if defined(OS_LINUX) || defined(OS_DARWIN)
         executor = std::make_unique<DistributedQueryPlanExecutorRemote>(unique_query_id, distributed_query_plan, task_to_host_map, context, cancellation, stage_wakeup);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Running a distributed query plan on stateless workers is supported only on Linux and macOS");
+#endif
+    }
 
     return executor;
 }

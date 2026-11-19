@@ -1,16 +1,16 @@
 """
 Per-node ports for the distributed-plan engine (`make_distributed_plan`).
 
-The 3 worker nodes use different task-dispatch (interserver) and streaming-exchange
-ports, declared per replica (`stateless_worker_port` / `streaming_exchange_port`):
+The 3 worker nodes use different streaming-exchange ports, declared per replica
+(`streaming_exchange_port`):
 
-    node1  interserver 9009  exchange 9223
-    node2  interserver 9010  exchange 9224
-    node3  interserver 9011  exchange 9225
+    node1  exchange 9223
+    node2  exchange 9224
+    node3  exchange 9225
 
-Streaming queries dispatch each task to its node's interserver port and dial each
-producer on its own exchange port, so they succeed only when the per-node ports are
-honored; the pre-fix single-port assumption cannot reach node2/node3.
+Streaming queries send each task on the control connection to its node's exchange port
+and dial each producer on its own exchange port, so they succeed only when the per-node
+ports are honored; the pre-fix single-port assumption cannot reach node2/node3.
 """
 
 import pytest
@@ -49,8 +49,8 @@ node3 = cluster.add_instance(
 NODES = [node1, node2, node3]
 INITIATOR = node1
 
-# Streaming exchange exercises both per-node ports: task dispatch (interserver)
-# and worker-to-worker exchange connections. 3 buckets match the 3-node cluster.
+# Streaming exchange exercises the per-node ports for both the control connections
+# and the worker-to-worker exchange connections. 3 buckets match the 3-node cluster.
 STREAMING_SETTINGS = ", ".join(
     [
         "make_distributed_plan = 1",
@@ -119,7 +119,7 @@ def _assert_distributed_matches_baseline(query: str, extra_settings: str = ""):
 
 def test_parallel_read(started_cluster):
     """Bucketed scan across the 3 nodes, gathered to the initiator; each task is
-    dispatched to its node's own interserver port."""
+    sent on the control connection to its node's own exchange port."""
     _assert_distributed_matches_baseline(
         "SELECT count(), sum(id), sum(group_key) FROM big"
     )
@@ -148,10 +148,11 @@ def test_shuffle_hash_join(started_cluster):
 
 
 def test_wrong_per_node_exchange_port_fails(started_cluster):
-    """Break node2's declared exchange port in the initiator's cluster view: consumers
-    are then told to dial a dead port and the streaming query fails. Confirms the
-    per-node exchange port is actually consulted (the pre-fix single-port assumption
-    ignores it). Runs last and restores the config in `finally`."""
+    """Break node2's declared exchange port in the initiator's cluster view: the
+    initiator's control connection and the consumers then dial a dead port and the
+    streaming query fails. Confirms the per-node exchange port is actually consulted
+    (the pre-fix single-port assumption ignores it). Runs last and restores the config
+    in `finally`."""
     INITIATOR.replace_in_config(
         CLUSTER_CONFIG_PATH,
         "<streaming_exchange_port>9224</streaming_exchange_port>",

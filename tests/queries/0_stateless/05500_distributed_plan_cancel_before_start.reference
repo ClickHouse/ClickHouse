@@ -1,3 +1,4 @@
-every queued task remembered	1	every task that arrived ignored	1
+initiator ended while the worker held the start: 1
+tasks reclaimed by the worker	1
 initial query logged	1
-tasks executed	0
+tasks finished	0

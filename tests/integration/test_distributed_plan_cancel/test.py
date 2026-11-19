@@ -90,8 +90,8 @@ def test_worker_error_not_masked(started_cluster):
 
 
 def test_worker_refuses_queries_beyond_max_queries(started_cluster):
-    """A worker runs the tasks of at most `stateless_worker_server.max_queries` queries (2 here): the tasks of a third
-    query are refused as busy (HTTP 429) and that query fails, while the two running queries finish."""
+    """A worker runs the tasks of at most `stateless_worker_server.max_queries` queries (2 here): the control connection of
+    a third query is refused as busy and that query fails, while the two running queries finish."""
     for node in [node1, node2]:
         node.query(
             "CREATE TABLE IF NOT EXISTS test_max_queries (k UInt64) "

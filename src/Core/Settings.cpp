@@ -11555,21 +11555,15 @@ Maximum rows to use broadcast join instead of shuffle join in distributed query 
 A heuristic for the rule-based distributed planner. When the cost-based optimizer is enabled, the broadcast-vs-shuffle choice is made by estimated cost and this setting has no effect.
 )", EXPERIMENTAL, \
         {"25.7", 20000, 20000, "New experimental setting."}) \
-    DECLARE(UInt64, distributed_plan_task_dispatch_threads, 0, R"(
-Number of stateless workers the tasks of a distributed query are sent to at the same time, one sender thread per worker;
-the batches of one worker are sent one after another. `0` sends to all the query's workers at once, `1` to one worker after
-another. The query's thread never sends.
-)", EXPERIMENTAL, \
-        {"26.11", 0, 0, "New experimental setting."}) \
     DECLARE(Bool, distributed_plan_task_dispatch_batching, true, R"(
-Send the tasks of a distributed query to each stateless worker in batches (`start_tasks`): one request carries all the
+Send the tasks of a distributed query to each stateless worker in batches (`StartTasks`): one request carries all the
 worker's tasks of the stages started together, with each stage's plan written once, up to 100 MiB of plans per request.
 `0` sends one task per request.
 )", EXPERIMENTAL, \
         {"26.11", true, true, "New experimental setting."}) \
     DECLARE(UInt64, distributed_plan_task_dispatch_stages_per_flush, 0, R"(
-Hand the queued tasks of a distributed query to the senders after every this many started stages, so their batches go
-out while the later stages are prepared. `0` hands them over only before waiting for persisted producers and once all
+Send the queued tasks of a distributed query to the stateless workers after every this many started stages, so their
+batches go out while the later stages are prepared. `0` sends them only before waiting for persisted producers and once all
 stages are started.
 )", EXPERIMENTAL, \
         {"26.11", 0, 0, "New experimental setting."}) \
