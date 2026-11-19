@@ -375,9 +375,9 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for function {} must be an Array", getName());
         const auto source_type = removeNullable(removeLowCardinality(arguments[1]));
-        if (!isDynamic(source_type) && !isVariant(source_type))
+        if (!isDynamic(source_type) && !isVariant(source_type) && !isStringOrFixedString(source_type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second argument for function {} must be a Dynamic or Variant", getName());
+                "Second argument for function {} must be a Dynamic, Variant or String", getName());
         auto result_type = std::make_shared<DataTypeUInt8>();
         if (canContainNull(*arguments[1]))
             return std::make_shared<DataTypeNullable>(result_type);
@@ -408,6 +408,15 @@ public:
             }
             if (left_values->isNullAt(row))
                 continue;
+
+            if (isStringOrFixedString(source_type))
+            {
+                auto source_row = sources->cut(row, 1);
+                auto converted = tryConvertColumnToTypeOrNull(
+                    *source_row, arguments[1].type, left_type, {}, /*strict=*/true);
+                values[row] = converted && left_values->compareAt(row, 0, *converted, 1) == 0;
+                continue;
+            }
 
             DataTypePtr active_type;
             if (const auto * dynamic = checkAndGetColumn<ColumnDynamic>(carrier))
@@ -702,6 +711,12 @@ public:
         auto set_types = set->getDataTypes();
         bool check_numeric_probe_exactness = false;
 
+        if (in_null_as_unknown && set_types.size() == 1 && set_types[0]->onlyNull() && !set->sourceIsEmpty())
+        {
+            auto unknown = ColumnNullable::create(ColumnUInt8::create(1, UInt8{0}), ColumnUInt8::create(1, UInt8{1}));
+            return ColumnConst::create(std::move(unknown), input_rows_count);
+        }
+
         if (in_null_as_unknown && set_types.size() == 1)
         {
             const auto left_type = removeNullable(removeLowCardinality(left_arg.type));
@@ -713,13 +728,13 @@ public:
                 && !left_type->equals(*key_type);
             /// A set containing only `NULL` has no numeric key whose type-sensitive hash
             /// could miss a match. Leave it to the ordinary unknown-result handling.
-            const bool only_null_key = set->hasNull() && set->getTotalRowCount() == 1;
+            const bool only_null_key = set_types[0]->onlyNull() || (set->hasNull() && set->getTotalRowCount() == 1);
             if ((isNumber(left_type) || isBool(left_type)) && (isDynamic(key_type) || isVariant(key_type)) && !only_null_key)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
                     left_arg.type->getName(), set_types[0]->getName(), getName());
-            if (mixed_temporal_types)
+            if (mixed_temporal_types && !only_null_key)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",

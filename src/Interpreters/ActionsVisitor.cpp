@@ -764,19 +764,9 @@ ASTPtr makeComplexNonConstantInReplacement(
         else if (isStringOrFixedString(source_bare_type))
         {
             if (isMap(left_bare_type))
-            {
                 match = makeASTFunction("__mapValueEqualsForIn", left_operand->clone(), elements[i]->clone());
-            }
             else
-            {
-                auto safe_string = makeASTFunction(
-                    "ifNull", elements[i]->clone(), make_intrusive<ASTLiteral>("[]"));
-                auto array_value = makeASTFunction(
-                    "CAST", std::move(safe_string), make_intrusive<ASTLiteral>(left_bare_type->getName()));
-                match = makeASTFunction(
-                    "and", makeASTFunction("not", std::move(source_is_null)),
-                    makeASTFunction("has", makeASTFunction("array", std::move(array_value)), left_operand->clone()));
-            }
+                match = makeASTFunction("__arrayValueEqualsForIn", left_operand->clone(), elements[i]->clone());
         }
         else if ((isArray(left_bare_type) && isArray(source_bare_type))
             || (isMap(left_bare_type) && isMap(source_bare_type)))
