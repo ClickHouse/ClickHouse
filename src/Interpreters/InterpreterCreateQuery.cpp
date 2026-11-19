@@ -1197,10 +1197,19 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         {
             /// Copy secondary indexes but only the ones which were not implicitly created. These will be re-generated later again and need
             /// not be copied.
+            /// Only a legacy `ON CLUSTER` entry still holds `AS src` when a worker runs it, and with no user,
+            /// so a transform copied here was not authorized. The initiator checks its own copy of the source,
+            /// but it may not hold one.
+            const bool replay_without_user = getContext()->isDDLOrOnClusterInternal() && !getContext()->getUserID();
             const auto & indices = as_storage_metadata->getSecondaryIndices();
             for (const auto & index : indices)
-                if (!index.isImplicitlyCreated())
-                    properties.indices.push_back(index);
+            {
+                if (index.isImplicitlyCreated())
+                    continue;
+                if (replay_without_user)
+                    rejectTextIndexTransformWithoutInitiatorUser(index);
+                properties.indices.push_back(index);
+            }
 
             /// Copy projections.
             properties.projections = as_storage_metadata->getProjections().clone();
@@ -4209,68 +4218,127 @@ BlockIO InterpreterCreateQuery::execute()
                 /// the UUIDs above do
                 create.as_database = getContext()->resolveDatabase(create.as_database);
 
-                /// OLDEST_VERSION sends no settings, so a worker replaces nothing with Null. check
-                /// what the worker builds, not what our settings give
-                auto preflight_context = Context::createCopy(getContext());
-                if (on_cluster_version == DDLLogEntry::OLDEST_VERSION)
+                /// The worker copies the columns, indices and projections of the source with no user, whatever the
+                /// engine, so every query needs `SHOW COLUMNS`. Check it before looking the source up, else the
+                /// error tells a user who cannot see the source whether it exists.
+                getContext()->checkAccess(AccessType::SHOW_COLUMNS, create.as_database, create.as_table);
+
+                /// The initiator can read the source only when it holds it. A cross-replication cluster keeps
+                /// each shard in a database the initiator may not have.
+                StoragePtr as_storage = DatabaseCatalog::instance().tryGetTable({create.as_database, create.as_table}, getContext());
+                if (as_storage)
                 {
-                    preflight_context->setSetting("restore_replace_external_engines_to_null", false);
-                    preflight_context->setSetting("restore_replace_external_table_functions_to_null", false);
-                }
-
-                ASTPtr inherited_query = query_ptr->clone();
-                auto & inherited = inherited_query->as<ASTCreateQuery &>();
-                InterpreterCreateQuery(inherited_query, preflight_context).setEngine(inherited);
-
-                /// getRequiredAccess sees no engine, because this query holds none of its own
-                if (inherited.storage && inherited.storage->engine)
-                    getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
-                if (inherited.as_table_function)
-                    if (auto engine_name = getSourceEngineOfTableFunction(inherited.as_table_function->ptr(), getContext()))
-                        getContext()->checkAccess(AccessType::TABLE_ENGINE, *engine_name);
-
-                /// setEngine copies only the outer engine of a `TimeSeries` source, and the worker copies
-                /// its inner engines while normalizing, so add the ones this query does not give itself
-                if (inherited.is_time_series_table)
-                {
-                    auto as_create_ptr = DatabaseCatalog::instance().getDatabase(inherited.as_database)->getCreateTableQuery(inherited.as_table, getContext());
-                    const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
-                    if (as_create.targets)
-                        for (const auto & target : as_create.targets->targets)
-                            if (target.inner_engine && !inherited.getTargetInnerEngine(target.kind))
-                                inherited.setTargetInnerEngine(target.kind, target.inner_engine->clone());
-                }
-
-                /// the worker inherits the move destination of the source too, and runs with no user
-                checkExportAccess(inherited);
-                checkDictionaryEngineAccess(inherited);
-
-                /// A worker copies the source's indices with no user, so declare their transforms here.
-                if (inherited.storage && inherited.storage->engine && endsWith(inherited.storage->engine->name, "MergeTree"))
-                {
-                    /// Before resolving it: an error below would otherwise disclose a source the user
-                    /// cannot see.
-                    getContext()->checkAccess(AccessType::SHOW_COLUMNS, create.as_database, create.as_table);
-                    StoragePtr as_storage = resolveStorageProxyLoading(
-                        DatabaseCatalog::instance().getTable({create.as_database, create.as_table}, getContext()));
+                    as_storage = resolveStorageProxyLoading(as_storage);
+                    /// An `Alias` reports its target's metadata, which the worker copies whatever the engine.
                     if (const auto * alias = as_storage->as<StorageAlias>();
                         alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
                         throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}",
                                         StorageID{create.as_database, create.as_table}.getNameForLogs());
-                    /// The query dispatches `AS src`, so each host materializes its own source, which
-                    /// may define the transform differently from the one authorized here.
-                    const bool workers_use_initiator_user
-                        = getContext()->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles]
-                        && on_cluster_version >= DDLLogEntry::INITIATOR_USER_VERSION;
+                }
 
-                    auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
-                    for (const auto & index : as_storage_metadata->getSecondaryIndices())
+                /// A query with its own `ENGINE` inherits no engine definition. A `TimeSeries` engine still inherits
+                /// the inner engines of the source.
+                const bool inherits_definition = !create.storage || !create.storage->engine || create.is_time_series_table;
+
+                if (!inherits_definition || as_storage)
+                {
+                    /// The source on the worker may be an `Alias` to a table the user cannot describe, so require
+                    /// `SHOW COLUMNS` on every table.
+                    if (!as_storage)
                     {
-                        if (index.isImplicitlyCreated())
-                            continue;
-                        if (!workers_use_initiator_user)
-                            rejectTextIndexTransformWithoutInitiatorUser(index);
-                        checkTextIndexPreAndPostProcessorPermissions(index, getContext());
+                        AccessRightsElements required_access;
+                        required_access.emplace_back(AccessType::SHOW_COLUMNS);
+                        if (!getContext()->getAccess()->isGranted(required_access))
+                        {
+                            throw Exception(
+                                ErrorCodes::ACCESS_DENIED,
+                                "Not enough privileges. {}.{} is not on this server, so the metadata that the new table "
+                                "copies from it cannot be checked here. To execute this query, it's necessary to have "
+                                "the grant {}",
+                                backQuoteIfNeed(create.as_database), backQuoteIfNeed(create.as_table),
+                                required_access.toStringWithoutOptions());
+                        }
+                    }
+
+                    /// OLDEST_VERSION sends no settings, so a worker replaces nothing with Null. check
+                    /// what the worker builds, not what our settings give
+                    auto preflight_context = Context::createCopy(getContext());
+                    if (on_cluster_version == DDLLogEntry::OLDEST_VERSION)
+                    {
+                        preflight_context->setSetting("restore_replace_external_engines_to_null", false);
+                        preflight_context->setSetting("restore_replace_external_table_functions_to_null", false);
+                    }
+
+                    ASTPtr inherited_query = query_ptr->clone();
+                    auto & inherited = inherited_query->as<ASTCreateQuery &>();
+                    InterpreterCreateQuery(inherited_query, preflight_context).setEngine(inherited);
+
+                    /// getRequiredAccess sees no engine, because this query holds none of its own
+                    if (inherited.storage && inherited.storage->engine)
+                        getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
+                    if (inherited.as_table_function)
+                        if (auto engine_name = getSourceEngineOfTableFunction(inherited.as_table_function->ptr(), getContext()))
+                            getContext()->checkAccess(AccessType::TABLE_ENGINE, *engine_name);
+
+                    /// setEngine copies only the outer engine of a `TimeSeries` source, and the worker copies
+                    /// its inner engines while normalizing, so add the ones this query does not give itself
+                    if (inherited.is_time_series_table)
+                    {
+                        auto as_create_ptr = DatabaseCatalog::instance().getDatabase(inherited.as_database)->getCreateTableQuery(inherited.as_table, getContext());
+                        const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
+                        if (as_create.targets)
+                            for (const auto & target : as_create.targets->targets)
+                                if (target.inner_engine && !inherited.getTargetInnerEngine(target.kind))
+                                    inherited.setTargetInnerEngine(target.kind, target.inner_engine->clone());
+                    }
+
+                    /// the worker inherits the move destination of the source too, and runs with no user
+                    checkExportAccess(inherited);
+                    checkDictionaryEngineAccess(inherited);
+
+                    /// A worker copies the source's indices with no user, so declare their transforms here.
+                    /// Without the source here, the worker refuses a copied transform itself.
+                    if (as_storage && inherited.storage && inherited.storage->engine && endsWith(inherited.storage->engine->name, "MergeTree"))
+                    {
+                        /// The query dispatches `AS src`, so each host materializes its own source, which
+                        /// may define the transform differently from the one authorized here.
+                        const bool workers_use_initiator_user
+                            = getContext()->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles]
+                            && on_cluster_version >= DDLLogEntry::INITIATOR_USER_VERSION;
+
+                        auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
+                        for (const auto & index : as_storage_metadata->getSecondaryIndices())
+                        {
+                            if (index.isImplicitlyCreated())
+                                continue;
+                            if (!workers_use_initiator_user)
+                                rejectTextIndexTransformWithoutInitiatorUser(index);
+                            checkTextIndexPreAndPostProcessorPermissions(index, getContext());
+                        }
+                    }
+                }
+                else
+                {
+                    /// The initiator cannot see the definition the worker inherits, so require `SELECT` on the
+                    /// source, `SHOW COLUMNS` on every table, `TABLE ENGINE` on every engine, `dictGet` on every
+                    /// dictionary and the grants of any move destination, which covers any source. The worker
+                    /// refuses a copied text index transform itself.
+                    AccessRightsElements required_access;
+                    required_access.emplace_back(AccessType::SELECT, create.as_database, create.as_table);
+                    required_access.emplace_back(AccessType::SHOW_COLUMNS);
+                    required_access.emplace_back(AccessType::TABLE_ENGINE);
+                    required_access.emplace_back(AccessType::dictGet);
+                    required_access.append_range(StorageFactory::instance().getExportAccessOfUnknownDefinition());
+                    if (!getContext()->getAccess()->isGranted(required_access))
+                    {
+                        throw Exception(
+                            ErrorCodes::ACCESS_DENIED,
+                            "Not enough privileges. {}.{} is not on this server, so the definition that the new table "
+                            "inherits from it cannot be checked here. To execute this query, it's necessary to have "
+                            "the grants {}{}",
+                            backQuoteIfNeed(create.as_database), backQuoteIfNeed(create.as_table),
+                            required_access.toStringWithoutOptions(),
+                            create.is_time_series_table ? "" : ", or to specify ENGINE explicitly");
                     }
                 }
             }
