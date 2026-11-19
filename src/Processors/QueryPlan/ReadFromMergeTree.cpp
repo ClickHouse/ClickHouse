@@ -434,6 +434,7 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int INCOMPATIBLE_COLUMNS;
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -8073,6 +8074,15 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         if (query_condition_cache_disabled)
             read_from_merge_tree_step->disableQueryConditionCache();
     }
+
+    /// The table can change its structure after the plan was serialized, for example a column type with
+    /// `ALTER ... MODIFY COLUMN`, so a read that no longer gives the header of the plan is a regular error, not
+    /// a logical one. A replica of parallel replicas can deserialize the plan even after its query has finished,
+    /// when it was cancelled as unused and the cancellation came after the plan.
+    if (!isCompatibleHeader(*step->getOutputHeader(), *ctx.output_header))
+        throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
+            "The structure of table {} changed after the query plan was built. The plan reads {}, the table gives {}",
+            table_id.getNameForLogs(), ctx.output_header->dumpStructure(), step->getOutputHeader()->dumpStructure());
 
     /// Need to keep shared pointer to MergeTree table till the end of plan execution
     ctx.storage_holders.push_back(storage_ptr);
