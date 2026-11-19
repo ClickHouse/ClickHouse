@@ -1253,6 +1253,51 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPNoBackoffAfterSlowRetryCleanup
     }
 }
 
+TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPCancelledOpenResponseAtDeadline)
+{
+    /// A server that sends the first 16 bytes of a longer response and then nothing.
+    Poco::Net::ServerSocket server(Poco::Net::SocketAddress("127.0.0.1", 0));
+    std::atomic<bool> stop = false;
+    std::thread responder([&]
+    {
+        std::vector<Poco::Net::StreamSocket> open;
+        while (!stop)
+        {
+            if (!server.poll(Poco::Timespan(10'000), Poco::Net::Socket::SELECT_READ))
+                continue;
+            auto socket = server.acceptConnection();
+            char request[4096];
+            socket.receiveBytes(request, sizeof(request));
+            const std::string response = "HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n0123456789abcdef";
+            socket.sendBytes(response.data(), static_cast<int>(response.size()));
+            open.push_back(socket);
+        }
+    });
+    SCOPE_EXIT({
+        stop = true;
+        responder.join();
+    });
+
+    /// The first buffer is read before the deadline. The read is then cancelled, and the next buffer is asked for after
+    /// the deadline: it is reported as interrupted, not as a timeout.
+    auto cancellation = std::make_shared<DB::ReadWriteBufferFromHTTP::Cancellation>();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+    Poco::Net::HTTPBasicCredentials empty_creds;
+    auto buf = DB::BuilderRWBufferFromHTTP(Poco::URI("http://" + server.address().toString() + "/"))
+        .withBypassProxy(true)
+        .withBufSize(16)
+        .withDeadline(deadline)
+        .withCancellation(cancellation)
+        .withDelayInit(false)
+        .create(empty_creds);
+    ASSERT_EQ(16, buf->available());
+
+    cancellation->cancel(/*softly=*/ false);
+    std::this_thread::sleep_until(deadline);
+    buf->position() = buf->buffer().end();
+    ASSERT_THROW(buf->next(), DB::ReadInterruptedException);
+}
+
 TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPPastDeadlineOpensNoConnection)
 {
     auto metrics = getPool()->getMetrics();

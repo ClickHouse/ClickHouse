@@ -405,6 +405,20 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
     std::exception_ptr exception = nullptr;
     String error_message;
 
+    /// A read that is cancelled, or whose query reached its soft time limit, is reported as interrupted even past the
+    /// deadline, as on the last attempt.
+    auto throw_deadline_exceeded = [&]
+    {
+        const bool deadline_soft_time_limit_reached = isQueryTimeLimitReached() && cancellation;
+        if (deadline_soft_time_limit_reached && cancellation)
+            cancellation->cancel(true);
+
+        if (deadline_soft_time_limit_reached || isReadCancelled())
+            throw ReadInterruptedException(exception);
+
+        throwDeadlineExceeded(initial_uri, error_message);
+    };
+
     for (size_t attempt = 1; attempt <= read_settings.http_settings.max_tries; ++attempt)
     {
         [[maybe_unused]] bool last_attempt = attempt + 1 > read_settings.http_settings.max_tries;
@@ -436,7 +450,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         }
 
         if (deadline && std::chrono::steady_clock::now() >= *deadline)
-            throwDeadlineExceeded(initial_uri, error_message);
+            throw_deadline_exceeded();
 
         try
         {
@@ -525,19 +539,9 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             if (on_retry)
                 on_retry();
 
-            /// `on_retry` can block: dropping a chunked response reads the next chunk header. As on the last attempt, an
-            /// interrupted read is reported as such.
+            /// `on_retry` can block: dropping a chunked response reads the next chunk header.
             if (deadline && std::chrono::steady_clock::now() + std::chrono::milliseconds(milliseconds_to_wait) >= *deadline)
-            {
-                const bool cleanup_soft_time_limit_reached = isQueryTimeLimitReached() && cancellation;
-                if (cleanup_soft_time_limit_reached && cancellation)
-                    cancellation->cancel(true);
-
-                if (cleanup_soft_time_limit_reached || isReadCancelled())
-                    throw ReadInterruptedException(exception);
-
-                throwDeadlineExceeded(initial_uri, error_message);
-            }
+                throw_deadline_exceeded();
 
             if (!mute_logging)
                 LOG_TRACE(log,
