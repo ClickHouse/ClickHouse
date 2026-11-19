@@ -58,7 +58,7 @@ public:
     }
 
     /// Whether this insert has already reserved the key.
-    bool holds(const std::string & path) const
+    [[nodiscard]] bool holds(const std::string & path) const
     {
         return std::ranges::find(reserved, path) != reserved.end();
     }
