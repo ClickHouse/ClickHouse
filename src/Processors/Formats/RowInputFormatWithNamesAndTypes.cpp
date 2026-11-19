@@ -478,6 +478,8 @@ NamesAndTypesList FormatWithNamesAndTypesSchemaReader::readSchema()
 
     if (!with_names && !with_types && try_detect_header)
     {
+        header_detection_first_row.clear();
+        header_detection_second_row.reset();
         tryDetectHeader(column_names, data_type_names);
         header_detection_attempted = true;
         names_detected_from_data = !column_names.empty();
@@ -539,6 +541,7 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(VectorWithMemoryTracki
         return;
 
     const auto & [first_row_values, first_row_types] = *first_row;
+    header_detection_first_row = first_row_values;
 
     /// The first row contains non String elements, it cannot be a header.
     if (!checkIfAllTypesAreString(first_row_types))
@@ -557,6 +560,7 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(VectorWithMemoryTracki
     }
 
     const auto & [second_row_values, second_row_types] = *second_row;
+    header_detection_second_row = second_row_values;
 
     DataTypes data_types;
     bool second_row_can_be_type_names = checkIfAllTypesAreString(second_row_types) && checkIfAllValuesAreTypeNames(readNamesFromFields(second_row_values));
@@ -624,6 +628,46 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(VectorWithMemoryTracki
     }
 }
 
+bool FormatWithNamesAndTypesSchemaReader::headerDetectionAgreesWithParser(const Names & expected_names) const
+{
+    /// No data, or a `*WithNames*` / `*WithTypes*` format that has no header detection.
+    if (!header_detection_attempted || header_detection_first_row.empty())
+        return true;
+
+    /// The same rules as in `RowInputFormatWithNamesAndTypes::tryDetectHeader`: the first row holds the
+    /// column names when its values and the destination names are a subset of one another, and then the
+    /// second row holds the types when all its values are type names.
+    const auto first_row_names = readHeaderDetectionValuesFromFields(header_detection_first_row);
+    UnorderedSetWithMemoryTracking<std::string_view> expected_names_set(expected_names.begin(), expected_names.end());
+    UnorderedSetWithMemoryTracking<std::string_view> first_row_names_set(first_row_names.begin(), first_row_names.end());
+    const bool parser_detects_names
+        = isSubsetOf(first_row_names_set, expected_names_set) || isSubsetOf(expected_names_set, first_row_names_set);
+    if (parser_detects_names != names_detected_from_data)
+        return false;
+    if (!parser_detects_names)
+        return true;
+
+    const bool parser_detects_types
+        = header_detection_second_row && checkIfAllValuesAreTypeNames(readHeaderDetectionValuesFromFields(*header_detection_second_row));
+    return parser_detects_types == types_detected_from_data;
+}
+
+VectorWithMemoryTracking<String> FormatWithNamesAndTypesSchemaReader::readHeaderDetectionValuesFromFields(const VectorWithMemoryTracking<String> & fields) const
+{
+    /// The parser reads the rows for header detection with `readRowForHeaderDetection`, which takes a
+    /// field as a string when it can be one under the escaping rule and as it is otherwise (e.g. a bare
+    /// number with the `Quoted` rule of `CustomSeparated`), see `readStringOrFieldByEscapingRule`.
+    VectorWithMemoryTracking<String> values;
+    values.reserve(fields.size());
+    auto escaping_rule = format_reader->getEscapingRule();
+    for (const auto & field : fields)
+    {
+        ReadBufferFromString field_buf(field);
+        values.emplace_back(readStringOrFieldByEscapingRule(field_buf, escaping_rule, format_settings));
+    }
+    return values;
+}
+
 std::optional<DataTypes> FormatWithNamesAndTypesSchemaReader::readRowAndGetDataTypes()
 {
     /// Check if we tried to detect a header and have buffered types from read rows.
@@ -637,7 +681,7 @@ std::optional<DataTypes> FormatWithNamesAndTypesSchemaReader::readRowAndGetDataT
     return readRowAndGetDataTypesImpl();
 }
 
-VectorWithMemoryTracking<String> FormatWithNamesAndTypesSchemaReader::readNamesFromFields(const VectorWithMemoryTracking<String> & fields)
+VectorWithMemoryTracking<String> FormatWithNamesAndTypesSchemaReader::readNamesFromFields(const VectorWithMemoryTracking<String> & fields) const
 {
     VectorWithMemoryTracking<String> names;
     names.reserve(fields.size());

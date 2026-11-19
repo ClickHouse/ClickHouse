@@ -247,6 +247,8 @@ public:
         return header_detection_attempted && !names_detected_from_data && !types_detected_from_data;
     }
 
+    [[nodiscard]] bool headerDetectionAgreesWithParser(const Names & expected_names) const override;
+
 protected:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
 
@@ -266,7 +268,8 @@ protected:
 
 private:
     void tryDetectHeader(VectorWithMemoryTracking<String> & column_names_out, VectorWithMemoryTracking<String> & type_names_out);
-    VectorWithMemoryTracking<String> readNamesFromFields(const VectorWithMemoryTracking<String> & fields);
+    VectorWithMemoryTracking<String> readNamesFromFields(const VectorWithMemoryTracking<String> & fields) const;
+    VectorWithMemoryTracking<String> readHeaderDetectionValuesFromFields(const VectorWithMemoryTracking<String> & fields) const;
 
     FormatWithNamesAndTypesReader * format_reader;
     bool try_detect_header;
@@ -275,6 +278,11 @@ private:
     /// The type names of the types row as read by the last `readSchema` call, see `getDeclaredTypeNames`.
     UnorderedMapWithMemoryTracking<String, String> declared_type_names;
     bool header_detection_attempted = false;
+    /// The raw fields of the first two rows seen by the header detection of the last `readSchema` call,
+    /// see `headerDetectionAgreesWithParser`. `header_detection_second_row` is unset when the data has a
+    /// single row.
+    VectorWithMemoryTracking<String> header_detection_first_row;
+    std::optional<VectorWithMemoryTracking<String>> header_detection_second_row;
     DataTypes buffered_types;
 };
 

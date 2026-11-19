@@ -322,6 +322,15 @@ public:
     /// then, exactly as the reader decided.
     [[nodiscard]] virtual bool readRowsAheadToDetectHeaderAndFoundNone() const { return false; }
 
+    /// False when `readSchema` auto-detected a header (`*_detect_header`) differently from how the
+    /// parser does it for a destination with the columns `expected_names`. The two use different rules:
+    /// the reader takes the first row for names when the rows after it hold non-string values, while
+    /// the parser takes it for names when its values and the destination names are a subset of one
+    /// another (see `RowInputFormatWithNamesAndTypes::tryDetectHeader`). When the decisions differ, the
+    /// inferred schema does not describe what the parser read, so a caller comparing it against the
+    /// destination must not draw conclusions from it.
+    [[nodiscard]] virtual bool headerDetectionAgreesWithParser(const Names & /*expected_names*/) const { return true; }
+
     /// True when the inferred schema is a metadata section of the input that the parser validates
     /// against the destination with `JSONUtils::validateMetadataByHeader`: a declared name is looked
     /// up exactly (regardless of `input_format_column_name_matching_mode`, which only applies to the

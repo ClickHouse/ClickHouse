@@ -368,6 +368,7 @@ String getInsertDataSchemaMismatchDescriptionImpl(
     bool format_allows_missing_named_columns = true;
     bool format_read_rows_ahead_to_detect_header = false;
     bool format_validates_schema_as_metadata_by_exact_name = false;
+    bool format_header_detection_agrees_with_parser = true;
     /// The row-based schema readers infer the types from the rows of the (text or binary) data itself,
     /// so the captured bytes bound the work of decoding the sample for them.
     bool format_has_row_based_schema_reader = true;
@@ -419,6 +420,16 @@ String getInsertDataSchemaMismatchDescriptionImpl(
         format_read_rows_ahead_to_detect_header = schema_reader->readRowsAheadToDetectHeaderAndFoundNone();
         format_validates_schema_as_metadata_by_exact_name = schema_reader->validatesSchemaAsMetadataByExactName();
         format_has_row_based_schema_reader = dynamic_cast<const IIRowSchemaReader *>(schema_reader.get()) != nullptr;
+        try
+        {
+            format_header_detection_agrees_with_parser = schema_reader->headerDetectionAgreesWithParser(expected_header.getNames());
+        }
+        catch (...)
+        {
+            /// Unescaping the header fields failed, so the decisions cannot be compared: treat it as a
+            /// disagreement, which omits the explanation.
+            format_header_detection_agrees_with_parser = false;
+        }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -445,6 +456,15 @@ String getInsertDataSchemaMismatchDescriptionImpl(
     /// regardless of the declared column order and types. The inferred structure does not describe what is parsed there, so comparing
     /// against it would attach a misleading explanation to an unrelated value-level parse error.
     if (!format_schema_describes_parsed_data)
+        return {};
+
+    /// A plain `CSV` / `TSV` / `CustomSeparated` auto-detects a header (`*_detect_header`) by different
+    /// rules in the schema reader and in the parser. E.g. with the destination `(s String, n UInt8)` and
+    /// the rows `n,"1"` and `bar,1.5`, the reader takes the first row for column names because the next
+    /// row has a number, while the parser reads it as data, since `{n, 1}` and `{s, n}` are not a subset
+    /// of one another. The inferred schema then does not describe what was parsed, and comparing it
+    /// against the destination would blame a structure mismatch for a value-level error.
+    if (!format_header_detection_agrees_with_parser)
         return {};
 
     ColumnsDescription inferred_columns;
