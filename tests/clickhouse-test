@@ -7730,9 +7730,11 @@ ORDER BY (test_name, callee_offset)
                 # can time out under sanitizers.  Re-check whether the queries
                 # are still running — if they finished in the meantime, it was
                 # not a real hang.
+                recheck_error = None
                 try:
                     hung_count = get_processlist_size(args)
-                except Exception:
+                except Exception as recheck_e:
+                    recheck_error = recheck_e
                     hung_count = -1
                 if hung_count != 0:
                     print(
@@ -7744,6 +7746,17 @@ ORDER BY (test_name, callee_offset)
                             attrs=["bold"],
                         )
                     )
+                    # The recheck is the terminal query here. When the server
+                    # answered it with an error, it rejected the query and is
+                    # not hung: print the same marker as the polling loop, so
+                    # that the stress test names the failure after the
+                    # rejection. A transport failure, or a recheck that still
+                    # sees running queries, stays on the deadlock path.
+                    if isinstance(recheck_error, HTTPError):
+                        print(
+                            "Server rejects queries. Cannot get the processlist size: "
+                            + " ".join(str(recheck_error).split())
+                        )
                     # stdout is a pipe and the dumps below can outlast the deadline.
                     sys.stdout.flush()
                     # The query that failed is an expensive aggregate over
