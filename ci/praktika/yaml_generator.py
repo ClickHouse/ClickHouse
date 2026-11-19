@@ -34,7 +34,7 @@ name: {NAME}
 
 on:
   {EVENT}:
-    branches: [{BRANCHES}]
+    branches: [{BRANCHES}]{EVENT_TYPES}
 
 {CONCURRENCY}env:
   # Force the stdout and stderr streams to be unbuffered
@@ -168,7 +168,7 @@ jobs:
   {JOB_NAME_NORMALIZED}:
     runs-on: [{RUNS_ON}]
     needs:{NEEDS}{IF_EXPRESSION}
-    name: "{JOB_NAME_GH}"{TIMEOUT_MINUTES}
+    name: "{JOB_NAME_GH}"{TIMEOUT_MINUTES}{READ_TOKEN_PERMISSIONS}
     outputs:
       data: ${{{{ steps.run.outputs.DATA }}}}
       pipeline_status: ${{{{ steps.run.outputs.pipeline_status || 'undefined' }}}}
@@ -194,6 +194,7 @@ jobs:
 {DOWNLOADS_GITHUB}
       - name: Run
         id: run
+{READ_TOKEN_ENV}\
         run: |
           . {ENV_SETUP_SCRIPT}
           PYTHONUNBUFFERED=1 python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci --timestamp
@@ -419,11 +420,22 @@ class PullRequestPushYamlGen:
                     )
                 )
 
+            read_token = orig_job and orig_job.enable_gh_read_token
             job_item = YamlGenerator.Templates.TEMPLATE_JOB_0.format(
                 JOB_NAME_NORMALIZED=job_name_normalized,
                 IF_EXPRESSION=if_expression,
                 TIMEOUT_MINUTES=timeout_minutes,
                 CHECKOUT_EXTRA=checkout_extra,
+                READ_TOKEN_PERMISSIONS=(
+                    "\n    permissions:\n      contents: read\n      pull-requests: read\n      actions: read"
+                    if read_token
+                    else ""
+                ),
+                READ_TOKEN_ENV=(
+                    "        env:\n          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}\n"
+                    if read_token
+                    else ""
+                ),
                 RUNS_ON=", ".join(job.runs_on),
                 NEEDS=needs,
                 JOB_NAME_GH=job_name.replace('"', '\\"'),
@@ -492,6 +504,12 @@ class PullRequestPushYamlGen:
                 ),
             }
             if self.workflow_config.event in (Workflow.Event.PULL_REQUEST,):
+                # The default types without `ready_for_review`: a draft runs only part
+                # of the CI (see `filter_job.py`), so marking it ready must start the
+                # workflow again.
+                format_kwargs["EVENT_TYPES"] = (
+                    "\n    types: [opened, synchronize, reopened, ready_for_review]"
+                )
                 ENV_CHECKOUT_REFERENCE = (
                     YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_PR
                 )
@@ -502,6 +520,7 @@ class PullRequestPushYamlGen:
                 ENV_CHECKOUT_REFERENCE = (
                     YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_DEFAULT
                 )
+                format_kwargs["EVENT_TYPES"] = ""
                 # A fixed group serializes overlapping push runs; cancel-in-progress is left at its default false, so a running apply is never interrupted mid-tofu.
                 format_kwargs["CONCURRENCY"] = (
                     "concurrency:\n"

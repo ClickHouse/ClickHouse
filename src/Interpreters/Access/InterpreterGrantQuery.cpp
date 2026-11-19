@@ -496,6 +496,9 @@ BlockIO InterpreterGrantQuery::execute()
         auto required_access = getRequiredAccessForExecutingOnCluster(elements_to_grant, elements_to_revoke);
         checkAdminOptionForExecutingOnCluster(*current_user_access, roles_to_grant, roles_to_revoke);
         current_user_access->checkGranteesAreAllowed(grantees);
+        /// executeDDLQueryOnCluster's access check grants some elements (e.g. the temporary database) before checking readonly.
+        if (!elements_to_grant.empty() || !elements_to_revoke.empty())
+            current_user_access->checkCanChangeGrants();
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
         return executeDDLQueryOnCluster(updated_query, getContext(), params);
@@ -504,7 +507,20 @@ BlockIO InterpreterGrantQuery::execute()
     /// Check if the current user has corresponding access rights granted with grant option.
     bool need_check_grantees_are_allowed = true;
     if (!query.current_grants)
+    {
         checkGrantOption(access_control, *current_user_access, grantees, need_check_grantees_are_allowed, elements_to_grant, elements_to_revoke);
+    }
+    else if (!elements_to_revoke.empty())
+    {
+        /// GRANT CURRENT GRANTS ... WITH REPLACE OPTION still revokes (implicit REVOKE ALL), which must be
+        /// authorized; the granted side is clamped to grantable rights and needs no grant-option check (#60304).
+        AccessRightsElements no_elements_to_grant;
+        checkGrantOption(access_control, *current_user_access, grantees, need_check_grantees_are_allowed, no_elements_to_grant, elements_to_revoke);
+    }
+
+    /// The REVOKE fallback in checkGrantOption and GRANT CURRENT GRANTS bypass the readonly check of ContextAccess.
+    if (!elements_to_grant.empty() || !elements_to_revoke.empty())
+        current_user_access->checkCanChangeGrants();
 
     /// Check if the current user has corresponding roles granted with admin option.
     checkAdminOption(access_control, *current_user_access, grantees, need_check_grantees_are_allowed, roles_to_grant, roles_to_revoke, query.admin_option);
