@@ -25,9 +25,9 @@ Aggregate function that takes time series data as pairs of timestamps and values
 
 The smoothing factor and the trend factor follow the samples as the last two arguments: each is either one number used at every grid point, or an array with one number per grid point. Each must be the same in every row. Like in Prometheus, a factor outside the open interval (0, 1) is an error for a grid point whose window has samples, and a NaN factor is not an error.
 
-:::note
+<Note>
 This function is in private preview, enable it by setting `enable_time_series_aggregate_functions=true`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesDoubleExponentialSmoothingToGrid = R"(
 timeSeriesDoubleExponentialSmoothingToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value, smoothing_factor, trend_factor)
