@@ -4,6 +4,8 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/LambdaNode.h>
+#include <Analyzer/Passes/NormalizeCountVariantsPass.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -12,6 +14,8 @@
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Core/Settings.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -21,7 +25,11 @@
 #include <Planner/Planner.h>
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Planner/TableExpressionData.h>
+#include <Planner/Utils.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -30,8 +38,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <QueryPipeline/Pipe.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/StorageDummy.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -45,6 +52,7 @@ namespace Setting
 {
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsBool prefer_column_name_to_alias;
 }
 
 namespace
@@ -73,22 +81,180 @@ private:
     Chunk chunk;
 };
 
-/// the name that a projection part stores the expression under: the name of the expression as the query writes it
+void writeStoredNames(const QueryTreeNodes & nodes, WriteBuffer & out);
+
+/// the old analysis names an array or a tuple of literals as a literal
+bool isLiteral(const QueryTreeNodePtr & node)
+{
+    const auto * constant_node = node->as<ConstantNode>();
+    if (!constant_node)
+        return false;
+
+    if (!constant_node->hasSourceExpression())
+        return true;
+
+    const auto * function_node = constant_node->getSourceExpression()->as<FunctionNode>();
+    return function_node && (function_node->getFunctionName() == "array" || function_node->getFunctionName() == "tuple")
+        && std::ranges::all_of(function_node->getArguments().getNodes(), isLiteral);
+}
+
+/// writes the name that a projection part stores the expression under: the name that the old analysis gave to the expression
+void writeStoredName(const QueryTreeNodePtr & node, WriteBuffer & out)
+{
+    if (const auto * column_node = node->as<ColumnNode>())
+    {
+        out << column_node->getColumnName();
+        return;
+    }
+
+    if (const auto * constant_node = node->as<ConstantNode>())
+    {
+        if (constant_node->hasSourceExpression())
+        {
+            /// a constant that the analysis makes has the name of the value
+            if (!constant_node->getSourceExpression()->hasOriginalAST() || isLiteral(node))
+                ASTLiteral(constant_node->getValue()).appendColumnName(out);
+            /// a constant folded from an expression has the name of that expression
+            else
+                writeStoredName(constant_node->getSourceExpression(), out);
+            return;
+        }
+
+        if (!node->hasOriginalAST())
+        {
+            ASTLiteral(constant_node->getValue()).appendColumnName(out);
+            return;
+        }
+    }
+
+    if (const auto * function_node = node->as<FunctionNode>())
+    {
+        out << function_node->getFunctionName();
+        if (!function_node->getParameters().getNodes().empty())
+        {
+            out << '(';
+            writeStoredNames(function_node->getParameters().getNodes(), out);
+            out << ')';
+        }
+
+        out << '(';
+        writeStoredNames(function_node->getArguments().getNodes(), out);
+        out << ')';
+
+        if (function_node->getNullsAction() == NullsAction::RESPECT_NULLS)
+            out << " RESPECT NULLS";
+        else if (function_node->getNullsAction() == NullsAction::IGNORE_NULLS)
+            out << " IGNORE NULLS";
+        return;
+    }
+
+    if (const auto * lambda_node = node->as<LambdaNode>())
+    {
+        out << "lambda(tuple(" << fmt::format("{}", fmt::join(lambda_node->getArguments().getNames(), ", ")) << "), ";
+        writeStoredName(lambda_node->getExpression(), out);
+        out << ')';
+        return;
+    }
+
+    if (node->hasOriginalAST())
+    {
+        /// a literal and a subquery have the name of the expression that the query writes
+        node->getOriginalAST()->appendColumnName(out);
+        return;
+    }
+
+    if (!isQueryOrUnionNode(node))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression {} of a projection has no original AST", node->formatASTForErrorMessage());
+
+    /// the analysis makes a subquery for `exists`
+    auto hash = node->getTreeHash();
+    out << "__subquery_" << hash.low64 << '_' << hash.high64;
+}
+
+void writeStoredNames(const QueryTreeNodes & nodes, WriteBuffer & out)
+{
+    for (size_t i = 0; i < nodes.size(); ++i)
+    {
+        if (i)
+            out << ", ";
+        writeStoredName(nodes[i], out);
+    }
+}
+
 String getStoredName(const QueryTreeNodePtr & node)
 {
-    /// a constant folded from an expression takes the name of that expression
-    const auto * constant_node = node->as<ConstantNode>();
-    const auto & written_node = constant_node && constant_node->hasSourceExpression() ? constant_node->getSourceExpression() : node;
+    WriteBufferFromOwnString out;
+    writeStoredName(node, out);
+    return out.str();
+}
 
-    /// the analysis makes a new node for a column; a function and a literal keep the expression that the query writes
-    if (const auto * column_node = written_node->as<ColumnNode>())
-        return column_node->getColumnName();
+/// Makes the plan calculate each expression over the columns of the table, as the old analysis did.
+/// An ALIAS column becomes its expression, because the source does not have the column.
+/// A constant that the analysis folds from an expression over a column becomes that expression again.
+/// Returns true if the expression reads a column of the table.
+bool restoreExpressionsOverColumns(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_node)
+{
+    while (const auto * column_node = node->as<ColumnNode>())
+    {
+        if (!column_node->hasExpression())
+            break;
 
-    if (!written_node->hasOriginalAST())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Expression {} of a projection has no original AST", written_node->formatASTForErrorMessage());
+        auto expression = column_node->getExpression();
+        node = std::move(expression);
+    }
 
-    return written_node->getOriginalAST()->getColumnName();
+    if (const auto * constant_node = node->as<ConstantNode>();
+        constant_node && constant_node->hasSourceExpression() && !isQueryOrUnionNode(constant_node->getSourceExpression()))
+    {
+        auto source_expression = constant_node->getSourceExpression();
+        if (!restoreExpressionsOverColumns(source_expression, table_node))
+            return false;
+
+        node = std::move(source_expression);
+        return true;
+    }
+
+    const auto * column_node = node->as<ColumnNode>();
+    bool reads_column = column_node && column_node->getColumnSourceOrNull() == table_node;
+    for (auto & child : node->getChildren())
+        if (child && !isQueryOrUnionNode(child))
+            reads_column |= restoreExpressionsOverColumns(child, table_node);
+
+    return reads_column;
+}
+
+/// A constant key has one value, so a projection does not keep it. The last key stays if the query has no
+/// aggregate function, because the query must remain an aggregation.
+void removeConstantGroupByKeys(QueryNode & query_node, bool has_aggregate_functions)
+{
+    if (!query_node.hasGroupBy() || query_node.isGroupByWithGroupingSets())
+        return;
+
+    auto & keys = query_node.getGroupBy().getNodes();
+    for (size_t i = 0; i < keys.size();)
+    {
+        if (!keys[i]->as<ConstantNode>() || (!has_aggregate_functions && keys.size() == 1))
+        {
+            ++i;
+            continue;
+        }
+
+        /// the last key takes the place of the removed one: the existing parts are sorted in this order
+        if (i + 1 < keys.size())
+            keys[i] = std::move(keys.back());
+        keys.pop_back();
+    }
+}
+
+/// collects the columns of the table that the expression reads
+void collectSourceColumnNodes(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_node, QueryTreeNodes & result)
+{
+    if (const auto * column_node = node->as<ColumnNode>(); column_node && column_node->getColumnSourceOrNull() == table_node)
+        result.push_back(node);
+
+    for (const auto & child : node->getChildren())
+        if (child && !isQueryOrUnionNode(child))
+            collectSourceColumnNodes(child, table_node, result);
 }
 
 
@@ -144,19 +310,49 @@ QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const Storag
     /// 'SELECT min(c0), max(c0), count() GROUP BY c0' which is incorrect cause we store a column '-c0' in projection.
     query_tree_pass_manager.runOnlyResolve(query_tree);
 
+    /// `count(1)` and `sum(1)` are stored as `count()`
+    NormalizeCountVariantsPass().run(query_tree, context);
+
+    auto table_node = query_node.getJoinTreeNode();
+    for (auto & child : query_node.getChildren())
+        if (child)
+            restoreExpressionsOverColumns(child, table_node);
+
+    removeConstantGroupByKeys(query_node, hasAggregateFunctionNodes(query_tree));
+
     return query_tree;
 }
 
-ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDescription & source_columns, const ContextPtr & context)
+ContextMutablePtr createProjectionAnalysisContext(const ASTPtr & query_ast, const ContextPtr & context)
 {
     auto query_context = Context::createCopy(context);
-    /// the stored query is final, so the settings of the session must not rewrite it again
+    /// the settings of the session must not change the meaning of the query of a projection
     query_context->setSetting("enable_positional_arguments", false);
     query_context->setSetting("rewrite_in_to_join", false);
     query_context->setSetting("rewrite_count_distinct_if_with_count_distinct_implementation", false);
+    /// `exists` stays an `IN` that is calculated with the projection, as a scalar it is a constant of the query
+    query_context->setSetting("execute_exists_as_scalar_subquery", false);
+    /// the query keeps the value of a scalar subquery, not a reference to the scalars of a query
+    query_context->setSetting("enable_scalar_subquery_optimization", false);
+    /// a projection is calculated locally; with parallel replicas the analysis replaces the set of `GLOBAL IN` with a temporary table
+    query_context->setSetting("enable_parallel_replicas", Field(0));
+    /// aliases are resolved as a reload of the table resolves them, with the settings of the server
+    query_context->setSetting(
+        "prefer_column_name_to_alias", context->getGlobalContext()->getSettingsRef()[Setting::prefer_column_name_to_alias].value);
+    /// the analysis resolves positional arguments only in an initial query
+    query_context->setQueryKindInitial();
 
-    auto source = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, source_columns);
-    query_tree = buildProjectionQueryTree(query_ast, source, query_context);
+    /// the settings of the stored query are a part of the projection, so the constraints of the session do not apply to them
+    if (const auto & settings = query_ast->as<ASTSelectQuery &>().settings())
+        for (const auto & change : settings->as<ASTSetQuery &>().changes)
+            query_context->setSetting(change.name, change.value);
+
+    return query_context;
+}
+
+ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context)
+{
+    query_tree = buildProjectionQueryTree(query_ast, source, createProjectionAnalysisContext(query_ast, context));
     auto & query_node = query_tree->as<QueryNode &>();
 
     /// the analysis resolved the tree with the context of the query node
@@ -281,20 +477,31 @@ QueryPlan ProjectionPlanner::buildPlanForNormalProjection(Block source)
 {
     auto plan = buildPlanForSource(std::move(source));
 
+    const auto & query_node = query_tree->as<QueryNode &>();
     QueryTreeNodes stored_expressions;
-    collectExpressionsBeforeWindow(query_tree->as<QueryNode &>().getProjectionNode(), stored_expressions);
+    collectExpressionsBeforeWindow(query_node.getProjectionNode(), stored_expressions);
+    /// the part is sorted by ORDER BY, so it stores the columns that ORDER BY reads
+    if (query_node.hasOrderBy())
+        collectSourceColumnNodes(query_node.getOrderByNode(), query_node.getJoinTreeNode(), stored_expressions);
     auto projection_dag = buildActions(stored_expressions);
 
     /// the outputs are the expressions under the names that the part stores
     NamesWithAliases stored_columns;
     NameSet stored_names;
+    NameSet constant_names;
     for (const auto & expression : stored_expressions)
     {
         auto stored_name = getStoredName(expression);
+        if (expression->as<ConstantNode>())
+            constant_names.insert(stored_name);
         if (stored_names.emplace(stored_name).second)
             stored_columns.emplace_back(calculateActionNodeName(expression, *planner_context), std::move(stored_name));
     }
     projection_dag.project(stored_columns);
+    /// a function can give a constant column for an expression over a column (`a + NULL`), but the part stores a value for each row
+    for (auto & output : projection_dag.getOutputs())
+        if (!constant_names.contains(output->result_name))
+            output = &projection_dag.materializeNode(*output);
     /// the projection stores only the columns of its SELECT
     projection_dag.appendInputsForUnusedColumns(*plan.getCurrentHeader());
     plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(projection_dag)));

@@ -13,16 +13,17 @@
 namespace DB
 {
 
-class ColumnsDescription;
 class QueryPlan;
 
 /// plans the SELECT of a projection
-/// names each stored expression as the query writes it, because a projection part stores its columns under these names
+/// names each stored expression as the old analysis did, because a projection part stores its columns under these names
 class ProjectionPlanner
 {
 public:
-    /// the query has no FROM, it reads source_columns
-    ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDescription & source_columns, const ContextPtr & context);
+    /// the query has no FROM, it reads the columns of source
+    ProjectionPlanner(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context);
+
+    [[nodiscard]] const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
 
     /// the functions in the actions refer to this context, so keep it while you use the actions
     [[nodiscard]] ContextPtr getContext() const { return planner_context->getQueryContext(); }
@@ -60,6 +61,9 @@ private:
     Names planner_key_names;
     AggregateDescriptions aggregates;
 };
+
+/// the context for the analysis of the query of a projection: the settings of the session do not change the meaning of the query
+ContextMutablePtr createProjectionAnalysisContext(const ASTPtr & query_ast, const ContextPtr & context);
 
 /// Builds the query tree of the `SELECT` of a projection over `source` and runs the analysis passes on it.
 /// With `only_analyze` a scalar subquery is not calculated, it gets a default value.

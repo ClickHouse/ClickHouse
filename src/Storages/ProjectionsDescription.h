@@ -5,6 +5,7 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/IStorage_fwd.h>
 #include <Storages/MergeTree/ProjectionIndex/IProjectionIndex.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Common/PODArray_fwd.h>
@@ -89,6 +90,9 @@ struct ProjectionDescription
     /// Cache whether index_granularity or index_granularity_bytes is overridden to avoid re-scanning the changes list
     /// during data writing.
     bool has_index_granularity_overrides = false;
+
+    /// The source that the calculation analyzes `query_ast` over: the columns of the table that the query can refer to.
+    StoragePtr query_source;
 
     /// WHERE clause AST for filtered projections (Issue #74234).
     /// When set, only rows matching this predicate are materialized into the projection.
