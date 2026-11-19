@@ -3122,7 +3122,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         supportsSkipIndexesOnDataRead(),
         /*check_row_limits=*/true,
         skip_ranges_analysis,
-        /*report_index_usage=*/true);
+        /*report_index_usage=*/true,
+        /*stop_at_first_match=*/false);
 
     /// After the row-limit checks above; like them, the analysis totals count the rows before deletes.
     if (const auto * uk_read_snapshot = tryGetDeleteBitmapSnapshot(*storage_snapshot))
@@ -3157,7 +3158,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEst
         supportsSkipIndexesOnDataRead(),
         /*check_row_limits=*/false,
         /*skip_ranges_analysis=*/false,
-        /*report_index_usage=*/false);
+        /*report_index_usage=*/false,
+        /*stop_at_first_match=*/false);
     return analyzed_result_for_estimation_ptr;
 }
 
@@ -3927,7 +3929,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool supports_skip_indexes_on_data_read,
     bool check_row_limits,
     bool skip_ranges_analysis,
-    bool report_index_usage)
+    bool report_index_usage,
+    bool stop_at_first_match)
 {
     ProfileEvents::increment(ProfileEvents::IndexAnalysisRounds);
 
@@ -4118,6 +4121,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         .has_projections = has_projections,
         .check_row_limits = check_row_limits,
         .report_index_usage = report_index_usage,
+        .stop_at_first_match = stop_at_first_match,
         .result = result,
     };
 

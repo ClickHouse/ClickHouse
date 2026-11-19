@@ -42,5 +42,10 @@ public:
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// The scalar functions applied to the elements throw for some values (a zero divisor, a decimal
+    /// overflow, a string that is not a date), so only the values that the rows hold may be evaluated.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 };
 }
