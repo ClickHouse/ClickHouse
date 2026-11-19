@@ -42,6 +42,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/extractStringValueFilters.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/ITokenizer.h>
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -72,6 +73,9 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
@@ -3265,6 +3269,34 @@ bool areAllSkipIndexColumnsInPrimaryKey(const KeyDescription & primary_key, cons
 
 }
 
+/// Whether a skip index can prune granules by the `IN` set or the range predicate a JOIN runtime filter builds on
+/// one of the index columns (see `buildRuntimeRangePredicate`).
+///
+/// A text index qualifies only if every value of the indexed column is a single token: the `array` tokenizer
+/// without a preprocessor or postprocessor (the same configuration that lets the text index answer `equals`
+/// exactly). Then each value of the runtime filter is one dictionary lookup, and its posting list gives the rows,
+/// hence the granules, that contain it. Other text index configurations would still prune soundly, but every
+/// value would expand into several tokens, which costs more than it saves for a filter built on the fly.
+static bool isSkipIndexPrunableByJoinRuntimeFilter(const IMergeTreeIndex & index)
+{
+    const auto & type = index.index.type;
+    if (type == "minmax" || type == "set" || type == "bloom_filter")
+        return true;
+
+    if (type != "text")
+        return false;
+
+    const auto & text_index = assert_cast<const MergeTreeIndexText &>(index);
+    return text_index.tokenizer->getType() == ITokenizer::Type::Array
+        && !text_index.preprocessor->hasActions()
+        && !text_index.postprocessor->hasActions();
+}
+
+static bool isSkipIndexTypePrunableByJoinRuntimeFilter(const String & type)
+{
+    return type == "minmax" || type == "set" || type == "bloom_filter" || type == "text";
+}
+
 /// Whether a JOIN runtime filter on `_part_starting_offset + _part_offset` can prune granules: the global row indexes
 /// of the rows of a granule are known without reading anything. A physical column of either name shadows the
 /// virtual one, like for `MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset`.
@@ -3287,7 +3319,7 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(
         return;
     }
 
-    /// Prunable only if in the primary key or has a minmax/set/bloom_filter skip index.
+    /// Prunable only if in the primary key or has a skip index that `isSkipIndexPrunableByJoinRuntimeFilter` accepts.
     const auto & primary_key_columns = metadata.getPrimaryKey().column_names;
     const bool is_primary_key_column
         = std::find(primary_key_columns.begin(), primary_key_columns.end(), column_name) != primary_key_columns.end();
@@ -3295,9 +3327,13 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(
     bool has_applicable_skip_index = false;
     for (const auto & index : metadata.getSecondaryIndices())
     {
-        if (index.type != "minmax" && index.type != "set" && index.type != "bloom_filter")
+        if (!isSkipIndexTypePrunableByJoinRuntimeFilter(index.type))
             continue;
-        if (std::find(index.column_names.begin(), index.column_names.end(), column_name) != index.column_names.end())
+        if (std::find(index.column_names.begin(), index.column_names.end(), column_name) == index.column_names.end())
+            continue;
+        /// Only a `text` index depends on its parameters, so only it is instantiated here.
+        if (index.type != "text"
+            || isSkipIndexPrunableByJoinRuntimeFilter(*MergeTreeIndexFactory::instance().get(storage_snapshot->metadata, index, *data_settings)))
         {
             has_applicable_skip_index = true;
             break;
@@ -6101,12 +6137,17 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             {
                 if (ignored_index_names.contains(index.name))
                     continue;
-                if (index.type != "minmax" && index.type != "set" && index.type != "bloom_filter")
+                if (!isSkipIndexTypePrunableByJoinRuntimeFilter(index.type))
                     continue;
                 if (std::find(index.column_names.begin(), index.column_names.end(), descr.key_column_name) == index.column_names.end())
                     continue;
-                if (seen_index_names.insert(index.name).second)
-                    runtime_skip_indexes.push_back(MergeTreeIndexFactory::instance().get(storage_snapshot->metadata, index, *data_settings));
+                if (seen_index_names.contains(index.name))
+                    continue;
+                auto index_helper = MergeTreeIndexFactory::instance().get(storage_snapshot->metadata, index, *data_settings);
+                if (!isSkipIndexPrunableByJoinRuntimeFilter(*index_helper))
+                    continue;
+                seen_index_names.insert(index.name);
+                runtime_skip_indexes.push_back(std::move(index_helper));
             }
         }
 
@@ -6180,12 +6221,16 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                     return buildRuntimeRangePredicate(*lookup, descriptors, dag, ctx);
                 };
 
+        /// A `bloom_filter` index is only worth checking for a small `IN` set. A `text` index can only use an `IN`
+        /// set (it does not support the range predicate of a filter that did not keep the exact values); the set
+        /// is bounded by `join_runtime_filter_exact_values_limit`, like an `IN` set in a query.
         const UInt64 bloom_filter_in_cap = context->getSettingsRef()[Setting::join_runtime_filter_exact_values_limit] / 100;
         dynamic_skip_index_filter =
             [lookup = runtime_filter_lookup, descriptors = std::move(key_descriptors), bloom_filter_in_cap]
             (const IMergeTreeIndex & index) -> bool
             {
-                if (index.index.type != "bloom_filter")
+                const bool is_bloom_filter = index.index.type == "bloom_filter";
+                if (!is_bloom_filter && index.index.type != "text")
                     return true;
                 for (const auto & descr : descriptors)
                 {
@@ -6195,7 +6240,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                     if (!filter)
                         return false;
                     auto values = filter->getRecordedKeyValues();
-                    return values && values->size() <= bloom_filter_in_cap;
+                    return values && (!is_bloom_filter || values->size() <= bloom_filter_in_cap);
                 }
                 return false;
             };
