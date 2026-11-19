@@ -84,7 +84,8 @@ FROM
         argMax(ProfileEvents['RuntimeFilterGranulesConsidered'], event_time) AS considered,
         argMax(ProfileEvents['RuntimeFilterGranulesDropped'], event_time) AS dropped
     FROM system.query_log
-    WHERE current_database = currentDatabase() AND log_comment LIKE '05830\_%' AND type = 'QueryFinish'
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+        AND log_comment IN ('05830_array', '05830_split', '05830_preprocessor', '05830_no_exact_values', '05830_ignored', '05830_added_index')
     GROUP BY log_comment
 )
 ORDER BY log_comment;
