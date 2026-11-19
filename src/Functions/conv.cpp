@@ -39,6 +39,8 @@ public:
     [[nodiscard]] String getName() const override { return name; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// Neither an empty number nor a zero base is valid.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     [[nodiscard]] String getSignatureString() const override

@@ -12,3 +12,8 @@ SELECT conv(toFloat64(15.9), 16, 10), conv(toFloat64(-2.5), 10, 10), conv(toFloa
 SELECT conv(nan, 36, 10); -- { serverError BAD_ARGUMENTS }
 SELECT conv(inf, 36, 10); -- { serverError BAD_ARGUMENTS }
 SELECT conv(-inf, 10, 10); -- { serverError BAD_ARGUMENTS }
+
+-- A non-finite value masked by NULL, or on a row with a NULL base, gives NULL.
+SELECT conv(nullIf(x, inf), 10, 10) FROM (SELECT arrayJoin([1., inf]) AS x);
+SELECT conv(if(isNaN(x), NULL, x), 10, 10) FROM (SELECT arrayJoin([1., nan]) AS x);
+SELECT conv(x, b, 10) FROM values('x Float64, b Nullable(Int64)', (1, 10), (inf, NULL));
