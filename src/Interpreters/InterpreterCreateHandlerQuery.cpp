@@ -274,7 +274,10 @@ void validateHandlerQuery(ASTCreateHandlerQuery & handler, const ContextPtr & co
     /// A NONE query runs with full access, named collections included.
     const bool full_access = hasFullAccess(context)
         && (type != SQLSecurityType::NONE || context->getAccess()->isGranted(AccessType::NAMED_COLLECTION));
+    /// The query of a self-definer is checked when it runs as the definer, which then has all the privileges of the account.
+    /// A session authenticated with a credential limited by `GRANTS` has fewer privileges, so its query is checked here.
     const bool self_definer = type == SQLSecurityType::DEFINER
+        && !context->getAuthenticationGrants()
         && isDefinerTheCurrentUser(handler.sql_security->as<const ASTSQLSecurity &>(), context);
 
     const String database = context->getCurrentDatabase();
@@ -316,10 +319,13 @@ void validateHandlerQuery(ASTCreateHandlerQuery & handler, const ContextPtr & co
             continue;
         }
 
-        const std::string_view way_out = type == SQLSecurityType::INVOKER
-            ? "Use DEFINER = CURRENT_USER SQL SECURITY DEFINER to store a query that is checked against your privileges "
-              "when it runs, or create the handler as a user with full access"
-            : "Use DEFINER = CURRENT_USER, or create the handler as a user with full access";
+        const std::string_view way_out = context->getAuthenticationGrants()
+            ? "The session is authenticated with a credential limited by GRANTS, so the query is checked when the handler "
+              "is stored. Store the handler from a session without such limits, or as a user with full access"
+            : (type == SQLSecurityType::INVOKER
+                ? "Use DEFINER = CURRENT_USER SQL SECURITY DEFINER to store a query that is checked against your privileges "
+                  "when it runs, or create the handler as a user with full access"
+                : "Use DEFINER = CURRENT_USER, or create the handler as a user with full access");
 
         if (!context->getExternalTables().empty())
             throw Exception(ErrorCodes::ACCESS_DENIED,
