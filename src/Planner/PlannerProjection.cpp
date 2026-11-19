@@ -17,9 +17,11 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/getEffectiveMaxThreads.h>
 #include <Planner/CollectSets.h>
+#include <Planner/CollectTableExpressionData.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
+#include <Planner/TableExpressionData.h>
 #include <Planner/Utils.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -70,12 +72,6 @@ protected:
 private:
     Chunk chunk;
 };
-
-/// the name that the planner gives to the expression
-String getPlannerName(const QueryTreeNodePtr & node, const PlannerContext & planner_context)
-{
-    return calculateActionNodeName(node, planner_context, /*use_column_identifier_as_action_node_name=*/false);
-}
 
 /// the name that a projection part stores the expression under: the name of the expression as the query writes it
 String getStoredName(const QueryTreeNodePtr & node)
@@ -162,6 +158,8 @@ ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDesc
     auto source = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, source_columns);
     query_tree = buildProjectionQueryTree(query_ast, source, query_context);
     auto & query_node = query_tree->as<QueryNode &>();
+    /// with the alias, the identifier of a column is different from the name of each expression
+    query_node.getJoinTreeNode()->setAlias("__table1");
 
     /// the analysis resolved the tree with the context of the query node
     planner_context = std::make_shared<PlannerContext>(
@@ -169,6 +167,7 @@ ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDesc
         std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}),
         SelectQueryOptions{});
     collectSets(query_tree, *planner_context);
+    collectTableExpressionData(query_tree, planner_context);
 
     NameSet unique_aggregation_keys;
     for (const auto & key_node : query_node.getGroupBy().getNodes())
@@ -178,13 +177,13 @@ ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDesc
             continue;
 
         aggregation_keys.push_back(std::move(key_name));
-        planner_key_names.push_back(getPlannerName(key_node, *planner_context));
+        planner_key_names.push_back(calculateActionNodeName(key_node, *planner_context));
     }
 
     NameSet unique_aggregate_names;
     for (const auto & aggregate_function_node : collectAggregateFunctionNodes(query_tree))
     {
-        auto aggregate = extractAggregateDescriptions({aggregate_function_node}, *planner_context, /*use_column_identifier_as_action_node_name=*/false).front();
+        auto aggregate = extractAggregateDescriptions({aggregate_function_node}, *planner_context).front();
         aggregate.column_name = getStoredName(aggregate_function_node);
         if (unique_aggregate_names.emplace(aggregate.column_name).second)
             aggregates.push_back(std::move(aggregate));
@@ -195,7 +194,7 @@ ActionsDAG ProjectionPlanner::buildActions(const QueryTreeNodes & expressions)
 {
     ActionsDAG actions_dag;
     ColumnNodePtrWithHashSet no_correlated_columns;
-    PlannerActionsVisitor actions_visitor(planner_context, no_correlated_columns, /*use_column_identifier_as_action_node_name=*/false);
+    PlannerActionsVisitor actions_visitor(planner_context, no_correlated_columns);
 
     NameSet output_names;
     for (const auto & expression : expressions)
@@ -207,7 +206,19 @@ ActionsDAG ProjectionPlanner::buildActions(const QueryTreeNodes & expressions)
                 actions_dag.getOutputs().push_back(node);
     }
 
-    return actions_dag;
+    /// the source has the names of the columns, and the actions read the identifiers of the columns
+    const auto & source_columns = planner_context->getTableExpressionDataOrThrow(query_tree->as<QueryNode &>().getJoinTreeNode());
+    ActionsDAG rename_dag;
+    for (const auto * input : actions_dag.getInputs())
+    {
+        const auto * column_name = source_columns.getColumnNameOrNull(input->result_name);
+        if (!column_name)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Input {} of a projection is not a column of its source", input->result_name);
+
+        rename_dag.getOutputs().push_back(&rename_dag.addAlias(rename_dag.addInput(*column_name, input->result_type), input->result_name));
+    }
+
+    return ActionsDAG::merge(std::move(rename_dag), std::move(actions_dag));
 }
 
 ActionsDAG ProjectionPlanner::buildBeforeAggregationActions()
@@ -275,7 +286,7 @@ QueryPlan ProjectionPlanner::buildPlanForNormalProjection(Block source)
     {
         auto stored_name = getStoredName(expression);
         if (stored_names.emplace(stored_name).second)
-            stored_columns.emplace_back(getPlannerName(expression, *planner_context), std::move(stored_name));
+            stored_columns.emplace_back(calculateActionNodeName(expression, *planner_context), std::move(stored_name));
     }
     projection_dag.project(stored_columns);
     /// the projection stores only the columns of its SELECT

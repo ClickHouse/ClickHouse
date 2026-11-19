@@ -427,7 +427,7 @@ static std::optional<AggregateFunctionMatches> matchAggregateFunctions(
                     break;
 
                 const auto * query_node = jt->second;
-                const auto * proj_node = kt->second;
+                const auto * proj_node = skipAliases(kt->second);
 
                 auto mt = matches.find(query_node);
                 if (mt == matches.end())
@@ -522,10 +522,7 @@ static std::optional<ActionsDAG> analyzeAggregateProjection(
             if (it == proj_index.end())
                 return {};
 
-            const auto * key_node = it->second;
-            while (key_node->type == ActionsDAG::ActionType::ALIAS)
-                key_node = key_node->children.front();
-
+            const auto * key_node = skipAliases(it->second);
             proj_key_nodes.insert(key_node);
             proj_key_outputs.emplace(key_node, it->second);
         }

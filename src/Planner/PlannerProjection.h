@@ -40,7 +40,7 @@ public:
     QueryPlan buildPlanForAggregateProjection(Block source);
 
 private:
-    /// calculates the expressions from the source columns, the outputs have the stored names
+    /// calculates the expressions from the source columns, the outputs have the names that the planner gives
     ActionsDAG buildActions(const QueryTreeNodes & expressions);
 
     /// the first steps of both plans: reads the block and applies WHERE
