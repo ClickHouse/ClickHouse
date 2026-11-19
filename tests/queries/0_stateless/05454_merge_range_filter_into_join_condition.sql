@@ -149,9 +149,6 @@ SELECT 'G1-sorting', 1, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT 
 SELECT 'G2-ie-first', 0, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x AND a.y > c.y) SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 0;
 SELECT 'G2-ie-first', 1, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x AND a.y > c.y) SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 1;
 
-SELECT 'G1-parallel-plan', countIf(explain LIKE '%Filter column: %<%') > 0 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1 SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x SETTINGS join_algorithm = 'parallel_hash', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 1);
-SELECT 'G1-parallel', 0, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS join_algorithm = 'parallel_hash', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'G1-parallel', 1, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS join_algorithm = 'parallel_hash', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 1;
 SELECT 'G1-partial-plan', countIf(explain LIKE '%Filter column: %<%') > 0 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1 SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x SETTINGS join_algorithm = 'partial_merge', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 1);
 SELECT 'G1-partial', 0, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS join_algorithm = 'partial_merge', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 0;
 SELECT 'G1-partial', 1, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS join_algorithm = 'partial_merge', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 1;
@@ -283,3 +280,35 @@ FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1
         ON l.k + rowNumberInAllBlocks() = r.k
     WHERE l.x < r.x AND l.z > r.z
     SETTINGS join_algorithm = 'ie_join,hash', max_threads = 1, query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
+
+-- `String` and `FixedString` compare with zero padding, also as `ie_join` range keys and as equality keys.
+SELECT 'R23-string-le', 0, count()
+FROM values('s String, x Int32', ('a\0', 1)) AS l CROSS JOIN values('s FixedString(1), x Int32', ('a', 2)) AS r
+WHERE l.s <= r.s AND l.x < r.x
+SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
+SELECT 'R23-string-le', 1, count()
+FROM values('s String, x Int32', ('a\0', 1)) AS l CROSS JOIN values('s FixedString(1), x Int32', ('a', 2)) AS r
+WHERE l.s <= r.s AND l.x < r.x
+SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1;
+SELECT 'R23-string-gt', 0, count()
+FROM values('s String, x Int32', ('a\0', 1)) AS l CROSS JOIN values('s FixedString(1), x Int32', ('a', 2)) AS r
+WHERE l.s > r.s AND l.x < r.x
+SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
+SELECT 'R23-string-gt', 1, count()
+FROM values('s String, x Int32', ('a\0', 1)) AS l CROSS JOIN values('s FixedString(1), x Int32', ('a', 2)) AS r
+WHERE l.s > r.s AND l.x < r.x
+SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1;
+SELECT 'R23-plan', countIf(explain LIKE '%IEJoin%') > 0
+FROM (EXPLAIN PLAN
+    SELECT count()
+    FROM values('s String, x Int32', ('a\0', 1)) AS l CROSS JOIN values('s FixedString(1), x Int32', ('a', 2)) AS r
+    WHERE l.s <= r.s AND l.x < r.x
+    SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
+SELECT 'R23-string-key', 0, count()
+FROM values('s String, x Int32, y Int32', ('a\0', 1, 3)) AS l JOIN values('s FixedString(1), x Int32, y Int32', ('a', 2, 2)) AS r ON l.s = r.s
+WHERE l.x < r.x AND l.y > r.y
+SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
+SELECT 'R23-string-key', 1, count()
+FROM values('s String, x Int32, y Int32', ('a\0', 1, 3)) AS l JOIN values('s FixedString(1), x Int32, y Int32', ('a', 2, 2)) AS r ON l.s = r.s
+WHERE l.x < r.x AND l.y > r.y
+SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1;

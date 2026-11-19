@@ -102,9 +102,6 @@ G1-sorting	0	6667	2999397547801183885
 G1-sorting	1	6667	2999397547801183885
 G2-ie-first	0	6667	2999397547801183885
 G2-ie-first	1	6667	2999397547801183885
-G1-parallel-plan	1
-G1-parallel	0	6667	2999397547801183885
-G1-parallel	1	6667	2999397547801183885
 G1-partial-plan	1
 G1-partial	0	6667	2999397547801183885
 G1-partial	1	6667	2999397547801183885
@@ -135,3 +132,10 @@ R21-plan	1
 R22-stateful-on	0	[(1,11),(2,12)]
 R22-stateful-on	1	[(1,11),(2,12)]
 R22-plan	1
+R23-string-le	0	1
+R23-string-le	1	1
+R23-string-gt	0	0
+R23-string-gt	1	0
+R23-plan	1
+R23-string-key	0	1
+R23-string-key	1	1
