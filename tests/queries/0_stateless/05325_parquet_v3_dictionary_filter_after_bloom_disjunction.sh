@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Random settings limits: input_format_parquet_bloom_filter_push_down=(1, 1); input_format_parquet_local_file_min_bytes_for_seek=(None, 8192); input_format_parquet_memory_high_watermark=(67108864, None)
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

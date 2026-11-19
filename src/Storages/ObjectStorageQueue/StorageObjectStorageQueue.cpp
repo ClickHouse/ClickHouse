@@ -343,6 +343,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , type(configuration_->getType())
     , engine_name(engine_args->engine->name)
     , enable_logging_to_queue_log((*queue_settings_)[ObjectStorageQueueSetting::enable_logging_to_queue_log])
+    , parallel_inserts((*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts])
     , polling_min_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , polling_max_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_max_timeout_ms])
     , polling_backoff_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_backoff_ms])
@@ -372,7 +373,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , min_insert_block_size_bytes_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views])
     , configuration{configuration_}
     , format_settings(format_settings_)
-    , reschedule_processing_interval_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , log(getLogger(fmt::format("Storage{}Queue ({})", configuration->getEngineName(), table_id_.getFullTableName())))
     , can_be_moved_between_databases((*queue_settings_)[ObjectStorageQueueSetting::keeper_path].changed)
     , keep_data_in_keeper(keep_data_in_keeper_)
@@ -503,6 +503,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
 
     ObjectStorageType storage_type = engine_name == "S3Queue" ? ObjectStorageType::S3 : ObjectStorageType::Azure;
 
+    const size_t task_count = parallel_inserts ? table_metadata.processing_threads_num.load() : 1;
+
     temp_metadata = std::make_unique<ObjectStorageQueueMetadata>(
         storage_type,
         zookeeper_name,
@@ -517,14 +519,17 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements]);
 
-    size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
     for (size_t i = 0; i < task_count; ++i)
     {
         auto task = getContext()->getSchedulePool()->createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
         streaming_tasks.emplace_back(std::move(task));
     }
     streaming_task_refresh_epochs.resize(task_count, 0);
-    max_files_override = 0;
+    {
+        std::lock_guard lock(mutex);
+        streaming_task_reschedule_intervals_ms.resize(task_count, polling_min_timeout_ms);
+    }
+    max_files_override.reset();
 }
 
 void StorageObjectStorageQueue::startup()
@@ -914,6 +919,8 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
     /// for them; a viewless table still claims, draining a pending permit so it cannot fire later.
     const bool deps_ready = num_views == 0 || dependencies_count > 0;
 
+    UInt64 & reschedule_processing_interval_ms = streaming_task_reschedule_intervals_ms.at(streaming_tasks_index);
+
     if (deps_ready && !stream_control.claimCycle(streaming_task_refresh_epochs.at(streaming_tasks_index)))
     {
         /// SYSTEM STOP/PAUSE blocks polling: skip processing. SYSTEM START wakes the task promptly
@@ -931,7 +938,6 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
             tryLogCurrentException(log);
         }
 
-        std::lock_guard lock(mutex);
         reschedule_processing_interval_ms = paused_reschedule_period;
     }
     else if (getContext()->getS3QueueDisableStreaming())
@@ -940,7 +946,6 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
         LOG_TRACE(log, "Streaming is disabled, rescheduling next check in {} ms", disabled_streaming_reschedule_period);
 
-        std::lock_guard lock(mutex);
         reschedule_processing_interval_ms = disabled_streaming_reschedule_period;
     }
     else
@@ -983,11 +988,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
     if (!shutdown_called)
     {
-        UInt64 reschedule_interval_ms = 0;
-        {
-            std::lock_guard lock(mutex);
-            reschedule_interval_ms = reschedule_processing_interval_ms;
-        }
+        const UInt64 reschedule_interval_ms = reschedule_processing_interval_ms;
 
         LOG_TRACE(log, "Reschedule processing thread in {} ms", reschedule_interval_ms);
         task->scheduleAfter(reschedule_interval_ms);
@@ -1071,17 +1072,17 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
     const auto & table_metadata = metadata->getTableMetadata();
     const size_t processing_threads_num = table_metadata.processing_threads_num;
-    const bool parallel_inserts = table_metadata.parallel_inserts;
     const size_t threads = parallel_inserts ? 1 : processing_threads_num;
 
-    LOG_TEST(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
+    LOG_TRACE(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
         threads, processing_threads_num, parallel_inserts, is_deduplication_v2);
 
     while (!shutdown_called && !file_iterator->isFinished() && !stream_control.isCancelRequested(cycle_epoch))
     {
         /// All tasks share a single batch size override so that the halving
         /// converges regardless of which task encounters the bad file.
-        auto effective_max_files = max_files_override.load();
+        const auto batch_size_override = max_files_override.get();
+        const size_t effective_max_files = batch_size_override.max_files;
 
         /// FIXME:
         /// it is possible that MV is dropped just before we start the insert,
@@ -1115,9 +1116,12 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
             = std::make_shared<FormatParserSharedResources>(queue_context->getSettingsRef(), /*num_streams_=*/threads);
 
         auto processing_progress = std::make_shared<ProcessingProgress>();
+        std::vector<size_t> processor_ids;
+        processor_ids.reserve(threads);
         for (size_t i = 0; i < threads; ++i)
         {
-            size_t processor_id = i * (streaming_tasks_index + 1);
+            size_t processor_id = streaming_tasks_index * threads + i;
+            processor_ids.push_back(processor_id);
             auto source = createSource(
                 processor_id,
                 read_from_format_info,
@@ -1186,7 +1190,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
                     message,
                     error_code);
 
-                file_iterator->releaseFinishedBuckets();
+                file_iterator->releaseFinishedBuckets(processor_ids);
                 file_iterator->refreshExpiringBucketLocks();
 
                 if (interrupted)
@@ -1200,15 +1204,12 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
                 /// and only then its retry count will be reduced.
                 /// The override is shared across all tasks so that the halving converges
                 /// regardless of which task encounters the bad file.
-                size_t current_max = max_files_override.load();
-                if (!current_max)
+                size_t configured_max_files = 0;
                 {
                     std::lock_guard lock(mutex);
-                    current_max = commit_settings.max_processed_files_before_commit;
+                    configured_max_files = commit_settings.max_processed_files_before_commit;
                 }
-                if (!current_max)
-                    current_max = processing_progress->processed_files.load();
-                max_files_override = std::max<size_t>(current_max / 2, 1);
+                max_files_override.halveAfterFailure(configured_max_files, processing_progress->acquired_files.load());
             }
             catch (Exception & e)
             {
@@ -1224,9 +1225,17 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         });
 
         commit(/*insert_succeeded=*/ true, rows, sources, *metadata, transaction_start_time);
-        file_iterator->releaseFinishedBuckets();
+        file_iterator->releaseFinishedBuckets(processor_ids);
         file_iterator->refreshExpiringBucketLocks();
-        max_files_override = 0;
+
+        /// Restore the full batch size only after a batch which actually committed files,
+        /// and only if no insert failed since this iteration started.
+        /// Otherwise idle tasks (with `parallel_inserts` there is one task per processing thread)
+        /// would keep resetting the halving after committing empty batches,
+        /// and the bad file would never end up alone in a batch.
+        if (processing_progress->acquired_files.load() > 0)
+            max_files_override.resetAfterSuccess(batch_size_override);
+
         total_rows += rows;
 
         /// Park after the durable boundary and before the blocked check below, so a test can
@@ -1238,6 +1247,12 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
             FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_after_commit);
 
         if (stream_control.isBlocked())
+            break;
+
+        /// This task acquired no files, although the iterator is not finished: e.g. in ordered mode
+        /// the remaining files belong to buckets held by other tasks. End the cycle, so that the task
+        /// backs off instead of building empty insert pipelines in a loop until the others are done.
+        if (processing_progress->acquired_files.load() == 0)
             break;
     }
 
@@ -2029,7 +2044,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::keeper_path] = fmt::format("{}:{}", zookeeper_name, zk_path.string());
     settings[ObjectStorageQueueSetting::loading_retries] = table_metadata.loading_retries;
     settings[ObjectStorageQueueSetting::processing_threads_num] = table_metadata.processing_threads_num;
-    settings[ObjectStorageQueueSetting::parallel_inserts] = table_metadata.parallel_inserts;
+    settings[ObjectStorageQueueSetting::parallel_inserts] = parallel_inserts;
     settings[ObjectStorageQueueSetting::enable_logging_to_queue_log] = enable_logging_to_queue_log;
     settings[ObjectStorageQueueSetting::last_processed_path] = table_metadata.last_processed_path;
     settings[ObjectStorageQueueSetting::bucketing_mode] = table_metadata.bucketing_mode;
