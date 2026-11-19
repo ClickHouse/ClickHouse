@@ -25,13 +25,14 @@ static struct InitFiu
 } init_fiu;
 #endif
 
-/// We should define different types of failpoints here. There are four types of them
+/// We should define different types of failpoints here. There are four types of them:
 /// - ONCE: the failpoint will only be triggered once.
 /// - REGULAR: the failpoint will always be triggered until disableFailPoint is called.
 /// - PAUSEABLE_ONCE: the failpoint will be blocked one time when pauseFailPoint is called, until disableFailPoint is called.
 /// - PAUSEABLE: the failpoint will be blocked every time when pauseFailPoint is called, until disableFailPoint is called.
 
 #define APPLY_FOR_FAILPOINTS(ONCE, REGULAR, PAUSEABLE_ONCE, PAUSEABLE) \
+    PAUSEABLE_ONCE(time_series_rename_pause_after_first_inner_table) \
     ONCE(replicated_merge_tree_commit_zk_fail_after_op) \
     ONCE(replicated_queue_fail_next_entry) \
     ONCE(nats_fail_resubscribe_within_query) \
@@ -448,7 +449,6 @@ static struct InitFiu
     REGULAR(datalake_paimon_list_page_size_one) \
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
-    PAUSEABLE_ONCE(drop_database_holding_drop_lock) \
     PAUSEABLE_ONCE(rename_database_after_dependency_check) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
     REGULAR(atomic_populate_fail_before_subscription) \
