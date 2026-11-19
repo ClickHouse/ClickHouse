@@ -453,6 +453,10 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 && (is_temporary || !context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]))
                 required_access.append_range(StorageFactory::instance().getExportAccess(create));
 
+            /// Engines with creation grants are never replaced by `Null`.
+            if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
+                required_access.append_range(StorageFactory::instance().getCreateAccess(create));
+
             /// A skipped database creates none of its tables, so their targets are never written to.
             const auto database_it = database_infos.find(table_name.database);
             const bool database_skipped = (database_it != database_infos.end())
