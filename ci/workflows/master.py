@@ -28,6 +28,7 @@ MASTER_FUNCTIONAL_TESTS_JOBS = (
     ]
     + JobConfigs.functional_tests_master_release_jobs
     + JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
+    + JobConfigs.functional_tests_arm_binary_plan_based_parallel_replicas_jobs
 )
 
 clickhouse_binaries_with_tags = with_long_retention_tags(
