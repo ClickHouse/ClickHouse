@@ -41,6 +41,9 @@ namespace Net
     POCO_DECLARE_EXCEPTION(Net_API, InterfaceNotFoundException, NetException)
     POCO_DECLARE_EXCEPTION(Net_API, NoMessageException, NetException)
     POCO_DECLARE_EXCEPTION(Net_API, MessageException, NetException)
+    /// A header exceeds one of its limits. Unlike other malformed messages, it is not transient:
+    /// the peer sends the same header again.
+    POCO_DECLARE_EXCEPTION(Net_API, HTTPHeaderLimitException, MessageException)
     POCO_DECLARE_EXCEPTION(Net_API, MultipartException, MessageException)
     /// A message whose received bytes violate the protocol or exceed a limit, as opposed to
     /// one that ends too early. Sending the same request again gets the same message.

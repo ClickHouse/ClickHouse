@@ -1509,7 +1509,8 @@ public:
         const ConnectionTimeouts & timeouts_,
         const CompressionMethod compression_method_,
         const HTTPHeaderEntries & headers_,
-        const String & http_method_)
+        const String & http_method_,
+        PartitionedWriteAccessCheck write_access_check_)
         : PartitionedSink(partition_strategy_, context_, std::make_shared<const Block>(sample_block_))
         , uri(uri_)
         , format(format_)
@@ -1520,12 +1521,17 @@ public:
         , compression_method(compression_method_)
         , headers(headers_)
         , http_method(http_method_)
+        , write_access_check(std::move(write_access_check_))
     {
     }
 
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
         std::string partition_path = partition_strategy->getPathForWrite(uri, partition_id);
+
+        /// The partition id comes from the data, so its destination is checked before anything is written to it.
+        if (write_access_check)
+            write_access_check(context, partition_path);
 
         context->getRemoteHostFilter().checkURL(Poco::URI(partition_path));
         return std::make_shared<StorageURLSink>(
@@ -1543,6 +1549,7 @@ private:
     const CompressionMethod compression_method;
     const HTTPHeaderEntries headers;
     const String http_method;
+    const PartitionedWriteAccessCheck write_access_check;
 };
 
 std::string IStorageURLBase::getReadMethod() const
@@ -1963,6 +1970,8 @@ public:
     bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
     void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
 
+    bool canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const override;
+
     ReadFromURL(
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
@@ -2033,6 +2042,12 @@ bool ReadFromURL::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_c
     /// by `AddingDefaultsTransform` for the values the reader reported as missing, so the threshold
     /// would come from other values than the ones the reader compares against it.
     return !info.columns_description.hasDefault(sort_column.name);
+}
+
+bool ReadFromURL::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const
+{
+    const auto settings = storage->format_settings ? *storage->format_settings : getFormatSettings(getContext());
+    return formatSkipsDataByStatistics(storage->format_name, settings) && info.canSkipDataByStatisticsOf(column);
 }
 
 void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -2329,7 +2344,8 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             getHTTPTimeouts(context),
             compression_method,
             headers,
-            write_method);
+            write_method,
+            getPartitionedWriteAccessCheck());
     }
 
     return std::make_shared<StorageURLSink>(
@@ -3603,7 +3619,7 @@ Syntax: `URL(URL [,Format] [,CompressionMethod])`
 
 - The `URL` parameter must conform to the structure of a Uniform Resource Locator. For an `http`/`https` URL (the default backend), it must point to a server that uses HTTP or HTTPS, and getting a response from the server does not require any additional headers. A URL with a recognized non-HTTP scheme (`file://`, `s3://`, `az://`, `hdfs://`, …) is instead delegated to the matching engine — see [Dispatching by URL scheme](#scheme-dispatch) below.
 
-- The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](/reference/formats#formats-overview).
+- The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](/reference/formats/index#formats-overview).
 
     If this argument is not specified, ClickHouse detects the format automatically from the suffix of the `URL` parameter. If the suffix of `URL` parameter does not match any supported formats, it fails to create table. For example, for engine expression `URL('http://localhost/test.json')`, `JSON` format is applied.
 
