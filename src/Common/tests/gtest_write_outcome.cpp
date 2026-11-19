@@ -11,7 +11,7 @@ TEST(AttemptsRecord, OutcomeFollowsTheFacts)
     struct Case
     {
         AttemptsRecord record;
-        WriteOutcome expected;
+        WriteOutcome expected = WriteOutcome::NotApplied;
     };
     const Case cases[] = {
         {{.may_have_been_applied = false, .precondition_refused = false, .proof = Proof::None}, WriteOutcome::NotApplied},

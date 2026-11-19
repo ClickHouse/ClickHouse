@@ -79,7 +79,7 @@ private:
 
 struct WriteResult
 {
-    WriteOutcome outcome;
+    WriteOutcome outcome = WriteOutcome::NotApplied;
     /// The error of the write, empty if it succeeded.
     std::string error;
 };
