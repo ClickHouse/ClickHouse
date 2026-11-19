@@ -1,4 +1,4 @@
--- Tags: distributed
+-- Tags: distributed, no-msan
 
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/106403
 -- Two (or more) ALIAS columns expanding to the same expression are deduplicated into a single
@@ -30,8 +30,6 @@ CREATE TABLE dist_same_expr
 ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), local_same_expr, rand());
 
 INSERT INTO local_same_expr (dt, x) VALUES ('2024-01-01 00:00:00', 7);
-
-SET enable_analyzer = 1;
 
 -- Basic case: two ALIAS columns with same expression + ORDER BY on a non-projected column
 SELECT a1, a2 FROM dist_same_expr ORDER BY dt DESC LIMIT 1;

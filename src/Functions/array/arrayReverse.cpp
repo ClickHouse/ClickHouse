@@ -17,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -27,24 +26,17 @@ public:
     static constexpr auto name = "arrayReverse";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayReverse>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-        if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be array.", getName());
+    [[nodiscard]] String getSignatureString() const override { return "(Array(T)) -> Array(T)"; }
 
-        return arguments[0];
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override;
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override;
 
 private:
     template <typename T>
@@ -83,10 +75,14 @@ ColumnPtr FunctionArrayReverse::executeImpl(const ColumnsWithTypeAndName & argum
         || executeNumber<UInt16>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<UInt32>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<UInt64>(*src_inner_col, offsets, *res_inner_col)
+        || executeNumber<UInt128>(*src_inner_col, offsets, *res_inner_col)
+        || executeNumber<UInt256>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Int8>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Int16>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Int32>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Int64>(*src_inner_col, offsets, *res_inner_col)
+        || executeNumber<Int128>(*src_inner_col, offsets, *res_inner_col)
+        || executeNumber<Int256>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Float32>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Float64>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Decimal32>(*src_inner_col, offsets, *res_inner_col)

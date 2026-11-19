@@ -32,14 +32,11 @@ public:
     {
     }
 
-    String getName() const override { return AggregateFunctionGroupNumericIndexedVectorData<VectorImpl>::name(); }
-
-    /// A numeric parameter may arrive as a Decimal or wide integer, whose untyped spelling reparses as String.
-    bool shouldPrintParametersWithTypes() const override { return true; }
+    [[nodiscard]] String getName() const override { return AggregateFunctionGroupNumericIndexedVectorData<VectorImpl>::name(); }
 
     static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<Float64>>(); }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

@@ -1,0 +1,11 @@
+EXPLAIN PIPELINE does not insert
+0
+The inserted data cannot be read during the analysis
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+0
+Subcolumns
+1	2	b	2	1	[3,4]
+Alias
+NOT_IMPLEMENTED
+0

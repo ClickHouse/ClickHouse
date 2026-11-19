@@ -1,9 +1,11 @@
 #include <stack>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
 #include <Common/typeid_cast.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -93,7 +95,8 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
         filter->getExpression(),
         filter->getFilterColumnName(),
         *interesting_side_header,
-        /*allow_unknown_function_arguments=*/true);
+        /*allow_unknown_function_arguments=*/true,
+        interesting_side_plan_node);
 
     /// If not matched rows are not always filtered out, then we cannot convert ANY OUTER JOIN to INNER JOIN
     /// See discussion in https://github.com/ClickHouse/ClickHouse/issues/66447
@@ -116,7 +119,8 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
                 if (current_node->type == ActionsDAG::ActionType::INPUT)
                     join_keys_interesting_side.insert(current_node->result_name);
 
-                if (current_node->type == ActionsDAG::ActionType::FUNCTION && current_node->function_base->isInjective({}))
+                if (current_node->type == ActionsDAG::ActionType::FUNCTION
+                    && current_node->function_base->isInjective(getFunctionArgumentColumns(*current_node)))
                 {
                     for (const auto * child : current_node->children)
                         nodes_to_process.push(child);
@@ -145,6 +149,12 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
         /// JOIN condition: t1.name = t2.name and t1.uid > t2.uid
         /// There can be multiple rows matching the join condition (same name, but different uid).
         if (predicate_op != JoinConditionOperator::Equals)
+            return 0;
+
+        /// The grouping keys are unique as raw values. A key pair the JOIN does not compare exactly, such as
+        /// `FixedString` vs `String`, matches one value to several groups (`'a'` and `'a\0\0'`), so uniqueness is lost.
+        const bool is_key_pair = (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
+        if (is_key_pair && !JoinCommon::isExactJoinKeyEquality(lhs.getType(), rhs.getType()))
             return 0;
 
         if (lhs.fromLeft() && rhs.fromRight())
@@ -265,12 +275,12 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
     if (check_left_stream)
         left_stream_safe = filterResultForNotMatchedRows(
             filter_dag, filter_column_name, *left_stream_input_header,
-            /*allow_unknown_function_arguments=*/true) == FilterResult::FALSE;
+            /*allow_unknown_function_arguments=*/true, child_node->children.front()) == FilterResult::FALSE;
 
     if (check_right_stream)
         right_stream_safe = filterResultForNotMatchedRows(
             filter_dag, filter_column_name, *right_stream_input_header,
-            /*allow_unknown_function_arguments=*/true) == FilterResult::FALSE;
+            /*allow_unknown_function_arguments=*/true, child_node->children.back()) == FilterResult::FALSE;
 
     if (!left_stream_safe || !right_stream_safe)
     {
