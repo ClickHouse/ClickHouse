@@ -98,6 +98,9 @@ public:
     /// Whether reads go through the page cache, whose cells can be much larger than the ranges read.
     bool readsThroughPageCache() const;
 
+    /// Whether [offset, offset + size) of the file is in a local cache (see SeekableReadBuffer::isRangeCachedLocally).
+    bool isRangeCachedLocally(size_t offset, size_t size) const;
+
 private:
     friend class PrefetchHandle;
 
@@ -216,6 +219,7 @@ private:
     size_t file_size{};
     bool is_local_file = false;
     size_t min_bytes_for_seek{};
+    size_t local_min_bytes_for_seek{};
     size_t bytes_per_read_task{};
 
     std::shared_ptr<ShutdownHelper> shutdown = std::make_shared<ShutdownHelper>();

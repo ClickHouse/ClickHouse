@@ -2244,4 +2244,13 @@ bool CachedOnDiskReadBufferFromFile::isContentCached(size_t offset, size_t size)
     return isRangeContainedInSegments(offset, std::min(offset + size - 1, right_boundary), info.file_segments);
 }
 
+bool CachedOnDiskReadBufferFromFile::isRangeCachedLocally(size_t offset, size_t size) const
+{
+    if (size == 0)
+        return true;
+    if (!cache->isInitialized())
+        return false;
+    return !cache->getDownloadedContiguousOrEmpty(info.cache_key, offset, size, origin.user_id)->empty();
+}
+
 }
