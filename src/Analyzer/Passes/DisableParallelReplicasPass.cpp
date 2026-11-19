@@ -33,16 +33,15 @@ public:
     {
         if (dry_run)
         {
-            /// A `MergeTree` table is read with the context of the query around it. Any other storage may plan a
-            /// query of its own when it is read (the body of a view, with its own settings), which this tree does
-            /// not show, so whether it reads with parallel replicas is unknown.
+            /// The tree shows how a `MergeTree` table is read: with the context of the query around it. Any other
+            /// storage is opaque to it, so whether that read uses parallel replicas cannot be told from here.
             StoragePtr storage;
             if (const auto * table_node = node->as<TableNode>())
                 storage = table_node->getStorage();
             else if (const auto * table_function_node = node->as<TableFunctionNode>())
                 storage = table_function_node->getStorage();
             if (storage && !storage->isMergeTree())
-                reads_storage_with_own_query = true;
+                reads_opaque_storage = true;
         }
 
         if (is_correlated)
@@ -61,7 +60,8 @@ public:
     {
         if (!is_correlated)
         {
-            /// Left before the first correlated node was entered, so it keeps parallel replicas.
+            /// Left before `is_correlated` latched, so it keeps parallel replicas. The flag is never reset, so
+            /// every query and union left after that, the root and siblings walked later included, loses them.
             if (node->as<QueryNode>() || node->as<UnionNode>())
                 kept_in_some_query = true;
             return;
@@ -76,13 +76,15 @@ public:
             union_node->getMutableContext()->setSetting("allow_experimental_parallel_reading_from_replicas", String("0"));
     }
 
-    [[nodiscard]] bool disablesEverywhere() const { return is_correlated && !kept_in_some_query && !reads_storage_with_own_query; }
+    /// Latched with no query or union left before it, so the pass turns parallel replicas off in every one of them,
+    /// and no opaque storage, which might still use them, was read.
+    [[nodiscard]] bool disablesEverywhere() const { return is_correlated && !kept_in_some_query && !reads_opaque_storage; }
 
 private:
     const bool dry_run;
     bool is_correlated = false;
     bool kept_in_some_query = false;
-    bool reads_storage_with_own_query = false;
+    bool reads_opaque_storage = false;
 };
 
 
