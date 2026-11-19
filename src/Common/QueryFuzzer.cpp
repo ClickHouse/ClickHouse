@@ -8897,6 +8897,59 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             insert_query->returning = union_query;
             insert_query->children.push_back(insert_query->returning);
         }
+        /// INSERT INTO FUNCTION: drop `PARTITION BY`, or add a listed column, a column-like or a stateful expression
+        if (insert_query->table_function && insert_query->partition_by && fuzz_rand() % 20 == 0)
+        {
+            auto & ch = insert_query->children;
+            ch.erase(std::remove(ch.begin(), ch.end(), insert_query->partition_by), ch.end());
+            insert_query->partition_by = {};
+        }
+        else if (insert_query->table_function && !insert_query->partition_by && fuzz_rand() % 30 == 0)
+        {
+            ASTPtr expr;
+            const auto option = fuzz_rand() % 2;
+
+            if (option == 0 && insert_query->columns && !insert_query->columns->children.empty())
+                expr = insert_query->columns->children[fuzz_rand() % insert_query->columns->children.size()]->clone();
+            else
+                expr = getRandomColumnLike();
+            if (expr)
+            {
+                /// Printed in parentheses, otherwise `c0 (c0, c1)` parses back as a call
+                expr->setParenthesized(true);
+                insert_query->partition_by = expr;
+                insert_query->children.push_back(insert_query->partition_by);
+            }
+            /// Without `{_partition_id}` in the path, `file` and `url` ignore the clause. Add it to the first
+            /// path argument, positional or `filename`/`url`/`path`/`blob_path` key-value, when it has no glob
+            static const std::unordered_set<String> partitioned_writers = {"file", "url", "s3", "gcs", "azureBlobStorage", "hdfs"};
+            const auto * tf_fn = insert_query->table_function->as<ASTFunction>();
+            if (expr && tf_fn && tf_fn->arguments && partitioned_writers.contains(tf_fn->name) && fuzz_rand() % 4 != 0)
+            {
+                for (auto & arg : tf_fn->arguments->children)
+                {
+                    ASTLiteral * path_literal = arg->as<ASTLiteral>();
+                    if (const auto * eq = arg->as<ASTFunction>(); eq && eq->name == "equals" && eq->arguments && eq->arguments->children.size() == 2)
+                    {
+                        const auto * key = eq->arguments->children[0]->as<ASTIdentifier>();
+                        if (key && (key->name() == "filename" || key->name() == "url" || key->name() == "path" || key->name() == "blob_path"))
+                            path_literal = eq->arguments->children[1]->as<ASTLiteral>();
+                    }
+                    if (path_literal && path_literal->value.getType() == Field::Types::String)
+                    {
+                        String path = path_literal->value.safeGet<String>();
+                        if (path.find_first_of("*?{") == String::npos)
+                        {
+                            const size_t slash = path.rfind('/');
+                            const size_t dot = path.rfind('.');
+                            path.insert((dot != String::npos && (slash == String::npos || dot > slash)) ? dot : path.size(), "_{_partition_id}");
+                            path_literal->value = Field(path);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
         /// INSERT INTO FUNCTION: swap the table function within its group
         fuzzTableFunctionName(insert_query->table_function);
         fuzz(insert_query->children);

@@ -3452,6 +3452,16 @@ CONV_FN(Insert, insert)
         ret += "FUNCTION ";
     }
     TableOrFunctionToString(ret, false, insert.tof());
+    if (insert.tof().has_tfunc() && insert.has_partition_by())
+    {
+        /// `tuple()` before a column list parses as a parametric call, other keys print in parentheses
+        const bool paren = insert.cols_size() > 0 && insert.partition_by().exprs_size() == 0;
+
+        ret += " PARTITION BY ";
+        ret += paren ? "(" : "";
+        TableKeyToString(ret, insert.partition_by());
+        ret += paren ? ")" : "";
+    }
     if (insert.cols_size())
     {
         ret += " (";

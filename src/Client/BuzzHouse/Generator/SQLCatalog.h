@@ -7,6 +7,9 @@
 namespace BuzzHouse
 {
 
+/// Replaced by the partition id in the path of a partitioned write
+static const constexpr String PARTITION_STR = "{_partition_id}";
+
 enum class ColumnSpecial
 {
     NONE = 0,

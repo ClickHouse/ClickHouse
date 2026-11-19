@@ -423,7 +423,6 @@ String SQLBase::getSparkCatalogName() const
     return db->getSparkCatalogName();
 }
 
-static const constexpr String PARTITION_STR = "{_partition_id}";
 static const constexpr String SCHEMA_HASH_STR = "{_schema_hash}";
 
 /// Returns the placeholder suffix to append to an S3/Azure path component.

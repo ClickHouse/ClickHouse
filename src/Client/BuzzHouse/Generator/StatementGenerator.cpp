@@ -1634,6 +1634,31 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
 
     generateInsertToTable(rg, t, in_parallel, std::nullopt, ins);
+    if (ins->tof().has_tfunc() && rg.nextSmallNumber() < 4)
+    {
+        TableFunction & tf = *ins->mutable_tof()->mutable_tfunc();
+        /// Object storage tables with `PARTITION BY` already have the wildcard or the hive strategy in their parameters
+        const bool object_storage = tf.has_object_func() && t.has_partition_by && (t.isS3Engine() || t.isAzureEngine());
+
+        /// Other table functions reject the clause
+        if (tf.has_file() || tf.has_url() || object_storage || rg.nextLargeNumber() < 3)
+        {
+            /// Without the wildcard `file` and `url` ignore the clause. Skip globs and `url` calls with a query
+            String * path = tf.has_file() ? tf.mutable_file()->mutable_path() : (tf.has_url() ? tf.mutable_url()->mutable_uurl() : nullptr);
+
+            if (path && !path->contains(PARTITION_STR) && path->find_first_of("*?{") == String::npos && rg.nextSmallNumber() < 8)
+            {
+                const size_t slash = path->rfind('/');
+                const size_t dot = path->rfind('.');
+
+                path->insert((dot != String::npos && (slash == String::npos || dot > slash)) ? dot : path->size(), "_" + PARTITION_STR);
+            }
+            /// Same key generator as the table `PARTITION BY`
+            flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
+            generateTableKey(rg, createTableRelation(rg, false, "", t), t, false, ins->mutable_partition_by());
+            this->entries.clear();
+        }
+    }
     if (rg.nextSmallNumber() < 3)
     {
         /// `RETURNING (SELECT ...)` runs a query on top of the inserted blocks, read through the table name in FROM.

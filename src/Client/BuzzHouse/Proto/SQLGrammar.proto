@@ -1847,6 +1847,7 @@ message Insert {
     }
     optional SettingValues setting_values = 8;
     optional Select returning = 9;
+    optional TableKey partition_by = 10;
 }
 
 message PartitionExpr {
