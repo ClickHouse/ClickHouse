@@ -87,7 +87,7 @@ SimulationResult::Status Simulation::runLoop()
     {
         SimulatedThread * next = scheduler.pickNext();
         if (!next)
-            return alive == 0 ? SimulationResult::Status::Ok : SimulationResult::Status::Deadlock;
+            return unfinished_threads == 0 ? SimulationResult::Status::Ok : SimulationResult::Status::Deadlock;
 
         if (steps >= params.max_steps)
             return SimulationResult::Status::StepLimit;
@@ -107,7 +107,7 @@ SimulationResult::Status Simulation::runLoop()
         {
             if (exception)
                 return SimulationResult::Status::Exception;
-            --alive;
+            --unfinished_threads;
             scheduler.onExit();
         }
     }
@@ -141,7 +141,7 @@ void Simulation::createThread(std::function<void()> user_body)
     };
 
     threads.push_back(std::make_unique<SimulatedThread>(next_thread_id++, params.fiber_stack_size, std::move(guarded_body)));
-    ++alive;
+    ++unfinished_threads;
     scheduler.onRunnable(threads.back().get());
 }
 

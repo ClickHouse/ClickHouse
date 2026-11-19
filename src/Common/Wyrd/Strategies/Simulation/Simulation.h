@@ -75,7 +75,7 @@ private:
     FutexTable futexes;
     VectorWithMemoryTracking<std::unique_ptr<SimulatedThread>> threads;
     SimulatedThread * running_thread = nullptr;
-    size_t alive = 0;
+    size_t unfinished_threads = 0;
     UInt32 next_thread_id = 1;
 
     size_t steps = 0;
