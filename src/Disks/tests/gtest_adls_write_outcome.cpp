@@ -41,7 +41,7 @@ public:
     {
         Poco::NullOutputStream sink;
         Poco::StreamCopier::copyStream(request.stream(), sink);
-        size_t number;
+        size_t number = 0;
         {
             std::lock_guard lock(mutex);
             number = count++;
