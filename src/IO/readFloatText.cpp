@@ -1061,7 +1061,6 @@ bool tryParseFloatFromPaddedRange(T & x, PaddedRange range)
     if (range.begin() == range.end())
         return false;
     T value{};
-    /// A non-empty `PaddedRange` comes from storage whose type guarantees the padding.
     auto res = parseFloatFromBuffer(value, range.begin(), range.end(), /* padded = */ true);
     if ((res.ec != std::errc() && res.ec != std::errc::result_out_of_range) || res.ptr != range.end())
         return false;

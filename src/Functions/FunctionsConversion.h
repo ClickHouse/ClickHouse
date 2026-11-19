@@ -1599,8 +1599,7 @@ struct ConvertThroughParsing
             {
                 if (settings.precise_float_parsing)
                 {
-                    /// For a `String` row the generic path below makes this same parse call, so its result decides the row.
-                    /// Only the `Throw` mode takes the generic path for a rejected row, which builds the exception message.
+                    /// Same verdict as the generic path below; a rejected row goes there only in `Throw` mode, for the message.
                     if constexpr (exception_mode != ConvertFromStringExceptionMode::Throw)
                         vec_to[i] = static_cast<typename ToDataType::FieldType>(0);
                     const bool parsed = tryParseFloatFromPaddedRange(vec_to[i], PaddedRange(*chars, current_offset, text.size()));
