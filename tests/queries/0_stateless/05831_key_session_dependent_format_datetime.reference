@@ -1,6 +1,7 @@
 baseline session
 read in order	1
 primary key	833
+fromUnixTimestamp primary key	833
 skip indexes	833
 join sharding	1
 no setting changed	0	0
@@ -32,6 +33,7 @@ shard pruning	168
 parseDateTime	2
 lambda	1
 nullable	168
+fromUnixTimestamp	168
 final	12
 final without index	12
 modulo partition	(\'May\',1)

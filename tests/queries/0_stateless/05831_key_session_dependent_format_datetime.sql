@@ -23,6 +23,7 @@ DROP TABLE IF EXISTS t_dist_local;
 DROP TABLE IF EXISTS t_parse;
 DROP TABLE IF EXISTS t_lambda;
 DROP TABLE IF EXISTS t_nullable;
+DROP TABLE IF EXISTS t_unix;
 DROP TABLE IF EXISTS t_final;
 DROP TABLE IF EXISTS t_modulo;
 
@@ -63,6 +64,8 @@ INSERT INTO t_lambda VALUES (['2024-05-01 00:05:00']), (['2024-06-01 00:06:00'])
 
 CREATE TABLE t_nullable (dt Nullable(DateTime('UTC'))) ENGINE = MergeTree ORDER BY formatDateTime(dt, '%M') SETTINGS allow_nullable_key = 1, index_granularity = 100;
 INSERT INTO t_nullable SELECT dt FROM t_sort;
+CREATE TABLE t_unix (ts UInt32) ENGINE = MergeTree ORDER BY fromUnixTimestamp(ts, '%M', 'UTC') SETTINGS index_granularity = 100;
+INSERT INTO t_unix SELECT toUInt32(dt) FROM t_sort;
 
 CREATE TABLE t_final (dt DateTime('UTC'), b UInt32) ENGINE = ReplacingMergeTree ORDER BY (formatDateTime(dt, '%M'), b, dt) SETTINGS index_granularity = 100;
 SYSTEM STOP MERGES t_final;
@@ -74,6 +77,7 @@ CREATE TABLE t_modulo (dt DateTime('UTC'), id UInt32) ENGINE = MergeTree PARTITI
 SELECT 'baseline session';
 SELECT 'read in order', count() > 0 FROM (EXPLAIN actions = 1 SELECT formatDateTime(dt, '%M') AS k FROM t_sort ORDER BY k SETTINGS optimize_read_in_order = 1) WHERE explain ILIKE '%Read type: InOrder%';
 SELECT 'primary key', count() FROM t_sort WHERE formatDateTime(dt, '%M') = 'May' SETTINGS force_primary_key = 1;
+SELECT 'fromUnixTimestamp primary key', count() FROM t_unix WHERE fromUnixTimestamp(ts, '%M', 'UTC') = 'May' SETTINGS force_primary_key = 1;
 SELECT 'skip indexes', count() FROM t_idx WHERE formatDateTime(dt, '%M') = 'May' SETTINGS force_data_skipping_indices = 'i_set,i_bf,i_mm';
 SELECT 'join sharding', count() > 0 FROM (EXPLAIN actions = 1 SELECT count() FROM t_ja AS a INNER JOIN t_jb AS b ON formatDateTime(a.dt, '%M') = formatDateTime(b.dt, '%M')) WHERE explain ILIKE '%Sharding:%';
 
@@ -103,15 +107,15 @@ SELECT 'bloom filter index', count() FROM t_idx WHERE formatDateTime(dt, '%M') =
 SELECT 'minmax index', count() FROM t_idx WHERE formatDateTime(dt, '%M') = '05' SETTINGS ignore_data_skipping_indexes = 'i_set,i_bf';
 SELECT count() FROM t_idx WHERE formatDateTime(dt, '%M') = '05' SETTINGS force_data_skipping_indices = 'i_set'; -- { serverError INDEX_NOT_USED }
 
-SELECT 'min max', min(formatDateTime(dt, '%M')), max(formatDateTime(dt, '%M')) FROM t_sort SETTINGS optimize_use_implicit_projections = 1;
-SELECT 'partition values', count() FROM (SELECT formatDateTime(dt, '%M') AS k, count() FROM t_part GROUP BY k) SETTINGS optimize_use_implicit_projections = 1;
+SELECT 'min max', min(formatDateTime(dt, '%M')), max(formatDateTime(dt, '%M')) FROM t_sort SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+SELECT 'partition values', count() FROM (SELECT formatDateTime(dt, '%M') AS k, count() FROM t_part GROUP BY k) SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 
 SELECT 'aggregation per partition', count() FROM (SELECT formatDateTime(dt, '%M') AS k, count() FROM t_part GROUP BY k)
 SETTINGS optimize_use_implicit_projections = 0, allow_aggregate_partitions_independently = 1, force_aggregate_partitions_independently = 1, max_threads = 4;
 SELECT 'limit by per partition', count() FROM (SELECT formatDateTime(dt, '%M') AS k FROM t_part LIMIT 1 BY k)
-SETTINGS allow_aggregate_partitions_independently = 1, force_aggregate_partitions_independently = 1, max_threads = 4;
+SETTINGS allow_limit_by_partitions_independently = 1, max_threads = 4;
 SELECT 'distinct per partition', count() FROM (SELECT DISTINCT formatDateTime(dt, '%M') FROM t_part)
-SETTINGS allow_aggregate_partitions_independently = 1, force_aggregate_partitions_independently = 1, max_threads = 4;
+SETTINGS allow_distinct_partitions_independently = 1, force_distinct_partitions_independently = 1, max_threads = 4;
 
 SELECT 'join sharding', count() FROM (EXPLAIN actions = 1 SELECT count() FROM t_ja AS a INNER JOIN t_jb AS b ON formatDateTime(a.dt, '%M') = formatDateTime(b.dt, '%M')) WHERE explain ILIKE '%Sharding:%';
 SELECT 'join', count() FROM t_ja AS a INNER JOIN t_jb AS b ON formatDateTime(a.dt, '%M') = formatDateTime(b.dt, '%M');
@@ -123,6 +127,7 @@ SELECT 'parseDateTime', count() FROM t_parse WHERE parseDateTimeOrZero(s, '%Y-%M
 
 SELECT 'lambda', count() FROM t_lambda WHERE arrayMap(x -> formatDateTime(x, '%M'), arr) = ['05'];
 SELECT 'nullable', count() FROM t_nullable WHERE formatDateTime(dt, '%M') = '05';
+SELECT 'fromUnixTimestamp', count() FROM t_unix WHERE fromUnixTimestamp(ts, '%M', 'UTC') = '05';
 
 -- FINAL merges by the stored key, which is the table's own semantics.
 SELECT 'final', count() FROM t_final FINAL WHERE formatDateTime(dt, '%M') = '05';
@@ -148,5 +153,6 @@ DROP TABLE t_dist_local;
 DROP TABLE t_parse;
 DROP TABLE t_lambda;
 DROP TABLE t_nullable;
+DROP TABLE t_unix;
 DROP TABLE t_final;
 DROP TABLE t_modulo;
