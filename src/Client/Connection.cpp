@@ -1586,6 +1586,7 @@ Packet Connection::receivePacket()
         ensureConnected();
 
         Packet res;
+        res.origin_version = VersionNumber(server_version_major, server_version_minor, server_version_patch);
 
         /// Have we already read packet type?
         if (last_input_packet_type)

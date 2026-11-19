@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Throttler.h>
+#include <Common/VersionNumber.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Block.h>
@@ -43,6 +44,10 @@ struct Packet
     std::optional<ParallelReadRequest> request;
 
     std::string server_timezone;
+
+    /// Version of the peer that sent this packet, 0 if unknown. Not part of the wire format; kept per
+    /// packet because hedged requests can mix replicas of different versions in one query.
+    VersionNumber origin_version;
 };
 
 

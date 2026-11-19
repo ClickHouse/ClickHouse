@@ -80,6 +80,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
     extern const int BAD_ARGUMENTS;
     extern const int ACCESS_DENIED;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 namespace FailPoints
@@ -411,10 +412,40 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
     }
 }
 
+/// Name to read for each `header` entry in a block from a pre-26.5 peer. An entry with no legacy spelling
+/// keeps its name: a planner-generated column such as `__grouping_set` is spelled alike by both versions.
+static Names buildLegacySourceNames(const Block & header, const LegacyHeaderNames & legacy_names)
+{
+    Names source_names;
+    source_names.reserve(header.columns());
+    NameToNameMap source_to_entry_name;
+
+    for (const auto & elem : header)
+    {
+        if (legacy_names.ambiguous.contains(elem.name))
+            throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+                "Cannot resolve column {} in a block received from a server older than {}: its plan column identifier "
+                "has more than one pre-{} spelling", elem.name, legacy_quoted_identifiers_version.toString(),
+                legacy_quoted_identifiers_version.toString());
+
+        auto it = legacy_names.current_to_legacy.find(elem.name);
+        const auto & source_name = source_names.emplace_back(it == legacy_names.current_to_legacy.end() ? elem.name : it->second);
+
+        auto [claimed, inserted] = source_to_entry_name.emplace(source_name, elem.name);
+        if (!inserted && claimed->second != elem.name)
+            throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+                "Columns of a block received from a server older than {} do not map one to one onto the expected columns: {}",
+                legacy_quoted_identifiers_version.toString(), header.dumpNames());
+    }
+
+    return source_names;
+}
+
 /** If we receive a block with slightly different column types, or with excessive columns,
   *  we will adapt it to expected structure.
+  * `source_names`, if given, holds the name to read for each header entry instead of its own name.
   */
-static Block adaptBlockStructure(const Block & block, const Block & header)
+static Block adaptBlockStructure(const Block & block, const Block & header, const Names * source_names = nullptr)
 {
     /// Special case when reader doesn't care about result structure. Deprecated and used only in Benchmark, PerformanceTest.
     if (header.empty())
@@ -426,8 +457,12 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
     /// `ColumnBLOB::addCast` modifies the column in place, and header entries with the same name share a column of `block`.
     UnorderedSetWithMemoryTracking<const IColumn *> blobs_with_cast;
 
+    size_t header_position = 0;
     for (const auto & elem : header)
     {
+        const auto & source_name = source_names ? (*source_names)[header_position] : elem.name;
+        ++header_position;
+
         ColumnPtr column;
 
         if (elem.column && isColumnConst(*elem.column))
@@ -435,13 +470,13 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
             /// We expect constant column in block.
             /// If block is not empty, then get value for constant from it,
             /// because it may be different for remote server for functions like version(), uptime(), ...
-            if (block.rows() > 0 && block.has(elem.name))
+            if (block.rows() > 0 && block.has(source_name))
             {
                 /// Const column is passed as materialized. Get first value from it.
                 ///
                 /// TODO: check that column contains the same value.
                 /// TODO: serialize const columns.
-                auto col = block.getByName(elem.name);
+                auto col = block.getByName(source_name);
                 if (const auto * blob = typeid_cast<const ColumnBLOB *>(col.column.get()))
                     col.column = blob->convertFrom();
                 col.column = col.column->cut(0, 1);
@@ -459,7 +494,7 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
         }
         else
         {
-            const auto & col = block.getByName(elem.name);
+            const auto & col = block.getByName(source_name);
             if (auto * blob = typeid_cast<ColumnBLOB *>(col.column->assumeMutable().get()))
             {
                 if (blobs_with_cast.insert(blob).second)
@@ -940,6 +975,18 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 #endif
 }
 
+const Names * RemoteQueryExecutor::getLegacySourceNames(const Packet & packet)
+{
+    if (legacy_header_names.empty()
+        || packet.origin_version == VersionNumber{}
+        || packet.origin_version >= legacy_quoted_identifiers_version)
+        return nullptr;
+
+    if (!legacy_source_names)
+        legacy_source_names = buildLegacySourceNames(*header, legacy_header_names);
+    return &*legacy_source_names;
+}
+
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet)
 {
     switch (packet.type)
@@ -971,7 +1018,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             if (!packet.block.empty() && (packet.block.rows() > 0))
             {
                 got_data_from_replica = true;
-                return ReadResult(adaptBlockStructure(packet.block, *header));
+                return ReadResult(adaptBlockStructure(packet.block, *header, getLegacySourceNames(packet)));
             }
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
@@ -1028,13 +1075,13 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
         case Protocol::Server::Totals:
             totals = packet.block;
             if (!totals.empty())
-                totals = adaptBlockStructure(totals, *header);
+                totals = adaptBlockStructure(totals, *header, getLegacySourceNames(packet));
             break;
 
         case Protocol::Server::Extremes:
             extremes = packet.block;
             if (!extremes.empty())
-                extremes = adaptBlockStructure(packet.block, *header);
+                extremes = adaptBlockStructure(packet.block, *header, getLegacySourceNames(packet));
             break;
 
         case Protocol::Server::Log:

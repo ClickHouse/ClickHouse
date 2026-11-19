@@ -18,6 +18,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 
+#include <Planner/CollectLegacyActionNodeNames.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -651,6 +652,8 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     /// Otherwise buildQueryPipeline would optimize internally and QueryPipelineBuildMicroseconds
     /// would double-count the optimization phase.
     query_plan.optimize(optimization_settings);
+
+    renameOutgoingHeaderForLegacyUpstream(query_plan, planner.getPlannerContext(), select_query_options, context);
 
     ProfileEventTimeIncrement<Microseconds> pipeline_build_time_watch(ProfileEvents::QueryPipelineBuildMicroseconds);
     return std::move(*query_plan.buildQueryPipeline(

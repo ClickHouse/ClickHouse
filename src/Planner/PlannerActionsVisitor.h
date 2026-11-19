@@ -56,16 +56,49 @@ private:
     bool use_column_identifier_as_action_node_name = true;
 };
 
+/// Spelling of a plan column identifier in an action node name. `Legacy` (pre-26.5: alias and column
+/// joined unquoted) is only for names exchanged with a pre-26.5 peer.
+enum class ColumnIdentifierConvention : uint8_t
+{
+    Current,
+    Legacy,
+};
+
+struct RenderedColumnIdentifier
+{
+    enum class State : uint8_t
+    {
+        /// No registered plan column identifier: the bare column name names the node.
+        NoIdentifier,
+        Rendered,
+        /// The node's current parts do not regenerate its identifier, so the spelling is unknown.
+        Unrenderable,
+    };
+
+    State state = State::NoIdentifier;
+    String name;
+};
+
+/// Built from the column and its source: a rendered identifier cannot be parsed back unambiguously.
+RenderedColumnIdentifier renderColumnNodeIdentifier(const QueryTreeNodePtr & column_node,
+    const PlannerContext & planner_context,
+    ColumnIdentifierConvention convention);
+
 /** Calculate query tree expression node action dag name and add them into node to name map.
   * If node exists in map, name from map is used.
   *
   * For column node column node identifier from planner context is used, if use_column_identifier_as_action_node_name = true.
+  * Nodes whose name relies on an identifier unrenderable under `column_identifier_convention` are added to
+  * `unrenderable_identifier_nodes`, which must always be passed with the same `node_to_name`.
   */
 using QueryTreeNodeToName = std::unordered_map<QueryTreeNodePtr, String>;
+using QueryTreeNodeSet = std::unordered_set<QueryTreeNodePtr>;
 String calculateActionNodeName(const QueryTreeNodePtr & node,
     const PlannerContext & planner_context,
     QueryTreeNodeToName & node_to_name,
-    bool use_column_identifier_as_action_node_name = true);
+    bool use_column_identifier_as_action_node_name = true,
+    ColumnIdentifierConvention column_identifier_convention = ColumnIdentifierConvention::Current,
+    QueryTreeNodeSet * unrenderable_identifier_nodes = nullptr);
 
 /** Calculate query tree expression node action dag name.
   *
@@ -73,7 +106,8 @@ String calculateActionNodeName(const QueryTreeNodePtr & node,
   */
 String calculateActionNodeName(const QueryTreeNodePtr & node,
     const PlannerContext & planner_context,
-    bool use_column_identifier_as_action_node_name = true);
+    bool use_column_identifier_as_action_node_name = true,
+    ColumnIdentifierConvention column_identifier_convention = ColumnIdentifierConvention::Current);
 
 /// Calculate action node name for constant
 String calculateConstantActionNodeName(const Field & constant_literal, const DataTypePtr & constant_type);
