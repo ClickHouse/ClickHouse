@@ -320,6 +320,9 @@ public:
         QueryTreeNodePtr query_tree,
         const Settings & settings);
 
+    /// Register a set created elsewhere under its own key, replacing a set already registered under it.
+    void addOrReplaceSubquery(FutureSetFromSubqueryPtr subquery);
+
     [[nodiscard]] FutureSetFromTuplePtr findTuple(const Hash & key, const DataTypes & types) const;
     [[nodiscard]] FutureSetFromStoragePtr findStorage(const Hash & key) const;
     [[nodiscard]] FutureSetFromSubqueryPtr findSubquery(const Hash & key) const;
@@ -327,6 +330,7 @@ public:
     using Subqueries = std::vector<FutureSetFromSubqueryPtr>;
     [[nodiscard]] Subqueries getSubqueries() const;
     [[nodiscard]] bool hasSubqueries() const { return !sets_from_subqueries.empty(); }
+    [[nodiscard]] bool hasSetsFromStorage() const { return !sets_from_storage.empty(); }
 
     [[nodiscard]] const SetsFromTuple & getSetsFromTuple() const { return sets_from_tuple; }
     // const SetsFromStorage & getSetsFromStorage() const { return sets_from_storage; }

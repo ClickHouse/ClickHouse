@@ -3,6 +3,7 @@
 #include <functional>
 #include <unordered_map>
 
+#include <Interpreters/PreparedSets.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/IStorage.h>
@@ -17,6 +18,9 @@ namespace DB
 struct QueryPlanResourceHolder;
 
 class ReadFromMergeTree;
+
+class DefaultExpressionsSets;
+using DefaultExpressionsSetsPtr = std::shared_ptr<DefaultExpressionsSets>;
 
 struct RowPolicyFilter;
 using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
@@ -244,6 +248,13 @@ public:
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
+    /// A nested `Merge` read hands the sets of an outer one on to its own children.
+    void setDefaultExpressionsSets(DefaultExpressionsSetsPtr sets) override { default_expressions_sets = std::move(sets); }
+
+    /// A nested `Merge` read uses the sets of the `ALIAS` columns of an outer one, and the outer one builds them.
+    /// Must be called before the child plans are created. See `alias_sets`.
+    void shareAliasSets(std::shared_ptr<PreparedSets> sets);
+
     QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
     QueryPlanRawPtrs getBuiltChildPlans() override;
 
@@ -350,6 +361,8 @@ private:
         bool forget_aggregation_buckets = false;
         /// Set when the child's plan applies the child's row policy itself (interpreter plan, or the read's row-level filter).
         bool applies_row_policy = false;
+        /// Set when an `ALIAS` column computed in the child's plan uses one of `alias_sets`, which the child does not build.
+        bool uses_alias_sets = false;
     };
 
     /// Answer of `getExpandableReads`, unset until it is asked for. The parallel-replicas pass asks first
@@ -368,9 +381,30 @@ private:
     /// Store filters pushed down from query plan optimization. Filters are added on top of child plans.
     std::vector<FilterDAGInfo> pushed_down_filters;
 
-    std::vector<ChildPlan> createChildrenPlans(SelectQueryInfo & query_info_) const;
+    /// Sets for `IN` in the `ALIAS` columns which the child plans compute, such as `flag UInt8 ALIAS p IN keys`.
+    /// A set is registered here by the first child that uses it and shared by the following ones, and it is
+    /// built once for the whole read in front of the united pipeline of the children (`initializePipeline`),
+    /// the same as a set of the outer query, instead of once per child table.
+    /// A nested `Merge` read shares the registry of the outer one (`shareAliasSets`), which builds the sets in front of
+    /// the pipelines of all its children, the nested reads included, so that a set is built once for the whole read.
+    std::shared_ptr<PreparedSets> alias_sets = std::make_shared<PreparedSets>();
+    /// False if `alias_sets` is shared from an outer `Merge` read, which builds them.
+    bool owns_alias_sets = true;
+    /// The plans which `addCreatingAliasSets` built the pipelines of `alias_sets` from.
+    std::vector<std::unique_ptr<QueryPlan>> alias_set_plans;
+    /// Sets for `IN` in the `DEFAULT` expressions of the columns missing in the parts of the children, such as
+    /// `f UInt8 DEFAULT p IN keys` added by `ALTER TABLE ... ADD COLUMN`. These defaults are evaluated by the readers
+    /// of the children, so this is handed to every reading step of the child plans, including the nested `Merge` reads
+    /// and the readers of formats: a set is built once for the whole read, by the first reader that needs it, instead
+    /// of once per child table.
+    DefaultExpressionsSetsPtr default_expressions_sets;
+
+    std::vector<ChildPlan> createChildrenPlans(SelectQueryInfo & query_info_, PreparedSets & alias_sets_) const;
 
     void filterTablesAndCreateChildrenPlans();
+
+    /// Build `alias_sets` before the children are read.
+    void addCreatingAliasSets(QueryPipelineBuilder & pipeline);
 
     ChildPlan createPlanForTable(
         const StorageSnapshotPtr & storage_snapshot,
@@ -399,7 +433,8 @@ private:
         ContextPtr context,
         ChildPlan & child,
         bool is_smallest_column_requested,
-        const Names & column_names_read);
+        const Names & column_names_read,
+        PreparedSets & alias_sets_);
 
     [[nodiscard]] StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context) const;
