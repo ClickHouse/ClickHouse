@@ -295,7 +295,7 @@ public:
     [[nodiscard]] virtual bool writesInitialMetadata() const { return false; }
 
     /// Whether `updateMetadata` is implemented. Check before staging files for a catalog commit.
-    virtual bool supportsMetadataUpdates() const { return false; }
+    [[nodiscard]] virtual bool supportsMetadataUpdates() const { return false; }
 
     /// Updates metadata in catalog.
     /// Returns `true` on success and `false` only on a confirmed conflict that permits cleanup and retry.
