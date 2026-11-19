@@ -2,18 +2,18 @@
 Hello, World!
 col1	Nullable(Int64)					
 col2	Nullable(String)					
-col3	Nullable(String)					
-42	Hello, World!	[1, 2, 3]
+col3	Array(Nullable(Int64))					
+42	Hello, World!	[1,2,3]
 Row 1:
 ──────
 c.e:                  ls7xfkpm
 c.tti.m:              raf
 rt.start:             navigation
 rt.bmr:               390,11,10
-rt.tstart:            1707076768666
-rt.bstart:            1707076769091
-rt.blstart:           1707076769056
-rt.end:               1707076769078
+rt.tstart:            1707076768666 -- 1.71 trillion
+rt.bstart:            1707076769091 -- 1.71 trillion
+rt.blstart:           1707076769056 -- 1.71 trillion
+rt.end:               1707076769078 -- 1.71 trillion
 t_resp:               296
 t_page:               116
 t_done:               412
@@ -21,24 +21,24 @@ t_other:              boomerang|6,boomr_fb|425,boomr_ld|390,boomr_lat|35
 rt.tt:                2685
 rt.obo:               0
 pt.fcp:               407
-nt_nav_st:            1707076768666
-nt_dns_st:            1707076768683
-nt_dns_end:           1707076768684
-nt_con_st:            1707076768684
-nt_con_end:           1707076768850
-nt_req_st:            1707076768850
-nt_res_st:            1707076768962
-nt_res_end:           1707076768962
-nt_domloading:        1707076769040
-nt_domint:            1707076769066
-nt_domcontloaded_st:  1707076769067
-nt_domcontloaded_end: 1707076769068
-nt_domcomp:           1707076769069
-nt_load_st:           1707076769069
-nt_load_end:          1707076769078
-nt_unload_st:         1707076769040
-nt_unload_end:        1707076769041
-nt_ssl_st:            1707076768788
+nt_nav_st:            1707076768666 -- 1.71 trillion
+nt_dns_st:            1707076768683 -- 1.71 trillion
+nt_dns_end:           1707076768684 -- 1.71 trillion
+nt_con_st:            1707076768684 -- 1.71 trillion
+nt_con_end:           1707076768850 -- 1.71 trillion
+nt_req_st:            1707076768850 -- 1.71 trillion
+nt_res_st:            1707076768962 -- 1.71 trillion
+nt_res_end:           1707076768962 -- 1.71 trillion
+nt_domloading:        1707076769040 -- 1.71 trillion
+nt_domint:            1707076769066 -- 1.71 trillion
+nt_domcontloaded_st:  1707076769067 -- 1.71 trillion
+nt_domcontloaded_end: 1707076769068 -- 1.71 trillion
+nt_domcomp:           1707076769069 -- 1.71 trillion
+nt_load_st:           1707076769069 -- 1.71 trillion
+nt_load_end:          1707076769078 -- 1.71 trillion
+nt_unload_st:         1707076769040 -- 1.71 trillion
+nt_unload_end:        1707076769041 -- 1.71 trillion
+nt_ssl_st:            1707076768788 -- 1.71 trillion
 nt_enc_size:          3209
 nt_dec_size:          10093
 nt_trn_size:          3940
@@ -52,7 +52,7 @@ v:                    1.737.60
 sv:                   14
 sm:                   p
 rt.si:                dd0c542f-7adf-4310-830a-6c0a3d157c90-s8cjr1
-rt.ss:                1707075325294
+rt.ss:                1707075325294 -- 1.71 trillion
 rt.sl:                4
 vis.st:               visible
 ua.plt:               Linux x86_64
