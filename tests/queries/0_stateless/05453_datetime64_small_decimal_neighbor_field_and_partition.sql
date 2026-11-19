@@ -18,5 +18,11 @@ ALTER TABLE t_dt64_small_decimal DROP PARTITION '1234.5001'; -- { serverError IN
 -- An invalid calendar date in the `YYYY.MM.DD` layout is still rejected.
 ALTER TABLE t_dt64_small_decimal DROP PARTITION '2024.02.30 00:00:00'; -- { serverError INVALID_PARTITION_VALUE }
 ALTER TABLE t_dt64_small_decimal DROP PARTITION '1234.5';
+-- A signed timestamp is not a broken-down date either, the same as for the parser.
+INSERT INTO t_dt64_small_decimal SELECT toDateTime64('+123.5', 3, 'UTC');
+INSERT INTO t_dt64_small_decimal SELECT toDateTime64('-123.5', 3, 'UTC');
+ALTER TABLE t_dt64_small_decimal DROP PARTITION '+123.5001'; -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_dt64_small_decimal DROP PARTITION '+123.5';
+ALTER TABLE t_dt64_small_decimal DROP PARTITION '-123.5';
 SELECT d FROM t_dt64_small_decimal ORDER BY d;
 DROP TABLE t_dt64_small_decimal;

@@ -1313,28 +1313,18 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     bool is_negative_timestamp = (!buf.eof() && *buf.position() == '-');
     bool is_empty = buf.eof();
     DateTimeFractionPrefix fraction_prefix;
-    bool recovered_at_dot = false;
+    bool consumed_trailing_dot = false;
 
+    /// A value with no integer digits, like ".5" or "-.5", is handled by both the optimistic path and the
+    /// fallback of the whole part parser, so any exception from it is a real parse error and propagates.
+    /// It must not be recovered from at a dot: the fallback can consume a date-shaped prefix across a
+    /// buffer refill and fail at a later dot (e.g. '1234.56..78' or '2025-01-.5'), and accepting the rest
+    /// as a fraction would turn a malformed value into an unrelated timestamp depending on read boundaries.
     if (!is_empty)
     {
         if constexpr (throw_exception)
         {
-            try
-            {
-                readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow, &fraction_prefix);
-            }
-            catch (const DB::Exception &)
-            {
-                if (buf.eof() || *buf.position() != '.')
-                    throw;
-                /// The whole part failed to parse and the failure position is a dot, so the value can only be
-                /// a fraction with no integer digits, like ".5". Recover only when at least one fractional digit
-                /// follows the dot: a bare "." (e.g. from a zero-padded FixedString) must not become the epoch.
-                ++buf.position();
-                if (buf.eof() || !isNumericASCII(*buf.position()))
-                    throw;
-                recovered_at_dot = true;
-            }
+            readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow, &fraction_prefix);
         }
         else
         {
@@ -1351,7 +1341,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     /// '2025-01-02 03:04:05.', must not become zero subseconds. When the character after an unconsumed dot
     /// is available in the buffer and is not a digit, leave the dot unread, so the caller reports it as
     /// trailing characters, the same as for any other unexpected character after the value.
-    bool has_unconsumed_dot = !fraction_prefix.has_fraction && !recovered_at_dot && !buf.eof() && *buf.position() == '.';
+    bool has_unconsumed_dot = !fraction_prefix.has_fraction && !consumed_trailing_dot && !buf.eof() && *buf.position() == '.';
     bool left_bare_dot = false;
     if (has_unconsumed_dot && buf.position() + 1 < buf.buffer().end() && !isNumericASCII(buf.position()[1]))
     {
@@ -1369,15 +1359,15 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
             else
                 return ReturnType(false);
         }
-        /// The dot is consumed now, as if the throwing path recovered at it.
+        /// The dot is consumed now, so the fraction is read below.
         has_unconsumed_dot = false;
-        recovered_at_dot = true;
+        consumed_trailing_dot = true;
     }
 
-    if (fraction_prefix.has_fraction || recovered_at_dot || has_unconsumed_dot)
+    if (fraction_prefix.has_fraction || consumed_trailing_dot || has_unconsumed_dot)
     {
         /// The dot has already been consumed when the fallback pre-read the fraction prefix
-        /// or when the throwing path recovered at the dot.
+        /// or when it was the last character in the buffer.
         if (has_unconsumed_dot)
             ++buf.position();
 

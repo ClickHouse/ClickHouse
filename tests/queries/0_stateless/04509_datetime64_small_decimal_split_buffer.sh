@@ -20,6 +20,17 @@ if [ "$split" = "$whole" ]; then echo "split parsing matches"; else echo "MISMAT
 
 rm -f "$DATA_FILE"
 
+# A malformed value whose date-shaped prefix is consumed across a buffer refill must be rejected, not
+# recovered at a later dot as a fraction ('1234.56..78' must not become 1234.78, '2025-01-.5' must not
+# become 2025.5). Errors are skipped, so only the valid last row is counted, both with a 2-byte read
+# buffer and with a normal one.
+DATA_BAD="${CLICKHOUSE_TMP}/small_decimal_dt64_bad_${CLICKHOUSE_DATABASE}.tsv"
+printf '1234.56..78\n2025-01-.5\n1234.5\n' > "$DATA_BAD"
+QUERY_BAD="SELECT count(), groupArray(a) FROM file('${DATA_BAD}', TSV, 'a DateTime64(3, \'UTC\')') SETTINGS date_time_input_format='basic', input_format_allow_errors_num=10"
+${CLICKHOUSE_LOCAL} --max_read_buffer_size=2 --input_format_parallel_parsing=0 -q "$QUERY_BAD"
+${CLICKHOUSE_LOCAL} -q "$QUERY_BAD"
+rm -f "$DATA_BAD"
+
 # The non-throwing entrypoints (OrNull / schema inference) must agree with the throwing ones,
 # including leading-dot fractions with and without a sign (".5", "-.5") and bare small integers.
 ${CLICKHOUSE_LOCAL} -q "
