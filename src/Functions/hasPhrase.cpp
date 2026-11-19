@@ -6,6 +6,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -17,6 +19,7 @@
 #include <Interpreters/TokenizerFactory.h>
 #include <Common/FunctionDocumentation.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/assert_cast.h>
 
 #include <ranges>
 
@@ -109,28 +112,29 @@ struct MatchPhraseMatcher
     {
     }
 
+    /// Returns true when `current_token` completes the phrase.
+    bool consume(std::string_view current_token)
+    {
+        /// Follow failure links until we find a match or exhaust the chain.
+        while (match_position > 0 && current_token != phrase_tokens[match_position])
+            match_position = failure[match_position - 1];
+
+        if (current_token == phrase_tokens[match_position])
+            ++match_position;
+
+        return match_position == phrase_tokens.size();
+    }
+
     template <typename OnMatchCallback>
     auto operator()(OnMatchCallback && onMatchCallback)
     {
         return [&](const char * token_start, size_t token_len)
         {
-            std::string_view current_token(token_start, token_len);
+            if (!consume({token_start, token_len}))
+                return false;
 
-            /// Follow failure links until we find a match or exhaust the chain.
-            while (match_position > 0 && current_token != phrase_tokens[match_position])
-                match_position = failure[match_position - 1];
-
-            if (current_token == phrase_tokens[match_position])
-            {
-                ++match_position;
-                if (match_position == phrase_tokens.size())
-                {
-                    onMatchCallback();
-                    return true;
-                }
-            }
-
-            return false;
+            onMatchCallback();
+            return true;
         };
     }
 
@@ -343,6 +347,73 @@ ExecutableFunctionHasPhrase::executeImpl(const ColumnsWithTypeAndName & argument
     return col_result;
 }
 
+DataTypePtr FunctionHasPhraseInTokenSequences::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+{
+    FunctionArgumentDescriptors mandatory_args{
+        {"sequences",
+         static_cast<FunctionArgumentDescriptor::TypeValidator>(
+             [](const IDataType & type)
+             {
+                 const auto * sequences = checkAndGetDataType<DataTypeArray>(&type);
+                 const auto * tokens = sequences ? checkAndGetDataType<DataTypeArray>(sequences->getNestedType().get()) : nullptr;
+                 return tokens && isString(tokens->getNestedType());
+             }),
+         nullptr,
+         "Array(Array(String))"},
+        {"phrase",
+         static_cast<FunctionArgumentDescriptor::TypeValidator>(
+             [](const IDataType & type) { return isArray(type) && isStringOrArrayOfStringType(type); }),
+         isColumnConst,
+         "const Array(String)"}};
+
+    validateFunctionArguments(*this, arguments, mandatory_args);
+
+    return std::make_shared<DataTypeNumber<UInt8>>();
+}
+
+ColumnPtr FunctionHasPhraseInTokenSequences::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+{
+    auto col_result = ColumnUInt8::create(input_rows_count, UInt8(0));
+
+    VectorWithMemoryTracking<String> phrase_tokens;
+    for (const Field & token : (*arguments[arg_phrase].column)[0].safeGet<Array>())
+        if (!token.safeGet<String>().empty())
+            phrase_tokens.push_back(token.safeGet<String>());
+
+    if (phrase_tokens.empty())
+        return col_result;
+
+    const auto failure_table = buildFailureFunction(phrase_tokens);
+    MatchPhraseMatcher matcher(phrase_tokens, failure_table);
+
+    const auto & col_sequences = assert_cast<const ColumnArray &>(*arguments[arg_input].column);
+    const auto & col_tokens = assert_cast<const ColumnArray &>(col_sequences.getData());
+    const auto & tokens = assert_cast<const ColumnString &>(col_tokens.getData());
+    const auto & sequence_offsets = col_sequences.getOffsets();
+    const auto & token_offsets = col_tokens.getOffsets();
+
+    auto & result = col_result->getData();
+    for (size_t row = 0; row < input_rows_count; ++row)
+    {
+        for (size_t sequence = sequence_offsets[row - 1]; sequence < sequence_offsets[row] && !result[row]; ++sequence)
+        {
+            matcher.reset();
+            for (size_t token = token_offsets[sequence - 1]; token < token_offsets[sequence]; ++token)
+            {
+                /// A postprocessor drops a token by emptying it, which must not break a phrase.
+                const std::string_view value = tokens.getDataAt(token);
+                if (!value.empty() && matcher.consume(value))
+                {
+                    result[row] = 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    return col_result;
+}
+
 REGISTER_FUNCTION(HasPhrase)
 {
     FunctionDocumentation::Description description = R"(
@@ -422,6 +493,7 @@ because "brown" appears between "quick" and "fox".
 
     factory.registerFunction<FunctionHasPhraseOverloadResolver>(documentation);
     factory.registerAlias("matchPhrase", FunctionHasPhraseOverloadResolver::name);
+    factory.registerFunction<FunctionHasPhraseInTokenSequences>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
 }

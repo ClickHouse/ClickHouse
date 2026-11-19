@@ -5,6 +5,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
+#include <Functions/hasPhrase.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ITokenizer.h>
@@ -286,15 +287,14 @@ ActionsDAG MergeTreeIndexTextPostprocessor::getPhraseActionsDAG(
             make_intrusive<ASTIdentifier>(postprocessor_element_arg),
             make_intrusive<ASTLiteral>(Field(tokenizer_description))));
 
-    ASTPtr has_phrase = makeASTFunction("hasPhrase",
-        std::move(element_tokens),
-        make_intrusive<ASTLiteral>(Field(phrase_tokens)),
-        make_intrusive<ASTLiteral>(Field(ArrayTokenizer::getName())));
-
     ASTPtr column = source_ast ? source_ast->clone() : ASTPtr(make_intrusive<ASTIdentifier>(col_name));
-    ASTPtr result = makeASTFunction("arrayExists",
-        makeASTLambda({postprocessor_element_arg}, std::move(has_phrase)),
+    ASTPtr sequences = makeASTFunction("arrayMap",
+        makeASTLambda({postprocessor_element_arg}, std::move(element_tokens)),
         std::move(column));
+
+    ASTPtr result = makeASTFunction(FunctionHasPhraseInTokenSequences::name,
+        std::move(sequences),
+        make_intrusive<ASTLiteral>(Field(phrase_tokens)));
 
     NamesAndTypesList source_columns{{col_name, col_type}};
     return buildActionsDAGFromAST(std::move(result), source_columns);
