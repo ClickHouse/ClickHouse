@@ -27,10 +27,10 @@ struct JoinFeatures
       */
     static constexpr bool need_replication = is_all_join || (is_any_join && right) || (is_semi_join && right);
 
-    /// Whether a probe of this kind emits every row of a matched key at once, which `addFoundRowAll`
-    /// does by recording the key's whole cell word. Such a word may be a `RowRefList` one, so the
-    /// emit has to read the words in the `Lists` shape. `flag_per_row` is the exception: it appends
-    /// one ref at a time, to claim each row separately.
+    /// Whether a probe of this kind with one disjunct emits every row of a matched key at once, by
+    /// recording the key's whole cell word. Such a word may be a `RowRefList` one, so the emit has to
+    /// read the words in the `Lists` shape. With several disjuncts the probe appends one ref at a time,
+    /// to claim each row separately.
     static constexpr bool emits_whole_key_per_word = is_all_join || ((is_any_join || is_semi_join) && right);
 
     /// The same condition by nature: emitting every row of a matched key at once is what replicates a

@@ -1,0 +1,64 @@
+<test>
+    <!--
+        Hash joins with several ON disjuncts, and with an additional condition in ON. Their probe looks a batch of left rows up
+        in the table of each disjunct in turn, and then adds the matches.
+        `join_or_build` has 2 million keys per column, so its tables are much larger than the L2 cache. `join_or_build_small`
+        has 10 thousand keys, so its tables stay in the cache. `join_or_build_dups` has 4 rows per key, for the additional
+        condition. In `join_or_probe`, `rare` matches 5% of the rows of `join_or_build`, `often` 95%, the `half` columns 50%, and the `small`
+        columns 50% of `join_or_build_small`.
+    -->
+
+    <create_query>CREATE TABLE join_or_build (k1 UInt64, k2 UInt64, k3 UInt64, k4 UInt64, n1 Nullable(UInt64), n2 Nullable(UInt64), t UInt32, v UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE join_or_build_small (k1 UInt64, k2 UInt64, v UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE join_or_build_dups (k1 UInt64, k2 UInt64, t UInt32, v UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE join_or_probe (rare UInt64, often UInt64, half UInt64, half2 UInt64, half3 UInt64, small UInt64, small2 UInt64, n1 Nullable(UInt64), n2 Nullable(UInt64), t UInt32) ENGINE = Memory</create_query>
+
+    <fill_query>INSERT INTO join_or_build SELECT number, number, number, number, if(number % 10 = 0, NULL, number), if(number % 10 = 1, NULL, number), number % 16, number FROM numbers_mt(2000000)</fill_query>
+    <fill_query>INSERT INTO join_or_build_small SELECT number, number, number FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO join_or_build_dups SELECT intDiv(number, 4), intDiv(number, 4), number % 16, number FROM numbers_mt(2000000)</fill_query>
+    <fill_query>
+        INSERT INTO join_or_probe
+        SELECT
+            intHash64(number) % 40000000,
+            intHash64(number + 1) % 2100000,
+            intHash64(number + 2) % 4000000,
+            intHash64(number + 3) % 4000000,
+            intHash64(number + 4) % 4000000,
+            intHash64(number + 7) % 20000,
+            intHash64(number + 8) % 20000,
+            if(number % 10 = 2, NULL, intHash64(number + 5) % 4000000),
+            if(number % 10 = 3, NULL, intHash64(number + 6) % 4000000),
+            number % 16
+        FROM numbers_mt(20000000)
+    </fill_query>
+
+    <!-- ALL with 2, 3 and 4 disjuncts. -->
+    <query>SELECT count() FROM join_or_probe AS l INNER JOIN join_or_build AS r ON l.half = r.k1 OR l.half2 = r.k2 FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+    <query>SELECT count() FROM join_or_probe AS l INNER JOIN join_or_build AS r ON l.half = r.k1 OR l.half2 = r.k2 OR l.half3 = r.k3 FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+    <query>SELECT count() FROM join_or_probe AS l INNER JOIN join_or_build AS r ON l.half = r.k1 OR l.half2 = r.k2 OR l.half3 = r.k3 OR l.often = r.k4 FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+    <query>SELECT sum(r.v) FROM join_or_probe AS l LEFT JOIN join_or_build AS r ON l.half = r.k1 OR l.half2 = r.k2 FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+
+    <!-- Joins that stop at the first match: the first disjunct matches rarely, or often. -->
+    <query>SELECT sum(r.v) FROM join_or_probe AS l ANY LEFT JOIN join_or_build AS r ON l.rare = r.k1 OR l.half = r.k2 FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+    <query>SELECT sum(r.v) FROM join_or_probe AS l ANY LEFT JOIN join_or_build AS r ON l.often = r.k1 OR l.half = r.k2 FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+    <query>SELECT count() FROM join_or_probe AS l LEFT SEMI JOIN join_or_build AS r ON l.rare = r.k1 OR l.half = r.k2 FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+    <query>SELECT count() FROM join_or_probe AS l LEFT SEMI JOIN join_or_build AS r ON l.often = r.k1 OR l.half = r.k2 FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+    <query>SELECT count() FROM join_or_probe AS l LEFT ANTI JOIN join_or_build AS r ON l.rare = r.k1 OR l.half = r.k2 FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+    <query>SELECT count() FROM join_or_probe AS l LEFT ANTI JOIN join_or_build AS r ON l.often = r.k1 OR l.half = r.k2 FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+
+    <!-- An additional condition, with one disjunct and with two. -->
+    <query>SELECT count() FROM join_or_probe AS l LEFT JOIN join_or_build_dups AS r ON l.half = r.k1 AND l.t &lt; r.t FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+    <query>SELECT count() FROM join_or_probe AS l LEFT JOIN join_or_build_dups AS r ON (l.half = r.k1 OR l.half2 = r.k2) AND l.t &lt; r.t FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+
+    <!-- Nullable keys. -->
+    <query>SELECT count() FROM join_or_probe AS l INNER JOIN join_or_build AS r ON l.n1 = r.n1 OR l.n2 = r.n2 FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+
+    <!-- Tables that fit in the cache. -->
+    <query>SELECT count() FROM join_or_probe AS l INNER JOIN join_or_build_small AS r ON l.small = r.k1 OR l.small2 = r.k2 FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+    <query>SELECT count() FROM join_or_probe AS l LEFT SEMI JOIN join_or_build_small AS r ON l.small = r.k1 OR l.small2 = r.k2 FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+
+    <drop_query>DROP TABLE IF EXISTS join_or_build</drop_query>
+    <drop_query>DROP TABLE IF EXISTS join_or_build_small</drop_query>
+    <drop_query>DROP TABLE IF EXISTS join_or_build_dups</drop_query>
+    <drop_query>DROP TABLE IF EXISTS join_or_probe</drop_query>
+</test>

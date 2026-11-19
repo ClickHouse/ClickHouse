@@ -2060,7 +2060,7 @@ void HashJoin::validateAdditionalFilterExpression(ExpressionActionsPtr additiona
     }
 
     /// `arrayJoin` changes the number of rows, but `buildAdditionalFilter` evaluates this expression
-    /// per probe batch and `joinRightColumnsWithAdditionalFilter` indexes the result by row position,
+    /// per probe batch and `JoinProbe::addMatchesWithAdditionalFilter` indexes the result by row position,
     /// so the expression must preserve the number of rows.
     if (additional_filter_expression->hasArrayJoin())
     {

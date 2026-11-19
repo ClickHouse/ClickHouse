@@ -36,13 +36,11 @@ struct JoinOnKeyColumns
     /// Only rows where mask == true can be joined
     JoinCommon::JoinMask join_mask_column;
 
+    /// The key getter of these columns that `JoinProbe::keptKeyGetter` keeps for the later key searches of the call.
+    mutable std::shared_ptr<void> kept_key_getter;
+
     JoinOnKeyColumns(
         const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, bool keep_lowcardinality = false);
-
-    [[nodiscard]] bool isRowFiltered(size_t i) const
-    {
-        return join_mask_column.isRowFiltered(i);
-    }
 
     /// A row with a NULL key and a row filtered out by the ON-section mask have the same
     /// effect - the row matches nothing - so the probe loop needs a single skip byte per

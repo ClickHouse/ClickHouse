@@ -1,0 +1,81 @@
+-- A hash join with several ON disjuncts, or with an additional condition in ON, probes a left block in batches of at most
+-- 8192 rows: for each batch, it looks the keys of all its rows up in the table of each disjunct in turn, and then adds the
+-- matches. A call stops at `max_joined_block_size_rows`, and its first batch is no longer than that limit. The size of the
+-- left block and the limit must not change the result of a join. Every join below runs on left blocks of 1000, 8191, 8192,
+-- 8193 and 20001 rows, and with the limits 7 and 1000, and the seven runs must give the same result.
+
+SET join_algorithm = 'hash', join_use_nulls = 0, query_plan_join_swap_table = 0, enable_join_runtime_filters = 0;
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
+
+-- Row `m` of the first insert has the keys `k = 2m`, `k2 = 3m`, `k3 = 5m`. The second insert gives every tenth `k` (and so
+-- every tenth `k2`) a second row, and adds keys `k3` of its own. Rows that share `k` also share `k2`, `s` and `s2`.
+CREATE TABLE r (k UInt64, k2 UInt64, k3 UInt64, s String, s2 String, lc LowCardinality(String), lc2 LowCardinality(String), t UInt32, v UInt64) ENGINE = Memory;
+INSERT INTO r SELECT number * 2 AS k, number * 3 AS k2, number * 5, toString(k), toString(k2), toString(k), toString(k2), number % 10, number FROM numbers(3500);
+INSERT INTO r SELECT number * 20 AS k, number * 30 AS k2, number * 50 + 2, toString(k), toString(k2), toString(k), toString(k2), 8, 3500 + number FROM numbers(350);
+
+CREATE TABLE results (name String, run String, rows UInt64, checksum UInt64) ENGINE = Memory;
+
+-- 50000 left rows in random order. Half of the keys `k` are odd, so they are not in `r`. A third of the rows have the key `k2`
+-- of the row that `k` matches, so their two disjuncts reach the same right rows.
+{% set l = '(SELECT intHash64(number) % 6000 AS k, if(number % 3 = 0, intDiv(k, 2) * 3, cityHash64(number, 1) % 9000) AS k2, cityHash64(number, 2) % 20000 AS k3, toString(k) AS s, toString(k2) AS s2, toLowCardinality(s) AS lc, toLowCardinality(s2) AS lc2, toUInt32(number % 10) AS t, number AS x FROM numbers(50000)) AS l' -%}
+
+-- A checksum must not depend on the order of the threads. A join that takes one right row of a key may take any row of the
+-- key, so its checksum reads only what the rows of a key share. A join that claims right rows gives them to the left row that
+-- comes first, so it runs on one thread, or its checksum reads only the right rows.
+{% set pairs = 'count(), sum(cityHash64(l.x, r.v))' -%}
+{% set left_row_and_key = 'count(), sum(cityHash64(l.x, r.k, r.k2))' -%}
+{% set left_row = 'count(), sum(cityHash64(l.x))' -%}
+{% set right_row = 'count(), sum(cityHash64(r.v))' -%}
+{% set or2 = 'l.k = r.k OR l.k2 = r.k2' -%}
+{% set or3 = 'l.k = r.k OR l.k2 = r.k2 OR l.k3 = r.k3' -%}
+{% set cases = [
+    ('inner all', pairs, 'INNER JOIN r ON ' ~ or2, ''),
+    ('inner all, 3 disjuncts', pairs, 'INNER JOIN r ON ' ~ or3, ''),
+    ('inner all, serial layout', pairs, 'INNER JOIN r ON ' ~ or3, 'hash_join_layout = \'serial\''),
+    ('inner all, parallel layout', pairs, 'INNER JOIN r ON ' ~ or3, 'hash_join_layout = \'parallel\''),
+    ('left all', pairs, 'LEFT JOIN r ON ' ~ or2, ''),
+    ('right all', pairs, 'RIGHT JOIN r ON ' ~ or2, ''),
+    ('full all', pairs, 'FULL JOIN r ON ' ~ or3, ''),
+    ('inner any', left_row_and_key, 'ANY INNER JOIN r ON ' ~ or2, 'max_threads = 1'),
+    ('left any', left_row_and_key, 'ANY LEFT JOIN r ON ' ~ or2, ''),
+    ('left any, 3 disjuncts', left_row_and_key, 'ANY LEFT JOIN r ON ' ~ or3, ''),
+    ('left any, parallel layout', left_row_and_key, 'ANY LEFT JOIN r ON ' ~ or3, 'hash_join_layout = \'parallel\''),
+    ('left semi', left_row_and_key, 'LEFT SEMI JOIN r ON ' ~ or3, ''),
+    ('left semi, keys only', left_row, 'LEFT SEMI JOIN r ON ' ~ or3, 'enable_join_key_only_hash_tables = 1'),
+    ('left semi, no key-only table', left_row, 'LEFT SEMI JOIN r ON ' ~ or3, 'enable_join_key_only_hash_tables = 0'),
+    ('left anti, keys only', left_row, 'LEFT ANTI JOIN r ON ' ~ or3, 'enable_join_key_only_hash_tables = 1'),
+    ('left anti, no key-only table', left_row, 'LEFT ANTI JOIN r ON ' ~ or3, 'enable_join_key_only_hash_tables = 0'),
+    ('right any', right_row, 'ANY RIGHT JOIN r ON ' ~ or2, ''),
+    ('right semi', right_row, 'RIGHT SEMI JOIN r ON ' ~ or2, ''),
+    ('right semi, one thread', pairs, 'RIGHT SEMI JOIN r ON ' ~ or2, 'max_threads = 1'),
+    ('right anti', right_row, 'RIGHT ANTI JOIN r ON ' ~ or2, ''),
+    ('string keys', pairs, 'LEFT JOIN r ON l.s = r.s OR l.s2 = r.s2', ''),
+    ('low cardinality keys', pairs, 'LEFT JOIN r ON l.lc = r.lc OR l.lc2 = r.lc2', ''),
+    ('two key columns', pairs, 'LEFT JOIN r ON (l.k = r.k AND l.t = r.t) OR (l.k2 = r.k2 AND l.t = r.t)', ''),
+    ('nullable key', pairs, 'LEFT JOIN r ON if(l.x % 11 = 0, NULL, l.k) = r.k OR l.k2 = r.k2', ''),
+    ('condition on the left table', pairs, 'LEFT JOIN r ON (l.k = r.k AND l.t != 3) OR (l.k2 = r.k2 AND l.t != 4)', ''),
+    ('residual, left all', pairs, 'LEFT JOIN r ON l.k = r.k AND l.t < r.t', ''),
+    ('residual, right all', pairs, 'RIGHT JOIN r ON l.k = r.k AND l.t < r.t', ''),
+    ('residual, full all', pairs, 'FULL JOIN r ON l.k = r.k AND l.t < r.t', ''),
+    ('residual, inner any', left_row_and_key, 'ANY INNER JOIN r ON l.k = r.k AND l.t < r.t', ''),
+    ('residual, left any', left_row_and_key, 'ANY LEFT JOIN r ON l.k = r.k AND l.t < r.t', ''),
+    ('residual, left semi', left_row_and_key, 'LEFT SEMI JOIN r ON l.k = r.k AND l.t < r.t', ''),
+    ('residual, left anti', left_row, 'LEFT ANTI JOIN r ON l.k = r.k AND l.t < r.t', ''),
+    ('residual, right semi', right_row, 'RIGHT SEMI JOIN r ON l.k = r.k AND l.t < r.t', ''),
+    ('residual, condition on the left table', pairs, 'LEFT JOIN r ON l.k = r.k AND l.t != 3 AND l.t < r.t', ''),
+    ('residual, inner all, disjuncts', pairs, 'INNER JOIN r ON l.k = r.k OR (l.k2 = r.k2 AND l.t < r.t)', ''),
+    ('residual, left all, disjuncts', pairs, 'LEFT JOIN r ON (' ~ or3 ~ ') AND l.t < r.t', ''),
+    ('residual, full all, disjuncts', pairs, 'FULL JOIN r ON (' ~ or2 ~ ') AND l.t < r.t', ''),
+    ('residual, inner any, disjuncts', left_row_and_key, 'ANY INNER JOIN r ON (' ~ or2 ~ ') AND l.t < r.t', 'max_threads = 1'),
+    ('residual, left semi, disjuncts', left_row_and_key, 'LEFT SEMI JOIN r ON (' ~ or2 ~ ') AND l.t < r.t', ''),
+    ('residual, left anti, disjuncts', left_row, 'LEFT ANTI JOIN r ON (' ~ or2 ~ ') AND l.t < r.t', ''),
+] -%}
+
+{% for block, limit in [(1000, 0), (8191, 0), (8192, 0), (8193, 0), (20001, 0), (20001, 7), (20001, 1000)] -%}
+SET max_block_size = {{ block }}, max_joined_block_size_rows = {{ limit }};
+{% for name, columns, join, settings in cases -%}
+INSERT INTO results SELECT '{{ name }}', '{{ block }}/{{ limit }}', {{ columns }} FROM {{ l }} {{ join }}{{ ' SETTINGS ' ~ settings if settings else '' }};
+{% endfor -%}
+{% endfor %}
+-- The name of the join, its runs, their distinct results, and the result.
+SELECT name, count(), uniqExact((rows, checksum)), any(rows), any(checksum) FROM results GROUP BY name ORDER BY name;
