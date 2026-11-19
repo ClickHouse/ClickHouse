@@ -274,7 +274,7 @@ StorageMergeTree::StorageMergeTree(
 
     /// Block numbers restart from the parts on disk, so new parts can get the names of removed ones,
     /// which the query condition cache still holds verdicts for.
-    if (mode == LoadingStrictnessLevel::ATTACH && getStorageID().hasUUID())
+    if (isAttachQuery(mode) && getStorageID().hasUUID())
         getContext()->clearQueryConditionCache();
 
     loadMutations();

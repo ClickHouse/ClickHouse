@@ -543,7 +543,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     {
         try
         {
-            if ((mode == LoadingStrictnessLevel::ATTACH || mode == LoadingStrictnessLevel::ATTACH_FULL_DEFINITION) && current_zookeeper && current_zookeeper->exists(replica_path + "/is_active"))
+            if (isAttachQuery(mode) && current_zookeeper && current_zookeeper->exists(replica_path + "/is_active"))
             {
                 throw Exception(ErrorCodes::REPLICA_ALREADY_EXISTS, "There already is an active replica with this replica path {}", replica_path);
             }

@@ -254,7 +254,8 @@ DatabaseDataLake::DatabaseDataLake(
     UUID uuid,
     bool allow_server_credentials_in_user_queries_,
     bool is_loading_from_existing_metadata_,
-    bool is_existing_definition)
+    bool is_fresh_definition,
+    bool defer_catalog_initialization)
     : IDatabase(database_name_)
     , url(url_)
     , database_settings(std::make_unique<const DatabaseDataLakeSettings>(settings_))
@@ -265,19 +266,19 @@ DatabaseDataLake::DatabaseDataLake(
     , is_loading_from_existing_metadata(is_loading_from_existing_metadata_)
     , db_uuid(uuid)
 {
-    validateSettings(is_existing_definition);
-    /// On ATTACH (server startup / user `ATTACH DATABASE`) or `RESTORE DATABASE`, i.e. for an existing definition,
-    ///  defer catalog construction to first use: building it can perform network I/O or credential validation
-    ///  that must not block startup. On CREATE build eagerly so misconfiguration (including a restricted
-    ///  server-credential catalog) is reported immediately.
-    if (!is_existing_definition)
+    validateSettings(is_fresh_definition);
+    /// On ATTACH (server startup / user `ATTACH DATABASE`) or `RESTORE DATABASE` defer catalog construction to
+    ///  first use: building it can perform network I/O or credential validation that must not block startup.
+    ///  On CREATE build eagerly so misconfiguration (including a restricted server-credential catalog) is
+    ///  reported immediately.
+    if (!defer_catalog_initialization)
     {
         std::lock_guard lock(catalog_mutex);
         initializeOrLeaveUnavailable();
     }
 }
 
-void DatabaseDataLake::validateSettings(bool is_existing_definition)
+void DatabaseDataLake::validateSettings(bool is_fresh_definition)
 {
     const auto settings_version = database_settings.get();
     const DatabaseDataLakeSettings & settings = *settings_version;
@@ -319,12 +320,10 @@ void DatabaseDataLake::validateSettings(bool is_existing_definition)
             || !settings[DatabaseDataLakeSetting::google_adc_client_id].value.empty()
             || !settings[DatabaseDataLakeSetting::google_adc_client_secret].value.empty()
             || !settings[DatabaseDataLakeSetting::google_adc_refresh_token].value.empty();
-        /// Only new definitions are refused: a database that already exists (replayed at server startup, re-attached
-        /// with `ATTACH DATABASE` after `DETACH`, or restored from a backup) must still load, so it keeps the previous
-        /// behavior (the data files are read with the credentials of the disk). This is a usability check, not a
-        /// credential check, so a user `ATTACH` is not fail-closed here: the credentials of the catalog are still
-        /// checked independently when it is built.
-        if (has_google_credentials && is_existing_definition)
+        /// Only fresh definitions are refused: a stored one (replayed at server startup or re-attached with a short
+        /// `ATTACH DATABASE` after `DETACH`) must still load, so it keeps the previous behavior (the data files are
+        /// read with the credentials of the disk).
+        if (has_google_credentials && !is_fresh_definition)
             LOG_WARNING(log, "The `disk` setting of a BigLake catalog is combined with Google credentials: the data files "
                 "are read with the credentials of the disk, not with the credentials of the catalog");
         else if (has_google_credentials)
@@ -2348,11 +2347,11 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             args.uuid,
             allow_server_credentials_in_user_queries,
             is_loading_from_existing_metadata,
-            /// `ATTACH DATABASE` (server startup or a user re-attach) and `RESTORE DATABASE` replay an existing
-            /// definition. They shouldn't do network I/O: an unreachable or unauthorized catalog must not block them.
-            /// Keyed on the attach and restore flags, not `internal`: a user `CREATE` wrapped in `PARALLEL WITH` or
-            /// `EXECUTE AS` runs as an internal query and must still build the catalog eagerly.
-            /*is_existing_definition=*/expectsExistingState(args.mode) || args.is_restore_from_backup);
+            isFreshDefinition(args.mode),
+            /// Keyed on the mode and the restore flag, not `internal`: a user `CREATE` wrapped in `PARALLEL WITH` or
+            /// `EXECUTE AS` runs as an internal query and must still build the catalog eagerly. A replica replaying a
+            /// restored definition runs as `SECONDARY_CREATE`, hence the flag.
+            /*defer_catalog_initialization=*/defersExternalConnections(args.mode) || args.is_restore_from_backup);
     };
     /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
     /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism
