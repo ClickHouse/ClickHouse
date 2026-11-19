@@ -2794,7 +2794,7 @@ def test_namespace_two_part_name_resolution(started_cluster):
     current-database reading (table `X.T`) is tried too only when the current database
     supports table namespaces and `X` is not `system`. Database `X` must exist, and both
     existing is an error unless the user can access only one of them. SQL stored in
-    definitions (views, materialized views, row policies, mutations) always reads `X.T`
+    definitions (views, materialized views, row policies, mutations, `ALIAS` columns) always reads `X.T`
     as table `T` of database `X`.
     """
     node = started_cluster.instances["node1"]
@@ -2804,8 +2804,10 @@ def test_namespace_two_part_name_resolution(started_cluster):
     X = f"ns_{test_ref}"
     T = "priority_table"
     P = "policy_table"
+    J = "join_table"
     T2 = f"t2_{test_ref}"
     V, V2, MV = f"v_{test_ref}", f"v2_{test_ref}", f"mv_{test_ref}"
+    A = f"a_{test_ref}"
     policy = f"pol_{test_ref}"
     policy_user = f"u_policy_{test_ref}"
 
@@ -2981,7 +2983,22 @@ def test_namespace_two_part_name_resolution(started_cluster):
             )
             assert "ACCESS_DENIED" in err, f"nested SETTINGS, outer {outer}: {err}"
             assert f"ON {X}.{P}" in err, f"the missing grant must be on the database table: {err}"
+
+        # an `ALIAS` column reads `X.J` as the database table; the catalog table is not a `Join` table
+        create_table(catalog, X, J)
+        node.query(f"CREATE TABLE `{X}`.{J} (k String, v UInt64) ENGINE = Join(ANY, LEFT, k)")
+        node.query(f"INSERT INTO `{X}`.{J} VALUES ('kek', 7)")
+        node.query(
+            f"CREATE TABLE default.{A} (symbol String, v UInt64 ALIAS joinGet({X}.{J}, 'v', symbol)) "
+            f"ENGINE = MergeTree ORDER BY tuple()"
+        )
+        node.query(f"INSERT INTO default.{A} VALUES ('kek')")
+        for outer in ({}, on):
+            result = node.query(f"USE {CATALOG_NAME}; SELECT v FROM default.{A}", settings=outer).strip()
+            assert result == "7", f"ALIAS column, outer {outer}: expected the database table, got {result}"
     finally:
+        node.query(f"DROP TABLE IF EXISTS default.{A}")
+        node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{X}.{J}`")
         for kind in ("catalog", "database", "neither"):
             node.query(f"DROP USER IF EXISTS u_{kind}_{test_ref}")
         node.query(f"DROP ROW POLICY IF EXISTS {policy} ON default.{T2}")
