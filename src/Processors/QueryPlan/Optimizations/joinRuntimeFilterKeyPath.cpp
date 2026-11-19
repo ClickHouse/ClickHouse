@@ -1,11 +1,24 @@
 #include <Processors/QueryPlan/Optimizations/joinRuntimeFilterKeyPath.h>
 
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAGTraversal.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
+#include <Processors/QueryPlan/CommonSubplanStep.h>
+#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -56,11 +69,12 @@ bool hasColumns(const QueryPlan::Node & node, const NameSet & columns)
     return std::ranges::all_of(columns, [&](const String & column) { return header.has(column); });
 }
 
-bool filterReachesInputAbove(const QueryPlan::Node * node, NameSet columns, UInt64 limit);
+bool filterReachesInputAbove(const QueryPlan::Node * node, NameSet columns, const QueryPlanOptimizationSettings & settings);
 
 /// Whether a filter that reads `columns` of the output of the join at `node`, pushed down into one of its inputs, reaches
-/// an input estimated above `limit` rows.
-bool filterReachesJoinInputAbove(const QueryPlan::Node & node, const JoinStepLogical & join, const NameSet & columns, UInt64 limit)
+/// an input estimated above `join_runtime_filter_min_probe_rows`.
+bool filterReachesJoinInputAbove(
+    const QueryPlan::Node & node, const JoinStepLogical & join, const NameSet & columns, const QueryPlanOptimizationSettings & settings)
 {
     const auto & join_operator = join.getJoinOperator();
     const auto kind = join_operator.kind;
@@ -125,68 +139,148 @@ bool filterReachesJoinInputAbove(const QueryPlan::Node & node, const JoinStepLog
             continue;
         }
 
-        if (auto rows = join.getInputRowsEstimation(side == 0 ? JoinTableSide::Left : JoinTableSide::Right); rows && *rows > limit)
+        if (auto rows = join.getInputRowsEstimation(side == 0 ? JoinTableSide::Left : JoinTableSide::Right);
+            rows && *rows > settings.join_runtime_filter_min_probe_rows)
             return true;
-        if (filterReachesInputAbove(&input, std::move(input_columns), limit))
+        if (filterReachesInputAbove(&input, std::move(input_columns), settings))
             return true;
     }
     return false;
 }
 
-/// Whether a filter that reads `columns` of the output of `node`, pushed down into `node`, reaches a join input
-/// estimated above `limit` rows.
-bool filterReachesInputAbove(const QueryPlan::Node * node, NameSet columns, UInt64 limit)
+/// The columns of the input of the single-input step at `node` that a filter reading `columns` of its output reads once
+/// `tryPushDownFilter` pushed it down below the step. Nothing if it is not pushed down.
+std::optional<NameSet> getColumnsBelowStep(const QueryPlan::Node & node, NameSet columns, const QueryPlanOptimizationSettings & settings)
 {
-    if (!hasColumns(*node, columns))
-        return false;
+    const IQueryPlanStep * step = node.step.get();
 
-    while (node)
+    /// The filter is merged with the step and then reads the columns the step computes its own from, and the columns it
+    /// passes through, which are not outputs of its DAG.
+    const ActionsDAG * dag = nullptr;
+    if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
+        dag = &expression->getExpression();
+    else if (const auto * filter = typeid_cast<const FilterStep *>(step))
+        dag = &filter->getExpression();
+    if (dag)
     {
+        if (dag->hasStatefulFunctions() || dag->hasArrayJoin())
+            return {};
+
+        NameSet columns_below;
+        ActionsDAG::NodeRawConstPtrs outputs;
+        for (const auto & column : columns)
+        {
+            if (const auto * output = dag->tryFindInOutputs(column))
+                outputs.push_back(output);
+            else
+                columns_below.insert(column);
+        }
+
+        if (!outputs.empty())
+        {
+            auto source_columns = getSourceColumns(outputs);
+            if (!source_columns)
+                return {};
+            columns_below.merge(*source_columns);
+        }
+        return columns_below;
+    }
+
+    /// The other steps pass the columns the filter reads on unchanged, if it reads only those it may be pushed below them.
+    auto if_reads_only = [&](const auto & allowed) -> std::optional<NameSet>
+    {
+        if (!std::ranges::all_of(columns, [&](const String & column) { return std::ranges::find(allowed, column) != allowed.end(); }))
+            return {};
+        return std::move(columns);
+    };
+
+    /// The keys, except for GROUPING SETS. An aggregation without keys returns a row for an empty input.
+    if (const auto * aggregating = typeid_cast<const AggregatingStep *>(step))
+        return aggregating->isGroupingSets() ? std::nullopt : if_reads_only(aggregating->getParams().keys);
+    if (const auto * merging_aggregated = typeid_cast<const MergingAggregatedStep *>(step))
+        return merging_aggregated->isGroupingSets() ? std::nullopt : if_reads_only(merging_aggregated->getParams().keys);
+
+    /// The keys, if the step keeps a row of every group.
+    if (const auto * limit_by = typeid_cast<const LimitByStep *>(step))
+    {
+        if (!settings.filter_push_down_below_limit_by || limit_by->getGroupOffset() != 0 || limit_by->getGroupLength() == 0)
+            return {};
+        return if_reads_only(limit_by->getColumns());
+    }
+
+    /// The columns that are not aggregate function states, without HAVING.
+    if (const auto * totals_having = typeid_cast<const TotalsHavingStep *>(step))
+    {
+        if (totals_having->getActions())
+            return {};
+        Names keys;
+        for (const auto & column : *totals_having->getInputHeaders().front())
+            if (!typeid_cast<const DataTypeAggregateFunction *>(column.type.get()))
+                keys.push_back(column.name);
+        return if_reads_only(keys);
+    }
+
+    /// The columns that are not array joined.
+    if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(step))
+    {
+        const auto & array_joined = array_join->getColumns();
+        if (std::ranges::any_of(columns, [&](const String & column) { return std::ranges::find(array_joined, column) != array_joined.end(); }))
+            return {};
+        return std::move(columns);
+    }
+
+    /// Every column.
+    if (typeid_cast<const BuildRuntimeFilterStep *>(step) || typeid_cast<const DistinctStep *>(step)
+        || typeid_cast<const SortingStep *>(step) || typeid_cast<const CreateSetAndFilterOnTheFlyStep *>(step)
+        || typeid_cast<const DelayedCreatingSetsStep *>(step) || typeid_cast<const CommonSubplanStep *>(step))
+        return std::move(columns);
+
+    return {};
+}
+
+/// Whether a filter that reads `columns` of the output of `node`, pushed down into `node`, reaches a join input
+/// estimated above `join_runtime_filter_min_probe_rows`.
+bool filterReachesInputAbove(const QueryPlan::Node * node, NameSet columns, const QueryPlanOptimizationSettings & settings)
+{
+    while (true)
+    {
+        if (!hasColumns(*node, columns))
+            return false;
+
         if (const auto * join = typeid_cast<const JoinStepLogical *>(node->step.get()))
-            return filterReachesJoinInputAbove(*node, *join, columns, limit);
+            return filterReachesJoinInputAbove(*node, *join, columns, settings);
+
+        /// A copy of the filter is pushed down to every input of a union, unless the union changes the structure of one.
+        if (const auto * union_step = typeid_cast<const UnionStep *>(node->step.get()))
+        {
+            const auto & output = *union_step->getOutputHeader();
+            if (!std::ranges::all_of(union_step->getInputHeaders(), [&](const auto & input) { return blocksHaveEqualStructure(*input, output); }))
+                return false;
+            return std::ranges::any_of(node->children, [&](const QueryPlan::Node * input) { return filterReachesInputAbove(input, columns, settings); });
+        }
+
+        /// The filter is pushed down to the first input, the others build sets.
+        if (typeid_cast<const CreatingSetsStep *>(node->step.get()))
+        {
+            node = node->children.front();
+            continue;
+        }
 
         if (node->children.size() != 1)
             return false;
 
-        const ActionsDAG * dag = nullptr;
-        if (const auto * expression = typeid_cast<const ExpressionStep *>(node->step.get()))
-            dag = &expression->getExpression();
-        else if (const auto * filter = typeid_cast<const FilterStep *>(node->step.get()))
-            dag = &filter->getExpression();
-        else if (!typeid_cast<const BuildRuntimeFilterStep *>(node->step.get()))
+        auto columns_below = getColumnsBelowStep(*node, std::move(columns), settings);
+        if (!columns_below)
             return false;
-
-        /// The filter is merged with the step and then reads the columns the step computes its own from.
-        if (dag)
-        {
-            if (dag->hasStatefulFunctions() || dag->hasArrayJoin())
-                return false;
-
-            ActionsDAG::NodeRawConstPtrs outputs;
-            for (const auto & column : columns)
-            {
-                const auto * output = dag->tryFindInOutputs(column);
-                if (!output)
-                    return false;
-                outputs.push_back(output);
-            }
-
-            auto source_columns = getSourceColumns(outputs);
-            if (!source_columns)
-                return false;
-            columns = std::move(*source_columns);
-        }
-
+        columns = std::move(*columns_below);
         node = node->children.front();
-        if (!hasColumns(*node, columns))
-            return false;
     }
-    return false;
 }
 
 }
 
-bool runtimeFilterReachesInputAbove(const QueryPlan::Node & join_node, bool check_left_does_not_contain, UInt64 limit)
+bool runtimeFilterReachesInputAbove(
+    const QueryPlan::Node & join_node, bool check_left_does_not_contain, const QueryPlanOptimizationSettings & settings)
 {
     const auto & join_operator = assert_cast<const JoinStepLogical &>(*join_node.step).getJoinOperator();
 
@@ -215,7 +309,7 @@ bool runtimeFilterReachesInputAbove(const QueryPlan::Node & join_node, bool chec
     return std::ranges::any_of(filter_keys, [&](const ActionsDAG::NodeRawConstPtrs & keys)
     {
         auto columns = getSourceColumns(keys);
-        return columns && filterReachesInputAbove(join_node.children[0], std::move(*columns), limit);
+        return columns && filterReachesInputAbove(join_node.children[0], std::move(*columns), settings);
     });
 }
 

@@ -116,6 +116,23 @@ FROM (EXPLAIN SELECT count() FROM key_path_b b RIGHT SEMI JOIN key_path_p p ON b
 SELECT 'key from the input a LEFT JOIN below adds rows to' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
 FROM (EXPLAIN SELECT count() FROM key_path_b b LEFT JOIN key_path_p p ON b.x = p.x JOIN key_path_s s ON p.y = s.y);
 
+-- Other steps pass the filter on if it reads only columns they keep: the keys of an aggregation, the columns that are not array joined.
+SELECT 'aggregation key' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM (SELECT p.y AS y, count() AS c FROM key_path_p p JOIN key_path_b b ON p.x = b.x GROUP BY p.y) t
+      JOIN key_path_s s ON t.y = s.y);
+
+SELECT 'aggregate' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM (SELECT p.y AS y, count() AS c FROM key_path_p p JOIN key_path_b b ON p.x = b.x GROUP BY p.y) t
+      JOIN key_path_s s ON toInt32(t.c) = s.y);
+
+SELECT 'column next to ARRAY JOIN' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM (SELECT p.y AS y, arrayJoin([1, 2]) AS a FROM key_path_p p JOIN key_path_b b ON p.x = b.x) t
+      JOIN key_path_s s ON t.y = s.y);
+
+SELECT 'array joined column' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM (SELECT p.y AS y, arrayJoin([1, 2]) AS a FROM key_path_p p JOIN key_path_b b ON p.x = b.x) t
+      JOIN key_path_s s ON t.a = s.y);
+
 DROP TABLE small_probe;
 DROP TABLE large_probe;
 DROP TABLE build_side;

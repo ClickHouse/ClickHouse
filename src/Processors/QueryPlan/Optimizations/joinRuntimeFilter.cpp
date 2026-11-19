@@ -384,9 +384,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     if (optimization_settings.join_runtime_filter_min_probe_rows > 0)
     {
-        const UInt64 limit = optimization_settings.join_runtime_filter_min_probe_rows;
         auto probe_size = join_step->getInputRowsEstimation(JoinTableSide::Left);
-        if (probe_size && *probe_size <= limit && !runtimeFilterReachesInputAbove(node, check_left_does_not_contain, limit))
+        if (probe_size && *probe_size <= optimization_settings.join_runtime_filter_min_probe_rows
+            && !runtimeFilterReachesInputAbove(node, check_left_does_not_contain, optimization_settings))
         {
             join_step->setRuntimeFilterDeclinedForSmallProbe();
             return false;

@@ -18,3 +18,7 @@ LEFT SEMI JOIN below	2
 right key of a LEFT SEMI JOIN below	2
 RIGHT SEMI JOIN below	1
 key from the input a LEFT JOIN below adds rows to	0
+aggregation key	2
+aggregate	1
+column next to ARRAY JOIN	2
+array joined column	1
