@@ -41,7 +41,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 81
+    version: int = 82
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)
@@ -50,6 +50,9 @@ class RunnerConfig:
     user: str = "ec2-user" if sys.platform == "darwin" else "ubuntu"
     runner_home: str = f"/Users/{user}/actions-runner" if sys.platform == "darwin" else f"/home/{user}/actions-runner"
     log_file: str = f"/Users/{user}/runner-init.log"
+    work_dir: str = "_work"
+    local_ssd_mount: str = "/Volumes/ephemeral0"
+    local_ssd_instance_types: tuple = ("mac-m4pro.metal",)
     runner_org: str = "ClickHouse"
     runner_url: str = ""  # set in __post_init__
     max_total_errors: int = 5
@@ -285,7 +288,7 @@ class Runner:
         if config.keep_workspace:
             log("keep_workspace is set: preserving _work checkout between jobs")
             return
-        work_dir = Path(config.runner_home) / "_work"
+        work_dir = Path(config.runner_home) / config.work_dir
         if work_dir.exists():
             shutil.rmtree(work_dir)
 
@@ -330,7 +333,7 @@ class Runner:
             "--labels",
             self.labels,
             "--work",
-            "_work",
+            config.work_dir,
             "--name",
             self.ec2._instance_id,
         ]
@@ -357,6 +360,7 @@ class Runner:
             # runner-init starts once per boot; unified logs and `uuidtext` otherwise grow to several GB.
             run_bash("log erase --all", sudo=True)
             Runner.configure_darwin()
+            self.configure_local_ssd()
             # M2 Pro, M4 and M4 Pro test hosts; parking is off until the tests start, so they run jobs
             if False and self.ec2._instance_id in ("i-04af1537ae54658c2", "i-026bcc3b5264aa319", "i-007ee22c1c365d7ef"):
                 log("Test host: the GitHub runner is not started")
@@ -462,18 +466,22 @@ class Runner:
 
     @staticmethod
     def check_free_disk_space() -> None:
-        usage = shutil.disk_usage("/")
-        free_blocks = usage.free // 1024
-        free_percent = usage.free * 100 // usage.total
-        if config.verbose:
-            log(f"rootfs: {free_blocks} KiB free, {free_percent}%", "disk-space")
+        paths = ["/"]
+        if Path(config.work_dir).is_absolute():
+            paths.append(str(Path(config.work_dir).parent))
+        for path in paths:
+            usage = shutil.disk_usage(path)
+            free_blocks = usage.free // 1024
+            free_percent = usage.free * 100 // usage.total
+            if config.verbose:
+                log(f"{path}: {free_blocks} KiB free, {free_percent}%", "disk-space")
 
-        if free_blocks < config.free_blocks_threshold:
-            raise RuntimeError(f"Out of disk space: {free_blocks} KiB free on rootfs")
-        if free_percent < config.free_blocks_threshold_percent:
-            raise RuntimeError(
-                f"Out of disk space: {free_percent}% of free space on rootfs"
-            )
+            if free_blocks < config.free_blocks_threshold:
+                raise RuntimeError(f"Out of disk space: {free_blocks} KiB free on {path}")
+            if free_percent < config.free_blocks_threshold_percent:
+                raise RuntimeError(
+                    f"Out of disk space: {free_percent}% of free space on {path}"
+                )
 
     @staticmethod
     def check_post_run() -> None:
@@ -555,6 +563,19 @@ timedatectl status | grep 'NTP service: active'
                 seen.add(entry)
                 result.append(entry)
         return ":".join(result)
+
+    def configure_local_ssd(self) -> None:
+        # The instance store is empty after a stop, so this runs at every boot, not behind the provisioning marker.
+        if self.instance_type not in config.local_ssd_instance_types:
+            return
+        deadline = time.time() + 120
+        while not os.path.ismount(config.local_ssd_mount):
+            assert time.time() < deadline, f"{config.local_ssd_mount} is not mounted on {self.instance_type}"
+            time.sleep(5)
+        parent = f"{config.local_ssd_mount}/runner"
+        run_bash(f'mkdir -p "{parent}" && chown {config.user} "{parent}"', sudo=True)
+        config.work_dir = f"{parent}/_work"
+        log(f"Local SSD: the runner work directory is {config.work_dir}")
 
     @staticmethod
     def configure_darwin() -> None:
