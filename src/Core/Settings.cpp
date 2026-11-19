@@ -7577,7 +7577,7 @@ Use query plan for lazy materialization optimization.
 )", 0, \
         {"25.4", false, true, "Added new setting to use query plan for lazy materialization optimisation"}) \
     DECLARE(Bool, query_plan_optimize_lazy_materialization_with_ties, false, R"(
-Allow query plan lazy materialization optimization for `LIMIT WITH TIES`
+Allow query plan lazy materialization optimization for `LIMIT ... WITH TIES`
 if the limit value does not exceed
 `query_plan_max_limit_for_lazy_materialization`. Takes effect only if
 `query_plan_optimize_lazy_materialization` is enabled. It applies only
