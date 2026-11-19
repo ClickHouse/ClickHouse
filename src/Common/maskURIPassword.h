@@ -122,53 +122,56 @@ static constexpr std::tuple<size_t, size_t, size_t>
 findURIPasswordRange(const std::string & text, const size_t offset = 0, std::string_view authority_terminators = "/")
 {
     static constexpr std::string_view SEPARATOR = "//";
-    size_t starting_offset = text.find(SEPARATOR, offset);
-    starting_offset = starting_offset == std::string_view::npos && offset > 0 ? text.find('|', offset) : starting_offset;
-    if (offset > 0 && starting_offset == std::string_view::npos)
-        return {std::string_view::npos, std::string_view::npos, text.length()};
-    const size_t first_at = text.find('@', offset);
-    if (first_at == std::string_view::npos)
+    for (size_t separator = [&] -> size_t
+         {
+             const size_t first_at = text.find('@', offset);
+             if (first_at == std::string_view::npos)
+                 return std::string_view::npos;
+             size_t starting_offset = text.find(SEPARATOR, offset);
+             if (offset > 0)
+             {
+                 if (starting_offset == std::string_view::npos)
+                 {
+                     starting_offset = std::string_view(text).substr(offset, first_at - offset).find('|');
+                     if (starting_offset == std::string_view::npos)
+                         return std::string_view::npos;
+                     starting_offset += offset;
+                 }
+                 if (starting_offset > first_at)
+                     if (const size_t first_pipe = std::string_view(text).substr(offset, first_at - offset).find('|');
+                         first_pipe != std::string_view::npos)
+                         return first_pipe + offset;
+             }
+        return first_at > starting_offset ? starting_offset : offset;
+    }(); separator != std::string_view::npos;
+         separator = text.find(SEPARATOR, separator + SEPARATOR.length()))
     {
-        return {std::string_view::npos, std::string_view::npos, text.length()};
-    }
-    if (starting_offset > first_at && offset > 0)
-    {
-        const size_t first_pipe = std::string_view(text).substr(0, first_at).find('|');
-        if (first_pipe != std::string_view::npos)
+        const size_t authority_begin = [&]
         {
-            starting_offset = first_pipe;
-        }
-    }
-    const size_t last_at = first_at + std::string_view(text).substr(first_at).rfind('@');
-    for (size_t separator = first_at > starting_offset ? starting_offset : offset; separator != std::string_view::npos;
-         separator = std::string_view(text).substr(0, last_at).find(SEPARATOR, separator + SEPARATOR.length()))
-    {
-        const size_t authority_begin = separator + (
-            text[separator] == '/' ? (text[separator + 1] == '/' ? 2 : 1)
-
-        :(text[separator] == '|' ? (text[separator + 1] == '/' ? 2 : 1) : 0));
+            if (const char first = text[separator]; first == '/' || first == '|')
+                return text[separator + 1] == '/' ? 2 : 1;
+            return 0;
+        }() + separator;
         const size_t userinfo_bound = std::min(text.find_first_of(authority_terminators, authority_begin), text.length());
         auto bounded = std::string_view(text).substr(authority_begin, userinfo_bound - authority_begin);
 
-        if (const size_t at_sign = bounded.rfind('@'); at_sign != std::string_view::npos)
+        if (const size_t at_sign = bounded.rfind('@'); at_sign != std::string_view::npos && at_sign > 0)
         {
-            const size_t colon = bounded.find(':');
-            if (colon < at_sign)
+            const size_t colon = bounded.substr(0, at_sign).find(':');
+            const size_t next_pipe = bounded.find("|", at_sign + 1);
+            if (colon != std::string::npos)
             {
-                const size_t sub_delimiter = bounded.substr(at_sign + 1).find("|");
                 return {
                     authority_begin + colon + 1,
                     authority_begin + at_sign,
-                    sub_delimiter == std::string::npos ? userinfo_bound : authority_begin + at_sign + sub_delimiter + 1 };
+                    next_pipe == std::string::npos ? userinfo_bound : authority_begin + next_pipe};
             }
-            if (colon == std::string::npos || colon > at_sign)
-            {
-                const size_t next_pipe = bounded.find("|", at_sign + 1);
-                if (const auto host_and_port
-                    = next_pipe == std::string::npos ? bounded.substr(at_sign + 1) : bounded.substr(at_sign + 1, next_pipe - at_sign - 1);
-                    isURIHostAndPort(host_and_port))
-                    return {authority_begin, authority_begin + at_sign, next_pipe == std::string::npos ? userinfo_bound : authority_begin + next_pipe};
-            }
+            if (isURIHostAndPort(
+                    next_pipe == std::string::npos ? bounded.substr(at_sign + 1) : bounded.substr(at_sign + 1, next_pipe - at_sign - 1)))
+                return {
+                    authority_begin,
+                    authority_begin + at_sign,
+                    next_pipe == std::string::npos ? userinfo_bound : authority_begin + next_pipe};
             return {authority_begin, authority_begin + at_sign, userinfo_bound};
         }
 
@@ -181,7 +184,7 @@ findURIPasswordRange(const std::string & text, const size_t offset = 0, std::str
             continue;
         }
 
-        if (last_at != std::string_view::npos && last_at > authority_end)
+        if (const size_t last_at = text.find('@', authority_end + 1); last_at != std::string_view::npos)
             return {authority_begin + colon + 1, last_at, text.length()};
     }
 

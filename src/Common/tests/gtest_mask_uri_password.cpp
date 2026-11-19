@@ -14,13 +14,16 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
     const std::vector<std::pair<std::string, std::string>> cases = {
         /// Ordinary URIs with credentials.
         {"http://user:password@host", "http://user:[HIDDEN]@host"},
+        {"http://user:password@host|http://user:password@host2", "http://user:[HIDDEN]@host|http://user:[HIDDEN]@host2"},
         {"https://user:password@host:8080/path?query=1", "https://user:[HIDDEN]@host:8080/path?query=1"},
         {"amqp://guest:guest@localhost:5672/", "amqp://guest:[HIDDEN]@localhost:5672/"},
         {"mongodb://u:p@h1:27017,h2:27017/db?replicaSet=r", "mongodb://u:[HIDDEN]@h1:27017,h2:27017/db?replicaSet=r"},
         {"http://u:p@[::1]:8123/", "http://u:[HIDDEN]@[::1]:8123/"},
+        {"http://u:p@[::1]:8123/|http://u:p@[::2]:8123/", "http://u:[HIDDEN]@[::1]:8123/|http://u:[HIDDEN]@[::2]:8123/"},
         {"http://user:pass:word@host", "http://user:[HIDDEN]@host"},
         {"http://user%3Aname:password@host", "http://user%3Aname:[HIDDEN]@host"},
         {"http://:password@host", "http://:[HIDDEN]@host"},
+        {"http://:password@host|http://:password@host2", "http://:[HIDDEN]@host|http://:[HIDDEN]@host2"},
         {"mysql://root:@host", "mysql://root:[HIDDEN]@host"},
 
         /// A '@' after the authority is not the end of a userinfo.
@@ -38,6 +41,8 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
         {"just some text", "just some text"},
         {"", ""},
         {"://", "://"},
+        {"////", "////"},
+        {"////@", "////@"},
         {"http://", "http://"},
 
         /// Fails closed: a raw '@' in the password extends the userinfo to the last '@' of the authority.
