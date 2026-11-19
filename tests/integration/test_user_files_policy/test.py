@@ -1773,15 +1773,21 @@ def test_local_rename_after_processing_destination_through_symlink_rejected():
 
 
 def test_local_filelog_skips_child_symlink_outside_disk():
-    """`FileLog` checks every file it finds in the directory, not only the configured path."""
+    """`FileLog` checks every file it finds in the directory, not only the configured path.
+    The check comes before probing the file, so a child pointing to a missing outside target or into an
+    outside symlink loop is skipped like any other outside file instead of failing `CREATE TABLE`."""
     node_local.exec_in_container(
         [
             "bash",
             "-c",
-            "rm -rf /test_user_files_disk1/filelog_dir && mkdir -p /test_user_files_disk1/filelog_dir && "
+            "rm -rf /test_user_files_disk1/filelog_dir /tmp/filelog_missing_probe /tmp/filelog_loop_probe && "
+            "mkdir -p /test_user_files_disk1/filelog_dir && "
             "echo inside > /test_user_files_disk1/filelog_dir/ok.log && "
             "echo secret > /tmp/filelog_secret.log && "
-            "ln -snf /tmp/filelog_secret.log /test_user_files_disk1/filelog_dir/leak.log",
+            "ln -snf /tmp/filelog_secret.log /test_user_files_disk1/filelog_dir/leak.log && "
+            "ln -snf /tmp/filelog_missing_probe/file.log /test_user_files_disk1/filelog_dir/missing.log && "
+            "ln -snf filelog_loop_probe /tmp/filelog_loop_probe && "
+            "ln -snf /tmp/filelog_loop_probe/file.log /test_user_files_disk1/filelog_dir/loop.log",
         ]
     )
     try:
@@ -1799,7 +1805,7 @@ def test_local_filelog_skips_child_symlink_outside_disk():
             [
                 "bash",
                 "-c",
-                "rm -rf /test_user_files_disk1/filelog_dir /tmp/filelog_secret.log",
+                "rm -rf /test_user_files_disk1/filelog_dir /tmp/filelog_secret.log /tmp/filelog_loop_probe",
             ]
         )
 

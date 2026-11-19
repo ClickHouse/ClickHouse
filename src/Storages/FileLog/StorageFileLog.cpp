@@ -396,7 +396,9 @@ void StorageFileLog::loadFiles()
         /// Just consider file with depth 1
         for (const auto & dir_entry : std::filesystem::directory_iterator{root_data_path})
         {
-            if (!dir_entry.is_regular_file() || !isDataFileAllowed(dir_entry.path()))
+            /// The policy boundary is checked before the status probe: probing a file outside it would disclose
+            /// whether its target exists, or throw for a symlink loop.
+            if (!isDataFileAllowed(dir_entry.path()) || !dir_entry.is_regular_file())
                 continue;
             String file_name = dir_entry.path().filename();
             struct stat file_stat{};
@@ -1391,7 +1393,7 @@ bool StorageFileLog::updateFileInfos()
                     break;
                 /// Check if it is a regular file, and new file may be renamed or removed.
                 /// Another name of a file that is still read here (a hard link) is not read again.
-                if (!std::filesystem::is_regular_file(file_path) || !isDataFileAllowed(file_path) || !fileNameMatches(file_name)
+                if (!isDataFileAllowed(file_path) || !std::filesystem::is_regular_file(file_path) || !fileNameMatches(file_name)
                     || isReadUnderOtherName(file_name, getInode(file_path)))
                 {
                     name_is_read[file_name] = false;
@@ -1452,7 +1454,7 @@ bool StorageFileLog::updateFileInfos()
                     break;
                 /// Similar to DW_ITEM_ADDED, but if it removed from an old file
                 /// should obtain old meta file and rename meta file
-                if (std::filesystem::is_regular_file(file_path) && isDataFileAllowed(file_path))
+                if (isDataFileAllowed(file_path) && std::filesystem::is_regular_file(file_path))
                 {
                     auto inode = getInode(file_path);
 
