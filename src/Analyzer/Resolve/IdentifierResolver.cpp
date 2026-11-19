@@ -1178,16 +1178,21 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     const size_t table_name_parts = numberOfPartsMatchingTableName(identifier, 0, table_name, allow_table_paths);
     const bool prefix_matches_table_name = table_name_parts > 0 && table_name_parts < identifier.getPartsSize();
 
-    if (prefix_matches_alias || prefix_matches_table_name)
+    /// The alias is tried first, the table path only if the alias lookup finds nothing.
+    if (prefix_matches_alias)
     {
-        const size_t identifier_column_qualifier_parts = prefix_matches_alias ? 1 : table_name_parts;
-
         auto lookup_result = tryResolveIdentifierFromStorage(
-            identifier_lookup,
-            table_expression_node,
-            table_expression_data,
-            scope,
-            identifier_column_qualifier_parts);
+            identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
+
+        if (lookup_result.resolved_identifier)
+            return lookup_result;
+    }
+
+    /// A one-part table name equal to the alias is the lookup above.
+    if (prefix_matches_table_name && !(prefix_matches_alias && table_name_parts == 1))
+    {
+        auto lookup_result = tryResolveIdentifierFromStorage(
+            identifier_lookup, table_expression_node, table_expression_data, scope, table_name_parts /*identifier_column_qualifier_parts*/);
 
         if (lookup_result.resolved_identifier)
             return lookup_result;

@@ -50,10 +50,7 @@ echo '-- 7. alias reading fails, the compatibility setting prefers the table pat
 both -q "SELECT ns.c.x FROM \`ns.c\` AS ns"
 
 echo '-- 8. table path is tried after a failed alias lookup'
-# Only with the compatibility setting: without it the alias is the only qualifier tried here.
-$CLICKHOUSE_CLIENT --enable_analyzer=1 --allow_experimental_table_namespaces=1 \
-    --analyzer_compatibility_prefer_alias_over_subcolumn=1 \
-    -q "SELECT ns.t.x FROM \`ns.t\` AS ns"
+both -q "SELECT ns.t.x FROM \`ns.t\` AS ns"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.\`ns.tupletest\`"
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.\`ns.c\`"
