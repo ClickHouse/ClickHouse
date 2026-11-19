@@ -853,3 +853,26 @@ TEST(ColumnObject, ChooseDynamicStructureAndTakeStatisticsForTypedPaths)
     EXPECT_EQ(single_source_map.getStatistics()->count, 2u);
     EXPECT_DOUBLE_EQ(single_source_map.getStatistics()->avg, 1.0);
 }
+
+/// Skipped under debug/sanitizers: LOGICAL_ERROR aborts there, so the exception can't be caught.
+#ifndef DEBUG_OR_SANITIZER_BUILD
+
+TEST(ColumnObject, SourcesWithOtherTypedPathsAreRejected)
+{
+    auto target_type = DataTypeFactory::instance().get("JSON(a UInt64, b String)");
+    for (const auto * source_type_name : {"JSON(a UInt64, c String)", "JSON(a UInt64)", "JSON(a UInt64, b String, c String)"})
+    {
+        SCOPED_TRACE(source_type_name);
+        auto source_type = DataTypeFactory::instance().get(source_type_name);
+        auto source = source_type->createColumn();
+        source->insert(Object{{"a", Field(UInt64(1))}});
+
+        const IColumn * source_column = source.get();
+        EXPECT_THROW(target_type->createColumn()->prepareForSquashing(std::span(&source_column, 1), 1), Exception);
+
+        const ColumnRawPtrs two_sources{source.get(), source.get()};
+        EXPECT_THROW(target_type->createColumn()->prepareForSquashing(two_sources, 1), Exception);
+    }
+}
+
+#endif

@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnString.h>
+#include <Columns/groupColumns.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeString.h>
@@ -64,6 +65,77 @@ const FormatSettings & getFormatSettings()
 {
     static const FormatSettings settings;
     return settings;
+}
+
+/// Calls `callback(variant, variant_source_columns)` for every variant of `column` in the order of the global
+/// discriminators, where `variant_source_columns` are the columns of the same variant in the source columns that have it,
+/// in the order of the source columns. The source columns must be Dynamic.
+///
+/// It walks the variants of every source once and looks them up in the map of `column`, which stays in the cache, instead of
+/// looking up every variant of `column` in every source, where most lookups are misses when the sources have different variants.
+template <typename Callback>
+void forEachVariantWithSourceColumns(ColumnDynamic & column, std::span<const IColumn * const> source_columns, Callback && callback)
+{
+    const auto & variant_info = column.getVariantInfo();
+    auto & variant_column = column.getVariantColumn();
+
+    /// A single source column, for example the block that the writer of a part takes the statistics from: look up the
+    /// variants in it directly instead of materializing the groups.
+    if (source_columns.size() == 1)
+    {
+        const auto & source_dynamic_column = assert_cast<const ColumnDynamic &>(*source_columns.front());
+        const auto & source_variant_info = source_dynamic_column.getVariantInfo();
+        const auto & source_variant_column = source_dynamic_column.getVariantColumn();
+        /// The same variants have the same global discriminators.
+        const bool same_variants = source_variant_info.variant_name == variant_info.variant_name;
+        for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
+        {
+            auto & variant = variant_column.getVariantByGlobalDiscriminator(i);
+            if (same_variants)
+            {
+                const IColumn * source_column = source_variant_column.getVariantPtrByGlobalDiscriminator(i).get();
+                callback(variant, std::span(&source_column, 1));
+                continue;
+            }
+
+            auto it = source_variant_info.variant_name_to_discriminator.find(variant_info.variant_names[i]);
+            if (it != source_variant_info.variant_name_to_discriminator.end())
+            {
+                const IColumn * source_column = source_variant_column.getVariantPtrByGlobalDiscriminator(it->second).get();
+                callback(variant, std::span(&source_column, 1));
+            }
+            else
+                callback(variant, std::span<const IColumn * const>());
+        }
+        return;
+    }
+
+    const auto variants_source_columns = groupColumns(
+        source_columns,
+        variant_info.variant_names.size(),
+        [&](const IColumn * source_column, auto && emit)
+        {
+            const auto & source_dynamic_column = assert_cast<const ColumnDynamic &>(*source_column);
+            const auto & source_variant_info = source_dynamic_column.getVariantInfo();
+            const auto & source_variant_column = source_dynamic_column.getVariantColumn();
+            /// The same variants have the same global discriminators, and usually the sources have the same variants.
+            if (source_variant_info.variant_name == variant_info.variant_name)
+            {
+                for (size_t i = 0; i != source_variant_info.variant_names.size(); ++i)
+                    emit(i, source_variant_column.getVariantPtrByGlobalDiscriminator(i).get());
+                return;
+            }
+
+            for (size_t i = 0; i != source_variant_info.variant_names.size(); ++i)
+            {
+                auto it = variant_info.variant_name_to_discriminator.find(source_variant_info.variant_names[i]);
+                if (it != variant_info.variant_name_to_discriminator.end())
+                    emit(it->second, source_variant_column.getVariantPtrByGlobalDiscriminator(i).get());
+            }
+        });
+
+    for (size_t i = 0; i != variants_source_columns.size(); ++i)
+        callback(variant_column.getVariantByGlobalDiscriminator(i), variants_source_columns[i]);
 }
 
 }
@@ -1500,6 +1572,7 @@ void ColumnDynamic::prepareVariantsForSquashing(std::span<const IColumn * const>
         }
     };
 
+    /// `forEachVariantWithSourceColumns` below relies on this check.
     for (const auto & source_column : source_columns)
         add_variants(getSourceDynamicColumn(*source_column, *this, "squashing"));
 
@@ -1553,24 +1626,11 @@ void ColumnDynamic::prepareVariantsForSquashing(std::span<const IColumn * const>
 
     /// Now current dynamic column has all resulting variants and we can call
     /// prepareForSquashing on them to preallocate the memory.
-    auto & variant_col = getVariantColumn();
-    ColumnRawPtrsWithStackMemory source_variant_columns;
-    source_variant_columns.reserve(source_columns.size());
-    for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
-    {
-        source_variant_columns.clear();
-        for (const auto & source_column : source_columns)
-        {
-            const auto & source_dynamic_column = assert_cast<const ColumnDynamic &>(*source_column);
-            const auto & source_variant_info = source_dynamic_column.getVariantInfo();
-            /// Try to find this variant in the current source column.
-            auto it = source_variant_info.variant_name_to_discriminator.find(variant_info.variant_names[i]);
-            if (it != source_variant_info.variant_name_to_discriminator.end())
-                source_variant_columns.push_back(source_dynamic_column.getVariantColumn().getVariantPtrByGlobalDiscriminator(it->second).get());
-        }
-
-        variant_col.getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns, factor);
-    }
+    forEachVariantWithSourceColumns(
+        *this,
+        source_columns,
+        [&](IColumn & variant, std::span<const IColumn * const> variant_source_columns)
+        { variant.prepareForSquashing(variant_source_columns, factor); });
 }
 
 bool ColumnDynamic::dynamicStructureEquals(const IColumn & rhs) const
@@ -1613,7 +1673,7 @@ void ColumnDynamic::chooseDynamicStructureForMerge(std::span<const IColumn * con
 
     for (const auto & source_column : source_columns)
     {
-        /// The remaining loops over `source_columns` rely on this check.
+        /// The remaining traversals of `source_columns` rely on this check.
         const auto & source_dynamic = getSourceDynamicColumn(*source_column, *this, "merge");
         const auto & source_variant_column = source_dynamic.getVariantColumn();
         const auto & source_variant_info = source_dynamic.getVariantInfo();
@@ -1696,25 +1756,19 @@ void ColumnDynamic::chooseDynamicStructureForMerge(std::span<const IColumn * con
     /// Now we have the resulting Variant that will be used in all merged columns.
     /// Variants can also contain Dynamic columns inside, we should collect
     /// all source variants that will be used in the resulting merged column
-    /// and call `chooseDynamicStructureForMerge` on all resulting variants.
-    VectorWithMemoryTracking<ColumnRawPtrsWithStackMemory> variants_source_columns;
-    variants_source_columns.resize(variant_info.variant_names.size());
-    for (const auto & source_column : source_columns)
-    {
-        const auto & source_dynamic_column = assert_cast<const ColumnDynamic &>(*source_column);
-        const auto & source_variant_info = source_dynamic_column.getVariantInfo();
-        for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
-        {
-            /// Try to find this variant in current source column.
-            auto it = source_variant_info.variant_name_to_discriminator.find(variant_info.variant_names[i]);
-            if (it != source_variant_info.variant_name_to_discriminator.end())
-                variants_source_columns[i].push_back(source_dynamic_column.getVariantColumn().getVariantPtrByGlobalDiscriminator(it->second).get());
-        }
-    }
+    /// and call `chooseDynamicStructureForMerge` on the resulting variants with dynamic structure.
+    /// For the other variants it does nothing, and usually no variant has dynamic structure, so don't collect the sources then.
+    if (!getVariantColumn().hasDynamicStructure())
+        return;
 
-    auto & variant_col = getVariantColumn();
-    for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
-        variant_col.getVariantByGlobalDiscriminator(i).chooseDynamicStructureForMerge(variants_source_columns[i], max_dynamic_subcolumns);
+    forEachVariantWithSourceColumns(
+        *this,
+        source_columns,
+        [&](IColumn & variant, std::span<const IColumn * const> variant_source_columns)
+        {
+            if (variant.hasDynamicStructure())
+                variant.chooseDynamicStructureForMerge(variant_source_columns, max_dynamic_subcolumns);
+        });
 }
 
 void ColumnDynamic::takeExactDynamicStructureFrom(const IColumn & source)
@@ -1787,7 +1841,7 @@ void ColumnDynamic::takeOrCalculateStatisticsFrom(std::span<const IColumn * cons
     UnorderedMapWithMemoryTracking<String, size_t> shared_variant_candidates;
     for (const auto & source_column : source_columns)
     {
-        /// The later loop over `source_columns` relies on this check.
+        /// The later traversals of `source_columns` rely on this check.
         const auto & source_dynamic = getSourceDynamicColumn(*source_column, *this, "statistics");
         const auto & source_statistics = source_dynamic.getOrCalculateStatistics();
 
@@ -1830,27 +1884,19 @@ void ColumnDynamic::takeOrCalculateStatisticsFrom(std::span<const IColumn * cons
 
     statistics = std::make_shared<const Statistics>(std::move(new_statistics));
 
-    /// Recursively update statistics for nested variants.
-    VectorWithMemoryTracking<ColumnRawPtrsWithStackMemory> variants_source_columns;
-    variants_source_columns.resize(variant_info.variant_names.size());
-    for (const auto & source_column : source_columns)
-    {
-        const auto & source_dynamic_column = assert_cast<const ColumnDynamic &>(*source_column);
-        const auto & source_variant_info = source_dynamic_column.getVariantInfo();
-        for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
-        {
-            auto it = source_variant_info.variant_name_to_discriminator.find(variant_info.variant_names[i]);
-            if (it != source_variant_info.variant_name_to_discriminator.end())
-                variants_source_columns[i].push_back(source_dynamic_column.getVariantColumn().getVariantPtrByGlobalDiscriminator(it->second).get());
-        }
-    }
+    /// Recursively update statistics for nested variants with statistics (e.g. `Map` or `Array(JSON)`).
+    /// For the other variants it does nothing, and usually no variant has statistics, so don't look for the sources then.
+    if (!getVariantColumn().hasStatistics())
+        return;
 
-    auto & variant_col = getVariantColumn();
-    for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
-    {
-        if (!variants_source_columns[i].empty())
-            variant_col.getVariantByGlobalDiscriminator(i).takeOrCalculateStatisticsFrom(variants_source_columns[i]);
-    }
+    forEachVariantWithSourceColumns(
+        *this,
+        source_columns,
+        [&](IColumn & variant, std::span<const IColumn * const> variant_source_columns)
+        {
+            if (variant.hasStatistics() && !variant_source_columns.empty())
+                variant.takeOrCalculateStatisticsFrom(variant_source_columns);
+        });
 }
 
 void ColumnDynamic::applyNullMap(const ColumnVector<UInt8>::Container & null_map)

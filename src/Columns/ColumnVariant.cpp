@@ -1965,11 +1965,15 @@ void ColumnVariant::chooseDynamicStructureForMerge(std::span<const IColumn * con
     for (const auto & source_column : source_columns)
         getSourceVariantColumn(*source_column, *this, "merge");
 
+    /// For the variants without dynamic structure it does nothing.
     ColumnRawPtrsWithStackMemory variant_source_columns;
     size_t num_variants = variants.size();
     for (size_t i = 0; i != num_variants; ++i)
     {
         auto & variant = getVariantByGlobalDiscriminator(i);
+        if (!variant.hasDynamicStructure())
+            continue;
+
         collectVariantSourceColumns(source_columns, i, variant_source_columns);
         variant.chooseDynamicStructureForMerge(variant_source_columns, max_dynamic_subcolumns);
     }
@@ -2040,10 +2044,14 @@ void ColumnVariant::takeOrCalculateStatisticsFrom(std::span<const IColumn * cons
 
     /// Iterate by global discriminator: source columns are addressed by global discriminator,
     /// so the destination variant must be too (local order may differ from global order).
+    /// For the variants without statistics it does nothing.
     ColumnRawPtrsWithStackMemory variant_source_columns;
     for (size_t i = 0; i != variants.size(); ++i)
     {
         auto & variant = getVariantByGlobalDiscriminator(i);
+        if (!variant.hasStatistics())
+            continue;
+
         collectVariantSourceColumns(source_columns, i, variant_source_columns);
         variant.takeOrCalculateStatisticsFrom(variant_source_columns);
     }

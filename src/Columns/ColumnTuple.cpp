@@ -995,9 +995,13 @@ void ColumnTuple::chooseDynamicStructureForMerge(std::span<const IColumn * const
 {
     checkSourceTupleColumns(source_columns, *this, "merge");
 
+    /// For the elements without dynamic structure it does nothing.
     ColumnRawPtrsWithStackMemory element_source_columns;
     for (size_t i = 0; i != columns.size(); ++i)
     {
+        if (!columns[i]->hasDynamicStructure())
+            continue;
+
         collectElementSourceColumns(source_columns, i, element_source_columns);
         columns[i]->chooseDynamicStructureForMerge(element_source_columns, max_dynamic_subcolumns);
     }
@@ -1026,27 +1030,25 @@ bool ColumnTuple::hasStatistics() const
 
 void ColumnTuple::takeOrCalculateStatisticsFrom(std::span<const IColumn * const> source_columns)
 {
-    ColumnRawPtrsWithStackMemory elem_source_columns;
-    elem_source_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+    {
+        if (!source_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
+    }
+    checkSourceTupleColumns(source_columns, *this, "statistics");
+
+    /// For the elements without statistics it does nothing.
+    ColumnRawPtrsWithStackMemory element_source_columns;
     for (size_t i = 0; i != columns.size(); ++i)
     {
-        elem_source_columns.clear();
-        for (const auto & source_column : source_columns)
-        {
-            if (!source_column)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
-
-            const auto * source_tuple = typeid_cast<const ColumnTuple *>(source_column);
-            if (!source_tuple || source_tuple->tupleSize() != columns.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not a Tuple of the same size, but {}", source_column->getName());
-
-            elem_source_columns.push_back(source_tuple->columns[i].get());
-        }
-
         if (!columns[i])
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of tuple is invalid", i);
 
-        columns[i]->takeOrCalculateStatisticsFrom(elem_source_columns);
+        if (!columns[i]->hasStatistics())
+            continue;
+
+        collectElementSourceColumns(source_columns, i, element_source_columns);
+        columns[i]->takeOrCalculateStatisticsFrom(element_source_columns);
     }
 }
 
