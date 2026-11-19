@@ -1,5 +1,7 @@
 #include <Storages/StorageTimeSeries.h>
 
+#include <Common/FailPoint.h>
+
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
@@ -69,6 +71,11 @@ namespace TimeSeriesSetting
     extern const TimeSeriesSettingsUInt64 tags_deduplication_cache_expiration_seconds;
     extern const TimeSeriesSettingsUInt64 tags_deduplication_cache_size_bytes;
     extern const TimeSeriesSettingsUInt64 version;
+}
+
+namespace FailPoints
+{
+    extern const char time_series_rename_pause_after_first_inner_table[];
 }
 
 namespace ErrorCodes
@@ -720,16 +727,16 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
 
     if (has_settings_changes)
     {
-        chassert(new_metadata.hasSettingsChanges());
+        chassert(new_metadata.settings_changes);
         /// Round-trip through `TimeSeriesSettings` to validate the names/values and
         /// to write them back in a canonical form.
         new_settings = std::make_unique<TimeSeriesSettings>();
-        new_settings->applyChanges(new_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes);
+        new_settings->applyChanges(new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
         checkTimeSeriesSettings(*new_settings);
         auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         settings_ast->changes = new_settings->changes();
-        new_metadata.setSettingsChanges(settings_ast);
+        new_metadata.settings_changes = settings_ast;
     }
 
     auto time_series_table_id = getStorageID();
@@ -799,6 +806,7 @@ void StorageTimeSeries::renameInMemory(const StorageID & new_table_id)
             rename->addElement(inner_table_id.database_name, inner_table_id.table_name,
                                new_table_id.database_name, new_inner_table_name);
             InterpreterRenameQuery(rename, getContext()).execute();
+            FailPointInjection::pauseFailPoint(FailPoints::time_series_rename_pause_after_first_inner_table);
         }
     }
 
@@ -1017,8 +1025,8 @@ CREATE TABLE my_table ENGINE=TimeSeries
 ```
 
 Then this table can be used with the following protocols (a port must be assigned in the server configuration):
-- [prometheus remote-write](/concepts/features/connect-to-clickhouse/prometheus#remote-write)
-- [prometheus remote-read](/concepts/features/connect-to-clickhouse/prometheus#remote-read)
+- [prometheus remote-write](/concepts/features/interfaces/prometheus#remote-write)
+- [prometheus remote-read](/concepts/features/interfaces/prometheus#remote-read)
 
 ### Outer columns {#outer-columns}
 
