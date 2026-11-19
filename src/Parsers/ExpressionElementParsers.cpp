@@ -1211,9 +1211,10 @@ static FailedLiteralReadings & getFailedLiteralReadings(Expected & expected)
 /// in which case `pos` is left somewhere inside what was scanned.
 ///
 /// Without `build_text` it only checks, and remembers in `remember_in` what a scan from each bracket
-/// it passes would find, so that the scans from them are not repeated.
+/// it passes would find, so that the scans from them are not repeated. It also tells in `verbatim`
+/// whether the text it would build is the query text of the collection as it is.
 template <bool build_text>
-static bool scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & literal, Expected * remember_in)
+static bool scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & literal, Expected * remember_in, bool * verbatim)
 {
     using enum TokenType;
 
@@ -1326,6 +1327,11 @@ static bool scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & l
                 if constexpr (build_text)
                     literal.text += '-';
             }
+            else if (last_token == Minus && verbatim)
+            {
+                /// The minus of a zero is not written.
+                *verbatim = false;
+            }
             if constexpr (build_text)
                 literal.text += text;
         }
@@ -1348,6 +1354,8 @@ static bool scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & l
                 return fail();
             literal.has_null = true;
             stack.back().holds_scalar = true;
+            if (verbatim && tokenText(pos) != "NULL")
+                *verbatim = false;
             if constexpr (build_text)
                 literal.text += "NULL";
         }
@@ -1356,8 +1364,15 @@ static bool scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & l
             break;
         }
 
-        last_token = pos->type;
-        last_token_end = pos->end;
+        const Token & token = *pos;
+
+        /// Only a single space after a comma is kept of what separates the tokens.
+        if (verbatim && token.begin != last_token_end
+            && !(last_token == Comma && token.begin == last_token_end + 1 && *last_token_end == ' '))
+            *verbatim = false;
+
+        last_token = token.type;
+        last_token_end = token.end;
         ++pos;
 
         if (stack.empty())
@@ -1420,7 +1435,7 @@ bool parseLiteralAsText(IParser::Pos & pos, LiteralAsText & literal)
     }
     else if (isOneOf<OpeningSquareBracket, OpeningRoundBracket>(pos->type))
     {
-        if (!scanCollectionOfLiteralsAsText</*build_text*/ true>(pos, result, /*failed*/ nullptr))
+        if (!scanCollectionOfLiteralsAsText</*build_text*/ true>(pos, result, /*remember_in*/ nullptr, /*verbatim*/ nullptr))
         {
             pos = begin;
             return false;
@@ -1563,10 +1578,10 @@ ASTPtr exactCastArgument(
     return result;
 }
 
-/// Whether `pos` starts a collection of literals that `parseLiteralAsText` reads and that is followed by `::`. This is
-/// checked without building the text of the literal, and what a check finds about the brackets it passes is remembered,
-/// so that the operand of every enclosing expression is not scanned again. Leaves `pos` where it is.
-static bool castFollowsCollectionOfLiterals(IParser::Pos & pos, Expected & expected)
+/// Reads at `pos` a collection of literals the way `parseLiteralAsText` does, but only when `::` follows it. That is
+/// checked first, without building the text of the literal, and what a check finds about the brackets it passes is
+/// remembered, so that the operand of every enclosing expression is not scanned again. On success `pos` is left at `::`.
+static bool readCollectionOfLiteralsBeforeCast(IParser::Pos & pos, LiteralAsText & literal, Expected & expected)
 {
     std::optional<TokenIterator> after_literal;
     bool remembered = false;
@@ -1582,11 +1597,24 @@ static bool castFollowsCollectionOfLiterals(IParser::Pos & pos, Expected & expec
     if (!remembered)
     {
         IParser::Pos end = pos;
-        LiteralAsText unused;
-        if (!scanCollectionOfLiteralsAsText</*build_text*/ false>(end, unused, &expected))
+        LiteralAsText checked;
+        bool verbatim = true;
+        if (!scanCollectionOfLiteralsAsText</*build_text*/ false>(end, checked, &expected, &verbatim))
             return false;
+
         if (end->type == TokenType::DoubleColon)
+        {
+            if (!verbatim)
+                return parseLiteralAsText(pos, literal);
+
+            IParser::Pos last = end;
+            --last;
+            checked.text.assign(pos->begin, last->end);
+            literal = std::move(checked);
+            pos = end;
             return true;
+        }
+
         after_literal = end;
         if (end->begin - pos->begin >= min_remembered_reading_size)
             getFailedLiteralReadings(expected).cast_operands.emplace(pos->begin, after_literal);
@@ -1604,12 +1632,13 @@ static bool castFollowsCollectionOfLiterals(IParser::Pos & pos, Expected & expec
 
 bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket>(pos->type)
-        && !castFollowsCollectionOfLiterals(pos, expected))
-        return false;
-
     LiteralAsText literal;
-    if (!parseLiteralAsText(pos, literal))
+    if (isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket>(pos->type))
+    {
+        if (!readCollectionOfLiteralsBeforeCast(pos, literal, expected))
+            return false;
+    }
+    else if (!parseLiteralAsText(pos, literal))
         return false;
 
     if (!ParserToken(TokenType::DoubleColon).ignore(pos, expected))
