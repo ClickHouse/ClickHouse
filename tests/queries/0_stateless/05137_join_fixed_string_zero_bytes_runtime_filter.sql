@@ -52,10 +52,10 @@ SELECT count() FROM s JOIN (SELECT toLowCardinality(x) AS x FROM fs) AS fsl ON s
 
 SELECT '-- the runtime filter is built and applied on the normalized keys';
 SELECT replaceRegexpOne(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ' from \\w+\\.\\w+', '')
-FROM (EXPLAIN actions = 1 SELECT count() FROM s JOIN fs ON s.y = fs.x)
+FROM (EXPLAIN actions = 1 SELECT count() FROM s JOIN fs ON s.y = fs.x SETTINGS enable_parallel_replicas = 0)
 WHERE explain LIKE '%Build runtime join filter on%' OR explain LIKE '%Filter column: RF%';
 SELECT replaceRegexpOne(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ' from \\w+\\.\\w+', '')
-FROM (EXPLAIN actions = 1 SELECT count() FROM s JOIN fs ON tuple(s.y) = tuple(fs.x))
+FROM (EXPLAIN actions = 1 SELECT count() FROM s JOIN fs ON tuple(s.y) = tuple(fs.x) SETTINGS enable_parallel_replicas = 0)
 WHERE explain LIKE '%Build runtime join filter on%' OR explain LIKE '%Filter column: RF%';
 
 DROP TABLE fs;
