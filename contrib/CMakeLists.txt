@@ -117,7 +117,9 @@ add_contrib (StringZilla-cmake StringZilla)
 add_contrib (heks-cmake heks)
 # parquet/arrow
 add_contrib (xsimd-cmake xsimd) # required by arrow's SIMD codepaths
-add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion, xsimd, flatbuffers
+add_contrib (simdjson-cmake simdjson)
+add_contrib (uriparser-cmake uriparser)
+add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion, xsimd, flatbuffers, simdjson, uriparser
 add_contrib (avro-cmake avro) # requires: snappy
 add_contrib (openldap-cmake openldap)
 add_contrib (msgpack-c-cmake msgpack-c)
@@ -186,7 +188,6 @@ add_contrib (aws-cmake
     aws-cmake
 )
 
-add_contrib (simdjson-cmake simdjson)
 add_contrib (simdutf-cmake simdutf)
 add_contrib (rapidjson-cmake rapidjson)
 add_contrib (fastops-cmake fastops)
