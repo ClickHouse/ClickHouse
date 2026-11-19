@@ -43,7 +43,7 @@ public:
     [[nodiscard]] bool isTransformation() const override { return false; }
 
 protected:
-    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+    GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
 /// The partition keys as distribution columns, or empty when the window cannot run per
@@ -93,7 +93,7 @@ static ExpressionProperties windowInputRequirement(const WindowStep & window_ste
     return required;
 }
 
-std::vector<GroupExpressionPtr> WindowImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+GroupExpressions WindowImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     const auto * window_step = typeid_cast<const WindowStep *>(expression->getQueryPlanStep());
     if (!window_step)
@@ -105,7 +105,7 @@ std::vector<GroupExpressionPtr> WindowImplementation::applyImpl(GroupExpressionP
             "WindowImplementation::applyImpl: expected 1 input, got {} for expression '{}'",
             expression->inputs.size(), expression->getDescription());
 
-    std::vector<GroupExpressionPtr> result;
+    GroupExpressions result;
     const DistributionColumns partition_columns = partitionKeyColumns(*window_step);
     const ExpressionProperties window_input_requirement = windowInputRequirement(*window_step, partition_columns);
 
