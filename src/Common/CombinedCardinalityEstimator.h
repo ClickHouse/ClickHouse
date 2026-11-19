@@ -182,7 +182,7 @@ public:
         }
     }
 
-    UInt64 size() const
+    [[nodiscard]] UInt64 size() const
     {
         auto container_type = getContainerType();
 
@@ -330,7 +330,7 @@ private:
     }
 
     template <typename T>
-    const T & getContainer() const
+    [[nodiscard]] const T & getContainer() const
     {
         return *reinterpret_cast<T *>(address & mask);
     }
@@ -341,7 +341,7 @@ private:
         address |= static_cast<UInt8>(t);
     }
 
-    details::ContainerType getContainerType() const
+    [[nodiscard]] details::ContainerType getContainerType() const
     {
         return static_cast<details::ContainerType>(address & ~mask);
     }
