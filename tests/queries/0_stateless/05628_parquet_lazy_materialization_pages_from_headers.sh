@@ -28,7 +28,7 @@ for pages in 32768 1024; do
 done
 
 # Without dictionaries the deferred columns are most of the bytes, so reading only the located pages reads far less.
-# With 1 MiB pages every chunk has one data page, which is not located.
+# With 1 MiB pages and no page row limit every chunk has one data page, which is not located.
 for pages in 32768 1024 1048576; do
     $CLICKHOUSE_CLIENT -q "
         INSERT INTO FUNCTION file('${PREFIX}_bytes_${pages}.parquet')
@@ -37,7 +37,7 @@ for pages in 32768 1024 1048576; do
         FROM numbers(100000)
         SETTINGS max_block_size = 65409, engine_file_truncate_on_insert = 1, output_format_parquet_write_page_index = 0, output_format_parquet_data_page_size = ${pages},
             output_format_parquet_row_group_size = 30000, output_format_parquet_compression_method = 'none',
-            output_format_parquet_max_dictionary_size = 0"
+            output_format_parquet_max_dictionary_size = 0, output_format_parquet_data_page_row_limit = 0"
 done
 
 $CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM (EXPLAIN SELECT * FROM file('${PREFIX}_32768.parquet') ORDER BY k LIMIT 5 SETTINGS ${LAZY})
