@@ -401,6 +401,11 @@ ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const StoragePtr 
     }
 }
 
+NamesAndTypes ProjectionPlanner::getSourceColumns() const
+{
+    return planner_context->getTableExpressionDataOrThrow(query_tree->as<QueryNode &>().getJoinTreeNode()).getColumns();
+}
+
 ActionsDAG ProjectionPlanner::buildActions(const QueryTreeNodes & expressions)
 {
     ActionsDAG actions_dag;

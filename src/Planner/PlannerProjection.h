@@ -25,6 +25,9 @@ public:
 
     [[nodiscard]] const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
 
+    /// the columns of the source that the query reads
+    [[nodiscard]] NamesAndTypes getSourceColumns() const;
+
     /// the functions in the actions refer to this context, so keep it while you use the actions
     [[nodiscard]] ContextPtr getContext() const { return planner_context->getQueryContext(); }
 

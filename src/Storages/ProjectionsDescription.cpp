@@ -307,21 +307,6 @@ void storeValuesOfScalarSubqueries(const ASTPtr & query_ast, const StoragePtr & 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A scalar subquery of a projection is not in the query {}", query_ast->formatForErrorMessage());
 }
 
-/// Collects the columns of the table that the expression reads, in the order of the first use.
-void collectProjectionSourceColumns(const QueryTreeNodePtr & node, const IQueryTreeNode * table_node, NamesAndTypesList & result, NameSet & names)
-{
-    if (const auto * column_node = node->as<ColumnNode>())
-    {
-        auto column_source = column_node->getColumnSourceOrNull();
-        if (column_source.get() == table_node && names.insert(column_node->getColumnName()).second)
-            result.emplace_back(column_node->getColumnName(), column_node->getColumnType());
-    }
-
-    for (const auto & child : node->getChildren())
-        if (child && !isQueryOrUnionNode(child))
-            collectProjectionSourceColumns(child, table_node, result, names);
-}
-
 /// The parts store the columns of the table in the order of the table.
 void sortByPositionInTable(NamesAndTypesList & source_columns, const ColumnsDescription & columns)
 {
@@ -349,10 +334,8 @@ std::pair<ProjectionPlanner, NamesAndTypesList> planProjectionQuery(
 
     ProjectionPlanner planner(result.query_ast, table, context);
 
-    NamesAndTypesList source_columns;
-    NameSet source_column_names;
-    collectProjectionSourceColumns(
-        planner.getQueryTree(), planner.getQueryTree()->as<QueryNode &>().getJoinTreeNode().get(), source_columns, source_column_names);
+    auto read_columns = planner.getSourceColumns();
+    NamesAndTypesList source_columns(read_columns.begin(), read_columns.end());
     sortByPositionInTable(source_columns, columns);
 
     /// a part does not store an EPHEMERAL column, so the calculation cannot read it
