@@ -3,6 +3,7 @@
 -- Test for setting 'vector_search_with_rescoring'
 SET explain_query_plan_default = 'legacy';
 
+SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to force local plan for parallel replicas
 
 DROP TABLE IF EXISTS tab;
@@ -94,7 +95,7 @@ CREATE TABLE tab_final
 )
 ENGINE = ReplacingMergeTree(ver)
 ORDER BY id
-SETTINGS index_granularity = 1, allow_vector_similarity_index_in_specialized_merge_tree = 1;
+SETTINGS index_granularity = 1;
 
 INSERT INTO tab_final VALUES (1, 1, [0.0, 0.0]), (10, 1, [500.0, 0.0]), (11, 1, [600.0, 0.0]);
 INSERT INTO tab_final VALUES (1, 2, [100.0, 0.0]), (2, 1, [0.1, 0.0]), (3, 1, [700.0, 0.0]);

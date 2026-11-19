@@ -1,4 +1,3 @@
--- Tags: no-parallel, no-fasttest
 -- Tests parallel_replicas_exchange_plan: the planner builds a plain local plan, then a post-build phase
 -- splits it at the reading step into a UNION of a local read and a remote parallel-replicas read of the
 -- shipped fragment. Results must match non-parallel execution, and counts must not be multiplied across
@@ -9,6 +8,7 @@ DROP TABLE IF EXISTS t_pr_plan_based;
 CREATE TABLE t_pr_plan_based (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_pr_plan_based SELECT number, number % 10 FROM numbers(100000);
 
+SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;

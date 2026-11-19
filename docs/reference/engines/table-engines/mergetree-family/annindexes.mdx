@@ -146,8 +146,8 @@ ORDER BY [...]
 
 These HNSW-specific parameters are available:
 - `<quantization>` controls the quantization of the vectors in the proximity graph. Possible values are `f64`, `f32`, `f16`, `bf16`, `i8`, or `b1`. The default value is `bf16`. Note that this parameter does not affect the representation of the vectors in the underlying column.
-- `<hnsw_max_connections_per_layer>` controls the number of neighbors per graph node, also known as HNSW hyperparameter `M`. The default value is `32`. Value `0` means using the default value. The maximum value is `512`.
-- `<hnsw_candidate_list_size_for_construction>` controls the size of the dynamic candidate list during construction of the HNSW graph, also known as HNSW hyperparameter `ef_construction`. The default value is `128`. Value `0` means using the default value. The maximum value is `3200`.
+- `<hnsw_max_connections_per_layer>` controls the number of neighbors per graph node, also known as HNSW hyperparameter `M`. The default value is `32`. Value `0` means using the default value.
+- `<hnsw_candidate_list_size_for_construction>` controls the size of the dynamic candidate list during construction of the HNSW graph, also known as HNSW hyperparameter `ef_construction`. The default value is `128`. Value `0` means using the default value.
 
 The default values of all HNSW-specific parameters work reasonably well in the majority of use cases.
 We therefore do not recommend customizing the HNSW-specific parameters.
@@ -158,7 +158,6 @@ Further restrictions apply:
 - Vector similarity indexes may be build on calculated expressions (e.g., `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`) but such indexes cannot be used for approximate neighbor search later on.
 - Vector similarity indexes require that all arrays in the underlying column have `<dimension>`-many elements - this is checked during index creation. To detect violations of this requirement as early as possible, users can add a [constraint](/reference/statements/create/table#constraints) for the vector column, e.g., `CONSTRAINT same_length CHECK length(vectors) = 256`.
 - Likewise, array values in the underlying column must not be empty (`[]`) or have a default value (also `[]`).
-- Vector similarity indexes can only be created on tables with engine `MergeTree` or `ReplicatedMergeTree`. Other engines of the family, e.g. `ReplacingMergeTree` or `CollapsingMergeTree`, are refused because `SELECT ... FINAL` may return wrong results with the index. MergeTree setting `allow_vector_similarity_index_in_specialized_merge_tree` allows it anyway.
 
 **Estimating storage and memory consumption**
 
@@ -273,7 +272,7 @@ In this case, the vector similarity index dropped two of four granules, i.e. 50%
 The more granules can be dropped, the more effective index usage becomes.
 
 <Tip>
-To enforce index usage, you can run the SELECT query with setting [force_data_skipping_indices](/reference/settings/session-settings/force#force_data_skipping_indexes) (provide the index name as setting value).
+To enforce index usage, you can run the SELECT query with setting [force_data_skipping_indices](/reference/settings/session-settings/force#force_data_skipping_indices) (provide the index name as setting value).
 </Tip>
 
 **Post-filtering and Pre-filtering**
@@ -454,11 +453,7 @@ SELECT queries need to load vector similarity indexes into main memory to use th
 To avoid that the same vector similarity index is loaded repeatedly into main memory, ClickHouse provides a dedicated in-memory cache for such indexes.
 The bigger this cache is, the fewer unnecessary loads will happen.
 The maximum cache size can be configured using server setting [vector_similarity_index_cache_size](/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size).
-In ClickHouse OSS, the cache can grow up to 5 GB in size by default.
-
-In ClickHouse Cloud, the maximum cache size depends on the pod size.
-The exact size can be checked in [system.server_settings](/reference/system-tables/server_settings).
-As server settings cannot be changed from SQL or the console, contact support to configure a bigger size.
+By default, the cache can grow up to 5 GB in size.
 
 The following log messages (`system.text_log`) indicate that the vector similarity index is being loaded.
 If such messages appear repeatedly for different vector search queries, this indicates that the cache size is too low.
@@ -496,13 +491,6 @@ SELECT ProfileEvents['VectorSimilarityIndexCacheHits'], ProfileEvents['VectorSim
 FROM system.query_log
 WHERE type = 'QueryFinish' AND query_id = '<...>'
 ORDER BY event_time_microseconds;
-```
-
-The statement [`SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE`](/reference/statements/system#drop-vector-similarity-index-cache) removes all vector similarity indexes from the cache.
-To remove only the indexes of a single table from cache, add the `FOR TABLE` clause:
-
-```sql
-SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE FOR TABLE tab;
 ```
 
 For production use-cases, we recommend that the cache is sized large enough so that all vector indexes remain in memory at all times.

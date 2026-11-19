@@ -52,7 +52,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
-#include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 
 #include <filesystem>
@@ -102,7 +101,6 @@ namespace FailPoints
     extern const char object_storage_queue_fail_after_insert[];
     extern const char object_storage_queue_fail_startup[];
     extern const char object_storage_queue_pause_after_commit[];
-    extern const char object_storage_queue_pause_in_direct_select[];
 }
 
 namespace ServerSetting
@@ -151,7 +149,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsString after_processing_move_prefix;
     extern const ObjectStorageQueueSettingsBool after_processing_move_preserve_path;
     extern const ObjectStorageQueueSettingsString after_processing_move_access_key_id;
-    extern const ObjectStorageQueueSettingsSecretString after_processing_move_secret_access_key;
+    extern const ObjectStorageQueueSettingsString after_processing_move_secret_access_key;
     extern const ObjectStorageQueueSettingsString after_processing_move_connection_string;
     extern const ObjectStorageQueueSettingsString after_processing_move_container;
     extern const ObjectStorageQueueSettingsString after_processing_tag_key;
@@ -224,7 +222,7 @@ namespace
         {
             bool move_uri = !queue_settings[ObjectStorageQueueSetting::after_processing_move_uri].toString().empty();
             bool move_access_key_id = !queue_settings[ObjectStorageQueueSetting::after_processing_move_access_key_id].toString().empty();
-            bool move_secret_access_key = !queue_settings[ObjectStorageQueueSetting::after_processing_move_secret_access_key].value.empty();
+            bool move_secret_access_key = !queue_settings[ObjectStorageQueueSetting::after_processing_move_secret_access_key].toString().empty();
             bool move_connection_string = !queue_settings[ObjectStorageQueueSetting::after_processing_move_connection_string].toString().empty();
             bool move_container = !queue_settings[ObjectStorageQueueSetting::after_processing_move_container].toString().empty();
             bool move_prefix = !queue_settings[ObjectStorageQueueSetting::after_processing_move_prefix].toString().empty();
@@ -251,11 +249,6 @@ namespace
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Move to Azure container requires all of settings: move_connection_string, move_container");
                 }
-                /// A full user `ATTACH` is fresh input as well, so only a definition stored on this server is exempt.
-                if (!is_loading_from_existing_metadata)
-                    ObjectStorageQueuePostProcessor::checkAzureMoveDestination(
-                        queue_settings[ObjectStorageQueueSetting::after_processing_move_connection_string].toString(),
-                        queue_settings[ObjectStorageQueueSetting::after_processing_move_container].toString());
             }
             else if (!move_prefix)
             {
@@ -468,21 +461,17 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     if (engine_args->settings)
-        storage_metadata.setSettingsChanges(engine_args->settings->ptr());
+        storage_metadata.settings_changes = engine_args->settings->ptr();
     storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
-    Macros::MacroExpansionInfo macro_info;
     zk_path = chooseZooKeeperPath(
         getContext(),
         table_id_,
         context_->getSettingsRef(),
         *queue_settings_,
         UUIDHelpers::Nil,
-        &zookeeper_name,
-        &macro_info);
-    if (macro_info.expanded_database)
-        keeper_path_database_name = table_id_.database_name;
+        &zookeeper_name);
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
@@ -673,7 +662,7 @@ void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
 {
     const auto prev_storage_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
-    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID(), /* if_exists */ true);
+    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID());
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
@@ -757,10 +746,6 @@ void StorageObjectStorageQueue::read(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. "
                         "To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
     }
-
-    /// The client keeps the creator's allowance for background processing; a direct reader is checked against its own.
-    checkSessionMayUseServerIdentity(*object_storage, local_context);
-
     bool do_commit_on_select = false;
     {
         std::lock_guard lock(mutex);
@@ -771,8 +756,6 @@ void StorageObjectStorageQueue::read(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
                         "Cannot read from {} with attached materialized views and commit_on_select=1", getName());
     }
-
-    FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_in_direct_select);
 
     auto this_ptr = std::static_pointer_cast<StorageObjectStorageQueue>(shared_from_this());
 
@@ -1310,6 +1293,13 @@ void StorageObjectStorageQueue::commit(
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
 
+    /// The post-processing runs before the Keeper requests are sent on purpose: an object found to
+    /// be no longer the generation that was ingested (`FILE_CHANGED_DURING_READ`, see
+    /// `ObjectStorageQueuePostProcessor::process`) throws out of here, so that the batch is not
+    /// committed as processed. The files then go back to unprocessed (their `Processing` nodes are
+    /// released when the sources are destroyed) and the newer generation is ingested on a later pass,
+    /// instead of staying in the bucket untracked for good. The objects of the batch that were moved
+    /// or deleted are gone from the bucket, so that pass does not ingest them again.
     UnorderedSetWithMemoryTracking<String> post_processing_failed_paths;
 
     if (!successful_objects.empty()
@@ -1635,14 +1625,12 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
 
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata old_metadata(*metadata_snapshot); /// NOLINT
-    const auto old_settings_ast = old_metadata.getSettingsChanges();
     SettingsChanges * old_settings = nullptr;
-    if (old_settings_ast)
+    if (old_metadata.settings_changes)
     {
-        old_settings = &old_settings_ast->as<ASTSetQuery &>().changes;
+        old_settings = &old_metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (auto & setting : *old_settings)
             setting.name = normalizeSetting(setting.name);
-        old_metadata.setSettingsChanges(old_settings_ast);
     }
 
     StorageInMemoryMetadata new_metadata(old_metadata);
@@ -1658,8 +1646,7 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
 
     const auto mode = metadata->getTableMetadata().getMode();
-    const auto new_settings_ast = new_metadata.getSettingsChanges();
-    const auto & new_settings = new_settings_ast->as<ASTSetQuery &>().changes;
+    const auto & new_settings = new_metadata.settings_changes->as<ASTSetQuery &>().changes;
 
     for (const auto & setting : new_settings)
     {
@@ -1720,18 +1707,11 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
 
     if (move_destination_changed)
     {
-        const String move_connection_string = get_move_destination_value(&new_settings, "after_processing_move_connection_string");
-        const String move_container = get_move_destination_value(&new_settings, "after_processing_move_container");
-
-        /// A move destination set by this query must carry its own credentials, as at `CREATE`.
-        if (type == ObjectStorageType::Azure && !move_connection_string.empty())
-            ObjectStorageQueuePostProcessor::checkAzureMoveDestination(move_connection_string, move_container);
-
         checkMoveDestinationHost(
             type,
             get_move_destination_value(&new_settings, "after_processing_move_uri"),
-            move_connection_string,
-            move_container,
+            get_move_destination_value(&new_settings, "after_processing_move_connection_string"),
+            get_move_destination_value(&new_settings, "after_processing_move_container"),
             local_context->getRemoteHostFilter());
     }
 }
@@ -1750,22 +1730,19 @@ void StorageObjectStorageQueue::alter(
 
         auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
         StorageInMemoryMetadata old_metadata(*metadata_snapshot); /// NOLINT
-        const auto old_settings_ast = old_metadata.getSettingsChanges();
         SettingsChanges * old_settings = nullptr;
-        if (old_settings_ast)
+        if (old_metadata.settings_changes)
         {
-            old_settings = &old_settings_ast->as<ASTSetQuery &>().changes;
+            old_settings = &old_metadata.settings_changes->as<ASTSetQuery &>().changes;
             for (auto & setting : *old_settings)
                 setting.name = normalizeSetting(setting.name);
-            old_metadata.setSettingsChanges(old_settings_ast);
         }
 
         /// settings_changes will be cloned.
         StorageInMemoryMetadata new_metadata(old_metadata);
         alter_commands.apply(new_metadata, local_context);
 
-        const auto new_settings_ast = new_metadata.getSettingsChanges();
-        auto & new_settings = new_settings_ast->as<ASTSetQuery &>().changes;
+        auto & new_settings = new_metadata.settings_changes->as<ASTSetQuery &>().changes;
 
         if (old_settings)
         {
@@ -1800,7 +1777,6 @@ void StorageObjectStorageQueue::alter(
                 ObjectStorageQueueSettings default_settings;
                 for (const auto & name : reset_settings)
                     new_settings.push_back(SettingChange(name, default_settings.get(name)));
-                new_metadata.setSettingsChanges(new_settings_ast);
             }
         }
 
@@ -1884,7 +1860,7 @@ void StorageObjectStorageQueue::alter(
 
         LOG_TRACE(
             log, "New settings changes: {} (requires_detached_mv: {}, changed settings ({}): {})",
-            new_settings_ast->formatForLogging(),
+            new_metadata.settings_changes->formatForLogging(),
             requires_detached_mv, changed_settings.size(), changed_settings.namesToString());
 
         /// Alter settings which are stored in keeper.
@@ -2092,29 +2068,13 @@ void StorageObjectStorageQueue::checkTableCanBeRenamed(const StorageID & new_nam
     }
 }
 
-void StorageObjectStorageQueue::checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const
-{
-    /// Compared against the name the path was expanded with, not against the current one: the last step of
-    /// the Ordinary-to-Atomic conversion renames the database back to that name, which leaves the table on
-    /// its own Keeper node and must stay allowed.
-    if (!keeper_path_database_name || *keeper_path_database_name == new_database_name)
-        return;
-
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-        "Cannot rename the database of Storage{}Queue table {} to {}, because its `keeper_path` setting "
-        "expands the {{database}} macro (possibly nested in another macro). The Keeper path would change "
-        "and the table would process every file again",
-        configuration->getEngineName(), getStorageID().getNameForLogs(), backQuoteIfNeed(new_database_name));
-}
-
 String StorageObjectStorageQueue::chooseZooKeeperPath(
     const ContextPtr & context_,
     const StorageID & table_id,
     const Settings & settings,
     const ObjectStorageQueueSettings & queue_settings,
     UUID database_uuid,
-    String * result_zookeeper_name,
-    Macros::MacroExpansionInfo * result_macro_info)
+    String * result_zookeeper_name)
 {
     /// keeper_path setting can be set explicitly by the user in the CREATE query, or filled in registerQueueStorage.cpp.
     /// We also use keeper_path to determine whether we move it between databases, since the default path contains UUID of the database.
@@ -2168,8 +2128,6 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
         Macros::MacroExpansionInfo info;
         info.table_id = table_id;
         result_zk_path = context_->getMacros()->expand(result_zk_path, info);
-        if (result_macro_info)
-            *result_macro_info = info;
     }
 
     if (result_zookeeper_name)

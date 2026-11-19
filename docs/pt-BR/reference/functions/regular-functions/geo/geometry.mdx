@@ -6,11 +6,15 @@ title: 'Funções para trabalhar com Geometry'
 doc_type: 'reference'
 ---
 
-## Geometry {#geometry}
+<div id="geometry">
+  ## Geometry
+</div>
 
 As funções de Geometry permitem calcular o perímetro e a área de tipos geométricos como POLYGON, LINESTRING, MULTIPOLYGON, MULTILINESTRING, RING e POINT. Use geometrias no tipo Geometry. Se o valor de entrada for `NULL`, todas as funções abaixo retornarão 0.
 
-## perimeterCartesian {#perimetercartesian}
+<div id="perimetercartesian">
+  ## perimeterCartesian
+</div>
 
 Calcula o perímetro do objeto Geometry especificado no sistema de coordenadas cartesianas (plano).
 
@@ -42,7 +46,9 @@ SELECT perimeterCartesian(geom) FROM geo_dst;
 └──────────────────────────┘
 ```
 
-## areaCartesian {#areacartesian}
+<div id="areacartesian">
+  ## areaCartesian
+</div>
 
 Calcula a área do objeto Geometry especificado no sistema de coordenadas cartesianas.
 
@@ -74,7 +80,9 @@ SELECT areaCartesian(geom) FROM geo_dst;
 └─────────────────────┘
 ```
 
-## perimeterSpherical {#perimeterspherical}
+<div id="perimeterspherical">
+  ## perimeterSpherical
+</div>
 
 Calcula o perímetro de um objeto do tipo Geometry na superfície de uma esfera.
 
@@ -90,7 +98,7 @@ perimeterSpherical(geom)
 
 **Valores retornados**
 
-* Número — Perímetro em uma esfera de raio 1, em radianos (as coordenadas são longitude e latitude em graus). Multiplique pelo raio da esfera para obter um comprimento, por exemplo, por 6371 para obter quilômetros na Terra. [Float64](/pt-BR/reference/data-types/float).
+* Número — Perímetro. [Float64](/pt-BR/reference/data-types/float).
 
 **Exemplo**
 
@@ -102,11 +110,13 @@ SELECT perimeterSpherical(geom) FROM geo_dst;
 
 ```response title="Response"
 ┌─perimeterSpherical(geom)─┐
-│      0.06981051179132045 │
+│ 0                        │
 └──────────────────────────┘
 ```
 
-## areaSpherical {#areaspherical}
+<div id="areaspherical">
+  ## areaSpherical
+</div>
 
 Calcula a área de um objeto do tipo Geometry na superfície de uma esfera.
 
@@ -122,7 +132,7 @@ areaSpherical(geom)
 
 **Valores retornados**
 
-* Número — Área em uma esfera de raio 1, em esterradianos (as coordenadas são longitude e latitude em graus). Multiplique pelo quadrado do raio da esfera para obter a área. [Float64](/pt-BR/reference/data-types/float).
+* Número — Área. [Float64](/pt-BR/reference/data-types/float).
 
 **Exemplo**
 

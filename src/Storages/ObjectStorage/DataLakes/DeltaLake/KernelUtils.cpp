@@ -67,7 +67,7 @@ DB::Chunk castChunkToDeltaWriteSchema(const DB::Chunk & chunk, const DB::Block &
     return DB::Chunk(std::move(out_columns), chunk.getNumRows());
 }
 
-ffi::KernelStringSlice KernelUtils::toDeltaString(std::string_view string)
+ffi::KernelStringSlice KernelUtils::toDeltaString(const std::string & string)
 {
     return ffi::KernelStringSlice{ .ptr = string.data(), .len = string.size() };
 }
@@ -185,20 +185,6 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
             "Received unknown error from DeltaLake kernel. (EType: {}) (in {})",
             etype, from);
     }
-}
-
-std::string appendToLogicalPath(const std::string & logical_path, const std::string & field_name)
-{
-    std::string result = logical_path;
-    if (!result.empty())
-        result += '.';
-    for (char c : field_name)
-    {
-        if (c == '.' || c == '\\')
-            result += '\\';
-        result += c;
-    }
-    return result;
 }
 
 std::optional<std::string> tryGetPhysicalName(const std::string & name, const DB::NameToNameMap & physical_names_map)

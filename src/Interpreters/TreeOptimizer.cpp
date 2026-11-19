@@ -1,6 +1,4 @@
 #include <Core/Settings.h>
-#include <Access/Common/AccessFlags.h>
-#include <Access/ContextAccess.h>
 
 #include <Interpreters/TreeOptimizer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -165,19 +163,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NamesAndTypesList & so
                 const auto & dict_name = dict_name_ast->value.safeGet<String>();
                 const auto & attr_name = attr_name_ast->value.safeGet<String>();
 
-                const auto & external_loader = context->getExternalDictionariesLoader();
-
-                /// Do not load the dictionary for a user without access to it, because loading contacts
-                /// the dictionary source. The query fails later with the proper access error.
-                auto dictionary = external_loader.resolveDictionary(dict_name, context);
-                if (!context->getAccess()->isGranted(
-                        AccessType::dictGet, IDictionary::getDatabaseOrNoDatabaseTag(dictionary.id), dictionary.id.getTableName()))
-                {
-                    ++i;
-                    continue;
-                }
-
-                const auto & dict_ptr = external_loader.getDictionary(dictionary, context);
+                const auto & dict_ptr = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
                 if (!dict_ptr->isInjective(attr_name))
                 {
                     ++i;
@@ -563,10 +549,10 @@ void optimizeUsing(const ASTSelectQuery * select_query)
         expression_list = uniq_expressions_list;
 }
 
-void optimizeAggregationFunctions(ASTPtr & query, const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns)
+void optimizeAggregationFunctions(ASTPtr & query)
 {
     /// Move arithmetic operations out of aggregation functions
-    ArithmeticOperationsInAgrFuncVisitor::Data data{tables_with_columns};
+    ArithmeticOperationsInAgrFuncVisitor::Data data;
     ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
 }
 
@@ -686,7 +672,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     /// Move arithmetic operations out of aggregation functions
     if (settings[Setting::optimize_arithmetic_operations_in_aggregate_functions])
-        optimizeAggregationFunctions(query, tables_with_columns);
+        optimizeAggregationFunctions(query);
 
     bool converted_to_cnf = false;
     if (settings[Setting::convert_query_to_cnf])

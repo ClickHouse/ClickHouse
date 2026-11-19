@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel
 # Tag no-parallel: the finalization-failure section enables the `framing_finalize_throw` fail point,
 # which affects the whole server. It fires on the next framing-format finalization anywhere on the
 # server, so a concurrent framing query from another test (e.g. `04512_framing_formats`) could consume

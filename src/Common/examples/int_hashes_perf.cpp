@@ -14,7 +14,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>
 #include <Core/Defines.h>
-#include <bit>
 
 
 static void setAffinity()
@@ -56,11 +55,11 @@ static inline size_t identity(UInt64 x)
 static inline size_t intHash32(UInt64 x)
 {
     x = (~x) + (x << 18);
-    x = x ^ std::rotr(x, 31);
+    x = x ^ ((x >> 31) | (x << 33));
     x = x * 21;
-    x = x ^ std::rotr(x, 11);
+    x = x ^ ((x >> 11) | (x << 53));
     x = x + (x << 6);
-    x = x ^ std::rotr(x, 22);
+    x = x ^ ((x >> 22) | (x << 42));
 
     return x;
 }

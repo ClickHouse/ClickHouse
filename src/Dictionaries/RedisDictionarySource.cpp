@@ -43,7 +43,7 @@ namespace DB
                 .host = host,
                 .port = static_cast<UInt16>(port),
                 .db_index = config.getUInt(redis_config_prefix + ".db_index", DEFAULT_REDIS_DB_INDEX),
-                .password = SecretString(config.getString(redis_config_prefix + ".password", DEFAULT_REDIS_PASSWORD)),
+                .password = config.getString(redis_config_prefix + ".password", DEFAULT_REDIS_PASSWORD),
                 .storage_type = parseStorageType(config.getString(redis_config_prefix + ".storage_type", "")),
                 .pool_size = config.getUInt(redis_config_prefix + ".pool_size", DEFAULT_REDIS_POOL_SIZE),
             };
@@ -51,7 +51,7 @@ namespace DB
             return std::make_unique<RedisDictionarySource>(dict_struct, configuration, std::make_shared<const Block>(std::move(sample_block)));
         };
 
-        factory.registerSource("redis", create_table_source, SecretArgumentsSpec{.secret_keys = {"password"}}, Documentation{
+        factory.registerSource("redis", create_table_source, Documentation{
             .description = R"DOCS_MD(
 # Redis dictionary source
 

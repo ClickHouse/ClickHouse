@@ -65,8 +65,6 @@ protected:
 
     void initialize(Application & self) override;
 
-    void beforeStartingThreads() override;
-
     void uninitialize() override;
 
     int main(const std::vector<std::string> & args) override;
@@ -77,8 +75,6 @@ private:
     ContextMutablePtr global_context;
     /// Updated/recent config, to compare http_handlers
     ConfigurationPtr latest_config;
-    /// The `application.*` properties that `Poco::Util::Application` sets before any file or command-line layer is added.
-    ConfigurationPtr application_properties;
 
     HTTPContextPtr httpContext() const;
 
@@ -95,8 +91,7 @@ private:
         const std::string & protocol,
         Poco::Net::HTTPServerParams::Ptr http_params,
         AsynchronousMetrics & async_metrics,
-        bool & is_secure,
-        ServerType::Type & protocol_type);
+        bool & is_secure);
 
     using CreateServerFunc = std::function<ProtocolServerAdapter(UInt16)>;
     void createServer(

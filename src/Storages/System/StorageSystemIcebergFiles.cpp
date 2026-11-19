@@ -27,7 +27,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Databases/IDatabase.h>
 
 
 namespace DB
@@ -394,7 +393,7 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return "ReadFromSystemIcebergFiles"; }
+    String getName() const override { return "ReadFromSystemIcebergFiles"; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override
     {
