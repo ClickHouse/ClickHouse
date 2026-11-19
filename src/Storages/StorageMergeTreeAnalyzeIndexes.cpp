@@ -251,7 +251,7 @@ private:
 class ReadFromMergeTreeAnalyzeIndexes : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromMergeTreeAnalyzeIndexes"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromMergeTreeAnalyzeIndexes"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     ReadFromMergeTreeAnalyzeIndexes(

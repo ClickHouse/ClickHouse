@@ -451,6 +451,27 @@ bool containsThisCode(DynamicLinkingProgramHeaderInfo * info)
 }
 #endif
 
+/// The end of the address range occupied by the loadable segments of the object, relative to its load address.
+/// It is taken from the program headers of the loaded object rather than from the size of its file,
+/// because the file we read symbols from may be a separate debug file, which can be smaller than the code
+/// (e.g. when its debug sections are compressed).
+uintptr_t getLoadedSegmentsEnd(DynamicLinkingProgramHeaderInfo * info)
+{
+    __msan_unpoison(&info->phnum, sizeof(info->phnum));
+    __msan_unpoison(&info->phdr, sizeof(info->phdr));
+    uintptr_t end = 0;
+    for (size_t header_index = 0; header_index < info->phnum; ++header_index)
+    {
+        const ElfProgramHeader & phdr = info->phdr[header_index];
+        __msan_unpoison(&phdr, sizeof(phdr));
+        if (phdr.type != ProgramHeaderType::LOAD)
+            continue;
+
+        end = std::max<uintptr_t>(end, phdr.vaddr + phdr.memsz);
+    }
+    return end;
+}
+
 
 void collectSymbolsFromELFSymbolTable(
     const Elf & elf,
@@ -791,7 +812,7 @@ bool collectSymbolsFromELF(
     }
 
     object.address_begin = reinterpret_cast<const void *>(info->addr);
-    object.address_end = reinterpret_cast<const void *>(info->addr + object.elf->size());
+    object.address_end = reinterpret_cast<const void *>(info->addr + getLoadedSegmentsEnd(info));
     object.name = object_name;
     data.objects.push_back(std::move(object));
 
@@ -856,7 +877,60 @@ int collectSymbols(DynamicLinkingProgramHeaderInfo * info, size_t, void * contex
     return 0;
 }
 
+#if !defined(USE_MUSL)
+struct SelfBuildIDContext
+{
+    bool found = false;
+    String build_id;
+    std::exception_ptr exception;
+};
+
+/// Finds the build id of the main executable, the same way as `collectSymbolsFromELF` does for
+/// `SymbolIndex::Data::self_build_id`. As in `collectSymbols`, an exception must not unwind through the
+/// frames of `dl_iterate_phdr`: it is rethrown after the iteration, and so is the file read there if needed.
+int findSelfBuildID(DynamicLinkingProgramHeaderInfo * info, size_t, void * context_ptr)
+{
+    SelfBuildIDContext & context = *reinterpret_cast<SelfBuildIDContext *>(context_ptr);
+
+    /// MSan does not know that the program segments in memory are initialized.
+    __msan_unpoison(info, sizeof(*info));
+    __msan_unpoison_string(info->name);
+
+    /// The main executable is the one with an empty name.
+    if (info->name && info->name[0])
+        return 0;
+
+    context.found = true;
+    try
+    {
+        context.build_id = getBuildIDFromProgramHeaders(info);
+    }
+    catch (...)
+    {
+        context.exception = std::current_exception();
+    }
+    return 1;
+}
+#endif
+
 #elif defined(OS_DARWIN)
+
+/// The build id equivalent of a Mach-O image: its LC_UUID, or an empty string.
+String getMachOUUID(const struct mach_header_64 * header)
+{
+    const uint8_t * cmd_ptr = reinterpret_cast<const uint8_t *>(header + 1);
+    for (uint32_t i = 0; i < header->ncmds; ++i)
+    {
+        const struct load_command * cmd = reinterpret_cast<const struct load_command *>(cmd_ptr);
+        if (cmd->cmd == LC_UUID)
+        {
+            const struct uuid_command * uuid_cmd = reinterpret_cast<const struct uuid_command *>(cmd);
+            return String(reinterpret_cast<const char *>(uuid_cmd->uuid), sizeof(uuid_cmd->uuid));
+        }
+        cmd_ptr += cmd->cmdsize;
+    }
+    return {};
+}
 
 /// Collect symbols from a single Mach-O image loaded in the current process.
 /// Uses the in-memory __LINKEDIT segment to access the symbol table (LC_SYMTAB)
@@ -869,6 +943,10 @@ void collectSymbolsFromMachOImage(
         = reinterpret_cast<const struct mach_header_64 *>(_dyld_get_image_header(image_index));
     if (!header || header->magic != MH_MAGIC_64)
         return;
+
+    /// The build id of the main executable (image 0).
+    if (image_index == 0 && data.self_build_id.empty())
+        data.self_build_id = getMachOUUID(header);
 
     intptr_t slide = _dyld_get_image_vmaddr_slide(image_index);
     const char * image_name = _dyld_get_image_name(image_index);
@@ -907,16 +985,6 @@ void collectSymbolsFromMachOImage(
         else if (cmd->cmd == LC_SYMTAB)
         {
             symtab_cmd = reinterpret_cast<const struct symtab_command *>(cmd);
-        }
-        else if (cmd->cmd == LC_UUID)
-        {
-            /// Extract build ID (LC_UUID) for the main executable (image_index == 0)
-            if (image_index == 0 && data.self_build_id.empty())
-            {
-                /// uuid_command layout: { uint32_t cmd, uint32_t cmdsize, uint8_t uuid[16] }
-                const uint8_t * uuid_bytes = cmd_ptr + 8;
-                data.self_build_id.assign(reinterpret_cast<const char *>(uuid_bytes), 16);
-            }
         }
 
         cmd_ptr += cmd->cmdsize;
@@ -1362,19 +1430,64 @@ const SymbolIndex::Object * SymbolIndex::thisObject() const
     return findObject(reinterpret_cast<const void *>(+[]{}));
 }
 
-String SymbolIndex::getBuildIDHex() const
+namespace
+{
+
+String buildIDToHex(const String & build_id)
 {
     String build_id_hex;
-    build_id_hex.resize(data.self_build_id.size() * 2);
+    build_id_hex.resize(build_id.size() * 2);
 
     char * pos = build_id_hex.data();
-    for (auto c : data.self_build_id)
+    for (auto c : build_id)
     {
         writeHexByteUppercase(c, pos);
         pos += 2;
     }
 
     return build_id_hex;
+}
+
+}
+
+String SymbolIndex::getBuildIDHex() const
+{
+    return buildIDToHex(data.self_build_id);
+}
+
+String SymbolIndex::getSelfBuildIDHex()
+{
+    if (const SymbolIndex * index = instanceIfInitialized())
+        return index->getBuildIDHex();
+
+#if defined(__ELF__)
+    static const String build_id_hex = []
+    {
+#    if defined(USE_MUSL)
+        return buildIDToHex(Elf("/proc/self/exe").getBuildID());
+#    else
+        SelfBuildIDContext context;
+        dl_iterate_phdr(findSelfBuildID, &context);
+        if (context.exception)
+            std::rethrow_exception(context.exception);
+        if (context.found && context.build_id.empty())
+            context.build_id = Elf("/proc/self/exe").getBuildID();
+        return buildIDToHex(context.build_id);
+#    endif
+    }();
+    return build_id_hex;
+#elif defined(OS_DARWIN)
+    static const String build_id_hex = []
+    {
+        const auto * header = reinterpret_cast<const struct mach_header_64 *>(_dyld_get_image_header(0));
+        if (!header || header->magic != MH_MAGIC_64)
+            return String{};
+        return buildIDToHex(getMachOUUID(header));
+    }();
+    return build_id_hex;
+#else
+    return instance().getBuildIDHex();
+#endif
 }
 
 namespace
