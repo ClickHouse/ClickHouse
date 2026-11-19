@@ -31,6 +31,12 @@ namespace
     std::mutex expression_jit_mutex;
     /// See `aggregator_jit_instance` in `Aggregator.cpp` for the rationale of `shared_ptr` ownership.
     std::shared_ptr<CHJIT> expression_jit_instance;
+
+    /// How many times each expression was seen, so it is compiled only after `min_count_to_compile_expression`
+    /// uses. Cleared when full and by `resetExpressionJITInstance`, so distinct literals cannot grow it without bound.
+    std::mutex expression_compile_counter_mutex;
+    std::unordered_map<UInt128, UInt64, UInt128Hash> expression_compile_counter;
+    constexpr size_t MAX_EXPRESSION_COMPILE_COUNTER_ENTRIES = 10000;
 }
 
 static std::shared_ptr<CHJIT> getJITInstancePtr()
@@ -43,8 +49,14 @@ static std::shared_ptr<CHJIT> getJITInstancePtr()
 
 void resetExpressionJITInstance()
 {
-    std::lock_guard lock(expression_jit_mutex);
-    expression_jit_instance.reset();
+    {
+        std::lock_guard lock(expression_jit_mutex);
+        expression_jit_instance.reset();
+    }
+    {
+        std::lock_guard lock(expression_compile_counter_mutex);
+        expression_compile_counter.clear();
+    }
 }
 
 static LoggerPtr getLogger()
@@ -305,13 +317,12 @@ static FunctionBasePtr compile(
     const CompileDAG & dag,
     size_t min_count_to_compile_expression)
 {
-    static std::unordered_map<UInt128, UInt64, UInt128Hash> counter;
-    static std::mutex mutex;
-
     auto hash_key = dag.hash();
     {
-        std::lock_guard lock(mutex);
-        if (counter[hash_key]++ < min_count_to_compile_expression)
+        std::lock_guard lock(expression_compile_counter_mutex);
+        if (expression_compile_counter.size() >= MAX_EXPRESSION_COMPILE_COUNTER_ENTRIES && !expression_compile_counter.contains(hash_key))
+            expression_compile_counter.clear();
+        if (expression_compile_counter[hash_key]++ < min_count_to_compile_expression)
             return nullptr;
     }
 
