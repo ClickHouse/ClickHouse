@@ -1,59 +1,72 @@
 #include <algorithm>
 #include <queue>
+#include <unordered_set>
 
-#include <Common/logger_useful.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ReplicatedTableDelay.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageView.h>
 
 namespace DB
 {
 
-/// Traverse referential dependencies of a storage (e.g. View -> ReplicatedMergeTree)
-/// and aggregate delay/readonly info across all discovered ReplicatedMergeTree tables.
+namespace
+{
+
+/// The tables that `storage` reads as data sources. Only storages that forward a read to other
+/// local tables are expanded: a `View`, a `MaterializedView` and wrappers like `Alias`.
+/// Anything else (`Distributed`, `Merge`, `Dictionary`, ...) is not followed.
+std::vector<StoragePtr> getStoragesRead(const StoragePtr & storage, const ContextPtr & context)
+{
+    if (const auto materialized_view = castStorage<StorageMaterializedView>(storage, DeferredTable::Load))
+        return {materialized_view->tryGetTargetTable()};
+
+    if (castStorage<StorageView>(storage, DeferredTable::Load))
+    {
+        const auto & catalog = DatabaseCatalog::instance();
+        std::vector<StoragePtr> result;
+        for (const auto & dependency : catalog.getReferentialDependencies(storage->getStorageID()))
+            result.push_back(catalog.tryGetTable(dependency, context));
+        return result;
+    }
+
+    return storage->getUnderlyingStorages();
+}
+
+}
+
 ReplicatedTableDelay getReplicatedDelay(const StoragePtr & storage, ContextPtr context)
 {
-    if (const auto replicated_storage = castStorage<StorageReplicatedMergeTree>(storage, DeferredTable::Load))
-        return {
-            .max_absolute_delay = replicated_storage->getAbsoluteDelay(),
-            .is_replicated = true,
-            .is_readonly = replicated_storage->isTableReadOnly() };
-
-    if (castStorage<MergeTreeData>(storage, DeferredTable::Load))
-        return ReplicatedTableDelay{};
-
-    const auto & logger = getLogger("ReplicatedTableDelay");
-    const auto & catalog = DatabaseCatalog::instance();
     ReplicatedTableDelay info;
+    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> visited;
+    std::queue<StoragePtr> queue;
 
-    LOG_DEBUG(logger, "Checking replication delay of {} and its dependencies", storage->getStorageID().getNameForLogs());
+    auto enqueue = [&](const StoragePtr & table)
+    {
+        if (table && visited.insert(table->getStorageID()).second)
+            queue.push(table);
+    };
 
-    /// Do a breadth-first search on all dependencies (direct and transitive) and get the maximum replication delay
-    /// No need for a visited set because ClickHouse does not allow cyclical dependencies and graph should be small
-    std::queue<StoragePtr> queue({ storage });
+    enqueue(storage);
     while (!queue.empty())
     {
-        auto current = queue.front(); queue.pop();
-        if (!current)
-            continue;
+        auto current = queue.front();
+        queue.pop();
 
         if (const auto replicated = castStorage<StorageReplicatedMergeTree>(current, DeferredTable::Load))
         {
-            auto delay = replicated->getAbsoluteDelay();
             info.is_replicated = true;
-            info.max_absolute_delay = std::max(info.max_absolute_delay, delay);
+            info.max_absolute_delay = std::max(info.max_absolute_delay, replicated->getAbsoluteDelay());
             info.is_readonly = info.is_readonly || replicated->isTableReadOnly();
-            LOG_TRACE(logger, "Found ReplicatedMergeTree dependency {} with delay of {} seconds",
-                current->getStorageID().getNameForLogs(), delay);
+            continue;
         }
 
-        for (const auto & dependency : catalog.getReferentialDependencies(current->getStorageID()))
-            queue.push(catalog.tryGetTable(dependency, context));
+        for (const auto & table : getStoragesRead(current, context))
+            enqueue(table);
     }
 
-    LOG_DEBUG(logger, "Replication delay of {} is {} seconds", storage->getStorageID().getNameForLogs(), info.max_absolute_delay);
     return info;
 }
 

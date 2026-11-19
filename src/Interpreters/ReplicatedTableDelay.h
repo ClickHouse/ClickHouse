@@ -15,8 +15,7 @@ struct ReplicatedTableDelay
     bool is_readonly = false;
 };
 
-/// Traverse referential dependencies of a storage (e.g. View -> ReplicatedMergeTree)
-/// and aggregate delay/readonly info across all discovered ReplicatedMergeTree tables.
+/// Aggregate replication delay info across the `ReplicatedMergeTree` tables found that are sources to `storage`.
 ReplicatedTableDelay getReplicatedDelay(const StoragePtr & storage, ContextPtr context);
 
 }
