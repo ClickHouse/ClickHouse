@@ -457,6 +457,9 @@ extern template struct BigEndianDecimalStringConverter<Int256>;
 
 struct Int96Converter : public FixedSizeConverter
 {
+    /// A value that does not fit into Int64 nanoseconds is clamped to the `DateTime64(9)` range with Saturate, otherwise throws.
+    FormatSettings::DateTimeOverflowBehavior overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
+
     Int96Converter();
 
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;

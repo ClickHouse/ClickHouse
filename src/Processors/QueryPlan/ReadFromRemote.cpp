@@ -480,8 +480,7 @@ ASTPtr tryBuildAdditionalFilterAST(
                         /// This should happen because filter expression on initiator needs the set as well,
                         /// and it should be built before sending the external tables.
 
-                        auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(
-                            source_ast, context, SelectQueryOptions().positionalArgumentsAlreadyResolved());
+                        auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(source_ast, context);
                         /// The subquery may produce columns with duplicate names
                         /// (e.g. `(x, y) GLOBAL IN (SELECT number, number FROM ...)`).
                         /// `ColumnsDescription` prohibits duplicate column names, so deduplicate

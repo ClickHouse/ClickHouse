@@ -33,8 +33,6 @@ struct OneTimePasswordSecret
     explicit OneTimePasswordSecret(
         const String & key_,
         OneTimePasswordParams params_ = OneTimePasswordParams{});
-
-    bool operator==(const OneTimePasswordSecret &) const = default;
 };
 
 String getOneTimePasswordSecretLink(const OneTimePasswordSecret & secret);

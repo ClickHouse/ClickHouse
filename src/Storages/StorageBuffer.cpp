@@ -19,6 +19,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Planner/PlannerContext.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -38,7 +39,6 @@
 #include <Storages/ColumnDefault.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
@@ -346,8 +346,6 @@ void StorageBuffer::read(
         auto destination_lock
             = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-        /// The analyzer refreshes only the `Buffer`, so a data lake destination would keep the snapshot of its last direct query.
-        resolveStorageProxy(destination)->updateExternalDynamicMetadataIfExists(local_context);
         auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr(local_context, false);
         auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot, local_context);
         const auto get_columns_options = GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
@@ -617,8 +615,10 @@ void StorageBuffer::read(
     {
         /// The buffers plan is united with the table plan in the same process, where nothing
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
-        auto buffers_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
+        auto buffers_select_query_options = SelectQueryOptions(processed_stage);
         buffers_select_query_options.is_local_plan_for_distributed_query = true;
+        buffers_select_query_options.view_source_in_subqueries
+            = query_info.planner_context && query_info.planner_context->isViewSourceInSubqueries();
 
         auto storage = std::make_shared<StorageValues>(
                 getStorageID(),
@@ -1133,6 +1133,13 @@ bool StorageBuffer::supportsOptimizationToTupleElementSubcolumns() const
 {
     if (auto destination = getDestinationTable())
         return destination->supportsOptimizationToTupleElementSubcolumns();
+    return false;
+}
+
+bool StorageBuffer::hasBucketedMapSerialization() const
+{
+    if (auto destination = getDestinationTable())
+        return destination->hasBucketedMapSerialization();
     return false;
 }
 

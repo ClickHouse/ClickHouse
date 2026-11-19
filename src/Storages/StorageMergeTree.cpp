@@ -455,16 +455,6 @@ std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr local_context) cons
 {
     chassert(local_context);
 
-    /// Each part's rows and its bitmap come from one read snapshot, so the count matches a `SELECT`'s.
-    if (hasUniqueKey())
-    {
-        const auto uk_read_snapshot = makeDeleteBitmapSnapshot(local_context);
-        UInt64 res = 0;
-        for (const auto & part : getVisibleDataPartsVector(uk_read_snapshot->snapshotCSN(), uk_read_snapshot->readerTID()))
-            res += uk_read_snapshot->liveRows(*part);
-        return res;
-    }
-
     UInt64 res = 0;
     if (local_context->getCurrentTransaction())
     {
@@ -485,15 +475,8 @@ std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const Acti
 {
     chassert(local_context);
 
-    /// Guarded, so a plain count on a table without a unique key does not start a transaction
-    /// as a side effect.
-    DeleteBitmapSnapshotPtr uk_read_snapshot;
-    if (hasUniqueKey())
-        uk_read_snapshot = makeDeleteBitmapSnapshot(local_context);
-    auto parts = uk_read_snapshot
-        ? getVisibleDataPartsVector(uk_read_snapshot->snapshotCSN(), uk_read_snapshot->readerTID())
-        : getVisibleDataPartsVector(local_context);
-    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts), uk_read_snapshot.get());
+    auto parts = getVisibleDataPartsVector(local_context);
+    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts));
 }
 
 std::optional<UInt64> StorageMergeTree::totalBytes(ContextPtr) const
@@ -1563,6 +1546,11 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     context_copy->setPartitionIdToMaxBlock(getStorageID().uuid, std::move(partition_id_to_max_block));
     /// Updates currently don't work with parallel replicas.
     context_copy->setSetting("max_parallel_replicas", Field(1));
+
+    /// A snapshot cached by `enable_shared_storage_snapshot_in_query` before the wait for committing
+    /// inserts above (e.g. by the validation of `IN` operands in `InterpreterUpdateQuery`) would hide
+    /// the parts committed during the wait from the update. See `StorageReplicatedMergeTree::updateLightweight`.
+    discardSharedStorageSnapshot(context_copy);
 
     auto [pipeline, patch_metadata] = updateLightweightImpl(commands, context_copy);
 

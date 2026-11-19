@@ -412,6 +412,13 @@ so actual chunk sizes range from `target/2` to `1.5 * target`.
 Smaller values reduce peak memory during merges of JSON columns with many unique paths at the cost of more chunks.
 )", 0, \
         {"26.9", 8192, 8192, "New setting"}) \
+    DECLARE(MergeTreeObjectTypedSharedDataSerializationVersion, object_typed_shared_data_serialization_version, "v1", R"(
+Serialization version of the typed shared data inside JSON data type: the structure that stores the typed paths declared `SHARED` in a part together, in a constant number of files, instead of a separate set of files per path.
+
+Possible values:
+- `v1` - for each granule the data of every `SHARED` path in path order, with the start of every path's data recorded in a marks stream, so that a read of some paths decodes only them.
+)", 0, \
+        {"26.10", "v1", "v1", "New setting"}) \
     DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v3", R"(
 Serialization version for Dynamic data type. Required for compatibility.
 
@@ -2262,9 +2269,6 @@ Supported for object-storage disks whose metadata lives on the object storage it
 (s3_plain, s3_plain_rewritable, web, web_index) and their cached variants. Encrypted
 variants are supported only over the writable s3_plain / s3_plain_rewritable disks, not
 over the read-only web / web_index disks.
-A writable disk holds the data of only one table: the other tables over the same path,
-or over a path inside or above it, have to use a read-only disk.
-`ALTER` cannot change the disk of a table with this setting.
 The parts already present under the path are trusted to match the columns and the sorting
 key this table declares. Nothing records the sorting key a part was written with, so a
 table declaring a different one over the same parts returns wrong results or an error.
@@ -2453,8 +2457,8 @@ Comma-separated list of statistics types to calculate automatically on all suita
 Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
 The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
 )", 0, \
-        {"26.7", "minmax, uniq", "basic, uniq_v2", "Deprecate the `minmax` statistics type and replace it with `basic` (a superset of `minmax`) in the default auto statistics; also replace `uniq` with `uniq_v2` for less overhead on inserts and memory"}, \
-        {"26.4", "", "minmax, uniq", "Enable auto statistics by default"}, \
+        {"26.7", "basic, uniq_v2", "basic, uniq_v2", "26.7 replaced `minmax, uniq` with `basic, uniq_v2` (`basic` is a superset of the deprecated `minmax`, `uniq_v2` has less overhead on inserts, merges and memory). The change is recorded at 26.4, so that `compatibility` with 26.4 to 26.6 does not bring back `minmax, uniq`."}, \
+        {"26.4", "", "basic, uniq_v2", "Enable auto statistics by default. 26.4 to 26.6 shipped `minmax, uniq`, but `compatibility` with these versions gives `basic, uniq_v2`: statistics affect only query planning, not results, and merging the large `uniq` states of every part makes query planning many times slower in newer versions."}, \
         {"25.10", "", "", "New setting"}) \
     DECLARE(UInt64, packed_skip_index_max_bytes, 1024 * 1024, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
@@ -2730,7 +2734,7 @@ memory usage by not loading useless columns of the primary key.
     merges, fetches and on startup of server. Without it the statistics of a part
     are loaded into the cache by the first query that needs them.
 )", 0, \
-        {"26.11", false, false, "New setting to prewarm the statistics cache with the column statistics of new data parts and on startup. The statistics cache is now per data part and column instead of a snapshot of the whole table; the settings `refresh_statistics_interval` and `use_statistics_cache` are obsolete."}) \
+        {"26.10", false, false, "New setting to prewarm the statistics cache with the column statistics of new data parts and on startup. The statistics cache is now per data part and column instead of a snapshot of the whole table; the settings `refresh_statistics_interval` and `use_statistics_cache` are obsolete."}) \
     DECLARE(String, columns_to_prewarm_mark_cache, "", R"(
 List of columns to prewarm mark cache for (if enabled). Empty means all columns
 )", 0) \
@@ -2946,7 +2950,7 @@ DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, ME
 struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 {
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition);
 
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
@@ -2984,7 +2988,8 @@ static void validateTableDisk(const DiskPtr & disk)
 
 IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, MergeTreeSettings, MergeTreeSetting)
 
-void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+void MergeTreeSettingsImpl::loadFromQuery(
+    ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition)
 {
     if (storage_def.settings)
     {
@@ -2996,7 +3001,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
             DiskPtr disk;
 
             auto changes = storage_def.settings->changes;
-            MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata, for_system_database);
+            MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata, for_system_database, stored_definition);
 
             for (const auto & [name, value, _] : changes)
             {
@@ -3362,13 +3367,15 @@ void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr con
     impl->applyChange(resolved_change);
 }
 
-void MergeTreeSettings::resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+void MergeTreeSettings::resolveDiskSetting(
+    SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition)
 {
     for (auto & change : changes)
-        resolveDiskSetting(change, context, is_loading_from_existing_metadata, for_system_database);
+        resolveDiskSetting(change, context, is_loading_from_existing_metadata, for_system_database, stored_definition);
 }
 
-void MergeTreeSettings::resolveDiskSetting(SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+void MergeTreeSettings::resolveDiskSetting(
+    SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition)
 {
     if (change.name != "disk")
         return;
@@ -3380,7 +3387,8 @@ void MergeTreeSettings::resolveDiskSetting(SettingChange & change, ContextPtr co
 
     if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
     {
-        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata, for_system_database);
+        auto disk_name = DiskFromAST::createCustomDisk(
+            value_as_custom_ast, context, is_loading_from_existing_metadata, for_system_database, stored_definition);
         LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
         change.value = disk_name;
     }
@@ -3502,9 +3510,10 @@ SettingsTierType MergeTreeSettings::getTier(std::string_view name) const
     return impl->getTier(name);
 }
 
-void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+void MergeTreeSettings::loadFromQuery(
+    ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition)
 {
-    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata, for_system_database);
+    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata, for_system_database, stored_definition);
 }
 
 void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)

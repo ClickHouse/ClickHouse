@@ -12,6 +12,9 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -36,6 +39,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool iceberg_delete_data_on_drop;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsMilliseconds cluster_function_wait_for_replica_ms;
@@ -51,6 +55,56 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char storage_cluster_read_sleep[];
+}
+
+/// Names and types of `columns`, plus each `DEFAULT` without secret arguments that the nodes can evaluate from them.
+static String getStructureToSend(const ColumnsDescription & columns, const ColumnsDescription * insertion_columns)
+{
+    const auto names = columns.getAll().getNameSet();
+    std::unordered_map<String, NameSet> reads;
+    for (const auto & column : columns)
+    {
+        if (column.default_desc.kind != ColumnDefaultKind::Default || !column.default_desc.expression
+            || column.default_desc.expression->hasSecretParts())
+            continue;
+        reads.emplace(column.name, getStorageColumnsReadByDefault(columns, column));
+    }
+
+    /// The least fixed point, so cycles and self-reads are never sent.
+    NameSet sent;
+    for (bool changed = true; changed;)
+    {
+        changed = false;
+        for (const auto & [name, required] : reads)
+        {
+            if (!sent.contains(name) && std::ranges::all_of(required, [&](const String & read)
+                    {
+                        if (names.contains(read))
+                            return !columns.hasDefault(read) || sent.contains(read);
+                        /// Not a column of the table the `DEFAULT`s come from either: the nodes resolve the name the same way as
+                        /// this server, as a function, dictionary, table or set.
+                        return !insertion_columns || !insertion_columns->hasColumnOrSubcolumn(GetColumnsOptions::All, read);
+                    }))
+                changed |= sent.insert(name).second;
+        }
+    }
+
+    WriteBufferFromOwnString buf;
+    bool first = true;
+    for (const auto & column : columns)
+    {
+        if (!std::exchange(first, false))
+            writeCString(", ", buf);
+        writeBackQuotedString(column.name, buf);
+        writeChar(' ', buf);
+        writeString(column.type->getName(), buf);
+        if (sent.contains(column.name))
+        {
+            writeCString(" DEFAULT ", buf);
+            writeString(column.default_desc.expression->formatWithSecretsOneLine(), buf);
+        }
+    }
+    return buf.str();
 }
 
 String StorageObjectStorageCluster::getPathSample(ContextPtr context)
@@ -334,7 +388,14 @@ Pipe StorageObjectStorageCluster::executeCommand(const String & command_name, co
 
 void StorageObjectStorageCluster::drop()
 {
-    StorageObjectStorage::dropTable(configuration, catalog, getStorageID());
+    /// We cannot use query context here, because drop is executed in the background.
+    auto drop_context = Context::getGlobalContextInstance();
+    if (catalog)
+    {
+        const auto [namespace_name, table_name] = DataLake::parseTableName(getStorageID().getTableName());
+        catalog->dropTable(namespace_name, table_name, drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]);
+    }
+    configuration->drop(drop_context);
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
@@ -357,7 +418,8 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     ASTPtr & query,
     const DB::StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
-    const String & target_cluster_name)
+    const String & target_cluster_name,
+    bool add_structure_and_format)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
@@ -372,7 +434,12 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 
     ASTs & args = expression_list->children;
-    const auto & structure = storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription();
+    const auto & columns = storage_snapshot->metadata->getColumns();
+    /// The `DEFAULT`s of an `'auto'` structure are the insertion table's, those of a written one are resolved against it alone.
+    const auto * insertion_columns = configuration->structure == "auto" ? context->getInsertionTableColumnsDescription().get() : nullptr;
+    const String structure = !add_structure_and_format ? String{}
+        : configuration->isDataLakeConfiguration() ? columns.getAll().toNamesAndTypesDescription()
+        : getStructureToSend(columns, insertion_columns);
     if (args.empty())
     {
         throw Exception(
@@ -395,7 +462,8 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 
     if (!endsWith(table_function->name, "Cluster"))
     {
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+        if (add_structure_and_format)
+            configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
 
         /// When a non-cluster table function (e.g. `s3`) was auto-converted to cluster mode
         /// by the `parallel_replicas_for_cluster_engines` setting, rename it to the Cluster variant
@@ -421,11 +489,33 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         /// by it.
         ASTPtr cluster_name_arg = args.front();
         args.erase(args.begin());
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+        if (add_structure_and_format)
+            configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
         if (!target_cluster_name.empty())
             cluster_name_arg = make_intrusive<ASTLiteral>(target_cluster_name);
         args.insert(args.begin(), std::move(cluster_name_arg));
     }
+
+    /// Make the replicas read the table state this query iterates.
+    const auto & table_state = storage_snapshot->metadata->datalake_table_state;
+    if (configuration->isDataLakeConfiguration() && table_state.has_value())
+    {
+        if (auto metadata = configuration->getExternalMetadata())
+        {
+            if (auto changes = metadata->getSettingsToResolveState(*table_state); !changes.empty())
+            {
+                if (!settings_temporary_storage)
+                {
+                    auto settings_ast = make_intrusive<ASTSetQuery>();
+                    settings_ast->is_standalone = false;
+                    settings_temporary_storage = std::move(settings_ast);
+                }
+                for (const auto & change : changes)
+                    settings_temporary_storage->as<ASTSetQuery &>().changes.setSetting(change.name, change.value);
+            }
+        }
+    }
+
     if (settings_temporary_storage)
     {
         args.insert(args.end(), std::move(settings_temporary_storage));

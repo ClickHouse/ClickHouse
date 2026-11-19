@@ -114,9 +114,6 @@ public:
         const Settings & settings,
         LoggerPtr log);
 
-    static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
-        const StorageMetadataPtr & metadata_snapshot, const MergeTreeSettingsPtr & data_settings);
-
     static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
@@ -282,6 +279,9 @@ public:
     /// Filter parts using primary key and secondary indexes.
     /// For every part, select mark ranges to read.
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats);
+
+    /// Throws if an index in `force_data_skipping_indices` is not among the useful ones.
+    static void checkForcedSkipIndexes(const UsefulSkipIndexes & skip_indexes, const Settings & settings);
 
     /// Filter parts using query condition cache.
     static void filterPartsByQueryConditionCache(

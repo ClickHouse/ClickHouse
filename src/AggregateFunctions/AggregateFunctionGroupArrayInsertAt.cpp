@@ -175,6 +175,10 @@ public:
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                             "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE);
 
+        if (length_to_resize && size > length_to_resize)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size (maximum: {})", length_to_resize);
+
         Array & arr = data(place).value;
         arr.resize(size);
 

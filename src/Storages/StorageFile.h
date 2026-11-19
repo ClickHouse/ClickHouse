@@ -2,7 +2,6 @@
 
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatSettings.h>
-#include <IO/Archives/ArchiveEntryPositions.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/ISource.h>
@@ -116,7 +115,6 @@ public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
     bool storesDataOnDisk() const override;
-    bool hasUnreplicatedTableDataOnDisk() const override;
     Strings getDataPaths() const override;
 
     /// Check if the format supports reading only some subset of columns.
@@ -435,9 +433,6 @@ private:
 
     std::shared_ptr<IArchiveReader> archive_reader;
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
-    ArchiveEntryPositions entry_positions;
-    /// The row count cache key of the archive entry being read, unset for a plain file.
-    std::optional<String> current_archive_entry_cache_key;
 
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;

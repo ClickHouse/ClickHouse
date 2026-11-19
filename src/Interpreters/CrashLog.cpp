@@ -41,7 +41,7 @@ ColumnsDescription CrashLogElement::getColumnsDescription()
         {"thread_id", std::make_shared<DataTypeUInt64>(), "Thread ID."},
         {"query_id", std::make_shared<DataTypeString>(), "Query ID."},
         {"query", std::make_shared<DataTypeString>(), "Query text that was being executed when the crash occurred."},
-        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Stack trace at the moment of crash. On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary are stored as physical file offsets, and other addresses are virtual memory addresses inside the ClickHouse server process."},
+        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Stack trace at the moment of crash. On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary are stored as physical file offsets, and frames outside it (shared libraries, JIT code) are stored as 0."},
         {"trace_full", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Stack trace at the moment of crash. Each element contains a called method inside ClickHouse server process."},
         {"fault_address", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Memory address that caused the fault: the address itself below 4096 (a null pointer with an offset), the offset inside the executable, or NULL when the address is elsewhere or hidden."},
         {"fault_access_type", std::make_shared<DataTypeString>(), "Type of memory access that caused the fault (e.g., 'read', 'write')."},

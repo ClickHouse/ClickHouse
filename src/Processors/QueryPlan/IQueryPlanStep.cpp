@@ -27,9 +27,11 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-IQueryPlanStep::IQueryPlanStep()
+IQueryPlanStep::IQueryPlanStep() = default;
+
+IQueryPlanStep::StepIndex::StepIndex()
+    : value(CurrentThread::isInitialized() ? CurrentThread::get().getNextPlanStepIndex() : 0)
 {
-    step_index = CurrentThread::isInitialized() ? CurrentThread::get().getNextPlanStepIndex() : 0;
 }
 
 void IQueryPlanStep::updateInputHeaders(SharedHeaders input_headers_)
@@ -564,7 +566,7 @@ void IQueryPlanStep::appendExtraProcessors(const Processors & extra_processors)
 
 String IQueryPlanStep::getUniqID() const
 {
-    return fmt::format("{}_{}", getName(), step_index);
+    return fmt::format("{}_{}", getName(), step_index.value);
 }
 
 void IQueryPlanStep::serialize(Serialization & /*ctx*/) const

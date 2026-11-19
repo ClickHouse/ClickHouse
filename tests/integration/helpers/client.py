@@ -259,7 +259,7 @@ class QueryRuntimeException(Exception):
 
 class CommandRequest:
     def __init__(
-        self, command, stdin=None, timeout=None, ignore_error=False, parse=False, stdout_file_path=None, stderr_file_path=None, env=None, describe_transport_error=None
+        self, command, stdin=None, timeout=None, ignore_error=False, parse=False, stdout_file_path=None, stderr_file_path=None, env = {}, describe_transport_error=None
     ):
         # Write data to tmp file to avoid PIPEs and execution blocking
         self.stdin_file = tempfile.TemporaryFile(mode="w+")
@@ -272,23 +272,10 @@ class CommandRequest:
         self.describe_transport_error = describe_transport_error
         # print " ".join(command)
 
-        # The client gets a minimal environment on purpose: variables of the
-        # developer's shell such as `CLICKHOUSE_USER` must not change its
-        # behaviour. A copy, so that one request does not leak into the next.
-        env = dict(env or {})
         # we suppress stderror on client becase sometimes thread sanitizer
         # can print some debug information there
         env["ASAN_OPTIONS"] = "use_sigaltstack=0"
         env["TSAN_OPTIONS"] = "use_sigaltstack=0 verbosity=0"
-        # Under LLVM coverage the job sets `LLVM_PROFILE_FILE` to a merge pool
-        # (`it-%c%4m.profraw`), which is locked per process, so the many
-        # parallel clients cannot corrupt each other's profile. Without the
-        # variable the instrumented binary writes `default.profraw` in the
-        # working directory: every client truncates it at start and appends to
-        # it at exit, concurrent clients leave a corrupt file, and
-        # `llvm-profdata merge` then publishes nothing for the whole shard.
-        if "LLVM_PROFILE_FILE" in os.environ:
-            env["LLVM_PROFILE_FILE"] = os.environ["LLVM_PROFILE_FILE"]
         self.process = sp.Popen(
             command,
             stdin=self.stdin_file,

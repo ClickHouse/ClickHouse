@@ -640,8 +640,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
             if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
                 cache->clear();
-            /// Drop the static CHJIT slots so persistent LLVM state (`TargetMachine`, `Subtarget`,
-            /// `LLVMContext`-interned types/constants accumulated across compiles) is reclaimed too.
+            /// Drop the static CHJIT slots so persistent LLVM state (`TargetMachine`, `Subtarget`) is reclaimed too.
             /// Each in-flight compile and each cache holder retains its own `shared_ptr<CHJIT>`, so
             /// concurrent operations are not affected: the actual CHJIT survives until every user
             /// has released its handle. After the cache->clear() above, the only remaining
@@ -1390,6 +1389,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
             auto context = getContext();
             context->checkAccess(AccessType::SYSTEM_JEMALLOC);
+            /// The dump keeps runtime addresses: it stays on the local disk, and only its path is returned.
             auto filename = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));
             auto format = context->getSettingsRef()[Setting::jemalloc_profile_text_output_format];
             auto symbolize_with_inline = context->getSettingsRef()[Setting::jemalloc_profile_text_symbolize_with_inline];
@@ -2617,6 +2617,7 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
+    getContext()->checkAccess(AccessType::SYSTEM_SYNC_DATABASE_REPLICA, database_name);
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
 

@@ -7,9 +7,6 @@
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/Fragments/FragmentGraph.h>
-#include <Processors/QueryPlan/GatherReceiveStep.h>
-#include <Processors/QueryPlan/GatherSendStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergeRuntimeFiltersStep.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeFilterExchangeWiring.h>
@@ -543,59 +540,4 @@ TEST_F(RuntimeFilterExchangeWiring, PersistedDeliveryRequiresCompletionEdge)
     EXPECT_EQ(countStreams(plan), 0u);
     for (const auto & task : plan.stages.at("probe").tasks)
         EXPECT_TRUE(task.runtime_filter_descriptors.empty());
-}
-
-/// The merge stages of a filter are not part of the data flow, so the fragment graph leaves them out. `makeDistributedPlan`
-/// wires the filters after the cut, with exchange ids continuing from the id of `main`, and the merge stages keep the
-/// default stage id, so a builder which took them in would throw on duplicate ids.
-TEST_F(RuntimeFilterExchangeWiring, FragmentGraphLeavesOutMergeStages)
-{
-    /// stage_0 builds the filter and gathers its rows into main, which applies the filter.
-    DistributedQueryPlan plan;
-    addBuildStage(plan, "stage_0", 40, "key");
-    auto & build_stage = plan.stages.at("stage_0");
-    build_stage.id = 0;
-    build_stage.query_plan_fragment.addStep(std::make_unique<GatherSendStep>(dataHeader(), "exchange_0"));
-
-    DistributedQueryStage main;
-    main.id = 1;
-    main.query_plan_fragment.addStep(std::make_unique<GatherReceiveStep>(dataHeader(), "exchange_0", 40));
-    auto dag = makeApplyFilterDAG("key", "f");
-    const String filter_column_name = applyFilterResultName(dag);
-    main.query_plan_fragment.addStep(
-        std::make_unique<FilterStep>(dataHeader(), std::move(dag), filter_column_name, /*remove_filter_column_=*/true));
-    main.tasks.push_back(makeTask("main", 0));
-    plan.stages["main"] = std::move(main);
-
-    plan.stage_depends_on["stage_0"] = {};
-    plan.stage_depends_on["main"] = {{"stage_0", "exchange_0"}};
-    plan.exchange_descriptions["exchange_0"] = ExchangeDescription{
-        .name = "exchange_0",
-        .id = 0,
-        .kind = ExchangeDescription::Kind::Streaming,
-        .source_bucket_count = 40,
-        .destination_bucket_count = 1,
-        .exchange_step_name = "GatherExchange"};
-
-    size_t next_exchange_id = 1;
-    wireRuntimeFilterExchangeTopology(plan, next_exchange_id, ExchangeDescription::Kind::Streaming);
-
-    /// 40 build tasks: a level of 3 merge tasks, then the root, which `main` depends on.
-    auto merge_stages = mergeStageNames(plan);
-    ASSERT_EQ(merge_stages.size(), 2u);
-    EXPECT_TRUE(plan.stage_depends_on.at("main").contains(merge_stages.back()));
-
-    auto graph = buildFragmentGraph(plan);
-    EXPECT_EQ(dumpFragmentGraph(graph),
-        "query fragments: 2\n"
-        "  F0 stage_0  distributed  tasks=40\n"
-        "  F1 main     distributed  tasks=1  needs F0 via exchange_0\n"
-        "exchanges: 1\n"
-        "  exchange_0  F0 -> F1  gather  streaming  40 -> 1\n"
-        "levels: [F0] [F1]\n");
-
-    /// The steps that build and apply the filter stay in the plans of the data fragments.
-    EXPECT_NE(findBuildStep(plan.stages.at("stage_0").query_plan_fragment), nullptr);
-    EXPECT_EQ(graph.getFragment(0).plan, &plan.stages.at("stage_0").query_plan_fragment);
-    EXPECT_EQ(graph.getFragment(1).plan, &plan.stages.at("main").query_plan_fragment);
 }

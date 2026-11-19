@@ -562,11 +562,6 @@ size_t StorageURLSource::DisclosedGlobIterator::sizeForStreams(size_t requested)
     return pimpl->sizeForStreams(requested);
 }
 
-void StorageURLSource::setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
-{
-    setCredentialsFromURL(credentials, request_uri);
-}
-
 StorageURLSource::StorageURLSource(
     const ReadFromFormatInfo & info,
     std::shared_ptr<IteratorWrapper> uri_iterator_,
@@ -1096,7 +1091,8 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         for (const auto & [param, value] : params)
             request_uri.addQueryParameter(param, value);
 
-        setCredentials(credentials, request_uri);
+        /// Not inside the `try` below: a forbidden option must fail the read, not fall through to the next one.
+        setCredentialsFromURL(credentials, request_uri, context_->getHTTPHeaderFilter());
 
         const auto & settings = context_->getSettingsRef();
 
@@ -2494,34 +2490,6 @@ static bool urlHasUserInfo(const String & url)
     return authority_end == String::npos || at_pos < authority_end;
 }
 
-bool StorageURL::isAbsoluteURL(const String & url)
-{
-    /// A scheme is [A-Za-z][A-Za-z0-9+.-]*: per RFC 3986.
-    /// We check that the colon appears before any '/', '?', or '#' to avoid false positives
-    /// from embedded URLs in query parameters (e.g. "data.csv?next=https://other/a").
-    /// The scheme must be followed by "//": a name whose first path segment contains a colon
-    /// (e.g. `report:2026.csv`) technically parses as a URI with the scheme `report`, but every
-    /// scheme supported here uses the `scheme://` form, so such a name is not a usable absolute
-    /// URL. Per RFC 3986 it would have to be written as `./report:2026.csv` to be a relative
-    /// reference; instead of demanding that, it is resolved against the base as a relative path.
-    if (url.empty() || !std::isalpha(static_cast<unsigned char>(url[0])))
-        return false;
-
-    auto colon_pos = url.find(':');
-    auto first_special = url.find_first_of("/?#");
-    if (colon_pos == String::npos || (first_special != String::npos && colon_pos > first_special))
-        return false;
-
-    /// Verify all characters before the colon are valid scheme characters.
-    for (size_t i = 1; i < colon_pos; ++i)
-    {
-        char c = url[i];
-        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '+' && c != '-' && c != '.')
-            return false;
-    }
-    return url.compare(colon_pos + 1, 2, "//") == 0;
-}
-
 String StorageURL::resolveURLBase(const String & url, const String & base, const String & base_setting_name)
 {
     if (base.empty())
@@ -2535,8 +2503,35 @@ String StorageURL::resolveURLBase(const String & url, const String & base, const
     }
 
     /// If the URL already contains a scheme at the beginning, return as-is.
-    if (isAbsoluteURL(url))
-        return url;
+    /// A scheme is [A-Za-z][A-Za-z0-9+.-]*: per RFC 3986.
+    /// We check that the colon appears before any '/', '?', or '#' to avoid false positives
+    /// from embedded URLs in query parameters (e.g. "data.csv?next=https://other/a").
+    /// The scheme must be followed by "//": a name whose first path segment contains a colon
+    /// (e.g. `report:2026.csv`) technically parses as a URI with the scheme `report`, but every
+    /// scheme supported here uses the `scheme://` form, so such a name is not a usable absolute
+    /// URL. Per RFC 3986 it would have to be written as `./report:2026.csv` to be a relative
+    /// reference; instead of demanding that, it is resolved against the base as a relative path.
+    if (!url.empty() && std::isalpha(static_cast<unsigned char>(url[0])))
+    {
+        auto colon_pos = url.find(':');
+        auto first_special = url.find_first_of("/?#");
+        if (colon_pos != String::npos && (first_special == String::npos || colon_pos < first_special))
+        {
+            /// Verify all characters before the colon are valid scheme characters.
+            bool valid_scheme = true;
+            for (size_t i = 1; i < colon_pos; ++i)
+            {
+                char c = url[i];
+                if (!std::isalnum(static_cast<unsigned char>(c)) && c != '+' && c != '-' && c != '.')
+                {
+                    valid_scheme = false;
+                    break;
+                }
+            }
+            if (valid_scheme && url.compare(colon_pos + 1, 2, "//") == 0)
+                return url;
+        }
+    }
 
     auto scheme_end = base.find("://");
     /// Not echoed back: the value can carry a credential, and password masking anchors on the `://` it lacks.

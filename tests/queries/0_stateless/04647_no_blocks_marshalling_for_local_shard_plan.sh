@@ -146,9 +146,6 @@ $INITIAL_CLIENT -q "
 # The plan shape is the invariant being fixed: the locally executed branch must carry no
 # `BlocksMarshalling` step, while the branch read from a remote replica must keep it.
 #
-# The parallel replicas case names the query-based reading step, so it is pinned to that
-# implementation; `05238_pr_plan_based_blocks_marshalling` asserts the same counts for plan-based.
-#
 # The last one asserts that a plan which is serialized and shipped to a shard keeps marshalling:
 # the shard sends its blocks back over the network.
 $CLIENT -q "
@@ -162,7 +159,7 @@ $CLIENT -q "
     $(marshalling_counts_query "
         SELECT x, sum(y) FROM tab
         GROUP BY GROUPING SETS ((x, z % 1), (intDiv(z, 100), z + 2))
-        SETTINGS enable_parallel_blocks_marshalling = 1, $PARALLEL_REPLICAS, serialize_query_plan = 0, parallel_replicas_plan_based = 0" "ReadFromRemoteParallelReplicas");
+        SETTINGS enable_parallel_blocks_marshalling = 1, $PARALLEL_REPLICAS, serialize_query_plan = 0" "ReadFromRemoteParallelReplicas");
 "
 
 # The same plan-shape invariant for the `Buffer` carrier, so that the assignment on the buffers

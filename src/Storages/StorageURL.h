@@ -255,8 +255,6 @@ public:
 
     void cancel(CancelReason reason) noexcept override;
 
-    static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
-
     /// Returns no buffer when a hard teardown of the pipeline is noticed between the options while
     /// nothing else reports the interruption - the caller must end the stream then, see initialize.
     static std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> getFirstAvailableURIAndReadBuffer(
@@ -432,9 +430,6 @@ public:
     /// The resolution is done by string manipulation to allow malformed URLs.
     /// `base_setting_name` is the name of the setting the base came from, used in error messages.
     static String resolveURLBase(const String & url, const String & base, const String & base_setting_name = "url_base");
-
-    /// Returns true if `url` starts with `scheme://`, so that `resolveURLBase` returns it unchanged for any base.
-    static bool isAbsoluteURL(const String & url);
 
     /// Rewrite engine args so that the URL literal (positional) or `url='...'`
     /// override (named-collection) matches the URL resolved via `url_base`.

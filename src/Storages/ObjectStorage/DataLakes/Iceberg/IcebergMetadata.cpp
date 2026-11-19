@@ -12,7 +12,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/UUID.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/TypeTree.h>
@@ -86,6 +85,7 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/PartitionCommands.h>
+#include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
 
 #include <Common/ProfileEvents.h>
@@ -101,7 +101,6 @@ namespace ProfileEvents
 extern const Event IcebergIteratorInitializationMicroseconds;
 extern const Event IcebergMetadataUpdateMicroseconds;
 extern const Event IcebergTrivialCountOptimizationApplied;
-extern const Event IcebergGetTableStateMicroseconds;
 }
 
 namespace DB
@@ -123,10 +122,13 @@ extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
-extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
-extern const int FILE_ALREADY_EXISTS;
+}
+
+namespace FailPoints
+{
+extern const char iceberg_metadata_prefetch_pause[];
 }
 
 namespace Setting
@@ -194,6 +196,31 @@ Iceberg::TableStateSnapshotPtr extractIcebergSnapshotIdFromMetadataObject(Storag
     return std::make_shared<TableStateSnapshot>(std::get<TableStateSnapshot>(storage_metadata->datalake_table_state.value()));
 }
 
+/// Source ids of the sort fields whose null order differs from ClickHouse's (NULLs last for ASC, first for DESC).
+std::vector<Int32> getSourceIdsWithMismatchedNullOrder(const Poco::JSON::Object::Ptr & metadata_object, Int64 sort_order_id)
+{
+    Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
+    for (UInt32 i = 0; i < sort_orders->size(); ++i)
+    {
+        auto sort_order = sort_orders->getObject(i);
+        if (sort_order->getValue<Int64>(f_order_id) != sort_order_id)
+            continue;
+
+        std::vector<Int32> result;
+        auto fields = sort_order->getArray(f_fields);
+        for (UInt32 field_index = 0; field_index < fields->size(); ++field_index)
+        {
+            auto field = fields->getObject(field_index);
+            bool asc = field->getValue<String>(f_direction) == "asc";
+            bool nulls_first = field->getValue<String>(f_null_order) == "nulls-first";
+            if (asc == nulls_first)
+                result.push_back(field->getValue<Int32>(f_source_id));
+        }
+        return result;
+    }
+    return {};
+}
+
 }
 
 Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableComponents(
@@ -258,7 +285,6 @@ DataLakeStorageSettings IcebergMetadata::getMetadataLookupSettings() const
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(
     const ContextPtr & context, bool force_fetch_latest_metadata) const
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergGetTableStateMicroseconds);
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
@@ -275,7 +301,6 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(
     const ContextPtr & context, const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier) const
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergGetTableStateMicroseconds);
     const auto [metadata_version, metadata_file_path, _] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
         catalog,
@@ -331,6 +356,9 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
 
     try
     {
+        /// Lets a test hold the refresher before it reads the latest metadata
+        FailPointInjection::pauseFailPoint(FailPoints::iceberg_metadata_prefetch_pause);
+
         if (!Context::getGlobalContextInstance())
         {
             /// Should never happen, but if seen, this is clear indicator that the task should be started/stopped via startup/shutdown mechanism (check TODOs above)
@@ -1088,10 +1116,7 @@ void IcebergMetadata::createInitial(
         }
         catch (const Exception & e)
         {
-            const bool precondition_failed
-                = (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"))
-                || e.code() == ErrorCodes::FILE_ALREADY_EXISTS;
-            if (if_not_exists && precondition_failed)
+            if (if_not_exists && isConditionalWriteConflict(e))
                 return;
             throw;
         }
@@ -1375,6 +1400,13 @@ bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metada
     if (!data_snapshot)
         return true;
 
+    auto metadata_object = getMetadataJSONObject(
+        table_state_snapshot->metadata_file_path, object_storage, persistent_components.metadata_cache, context, log,
+        persistent_components.metadata_compression_method, persistent_components.table_uuid);
+    /// Reading in order merges files with NULLs placed the ClickHouse way; files sorted with the other null order
+    /// are only in that order if they have no NULLs.
+    const auto mismatched_null_order_source_ids = getSourceIdsWithMismatchedNullOrder(metadata_object, *sorting_key.sort_order_id);
+
     for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
     {
         auto files_handle = getManifestFileEntriesHandle(
@@ -1382,6 +1414,16 @@ bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metada
 
         if (!files_handle.areAllDataFilesSortedBySortOrderID(sorting_key.sort_order_id.value()))
             return false;
+
+        for (const auto & file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
+        {
+            for (Int32 source_id : mismatched_null_order_source_ids)
+            {
+                auto info = file->parsed_entry->columns_infos.find(source_id);
+                if (info == file->parsed_entry->columns_infos.end() || info->second.nulls_count.value_or(1) != 0)
+                    return false;
+            }
+        }
     }
     return true;
 }
@@ -1557,6 +1599,31 @@ std::unique_ptr<StorageInMemoryMetadata> IcebergMetadata::buildStorageMetadataFr
     return result;
 }
 
+SettingsChanges IcebergMetadata::getSettingsToResolveState(const DataLakeTableStateSnapshot & state) const
+{
+    namespace fs = std::filesystem;
+    chassert(std::holds_alternative<Iceberg::TableStateSnapshot>(state));
+
+    /// A user-given path is forwarded with the other table function settings.
+    if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
+        return {};
+
+    const String & path = std::get<Iceberg::TableStateSnapshot>(state).metadata_file_path;
+    const String & table_path = persistent_components.table_path;
+
+    /// The other server reads `table_path / relative`.
+    const String base = table_path.empty() || table_path.ends_with('/') ? table_path : table_path + "/";
+    const fs::path relative = path.starts_with(base) ? path.substr(base.size()) : String{};
+    if (relative.empty() || relative.is_absolute()
+        || std::any_of(relative.begin(), relative.end(), [](const fs::path & part) { return part == "." || part == ".."; }))
+    {
+        LOG_DEBUG(log, "Metadata file {} is not addressable relative to table path {}", path, table_path);
+        return {};
+    }
+
+    return {SettingChange{"iceberg_metadata_file_path", relative.string()}};
+}
+
 bool IcebergMetadata::shouldReloadSchemaForConsistency(ContextPtr) const
 {
     return true;
@@ -1614,9 +1681,6 @@ void IcebergMetadata::addDeleteTransformers(
             }
             /// with equality ids, we can know which columns should be deleted, here we calculate the indexes.
             const std::vector<Int32> & equality_ids = *(delete_file.equality_ids);
-            /// Iceberg `time` keys are read as the stored microseconds, like the data columns.
-            ColumnMapperPtr delete_mapper = persistent_components.schema_processor->getColumnMapperById(delete_file.schema_id);
-            bool has_time_equality_column = false;
             Block block_for_set;
             std::vector<size_t> equality_indexes_delete_file;
             for (Int32 col_id : equality_ids)
@@ -1624,13 +1688,6 @@ void IcebergMetadata::addDeleteTransformers(
                 NameAndTypePair name_and_type
                     = persistent_components.schema_processor->getFieldCharacteristics(delete_file.schema_id, col_id);
                 size_t position_in_delete_file = delete_file_header.getPositionByName(name_and_type.name);
-                if (delete_mapper && delete_mapper->isIcebergTimeFieldId(col_id))
-                {
-                    auto & column = delete_file_header.getByPosition(position_in_delete_file);
-                    DataTypePtr key_type = removeNullable(name_and_type.type);
-                    column.type = column.type->isNullable() ? makeNullable(key_type) : key_type;
-                    has_time_equality_column = true;
-                }
                 /// Take the type from the delete file header rather than from the table schema:
                 /// the nullability of a column in the delete file may differ from its nullability
                 /// in the table schema, and the columns read below have exactly the header's types.
@@ -1649,9 +1706,7 @@ void IcebergMetadata::addDeleteTransformers(
                 local_context->getSettingsRef()[DB::Setting::max_block_size],
                 format_settings,
                 parser_shared_resources,
-                has_time_equality_column
-                    ? std::make_shared<FormatFilterInfo>(nullptr, local_context, delete_mapper, nullptr, nullptr)
-                    : nullptr,
+                nullptr,
                 true,
                 compression_method);
             /// only get the delete columns and construct a set by 'block_for_set'

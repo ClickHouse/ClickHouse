@@ -151,7 +151,7 @@ ENUM_ACCESS_OBJECT(Source, APPLY_FOR_SOURCE)
 
 
 /// Represents an access type which can be granted on databases, tables, columns, etc.
-enum class AccessType : uint8_t
+enum class AccessType : uint16_t
 {
 /// Macro M should be defined as M(name, aliases, node_type, parent_group_name)
 /// where name is identifier with underscores (instead of spaces);
@@ -320,7 +320,6 @@ enum class AccessType : uint8_t
     M(NAMED_COLLECTION, "NAMED COLLECTION USAGE, USE NAMED COLLECTION", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) \
     M(NAMED_COLLECTION_ADMIN, "NAMED COLLECTION CONTROL", NAMED_COLLECTION, ALL) \
     M(SHOW_HANDLERS, "SHOW HANDLER", GLOBAL, ALL) /* allows to see SQL-defined HTTP handlers in system.handlers */\
-    M(SHOW_CONNECTIONS, "SHOW CONNECTION", GLOBAL, ALL) /* lets a user see the connections of all users in system.connections */\
     M(SET_DEFINER, "", DEFINER, ALL) \
     \
     M(TABLE_ENGINE, "TABLE ENGINE", TABLE_ENGINE, ALL) \
@@ -455,6 +454,17 @@ enum class AccessType : uint8_t
     M(ELASTICSEARCH, "", GLOBAL, ALL) \
     M(DISK, "", GLOBAL, ALL) \
     M(SOURCES, "", GLOBAL, ALL) \
+    \
+    /* AI functions */ \
+    M(aiClassify, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiClassify() */\
+    M(aiEmbed, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiEmbed() */\
+    M(aiExtract, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiExtract() */\
+    M(aiFilter, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiFilter() */\
+    M(aiGenerate, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiGenerate() */\
+    M(aiRedact, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiRedact() */\
+    M(aiSimilarity, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiSimilarity() */\
+    M(aiTranslate, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiTranslate() */\
+    M(AI_FUNCTIONS, "", GROUP, ALL) /* allows to execute all AI functions */\
     \
     /* Consts */ \
     M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \

@@ -124,11 +124,10 @@ public:
     virtual KindStack getKindStack() const { return {Kind::DEFAULT}; }
     SerializationPtr getPtr() const { return shared_from_this(); }
 
-    /// Wrap the base (`type->createColumn()`) column into the column layout this serialization deserializes
-    /// into. Each layer composes on top of the nested one, so this reproduces the serialization's kind stack
-    /// (Sparse/Replicated/Detached) and any custom wrapping (e.g. a per-part value broadcast as a ColumnConst).
-    /// Default: identity.
-    virtual MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const { return column; }
+    /// Create an empty column of `type` in the layout this serialization deserializes into. Each layer composes on
+    /// top of the nested one, so this reproduces the serialization's kind stack (Sparse/Replicated/Detached) and any
+    /// custom layout (e.g. a per-part value broadcast as a `ColumnConst`). Default: `type.createColumn()`.
+    virtual MutableColumnPtr createColumnForDeserialization(const IDataType & type) const;
 
     static KindStack getKindStack(const IColumn & column);
     static String kindToString(Kind kind);
@@ -326,6 +325,12 @@ public:
             ObjectSharedDataCopySizes,
             ObjectSharedDataCopyPathsIndexes,
             ObjectSharedDataCopyValues,
+            ObjectTypedSharedData,
+            ObjectTypedSharedDataHeader,
+            ObjectTypedSharedDataPathsData,
+            ObjectTypedSharedDataPathsMarks,
+            /// A SHARED typed path of Object: the identity element of the resolved path, with no file of its own.
+            ObjectTypedSharedDataPath,
             ObjectStructure,
 
             MapKeyValue,
@@ -360,6 +365,14 @@ public:
         /// Index of a bucket in Object shared data serialization or Map serialization with buckets.
         size_t bucket = 0;
 
+        /// For a stream shared with other subcolumns: this subcolumn's bytes of it, set by the serialization that knows them.
+        struct SizeHint
+        {
+            size_t compressed = 0;
+            size_t uncompressed = 0;
+        };
+        std::optional<SizeHint> size_hint;
+
         /// Data for current substream.
         SubstreamData data;
 
@@ -386,21 +399,13 @@ public:
         virtual ~ISubstreamsCacheElement() = default;
     };
 
-    /// Keys of the substreams caches are hashes of the substream paths, see `getSubstreamsCacheKeyForStream`.
-    struct SubstreamsCacheKeyHash
-    {
-        size_t operator()(const UInt128 & key) const { return static_cast<size_t>(key.items[0]); }
-    };
-
-    using SubstreamsCache = std::unordered_map<UInt128, std::unique_ptr<ISubstreamsCacheElement>, SubstreamsCacheKeyHash>;
+    using SubstreamsCache = std::unordered_map<String, std::unique_ptr<ISubstreamsCacheElement>>;
 
     using StreamCallback = std::function<void(const SubstreamPath &)>;
 
     struct EnumerateStreamsSettings
     {
         SubstreamPath path;
-        /// When resolving a subcolumn, serializers may omit streams that cannot contribute to its lookup.
-        std::optional<std::string_view> subcolumn_name;
         bool position_independent_encoding = true;
         /// If set to false, don't enumerate dynamic subcolumns
         /// (such as dynamic types in Dynamic column or dynamic paths in JSON column).
@@ -532,6 +537,13 @@ public:
         /// compressed block at a stream boundary. Used only in MergeTree; 0 - start a new block at every boundary.
         size_t min_compress_block_size = 0;
 
+        /// False if the granule being written continues in the next call. Used only in MergeTree.
+        bool granule_is_complete = true;
+
+        /// Serialization version of the typed shared data of Object. 0 is reserved, so the field is not value-initialized.
+        MergeTreeObjectTypedSharedDataSerializationVersion object_typed_shared_data_serialization_version
+            = MergeTreeObjectTypedSharedDataSerializationVersion::V1;
+
         /// Type of MergeTree data part we serialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
@@ -636,7 +648,7 @@ public:
         SerializeBinaryBulkSettings & /*settings*/,
         SerializeBinaryBulkStatePtr & /*state*/) const {}
 
-    using SubstreamsDeserializeStatesCache = std::unordered_map<UInt128, DeserializeBinaryBulkStatePtr, SubstreamsCacheKeyHash>;
+    using SubstreamsDeserializeStatesCache = std::unordered_map<String, DeserializeBinaryBulkStatePtr>;
 
     /// Call before before deserializeBinaryBulkWithMultipleStreams chain to get DeserializeBinaryBulkStatePtr.
     virtual void deserializeBinaryBulkStatePrefix(
@@ -789,7 +801,7 @@ public:
     static String getSubcolumnNameForStream(const SubstreamPath & path, bool) = delete;
 
     /// Key of a stream in SubstreamsCache and SubstreamsDeserializeStatesCache.
-    static UInt128 getSubstreamsCacheKeyForStream(const SubstreamPath & path);
+    static String getSubstreamsCacheKeyForStream(const SubstreamPath & path);
 
     static void addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows);
     static std::optional<std::pair<ColumnPtr, size_t>> getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);

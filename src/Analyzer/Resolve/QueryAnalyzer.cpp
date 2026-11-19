@@ -68,6 +68,7 @@
 #include <Columns/IColumn.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/convertColumnToType.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
@@ -119,7 +120,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool validate_group_by_all_key_types;
     extern const SettingsBool allow_correlated_subqueries;
-    extern const SettingsBool allow_experimental_lateral_join;
+    extern const SettingsBool enable_lateral_join;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool enable_identifier_resolve_cache;
@@ -405,10 +406,11 @@ void hideLambdaArgumentsShadowingAliasExpression(
 
 }
 
-QueryAnalyzer::QueryAnalyzer(bool only_analyze_, bool positional_arguments_already_resolved_)
+QueryAnalyzer::QueryAnalyzer(bool only_analyze_, StoragePtr replaced_storage_, bool view_source_in_subqueries_)
     : identifier_resolver(node_to_projection_name)
     , only_analyze(only_analyze_)
-    , positional_arguments_already_resolved(positional_arguments_already_resolved_)
+    , replaced_storage(std::move(replaced_storage_))
+    , view_source_in_subqueries(view_source_in_subqueries_)
 {}
 
 QueryAnalyzer::~QueryAnalyzer() = default;
@@ -918,8 +920,22 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
     const auto & settings = scope.context->getSettingsRef();
     if (!settings[Setting::enable_positional_arguments])
         return;
-    if (positional_arguments_already_resolved)
-        return;
+    const bool is_view_inner = scope.context->isViewInnerQuery();
+    if (!is_view_inner)
+    {
+        /// Skip resolution on distributed/parallel-replicas local plan nodes: the initiator
+        /// already resolved positional arguments in the outer query. View-inner contexts are
+        /// exempt because views are expanded on the local node and were never resolved by the
+        /// initiator.
+        if (scope.context->isPositionalArgumentsAlreadyResolved())
+            return;
+        /// Skip only on remote shard execution (SECONDARY_QUERY): the initiator already
+        /// resolved positional arguments. Do not skip for contexts that never set the kind
+        /// (NO_QUERY), e.g. a Replicated database DDL worker running CREATE ... AS SELECT,
+        /// which must resolve positional arguments itself.
+        if (scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+            return;
+    }
 
     auto & node_list_typed = node_list->as<ListNode &>();
 
@@ -1919,7 +1935,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Try to resolve table identifier from database catalog
     if (!resolve_result.resolved_identifier && identifier_resolve_context.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
     {
-        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context);
+        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context, replaced_storage);
     }
 
     /// Try to resolve identifier as a niladic function (SQL standard functions that allow omitting parentheses)
@@ -4919,21 +4935,11 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
     for (const auto & sort_node : query_node_typed.getOrderBy().getNodes())
         ready_columns.push_back(sort_node->as<SortNode &>().getExpression());
 
-    /// `FillingTransform` pairs each executed `INTERPOLATE` output with one destination column of its
-    /// input header, by position, so a column may be an `INTERPOLATE` output at most once.
-    NameSet interpolate_column_names;
-
     for (auto & interpolate_node : interpolate_node_list_typed.getNodes())
     {
         auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
         auto column_to_interpolate_name = interpolate_node_typed.getExpressionName();
-
-        if (!interpolate_column_names.emplace(column_to_interpolate_name).second)
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "Column '{}' can't be an INTERPOLATE output more than once. In scope {}",
-                column_to_interpolate_name,
-                scope.scope_node->formatASTForErrorMessage());
 
         resolveExpressionNode(interpolate_node_typed.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -5617,6 +5623,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         const auto & insert_columns = *scope_context->getInsertionTableColumnsDescription();
         const auto & insert_column_names = scope_context->hasInsertionTableColumnNames() ? *scope_context->getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
         DB::ColumnsDescription structure_hint;
+        NameToNameSetMap insertion_columns_by_hint_column;
 
         bool use_columns_from_insert_query = true;
 
@@ -5658,6 +5665,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                       * A source column has a single type, so the hint is usable only if all the
                       * insert table columns that it is mapped to agree on the type.
                       */
+                    insertion_columns_by_hint_column[column.name].insert(*insert_column_name_it);
                     if (const auto * already_hinted = structure_hint.tryGet(column.name))
                     {
                         if (!already_hinted->type->equals(*column.type))
@@ -5751,12 +5759,16 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                         ColumnDescription column = insert_columns.get(*insert_column_name_it);
                         /// Change ephemeral columns to default columns.
                         column.default_desc.kind = ColumnDefaultKind::Default;
+                        insertion_columns_by_hint_column[column.name].insert(column.name);
                         structure_hint.add(std::move(column));
                     }
                 }
 
                 if (!structure_hint.empty())
+                {
+                    removeMisboundDefaultsFromStructureHint(structure_hint, insertion_columns_by_hint_column, insert_columns);
                     table_function_ptr->setStructureHint(structure_hint);
+                }
             }
             else if (use_structure_from_insertion_table_in_table_functions == 1)
                 throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns in insert table less than required by SELECT expression.");
@@ -6234,9 +6246,9 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     /// Check the experimental setting for any LATERAL JOIN, regardless of whether the subquery is correlated
     if (join_node_typed.isLateral())
     {
-        if (!scope.context->getSettingsRef()[Setting::allow_experimental_lateral_join])
+        if (!scope.context->getSettingsRef()[Setting::enable_lateral_join])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "LATERAL JOIN is experimental. Set 'allow_experimental_lateral_join = 1' to enable it");
+                "LATERAL JOIN is experimental. Set 'enable_lateral_join = 1' to enable it");
     }
 
     if (isCorrelatedQueryOrUnionNode(join_node_typed.getRightTableExpressionNode()))
@@ -6838,7 +6850,7 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
 
         /// Resolve the row policy filter expression against result_node's columns.
         auto filter_node = buildQueryTree(row_policy_filter->expression->clone(), scope.context);
-        QueryAnalyzer filter_analyzer(this->only_analyze);
+        QueryAnalyzer filter_analyzer(this->only_analyze, replaced_storage, view_source_in_subqueries);
         filter_analyzer.resolve(filter_node, result_node, scope.context);
 
         /// Build wrapper: SELECT <cols> FROM (result_node) WHERE <resolved_filter>
@@ -7693,6 +7705,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         }
     }
 
+    expandLimitByAll(query_node_typed);
+
     if (query_node_typed.hasLimitByLimit())
     {
         resolveExpressionNode(query_node_typed.getLimitByLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -7706,13 +7720,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     if (query_node_typed.hasLimitBy())
+    {
         replaceNodesWithPositionalArguments(query_node_typed.getLimitByNode(), query_node_typed.getProjection().getNodes(), scope);
 
-    /// After the positional arguments: the projection expressions `ALL` expands to are not positions.
-    expandLimitByAll(query_node_typed);
-
-    if (query_node_typed.hasLimitBy())
         resolveExpressionNodeList(query_node_typed.getLimitByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+    }
 
     if (query_node_typed.hasLimit())
     {

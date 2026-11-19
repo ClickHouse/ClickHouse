@@ -33,9 +33,6 @@
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/PageCache.h>
-#if USE_GPU
-#include <GPU/GPUDevice.h>
-#endif
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Common/isLocalAddress.h>
@@ -71,6 +68,7 @@
 #include <IO/AsynchronousReader.h>
 #include <IO/LongConnectionLimit.h>
 #include <IO/S3Settings.h>
+#include <IO/SharedThreadPools.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -152,6 +150,7 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -175,9 +174,6 @@
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
-#include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
-#include <Server/StatelessWorker/StatelessWorkersProviderRegistry.h>
-#include <Server/StatelessWorker/StatelessWorkerAllocation.h>
 
 namespace fs = std::filesystem;
 
@@ -328,9 +324,6 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool cloud_mode;
     extern const SettingsString default_format;
-    extern const SettingsString distributed_plan_worker_cluster;
-    extern const SettingsUInt64 distributed_plan_workers_num;
-    extern const SettingsUInt64 distributed_plan_workers_provisioning_timeout_ms;
     extern const SettingsBoolAuto force_read_through_distributed_cache;
     extern const SettingsBoolAuto force_write_through_distributed_cache;
     extern const SettingsBool enable_filesystem_cache;
@@ -499,9 +492,6 @@ namespace FailPoints
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-#if USE_GPU
-    extern const int GPU_ERROR;
-#endif
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
@@ -673,7 +663,6 @@ struct ContextSharedPart : boost::noncopyable
     bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
     UInt64 cpu_slot_quantum_ns TSA_GUARDED_BY(mutex) = 10'000'000;
     UInt64 cpu_slot_preemption_timeout_ms TSA_GUARDED_BY(mutex) = 1000;
-    bool cpu_slot_parking TSA_GUARDED_BY(mutex) = true;
     UInt64 concurrent_threads_soft_limit_num TSA_GUARDED_BY(mutex) = 0;
     UInt64 concurrent_threads_soft_limit_ratio_to_cores TSA_GUARDED_BY(mutex) = 0;
     String concurrent_threads_scheduler TSA_GUARDED_BY(mutex);
@@ -717,9 +706,6 @@ struct ContextSharedPart : boost::noncopyable
 #endif
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
-#if USE_GPU
-    std::unique_ptr<GPU::GPUDevice> gpu;    /// Set at the start of the server, before any query, so read without the mutex.
-#endif
     ProcessList process_list;                                   /// Executing queries at the moment.
     SessionTracker session_tracker;
     GlobalOvercommitTracker global_overcommit_tracker;
@@ -903,9 +889,6 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
 #endif
 
-    mutable std::mutex stateless_worker_provider_mutex;
-    mutable StatelessWorkersProviderRegistryPtr stateless_workers_registry TSA_GUARDED_BY(stateless_worker_provider_mutex);
-
     ContextSharedPart()
         : access_control(std::make_unique<AccessControl>()), global_overcommit_tracker(&process_list), macros(std::make_unique<Macros>())
     {
@@ -1033,6 +1016,10 @@ struct ContextSharedPart : boost::noncopyable
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         }
+
+        /// A cancelled query does not wait for its AI requests. Their memory is tracked under the user trackers in
+        /// `process_list`, which is destroyed after this destructor body.
+        getAIRequestThreadPool().shutdown();
     }
 
     void setConfig(const ConfigurationPtr & config_value)
@@ -1259,20 +1246,6 @@ struct ContextSharedPart : boost::noncopyable
         }
 
         {
-            /// Detach under the lock (a racing query may read it), then shut down outside the lock.
-            StatelessWorkersProviderRegistryPtr registry;
-            {
-                std::lock_guard lock(stateless_worker_provider_mutex);
-                registry.swap(stateless_workers_registry);
-            }
-            if (registry)
-            {
-                LOG_TRACE(log, "Shutting down stateless worker providers");
-                registry->shutdown();
-            }
-        }
-
-        {
             // Disk selector might not be initialized if there was some error during
             // its initialization. Don't try to initialize it again on shutdown.
             if (merge_tree_disk_selector)
@@ -1394,11 +1367,6 @@ struct ContextSharedPart : boost::noncopyable
 
         delete_access_control.reset();
 
-#if USE_GPU
-        /// After everything that may still hold device or pinned memory.
-        gpu.reset();
-#endif
-
         total_memory_tracker.resetOvercommitTracker();
         total_memory_tracker.resetPageCache();
     }
@@ -1518,6 +1486,15 @@ void ContextSharedMutex::lockSharedImpl()
     ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
 }
 
+/// An entry of `ContextData::scalars`. `from_client` is true when the block arrived from the client
+/// over the wire (`Context::addClientScalar`) rather than being computed by the server, so that
+/// `Context::hasComputedScalar` can keep such a block out of the analyzer's scalar-subquery cache.
+struct ScalarEntry
+{
+    Block block;
+    bool from_client = false;
+};
+
 ContextData::ContextData()
 {
     settings = std::make_unique<Settings>();
@@ -1581,9 +1558,12 @@ ContextData::ContextData(const ContextData &o) :
     is_background_operation(o.is_background_operation),
     is_ddl_or_on_cluster_internal(o.is_ddl_or_on_cluster_internal),
     is_recovery_from_stored_metadata(o.is_recovery_from_stored_metadata),
+    is_analyzing_background_expressions(o.is_analyzing_background_expressions),
     skip_forced_projection_check(o.skip_forced_projection_check),
     is_view_inner_query(o.is_view_inner_query),
+    positional_arguments_already_resolved(o.positional_arguments_already_resolved),
     join_analyze_mode(o.join_analyze_mode),
+    is_automatic_parallel_replicas_probe(o.is_automatic_parallel_replicas_probe),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
     prepared_sets_cache(o.prepared_sets_cache),
@@ -2628,8 +2608,13 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
         /// If setUserID() was never called then this must be the global context with the full access.
         bool full_access = !user_id;
 
+        /// The row policies of the initial user are added to the row policies of the current user. The initiator of
+        /// a secondary query also forwards the current roles of the initial user (after `SET ROLE`); if the initial user
+        /// is the current user, the query still runs with the default roles of the user on a connection without
+        /// an interserver secret, so the row policies of the forwarded roles are needed then too.
         std::optional<UUID> initial_user_id;
-        if (client_info.initial_user != client_info.current_user)
+        if (client_info.initial_user != client_info.current_user
+            || (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && client_info.current_roles.has_value()))
             initial_user_id = getAccessControl().find<User>(client_info.initial_user);
 
         return ContextAccessParams{
@@ -2917,18 +2902,6 @@ void Context::setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_qua
     shared->cpu_slot_preemption_timeout_ms = cpu_slot_preemption_timeout_ms;
 }
 
-bool Context::getCPUSlotParking() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->cpu_slot_parking;
-}
-
-void Context::setCPUSlotParking(bool cpu_slot_parking)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->cpu_slot_parking = cpu_slot_parking;
-}
-
 UInt64 Context::getConcurrentThreadsSoftLimitNum() const
 {
     std::lock_guard lock(shared->mutex);
@@ -2988,7 +2961,10 @@ std::pair<UInt64, String> Context::setConcurrentThreadsSoftLimit(UInt64 num, UIn
 Scalars Context::getScalars() const
 {
     std::lock_guard lock(mutex);
-    return scalars;
+    Scalars res;
+    for (const auto & [name, entry] : scalars)
+        res.emplace(name, entry.block);
+    return res;
 }
 
 
@@ -3003,7 +2979,7 @@ Block Context::getScalar(const String & name) const
         // often, so 'bad arguments' for now.
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Scalar {} doesn't exist (internal bug)", backQuoteIfNeed(name));
     }
-    return it->second;
+    return it->second.block;
 }
 
 std::optional<Block> Context::tryGetSpecialScalar(const String & name) const
@@ -3157,7 +3133,18 @@ void Context::addScalar(const String & name, const Block & block)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
 
     std::lock_guard lock(mutex);
-    scalars[name] = block;
+    /// A server-computed value overrides any client-supplied one of the same name and is trusted.
+    scalars[name] = ScalarEntry{block, /*from_client=*/ false};
+}
+
+
+void Context::addClientScalar(const String & name, const Block & block)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
+
+    std::lock_guard lock(mutex);
+    scalars[name] = ScalarEntry{block, /*from_client=*/ true};
 }
 
 
@@ -3178,6 +3165,16 @@ bool Context::hasScalar(const String & name) const
 
     std::lock_guard lock(mutex);
     return scalars.contains(name);
+}
+
+bool Context::hasComputedScalar(const String & name) const
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
+
+    std::lock_guard lock(mutex);
+    auto it = scalars.find(name);
+    return it != scalars.end() && !it->second.from_client;
 }
 
 void Context::addQueryAccessInfo(
@@ -3475,6 +3472,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
             const auto & insert_column_names = hasInsertionTableColumnNames() ? *getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
             DB::ColumnsDescription structure_hint;
+            NameToNameSetMap insertion_columns_by_hint_column;
 
             bool use_columns_from_insert_query = true;
 
@@ -3515,6 +3513,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                           * A source column has a single type, so the hint is usable only if all the
                           * insert table columns that it is mapped to agree on the type.
                           */
+                        insertion_columns_by_hint_column[column.name].insert(*insert_column_name_it);
                         if (const auto * already_hinted = structure_hint.tryGet(column.name))
                         {
                             if (!already_hinted->type->equals(*column.type))
@@ -3609,12 +3608,16 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                             /// Change ephemeral columns to default columns.
                             column.default_desc.kind = ColumnDefaultKind::Default;
 
+                            insertion_columns_by_hint_column[column.name].insert(column.name);
                             structure_hint.add(std::move(column));
                         }
                     }
 
                     if (!structure_hint.empty())
+                    {
+                        removeMisboundDefaultsFromStructureHint(structure_hint, insertion_columns_by_hint_column, insert_columns);
                         table_function_ptr->setStructureHint(structure_hint);
+                    }
                 }
                 else if (use_structure_from_insertion_table_in_table_functions == 1)
                     throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns in insert table less than required by SELECT expression.");
@@ -3940,6 +3943,13 @@ void Context::clampToSettingsConstraintsWithLock(SettingsChanges & changes, Sett
         doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
+void Context::clampToSettingsConstraintsRejectingInvalidChangesWithLock(SettingsChanges & changes, SettingSource source)
+{
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clampRejectingInvalidChanges(*settings, changes, source);
+    if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
+        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
+}
+
 void Context::checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(merge_tree_settings, changes);
@@ -4077,6 +4087,21 @@ void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSourc
 
     SharedLockGuard lock(mutex);
     clampToSettingsConstraintsWithLock(changes, source);
+}
+
+void Context::clampToSettingsConstraintsRejectingInvalidChanges(SettingsChanges & changes, SettingSource source)
+{
+    if (std::ranges::any_of(changes, isProfileChange))
+    {
+        changes = enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.clampToSettingsConstraintsRejectingInvalidChanges(segment, source);
+        });
+        return;
+    }
+
+    SharedLockGuard lock(mutex);
+    clampToSettingsConstraintsRejectingInvalidChangesWithLock(changes, source);
 }
 
 void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
@@ -4522,7 +4547,6 @@ AsyncLoader & Context::getAsyncLoader() const
             /* log_failures = */ true,
             /* log_progress = */ true,
             /* log_events = */ true);
-        shared->async_loader->setWaiterCallbacks(onLoadJobWaitersIncrement, onLoadJobWaitersDecrement);
     });
 
     return *shared->async_loader;
@@ -4903,23 +4927,6 @@ void Context::waitAllBackupsAndRestores() const
         shared->backups_worker->waitAll();
 }
 
-void Context::stopDDLWorkerAndWaitAllBackupsAndRestores() const
-{
-    /// A worker that has not started yet must never start, because its startup job would undo the stop.
-    if (shared->ddl_worker_startup_task)
-        getAsyncLoader().remove(shared->ddl_worker_startup_task->goals());
-
-    DDLWorker * ddl_worker = nullptr;
-    {
-        SharedLockGuard lock(shared->mutex);
-        ddl_worker = shared->ddl_worker.get();
-    }
-    if (ddl_worker)
-        ddl_worker->shutdown();
-
-    waitAllBackupsAndRestores();
-}
-
 bool Context::cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline) const
 {
     if (shared->backups_worker)
@@ -5109,23 +5116,6 @@ void Context::setPageCache(std::chrono::milliseconds history_window,
         history_window, cache_policy, size_ratio,
         min_size_in_bytes, max_size_in_bytes, free_memory_ratio, num_shards);
 }
-
-#if USE_GPU
-void Context::setGPU(const ServerSettings & server_settings)
-{
-    if (shared->gpu)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The GPU has been already set.");
-
-    shared->gpu = std::make_unique<GPU::GPUDevice>(GPU::GPUDeviceSettings::fromServerSettings(server_settings));
-}
-
-GPU::GPUDevice & Context::getGPU() const
-{
-    if (!shared->gpu)
-        throw Exception(ErrorCodes::GPU_ERROR, "There is no GPU: the server setting `enable_gpu` is not set");
-    return *shared->gpu;
-}
-#endif
 
 PageCachePtr Context::getPageCache() const
 {
@@ -6178,7 +6168,7 @@ BackgroundSchedulePoolPtr Context::getBufferFlushSchedulePool() const
         auto created_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_buffer_flush_schedule_pool_size],
             shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
-            /*max_parallel_tasks_per_type*/ 0,
+            /*max_parallel_tasks_per_type_ratio*/ 0,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
             ThreadName::BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL);
@@ -6239,9 +6229,6 @@ BackgroundTaskSchedulingSettings Context::getBackgroundStreamingTaskSchedulingSe
 
 BackgroundSchedulePoolPtr Context::getSchedulePool() const
 {
-    size_t max_parallel_tasks_per_type = static_cast<size_t>(
-        static_cast<double>(shared->server_settings[ServerSetting::background_schedule_pool_size])
-        * static_cast<double>(shared->server_settings[ServerSetting::background_schedule_pool_max_parallel_tasks_per_type_ratio]));
     callOnce(
         shared->schedule_pool_initialized,
         [&]
@@ -6249,7 +6236,7 @@ BackgroundSchedulePoolPtr Context::getSchedulePool() const
             auto created_pool = BackgroundSchedulePool::create(
                 shared->server_settings[ServerSetting::background_schedule_pool_size],
                 shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
-                max_parallel_tasks_per_type,
+                static_cast<double>(shared->server_settings[ServerSetting::background_schedule_pool_max_parallel_tasks_per_type_ratio]),
                 CurrentMetrics::BackgroundSchedulePoolTask,
                 CurrentMetrics::BackgroundSchedulePoolSize,
                 DB::ThreadName::BACKGROUND_SCHEDULE_POOL);
@@ -6267,7 +6254,7 @@ BackgroundSchedulePoolPtr Context::getDistributedSchedulePool() const
         auto created_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_distributed_schedule_pool_size],
             shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
-            /*max_parallel_tasks_per_type*/ 0,
+            /*max_parallel_tasks_per_type_ratio*/ 0,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             CurrentMetrics::BackgroundDistributedSchedulePoolSize,
             DB::ThreadName::DISTRIBUTED_SCHEDULE_POOL);
@@ -6285,7 +6272,7 @@ BackgroundSchedulePoolPtr Context::getMessageBrokerSchedulePool() const
         auto created_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_message_broker_schedule_pool_size],
             shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
-            /*max_parallel_tasks_per_type*/ 0,
+            /*max_parallel_tasks_per_type_ratio*/ 0,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
             DB::ThreadName::MSG_BROKER_SCHEDULE_POOL);
@@ -6303,7 +6290,7 @@ BackgroundSchedulePoolPtr Context::getIcebergSchedulePool() const
         auto created_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::iceberg_background_schedule_pool_size],
             shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
-            /*max_parallel_tasks_per_type*/ 0,
+            /*max_parallel_tasks_per_type_ratio*/ 0,
             CurrentMetrics::IcebergSchedulePoolTask,
             CurrentMetrics::IcebergSchedulePoolSize,
             DB::ThreadName::ICEBERG_SCHEDULE_POOL);
@@ -6321,7 +6308,7 @@ BackgroundSchedulePoolPtr Context::getStreamingSchedulePool() const
         auto created_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_streaming_schedule_pool_size],
             shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
-            /*max_parallel_tasks_per_type*/ 0,
+            /*max_parallel_tasks_per_type_ratio*/ 0,
             CurrentMetrics::BackgroundStreamingSchedulePoolTask,
             CurrentMetrics::BackgroundStreamingSchedulePoolSize,
             DB::ThreadName::BACKGROUND_STREAMING_SCHEDULE_POOL);
@@ -8138,6 +8125,15 @@ StoragePolicyPtr Context::getStoragePolicy(const String & name) const
     return policy_selector->get(name);
 }
 
+StoragePolicyPtr Context::tryGetStoragePolicy(const String & name) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto policy_selector = getStoragePolicySelector(lock);
+
+    return policy_selector->tryGet(name);
+}
+
 StoragePolicyPtr Context::getStoragePolicyFromDisk(const String & disk_name) const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
@@ -8907,6 +8903,9 @@ void Context::setCurrentAddress(const Poco::Net::SocketAddress & current_address
 
 void Context::setInitialUserName(const String & initial_user_name)
 {
+    /// The forwarded current roles are the roles of the initial user, so they cannot be kept for another user.
+    if (client_info.initial_user != initial_user_name)
+        client_info.current_roles.reset();
     client_info.initial_user = initial_user_name;
     need_recalculate_access = true;
 }
@@ -9425,57 +9424,6 @@ OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
 {
     SharedLockGuard lock(shared->background_executors_mutex);
     return shared->common_executor;
-}
-
-StatelessWorkersProviderPtr Context::getStatelessWorkersProvider() const
-{
-    auto query_context_ptr = getQueryContext();
-    std::lock_guard lock(query_context_ptr->stateless_worker_allocation_mutex);
-    if (!query_context_ptr->stateless_worker_provider)
-        query_context_ptr->stateless_worker_provider = query_context_ptr->getStatelessWorkersProvider(
-            query_context_ptr->getSettingsRef()[Setting::distributed_plan_worker_cluster]);
-    return query_context_ptr->stateless_worker_provider;
-}
-
-StatelessWorkerAllocationPtr Context::getOrCreateStatelessWorkerAllocation() const
-{
-    /// Sized from the query context's settings, as planning is, so a subquery's `SETTINGS` cannot change it.
-    auto query_context_ptr = getQueryContext();
-
-    /// Resolve the provider before locking (it takes the same mutex).
-    auto provider = query_context_ptr->getStatelessWorkersProvider();
-
-    /// Held across the blocking allocation: a concurrent caller waits, then reuses the stored handle.
-    std::lock_guard lock(query_context_ptr->stateless_worker_allocation_mutex);
-    if (!query_context_ptr->stateless_worker_allocation)
-    {
-        const auto & settings = query_context_ptr->getSettingsRef();
-        UInt64 workers_num = settings[Setting::distributed_plan_workers_num];
-        /// The plans are built for at most this many nodes, so `TaskToHostMap` uses no more workers.
-        if (const size_t node_count = getCascadesClusterNodeCountParam(query_context_ptr); node_count > 0)
-            workers_num = std::min<UInt64>(workers_num, node_count);
-        query_context_ptr->stateless_worker_allocation
-            = provider->allocate(workers_num, settings[Setting::distributed_plan_workers_provisioning_timeout_ms]);
-    }
-    return query_context_ptr->stateless_worker_allocation;
-}
-
-StatelessWorkersProviderRegistryPtr Context::getStatelessWorkersProviderRegistry() const
-{
-    std::lock_guard lock(shared->stateless_worker_provider_mutex);
-    if (!shared->stateless_workers_registry)
-        shared->stateless_workers_registry = std::make_shared<StatelessWorkersProviderRegistry>();
-    return shared->stateless_workers_registry;
-}
-
-StatelessWorkersProviderPtr Context::getStatelessWorkersProvider(const String & cluster_name) const
-{
-    return getStatelessWorkersProviderRegistry()->getProvider(cluster_name);
-}
-
-void Context::reloadStatelessWorkersConfig(const Poco::Util::AbstractConfiguration & config) const
-{
-    getStatelessWorkersProviderRegistry()->reloadConfig(config);
 }
 
 IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const

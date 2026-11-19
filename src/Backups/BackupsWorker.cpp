@@ -23,7 +23,6 @@
 #include <Common/FailPoint.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DDLWorker.h>
 #include <Interpreters/BackupLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTBackupQuery.h>
@@ -77,7 +76,6 @@ namespace ServerSetting
 namespace FailPoints
 {
     extern const char backup_pause_on_start[];
-    extern const char backups_hold_registration_until_ddl_worker_stops[];
     extern const char backups_pause_before_publishing_progress[];
     extern const char restore_pause_before_publishing_final_progress[];
     extern const char restore_pause_on_start[];
@@ -916,7 +914,10 @@ void BackupsWorker::writeBackupEntries(
             }
         };
 
-        if (always_single_threaded)
+        /// An entry with nothing to write - the base backup has it, it is empty, or it is a reference - only updates
+        /// the counters, so it runs inline: the runner keeps every task until the end, and an incremental backup is
+        /// mostly such entries.
+        if (always_single_threaded || file_info.data_file_name.empty() || entry->isReference())
         {
             job();
             continue;
@@ -1355,15 +1356,6 @@ std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, con
                                                      const String & query_id, bool internal, QueryStatusPtr process_list_element,
                                                      BackupStatus status, std::map<String, String> settings)
 {
-    /// Outside `infos_mutex`, so that the hold does not block the shutdown wait.
-    /// During shutdown the DDL worker is stopped only after `ProcessList::killAllQueries`.
-    fiu_do_on(FailPoints::backups_hold_registration_until_ddl_worker_stops,
-    {
-        const auto & ddl_worker = Context::getGlobalContextInstance()->getDDLWorker();
-        while (fiu_fail(FailPoints::backups_hold_registration_until_ddl_worker_stops) && ddl_worker.isCurrentlyActive())
-            sleepForMilliseconds(10);
-    });
-
     ExtendedOperationInfo extended_info;
     auto & info = extended_info.info;
     info.id = id;

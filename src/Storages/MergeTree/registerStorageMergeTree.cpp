@@ -733,8 +733,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
 
-    const bool check_aliases = !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext());
-
     if (is_extended_storage_def)
     {
         ASTPtr partition_by_key;
@@ -962,7 +960,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// `LoadingStrictnessLevel::ATTACH` and must still be subject to these checks.
         storage_settings->loadFromQuery(
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
-            args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
+            args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE, /* stored_definition */ args.query.attach_short_syntax);
 
         /// What this query changes from the settings the server has in effect, which already include the
         /// `merge_tree` config section and `compatibility`: those are not changes made by the query. A
@@ -970,6 +968,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (is_fresh_definition)
             args.getLocalContext()->checkMergeTreeSettingsConstraints(
                 initial_storage_settings, storage_settings->changesFrom(initial_storage_settings));
+
+        /// After the constraints, so a forbidden `storage_policy` is reported as such and not as an unknown policy.
+        if ((*storage_settings)[MergeTreeSetting::storage_policy].changed)
+            args.getStoragePolicy((*storage_settings)[MergeTreeSetting::storage_policy]);
 
         /// `MergeTreeData` runs `sanityCheck` on the settings it is given when the mode says `CREATE`, so a
         /// full-definition `ATTACH` is the fresh definition left to check. Without this it can state a value
@@ -1034,6 +1036,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             for (const auto & index : args.query.columns_list->indices->children)
             {
+                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
 
                 auto using_auto_minmax_index =
@@ -1047,21 +1050,19 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     if (args.mode <= LoadingStrictnessLevel::CREATE)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table because index {} uses a reserved index name", index_name);
 
-                    /// Backward compatibility: older versions (before 25.12) stored implicit indices on disk
-                    /// as regular indices. Skip one identical to the index generated below, keep any other one.
+                    /// Backward compatibility: older versions (before 25.12) stored implicit indices
+                    /// on disk as regular indices. Re-mark them so `explicitToString` excludes them.
+                    auto & added = metadata.secondary_indices.back();
                     String col_name = index_name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
                     if (columns.has(col_name))
                     {
                         const auto & col_type = columns.get(col_name).type;
-                        if (((metadata.add_minmax_index_for_numeric_columns && isNumber(col_type))
-                                || (metadata.add_minmax_index_for_string_columns && isString(col_type))
-                                || (metadata.add_minmax_index_for_temporal_columns && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(col_type)))
-                            && index->formatWithSecretsOneLine() == createImplicitMinMaxIndexAST(col_name)->formatWithSecretsOneLine())
-                            continue;
+                        if ((metadata.add_minmax_index_for_numeric_columns && isNumber(col_type))
+                            || (metadata.add_minmax_index_for_string_columns && isString(col_type))
+                            || (metadata.add_minmax_index_for_temporal_columns && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(col_type)))
+                            added.is_implicitly_created = true;
                     }
                 }
-
-                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
             }
         }
 
@@ -1071,16 +1072,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             metadata.addImplicitIndicesForColumn(column, context);
         }
         metadata.addImplicitIndicesForVirtualColumns(context);
-
-        /// The expression and the text index transforms of an index have the ALIAS columns they use expanded.
-        if (check_aliases)
-        {
-            for (const auto & index : metadata.secondary_indices)
-            {
-                KeyDescription::checkNoAlias(index.expression_list_ast.get(), "INDEX " + index.name);
-                KeyDescription::checkNoAlias(index.arguments.get(), "INDEX " + index.name);
-            }
-        }
 
         String statistics_types_str = (*storage_settings)[MergeTreeSetting::auto_statistics_types];
 
@@ -1144,8 +1135,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// If there is an expression for sampling
         if (arg_cnt - arg_num == 3)
         {
-            if (check_aliases)
-                KeyDescription::checkNoAlias(engine_args[arg_num].get(), "SAMPLE BY");
             metadata.sampling_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, metadata.virtuals, context);
             ++arg_num;
         }
@@ -1159,8 +1148,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (merging_param_key_arg)
             additional_columns.emplace_back(*merging_param_key_arg, metadata.columns.getPhysical(*merging_param_key_arg).type);
 
-        if (check_aliases)
-            KeyDescription::checkNoAlias(engine_args[arg_num].get(), "PRIMARY KEY");
         metadata.sorting_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, metadata.virtuals, context, additional_columns);
 
         if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)
@@ -1203,6 +1190,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// Only a fresh definition, so that a table stored by an earlier version keeps loading.
     if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
         MergeTreeData::checkColumnTTLsForKeyColumns(metadata, metadata);
+
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition)
+        MergeTreeData::checkStoredExpressions(metadata, args.getLocalContext());
 
     DataTypes data_types = metadata.partition_key.data_types;
     if (args.mode <= LoadingStrictnessLevel::CREATE && !(*storage_settings)[MergeTreeSetting::allow_floating_point_partition_key])

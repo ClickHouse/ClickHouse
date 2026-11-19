@@ -44,7 +44,6 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
-#include <Storages/MergeTree/UniqueKey/DeleteBitmapSnapshot.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -110,23 +109,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// Whether the current thread holds the parts lock of any table.
-bool partsLockHeldByCurrentThread();
-
-class PartsLockHoldCount
-{
-public:
-    PartsLockHoldCount();
-    PartsLockHoldCount(PartsLockHoldCount && other) noexcept : held(std::exchange(other.held, false)) {}
-    PartsLockHoldCount & operator=(PartsLockHoldCount && other) noexcept;
-    ~PartsLockHoldCount() { release(); }
-
-    void release() noexcept;
-
-private:
-    bool held;
-};
-
 struct DataPartsLock
 {
     explicit DataPartsLock(SharedMutex & data_parts_mutex_, const MergeTreeData * data_);
@@ -140,7 +122,6 @@ struct DataPartsLock
 private:
     std::optional<Stopwatch> wait_watch;
     std::unique_lock<DB::SharedMutex> lock;
-    PartsLockHoldCount hold_count;
     std::optional<Stopwatch> lock_watch;
     const MergeTreeData * data;
 };
@@ -155,12 +136,11 @@ struct DataPartsSharedLock
     DataPartsSharedLock(DataPartsSharedLock &&) = default;
     DataPartsSharedLock & operator=(DataPartsSharedLock &&) = default;
 
-    void unlock();
+    void unlock() { lock.unlock(); }
 
 private:
     std::optional<Stopwatch> wait_watch;
     std::shared_lock<DB::SharedMutex> lock;
-    PartsLockHoldCount hold_count;
     std::optional<Stopwatch> lock_watch;
 };
 
@@ -599,6 +579,8 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
+    bool hasBucketedMapSerialization() const override;
+
     bool supportsTTL() const override { return true; }
 
     bool supportsStatistics() const override { return true; }
@@ -720,15 +702,17 @@ public:
         RangesInDataPartsPtr parts;
 
         MutationsSnapshotPtr mutations_snapshot;
-
-        /// Taken no later than `parts`. Null for a table without a unique key.
-        DeleteBitmapSnapshotPtr uk_read_snapshot;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
     /// The same as above but does not hold vector of data parts.
     StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
+
+    /// Removes the snapshot of this table from the query-scoped snapshot cache of
+    /// `enable_shared_storage_snapshot_in_query`, so that the next `getStorageSnapshot` in the query
+    /// takes a fresh one. Holders of the removed snapshot keep it.
+    void discardSharedStorageSnapshot(const ContextPtr & query_context) const;
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
@@ -805,7 +789,6 @@ public:
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr, const std::function<bool()> & need_stop = {}) const;
 
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
-    DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id) const;
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
 
     /// Returns the number of data mutations suitable for applying on the fly.
@@ -855,10 +838,6 @@ public:
     DataPartPtr getPartIfExistsUnlocked(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, const DataPartsAnyLock & acquired_lock) const;
     DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states) const;
     DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states) const;
-
-    bool checkPartCanBeRemoved(const MergeTreePartInfo & part_info);
-    bool checkPartCanBeRemoved(const String & part_name);
-    bool hasPartInAnyState(const String & part_name) const;
 
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
@@ -910,8 +889,6 @@ public:
         const Names & deduplicate_by_columns,
         bool cleanup,
         ContextPtr context);
-
-    virtual void removeTemporaryPart(const MutableDataPartPtr & part) const;
 
     MutableDataPartsVector tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr context, PartsTemporaryRename & renamed_parts);
 
@@ -1012,7 +989,6 @@ public:
     /// Parts in add must already be in data_parts with PreActive, Active, or Outdated states.
     /// If clear_without_timeout is true, the parts will be deleted at once, or during the next call to
     /// clearOldParts (ignoring old_parts_lifetime).
-    void outdateRemovedPartsLocally(const DataPartsVector & parts, DataPartsLock & lock);
     void removePartsFromWorkingSet(MergeTreeTransaction * txn, const DataPartsVector & remove, bool clear_without_timeout);
     void removePartsFromWorkingSet(MergeTreeTransaction * txn, const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & acquired_lock);
 
@@ -1132,8 +1108,6 @@ public:
 
     size_t clearEmptyParts();
 
-    DeleteBitmapSnapshotPtr makeDeleteBitmapSnapshot(const ContextPtr & local_context) const;
-
     UniqueKeyTxnManager & uniqueKeyTxnManager() const;
 
     /// Whether `part` holds the only copy of some other part's kills, in which case no removal
@@ -1187,6 +1161,11 @@ public:
 
     /// Throws if a column TTL is set on a column that a key reads, directly or through a subcolumn.
     static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
+
+    /// The expressions stored in the metadata (keys, TTL, skip indices, projections) are built with the global context,
+    /// which has full access, and are executed in the background. Builds them again with a copy of the query context,
+    /// which checks the user's access to their functions and rejects functions that are not executed in the background.
+    static void checkStoredExpressions(const StorageInMemoryMetadata & metadata, const ContextPtr & local_context);
 
     /// Throw exception if command is some kind of DROP command (drop column, drop index, etc) or rename command
     /// and we have unfinished mutation which need this column to finish.
@@ -1556,12 +1535,12 @@ public:
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
 
     /// Get expression on columns for which part-level min-max index will be calculated.
-    static ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key,
+    static ExpressionActionsPtr getMinMaxExpr(const StorageInMemoryMetadata & metadata,
                                               const MergeTreeSettingsPtr & data_settings,
                                               const ExpressionActionsSettings & expr_settings);
     /// Get the columns covered by the part-level min-max index.
-    static NamesAndTypesList getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings, MergeTreePartMinMaxIndexColumns up_to);
-    static NamesAndTypesList getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings);
+    static NamesAndTypesList getMinMaxColumns(const StorageInMemoryMetadata & metadata, const MergeTreeSettingsPtr & data_settings, MergeTreePartMinMaxIndexColumns up_to);
+    static NamesAndTypesList getMinMaxColumns(const StorageInMemoryMetadata & metadata, const MergeTreeSettingsPtr & data_settings);
 
     ExpressionActionsPtr
     getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
@@ -1975,7 +1954,7 @@ protected:
     }
 
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
-        const ActionsDAG & filter_actions_dag, ContextPtr context, const RangesInDataParts & parts, const DeleteBitmapSnapshot * uk_read_snapshot = nullptr) const;
+        const ActionsDAG & filter_actions_dag, ContextPtr context, const RangesInDataParts & parts) const;
 
     static decltype(auto) getStateModifier(DataPartState state)
     {
@@ -2043,7 +2022,7 @@ protected:
 
     void checkMinMaxIndexForJSON(const IndexDescription & index) const;
 
-    void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key);
+    void checkPartitionKeyAndInitMinMax(const StorageInMemoryMetadata & new_metadata);
 
     void checkTTLExpressions(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata) const;
 
@@ -2320,19 +2299,7 @@ protected:
 
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 
-    void setFilenameRegexpForCachePrewarming(MergeTreeSettingsPtr settings);
-    std::shared_ptr<const re2::RE2> getFilenameRegexpForCachePrewarming() const;
-
-    StorageSnapshotPtr createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
-    void injectSleepBeforeCreatingStorageSnapshot(ContextPtr query_context) const;
-
 private:
-    DeleteBitmapSnapshotPtr makeDeleteBitmapSnapshot(CSN snapshot_csn) const;
-
-    /// A writable `table_disk` disk holds the data of one table, which owns its root until the instance is destroyed.
-    void acquireTableDiskRoots();
-    void releaseTableDiskRoots();
-
     /// Checking that candidate part doesn't break invariants: correct partition
     void checkPartPartition(MutableDataPartPtr & part, const DataPartsAnyLock & lock) const;
     void checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, const DataPartsAnyLock & lock) const;
@@ -2498,6 +2465,9 @@ private:
 
     void checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
     void checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const;
+
+    StorageSnapshotPtr
+    createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
 
     bool isReadonlySetting(const std::string & setting_name) const;
 

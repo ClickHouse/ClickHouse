@@ -520,11 +520,6 @@ bool MutationsInterpreter::Source::hasBrokenProjection(const String & name) cons
     return part && part->hasBrokenProjection(name);
 }
 
-bool MutationsInterpreter::Source::hasUnloadedProjection(const String & name) const
-{
-    return part && part->hasUnloadedProjection(name);
-}
-
 bool MutationsInterpreter::Source::isCompactPart() const
 {
     return part && part->getType() == MergeTreeDataPartType::Compact;
@@ -1015,7 +1010,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         [&](const String & name, ColumnDependency::Kind kind)
     {
         if (kind == ColumnDependency::PROJECTION)
-            return source.hasProjection(name) || source.hasUnloadedProjection(name);
+            return source.hasProjection(name);
 
         if (kind == ColumnDependency::SKIP_INDEX)
             return source.hasSecondaryIndex(name, metadata_snapshot);
@@ -1788,11 +1783,9 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 LOG_DEBUG(logger, "Will rebuild commit-order projection {}", projection.name);
                 materialized_projections.insert(projection.name);
-                continue;
             }
 
-            if (!source.hasUnloadedProjection(projection.name))
-                continue;
+            continue;
         }
 
         /// Always rebuild broken projections.
@@ -2420,7 +2413,8 @@ void MutationsInterpreter::Source::read(
             mutation_settings.apply_deleted_mask,
             createFilterDAGForStage(first_stage),
             false,
-            false,
+            /*prefetch_begin_of_range=*/ false,
+            /*allow_remote_fs_prefetch=*/ canPrefetchInMergeOrMutation(*data, {part}, required_columns, context_),
             context_,
             getLogger("MutationsInterpreter"));
     }

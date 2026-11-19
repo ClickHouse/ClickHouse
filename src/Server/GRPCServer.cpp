@@ -53,9 +53,7 @@
 #include <absl/base/log_severity.h>
 #include <absl/log/globals.h>
 #include <absl/log/initialize.h>
-#include <absl/log/log_sink_registry.h>
 
-#include <grpc/support/log.h>
 #include <grpc++/security/server_credentials.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -112,70 +110,18 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Make grpc to pass logging messages to ClickHouse logging system.
-    class GrpcLogSink : public absl::LogSink
-    {
-    public:
-        void Send(const absl::LogEntry & entry) override
-        {
-            static LoggerRawPtr logger = getRawLogger("grpc");
-
-            const auto msg = std::string(entry.text_message());
-            const auto file = entry.source_filename();
-            int line = entry.source_line();
-
-            switch (entry.log_severity())
-            {
-                case absl::LogSeverity::kInfo:
-                    LOG_INFO(logger, "{} ({}:{})", msg, file, line);
-                    break;
-                case absl::LogSeverity::kWarning:
-                    LOG_WARNING(logger, "{} ({}:{})", msg, file, line);
-                    break;
-                case absl::LogSeverity::kError:
-                    LOG_ERROR(logger, "{} ({}:{})", msg, file, line);
-                    break;
-                case absl::LogSeverity::kFatal:
-                    LOG_ERROR(logger, "FATAL: {} ({}:{})", msg, file, line);
-                    break;
-            }
-        }
-    };
-    GrpcLogSink grpc_log_sink;
-
-    /// See also contrib/grpc/src/core/util/log.cc
-    void initGRPCLogging(const Poco::Util::AbstractConfiguration & config)
+    /// gRPC logging is disabled because its messages sometimes contain memory addresses
+    /// (e.g. `grpc_call_start_batch(call=0x...)`): there is no log sink, and nothing goes to stderr.
+    void initGRPCLogging()
     {
         static std::once_flag once_flag;
-        std::call_once(once_flag, [&config]
+        std::call_once(once_flag, []
         {
-            absl::AddLogSink(&grpc_log_sink);
             absl::SetStderrThreshold(absl::LogSeverityAtLeast::kInfinity);
             absl::InitializeLog();
-
             absl::SetStderrThreshold(absl::LogSeverityAtLeast::kInfinity);
-
-            const bool verbose = config.getBool("grpc.verbose_logs", false);
-            static LoggerRawPtr logger = getRawLogger("grpc");
-
-            if (verbose)
-                grpc_tracer_set_enabled("all", true);
-
-            if (logger->is(Poco::Message::PRIO_DEBUG))
-            {
-                absl::SetMinLogLevel(absl::LogSeverityAtLeast::kInfo);
-                absl::SetVLogLevel("*grpc*/*", 2);
-            }
-            else if (logger->is(Poco::Message::PRIO_INFORMATION))
-            {
-                absl::SetMinLogLevel(absl::LogSeverityAtLeast::kInfo);
-                absl::SetVLogLevel("*grpc*/*", -1);
-            }
-            else
-            {
-                absl::SetMinLogLevel(absl::LogSeverityAtLeast::kWarning);
-                absl::SetVLogLevel("*grpc*/*", -1);
-            }
+            absl::SetMinLogLevel(absl::LogSeverityAtLeast::kInfinity);
+            absl::SetVLogLevel("*grpc*/*", -1);
         });
     }
 
@@ -2077,7 +2023,7 @@ GRPCServer::~GRPCServer()
 
 void GRPCServer::start()
 {
-    initGRPCLogging(iserver.config());
+    initGRPCLogging();
     grpc::ServerBuilder builder;
     builder.AddListeningPort(address_to_listen.toString(), makeCredentials(iserver.config()));
     builder.RegisterService(&grpc_service);

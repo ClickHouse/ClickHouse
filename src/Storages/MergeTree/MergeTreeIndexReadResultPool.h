@@ -83,11 +83,6 @@ public:
     /// `primary_key_column_position`.
     void setTopKPrimaryKeyPruning(size_t primary_key_column_position, TopKThresholdTrackerPtr tracker);
 
-    /// Narrows each part's input ranges by the primary key, with the partition-minmax mapping of the plan-time analysis,
-    /// before reading the skip indexes, for a read whose ranges were not analyzed (see `AnalysisResult::key_condition_not_applied`).
-    void setPrimaryKeyCondition(
-        ConditionTemplate<KeyCondition>::Ptr key_condition_, std::vector<std::optional<size_t>> primary_key_to_minmax_slot_);
-
     void cancel() noexcept { is_cancelled = true; }
 
 private:
@@ -106,8 +101,6 @@ private:
 
     std::optional<size_t> top_k_primary_key_column_position;
     TopKThresholdTrackerPtr top_k_threshold_tracker;
-    ConditionTemplate<KeyCondition>::Ptr primary_key_condition;
-    std::vector<std::optional<size_t>> primary_key_to_minmax_slot;
     ContextPtr context;
     LoggerPtr log;
 

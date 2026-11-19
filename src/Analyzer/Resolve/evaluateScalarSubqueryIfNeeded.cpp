@@ -145,7 +145,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
         scalar_block = scalars_cache.at(node_with_hash);
     }
-    else if (context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasScalar(str_hash))
+    else if (context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasComputedScalar(str_hash))
     {
         scalar_block = context->getQueryContext()->getScalar(str_hash);
         scalar_subquery_to_scalar_value_global.emplace(node_with_hash, scalar_block);
@@ -205,6 +205,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
         options.only_analyze = only_analyze_subquery;
+        options.view_source_in_subqueries = view_source_in_subqueries;
 
         /// Scalar subqueries may reference materialized CTEs that haven't been populated yet.
         /// Force CTE materialization in the sub-plan so that the pipeline execution
@@ -219,7 +220,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
         /// The inner query of an ordinary view referenced by the view query reads the table itself,
         /// not the inserted block.
-        if (auto storage = subquery_context->getViewSource(); storage && !subquery_context->isViewInnerQuery())
+        if (auto storage = getViewSourceIfRead(subquery_context, view_source_in_subqueries))
             replaceStorageInQueryTree(query_tree, subquery_context, storage);
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_tree, subquery_context, options);
 

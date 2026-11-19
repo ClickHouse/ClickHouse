@@ -154,7 +154,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 columns_cache_size;
     extern const ServerSettingsDouble columns_cache_size_ratio;
     extern const ServerSettingsDouble columns_cache_size_to_ram_ratio;
-    extern const ServerSettingsBool enable_gpu;
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
     extern const ServerSettingsBool jemalloc_enable_background_threads;
     extern const ServerSettingsBool jemalloc_enable_global_profiler;
@@ -246,6 +245,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_size;
     extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_free_size;
     extern const ServerSettingsUInt64 iceberg_manifest_decode_thread_pool_queue_size;
+    extern const ServerSettingsNonZeroUInt64 ai_function_max_thread_pool_size;
+    extern const ServerSettingsUInt64 ai_function_max_thread_pool_free_size;
+    extern const ServerSettingsUInt64 ai_function_thread_pool_queue_size;
     extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
@@ -282,7 +284,6 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int NETWORK_ERROR;
-    extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -527,6 +528,11 @@ void LocalServer::initialize(Poco::Util::Application & self)
         server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
         server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
         server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
+
+    getAIRequestThreadPool().initialize(
+        server_settings[ServerSetting::ai_function_max_thread_pool_size],
+        server_settings[ServerSetting::ai_function_max_thread_pool_free_size],
+        server_settings[ServerSetting::ai_function_thread_pool_queue_size]);
 }
 
 
@@ -1233,7 +1239,6 @@ void LocalServer::setupUsers()
     access_control.setEnableReadWriteGrants(config.getBool("access_control_improvements.enable_read_write_grants", true));
     access_control.setEnableUserNameAccessType(config.getBool("access_control_improvements.enable_user_name_access_type", true));
     access_control.setThrowOnInvalidReplicatedAccessEntities(config.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", true));
-    access_control.setForbidSQLAccessEntitiesTargetingUsersConfig(config.getBool("access_control_improvements.forbid_sql_access_entities_targeting_users_config", false));
 
     /// Keep in sync with `AccessControl::setupFromMainConfig` and `attachSystemTables`: `system.user_query_log`
     /// is attached (and thus safe to grant SELECT on implicitly) only when this is enabled.
@@ -1670,15 +1675,6 @@ void LocalServer::processConfig()
     }
     global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size, uncompressed_cache_size_ratio);
 
-    if (server_settings[ServerSetting::enable_gpu])
-    {
-#if USE_GPU
-        global_context->setGPU(server_settings);
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server setting `enable_gpu` is set, but the server is built without GPU support");
-#endif
-    }
-
     String mark_cache_policy = server_settings[ServerSetting::mark_cache_policy];
     size_t mark_cache_size = server_settings[ServerSetting::mark_cache_size];
     double mark_cache_size_ratio = server_settings[ServerSetting::mark_cache_size_ratio];
@@ -2058,22 +2054,39 @@ void LocalServer::processConfig()
     /// cross-origin request is rejected by the browser - including the web UI opened from a `file://`
     /// URL, whose origin is `null`. A configuration file with its own `http_options_response` section
     /// replaces these defaults entirely.
+    Poco::Util::AbstractConfiguration::Keys http_options_response_keys;
+    getClientConfiguration().keys("http_options_response", http_options_response_keys);
     if (!getClientConfiguration().has("http_options_response"))
     {
-        static constexpr std::pair<const char *, const char *> default_http_options_response[]
+        if (http_options_response_keys.empty())
         {
-            {"Access-Control-Allow-Origin", "*"},
-            {"Access-Control-Allow-Headers", "origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization"},
-            {"Access-Control-Allow-Methods", "POST, GET, OPTIONS"},
-            {"Access-Control-Max-Age", "86400"},
-        };
+            static constexpr std::pair<const char *, const char *> default_http_options_response[]
+            {
+                {"Access-Control-Allow-Origin", "*"},
+                {"Access-Control-Allow-Headers", "origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization"},
+                {"Access-Control-Allow-Methods", "POST, GET, OPTIONS"},
+                {"Access-Control-Max-Age", "86400"},
+            };
 
-        for (size_t index = 0; index < std::size(default_http_options_response); ++index)
+            /// The configuration layer that receives these keys is a flat key-value map with no notion of a
+            /// parent node, so the section itself has to be set explicitly - otherwise `config.has` does not
+            /// see it and the headers are never applied.
+            getClientConfiguration().setString("http_options_response", "");
+
+            for (size_t index = 0; index < std::size(default_http_options_response); ++index)
+            {
+                const auto & [name, value] = default_http_options_response[index];
+                const String key = fmt::format("http_options_response.header[{}]", index);
+                getClientConfiguration().setString(key + ".name", name);
+                getClientConfiguration().setString(key + ".value", value);
+            }
+        }
+        else
         {
-            const auto & [name, value] = default_http_options_response[index];
-            const String key = fmt::format("http_options_response.header[{}]", index);
-            getClientConfiguration().setString(key + ".name", name);
-            getClientConfiguration().setString(key + ".value", value);
+            /// `argsToConfig` stores post-`--` arguments as flat keys, so a supplied header has children
+            /// but not its parent. Materialize the parent for the HTTP handler without overwriting the
+            /// supplied headers.
+            getClientConfiguration().setString("http_options_response", "");
         }
     }
 

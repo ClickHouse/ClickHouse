@@ -116,10 +116,14 @@ ParallelReadingExtension::ParallelReadingExtension(
 }
 
 std::optional<InitialAllRangesAnnouncementResponse> ParallelReadingExtension::sendInitialRequest(
-    CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const
+    CoordinationMode mode,
+    RangesInDataPartsDescription description,
+    size_t mark_segment_size,
+    size_t min_marks_per_request,
+    bool wants_analyzed_ranges) const
 {
     return all_callback(InitialAllRangesAnnouncement{
-        mode, std::move(description), number_of_current_replica, mark_segment_size, min_marks_per_request, stream_id});
+        mode, std::move(description), number_of_current_replica, mark_segment_size, min_marks_per_request, stream_id, wants_analyzed_ranges});
 }
 
 std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadRequest(
@@ -145,6 +149,27 @@ MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(
     , part_remaining_marks(std::move(part_remaining_marks_))
 {
     chassert(index_reader_pool);
+}
+
+void MergeTreeIndexBuildContext::addAnalyzedReadRanges(size_t part_index, const MarkRanges & ranges)
+{
+    auto & part_ranges = read_ranges.at(part_index).ranges;
+    if (parts_with_analyzed_ranges.insert(part_index).second)
+        part_ranges.clear();
+
+    part_ranges.insert(part_ranges.end(), ranges.begin(), ranges.end());
+    std::sort(part_ranges.begin(), part_ranges.end());
+
+    /// Merge adjacent ranges, as `optimizeRanges` in `RangesInPatchParts.cpp` does.
+    MarkRanges merged;
+    for (const auto & range : part_ranges)
+    {
+        if (!merged.empty() && merged.back().end >= range.begin)
+            merged.back().end = std::max(merged.back().end, range.end);
+        else
+            merged.push_back(range);
+    }
+    part_ranges = std::move(merged);
 }
 
 MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResult(const MergeTreeReadTask & task) const
@@ -214,8 +239,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
     MergeTreeIndexBuildContextPtr merge_tree_index_build_context_,
-    LazyMaterializingRowsPtr lazy_materializing_rows_,
-    const ColumnsDescription * columns_)
+    LazyMaterializingRowsPtr lazy_materializing_rows_)
     : pool(std::move(pool_))
     , algorithm(std::move(algorithm_))
     , row_level_filter(row_level_filter_)
@@ -228,8 +252,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
           actions_settings,
           reader_settings_.enable_multiple_prewhere_read_steps,
           reader_settings_.force_short_circuit_execution,
-          reader_settings_.read_ahead_prewhere_columns,
-          columns_))
+          reader_settings_.read_ahead_prewhere_columns))
     , reader_settings(reader_settings_)
     , prewhere_filters_by_top_k_threshold(prewhereFiltersByTopKThreshold(prewhere_info, reader_settings))
     , result_header(transformHeader(pool->getHeader(), row_level_filter, prewhere_info))
@@ -401,8 +424,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     const ExpressionActionsSettings & actions_settings,
     bool enable_multiple_prewhere_read_steps,
     bool force_short_circuit_execution,
-    bool read_ahead_prewhere_columns,
-    const ColumnsDescription * columns)
+    bool read_ahead_prewhere_columns)
 {
     PrewhereExprInfo prewhere_actions;
 
@@ -424,7 +446,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     }
 
     if (prewhere_info &&
-        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, columns, read_ahead_prewhere_columns, &index_read_tasks)))
+        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, read_ahead_prewhere_columns, &index_read_tasks)))
     {
         PrewhereExprStep prewhere_step
         {

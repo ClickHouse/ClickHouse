@@ -274,6 +274,7 @@ public:
 
     /// Merges states (on which src places points to) with other states (on which dst places points to) of current aggregation function
     /// then destroy states (on which src places points to).
+    /// If it throws, every source state of the batch has been destroyed.
     virtual void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * src_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const = 0;
 
     /// Serializes state (to transmit it over the network, for example).
@@ -339,14 +340,6 @@ public:
       * Also returns true when the final value of this aggregate function contains State of other aggregate function inside.
       */
     virtual bool isState() const { return false; }
-
-    /** How the finalized value of a merged state relates to the finalized values of the states
-      * being merged; see the `MergedValueBound` enum. A function may declare a bound only if the
-      * relation holds exactly for any set of states and any data, and its `insertResultInto` does
-      * not modify the state (the values of partial states are peeked before they are merged).
-      * The safe default is `Unknown`, which excludes the function from the threshold merge.
-      */
-    virtual MergedValueBound getMergedValueBound() const { return MergedValueBound::Unknown; }
 
     /** The inner loop that uses the function pointer is better than using the virtual function.
       * The reason is that in the case of virtual functions GCC 5.1.2 generates code,
@@ -419,7 +412,7 @@ public:
         size_t row_end,
         AggregateDataPtr __restrict place,
         const IColumn ** columns,
-        Arena * arena) const;
+        Arena * arena) const = 0;
 
     /** The same for single place when need to aggregate only filtered data.
       * Instead of using an if-column, the condition is combined inside the null_map
@@ -479,18 +472,6 @@ public:
         size_t row_begin,
         size_t row_end,
         AggregateDataPtr * places,
-        size_t place_offset,
-        IColumn & to,
-        Arena * arena) const = 0;
-
-    /** The same devirtualized loop, but the states stay usable afterwards (`insertResultInto`
-      * guarantees it) - for peeking the values of live states, e.g. by the top-K threshold
-      * merge, which ranks partial states by value before deciding which ones to merge.
-      */
-    virtual void insertResultIntoBatchWithoutDestroying(
-        size_t row_begin,
-        size_t row_end,
-        const AggregateDataPtr * places,
         size_t place_offset,
         IColumn & to,
         Arena * arena) const = 0;
@@ -581,6 +562,9 @@ public:
     virtual llvm::Value * compileGetResult(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const;
 
 protected:
+    /// Throws if the failpoint `aggregator_merge_batch_throw` is enabled.
+    static void injectMergeBatchFault();
+
     DataTypes argument_types;
     Array parameters;
     DataTypePtr result_type;
@@ -804,16 +788,29 @@ public:
 
     void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * rhs_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
-        for (size_t i = 0; i < size; ++i)
+        size_t i = 0;
+        try
         {
-            chassert(dst_places[i] + offset != rhs_places[i] + offset,
-                     "IAggregateFunction::mergeAndDestroyBatch called with the same source and destination state");
-            if constexpr (Derived::parallelizeMergeWithKey())
-                static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, thread_pool, is_cancelled, arena);
-            else
-                static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, arena);
+            for (; i < size; ++i)
+            {
+                if (unlikely(i == 1))
+                    injectMergeBatchFault();
 
-            static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
+                chassert(dst_places[i] + offset != rhs_places[i] + offset,
+                         "IAggregateFunction::mergeAndDestroyBatch called with the same source and destination state");
+                if constexpr (Derived::parallelizeMergeWithKey())
+                    static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, thread_pool, is_cancelled, arena);
+                else
+                    static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, arena);
+
+                static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
+            }
+        }
+        catch (...)
+        {
+            /// `destroy` does not throw, so the sources from `i` on are not destroyed yet.
+            destroyBatch(i, size, rhs_places, offset);
+            throw;
         }
     }
 
@@ -840,6 +837,27 @@ public:
             for (size_t i = row_begin; i < row_end; ++i)
                 static_cast<const Derived *>(this)->add(place, columns, i, arena);
         }
+    }
+
+    void addBatchSparseSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
+        const auto * values = &column_sparse.getValuesColumn();
+        const auto & offsets = column_sparse.getOffsetsData();
+
+        auto from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin() + 1;
+        auto to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin() + 1;
+
+        size_t num_defaults = (row_end - row_begin) - (to - from);
+        if (from < to)
+            static_cast<const Derived *>(this)->addBatchSinglePlace(from, to, place, &values, arena, -1);
+        if (num_defaults > 0)
+            static_cast<const Derived *>(this)->addManyDefaults(place, &values, num_defaults, arena);
     }
 
     void addBatchSinglePlaceNotNull( /// NOLINT
@@ -937,18 +955,6 @@ public:
                 init(place);
             static_cast<const Derived *>(this)->add(place + place_offset, columns, i, arena);
         }
-    }
-
-    void insertResultIntoBatchWithoutDestroying(
-        size_t row_begin,
-        size_t row_end,
-        const AggregateDataPtr * places,
-        size_t place_offset,
-        IColumn & to,
-        Arena * arena) const override
-    {
-        for (size_t i = row_begin; i < row_end; ++i)
-            static_cast<const Derived *>(this)->insertResultInto(places[i] + place_offset, to, arena);
     }
 
     void insertResultIntoBatch(

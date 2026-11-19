@@ -561,28 +561,7 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     }
     else
     {
-        /// Sorted indexes (e.g. a sparse filter's offsets) gallop forward instead of a binary search over all offsets per row.
-        const auto * offsets_begin = getOffsetsData().begin();
-        const auto * offsets_end = getOffsetsData().end();
-        size_t i = 0;
-        for (const auto * pos = offsets_begin; i < limit && (pos == offsets_begin || pos[-1] < indexes[i]);)
-        {
-            chassert(indexes[i] < _size);
-            size_t run_end = get_run_end(i);
-            size_t step = 1;
-            while (step <= static_cast<size_t>(offsets_end - pos) && pos[step - 1] < indexes[i])
-            {
-                pos += step;
-                step *= 2;
-            }
-            pos = std::lower_bound(pos, pos + std::min<size_t>(step - 1, offsets_end - pos), indexes[i]);
-            const bool found = pos != offsets_end && *pos == indexes[i];
-            pos += found;
-            insert_run(found ? pos - offsets_begin : 0, i, run_end - i);
-            i = run_end;
-        }
-
-        while (i < limit)
+        for (size_t i = 0; i < limit;)
         {
             size_t run_end = get_run_end(i);
             insert_run(getValueIndex(indexes[i]), i, run_end - i);
@@ -992,18 +971,31 @@ ColumnSparse::Iterator ColumnSparse::getIterator(size_t n) const
     return Iterator(offsets_data, _size, current_offset, n);
 }
 
+namespace
+{
+
+const ColumnSparse & getSourceSparseColumn(const IColumn & source, const ColumnSparse & column, std::string_view operation)
+{
+    const auto * source_sparse = typeid_cast<const ColumnSparse *>(&source);
+    if (!source_sparse)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for {} of {} is not Sparse, but {}", operation, column.getName(), source.getName());
+    return *source_sparse;
+}
+
+}
+
 void ColumnSparse::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     VectorWithMemoryTracking<ColumnPtr> values_source_columns;
     values_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-        values_source_columns.push_back(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
+        values_source_columns.push_back(getSourceSparseColumn(*source_column, *this, "merge").getValuesPtr());
     values->chooseDynamicStructureForMerge(values_source_columns, max_dynamic_subcolumns);
 }
 
 void ColumnSparse::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    values->takeExactDynamicStructureFrom(assert_cast<const ColumnSparse &>(source).getValuesColumn());
+    values->takeExactDynamicStructureFrom(getSourceSparseColumn(source, *this, "dynamic structure").getValuesColumn());
 }
 
 void ColumnSparse::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
@@ -1011,7 +1003,7 @@ void ColumnSparse::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
     VectorWithMemoryTracking<ColumnPtr> values_source_columns;
     values_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-        values_source_columns.push_back(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
+        values_source_columns.push_back(getSourceSparseColumn(*source_column, *this, "statistics").getValuesPtr());
     values->takeOrCalculateStatisticsFrom(values_source_columns);
 }
 

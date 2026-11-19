@@ -218,13 +218,6 @@ public:
         /// Set only on a parallel replicas follower: it kept every part, and the coordinator chooses its ranges
         /// from the analysis done on the initiator.
         bool index_analysis_was_already_done_on_initiator = false;
-        /// The filter constrains the primary key of the analyzed parts (the same criterion the
-        /// `force_primary_key` check uses). A projection whose own key is not used may not serve
-        /// the read.
-        bool pk_condition_useful = false;
-        /// Set when the read skipped its own index analysis (a parallel replicas follower): its ranges are whole parts,
-        /// not narrowed by this condition.
-        ConditionTemplate<KeyCondition>::Ptr key_condition_not_applied;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -248,8 +241,6 @@ public:
             , has_exact_ranges(other.has_exact_ranges)
             , exact_ranges_excluded(other.exact_ranges_excluded)
             , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
-            , pk_condition_useful(other.pk_condition_useful)
-            , key_condition_not_applied(other.key_condition_not_applied)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -272,8 +263,6 @@ public:
             , has_exact_ranges(other.has_exact_ranges)
             , exact_ranges_excluded(other.exact_ranges_excluded)
             , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
-            , pk_condition_useful(other.pk_condition_useful)
-            , key_condition_not_applied(std::move(other.key_condition_not_applied))
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -401,7 +390,8 @@ public:
         bool allow_query_condition_cache_,
         bool allow_top_k_prewhere_query_condition_cache_,
         bool supports_skip_indexes_on_data_read,
-        bool check_row_limits);
+        bool check_row_limits,
+        bool skip_ranges_analysis);
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
@@ -427,6 +417,9 @@ public:
     /// see filters whose value can change while that key stays the same: non-deterministic virtual
     /// columns (query-wide part numbering, catalog names, disk placement).
     static bool filterDependsOnNonDeterministicVirtuals(const VirtualColumnsDescription & virtuals, const SelectQueryInfo & query_info_);
+
+    /// The query takes no row from this read, so `selectRangesToRead` does not analyze its ranges.
+    void setNoRowsNeeded() { no_rows_needed = true; }
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
@@ -497,6 +490,7 @@ public:
         query_info.filter_actions_dag = filter_actions_dag;
 
         limit = other.limit;
+        no_rows_needed = other.no_rows_needed;
 
         /// `FINAL` defers the row policy and `PREWHERE` past deduplication, and what does it is part of
         /// `applyFilters`, so a read of a plan optimized without that pass applies them during reading
@@ -681,9 +675,16 @@ public:
     std::pair<RemoveUnusedColumnsResult, std::unique_ptr<LazilyReadFromMergeTree>> removeUnusedColumnsAndCreateLazyReadStep(
         const std::vector<size_t> & unneeded_output_positions, const std::vector<size_t> & lazy_output_positions);
 
-    /// Whether some columns of this read were moved to a lazy read, which addresses the rows of this one by
-    /// their part offsets. Reading a projection instead would address other rows.
-    bool hasLazilyReadColumns() const { return has_lazily_read_columns; }
+    /// Whether some columns of this read were moved to a lazy read, which addresses the rows of this one by their part
+    /// offsets. The read puts the parts it reads where the lazy read reads them from, when it builds its pipeline.
+    bool hasLazilyReadColumns() const { return !columns_read_lazily.empty(); }
+    /// The columns the lazy read reads for the rows of this one.
+    const Names & getColumnsReadLazily() const { return columns_read_lazily; }
+    /// Makes this read, which replaces `other` or serves some of its parts, put its parts where the lazy read of `other`
+    /// reads them from.
+    void shareLazyReadOf(const ReadFromMergeTree & other);
+    /// The rows the lazy read of the columns this read leaves out reads, or null without such a lazy read.
+    const LazyMaterializingRowsPtr & getLazyReadRows() const { return lazy_read_rows; }
 
     /// The columns `addStartingPartOffsetAndPartOffset` reads, where they are in the output header, and whether it added
     /// them. The columns the output header had keep their order.
@@ -941,9 +942,13 @@ private:
     bool enable_vertical_final = false;
     bool allow_query_condition_cache = true;
     bool allow_top_k_prewhere_query_condition_cache = true;
+    bool no_rows_needed = false;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
-    bool has_lazily_read_columns = false;
+
+    /// The rows the lazy read of the columns this read leaves out reads, and those columns. See `hasLazilyReadColumns`.
+    LazyMaterializingRowsPtr lazy_read_rows;
+    Names columns_read_lazily;
 
     ExpressionActionsPtr virtual_row_conversion;
 

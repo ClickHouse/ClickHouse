@@ -41,7 +41,7 @@ public:
         size_t current_range_last_mark,
         bool continue_reading,
         size_t max_rows_to_read,
-        MutableColumns & res_columns, Columns & shared_columns) override;
+        MutableColumns & res_columns) override;
 
     /// The virtual columns are resolved from per-mark posting lists addressed
     /// by absolute row number, so a read may start or stop inside a mark.
@@ -82,11 +82,6 @@ private:
     /// Sets per-column flags from the analyzer's verdict.
     void classifyVirtualColumns();
     void fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
-    /// Returns the postings folded by the index analysis for the query of the column, if they answer it
-    /// completely (no postings of the query are read per mark) and lazy mode is off, and nullptr otherwise.
-    const PostingList * getFoldedPostings(size_t column_idx) const;
-    /// Fills rows [row_offset, row_offset + num_rows) from `postings` of the whole part.
-    void fillColumnFromPostings(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
     void fillColumnLazy(IColumn & column, size_t column_idx, size_t row_offset, size_t num_rows);
 
     /// Search of one column resolved once per part.
@@ -155,7 +150,6 @@ private:
     size_t current_mark = 0;
     PaddedPODArray<UInt32> indices_buffer;
     TextIndexBlockedPositionsCodec::DecodeScratch blocked_positions_scratch;
-    const PostingList empty_postings;
 
     bool is_initialized = false;
     /// Virtual columns that are always true.

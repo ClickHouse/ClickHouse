@@ -735,7 +735,7 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         {"thread_id", std::make_shared<DataTypeUInt64>(), "The thread identifier"},
         {"query_id", std::make_shared<DataTypeString>(), "The ID of the query this thread belongs to."},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary "
-            "are stored as physical file offsets, and other addresses are virtual memory addresses inside the ClickHouse server process."},
+            "are stored as physical file offsets, and frames outside it (shared libraries, JIT code) are stored as 0."},
         {"untracked_memory", std::make_shared<DataTypeInt64>(), "Per-thread counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush."},
     }));
     storage_metadata.setVirtuals(createVirtuals());

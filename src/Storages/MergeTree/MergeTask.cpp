@@ -658,33 +658,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
-
-    /// The TTL bound of a column is unknown for a part that stores it without TTL info,
-    /// so the merged part must not take the bound of the other parts for that column.
-    NameSet columns_without_ttl_info;
-    if (global_ctx->metadata_snapshot->hasAnyColumnTTL())
-    {
-        for (const auto & [column, _] : global_ctx->metadata_snapshot->getColumnTTLs())
-        {
-            if (std::ranges::any_of(global_ctx->future_part->parts, [&](const auto & part)
-                { return !part->isEmpty() && !part->ttl_infos.columns_ttl.contains(column) && part->getColumns().contains(column); }))
-                columns_without_ttl_info.insert(column);
-        }
-    }
-
     for (const auto & part : global_ctx->future_part->parts)
     {
-        if (columns_without_ttl_info.empty())
-        {
-            global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
-        }
-        else
-        {
-            auto part_ttl_infos = part->ttl_infos;
-            for (const auto & column : columns_without_ttl_info)
-                part_ttl_infos.columns_ttl.erase(column);
-            global_ctx->new_data_part->ttl_infos.update(part_ttl_infos);
-        }
+        global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
 
         if (global_ctx->metadata_snapshot->hasAnyTTL() && !part->checkAllTTLCalculated(global_ctx->metadata_snapshot))
         {
@@ -947,7 +923,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
 
     const bool has_block_columns = enabledBlockNumberColumn(global_ctx) && enabledBlockOffsetColumn(global_ctx);
-    global_ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(global_ctx->metadata_snapshot->getPartitionKey(), global_ctx->data_settings, has_block_columns ? MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET : MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
+    global_ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(*global_ctx->metadata_snapshot, global_ctx->data_settings, has_block_columns ? MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET : MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
     extractMergingAndGatheringColumns(exclude_index_names);
 
     const auto & expired_columns = global_ctx->new_data_part->expired_columns;
@@ -1479,7 +1455,26 @@ bool MergeTask::canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx)
     if (hasLightweightDelete(global_ctx.future_part))
         return false;
 
-    return global_ctx.metadata_snapshot->hasRowsTTL() || global_ctx.metadata_snapshot->hasAnyRowsWhereTTL();
+    const auto & metadata = *global_ctx.metadata_snapshot;
+    if (!metadata.hasRowsTTL() && !metadata.hasAnyRowsWhereTTL())
+        return false;
+
+    /// `TTLDeleteFilterTransform` evaluates the rows TTLs before the merge, but only `TTLTransform`,
+    /// after the merge, fills the columns that no source part stores.
+    const auto & expired_columns = global_ctx.new_data_part->expired_columns;
+    auto is_missing = [&](const NameAndTypePair & column)
+    {
+        return Nested::tryGetColumnNameInStorage(column.name, expired_columns).has_value();
+    };
+    auto reads_missing_column = [&](const TTLDescription & ttl)
+    {
+        return std::ranges::any_of(ttl.expression_columns, is_missing) || std::ranges::any_of(ttl.where_expression_columns, is_missing);
+    };
+
+    if (metadata.hasRowsTTL() && reads_missing_column(metadata.getRowsTTL()))
+        return false;
+
+    return std::ranges::none_of(metadata.getRowsWhereTTLs(), reads_missing_column);
 }
 
 bool MergeTask::isVerticalTTLDelete(
@@ -1600,7 +1595,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         bool projection_part_misses_column = false;
 
         MergeTreeData::DataPartsVector projection_parts;
-        size_t parts_with_unloaded_projection = 0;
         for (const auto & part : global_ctx->future_part->parts)
         {
             auto it = part->getProjectionParts().find(projection.name);
@@ -1619,8 +1613,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
 
                 projection_parts.push_back(it->second);
             }
-            else if (part->hasUnloadedProjection(projection.name))
-                ++parts_with_unloaded_projection;
         }
 
         if (projection_part_misses_column && mode != DeduplicateMergeProjectionMode::IGNORE)
@@ -1643,12 +1635,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             /// where the correct `_block_number` values are available.
             chassert(projection_parts.size() < global_ctx->future_part->parts.size());
             LOG_DEBUG(ctx->log, "Projection {} will be rebuilt because some parts don't have it (commit-order projection)", projection.name);
-            global_ctx->projections_to_rebuild.push_back(&projection);
-        }
-        else if (parts_with_unloaded_projection
-                 && projection_parts.size() + parts_with_unloaded_projection == global_ctx->future_part->parts.size())
-        {
-            LOG_DEBUG(ctx->log, "Projection {} will be rebuilt because some parts have it on disk but not loaded", projection.name);
             global_ctx->projections_to_rebuild.push_back(&projection);
         }
         else if ((*global_ctx->data_settings)[MergeTreeSetting::materialize_projections_on_merge])
@@ -2165,6 +2151,8 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
     /// Collect statistics transforms for this column separately.
     BuildStatisticsTransformMap column_build_statistics_transforms;
 
+    const bool allow_remote_fs_prefetch = canPrefetchInMergeOrMutation(*global_ctx->data, global_ctx->future_part->parts, Names{column_name}, global_ctx->context);
+
     for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
     {
         auto plan_for_part = std::make_unique<QueryPlan>();
@@ -2183,6 +2171,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
             /*filter=*/ std::nullopt,
             ctx->read_with_direct_io,
             ctx->use_prefetch,
+            allow_remote_fs_prefetch,
             global_ctx->context,
             getLogger("VerticalMergeStage"));
 
@@ -3511,6 +3500,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         merging_column_names.push_back(RowExistsColumn::name);
     }
 
+    const bool allow_remote_fs_prefetch = canPrefetchInMergeOrMutation(*global_ctx->data, global_ctx->future_part->parts, merging_column_names, global_ctx->context);
+
     /// Read from all parts
     std::vector<QueryPlanPtr> plans;
     size_t part_starting_offset = 0;
@@ -3535,7 +3526,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             apply_deleted_mask,
             /*filter=*/ std::nullopt,
             ctx->read_with_direct_io,
-            /*prefetch=*/ false,
+            /*prefetch_begin_of_range=*/ false,
+            allow_remote_fs_prefetch,
             global_ctx->context,
             ctx->log);
 

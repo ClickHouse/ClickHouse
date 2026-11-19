@@ -51,9 +51,10 @@ public:
         return 2;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        return "(Any, Any) -> MultiPolygon";
+        /// Intersection of each with figure with each could be easily represent as MultiPolygon.
+        return DataTypeFactory::instance().get("MultiPolygon");
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -80,16 +81,20 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be MultiPoint", getName());
             else
             {
-                CorrectedGeometries<LeftConverter> first(arguments[0].column);
-                CorrectedGeometries<RightConverter> second(arguments[1].column);
+                auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
+                auto second = RightConverter::convert(arguments[1].column->convertToFullColumnIfConst());
 
                 /// We are not interested in some pitfalls in third-party libraries
                 /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
+                    /// Orient the polygons correctly.
+                    boost::geometry::correct(first[i]);
+                    boost::geometry::correct(second[i]);
+
                     MultiPolygon<Point> intersection{};
                     /// Main work here.
-                    boost::geometry::intersection(first.get(i), second.get(i), intersection);
+                    boost::geometry::intersection(first[i], second[i], intersection);
 
                     serializer.add(intersection);
                 }

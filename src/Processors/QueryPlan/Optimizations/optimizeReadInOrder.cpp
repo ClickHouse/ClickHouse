@@ -1,18 +1,14 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnSet.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/PreparedSets.h>
-#include <Interpreters/Set.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -231,20 +227,9 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
 /// Fixed columns are 'x' and 'y'.
 using FixedColumns = std::unordered_set<const ActionsDAG::Node *>;
 
-/// Whether the type is a `Variant` or `Dynamic`, also as an element of a `Tuple` or of a nested `Tuple`: `equals` compares tuples
-/// element by element, but `Array` and `Map` values of one type with `compareAt`, which tells apart the types stored in a `Dynamic`.
-bool isVariantOrDynamicThroughTuples(const DataTypePtr & type_with_wrappers)
-{
-    auto type = removeLowCardinalityAndNullable(type_with_wrappers);
-    if (isVariant(type) || isDynamic(type))
-        return true;
-    const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get());
-    return tuple && std::ranges::any_of(tuple->getElements(), isVariantOrDynamicThroughTuples);
-}
-
 /// Whether `column = constant` holds for several values of the column that sort differently, so it does not fix the column.
 /// `equals` pads a `FixedString` with zero bytes against a `String`, so `s = toFixedString('a', 2)` matches `'a'` with any
-/// number of trailing zero bytes, also inside `Tuple`, `Variant` and `Dynamic`, but not inside `Array` or `Map` cast to a common type.
+/// number of trailing zero bytes, also inside `Tuple`, `Variant` and `Dynamic`, but not inside `Array` or `Map`.
 bool equalsMatchesSeveralValues(
     const DataTypePtr & column_type_with_wrappers, ColumnPtr constant, const DataTypePtr & constant_type_with_wrappers)
 {
@@ -278,24 +263,12 @@ bool equalsMatchesSeveralValues(
 
     if (isString(column_type) && isFixedString(constant_type))
         return true;
-    /// A float is compared with a `Decimal`, `DateTime64` or `Time64` in `Float64`, which keeps distinct `Decimal32` values
-    /// distinct but not wider ones, so `d = 1.0` matches both `1` and `1.000000000000000001`.
-    if (isColumnedAsDecimal(column_type) && !WhichDataType(column_type).isDecimal32() && isFloat(constant_type))
-        return true;
     /// Values of several types can be equal to the constant (`'a'` as `String` and `FixedString(1)`) and sort differently.
     if (isVariant(column_type) || isDynamic(column_type))
-        return true;
-    /// `Array` values without a common type are compared element by element with `equals`, which can match several values.
-    /// `equals` looks for the common type without `LowCardinality`, which cannot hold every common type, e.g. `DateTime64`.
-    if (isArray(column_type) && isArray(constant_type)
-        && !tryGetLeastSupertype(DataTypes{recursiveRemoveLowCardinality(column_type), recursiveRemoveLowCardinality(constant_type)}))
         return true;
 
     const auto * column_tuple = typeid_cast<const DataTypeTuple *>(column_type.get());
     const auto * constant_tuple = typeid_cast<const DataTypeTuple *>(constant_type.get());
-    /// `equals` parses a string into the type of the tuple, so only `Variant` and `Dynamic` elements can match several values.
-    if (column_tuple && isStringOrFixedString(constant_type))
-        return isVariantOrDynamicThroughTuples(column_type);
     if (!column_tuple || !constant_tuple)
         return false;
 
@@ -311,56 +284,7 @@ bool equalsMatchesSeveralValues(
     return false;
 }
 
-/// Whether `set_node` is a ready set with exactly one element, like the right side of `x IN ('a')`,
-/// so that `probe IN set` fixes `probe` to a single value.
-/// Only `FutureSetFromTuple` is filled at planning time; sets from subqueries or storages are not.
-/// A `FutureSetFromTuple` may also be a shipped subquery set that kept the subquery's type,
-/// e.g. `d IN (SELECT 1.0)` for `d Decimal`. `Set::execute` converts the probe to the set key type,
-/// and this conversion may be non-injective, so require the key type to be the probe type
-/// (up to `LowCardinality` and `Nullable`), so that the conversion is an identity.
-bool isSingleElementSetForProbe(const ActionsDAG::Node & set_node, const ActionsDAG::Node & probe)
-{
-    if (set_node.type != ActionsDAG::ActionType::COLUMN || !set_node.column)
-        return false;
-
-    const auto * column_set = checkAndGetColumn<const ColumnSet>(&set_node.column->getDataColumn());
-    if (!column_set)
-        return false;
-
-    const auto * set_from_tuple = typeid_cast<const FutureSetFromTuple *>(column_set->getData().get());
-    if (!set_from_tuple)
-        return false;
-
-    auto set = set_from_tuple->get();
-    if (!set || !set->isCreated() || set->getTotalRowCount() != 1)
-        return false;
-
-    const auto & set_types = set->getDataTypes();
-    if (set_types.size() != 1)
-        return false;
-
-    auto probe_type = removeLowCardinalityAndNullable(probe.result_type);
-    auto set_type = removeLowCardinalityAndNullable(set_types.front());
-    return probe_type->equals(*set_type);
-}
-
-void addFixedColumn(const ActionsDAG::Node * fixed_column, FixedColumns & fixed_columns)
-{
-    fixed_columns.insert(fixed_column);
-
-    /// Support injective functions chain.
-    const ActionsDAG::Node * maybe_injective = fixed_column;
-    while (maybe_injective->type == ActionsDAG::ActionType::FUNCTION
-        && maybe_injective->children.size() == 1
-        && maybe_injective->function_base->isInjective(getFunctionArgumentColumns(*maybe_injective)))
-    {
-        maybe_injective = maybe_injective->children.front();
-        fixed_columns.insert(maybe_injective);
-    }
-}
-
 /// Right now we find only simple cases like 'and(..., and(..., and(column = value, ...), ...'
-/// A single-element `IN`, like `column IN (value)`, fixes the column the same way as `column = value`.
 /// Injective functions are supported here. For a condition 'injectiveFunction(x) = 5' column 'x' is fixed.
 void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
 {
@@ -399,13 +323,20 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
 
                 if (maybe_fixed_column && num_constant_columns + 1 == node->children.size()
                     && !equalsMatchesSeveralValues(maybe_fixed_column->result_type, constant->column, constant->result_type))
-                    addFixedColumn(maybe_fixed_column, fixed_columns);
-            }
-            else if (name == "in" || name == "globalIn" || name == "nullIn" || name == "globalNullIn")
-            {
-                if (node->children.size() == 2 && !node->children[0]->column
-                    && isSingleElementSetForProbe(*node->children[1], *node->children[0]))
-                    addFixedColumn(node->children[0], fixed_columns);
+                {
+                    //std::cerr << "====== Added fixed column " << maybe_fixed_column->result_name << ' ' << static_cast<const void *>(maybe_fixed_column) << std::endl;
+                    fixed_columns.insert(maybe_fixed_column);
+
+                    /// Support injective functions chain.
+                    const ActionsDAG::Node * maybe_injective = maybe_fixed_column;
+                    while (maybe_injective->type == ActionsDAG::ActionType::FUNCTION
+                        && maybe_injective->children.size() == 1
+                        && maybe_injective->function_base->isInjective(getFunctionArgumentColumns(*maybe_injective)))
+                    {
+                        maybe_injective = maybe_injective->children.front();
+                        fixed_columns.insert(maybe_injective);
+                    }
+                }
             }
         }
     }
@@ -681,6 +612,9 @@ SortingInputOrder buildInputOrderFromSortDescription(
     std::vector<MatchInfo> match_infos;
     match_infos.reserve(description.size());
 
+    /// For every fixed `ORDER BY` column: the read direction in which it is ordered like its key column, 0 if there is none.
+    std::vector<int> fixed_column_directions;
+
     while (next_description_column < description.size() && next_sort_key < sorting_key.column_names.size())
     {
         const auto & sorting_key_column = sorting_key.column_names[next_sort_key];
@@ -762,14 +696,20 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 /// don't let it determine read direction - skip to next columns.
                 /// Example: ORDER BY tenant, event_time DESC with WHERE tenant='42'
                 /// tenant is constant, so read direction should come from event_time DESC.
-                if (fixed_columns.contains(sort_node))
+                /// The key column has to be fixed as well: `toDate(ts) = '2024-01-01'` fixes `toDate(ts)` but not the key column `ts`.
+                if (fixed_columns.contains(sort_node) && fixed_key_columns.contains(sort_column_node))
                 {
-                    /// Virtual row for fixed column from order by is not supported now.
-                    can_optimize_virtual_row = false;
+                    int direction = sort_column_description.direction * reverse_indicator;
+                    if (match.monotonicity)
+                        direction = match.monotonicity->strict ? direction * match.monotonicity->direction : 0;
+                    const bool requests_nulls_last = sort_column_description.direction == sort_column_description.nulls_direction;
+                    if (column_is_nullable && (direction * reverse_indicator == 1) != requests_nulls_last)
+                        direction = 0;
+                    fixed_column_directions.push_back(direction);
 
                     /// Still add the fixed column to the sort description (required for sort matching)
                     /// but don't set current_direction so it won't influence read_direction.
-                    match_infos.push_back({.source = sort_node, .fixed_column = sort_node});
+                    match_infos.push_back({.source = sort_node, .monotonic = match.monotonicity ? &match : nullptr});
                     order_key_prefix_descr.push_back(sort_column_description);
                     ++next_description_column;
                     ++next_sort_key;
@@ -884,6 +824,11 @@ SortingInputOrder buildInputOrderFromSortDescription(
 
     /// If the prefix description is used, we can't restore the full description from PK value.
     if (pk_column_names.size() < next_sort_key)
+        can_optimize_virtual_row = false;
+
+    /// The virtual row takes a fixed `ORDER BY` column from the index like any other key column.
+    /// It bounds the rows only if the read goes in the direction of the column, as if the column was not fixed.
+    if (std::ranges::any_of(fixed_column_directions, [&](int direction) { return direction != read_direction; }))
         can_optimize_virtual_row = false;
 
     auto order_info = std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, read_direction, limit);
@@ -1501,7 +1446,8 @@ InputOrderInfoPtr buildInputOrderInfo(
 
         if (order_info.input_order)
         {
-            bool can_read = object_storage_step->requestReadingInOrder();
+            bool can_read = object_storage_step->requestReadingInOrder(
+                order_info.input_order->direction, optimization_settings);
             if (!can_read)
                 return nullptr;
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1598,7 +1544,8 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
         if (order_info.input_order)
         {
-            bool can_read = object_storage_step->requestReadingInOrder();
+            bool can_read = object_storage_step->requestReadingInOrder(
+                order_info.input_order->direction, optimization_settings);
             if (!can_read)
                 return {};
         }
@@ -1744,7 +1691,8 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         if (!canImproveOrderForDistinct(order_info, object_storage_step->getDataOrder()))
             return {};
 
-        if (!object_storage_step->requestReadingInOrder())
+        if (!object_storage_step->requestReadingInOrder(
+                order_info.input_order->direction, optimization_settings))
             return {};
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)

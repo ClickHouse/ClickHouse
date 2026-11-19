@@ -8,7 +8,6 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-#include <Planner/Utils.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
@@ -19,7 +18,6 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
-#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/SelectQueryInfo.h>
 
 #include <Common/ProfileEvents.h>
@@ -107,16 +105,12 @@ void IStorageCluster::read(
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
 
     SharedHeader sample_block;
-    /// The replicas re-analyze this query, so it must not name CTEs or `grouping` specializations of the initiator's query tree.
-    auto query_tree_to_send = query_info.query_tree->clone();
-    removeGroupingFunctionSpecializations(query_tree_to_send);
-    ASTPtr query_to_send = queryNodeToDistributedSelectQuery(query_tree_to_send);
+    ASTPtr query_to_send = query_info.query;
 
-    sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(
-        query_to_send, context, SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved());
+    sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_info.query, context, SelectQueryOptions(processed_stage));
 
     /// The nodes that will run the query are the nodes of this storage's own cluster.
-    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context, getClusterName());
+    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context, getClusterName(), /*add_structure_and_format=*/true);
 
     RestoreQualifiedNamesVisitor::Data data;
     data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));

@@ -1060,7 +1060,6 @@
         "reference/system-tables/completions",
         "reference/system-tables/constraints",
         "reference/system-tables/contributors",
-        "reference/system-tables/connections",
         "reference/system-tables/crash_log",
         "reference/system-tables/current_roles",
         "reference/system-tables/dashboards",

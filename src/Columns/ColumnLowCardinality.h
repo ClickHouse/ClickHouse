@@ -103,6 +103,7 @@ public:
 #endif
     void insertRangeFromFullColumn(const IColumn & src, size_t start, size_t length);
     void insertRangeFromDictionaryEncodedColumn(const IColumn & keys, const IColumn & indexes);
+    static void checkIndexesAreLimited(const IColumn & indexes, UInt64 limit);
 
     void insertData(const char * pos, size_t length) override;
 

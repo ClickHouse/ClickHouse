@@ -206,7 +206,6 @@ namespace Setting
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsUInt64 max_bytes_before_external_group_by;
     extern const SettingsDouble max_bytes_ratio_before_external_group_by;
-    extern const SettingsUInt64 min_bytes_before_external_group_by;
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const SettingsBool compile_aggregate_expressions;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
@@ -2439,32 +2438,12 @@ RowPolicyFilterPtr InterpreterSelectQuery::getRowPolicyFilter() const
 
 bool InterpreterSelectQuery::shouldPushRowLevelFilterToStorage() const
 {
-    if (input_pipe || !storage || !storage->supportsPrewhere())
+    if (input_pipe || !storage)
         return false;
 
-    /// A remote storage cannot carry the filter at all: read() only ships query text to the
-    /// remote servers and never lowers the filter into it, so pushing would silently drop an
-    /// access-control filter. Refuse, and let the stage check fail closed.
-    if (storage->isRemote())
-        return false;
-
-    /// The filter is built against this table's schema, but read() hands it to wrapper
-    /// storages' children (Merge, Buffer), which re-derive it against their own types.
-    /// Push it down only if every column it consumes is in the PREWHERE contract.
     /// NOTE: uses the interpreter's own row_policy_info, so it is callable before
     /// analysis_result exists; they share the same object.
-    if (const auto supported_prewhere_columns = storage->supportedPrewhereColumns())
-    {
-        const auto & table_columns = metadata_snapshot->getColumns();
-        const bool include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
-        for (const auto & column_name : row_policy_info->actions.getRequiredColumnsNames())
-        {
-            if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, include_subcolumns, table_columns, column_name))
-                return false;
-        }
-    }
-
-    return true;
+    return canPushDownRowPolicyFilter(*storage, metadata_snapshot->getColumns(), row_policy_info->actions.getRequiredColumnsNames());
 }
 
 void InterpreterSelectQuery::addPrewhereAliasActions()
@@ -2975,7 +2954,6 @@ static Aggregator::Params getAggregatorParams(
         group_by_two_level_threshold_bytes,
         Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
             settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
-        settings[Setting::min_bytes_before_external_group_by],
         settings[Setting::empty_result_for_aggregation_by_empty_set]
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && keys.empty()
                 && query_analyzer.hasConstAggregationKeys()),

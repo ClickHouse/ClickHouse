@@ -112,18 +112,20 @@ void StorageFileCluster::updateQueryToSendIfNeeded(
     DB::ASTPtr & query,
     const StorageSnapshotPtr & storage_snapshot,
     const DB::ContextPtr & context,
-    const String & target_cluster_name)
+    const String & target_cluster_name,
+    bool add_structure_and_format)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function fileCluster, got '{}'", query->formatForErrorMessage());
 
-    TableFunctionFileCluster::updateStructureAndFormatArgumentsIfNeeded(
-        table_function,
-        storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
-        format_name,
-        context
-    );
+    if (add_structure_and_format)
+        TableFunctionFileCluster::updateStructureAndFormatArgumentsIfNeeded(
+            table_function,
+            storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
+            format_name,
+            context
+        );
 
     /// `fileCluster` has no plain counterpart that `parallel_replicas_for_cluster_engines` could convert, so
     /// the function is always already the `*Cluster` variant and carries a cluster name the user wrote.

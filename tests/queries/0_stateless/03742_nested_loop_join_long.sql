@@ -87,7 +87,8 @@ ORDER BY t0.Id NULLS FIRST
 ;
 
 SELECT 'SEMI LEFT';
-SELECT t0.Id, sum(sipHash64(t0.Payload)), count(), countIf(t1.Attribute != ''), sum(sipHash64(t1.Attribute)) AS attr_hash_sum
+-- SEMI JOIN takes any of the matching right rows, so the hash of their attributes is not deterministic.
+SELECT t0.Id, sum(sipHash64(t0.Payload)), count(), countIf(t1.Attribute != '')
 FROM events AS t0
 SEMI LEFT JOIN attributes AS t1 ON t0.Id = t1.EventId
 GROUP BY t0.Id

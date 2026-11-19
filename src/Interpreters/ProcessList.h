@@ -43,8 +43,6 @@ class IExecutor;
 
 struct ProcessListForUser;
 class QueryStatus;
-class LoadJob;
-using LoadJobPtr = std::shared_ptr<LoadJob>;
 class ThreadStatus;
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
@@ -154,11 +152,8 @@ protected:
     /// Including EndOfStream or Exception.
     std::atomic<bool> is_all_data_sent { false };
 
-    /// Guards this query's transition between waiting for load jobs and not waiting: the first blocked
-    /// thread registers the query in the waiting counters, the last one to wake up unregisters it.
-    std::mutex waiting_mutex;
     /// Number of threads for the query that are waiting for load jobs
-    UInt64 waiting_threads TSA_GUARDED_BY(waiting_mutex) = 0;
+    std::atomic<UInt64> waiting_threads{0};
 
     /// For initialization of ProcessListForUser during process insertion.
     void setUserProcessList(ProcessListForUser * user_process_list_);
@@ -218,7 +213,6 @@ protected:
     std::optional<CurrentMetrics::Increment> num_non_internal_queries_increment;
 
     bool is_internal;
-    const bool is_ddl_or_on_cluster_internal;
 public:
     QueryStatus(
         ContextPtr context_,
@@ -489,18 +483,10 @@ protected:
     /// limit for waiting queries. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     std::atomic<UInt64> max_waiting_queries_amount{0};
 
-    /// amount of queries waiting for load jobs, excludes internal queries
-    std::atomic<UInt64> waiting_queries_amount{0};
-
     /// WARNING: for non-internal queries only
     void increaseQueryKindAmount(const IAST::QueryKind & query_kind);
     void decreaseQueryKindAmount(const IAST::QueryKind & query_kind);
     QueryAmount getQueryKindAmount(const IAST::QueryKind & query_kind) const;
-
-    /// WARNING: for non-internal queries only. The increase throws if `max_waiting_queries_amount`
-    /// is reached, in which case the query does not become a waiter and must not be decreased.
-    void increaseWaitingQueryAmount();
-    void decreaseWaitingQueryAmount();
 
     /// An unset `expected_user_id` cancels whatever holds the key.
     CancellationCode sendCancelToQueryImpl(
@@ -593,9 +579,6 @@ public:
         return max_waiting_queries_amount.load();
     }
 
-    void incrementWaiters(const QueryStatusPtr & status);
-    void decrementWaiters(const QueryStatusPtr & status);
-
     struct OwnQuery
     {
         String user;
@@ -621,12 +604,7 @@ public:
     /// was given exactly this pair; queries from other interfaces never match.
     CancellationCode sendCancelToPostgreSQLQuery(Int32 process_id, UInt32 secret_key);
 
-    /// With except_ddl_backups_and_restores, BACKUP and RESTORE parts of ON CLUSTER operations run by the DDL worker are not cancelled.
-    void killAllQueries(bool except_ddl_backups_and_restores = false);
+    void killAllQueries();
 };
-
-/// Waiter callbacks of the global `AsyncLoader`, see `AsyncLoader::setWaiterCallbacks`.
-void onLoadJobWaitersIncrement(const LoadJobPtr & job);
-void onLoadJobWaitersDecrement(const LoadJobPtr & job);
 
 }

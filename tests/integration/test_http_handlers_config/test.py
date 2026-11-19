@@ -1,6 +1,5 @@
 import contextlib
 import os
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -1091,38 +1090,3 @@ def test_catch_all_handler():
             response = cluster.instance.http_request(path, method="GET")
             assert response.status_code == 200, f"{path} -> {response.status_code}"
             assert response.content == b"catch-all matched", path
-
-
-def test_command_line_handlers_survive_reload():
-    # The configuration file has no <http_handlers>: the rule comes only from the command line.
-    cluster = ClickHouseCluster(__file__, "test_command_line_handlers_survive_reload")
-    instance = cluster.add_instance(
-        "command_line_handlers",
-        user_configs=["users.d/users.yaml"],
-        extra_args="--http_handlers.rule.url=/command_line "
-        "--http_handlers.rule.handler.type=static "
-        "--http_handlers.rule.handler.response_content=from_command_line",
-    )
-    try:
-        cluster.start()
-        instance.wait_for_log_line("Ready for connections")
-        response = instance.http_request("command_line", method="GET")
-        assert response.content == b"from_command_line"
-
-        reloaded = "config.xml', performed update on configuration"
-        loads = int(instance.count_in_log(reloaded))
-        instance.query("SYSTEM RELOAD CONFIG")
-        instance.query("SYSTEM RELOAD CONFIG")
-        # The log is written asynchronously: wait until both reloads are in it.
-        for _ in range(300):
-            if int(instance.count_in_log(reloaded)) >= loads + 2:
-                break
-            time.sleep(0.1)
-        assert int(instance.count_in_log(reloaded)) >= loads + 2
-
-        # An unchanged configuration must not restart the listener.
-        assert int(instance.count_in_log("Stopped listening for http://")) == 0
-        response = instance.http_request("command_line", method="GET")
-        assert response.content == b"from_command_line"
-    finally:
-        cluster.shutdown()

@@ -134,6 +134,9 @@ struct AIEmbeddingResponse
 
     /// Number of tokens in the input, as reported by the provider. Used for quota tracking.
     UInt64 input_tokens = 0;
+
+    /// Always 0: embedding endpoints produce no output tokens.
+    static constexpr UInt64 output_tokens = 0;
 };
 
 /** Abstract interface for AI provider HTTP clients.

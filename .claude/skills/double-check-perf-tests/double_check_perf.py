@@ -1060,7 +1060,7 @@ def fetch_run_day(pr_number: int, pr_sha: str, perf_arch: str) -> Optional[str]:
     out = play_query(
         "SELECT toString(toDate(max(event_time))) FROM query_metrics_v2 "
         f"WHERE new_sha = '{pr_sha}' AND arch = '{perf_arch}' "
-        f"AND pr_number = {pr_number} AND workflow_name IN ('PR', 'MasterCI') FORMAT TSV",
+        f"AND pr_number = {pr_number} FORMAT TSV",
         "find the run date",
     )
     if not out:
@@ -1106,7 +1106,7 @@ def fetch_reference_sha(
         # another run (a master-track run uses pr_number = 0) would otherwise
         # be eligible, and "newest row wins" would then hand back a baseline
         # from a different comparison than the report being checked.
-        f"AND pr_number = {pr_number} AND workflow_name IN ('PR', 'MasterCI') "
+        f"AND pr_number = {pr_number} "
         "GROUP BY old_sha ORDER BY max(event_time) DESC FORMAT TSV"
     )
     try:

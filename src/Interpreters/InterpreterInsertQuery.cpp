@@ -139,7 +139,7 @@ namespace ErrorCodes
 
 InterpreterInsertQuery::InterpreterInsertQuery(
     const ASTPtr & query_ptr_, ContextMutablePtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_, bool async_insert_,
-    bool is_initial_insert_, bool positional_arguments_already_resolved_)
+    bool is_initial_insert_)
     : WithMutableContext(context_)
     , logger(getLogger("InterpreterInsertQuery"))
     , query_ptr(query_ptr_)
@@ -148,7 +148,6 @@ InterpreterInsertQuery::InterpreterInsertQuery(
     , no_destination(no_destination_)
     , async_insert(async_insert_)
     , is_initial_insert(is_initial_insert_)
-    , positional_arguments_already_resolved(positional_arguments_already_resolved_)
 {
     checkStackSize();
     if (auto quota = getContext()->getQuota())
@@ -177,8 +176,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         /// we can create a temporary pipeline and get the header.
         if (query.select && table_function_ptr->needStructureHint())
         {
-            auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1)
-                .positionalArgumentsAlreadyResolved(positional_arguments_already_resolved);
+            auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
             auto header_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query.select, current_context, select_query_options);
 
             ColumnsDescription structure_hint{header_block->getNamesAndTypesList()};
@@ -364,7 +362,8 @@ bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & tab
     return !(settings[Setting::distributed_foreground_insert] && table->isRemote());
 }
 
-static std::pair<QueryPipelineBuilder, ClusterProxy::LocalPlanParallelReplicasInfo> getLocalSelectPipelineForInserSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
+static std::optional<std::pair<QueryPipelineBuilder, ClusterProxy::LocalPlanParallelReplicasInfo>>
+getLocalSelectPipelineForInserSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
 {
     auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, /*subquery_depth_=*/1);
 
@@ -378,7 +377,10 @@ static std::pair<QueryPipelineBuilder, ClusterProxy::LocalPlanParallelReplicasIn
     /// The connection pools and local replica index decided here are returned too, so the remote pass
     /// reuses the exact same replica set rather than recomputing liveness from a fresh snapshot.
     auto parallel_replicas_info = ClusterProxy::dropReadFromRemoteInPlan(plan);
-    return {interpreter.buildQueryPipeline(), std::move(parallel_replicas_info)};
+    if (!parallel_replicas_info)
+        return {};
+
+    return std::make_pair(interpreter.buildQueryPipeline(), std::move(*parallel_replicas_info));
 }
 
 
@@ -778,8 +780,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(
 
     QueryPipelineBuilder pipeline = [&]()
     {
-        auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1)
-            .positionalArgumentsAlreadyResolved(positional_arguments_already_resolved);
+        auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
         InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
         return interpreter_select_analyzer.buildQueryPipeline();
     }();
@@ -796,18 +797,22 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(
 }
 
 
-std::pair<QueryPipeline, ClusterProxy::LocalPlanParallelReplicasInfo> InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(
+std::optional<std::pair<QueryPipeline, ClusterProxy::LocalPlanParallelReplicasInfo>>
+InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(
     ASTInsertQuery & query, const StoragePtr & table, ContextPtr select_context)
 {
     applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), max_insert_threads, select_context);
 
-    auto [pipeline_builder, parallel_replicas_info]
-        = getLocalSelectPipelineForInserSelectWithParallelReplicas(query.select, select_context);
+    auto local_select = getLocalSelectPipelineForInserSelectWithParallelReplicas(query.select, select_context);
+    if (!local_select)
+        return {};
+
+    auto & [pipeline_builder, parallel_replicas_info] = *local_select;
     /// Parallel replicas builds its own local pipeline and never routes through the async insert queue,
     /// so it hands over no lock and the caller keeps it for the whole pipeline.
     auto local_pipeline = addInsertToSelectPipeline(
         query, table, pipeline_builder, /* add_async_insert_queue_transform */ false, /* destination_lock */ nullptr);
-    return {std::move(local_pipeline), std::move(parallel_replicas_info)};
+    return std::make_pair(std::move(local_pipeline), std::move(parallel_replicas_info));
 }
 
 
@@ -881,13 +886,11 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
         return {};
 
-    /// Pinning them on the context above is not enough: the nested interpreter re-applies the SELECT's own
+    /// Pinning it on the context above is not enough: the nested interpreter re-applies the SELECT's own
     /// `SETTINGS` clause on top of the context it is handed (`QueryTreeBuilder::buildSelectExpression`),
-    /// bringing the plan-based implementation or the automatic mode back for the plans built below, and
-    /// the automatic mode would make the probe below decline to distribute the insert. `execute` restores
+    /// bringing the plan-based implementation back for the plans built below. `execute` restores
     /// `query.select` from its backup once this returns, so the user's query text is not affected.
-    static constexpr std::array settings_overridden_for_this_path{
-        std::string_view{"parallel_replicas_plan_based"}, std::string_view{"automatic_parallel_replicas_mode"}};
+    static constexpr std::array settings_overridden_for_this_path{std::string_view{"parallel_replicas_plan_based"}};
     removeSettingsFromQueryTopLevel(query.select, settings_overridden_for_this_path);
 
     auto select = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front();
@@ -912,9 +915,9 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
                 "initiator's: the local pipeline shares the initiator's query status and cannot use the leaf "
                 "timeout separately");
         }
-        else
+        else if (auto local = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context))
         {
-            auto [local_pipeline, parallel_replicas_info] = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context);
+            auto & [local_pipeline, parallel_replicas_info] = *local;
             auto coordinator = parallel_replicas_info.coordinator;
             auto local_replica_index = parallel_replicas_info.local_replica_index;
             return ClusterProxy::executeInsertSelectWithParallelReplicas(
@@ -924,6 +927,10 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
                 std::move(coordinator),
                 std::move(parallel_replicas_info.connection_pools),
                 local_replica_index);
+        }
+        else
+        {
+            LOG_TRACE(logger, "Not using the local insert select pipeline because the SELECT plan has no local part");
         }
     }
 
@@ -1315,13 +1322,15 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     /// the forwarded query as a secondary query does not convert it again: it creates a plain storage that
     /// expands the globs and reads every file on its own instead of taking its share of the read tasks from
     /// the initiator, so N nodes insert the data N times. Rewrite the source the same way `IStorageCluster::read`
-    /// does for a `SELECT`: the function becomes its `*Cluster` variant with the cluster name argument, and the
-    /// structure and format arguments are added so that the nodes do not infer the schema again.
+    /// does for a `SELECT`: the function becomes its `*Cluster` variant with the cluster name argument. The other
+    /// arguments stay as written, so that the nodes take the structure from the insertion table with its `DEFAULT`
+    /// expressions unless the query gives one.
     {
         auto & select_to_send = query_to_send->as<ASTInsertQuery &>().select->as<ASTSelectWithUnionQuery &>();
         /// The query is forwarded to the nodes of `src_cluster`, which is the source storage's own cluster.
         src_storage_cluster->updateQueryToSendIfNeeded(
-            select_to_send.list_of_selects->children.at(0), src_snapshot, local_context, src_storage_cluster->getClusterName());
+            select_to_send.list_of_selects->children.at(0), src_snapshot, local_context, src_storage_cluster->getClusterName(),
+            /*add_structure_and_format=*/false);
     }
 
     String query_str;
@@ -1676,8 +1685,7 @@ void registerInterpreterInsertQuery(InterpreterFactory & factory)
             /* no_squash */false,
             /* no_destination */false,
             /* async_insert */false,
-            is_initial_insert,
-            args.options.positional_arguments_already_resolved);
+            is_initial_insert);
     };
     factory.registerInterpreter("InterpreterInsertQuery", create_fn);
 }

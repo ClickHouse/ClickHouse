@@ -352,6 +352,9 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     if (is_remote_function)
     {
         const auto & address = cluster.getShardsAddresses().front().front();
+        /// The forwarded current roles are the roles of the initial user, so they cannot be passed on for another user.
+        if (new_client_info.initial_user != address.user)
+            new_client_info.current_roles.reset();
         new_client_info.initial_user = address.user;
     }
 
@@ -1560,7 +1563,7 @@ bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const 
 /// find and remove ReadFromParallelRemoteReplicasStep in query plan,
 /// also returns the parallel replicas coordinator, connection pools and local replica index
 /// stored in ReadFromParallelRemoteReplicasStep, so the remote-pool pass can reuse them.
-LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan)
+std::optional<LocalPlanParallelReplicasInfo> dropReadFromRemoteInPlan(QueryPlan & query_plan)
 {
     struct Frame
     {
@@ -1583,6 +1586,10 @@ LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan)
             const auto * step = frame.node->step.get();
             if (const auto * read_from_remote = typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step))
             {
+                /// Without a local replica this step is the plan's only reading step.
+                if (!read_from_remote->getExcludePoolIndex())
+                    return {};
+
                 auto & children = frame.parent->children;
                 for (auto it = begin(children); it != end(children); ++it)
                 {
@@ -1711,15 +1718,6 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         /// forwarded query text still carries the INSERT's own `SETTINGS` — strip the initiator-only names
         /// (both `changes` and `default_settings`) from it too.
         stripInitiatorOnlySettingsFromQuery(new_query_ast);
-
-        /// `InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas` pins these on the context shipped
-        /// to the replicas, so the query text must not re-apply the user's values over it. The parser copies the
-        /// SELECT's trailing `SETTINGS` into the INSERT's own clause, so both carriers are stripped. A replica that
-        /// re-applies a non-zero `automatic_parallel_replicas_mode` and does not ignore it as a follower reads the
-        /// whole source table instead of its share, and the insert writes every row once per replica.
-        static constexpr std::array settings_pinned_by_initiator{
-            std::string_view{"parallel_replicas_plan_based"}, std::string_view{"automatic_parallel_replicas_mode"}};
-        removeSettingsFromQueryTopLevel(new_query_ast, settings_pinned_by_initiator);
 
         /// When a leaf timeout is set, drop 'max_execution_time' / 'timeout_overflow_mode' from the top-level
         /// SETTINGS of the query text (both on the INSERT itself and on the top-level SELECT) so that the leaf

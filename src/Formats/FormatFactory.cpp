@@ -265,7 +265,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.max_dictionary_size = settings[Setting::output_format_parquet_max_dictionary_size];
     format_settings.parquet.output_enum_as_byte_array = settings[Setting::output_format_parquet_enum_as_byte_array];
     format_settings.parquet.write_checksums = settings[Setting::output_format_parquet_write_checksums];
-    format_settings.parquet.use_alp_encoding = settings[Setting::output_format_parquet_use_alp_encoding];
     format_settings.parquet.max_block_size = settings[Setting::input_format_parquet_max_block_size];
     format_settings.parquet.prefer_block_bytes = settings[Setting::input_format_parquet_prefer_block_bytes];
     format_settings.parquet.output_compression_method = settings[Setting::output_format_parquet_compression_method];
@@ -286,7 +285,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.allow_geoparquet_parser = settings[Setting::input_format_parquet_allow_geoparquet_parser];
     format_settings.parquet.detect_variant_by_structure = settings[Setting::input_format_parquet_detect_variant_by_structure];
     format_settings.parquet.write_geometadata = settings[Setting::output_format_parquet_geometadata];
-    format_settings.parquet.write_geometry_logical_type = settings[Setting::output_format_parquet_geometry_logical_type];
     format_settings.parquet.write_file_logical_type = settings[Setting::output_format_parquet_write_file_logical_type];
     if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
     {
@@ -377,6 +375,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.arrow.output_unsupported_types = getArrowUnsupportedTypesMode(settings);
     format_settings.arrow.output_record_batch_rows = settings[Setting::output_format_arrow_record_batch_size];
     format_settings.arrow.output_record_batch_bytes = settings[Setting::output_format_arrow_record_batch_size_bytes];
+    format_settings.arrow.output_max_record_batch_bytes = settings[Setting::output_format_arrow_max_record_batch_size_bytes];
     format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];
     format_settings.orc.row_batch_size = settings[Setting::input_format_orc_row_batch_size];
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_orc_skip_columns_with_unsupported_types_in_schema_inference];
