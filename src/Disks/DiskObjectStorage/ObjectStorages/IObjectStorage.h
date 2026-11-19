@@ -516,7 +516,7 @@ public:
     /// The settings the native GCS client was built from: the bucket, the endpoint and the
     /// authentication mode. Returned as a shared pointer that owns the snapshot it points into,
     /// because a configuration reload may replace it under a concurrent reader.
-    virtual std::shared_ptr<const GCSObjectStorageSettings> getGCSObjectStorageSettings() const
+    [[nodiscard]] virtual std::shared_ptr<const GCSObjectStorageSettings> getGCSObjectStorageSettings() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for GCSObjectStorage");
     }

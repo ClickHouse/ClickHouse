@@ -580,7 +580,7 @@ std::string SessionKey(
          std::to_string(proxy.port) + "|" + proxy.protocol + "|" +
          (proxy.tunnel ? "tunnel" : "direct") + "|" +
          proxy.originalRequestProtocol + "|" + proxy.username + "|" +
-         std::to_string(std::hash<std::string>{}(proxy.password)) + "|" +
+         std::to_string(std::hash<std::string_view>{}(std::string_view(proxy.password.data(), proxy.password.size()))) + "|" +
          proxy.nonProxyHosts + "|" +
          std::to_string(keep_alive.timeout.count()) + ":" +
          std::to_string(keep_alive.max_requests) + "|" + ca_location + "|" +
@@ -644,7 +644,7 @@ AccountedSession MakeSession(
         effective_proxy.port = static_cast<Poco::UInt16>(std::stoi(proxy.port()));
       }
       effective_proxy.username = proxy.username();
-      effective_proxy.password = proxy.password();
+      effective_proxy.password.assign_range(std::string_view(proxy.password()));
     }
   }
   // A host matching the no-proxy pattern is connected to directly, exactly as
