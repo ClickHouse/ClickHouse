@@ -1285,7 +1285,8 @@ static Columns withoutSortColumns(Columns columns, size_t num_columns)
     return columns;
 }
 
-/// ClickHouse orders floats and UUIDs differently from Iceberg, and truncates `binary` by characters, not bytes.
+/// ClickHouse orders floats and UUIDs differently from Iceberg, truncates `binary` by characters, not bytes, and
+/// truncates `int` in 64 bits, where Iceberg wraps around in 32.
 static bool isOrderedAsInIceberg(const String & transform, const String & type)
 {
     if (transform == "icebergBucket" || transform == "icebergYear" || transform == "icebergMonth" || transform == "icebergDay"
@@ -1293,9 +1294,9 @@ static bool isOrderedAsInIceberg(const String & transform, const String & type)
         return true;
     if (transform != "identity" && transform != "icebergTruncate")
         return false;
-    if (type == Iceberg::f_binary)
+    if (type == Iceberg::f_binary || type == Iceberg::f_int)
         return transform == "identity";
-    return type == Iceberg::f_boolean || type == Iceberg::f_int || type == Iceberg::f_long || type == Iceberg::f_bigint
+    return type == Iceberg::f_boolean || type == Iceberg::f_long || type == Iceberg::f_bigint
         || type == Iceberg::f_date || type == Iceberg::f_time || type.starts_with("timestamp") || type == Iceberg::f_string
         || type.starts_with("decimal(") || type.starts_with("fixed[");
 }

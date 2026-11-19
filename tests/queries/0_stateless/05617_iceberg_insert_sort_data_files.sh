@@ -76,6 +76,10 @@ run_case sort_buffer_limit "x Int64, p Int32" "PARTITION BY p ORDER BY x" \
 # Floating-point and UUID keys are sorted but not tagged: Iceberg orders them differently from ClickHouse.
 run_case float "x Float64" "ORDER BY x" "SELECT ${RANDOM_X} / 7 FROM numbers(10000)" "x" "arraySort"
 run_case uuid "x UUID" "ORDER BY x" "SELECT generateUUIDv4(number) FROM numbers(10000)" "x" "arraySort"
+# Iceberg truncates `int` in 32 bits, so the lowest value wraps around to the highest key; ClickHouse widens it to 64
+# bits and sorts it first. The file is checked against Iceberg's key and not tagged.
+run_case truncated_int "x Int32" "ORDER BY icebergTruncate(10, x)" "SELECT x FROM values('x Int32', -2147483648, 0)" \
+    "toInt32(x - (x % 10 + 10) % 10)" "arraySort"
 
 # Sort orders `CREATE TABLE` cannot write: $1: table suffix, $2: columns, $3: ORDER BY clause, $4: sed script for the
 # metadata, $5: rows to insert. The table is reattached to reread the metadata.
