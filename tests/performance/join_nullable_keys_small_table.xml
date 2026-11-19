@@ -1,7 +1,7 @@
 <test run_all_queries="1">
     <!-- Probe-dominated hash joins against small (cache-resident) build sides with Nullable
          keys. With a tiny hash table the probe loop iteration is only a few cycles, so any
-         extra per-row work in `HashJoinMethods::joinRightColumns` shows up here first; the
+         extra per-row work in the probe (`JoinProbe::JoinRightColumns`) shows up here first; the
          Nullable-key shape exercises the null-map handling of the probe loop, which is not
          covered by the other join tests (their Nullable cases use large build sides). -->
 

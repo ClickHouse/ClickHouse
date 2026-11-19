@@ -1185,8 +1185,7 @@ std::shared_ptr<MergeJoin::OrderedProbeState> MergeJoin::matchInOrder(const Bloc
             {
                 /// INNER ANY: one output row per key
                 any_inner_matched += range.left_length;
-                if (inner_any_used_flags->setUsedOnce</*use_flags=*/true, /*flag_per_row=*/true>(
-                        static_cast<UInt32>(i), range.right_start, /*offset=*/0))
+                if (inner_any_used_flags->setUsedOnce</*use_flags=*/true>(static_cast<UInt32>(i), range.right_start))
                     runs.push_back({range.left_start, /*left_length=*/1, i, range.right_start, /*right_length=*/1});
                 right_cursor.nextN(range.right_length);
                 left_cursor.nextN(range.left_length);
@@ -1700,8 +1699,8 @@ bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_b
         if (inner_any_used_flags)
         {
             /// INNER ANY: one output row per key.
-            if (inner_any_used_flags->setUsedOnce</*use_flags=*/true, /*flag_per_row=*/true>(
-                    static_cast<UInt32>(right_block_info.block_number), range.right_start, /*offset=*/0))
+            if (inner_any_used_flags->setUsedOnce</*use_flags=*/true>(
+                    static_cast<UInt32>(right_block_info.block_number), range.right_start))
             {
                 MergeJoinEqualRange one_row_range{range.left_start, range.right_start, /*left_length=*/1, /*right_length=*/1};
                 joinEquals<false>(left_block, r_columns_to_add, left_columns, right_columns, one_row_range, 0);
