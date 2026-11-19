@@ -57,8 +57,8 @@ bool isDeterministicInQuery(const ActionsDAG::Node & node)
         && !ActionsDAG::hasUnsafeHiddenLambdaBody(node, changes_within_query);
 }
 
-/// The input columns that `roots` are computed from, which a filter reading `roots` reads once it is merged into the DAG
-/// that computes them. Nothing if that filter cannot be pushed down, or if it reads no column.
+/// The input columns `roots` are computed from, which a filter on `roots` reads once merged into their DAG. Nothing if such
+/// a filter is not pushed down, or reads no column.
 std::optional<NameSet> getSourceColumns(const ActionsDAG::NodeRawConstPtrs & roots)
 {
     NameSet columns;
@@ -90,8 +90,7 @@ bool isEstimatedAbove(QueryPlan::Node & node, const QueryPlanOptimizationSetting
 
 bool filterReachesInputAbove(QueryPlan::Node * node, NameSet columns, bool rows_known, const QueryPlanOptimizationSettings & settings);
 
-/// Whether a filter that reads `columns` of the output of the join at `node`, pushed down, is applied to an input estimated
-/// above `join_runtime_filter_min_probe_rows`. With `rows_known` the rows of the join were compared already.
+/// `filterReachesInputAbove` for the join at `node`.
 bool filterReachesJoinInputAbove(
     QueryPlan::Node & node, const JoinStepLogical & join, const NameSet & columns, bool rows_known, const QueryPlanOptimizationSettings & settings)
 {
@@ -104,18 +103,16 @@ bool filterReachesJoinInputAbove(
     const bool can_push_to_right = join_operator.strictness != JoinStrictness::Asof
         && !typeid_cast<const JoinStepLogicalLookup *>(node.children[1]->step.get());
 
-    /// The rules of `tryPushDownOverJoinStep`, per input (left, right). An input gets a filter on its own columns unless an
-    /// outer join adds rows for its unmatched rows of the other input. A filter that reads only keys of the join is also
-    /// pushed down as a filter on the equal keys, if the keys it reads count as equal for this join, to an input of which
-    /// the join does not read only the matching rows: such a copy of a runtime filter could make an OUTER or ANTI join
-    /// emit a row it would not.
+    /// The rules of `tryPushDownOverJoinStep`, per input (left, right): whether it gets a filter on its own columns, whether
+    /// its keys may be replaced by the equal keys of the other input, and whether it gets a filter on keys with them replaced
+    /// by its own. A runtime filter is not copied to an input that an OUTER or ANTI join only matches against, see
+    /// `splitActionsForJOINFilterPushDown`.
     const std::array<bool, 2> gets_own_columns{kind != JoinKind::Right, kind != JoinKind::Left && can_push_to_right};
     const std::array<bool, 2> keys_are_equal{
         gets_own_columns[0] || (kind == JoinKind::Right && is_semi), gets_own_columns[1] || (kind == JoinKind::Left && is_semi)};
     const std::array<bool, 2> gets_equal_keys{kind != JoinKind::Right || is_semi, can_push_to_right && (kind != JoinKind::Left || is_semi)};
 
-    /// Per input, its keys mapped to the equal keys of the other input. Only keys that are columns of the same type are
-    /// followed here.
+    /// Per input, its keys mapped to the equal keys of the other input. Only same-typed column keys are followed here.
     std::array<NameToNameMap, 2> equal_keys;
     if (join.typeChangingSides().empty())
     {
@@ -169,14 +166,14 @@ bool filterReachesJoinInputAbove(
     return !pushed_down && !rows_known && isEstimatedAbove(node, settings);
 }
 
-/// The columns of the input of the single-input step at `node` that a filter reading `columns` of its output reads once
-/// `tryPushDownFilter` pushed it down below the step. Nothing if it is not pushed down.
+/// The input columns of the single-input step at `node` that a filter on `columns` of its output reads once
+/// `tryPushDownFilter` pushes it below the step, or nothing if it does not.
 std::optional<NameSet> getColumnsBelowStep(const QueryPlan::Node & node, NameSet columns, const QueryPlanOptimizationSettings & settings)
 {
     const IQueryPlanStep * step = node.step.get();
 
-    /// The filter is merged with the step and then reads the columns the step computes its own from, and the columns it
-    /// passes through, which are not outputs of its DAG.
+    /// Merged into the step, the filter reads the sources of the DAG outputs it reads, and the columns the step passes
+    /// through, which are not DAG outputs.
     const ActionsDAG * dag = nullptr;
     if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
         dag = &expression->getExpression();
@@ -207,7 +204,7 @@ std::optional<NameSet> getColumnsBelowStep(const QueryPlan::Node & node, NameSet
         return columns_below;
     }
 
-    /// The other steps pass the columns the filter reads on unchanged, if it reads only those it may be pushed below them.
+    /// The other steps pass some columns on unchanged, and a filter that reads only those is pushed below them.
     auto if_reads_only = [&](const auto & allowed) -> std::optional<NameSet>
     {
         if (!std::ranges::all_of(columns, [&](const String & column) { return std::ranges::find(allowed, column) != allowed.end(); }))
@@ -215,7 +212,7 @@ std::optional<NameSet> getColumnsBelowStep(const QueryPlan::Node & node, NameSet
         return std::move(columns);
     };
 
-    /// The keys, except for GROUPING SETS. An aggregation without keys returns a row for an empty input.
+    /// The keys, except for GROUPING SETS.
     if (const auto * aggregating = typeid_cast<const AggregatingStep *>(step))
         return aggregating->isGroupingSets() ? std::nullopt : if_reads_only(aggregating->getParams().keys);
     if (const auto * merging_aggregated = typeid_cast<const MergingAggregatedStep *>(step))
@@ -259,10 +256,9 @@ std::optional<NameSet> getColumnsBelowStep(const QueryPlan::Node & node, NameSet
     return {};
 }
 
-/// Whether a filter that reads `columns` of the output of `node`, pushed down into `node`, is applied to an input estimated
-/// above `join_runtime_filter_min_probe_rows`. With `rows_known` the rows of `node` were compared already, as those of the
-/// probe input or of a join input: below a step that changes the number of rows they have to be estimated where the
-/// filter stays.
+/// Whether a filter on `columns` of the output of `node`, pushed down into `node`, is applied to an input estimated above
+/// `join_runtime_filter_min_probe_rows`. `rows_known`: the rows of `node` are those of the probe side or a join input,
+/// compared already. Below a step that changes the number of rows, the step the filter stays above is estimated instead.
 bool filterReachesInputAbove(QueryPlan::Node * node, NameSet columns, bool rows_known, const QueryPlanOptimizationSettings & settings)
 {
     auto stays_above_node = [&] { return !rows_known && isEstimatedAbove(*node, settings); };
@@ -351,8 +347,6 @@ void checkRuntimeFiltersKeptForKeyPath(
         bool found = false;
         bool applied_to_larger_input = false;
 
-        /// A filter step that applies a filter, below a join input estimated above the limit or right above an input
-        /// estimated so, is what `runtimeFilterReachesInputAbove` stands for.
         struct Frame
         {
             QueryPlan::Node * node;

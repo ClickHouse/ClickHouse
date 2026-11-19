@@ -251,8 +251,7 @@ struct RuntimeFiltersKeptForKeyPath;
 
 /// Build BloomFilter from right side of JOIN and add condition that looks up into this BloomFilter to the left side of the JOIN.
 /// This condition can potentially be pushed down all the way to the storage and filter unmatched rows very early.
-/// `kept_for_key_path`, if set, receives the filters created for a small probe side because they are pushed down to a
-/// larger input, see `checkRuntimeFiltersKeptForKeyPath`.
+/// `kept_for_key_path`, if set, receives the filters created for a small probe side, see `RuntimeFiltersKeptForKeyPath`.
 bool tryAddJoinRuntimeFilter(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,

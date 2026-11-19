@@ -372,8 +372,8 @@ bool tryAddJoinRuntimeFilter(
     /// that would have matches in the right table. This means we need to add something like NOT IN filter.
     const bool check_left_does_not_contain = (join_operator.kind == JoinKind::Left && join_operator.strictness == JoinStrictness::Anti);
 
-    /// Skip if the probe side is known to produce at most `join_runtime_filter_min_probe_rows` rows
-    /// Planning and pipeline overhead outweighs any saving on a tiny probe, unless a key filter is pushed down to a larger join input.
+    /// Skip if the probe side is known to produce at most `join_runtime_filter_min_probe_rows` rows.
+    /// Planning and pipeline overhead outweighs any saving on a tiny probe, unless the filter is pushed down to a larger input.
     ///
     /// The decision is recorded on the step and travels with a copy of it. It is the one decision
     /// this pass takes from a row estimate, and estimates are not part of the plan format, so on a
