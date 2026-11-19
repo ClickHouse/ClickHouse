@@ -50,10 +50,21 @@ PRELIMINARY_JOBS = [
     JobNames.FAST_TEST,
 ]
 
+# A draft pull request runs only the fast test (and the docker images it runs in).
+DRAFT_PR_JOBS = [
+    JobNames.FAST_TEST,
+    JobNames.DOCKER_BUILDS_ARM,
+    JobNames.DOCKER_BUILDS_AMD,
+]
+
 # The `arm_binary` jobs that run in pull requests instead of the LLVM coverage jobs
 # (see `ci/workflows/pull_request.py`).
 FUNCTIONAL_COVERAGE_REPLACEMENT_JOBS = [
     j.name for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
+]
+# The stateless jobs that run with plan-based parallel replicas (see `ci/workflows/pull_request.py`).
+PLAN_BASED_PARALLEL_REPLICAS_JOBS = [
+    j.name for j in JobConfigs.functional_tests_arm_binary_plan_based_parallel_replicas_jobs
 ]
 COVERAGE_REPLACEMENT_JOBS = [
     j.name
@@ -617,6 +628,14 @@ REVERT_PR_NOTE = (
     f"`{Labels.CI_FORCE_ALL}` label to run the full CI."
 )
 
+DRAFT_PR_SKIP_REASON = (
+    f"Skipped: draft PR, only the fast test runs unless labeled '{Labels.CI_FORCE_ALL}'"
+)
+DRAFT_PR_NOTE = (
+    "Draft PR: only the fast test runs. Mark the PR ready for review to run the full CI, "
+    f"or add the `{Labels.CI_FORCE_ALL}` label and re-run the workflow."
+)
+
 
 def revert_depth(title):
     """Number of nested `Revert "..."` wrappers in the pull request title; see
@@ -641,6 +660,7 @@ def is_net_revert_pr(title):
 
 
 _revert_note_added = False
+_draft_note_added = False
 
 
 def _add_revert_note():
@@ -650,6 +670,15 @@ def _add_revert_note():
         return
     _revert_note_added = True
     _info_cache.add_workflow_note(REVERT_PR_NOTE)
+
+
+def _add_draft_note():
+    """Explain the skipped jobs once on the workflow report page."""
+    global _draft_note_added
+    if _draft_note_added or _info_cache is None:
+        return
+    _draft_note_added = True
+    _info_cache.add_workflow_note(DRAFT_PR_NOTE)
 
 _PIPELINE_NOTES = {
     Labels.CI_BUILD: "Label `ci-build` runs build jobs and preliminary checks only.",
@@ -752,6 +781,22 @@ def configure_performance_shards():
         count = int(job.parameter.rsplit("/", 1)[1])
         if count != total:
             config.set_job_as_filtered(job.name, "Other performance shard family selected")
+    config.dump()
+
+
+def configure_toolchain_builds():
+    """`Build Toolchain (PGO, BOLT)` is opt-in: it occupies a large runner for hours."""
+    from ci.praktika.runtime import RunConfig
+
+    info = Info()
+    if not info.pr_number or Labels.CI_TOOLCHAIN in info.pr_labels:
+        return
+    # A pre-hook, unlike `should_skip_job`, also applies with `ci-force-all`.
+    config = RunConfig.from_fs(info.workflow_name)
+    for job in JobConfigs.toolchain_build_jobs:
+        config.set_job_as_filtered(
+            job.name, f"Skipped, not labeled with '{Labels.CI_TOOLCHAIN}'"
+        )
     config.dump()
 
 
@@ -923,6 +968,20 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped for release PR"
 
+    # A draft is work in progress: the fast test gives the author quick feedback, and the
+    # full CI starts when the PR is marked ready for review (the PR workflow also runs on
+    # `ready_for_review`). The `ci-force-all` label, checked above, runs everything.
+    # Only the main PR workflow, whose `can_be_merged.py` post-hook blocks the merge of a
+    # draft-only run: `BackportPR` has no fast test and no merge gate but has automerge,
+    # so a draft backport must still run its full CI.
+    if (
+        _info_cache.pr_is_draft
+        and _info_cache.workflow_name == SMALL_PR_WORKFLOW
+        and job_name not in DRAFT_PR_JOBS
+    ):
+        _add_draft_note()
+        return True, DRAFT_PR_SKIP_REASON
+
     if (
         _info_cache.pr_number > 0
         and job_name != JobNames.STYLE_CHECK
@@ -946,17 +1005,6 @@ def should_skip_job(job_name):
     if not changed_files:
         print("WARNING: no changed files found for PR - do not filter jobs")
         return False, ""
-
-    # `Build Toolchain (PGO, BOLT)` is opt-in: it occupies a large runner for
-    # hours. This check stays ahead of the review-thread gate below, which is
-    # allowed to shrink the pipeline but never to widen it - a limited run must
-    # not start toolchain builds that a full run would have skipped.
-    if (
-        JobNames.BUILD_TOOLCHAIN in job_name
-        and _info_cache.pr_number
-        and Labels.CI_TOOLCHAIN not in _info_cache.pr_labels
-    ):
-        return True, f"Skipped, not labeled with '{Labels.CI_TOOLCHAIN}'"
 
     # While the PR has unresolved review threads, run only `REVIEW_THREADS_JOBS`
     # and the preliminary checks - the code is expected to change again, so the
@@ -1212,10 +1260,13 @@ def should_skip_job(job_name):
     # to validate the CI pipeline: stateless batch 1 and amd_asan_ubsan integration batch 1.
     # The coverage family and its `arm_binary` replacements are already handled above and must run
     # in full when they run at all, so this only narrows down the other plain (non-coverage) test jobs.
+    # The plan-based parallel replicas jobs run in full too: a change to the job script can break how they
+    # install and start the server with the plan-based profile.
     if (
         changed_files
         and all(f.startswith("ci/") and f.endswith(".py") for f in changed_files)
         and job_name not in COVERAGE_REPLACEMENT_JOBS
+        and job_name not in PLAN_BASED_PARALLEL_REPLICAS_JOBS
         and "llvm_coverage" not in job_name
         and "excluded_from_llvm" not in job_name
     ):
