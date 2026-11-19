@@ -108,7 +108,7 @@ protected:
     }
 
     /// A DEFINER or NONE query does not run as the authenticated user: a request can only bind parameters and choose the format.
-    bool runsWithSQLSecurity() const { return sql_security_type && *sql_security_type != SQLSecurityType::INVOKER; }
+    [[nodiscard]] bool runsWithSQLSecurity() const { return sql_security_type && *sql_security_type != SQLSecurityType::INVOKER; }
     [[noreturn]] void rejectRequestInput(const String & input) const;
 
     /// The query text belongs to the server rather than to the HTTP request. Its parsing limits must therefore
@@ -266,7 +266,7 @@ private:
     void releaseOrCloseSession(const String & session_id, bool close_session);
 
     /// The query context for SQL SECURITY DEFINER or NONE, made from the global context; `caller_context` is the requester's.
-    ContextMutablePtr makeSQLSecurityQueryContext(const ContextPtr & caller_context) const;
+    [[nodiscard]] ContextMutablePtr makeSQLSecurityQueryContext(const ContextPtr & caller_context) const;
 
     static void pushDelayedResults(Output & used_output);
 
