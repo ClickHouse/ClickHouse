@@ -40,14 +40,18 @@ SELECT '0 !=', groupArray(id) FROM tab WHERE 0 != position(msg, 'PointerExc') SE
 SELECT 'no index', groupArray(id) FROM tab WHERE position(msg, 'PointerExc') > 0 SETTINGS use_skip_indexes = 0;
 
 SELECT '-- conditions that only imply the needle being found';
-SELECT 'bare', groupArray(id) FROM tab WHERE position(msg, 'PointerExc') SETTINGS max_rows_to_read = 1;
-SELECT 'bare, no index', groupArray(id) FROM tab WHERE position(msg, 'PointerExc') SETTINGS use_skip_indexes = 0;
-SELECT '= 15', groupArray(id) FROM tab WHERE position(msg, 'PointerExc') = 15 SETTINGS max_rows_to_read = 1;
-SELECT '= 15, no index', groupArray(id) FROM tab WHERE position(msg, 'PointerExc') = 15 SETTINGS use_skip_indexes = 0;
-SELECT '= 3', groupArray(id) FROM tab WHERE position(msg, 'PointerExc') = 3 SETTINGS max_rows_to_read = 1;
-SELECT '= 3, no index', groupArray(id) FROM tab WHERE position(msg, 'PointerExc') = 3 SETTINGS use_skip_indexes = 0;
-SELECT '> 10', groupArray(id) FROM tab WHERE position(msg, 'PointerExc') > 10 SETTINGS max_rows_to_read = 1;
-SELECT '> 10, no index', groupArray(id) FROM tab WHERE position(msg, 'PointerExc') > 10 SETTINGS use_skip_indexes = 0;
+-- They do not use the dictionary scan, which pays off only when the index replaces the predicate: the tokens inside
+-- the needle are searched instead.
+SELECT 'bare', groupArray(id) FROM tab WHERE position(msg, '.lang.') SETTINGS max_rows_to_read = 2;
+SELECT 'bare, no index', groupArray(id) FROM tab WHERE position(msg, '.lang.') SETTINGS use_skip_indexes = 0;
+SELECT '= 5', groupArray(id) FROM tab WHERE position(msg, '.lang.') = 5 SETTINGS max_rows_to_read = 2;
+SELECT '= 5, no index', groupArray(id) FROM tab WHERE position(msg, '.lang.') = 5 SETTINGS use_skip_indexes = 0;
+SELECT '= 3', groupArray(id) FROM tab WHERE position(msg, '.lang.') = 3 SETTINGS max_rows_to_read = 2;
+SELECT '= 3, no index', groupArray(id) FROM tab WHERE position(msg, '.lang.') = 3 SETTINGS use_skip_indexes = 0;
+SELECT '> 4', groupArray(id) FROM tab WHERE position(msg, '.lang.') > 4 SETTINGS max_rows_to_read = 2;
+SELECT '> 4, no index', groupArray(id) FROM tab WHERE position(msg, '.lang.') > 4 SETTINGS use_skip_indexes = 0;
+SELECT 'no tokens', groupArray(id) FROM tab WHERE position(msg, 'PointerExc') = 15;
+SELECT 'no tokens, no index', groupArray(id) FROM tab WHERE position(msg, 'PointerExc') = 15 SETTINGS use_skip_indexes = 0;
 SELECT 'between', groupArray(id) FROM tab WHERE position(msg, 'PointerExc') < 20 AND position(msg, 'PointerExc') > 0 SETTINGS max_rows_to_read = 1;
 
 SELECT '-- conditions that accept 0 cannot use the index';
@@ -74,7 +78,7 @@ SELECT 'positionCaseInsensitiveUTF8, no index', groupArray(id) FROM tab WHERE po
 SELECT '-- the result of position is kept where it is not a condition';
 SELECT id, position(msg, 'PointerExc'), position(msg, 'PointerExc') > 0 FROM tab WHERE position(msg, 'PointerExc') ORDER BY id;
 SELECT id, position(msg, 'PointerExc') FROM tab WHERE position(msg, 'PointerExc') > 0 ORDER BY id;
-SELECT id, position(msg, 'PointerExc') + 1 > 1 FROM tab WHERE position(msg, 'PointerExc') = 15 ORDER BY id;
+SELECT id, position(msg, '.lang.') + 1 > 1 FROM tab WHERE position(msg, '.lang.') = 5 ORDER BY id;
 
 SELECT '-- without the dictionary scan, the tokens inside the needle are searched';
 SELECT 'tokens', groupArray(id) FROM tab WHERE position(msg, '.lang.') > 0 SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0, max_rows_to_read = 2;
@@ -83,10 +87,10 @@ SELECT 'tokens, no index', groupArray(id) FROM tab WHERE position(msg, '.lang.')
 SELECT '-- direct read replaces the equivalent comparison only';
 SELECT '> 0', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION position(%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE position(msg, 'PointerExc') > 0);
-SELECT '= 15', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION position(%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE position(msg, 'PointerExc') = 15);
+SELECT '= 5', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION position(%') > 0
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE position(msg, '.lang.') = 5);
 SELECT 'bare', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION position(%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE position(msg, 'PointerExc'));
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE position(msg, '.lang.'));
 
 SELECT '-- Nullable';
 CREATE TABLE tab_null
@@ -105,5 +109,38 @@ SELECT 'Nullable, no index', groupArray(id) FROM tab_null WHERE position(msg, '.
 SELECT 'Nullable, not', groupArray(id) FROM tab_null WHERE NOT position(msg, '.lang.') > 0;
 SELECT 'Nullable, not, no index', groupArray(id) FROM tab_null WHERE NOT position(msg, '.lang.') > 0 SETTINGS use_skip_indexes = 0;
 
+SELECT '-- a preprocessor that does not preserve substrings';
+DROP TABLE IF EXISTS tab_preprocessor;
+CREATE TABLE tab_preprocessor
+(
+    s String,
+    INDEX idx(s) TYPE text(tokenizer = splitByNonAlpha, preprocessor = substring(s, 1, 10)) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+INSERT INTO tab_preprocessor VALUES ('0123456789 .needle.');
+SELECT '> 0', count() FROM tab_preprocessor WHERE position(s, '.needle.') > 0;
+SELECT '> 0, no index', count() FROM tab_preprocessor WHERE position(s, '.needle.') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'bare', count() FROM tab_preprocessor WHERE position(s, '.needle.');
+SELECT 'positionUTF8', count() FROM tab_preprocessor WHERE positionUTF8(s, '.needle.') > 0;
+SELECT 'positionCaseInsensitive', count() FROM tab_preprocessor WHERE positionCaseInsensitive(s, '.NEEDLE.') > 0;
+
+SELECT '-- a case-changing preprocessor';
+DROP TABLE IF EXISTS tab_lower;
+CREATE TABLE tab_lower
+(
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(msg)) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+INSERT INTO tab_lower SELECT id, msg FROM tab;
+SELECT 'tokens', groupArray(id) FROM tab_lower WHERE position(msg, '.Lang.') OR position(msg, '.lang.') SETTINGS max_rows_to_read = 2;
+SELECT 'tokens, no index', groupArray(id) FROM tab_lower WHERE position(msg, '.Lang.') OR position(msg, '.lang.') SETTINGS use_skip_indexes = 0;
+
 DROP TABLE tab;
 DROP TABLE tab_null;
+DROP TABLE tab_preprocessor;
+DROP TABLE tab_lower;

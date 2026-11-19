@@ -1462,6 +1462,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     /// Exact: a needle occurs in a value iff its `%needle%` pattern matches one of the value's tokens.
     auto try_search_needle_by_infix_pattern = [&](std::string_view needle, bool case_insensitive)
     {
+        /// The dictionary scan pays off only when the index replaces the predicate. For granule skipping alone,
+        /// scanning the whole dictionary can be slower than a full scan of the column.
+        if (!allow_direct_read)
+            return false;
+
         const bool tokenizer_supported = like_optimization_supported_tokenizers.contains(tokenizer->getType());
         const bool scan_enabled = settings[Setting::use_text_index_like_evaluation_by_dictionary_scan];
         const bool processors_supported
@@ -1480,8 +1485,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         out.function = RPNElement::FUNCTION_LIKE;
         out.text_search_queries.emplace_back(
             std::make_shared<TextSearchQuery>(
-                function_name, TextSearchMode::Any,
-                allow_direct_read ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None,
+                function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact,
                 VectorWithMemoryTracking<String>(), std::move(patterns), VectorWithMemoryTracking<String>(), automaton_budget.get()));
         return true;
     };
@@ -1988,6 +1992,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         /// The tokens below are matched case-sensitively.
         if (is_case_insensitive || !tokenizer->supportsStringLike())
+            return false;
+
+        /// The tokens are taken from the preprocessed needle. They are contained in the preprocessed value only if the
+        /// preprocessor preserves substrings, which an arbitrary expression, e.g. `substring(s, 1, 10)`, does not.
+        /// An ASCII case change does.
+        if (has_preprocessor && !preprocessor->isASCIILowerOrUpper())
             return false;
 
         auto tokens = substringToTokens(value_field, false, false);

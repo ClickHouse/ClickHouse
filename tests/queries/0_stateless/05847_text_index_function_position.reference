@@ -9,14 +9,16 @@
 0 !=	[1]
 no index	[1]
 -- conditions that only imply the needle being found
-bare	[1]
-bare, no index	[1]
-= 15	[1]
-= 15, no index	[1]
+bare	[1,2]
+bare, no index	[1,2]
+= 5	[1,2]
+= 5, no index	[1,2]
 = 3	[]
 = 3, no index	[]
-> 10	[1]
-> 10, no index	[1]
+> 4	[1,2]
+> 4, no index	[1,2]
+no tokens	[1]
+no tokens, no index	[1]
 between	[1]
 -- conditions that accept 0 cannot use the index
 = 0	[2,3,4,5,6]
@@ -41,15 +43,25 @@ positionCaseInsensitiveUTF8, no index	[1,5]
 1	15	1
 1	15
 1	1
+2	1
 -- without the dictionary scan, the tokens inside the needle are searched
 tokens	[1,2]
 tokens, no index	[1,2]
 -- direct read replaces the equivalent comparison only
 > 0	1	0
-= 15	0	1
+= 5	0	1
 bare	0	1
 -- Nullable
 Nullable	[1]
 Nullable, no index	[1]
 Nullable, not	[3,5]
 Nullable, not, no index	[3,5]
+-- a preprocessor that does not preserve substrings
+> 0	1
+> 0, no index	1
+bare	1
+positionUTF8	1
+positionCaseInsensitive	1
+-- a case-changing preprocessor
+tokens	[1,2]
+tokens, no index	[1,2]
