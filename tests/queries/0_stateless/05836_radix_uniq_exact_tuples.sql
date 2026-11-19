@@ -119,6 +119,44 @@ SELECT 'Tuple(String, Nullable(FixedString(3)), Float32)', count_radix, count_ra
         (SELECT uniqExact(x) FROM (SELECT (toString(number % 100), if(number % 4 = 0, NULL, toFixedString(toString(number % 200000 % 900 + 100), 3)), toFloat32(number % 3) / 2) AS x FROM numbers_mt(1000000)) SETTINGS optimize_uniq_exact_radix_partitioning = 0) AS count_ordinary
 );
 
+-- Not packed: a `LowCardinality` element holds indexes into its dictionary, not its values.
+SELECT 'Tuple(LowCardinality(UInt32), UInt8)', count_radix, count_radix = count_ordinary FROM
+(
+    SELECT
+        (SELECT uniqExact(x) FROM (SELECT (toLowCardinality(toUInt32(number % 100000)), toUInt8(number % 3)) AS x FROM numbers_mt(1000000)) SETTINGS optimize_uniq_exact_radix_partitioning = 1, allow_suspicious_low_cardinality_types = 1) AS count_radix,
+        (SELECT uniqExact(x) FROM (SELECT (toLowCardinality(toUInt32(number % 100000)), toUInt8(number % 3)) AS x FROM numbers_mt(1000000)) SETTINGS optimize_uniq_exact_radix_partitioning = 0, allow_suspicious_low_cardinality_types = 1) AS count_ordinary
+);
+
+SELECT 'Tuple(LowCardinality(Nullable(UInt16)), Int64)', count_radix, count_radix = count_ordinary FROM
+(
+    SELECT
+        (SELECT uniqExact(x) FROM (SELECT (toLowCardinality(if(number % 5 = 0, NULL, toUInt16(number % 1000))), toInt64(intDiv(number % 200000, 1000))) AS x FROM numbers_mt(1000000)) SETTINGS optimize_uniq_exact_radix_partitioning = 1, allow_suspicious_low_cardinality_types = 1) AS count_radix,
+        (SELECT uniqExact(x) FROM (SELECT (toLowCardinality(if(number % 5 = 0, NULL, toUInt16(number % 1000))), toInt64(intDiv(number % 200000, 1000))) AS x FROM numbers_mt(1000000)) SETTINGS optimize_uniq_exact_radix_partitioning = 0, allow_suspicious_low_cardinality_types = 1) AS count_ordinary
+);
+
+-- Runs of equal tuples longer than the 256 rows hashed at a time, also of NULL and not NULL values.
+SELECT 'runs of Tuple(UInt64, UInt64, UInt8)', count_radix, count_radix = count_ordinary FROM
+(
+    SELECT
+        (SELECT uniqExact(x) FROM (SELECT (intDiv(number, 300), intDiv(number, 7000), toUInt8(intDiv(number, 1000) % 2)) AS x FROM numbers_mt(1000000)) SETTINGS optimize_uniq_exact_radix_partitioning = 1) AS count_radix,
+        (SELECT uniqExact(x) FROM (SELECT (intDiv(number, 300), intDiv(number, 7000), toUInt8(intDiv(number, 1000) % 2)) AS x FROM numbers_mt(1000000)) SETTINGS optimize_uniq_exact_radix_partitioning = 0) AS count_ordinary
+);
+
+SELECT 'runs of Tuple(String, Nullable(UInt32))', count_radix, count_radix = count_ordinary FROM
+(
+    SELECT
+        (SELECT uniqExact(x) FROM (SELECT (toString(intDiv(number, 300)), if(intDiv(number, 600) % 3 = 0, NULL, toUInt32(intDiv(number, 1000)))) AS x FROM numbers_mt(1000000)) SETTINGS optimize_uniq_exact_radix_partitioning = 1) AS count_radix,
+        (SELECT uniqExact(x) FROM (SELECT (toString(intDiv(number, 300)), if(intDiv(number, 600) % 3 = 0, NULL, toUInt32(intDiv(number, 1000)))) AS x FROM numbers_mt(1000000)) SETTINGS optimize_uniq_exact_radix_partitioning = 0) AS count_ordinary
+);
+
+-- The rows of a run are compared by their bits: -0.0 and 0.0 are two values, as are NaNs with other bits.
+SELECT 'runs of Tuple(String, Float64)', count_radix, count_radix = count_ordinary FROM
+(
+    SELECT
+        (SELECT uniqExact(x) FROM (SELECT (toString(intDiv(number, 1000)), multiIf(intDiv(number, 100) % 4 = 0, -0., intDiv(number, 100) % 4 = 1, 0., intDiv(number, 100) % 4 = 2, nan, reinterpretAsFloat64(reinterpretAsUInt64(nan) + 1))) AS x FROM numbers_mt(1000000)) SETTINGS optimize_uniq_exact_radix_partitioning = 1) AS count_radix,
+        (SELECT uniqExact(x) FROM (SELECT (toString(intDiv(number, 1000)), multiIf(intDiv(number, 100) % 4 = 0, -0., intDiv(number, 100) % 4 = 1, 0., intDiv(number, 100) % 4 = 2, nan, reinterpretAsFloat64(reinterpretAsUInt64(nan) + 1))) AS x FROM numbers_mt(1000000)) SETTINGS optimize_uniq_exact_radix_partitioning = 0) AS count_ordinary
+);
+
 -- A constant element, and spilled keys.
 SELECT 'constant element', count_radix, count_radix = count_ordinary FROM
 (

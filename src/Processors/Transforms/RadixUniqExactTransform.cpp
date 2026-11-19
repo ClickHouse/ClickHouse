@@ -1781,8 +1781,9 @@ std::optional<size_t> packedTupleSize(const IDataType & type)
     size_t size = 0;
     for (const auto & element : tuple->getElements())
     {
+        /// A `LowCardinality` column holds indexes into a dictionary, not its values.
         const auto values = removeNullable(element);
-        if (!values->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+        if (values->lowCardinality() || !values->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
             return {};
         const size_t element_size = values->getSizeOfValueInMemory();
         if (!std::has_single_bit(element_size) || element_size > sizeof(UInt128))

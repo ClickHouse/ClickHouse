@@ -14,6 +14,11 @@ Tuple(Int32, String)	200000	1
 Tuple(String, String)	200000	1
 Tuple(Nullable(UInt8), Nullable(String))	312387	1
 Tuple(String, Nullable(FixedString(3)), Float32)	2100	1
+Tuple(LowCardinality(UInt32), UInt8)	300000	1
+Tuple(LowCardinality(Nullable(UInt16)), Int64)	160200	1
+runs of Tuple(UInt64, UInt64, UInt8)	4000	1
+runs of Tuple(String, Nullable(UInt32))	3778	1
+runs of Tuple(String, Float64)	4000	1
 constant element	200000	1
 spill	1000000
 no rows	0
