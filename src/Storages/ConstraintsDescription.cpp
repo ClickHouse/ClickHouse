@@ -2,6 +2,7 @@
 
 #include <Common/quoteString.h>
 #include <Core/Block.h>
+#include <DataTypes/Utils.h>
 #include <Interpreters/ComparisonGraph.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -309,8 +310,21 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
                 continue;
 
             auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
-            if (function_node && relations.contains(function_node->getFunctionName()))
-                constraints_for_graph.push_back(atom.node_with_hash.node);
+            if (!function_node || !relations.contains(function_node->getFunctionName()))
+                continue;
+
+            /// An `Enum` compared with a string orders by the `Enum` value, two strings order by name.
+            /// The graph chains its relations and treats a constant by its `Field`, so such an atom is left out.
+            const auto & arguments = function_node->getArguments().getNodes();
+            if (arguments.size() == 2)
+            {
+                const auto left_type = arguments[0]->getResultType();
+                const auto right_type = arguments[1]->getResultType();
+                if (comparesStringWithEnum(left_type, right_type) || comparesStringWithEnum(right_type, left_type))
+                    continue;
+            }
+
+            constraints_for_graph.push_back(atom.node_with_hash.node);
         }
         data.graph = std::make_unique<ComparisonGraph<QueryTreeNodePtr>>(constraints_for_graph, context);
     }
