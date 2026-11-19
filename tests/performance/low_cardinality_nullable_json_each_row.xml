@@ -1,0 +1,12 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <input_format_parallel_parsing>0</input_format_parallel_parsing>
+    </settings>
+
+    <query>
+        SELECT count(s)
+        FROM format(JSONEachRow, 's LowCardinality(Nullable(String))',
+            repeat('{"s":"alpha"}\n{"s":"beta"}\n{"s":null}\n', 250000))
+    </query>
+</test>
