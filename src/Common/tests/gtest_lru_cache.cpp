@@ -1,6 +1,4 @@
-#include <atomic>
 #include <iomanip>
-#include <thread>
 #include <gtest/gtest.h>
 #include <Common/CacheBase.h>
 #include <Common/CurrentMetrics.h>
@@ -121,49 +119,4 @@ TEST(LRUCache, noOnRemoveEntryCallback)
     value = lru_cache.get("key2");
     ASSERT_TRUE(value != nullptr);
     ASSERT_TRUE(*value == 20);
-}
-
-TEST(CacheBase, trySetWithoutEvictionByteLimit)
-{
-    using Cache = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
-    for (const char * policy : {"LRU", "SLRU", "SIEVE"})
-    {
-        Cache cache(policy, CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 100, /*max_count*/ 100, /*size_ratio*/ 0.5);
-        ASSERT_TRUE(cache.trySetWithoutEviction(1, std::make_shared<size_t>(60), /*max_size_in_bytes_limit*/ 95)) << policy;
-        ASSERT_EQ(cache.count(), 1u) << policy;
-
-        std::atomic<int> admitted{0};
-        auto worker = [&](int key)
-        {
-            if (cache.trySetWithoutEviction(key, std::make_shared<size_t>(25), 95))
-                ++admitted;
-        };
-        std::thread t1([&] { worker(2); });
-        std::thread t2([&] { worker(3); });
-        t1.join();
-        t2.join();
-
-        EXPECT_EQ(admitted.load(), 1) << policy;
-        EXPECT_NE(cache.get(1), nullptr) << policy;
-        EXPECT_EQ(cache.count(), 2u) << policy;
-        EXPECT_EQ(cache.sizeInBytes(), 85u) << policy;
-    }
-}
-
-TEST(CacheBase, trySetWithoutEvictionMaxCount)
-{
-    using Cache = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
-    for (const char * policy : {"LRU", "SLRU", "SIEVE"})
-    {
-        Cache cache(policy, CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 1'000'000, /*max_count*/ 2, /*size_ratio*/ 0.5);
-        ASSERT_TRUE(cache.trySetWithoutEviction(1, std::make_shared<size_t>(20), 1'000'000)) << policy;
-        ASSERT_TRUE(cache.trySetWithoutEviction(2, std::make_shared<size_t>(20), 1'000'000)) << policy;
-        EXPECT_FALSE(cache.trySetWithoutEviction(3, std::make_shared<size_t>(20), 1'000'000)) << policy;
-        EXPECT_NE(cache.get(1), nullptr) << policy;
-        EXPECT_NE(cache.get(2), nullptr) << policy;
-        EXPECT_EQ(cache.get(3), nullptr) << policy;
-        EXPECT_EQ(cache.count(), 2u) << policy;
-        EXPECT_TRUE(cache.trySetWithoutEviction(1, std::make_shared<size_t>(20), 1'000'000)) << policy;
-        EXPECT_EQ(cache.count(), 2u) << policy;
-    }
 }

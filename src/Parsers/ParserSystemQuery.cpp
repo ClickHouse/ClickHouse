@@ -1434,7 +1434,7 @@ Requires the `SYSTEM DROP VECTOR SIMILARITY INDEX CACHE` privilege for all or a 
 
 ## SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE {#prewarm-vector-similarity-index-cache}
 
-Loads deserialized HNSW granules of a `MergeTree` table into the [vector similarity index cache](#drop-vector-similarity-index-cache). `INDEX name` limits the load to one vector similarity index. Loading stops when the cache reaches `vector_similarity_index_cache_prewarm_ratio` of its configured size, or `vector_similarity_index_cache_max_entries`. A granule is inserted only when that does not evict another entry.
+Loads deserialized HNSW granules of a `MergeTree` table into the [vector similarity index cache](#drop-vector-similarity-index-cache). `INDEX name` limits the load to one vector similarity index. Loading stops starting new loads once the cache reaches `vector_similarity_index_cache_prewarm_ratio` of its configured size. Inserts that have already started may exceed that ratio, and the cache then evicts down to `vector_similarity_index_cache_size` and `vector_similarity_index_cache_max_entries`.
 
 ```sql
 SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster_name] FOR TABLE [db.]table [INDEX index_name]

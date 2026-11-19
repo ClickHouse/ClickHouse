@@ -4822,53 +4822,16 @@ void MergeTreeData::prewarmVectorSimilarityIndexCache(
 
     const double ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::vector_similarity_index_cache_prewarm_ratio];
 
-    /// On-disk size of an HNSW file is far below the deserialized cache weight, so the granule is
-    /// loaded outside the cache and inserted only when the real weight still fits under the cache
-    /// mutex. That keeps a concurrent prewarm from evicting another table's entries.
-    struct PrewarmBudget
+    /// Stop queueing once the cache reaches `vector_similarity_index_cache_prewarm_ratio` of its
+    /// configured size. A task already queued checks again before it starts reading. Inserts that
+    /// have started may go slightly over the ratio; the cache then evicts down to
+    /// `vector_similarity_index_cache_size` and `vector_similarity_index_cache_max_entries`.
+    /// Evicted entries may belong to other tables.
+    /// Created before the runner, so the tasks that capture it outlive the join.
+    auto enough_space = [&cache, ratio_to_prewarm]()
     {
-        VectorSimilarityIndexCache & cache;
-        double ratio;
-        /// Set when a granule does not fit. Tasks that have not started reading stop, and the
-        /// outer loop stops queueing. A `reader.read` already in progress still finishes, then
-        /// `tryInsert` refuses it if it would evict.
-        std::atomic<bool> full{false};
-
-        size_t byteLimit() const
-        {
-            return static_cast<size_t>(static_cast<double>(cache.maxSizeInBytes()) * ratio);
-        }
-
-        bool isFull() const
-        {
-            return full.load(std::memory_order_relaxed);
-        }
-
-        void markFull()
-        {
-            full.store(true, std::memory_order_relaxed);
-        }
-
-        bool wouldFit() const
-        {
-            if (isFull())
-                return false;
-            if (cache.sizeInBytes() >= byteLimit())
-                return false;
-            const size_t max_count = cache.maxCount();
-            return max_count == 0 || cache.count() < max_count;
-        }
-
-        bool tryInsert(const VectorSimilarityIndexCacheKey & key, VectorSimilarityIndexCache::MappedPtr cell)
-        {
-            if (cache.trySetWithoutEviction(key, cell, byteLimit()))
-                return true;
-            markFull();
-            return false;
-        }
+        return static_cast<double>(cache.sizeInBytes()) < static_cast<double>(cache.maxSizeInBytes()) * ratio_to_prewarm;
     };
-
-    PrewarmBudget budget{cache, ratio_to_prewarm};
 
     auto mark_cache = getContext()->getIndexMarkCache();
     auto uncompressed_cache = getContext()->getIndexUncompressedCache();
@@ -4878,22 +4841,25 @@ void MergeTreeData::prewarmVectorSimilarityIndexCache(
     ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGETREE_PREWARM_CACHE);
     /// `enqueueAndKeepTrack` schedules before it records the task. Reserving every part/index
     /// job up front keeps that recording from reallocating, so a throw cannot leave an accepted
-    /// job outside the list the runner joins. `budget` is declared before `runner` and outlives it.
+    /// job outside the list the runner joins.
     runner.reserve(data_parts.size() * indexes.size());
 
     for (const auto & part : data_parts)
     {
-        if (!budget.wouldFit())
+        if (!enough_space())
             break;
 
         for (const auto & index : indexes)
         {
+            if (!enough_space())
+                break;
+
             runner.enqueueAndKeepTrack(
                 [part,
                  index,
                  table_uuid,
                  &cache,
-                 &budget,
+                 &enough_space,
                  mark_cache,
                  uncompressed_cache,
                  context,
@@ -4912,11 +4878,11 @@ void MergeTreeData::prewarmVectorSimilarityIndexCache(
                     if (skip_marks == 0)
                         return;
 
-                    if (!budget.wouldFit())
-                    {
-                        budget.markFull();
+                    /// Check again, because another task may have filled the cache while this task was waiting.
+                    /// Inserts that have started may go slightly over the ratio; eviction then brings the cache
+                    /// back to its configured limits. Evicted entries may belong to other tables.
+                    if (!enough_space())
                         return;
-                    }
 
                     MarkRanges ranges{MarkRange(0, skip_marks)};
                     auto reader_settings = MergeTreeReaderSettings::createFromContext(context);
@@ -4940,22 +4906,15 @@ void MergeTreeData::prewarmVectorSimilarityIndexCache(
                         if (cache.contains(key))
                             continue;
 
-                        if (!budget.wouldFit())
-                        {
-                            budget.markFull();
-                            return;
-                        }
-
                         MergeTreeIndexGranulePtr granule;
                         reader.read(mark, /*condition=*/ nullptr, granule, /*readable_ranges=*/ nullptr);
                         if (!granule)
                             continue;
 
-                        if (!budget.tryInsert(
-                                key,
-                                std::make_shared<VectorSimilarityIndexCacheCell>(
-                                    std::move(granule), table_uuid, part->name, index->index.name)))
-                            return;
+                        cache.set(
+                            key,
+                            std::make_shared<VectorSimilarityIndexCacheCell>(
+                                std::move(granule), table_uuid, part->name, index->index.name));
                     }
                 });
         }

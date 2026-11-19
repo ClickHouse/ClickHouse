@@ -708,7 +708,7 @@ In ClickHouse Cloud, the maximum cache size depends on the pod size. The exact s
 )", 0) \
     DECLARE(UInt64, vector_similarity_index_cache_max_entries, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_ENTRIES, "Size of cache for vector similarity index in entries. Zero means disabled.", 0) \
     DECLARE(Double, vector_similarity_index_cache_size_ratio, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the vector similarity index cache relative to the cache's total size.", 0) \
-    DECLARE(Double, vector_similarity_index_cache_prewarm_ratio, 0.95, R"(The ratio of total size of the vector similarity index cache to fill during `SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE`. Prewarm also stops at `vector_similarity_index_cache_max_entries` and does not evict entries already in the cache.)", 0) \
+    DECLARE(Double, vector_similarity_index_cache_prewarm_ratio, 0.95, R"(The ratio of total size of the vector similarity index cache to fill during `SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE`. Prewarm stops starting new loads once the cache reaches this ratio. Inserts that have already started may exceed the ratio, and the cache then evicts down to `vector_similarity_index_cache_size` and `vector_similarity_index_cache_max_entries`.)", 0) \
     DECLARE(String, text_index_tokens_cache_policy, DEFAULT_TEXT_INDEX_TOKENS_CACHE_POLICY, "Text index tokens cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
     DECLARE(UInt64, text_index_tokens_cache_size, DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_SIZE, R"(Size of cache for text index tokens. Zero means disabled.
 

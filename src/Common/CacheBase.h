@@ -10,7 +10,6 @@
 #include <base/UUID.h>
 #include <base/defines.h>
 
-#include <algorithm>
 #include <atomic>
 #include <memory>
 #include <mutex>
@@ -173,29 +172,6 @@ public:
     {
         std::lock_guard lock(mutex);
         cache_policy->set(key, mapped);
-    }
-
-    /// Insert `mapped` only if that does not evict any other entry.
-    /// `max_size_in_bytes_limit` is an extra byte cap on top of `maxSizeInBytes` (for example a
-    /// prewarm ratio). Returns true when the key is in the cache afterwards: it was already
-    /// present, or this call inserted it. Shared with other writers through `mutex`.
-    bool trySetWithoutEviction(const Key & key, const MappedPtr & mapped, size_t max_size_in_bytes_limit)
-    {
-        std::lock_guard lock(mutex);
-        if (cache_policy->contains(key))
-            return true;
-
-        const size_t weight = mapped ? WeightFunction{}(*mapped) : 0;
-        const size_t byte_limit = std::min(max_size_in_bytes_limit, cache_policy->maxSizeInBytes());
-        if (cache_policy->sizeInBytes() + weight >= byte_limit)
-            return false;
-
-        const size_t max_count = cache_policy->maxCount();
-        if (max_count != NO_MAX_COUNT && cache_policy->count() >= max_count)
-            return false;
-
-        cache_policy->set(key, mapped);
-        return true;
     }
 
     /// `set`, and whether `mapped` is in the cache right after it: the policy can refuse it or evict it at once.
