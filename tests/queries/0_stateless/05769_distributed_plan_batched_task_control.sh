@@ -58,6 +58,7 @@ $CLICKHOUSE_CLIENT --query "SELECT replaceOne(query_id, '${QUERY_ID}_', '') AS q
             ProfileEvents['DistributedPlanTaskForgetRequests'] AS forget_requests,
             ProfileEvents['DistributedPlanHostsUsed'] AS workers
         FROM system.query_log
-        WHERE event_date >= yesterday() AND query_id IN ('${QUERY_ID}_finished', '${QUERY_ID}_killed') AND type != 'QueryStart'
+        WHERE event_date >= yesterday() AND current_database = currentDatabase()
+            AND query_id IN ('${QUERY_ID}_finished', '${QUERY_ID}_killed') AND type != 'QueryStart'
     )
     ORDER BY query"
