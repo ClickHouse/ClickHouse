@@ -475,7 +475,33 @@ public:
     {
     }
 
+    /// What cuDF, rmm and libstdc++ throw does not leave the island: see `guarded`.
     __host__ void addBatch(GPUSpan<DeviceColumnView> batch_keys, GPUSpan<DeviceColumnView> batch_values, const uint32_t * kept) override
+    {
+        guarded("adding a batch to a `GROUP BY`", [&] { addBatchImpl(batch_keys, batch_values, kept); });
+    }
+
+    __host__ void absorbPart(const CudfGroupBy & other, size_t part) override
+    {
+        guarded("absorbing a part of the groups of a `GROUP BY`", [&] { absorbPartImpl(other, part); });
+    }
+
+    __host__ size_t finalize() override { return guarded("finalizing a `GROUP BY`", [&] { return finalizeImpl(); }); }
+
+    __host__ size_t keepGroups(const uint32_t * kept) override
+    {
+        return guarded("filtering the groups of a `GROUP BY`", [&] { return keepGroupsImpl(kept); });
+    }
+
+    __host__ DeviceColumnView key(size_t index) const override { return guarded("viewing a key of a `GROUP BY`", [&] { return keyImpl(index); }); }
+
+    __host__ DeviceColumnView value(size_t index) const override
+    {
+        return guarded("viewing an aggregate of a `GROUP BY`", [&] { return valueImpl(index); });
+    }
+
+private:
+    __host__ void addBatchImpl(GPUSpan<DeviceColumnView> batch_keys, GPUSpan<DeviceColumnView> batch_values, const uint32_t * kept)
     {
         if (finalized)
             throwGPUError("a batch after the groups were finalized");
@@ -501,7 +527,7 @@ public:
             aggregate(columns);
     }
 
-    __host__ void absorbPart(const CudfGroupBy & other_group_by, size_t part) override
+    __host__ void absorbPartImpl(const CudfGroupBy & other_group_by, size_t part)
     {
         const auto * other = dynamic_cast<const GroupBy *>(&other_group_by);
         if (!other || finalized || parts.size() != 1 || !(partials == other->partials))
@@ -530,7 +556,7 @@ public:
             parts.add(std::move(copy));
     }
 
-    __host__ size_t finalize() override
+    __host__ size_t finalizeImpl()
     {
         if (finalized)
             throwGPUError("the groups were finalized twice");
@@ -541,7 +567,7 @@ public:
         return numGroups();
     }
 
-    __host__ size_t keepGroups(const uint32_t * kept) override
+    __host__ size_t keepGroupsImpl(const uint32_t * kept)
     {
         if (!finalized)
             throwGPUError("the groups were filtered before they were finalized");
@@ -558,18 +584,17 @@ public:
         return numGroups();
     }
 
-    __host__ DeviceColumnView key(size_t index) const override
+    __host__ DeviceColumnView keyImpl(size_t index) const
     {
         return viewOf(groups.get(), index, keys[index], widened_offsets[index], stream);
     }
 
-    __host__ DeviceColumnView value(size_t index) const override
+    __host__ DeviceColumnView valueImpl(size_t index) const
     {
         const size_t column = keys.size() + index;
         return viewOf(groups.get(), column, aggregates[index].result_type, widened_offsets[column], stream);
     }
 
-private:
     enum class Strategy
     {
         Undecided,
@@ -691,7 +716,7 @@ __host__ CudfGroupBy * createCudfGroupBy(
         if ((aggregate.aggregation == GPUAggregationKind::Count) != (aggregate.column == GPUGroupByAggregate::no_column))
             throwGPUError("a `count` of a column, or another aggregate of none");
     }
-    return new cudf_group_by::GroupBy(keys, values, aggregates, num_parts, stream);
+    return guarded("making a `GROUP BY`", [&] { return new cudf_group_by::GroupBy(keys, values, aggregates, num_parts, stream); });
 }
 
 }

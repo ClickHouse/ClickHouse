@@ -96,7 +96,7 @@ __host__ CudfReduction::CudfReduction(GPUElementType element_type, GPUElementTyp
     if (aggregation == GPUAggregationKind::Sum && columnKindOf(element_type) != GPUColumnKind::Fixed)
         throwGPUError("a sum of values of varying width");
 
-    state = new State(element_type, result_type, aggregation, stream);
+    state = guarded("making a reduction", [&] { return new State(element_type, result_type, aggregation, stream); });
 }
 
 __host__ CudfReduction::~CudfReduction()
@@ -105,6 +105,11 @@ __host__ CudfReduction::~CudfReduction()
 }
 
 __host__ void CudfReduction::addBatch(DeviceColumnView values)
+{
+    guarded("adding a batch to a reduction", [&] { addBatchImpl(values); });
+}
+
+__host__ void CudfReduction::addBatchImpl(DeviceColumnView values)
 {
     if (values.rows() == 0)
         throwGPUError("nothing to reduce");
@@ -117,6 +122,11 @@ __host__ void CudfReduction::addBatch(DeviceColumnView values)
 }
 
 __host__ DeviceColumnView CudfReduction::finalize()
+{
+    return guarded("finalizing a reduction", [&] { return finalizeImpl(); });
+}
+
+__host__ DeviceColumnView CudfReduction::finalizeImpl()
 {
     state->result.reset();
     state->result_offsets.reset();

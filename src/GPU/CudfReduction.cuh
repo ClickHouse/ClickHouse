@@ -22,6 +22,9 @@ public:
     __host__ DeviceColumnView finalize();
 
 private:
+    __host__ void addBatchImpl(DeviceColumnView values);
+    __host__ DeviceColumnView finalizeImpl();
+
     struct State;
     State * state = nullptr;
 };
