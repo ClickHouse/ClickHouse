@@ -207,7 +207,7 @@ rm -rf tmp_stress_output
 timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM system.tables" ||
 (
     echo "thread apply all backtrace (on select tables count)" >> /test_output/gdb.log
-    timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
+    timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$(serving_server_pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
     clickhouse stop --force
 )
 
