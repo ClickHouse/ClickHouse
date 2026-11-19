@@ -62,6 +62,7 @@ namespace ErrorCodes
     extern const int NO_ZOOKEEPER;
     extern const int REQUIRED_PASSWORD;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int LOGICAL_ERROR;
 }
 
 using namespace IcebergRESTCatalog;
@@ -304,6 +305,11 @@ void IcebergRESTCatalogHandler::sendNoSuchTable(HTTPServerResponse & response, c
         fmt::format("Table does not exist: {}.{}", joinNamespace(ns), table));
 }
 
+void IcebergRESTCatalogHandler::sendNoSuchWarehouse(HTTPServerResponse & response, const String & name)
+{
+    sendError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, "NoSuchWarehouseException", fmt::format("Unknown warehouse: {}", name));
+}
+
 void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
     try
@@ -373,6 +379,28 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
             return;
         }
 
+        /// Management routes create, drop, and read warehouses in the registry.
+        switch (match->route->operation)
+        {
+            case IcebergRESTOperation::CreateWarehouse:
+                handleCreateWarehouse(body, response, *context);
+                return;
+            case IcebergRESTOperation::ListWarehouses:
+                handleListWarehouses(response);
+                return;
+            case IcebergRESTOperation::GetWarehouse:
+                handleGetWarehouse(*match, response);
+                return;
+            case IcebergRESTOperation::ReplaceWarehouseCredential:
+                handleReplaceWarehouseCredential(*match, body, response, *context);
+                return;
+            case IcebergRESTOperation::DeleteWarehouse:
+                handleDeleteWarehouse(*match, response, *context);
+                return;
+            default:
+                break;
+        }
+
         const auto & prefix = match->path_params.at("prefix");
         const auto warehouse = warehouses->tryGet(prefix);
         if (!warehouse)
@@ -425,6 +453,9 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
                 return;
             case IcebergRESTOperation::ReportMetrics:
                 handleReportMetrics(*warehouse, *match, response);
+                return;
+            case IcebergRESTOperation::CommitTransaction:
+                handleCommitTransaction(*warehouse, body, response, *context);
                 return;
             default:
                 sendError(
@@ -513,11 +544,7 @@ void IcebergRESTCatalogHandler::handleGetConfig(const Poco::URI & uri, HTTPServe
     const auto warehouse = warehouses->tryGet(*requested_warehouse);
     if (!warehouse)
     {
-        sendError(
-            response,
-            Poco::Net::HTTPResponse::HTTP_NOT_FOUND,
-            "NoSuchWarehouseException",
-            fmt::format("Unknown warehouse: {}", *requested_warehouse));
+        sendNoSuchWarehouse(response, *requested_warehouse);
         return;
     }
 
@@ -957,7 +984,6 @@ void IcebergRESTCatalogHandler::handleCreateTable(
     sendLoadTableResult(pointer.metadata_location, metadata, response);
 }
 
-/// Checks requirements and applies updates in memory, then calls `commitTableMetadata`.
 void IcebergRESTCatalogHandler::handleUpdateTable(
     const IcebergRESTCatalogWarehouse & warehouse,
     const IcebergRESTRouteMatch & match,
@@ -1009,49 +1035,20 @@ void IcebergRESTCatalogHandler::handleUpdateTable(
         handleStagedCreateCommit(warehouse, *ns, table, *updates, response, context);
         return;
     }
-    auto metadata = readTableMetadata(warehouse, *pointer);
 
-    CompressionMethod compression_method = CompressionMethod::None;
-    try
-    {
-        if (const auto result = checkTableRequirements(*metadata, *requirements); !result)
-        {
-            sendError(response, Poco::Net::HTTPResponse::HTTP_CONFLICT, "CommitFailedException", result.error());
-            return;
-        }
-
-        /// Do not write a new metadata version for an empty commit.
-        if (updates->size() == 0)
-        {
-            sendCommitTableResult(pointer->metadata_location, metadata, response);
-            return;
-        }
-
-        applyTableUpdatesToJSON(*metadata, *updates, pointer->metadata_location);
-        /// A `set-properties` update may change the codec. The new file follows the updated properties.
-        compression_method = getMetadataCompressionMethod(*metadata);
-    }
-    catch (const Exception & e)
-    {
-        /// The request was based on metadata that another commit has since replaced. The client retries after reloading.
-        if (e.code() == ErrorCodes::METADATA_MISMATCH)
-        {
-            sendError(response, Poco::Net::HTTPResponse::HTTP_CONFLICT, "CommitFailedException", e.message());
-            return;
-        }
-        /// Other errors are not caused by the client. The HTTP layer reports them as internal errors.
-        if (e.code() != ErrorCodes::NOT_IMPLEMENTED && e.code() != ErrorCodes::BAD_ARGUMENTS)
-            throw;
-        sendCommitRequestError(response, e.code(), e.message());
+    const auto prepared = prepareTableCommit(warehouse, *ns, table, *pointer, *requirements, *updates, response);
+    if (!prepared)
         return;
-    }
-    catch (const Poco::Exception & e)
+
+    /// Do not write a new metadata version for an empty commit.
+    if (prepared->new_location.empty())
     {
-        sendCommitRequestError(response, ErrorCodes::BAD_ARGUMENTS, e.displayText());
+        sendCommitTableResult(pointer->metadata_location, prepared->metadata, response);
         return;
     }
 
-    commitTableMetadata(warehouse, *ns, table, *pointer, metadata, compression_method, response);
+    if (commitPreparedTables(warehouse, {*prepared}, response))
+        sendCommitTableResult(prepared->new_location, prepared->metadata, response);
 }
 
 /// Stage-create takes two requests.
@@ -1165,59 +1162,168 @@ IcebergRESTCatalogWarehouse::CreateTableResult IcebergRESTCatalogHandler::writeA
     const auto created = warehouse.createTable(ns, table, pointer);
     if (created != CreateTableResult::Created)
     {
+        /// TODO: Make this removal best effort, as in `commitPreparedTables`. A failed removal must not replace the response.
         LOG_INFO(log, "Removing metadata file {} because table {}.{} was not registered", object_key, joinNamespace(ns), table);
         warehouse.object_storage->removeObjectIfExists(StoredObject(object_key));
     }
     return created;
 }
 
-void IcebergRESTCatalogHandler::commitTableMetadata(
+std::optional<IcebergRESTCatalogHandler::PreparedTableCommit> IcebergRESTCatalogHandler::prepareTableCommit(
     const IcebergRESTCatalogWarehouse & warehouse,
     const IcebergNamespaceName & ns,
     const String & table,
     const IcebergTablePointer & pointer,
-    const Poco::JSON::Object::Ptr & metadata,
-    CompressionMethod compression_method,
+    const Poco::JSON::Array & requirements,
+    const Poco::JSON::Array & updates,
     HTTPServerResponse & response) const
 {
-    /// Get the name for the next metadata.json file.
-    const String new_location
-        = nextMetadataLocation(*metadata, pointer.metadata_location, getMetadataCompressionSuffix(compression_method));
+    PreparedTableCommit prepared;
+    prepared.ns = ns;
+    prepared.table = table;
+    prepared.current = pointer;
+    prepared.metadata = readTableMetadata(warehouse, pointer);
 
-    /// Write the metadata.json to object storage.
-    const auto object_key = warehouse.objectKey(new_location);
-    writeNewObject(
-        *warehouse.object_storage,
-        object_key,
-        toJSONString(*metadata, 4),
-        server.context()->getWriteSettings(),
-        compression_method,
-        static_cast<int>(server.context()->getSettingsRef()[Setting::output_format_compression_level]));
-
-    /// Update Keeper.
-    using UpdateTableResult = IcebergRESTCatalogWarehouse::UpdateTableResult;
-    std::optional<UpdateTableResult> result;
     try
     {
-        result = warehouse.updateTable(ns, table, pointer, {.uuid = pointer.uuid, .metadata_location = new_location});
+        if (const auto result = checkTableRequirements(*prepared.metadata, requirements); !result)
+        {
+            sendError(response, Poco::Net::HTTPResponse::HTTP_CONFLICT, "CommitFailedException", result.error());
+            return std::nullopt;
+        }
+
+        if (updates.size() == 0)
+            return prepared;
+
+        applyTableUpdatesToJSON(*prepared.metadata, updates, pointer.metadata_location);
+        /// A `set-properties` update may change the codec. The new file follows the updated properties.
+        prepared.compression_method = getMetadataCompressionMethod(*prepared.metadata);
+    }
+    catch (const Exception & e)
+    {
+        /// The request was based on metadata that another commit has since replaced. The client retries after reloading.
+        if (e.code() == ErrorCodes::METADATA_MISMATCH)
+        {
+            sendError(response, Poco::Net::HTTPResponse::HTTP_CONFLICT, "CommitFailedException", e.message());
+            return std::nullopt;
+        }
+        /// Other errors are not caused by the client. The HTTP layer reports them as internal errors.
+        if (e.code() != ErrorCodes::NOT_IMPLEMENTED && e.code() != ErrorCodes::BAD_ARGUMENTS)
+            throw;
+        sendCommitRequestError(response, e.code(), e.message());
+        return std::nullopt;
+    }
+    catch (const Poco::Exception & e)
+    {
+        sendCommitRequestError(response, ErrorCodes::BAD_ARGUMENTS, e.displayText());
+        return std::nullopt;
+    }
+
+    prepared.new_location = nextMetadataLocation(
+        *prepared.metadata, pointer.metadata_location, getMetadataCompressionSuffix(prepared.compression_method));
+    return prepared;
+}
+
+bool IcebergRESTCatalogHandler::commitPreparedTables(
+    const IcebergRESTCatalogWarehouse & warehouse, const std::vector<PreparedTableCommit> & prepared, HTTPServerResponse & response) const
+{
+    /// Best effort. A failed removal leaves an orphan file. It must not replace the result of the commit.
+    const auto remove_written_files = [&](const std::vector<String> & keys)
+    {
+        if (keys.empty())
+            return;
+        LOG_INFO(log, "Removing metadata files because the commit was not applied: {}", fmt::join(keys, ", "));
+        for (const auto & key : keys)
+        {
+            try
+            {
+                warehouse.object_storage->removeObjectIfExists(StoredObject(key));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("Cannot remove metadata file {}", key));
+            }
+        }
+    };
+
+    /// Object storage first, then the Keeper pointers. A crash in between leaves orphan files, not dangling pointers.
+    /// A table with an empty `new_location` is a read-only participant. The multi only checks that its version is unchanged.
+    std::vector<String> written_keys;
+    std::vector<IcebergRESTCatalogWarehouse::TableUpdate> keeper_updates;
+    try
+    {
+        for (const auto & table_commit : prepared)
+        {
+            if (!table_commit.new_location.empty())
+            {
+                const auto object_key = warehouse.objectKey(table_commit.new_location);
+                writeNewObject(
+                    *warehouse.object_storage,
+                    object_key,
+                    toJSONString(*table_commit.metadata, 4),
+                    server.context()->getWriteSettings(),
+                    table_commit.compression_method,
+                    static_cast<int>(server.context()->getSettingsRef()[Setting::output_format_compression_level]));
+                written_keys.push_back(object_key);
+            }
+            keeper_updates.push_back(
+                {.ns = table_commit.ns,
+                 .table = table_commit.table,
+                 .expected = table_commit.current,
+                 .new_pointer = {.uuid = table_commit.current.uuid, .metadata_location = table_commit.new_location}});
+        }
+    }
+    catch (...)
+    {
+        remove_written_files(written_keys);
+        throw;
+    }
+
+    using UpdateTableResult = IcebergRESTCatalogWarehouse::UpdateTableResult;
+    IcebergRESTCatalogWarehouse::UpdateTablesResult result;
+    try
+    {
+        result = warehouse.updateTables(keeper_updates);
     }
     catch (const zkutil::KeeperException & e)
     {
-        /// The set may have been applied, so the new file must stay. The client reloads the table to find out.
-        LOG_WARNING(log, "Commit of {}.{} to {} has an unknown outcome: {}", joinNamespace(ns), table, new_location, e.message());
+        /// The multi may have been applied, so the new files must stay. The client reloads the tables to find out.
+        Strings table_names;
+        for (const auto & update : keeper_updates)
+            table_names.push_back(joinNamespace(update.ns) + "." + update.table);
+        LOG_WARNING(log, "Commit of {} has an unknown outcome: {}", fmt::join(table_names, ", "), e.message());
         sendError(response, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, "CommitStateUnknownException", "Commit state is unknown");
-        return;
+        return false;
     }
 
-    if (*result != UpdateTableResult::Updated)
-        warehouse.object_storage->removeObjectIfExists(StoredObject(object_key));
+    if (result.result != UpdateTableResult::Updated)
+    {
+        remove_written_files(written_keys);
+        const auto & failed = keeper_updates[result.failed_index];
+        sendUpdateTableError(response, result.result, failed.ns, failed.table);
+        return false;
+    }
 
-    switch (*result)
+    for (const auto & update : keeper_updates)
+        if (!update.new_pointer.metadata_location.empty())
+            LOG_INFO(
+                log,
+                "Committed table {}.{}: {} -> {}",
+                joinNamespace(update.ns),
+                update.table,
+                update.expected.metadata_location,
+                update.new_pointer.metadata_location);
+    return true;
+}
+
+void IcebergRESTCatalogHandler::sendUpdateTableError(
+    HTTPServerResponse & response, IcebergRESTCatalogWarehouse::UpdateTableResult result, const IcebergNamespaceName & ns, const String & table)
+{
+    using UpdateTableResult = IcebergRESTCatalogWarehouse::UpdateTableResult;
+    switch (result)
     {
         case UpdateTableResult::Updated:
-            LOG_INFO(log, "Committed table {}.{}: {} -> {}", joinNamespace(ns), table, pointer.metadata_location, new_location);
-            sendCommitTableResult(new_location, metadata, response);
-            return;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {}.{} was updated, there is no error to send", joinNamespace(ns), table);
         case UpdateTableResult::VersionMismatch:
             sendError(
                 response,
@@ -1225,17 +1331,115 @@ void IcebergRESTCatalogHandler::commitTableMetadata(
                 "CommitFailedException",
                 fmt::format("Table {}.{} was updated concurrently, retry the commit", joinNamespace(ns), table));
             return;
-        case UpdateTableResult::UuidMismatch:
+        case UpdateTableResult::UuidNodeMissing:
+            /// A concurrent drop. The client reloads and gets 404 if the name is gone.
             sendError(
                 response,
                 Poco::Net::HTTPResponse::HTTP_CONFLICT,
                 "CommitFailedException",
-                fmt::format("Table {}.{} was dropped and re-created, reload the table", joinNamespace(ns), table));
-            return;
-        case UpdateTableResult::TableMissing:
-            sendNoSuchTable(response, ns, table);
+                fmt::format("Table {}.{} was dropped or re-created concurrently, reload the table", joinNamespace(ns), table));
             return;
     }
+}
+
+namespace
+{
+
+struct TableChange
+{
+    IcebergNamespaceName ns;
+    String table;
+    Poco::JSON::Array::Ptr requirements;
+    Poco::JSON::Array::Ptr updates;
+};
+
+TableChange parseTableChange(const Poco::JSON::Object & change)
+{
+    TableChange parsed;
+    const auto identifier = getObject(change, "identifier");
+    for (const auto & level : *getArray(*identifier, "namespace"))
+        parsed.ns.push_back(level.extract<String>());
+    parsed.table = getString(*identifier, "name");
+    validateTableName(parsed.table);
+    parsed.requirements = getArray(change, "requirements");
+    parsed.updates = getArray(change, "updates");
+
+    /// A staged table has no Keeper pointer yet, so the multi would need a create instead of a set.
+    for (const auto & requirement : *parsed.requirements)
+        if (requirement.type() == typeid(Poco::JSON::Object::Ptr)
+            && requirement.extract<Poco::JSON::Object::Ptr>()->optValue<String>("type", "") == "assert-create")
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Staged creates are not supported in transactions");
+
+    return parsed;
+}
+
+/// Parses the `table-changes` array of a `CommitTransactionRequest`. Each table may appear once.
+std::vector<TableChange> parseTableChanges(const String & body)
+{
+    const auto json = Poco::JSON::Parser().parse(body).extract<Poco::JSON::Object::Ptr>();
+    std::vector<TableChange> changes;
+    std::set<std::pair<IcebergNamespaceName, String>> seen_tables;
+    for (const auto & element : *getArray(*json, "table-changes"))
+    {
+        if (element.type() != typeid(Poco::JSON::Object::Ptr))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Every element of 'table-changes' must be an object");
+        auto change = parseTableChange(*element.extract<Poco::JSON::Object::Ptr>());
+
+        /// Each table gets one version-checked operation in the multi.
+        if (!seen_tables.emplace(change.ns, change.table).second)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Table {}.{} appears more than once in the transaction", joinNamespace(change.ns), change.table);
+
+        changes.push_back(std::move(change));
+    }
+    return changes;
+}
+
+}
+
+/// Commits all table changes of one request together. Either every table moves or none does.
+void IcebergRESTCatalogHandler::handleCommitTransaction(
+    const IcebergRESTCatalogWarehouse & warehouse, const String & body, HTTPServerResponse & response, const Context & context) const
+{
+    checkNotReadonly(context, "commit transaction");
+
+    std::vector<TableChange> changes;
+    try
+    {
+        changes = parseTableChanges(body);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::NOT_IMPLEMENTED && e.code() != ErrorCodes::BAD_ARGUMENTS)
+            throw;
+        sendCommitRequestError(response, e.code(), e.message());
+        return;
+    }
+    catch (const Poco::Exception & e)
+    {
+        sendCommitRequestError(response, ErrorCodes::BAD_ARGUMENTS, e.displayText());
+        return;
+    }
+
+    /// Check every table before writing anything, so a rejected table needs no cleanup.
+    std::vector<PreparedTableCommit> prepared;
+    prepared.reserve(changes.size());
+    for (const auto & change : changes)
+    {
+        const auto pointer = warehouse.getTable(change.ns, change.table);
+        if (!pointer)
+        {
+            sendNoSuchTable(response, change.ns, change.table);
+            return;
+        }
+        auto table_commit = prepareTableCommit(warehouse, change.ns, change.table, *pointer, *change.requirements, *change.updates, response);
+        if (!table_commit)
+            return;
+        prepared.push_back(std::move(*table_commit));
+    }
+
+    if (commitPreparedTables(warehouse, prepared, response))
+        sendNoContent(response);
 }
 
 void IcebergRESTCatalogHandler::sendCommitTableResult(
@@ -1363,6 +1567,106 @@ void IcebergRESTCatalogHandler::handleDropTable(
 
     LOG_INFO(log, "Dropped table {}.{}", joinNamespace(*ns), table);
     sendNoContent(response);
+}
+
+void IcebergRESTCatalogHandler::handleCreateWarehouse(const String & body, HTTPServerResponse & response, const Context & context) const
+{
+    checkDDLAllowed(context, "create warehouse");
+
+    const auto json = parseRequestBody(body);
+    const auto name = getString(*json, "name");
+    IcebergRESTCatalogWarehouseDefinition::validateName(name);
+    const auto definition = IcebergRESTCatalogWarehouseDefinition::fromJSON(*json);
+
+    if (!warehouses->create(name, definition))
+    {
+        sendError(
+            response,
+            Poco::Net::HTTPResponse::HTTP_CONFLICT,
+            "AlreadyExistsException",
+            fmt::format("Warehouse already exists: {}", name));
+        return;
+    }
+
+    sendJSON(response, *definition.toJSON(name), Poco::Net::HTTPResponse::HTTP_OK);
+}
+
+void IcebergRESTCatalogHandler::handleListWarehouses(HTTPServerResponse & response) const
+{
+    Poco::JSON::Array list;
+    for (const auto & [name, definition] : warehouses->list())
+        list.add(definition.toJSON(name));
+
+    Poco::JSON::Object result;
+    result.set("warehouses", list);
+    sendJSON(response, result, Poco::Net::HTTPResponse::HTTP_OK);
+}
+
+void IcebergRESTCatalogHandler::handleGetWarehouse(const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const
+{
+    const auto & name = match.path_params.at("warehouse");
+
+    const auto definition = warehouses->tryGetDefinition(name);
+    if (!definition)
+    {
+        sendNoSuchWarehouse(response, name);
+        return;
+    }
+
+    sendJSON(response, *definition->toJSON(name), Poco::Net::HTTPResponse::HTTP_OK);
+}
+
+void IcebergRESTCatalogHandler::handleReplaceWarehouseCredential(
+    const IcebergRESTRouteMatch & match, const String & body, HTTPServerResponse & response, const Context & context) const
+{
+    checkDDLAllowed(context, "replace warehouse credential");
+
+    const auto & name = match.path_params.at("warehouse");
+
+    const auto credential = IcebergRESTCatalogWarehouseCredential::fromJSON(*getObject(*parseRequestBody(body), "credential"));
+
+    using Result = IcebergRESTCatalogWarehouseRegistry::ReplaceCredentialResult;
+    switch (warehouses->replaceCredential(name, credential))
+    {
+        case Result::Replaced:
+            sendNoContent(response);
+            return;
+        case Result::NotFound:
+            sendNoSuchWarehouse(response, name);
+            return;
+        case Result::Conflict:
+            sendError(
+                response,
+                Poco::Net::HTTPResponse::HTTP_CONFLICT,
+                "CommitFailedException",
+                fmt::format("Warehouse {} was changed concurrently, retry", name));
+            return;
+    }
+}
+
+void IcebergRESTCatalogHandler::handleDeleteWarehouse(const IcebergRESTRouteMatch & match, HTTPServerResponse & response, const Context & context) const
+{
+    checkDDLAllowed(context, "drop warehouse");
+
+    const auto & name = match.path_params.at("warehouse");
+
+    using Result = IcebergRESTCatalogWarehouseRegistry::DropResult;
+    switch (warehouses->drop(name))
+    {
+        case Result::Dropped:
+            sendNoContent(response);
+            return;
+        case Result::NotFound:
+            sendNoSuchWarehouse(response, name);
+            return;
+        case Result::NotEmpty:
+            sendError(
+                response,
+                Poco::Net::HTTPResponse::HTTP_CONFLICT,
+                "WarehouseNotEmptyException",
+                fmt::format("Warehouse {} is not empty. Drop its namespaces first", name));
+            return;
+    }
 }
 
 }

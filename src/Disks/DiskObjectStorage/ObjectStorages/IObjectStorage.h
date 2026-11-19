@@ -19,6 +19,8 @@
 #include <Common/Exception.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/ObjectStorageKeyGenerator.h>
+#include <Common/SecretString.h>
+#include <Common/StringUtils.h>
 #include <Common/ThreadPool_fwd.h>
 
 #include <Disks/DirectoryIterator.h>
@@ -48,19 +50,19 @@ using ContainerClient = ContainerClientWrapper;
 class StaticCredential : public Azure::Core::Credentials::TokenCredential
 {
 public:
-    StaticCredential(std::string token_, std::chrono::system_clock::time_point expires_on_)
-        : token(std::move(token_)), expires_on(expires_on_)
+    StaticCredential(std::string_view token_, std::chrono::system_clock::time_point expires_on_)
+        : token(token_), expires_on(expires_on_)
     {}
 
     [[nodiscard]] Azure::Core::Credentials::AccessToken GetToken(
         Azure::Core::Credentials::TokenRequestContext const &,
         Azure::Core::Context const &) const override
     {
-        return Azure::Core::Credentials::AccessToken { .Token = token, .ExpiresOn = expires_on };
+        return Azure::Core::Credentials::AccessToken { .Token = String(token), .ExpiresOn = expires_on };
     }
 
 private:
-    std::string token;
+    SecretString token;
     std::chrono::system_clock::time_point expires_on;
 };
 
@@ -70,7 +72,7 @@ private:
 class TokenProviderCredential : public Azure::Core::Credentials::TokenCredential
 {
 public:
-    using TokenProvider = std::function<std::pair<std::string, std::chrono::system_clock::time_point>()>;
+    using TokenProvider = std::function<std::pair<SecretString, std::chrono::system_clock::time_point>()>;
 
     explicit TokenProviderCredential(TokenProvider provider_)
         : provider(std::move(provider_))
@@ -81,7 +83,7 @@ public:
         Azure::Core::Context const &) const override
     {
         auto [token, expires_on] = provider();
-        return Azure::Core::Credentials::AccessToken { .Token = std::move(token), .ExpiresOn = expires_on };
+        return Azure::Core::Credentials::AccessToken { .Token = String(token), .ExpiresOn = expires_on };
     }
 
 private:
@@ -227,9 +229,7 @@ struct RelativePathWithMetadata
         /// "data.tsv.gz?download=1"). They are not part of the file name and would defeat
         /// extension-based format/compression detection, so strip them only for web paths, consistent
         /// with how direct `url` reads use the URL path component.
-        const auto pos = relative_path.find_first_of("?#");
-        const std::string path_without_query = pos == std::string::npos ? relative_path : relative_path.substr(0, pos);
-        return std::filesystem::path(path_without_query).filename();
+        return std::filesystem::path(stripQueryAndFragment(relative_path)).filename();
     }
     [[nodiscard]] std::string getPath() const { return relative_path; }
     [[nodiscard]] std::string getPathForGlobMatching() const { return path_for_glob_matching.value_or(relative_path); }
@@ -257,6 +257,8 @@ struct SmallObjectDataWithMetadata
 using RelativePathWithMetadataPtr = std::shared_ptr<RelativePathWithMetadata>;
 using RelativePathsWithMetadata = std::vector<RelativePathWithMetadataPtr>;
 using ObjectKeysWithMetadata = std::vector<ObjectKeyWithMetadata>;
+
+class RemoteHostFilter;
 
 class IObjectStorageIterator;
 using ObjectStorageIteratorPtr = std::shared_ptr<IObjectStorageIterator>;
@@ -375,6 +377,11 @@ public:
         const WriteSettings & write_settings = {}) = 0;
 
     [[nodiscard]] virtual bool isRemote() const = 0;
+
+    /// Throws `UNACCEPTABLE_URL` if `remote_url_allow_hosts` does not allow a host this storage connects to.
+    /// A storage that connects to an endpoint from its configuration must override it. `local` has no host,
+    /// and `web` checks the URL of every request.
+    virtual void checkRemoteHostFilter(const RemoteHostFilter & /* filter */) const {}
 
     /// Remove object on path if exists
     virtual void removeObjectIfExists(const StoredObject & object) = 0;

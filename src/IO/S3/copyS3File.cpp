@@ -175,7 +175,7 @@ namespace
         size_t normal_part_size;
         String multipart_upload_id;
         DequeWithMemoryTracking<String> multipart_tags;
-        DequeWithMemoryTracking<String> multipart_checksums;
+        DequeWithMemoryTracking<Aws::String> multipart_checksums;
         std::atomic<size_t> num_finished_parts = 0;
         std::atomic<bool> has_failed = false;
 
@@ -228,7 +228,7 @@ namespace
             if (!idempotency_id.empty()
                 && metadata_size + std::string_view(S3::IDEMPOTENCY_ID_METADATA_KEY).size() + idempotency_id.size() <= 2048)
                 metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
-            request.SetMetadata(metadata);
+            request.SetMetadata(S3::objectAttributesToAwsMap(metadata));
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
@@ -330,7 +330,7 @@ namespace
 
                 if (isTransientCompleteMultipartUploadError(error) && (retries < max_retries))
                 {
-                    const String details = error.GetExceptionName().empty() ? error.GetMessage() : error.GetExceptionName();
+                    const auto details = error.GetExceptionName().empty() ? error.GetMessage() : error.GetExceptionName();
                     LOG_INFO(log, "Multipart upload failed with a transient error ({}) for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", details, dest_bucket, dest_key, multipart_upload_id, multipart_tags.size());
                     continue; /// will retry
                 }
@@ -492,7 +492,7 @@ namespace
             normal_part_size = part_size;
         }
 
-        String prepareChecksums(Aws::AmazonWebServiceRequest & request) const
+        Aws::String prepareChecksums(Aws::AmazonWebServiceRequest & request) const
         {
             if (!usesFlexibleUploadChecksumHeader())
                 return {};
@@ -511,7 +511,7 @@ namespace
             return upload_checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*upload_checksum_algorithm);
         }
 
-        void processUploadTask(UploadPartTask & task, String & part_tag, String & part_checksum)
+        void processUploadTask(UploadPartTask & task, String & part_tag, Aws::String & part_checksum)
         {
             if (has_failed)
                 return;
@@ -623,7 +623,7 @@ namespace
             request.SetBody(createS3UploadBody(create_read_buffer, offset, size));
 
             if (object_metadata.has_value())
-                request.SetMetadata(object_metadata.value());
+                request.SetMetadata(S3::objectAttributesToAwsMap(object_metadata.value()));
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
@@ -765,7 +765,7 @@ namespace
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
 
-            return outcome.GetResult().GetETag();
+            return String(outcome.GetResult().GetETag());
         }
     };
 
@@ -907,7 +907,7 @@ namespace
 
             if (object_metadata.has_value())
             {
-                request.SetMetadata(object_metadata.value());
+                request.SetMetadata(S3::objectAttributesToAwsMap(object_metadata.value()));
                 request.SetMetadataDirective(Aws::S3::Model::MetadataDirective::REPLACE);
             }
 
@@ -1073,7 +1073,7 @@ namespace
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
 
-            return outcome.GetResult().GetCopyPartResult().GetETag();
+            return String(outcome.GetResult().GetCopyPartResult().GetETag());
         }
     };
 }

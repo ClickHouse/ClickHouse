@@ -45,8 +45,8 @@ namespace
 
     Aws::S3::Model::GetObjectTaggingOutcome getObjectTagging(
         const S3::Client & client,
-        const String & bucket,
-        const String & key,
+        std::string_view bucket,
+        std::string_view key,
         const String & version_id)
     {
         ProfileEvents::increment(ProfileEvents::S3GetObjectTagging);
@@ -92,7 +92,7 @@ namespace
         object_info.headers.website_redirect_location = result.GetWebsiteRedirectLocation();
 
         if (with_metadata)
-            object_info.metadata = result.GetMetadata();
+            object_info.metadata = objectAttributesFromAwsMap(result.GetMetadata());
 
         /// `HeadObject` reports the tag count, so untagged objects cost no `GetObjectTagging` call; callers that
         /// need tags hidden from a restricted `HeadObject` ask via `getObjectTags`.
@@ -137,8 +137,8 @@ static String getAuthenticationErrorHint(Aws::S3::S3Errors error)
 
 ObjectAttributes getObjectTags(
     const S3::Client & client,
-    const String & bucket,
-    const String & key,
+    std::string_view bucket,
+    std::string_view key,
     const String & version_id,
     String * tags_version_id)
 {
@@ -159,7 +159,7 @@ ObjectAttributes getObjectTags(
     }
 
     for (const auto & tag : tag_outcome.GetResult().GetTagSet())
-        tags[tag.GetKey()] = tag.GetValue();
+        tags[String(tag.GetKey())] = tag.GetValue();
 
     if (tags_version_id)
         *tags_version_id = pinnableVersionId(tag_outcome.GetResult().GetVersionId());

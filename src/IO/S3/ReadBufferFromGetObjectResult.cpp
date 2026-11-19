@@ -4,6 +4,7 @@
 
 #include <IO/S3/ReadBufferFromGetObjectResult.h>
 #include <IO/S3/getObjectInfo.h>
+#include <IO/S3Common.h>
 #include <IO/StdStreamBufFromReadBuffer.h>
 #include <Common/Exception.h>
 #include <Common/HistogramMetrics.h>
@@ -40,7 +41,7 @@ ReadBufferFromGetObjectResult::ReadBufferFromGetObjectResult(Aws::S3::Model::Get
     metadata.last_modified = Poco::Timestamp::fromEpochTime(result->GetLastModified().Seconds());
     metadata.etag = result->GetETag();
     metadata.version_id = pinnableVersionId(result->GetVersionId());
-    metadata.attributes = result->GetMetadata();
+    metadata.attributes = objectAttributesFromAwsMap(result->GetMetadata());
 
     /// An empty response has nothing to read at all.
     if (metadata.size_bytes == 0 && (!http_body || http_body->isResponseComplete()))

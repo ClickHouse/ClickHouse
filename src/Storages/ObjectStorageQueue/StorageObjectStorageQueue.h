@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config.h"
 #include <chrono>
 #include <optional>
 #include <Common/Macros.h>
@@ -9,6 +10,7 @@
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/UUID.h>
 #include <Storages/IStorage.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueBatchSizeOverride.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -42,6 +44,11 @@ public:
         bool keep_data_in_keeper_);
 
     String getName() const override { return engine_name; }
+
+#if CLICKHOUSE_CLOUD
+    ObjectStoragePtr getObjectStorage() const { return object_storage; }
+    StorageObjectStorageConfigurationPtr getObjectStorageConfiguration() const { return configuration; }
+#endif
 
     ObjectStorageType getType() const { return type; }
 
@@ -144,6 +151,7 @@ private:
     std::string zookeeper_name;
     fs::path zk_path;
     const bool enable_logging_to_queue_log;
+    const bool parallel_inserts;
     mutable std::mutex mutex;
     UInt64 polling_min_timeout_ms TSA_GUARDED_BY(mutex);
     UInt64 polling_max_timeout_ms TSA_GUARDED_BY(mutex);
@@ -172,7 +180,6 @@ private:
 
     const std::optional<FormatSettings> format_settings;
 
-    UInt64 reschedule_processing_interval_ms TSA_GUARDED_BY(mutex);
 
     std::atomic<bool> startup_finished = false;
     std::atomic<bool> table_is_being_dropped = false;
@@ -183,7 +190,11 @@ private:
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> streaming_file_iterator;
     std::vector<BackgroundSchedulePoolTaskHolder> streaming_tasks;
     std::vector<UInt64> streaming_task_refresh_epochs;
-    std::atomic<size_t> max_files_override{0};
+    /// The polling backoff of each streaming task, accessed only by that task (it never runs concurrently with itself).
+    /// It is per task, because with `parallel_inserts` the idle cycles of many tasks would otherwise
+    /// add up to one shared backoff, and a reset by the task which found files would not wake the others.
+    std::vector<UInt64> streaming_task_reschedule_intervals_ms;
+    ObjectStorageQueueBatchSizeOverride max_files_override;
 
     LoggerPtr log;
 

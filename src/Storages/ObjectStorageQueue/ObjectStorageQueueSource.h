@@ -85,8 +85,9 @@ public:
         /// In fact, they could be released in destructors of BucketHolder,
         /// but we anyway try to release them explicitly,
         /// because we want to be able to rethrow exceptions if they might happen.
-        /// Only the holders of the given processors are released: the other processors may belong to inserts
-        /// that have not committed yet, and their buckets must stay held until they do.
+        /// Only the holders of the given `processors` are released: with `parallel_inserts`
+        /// each streaming task has its own processors and commits independently, so a task
+        /// must not release the buckets of another task whose insert may still be running.
         void releaseFinishedBuckets(const std::vector<size_t> & processors);
 
         /// Refresh bucket locks which were not refreshed for more than a quarter of
@@ -183,7 +184,11 @@ public:
 
     struct ProcessingProgress
     {
+        /// Counted only when `max_processed_files_before_commit` is set, to enforce that limit.
         std::atomic<size_t> processed_files = 0;
+        /// The number of files taken for processing (including the ones which failed to read),
+        /// counted regardless of the commit limits.
+        std::atomic<size_t> acquired_files = 0;
         std::atomic<size_t> processed_rows = 0;
         std::atomic<size_t> processed_bytes = 0;
         Stopwatch elapsed_time{CLOCK_MONOTONIC_COARSE};
@@ -255,7 +260,6 @@ public:
     void releaseAfterChangedGeneration(const std::string & exception_message);
 
     /// Whether this source claimed at least one file, including files that failed or were reset.
-    bool hasClaimedFiles() const { return !processed_files.empty(); }
 
     /// `after_processing` as it was when the batch started, used for every file of the batch.
     ObjectStorageQueueAction getAfterProcessing() const { return after_processing; }

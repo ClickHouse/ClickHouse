@@ -59,8 +59,8 @@ ObjectInfo getObjectInfo(
 /// If `tags_version_id` is not null, it receives the version whose tags were returned (empty if not reported).
 ObjectAttributes getObjectTags(
     const S3::Client & client,
-    const String & bucket,
-    const String & key,
+    std::string_view bucket,
+    std::string_view key,
     const String & version_id = {},
     String * tags_version_id = nullptr);
 

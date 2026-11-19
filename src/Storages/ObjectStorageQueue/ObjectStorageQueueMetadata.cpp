@@ -237,7 +237,8 @@ void ObjectStorageQueueMetadata::startup()
             generateRescheduleInterval(
                 cleanup_interval_min_ms, cleanup_interval_max_ms));
     }
-    if (!update_registry_thread)
+    /// Only `unordered` mode uses the active-server hash ring.
+    if (mode == ObjectStorageQueueMode::UNORDERED && !update_registry_thread)
         update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
 }
 
