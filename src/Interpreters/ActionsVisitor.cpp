@@ -612,20 +612,20 @@ bool needsExactCompoundNumericInComparison(const DataTypePtr & left_type, const 
     return false;
 }
 
-bool hasCompoundStringToNumericLeaf(const DataTypePtr & left_type, const DataTypePtr & right_type)
+bool hasCompoundStringToNumericLeaf(const DataTypePtr & left_type, const DataTypePtr & right_type, bool nested = false)
 {
     const auto left = removeNullable(removeLowCardinality(left_type));
     const auto right = removeNullable(removeLowCardinality(right_type));
     if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
     {
         if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
-            return hasCompoundStringToNumericLeaf(left_array->getNestedType(), right_array->getNestedType());
+            return hasCompoundStringToNumericLeaf(left_array->getNestedType(), right_array->getNestedType(), true);
     }
     if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
     {
         if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
-            return hasCompoundStringToNumericLeaf(left_map->getKeyType(), right_map->getKeyType())
-                || hasCompoundStringToNumericLeaf(left_map->getValueType(), right_map->getValueType());
+            return hasCompoundStringToNumericLeaf(left_map->getKeyType(), right_map->getKeyType(), true)
+                || hasCompoundStringToNumericLeaf(left_map->getValueType(), right_map->getValueType(), true);
     }
     if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
     {
@@ -633,11 +633,11 @@ bool hasCompoundStringToNumericLeaf(const DataTypePtr & left_type, const DataTyp
             right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
         {
             for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
-                if (hasCompoundStringToNumericLeaf(left_tuple->getElements()[i], right_tuple->getElements()[i]))
+                if (hasCompoundStringToNumericLeaf(left_tuple->getElements()[i], right_tuple->getElements()[i], true))
                     return true;
         }
     }
-    return (isNumber(left) || isBool(left) || isEnum(left)) && isStringOrFixedString(right);
+    return nested && (isNumber(left) || isBool(left) || isEnum(left)) && isStringOrFixedString(right);
 }
 
 ASTPtr makeExactCompoundNumericInComparison(
