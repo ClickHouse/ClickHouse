@@ -1,0 +1,5 @@
+<clickhouse>
+    <system_tables>
+        <storage_policy>default</storage_policy>
+    </system_tables>
+</clickhouse>

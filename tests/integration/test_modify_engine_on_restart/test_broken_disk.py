@@ -12,6 +12,7 @@ ch1 = cluster.add_instance(
     main_configs=[
         "configs/config.d/clusters.xml",
         "configs/config.d/distributed_ddl.xml",
+        "configs/config.d/system_tables_storage_policy.xml",
     ],
     with_zookeeper=True,
     macros={"replica": "node1"},
@@ -185,10 +186,13 @@ def test_broken_disk_with_readable_table_in_storage_policy(started_cluster):
     q("DETACH TABLE on_flaky")
 
     # A directory in place of the disk check file fails its write probe with EISDIR.
-    check_file = re.findall(
-        r"clickhouse_disk_checker_[0-9a-f-]+",
-        ch1.grep_in_log("Disk check for disk flaky started"),
-    )[-1]
+    # Rotated logs also list earlier server runs, so take the newest check file.
+    check_file = max(
+        re.findall(
+            r"(\d{4}\.\d{2}\.\d{2} [\d:.]+) .*(clickhouse_disk_checker_[0-9a-f-]+)",
+            ch1.grep_in_log("Disk check for disk flaky started"),
+        )
+    )[1]
     check_path = f"/var/lib/clickhouse/flaky_disk/{check_file}"
     ch1.exec_in_container(
         ["bash", "-c", f"until mkdir {check_path} 2>/dev/null; do sleep 0.1; done"]
