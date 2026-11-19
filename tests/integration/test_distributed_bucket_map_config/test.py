@@ -7,7 +7,7 @@ from helpers.cluster import ClickHouseCluster
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", main_configs=["configs/clusters.xml"])
+node = cluster.add_instance("node", main_configs=["configs/clusters.xml"], stay_alive=True)
 
 CONFIG_PATH = "/etc/clickhouse-server/config.d/bucket_map_settings.xml"
 
