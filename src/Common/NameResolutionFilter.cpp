@@ -237,7 +237,7 @@ extern "C" int getaddrinfo(const char * node, const char * service, const struct
             if (!DB::NameResolutionFilter::isAllowed(node))
                 return EAI_NONAME;
         }
-        catch (...)
+        catch (...) // Ok: the exception is turned into a failed resolution, it cannot propagate through C frames.
         {
             return EAI_FAIL;
         }
