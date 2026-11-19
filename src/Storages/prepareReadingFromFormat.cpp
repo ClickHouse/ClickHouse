@@ -391,6 +391,31 @@ bool ReadFromFormatInfo::formatReadsHivePartitionColumns() const
     return false;
 }
 
+bool ReadFromFormatInfo::formatReturnsColumnUnchanged(const String & name, const DataTypePtr & type) const
+{
+    /// With a structure of only Hive partition columns the format reads them from the file, while the
+    /// query takes their values from the path, so the reader would compare other values than the
+    /// ones the threshold is made from.
+    if (formatReadsHivePartitionColumns())
+        return false;
+
+    /// A column of `format_header` with the name of a column read under another name is another column.
+    if (columns_read_under_other_names.contains(name))
+        return false;
+
+    /// The output header is broader than what the format reads: Hive partition columns (from the
+    /// path) and virtual columns (`_path`, `_file`, `_row_id`, ...) are added after the format has
+    /// produced its chunk, so the reader could never compare them against the threshold.
+    const auto * format_column = format_header.findByName(name);
+    if (!format_column || !format_column->type->equals(*type))
+        return false;
+
+    /// A column with a `DEFAULT` / `MATERIALIZED` / `ALIAS` expression is recomputed above the format
+    /// by `AddingDefaultsTransform` for the values the reader reported as missing, so the threshold
+    /// would come from other values than the ones the reader compares against it.
+    return !columns_description.hasDefault(name);
+}
+
 std::shared_ptr<const ActionsDAG> ReadFromFormatInfo::getFormatFilter(const std::shared_ptr<const ActionsDAG> & filter_actions_dag) const
 {
     if (!filter_actions_dag || (hive_partition_columns_to_read_from_file_path.empty() && requested_virtual_columns.empty()))

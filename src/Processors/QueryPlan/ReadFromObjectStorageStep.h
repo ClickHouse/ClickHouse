@@ -110,8 +110,10 @@ private:
     StorageMetadataPtr iterator_metadata;
 
     RuntimeFilterIndexAnalysisDescriptors join_runtime_filters_for_file_pruning;
-    /// Built from `join_runtime_filters_for_file_pruning` by `createIterator`, shared by the file iterator and the formats.
+    /// Built from `join_runtime_filters_for_file_pruning` by `createIterator`, for the file iterator.
     std::shared_ptr<const RuntimeFilterPruningPredicate> join_runtime_filter_predicate;
+    /// The same on the keys the format returns unchanged, for the format: it prunes by the statistics of the file's columns.
+    std::shared_ptr<const RuntimeFilterPruningPredicate> format_join_runtime_filter_predicate;
 
     /// Memoized `getOrCreateDataLakeReadEstimate`, which walks the manifests; reset when the filter changes.
     /// A storage without an estimate returns nullptr without any work, so nullptr is not memoized.
