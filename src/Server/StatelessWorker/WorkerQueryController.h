@@ -20,7 +20,7 @@ class WorkerQueryController
 public:
     explicit WorkerQueryController(String unique_query_id_) : unique_query_id(std::move(unique_query_id_)) {}
 
-    const String & getUniqueQueryId() const { return unique_query_id; }
+    [[nodiscard]] const String & getUniqueQueryId() const { return unique_query_id; }
 
     void addTask(const String & unique_task_id) { task_ids.insert(unique_task_id); }
 

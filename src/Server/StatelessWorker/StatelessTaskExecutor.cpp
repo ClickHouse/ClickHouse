@@ -176,7 +176,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
 
 void StatelessTaskExecutor::startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors)
 {
-    const OpenTelemetry::TracingContext trace_context = OpenTelemetry::CurrentContext();
+    const OpenTelemetry::TracingContext & trace_context = OpenTelemetry::CurrentContext();
     size_t task_count = 0;
     for (const auto & stage : batch.stages)
         task_count += stage.tasks.size();
