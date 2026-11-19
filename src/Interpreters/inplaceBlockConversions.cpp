@@ -344,7 +344,7 @@ private:
         return {context->getAccess()->getParams(), context->getSettingsConstraintsAndCurrentProfiles(), std::move(settings)};
     }
 
-    const PreparedSets * findSets(const Identity & identity) const TSA_REQUIRES(mutex)
+    [[nodiscard]] const PreparedSets * findSets(const Identity & identity) const TSA_REQUIRES(mutex)
     {
         for (const auto & [sets_identity, sets] : sets_by_identity)
             if (sets_identity == identity)
