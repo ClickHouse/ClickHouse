@@ -1185,7 +1185,7 @@ void PostgreSQLReplicationHandler::checkPublicationReusableForUserManagedSnapsho
         throw Exception(
             ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
             "Cannot start MaterializedPostgreSQL replication from the snapshot supplied for the user-managed replication "
-            "slot {}: the publication {}, or the partition ancestry or the schema of a replicated table, was changed after "
+            "slot {}: the publication {}, or a replicated table or its partition ancestry, was changed after "
             "the snapshot was exported. The changes committed between the snapshot and that change may be absent from both the snapshot and the replication stream. "
             "Create a new replication slot and pass the snapshot exported for it (`materialized_postgresql_snapshot`) "
             "after the publication is ready. Startup will be retried",
@@ -1217,6 +1217,10 @@ std::set<String> PostgreSQLReplicationHandler::fetchPublicationCatalogRows(
     /// relation or of its ancestor, change the effective membership of the relation in the publication without changing
     /// the catalog rows of the publication itself. The catalogs are queried directly (not through `regclass` or
     /// `pg_partition_ancestors`, which read the latest catalog state), so that they are read under the snapshot of `tx`.
+    /// The row versions (`xmin`) of the `pg_inherits` and `pg_class` rows are compared too: a relation can lose its
+    /// membership temporarily and get it back (`DETACH PARTITION` and `ATTACH PARTITION` to the same parent, or
+    /// `SET SCHEMA` to another schema and back), and the changes committed in between are not published. This also
+    /// refuses the snapshot after other changes of these rows (for example, `ALTER TABLE`), which is safe.
     if (!source_tables.empty())
     {
         String names;
@@ -1230,13 +1234,15 @@ std::set<String> PostgreSQLReplicationHandler::fetchPublicationCatalogRows(
             " UNION ALL ("
             "WITH RECURSIVE source(relid) AS ("
             "SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE (n.nspname, c.relname) IN ({0})), "
-            "ancestry(relid, child, parent) AS ("
-            "SELECT s.relid, i.inhrelid, i.inhparent FROM source s JOIN pg_inherits i ON i.inhrelid = s.relid "
+            "ancestry(relid, child, parent, inherits_xmin) AS ("
+            "SELECT s.relid, i.inhrelid, i.inhparent, i.xmin FROM source s JOIN pg_inherits i ON i.inhrelid = s.relid "
             "UNION ALL "
-            "SELECT a.relid, i.inhrelid, i.inhparent FROM ancestry a JOIN pg_inherits i ON i.inhrelid = a.parent) "
-            "SELECT 'source:' || c.oid::text || ':' || c.relnamespace::text FROM source s JOIN pg_class c ON c.oid = s.relid "
+            "SELECT a.relid, i.inhrelid, i.inhparent, i.xmin FROM ancestry a JOIN pg_inherits i ON i.inhrelid = a.parent) "
+            "SELECT 'source:' || c.oid::text || ':' || c.relnamespace::text || ':' || c.xmin::text "
+            "FROM source s JOIN pg_class c ON c.oid = s.relid "
             "UNION ALL "
-            "SELECT 'ancestor:' || a.relid::text || ':' || a.child::text || ':' || a.parent::text || ':' || c.relnamespace::text "
+            "SELECT 'ancestor:' || a.relid::text || ':' || a.child::text || ':' || a.parent::text || ':' || a.inherits_xmin::text "
+            "|| ':' || c.relnamespace::text || ':' || c.xmin::text "
             "FROM ancestry a JOIN pg_class c ON c.oid = a.parent)",
             names);
     }

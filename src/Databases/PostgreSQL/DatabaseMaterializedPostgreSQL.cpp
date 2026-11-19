@@ -365,8 +365,48 @@ StoragePtr DatabaseMaterializedPostgreSQL::tryGetTable(const String & name, Cont
 /// `except` is not empty in case it is detach and it will contain only one table name - name of detached table.
 /// In case we have a user defined setting `materialized_postgresql_tables_list`, then list of tables is always taken there.
 /// Otherwise we traverse materialized storages to find out the list.
+/// The column lists of `materialized_postgresql_tables_list` (`table(col1, col2), table2, ...`) are preserved: the
+/// publication keeps publishing these tables with their column lists, and the next startup refuses a publication with a
+/// column list that the setting does not request. The parsing matches the one of `PostgreSQLReplicationHandler`.
 String DatabaseMaterializedPostgreSQL::getFormattedTablesList(const String & except) const
 {
+    std::map<String, String> column_lists;
+    {
+        const String & configured = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
+        String element;
+        String columns;
+        bool has_columns = false;
+        bool in_columns = false;
+        auto add_element = [&]
+        {
+            boost::trim(element);
+            if (has_columns && !element.empty())
+                column_lists[element] = columns;
+            element.clear();
+            columns.clear();
+            has_columns = false;
+        };
+        for (const char c : configured)
+        {
+            if (in_columns)
+            {
+                columns += c;
+                in_columns = c != ')';
+            }
+            else if (c == '(')
+            {
+                in_columns = true;
+                has_columns = true;
+                columns += c;
+            }
+            else if (c == ',')
+                add_element();
+            else if (!has_columns)
+                element += c;
+        }
+        add_element();
+    }
+
     String tables_list;
     for (const auto & table : materialized_tables)
     {
@@ -377,6 +417,8 @@ String DatabaseMaterializedPostgreSQL::getFormattedTablesList(const String & exc
             tables_list += ',';
 
         tables_list += table.first;
+        if (auto it = column_lists.find(table.first); it != column_lists.end())
+            tables_list += it->second;
     }
     return tables_list;
 }

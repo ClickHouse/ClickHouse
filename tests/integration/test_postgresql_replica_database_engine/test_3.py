@@ -3829,7 +3829,7 @@ def test_fresh_full_definition_attach_table_bootstraps(started_cluster):
     )
     assert_logs_contain_with_retry(
         instance,
-        f"replication slot {slot_name}: the publication .{publication}., or the partition ancestry or the schema of a replicated table, was changed after the snapshot was exported",
+        f"replication slot {slot_name}: the publication .{publication}., or a replicated table or its partition ancestry, was changed after the snapshot was exported",
         retry_count=60,
         sleep_time=1,
     )
@@ -4023,7 +4023,7 @@ def test_fresh_attach_table_refuses_publication_changed_after_snapshot(started_c
     )
     assert_logs_contain_with_retry(
         instance,
-        f"replication slot {slot_name}: the publication .{publication}., or the partition ancestry or the schema of a replicated table, was changed after the snapshot was exported",
+        f"replication slot {slot_name}: the publication .{publication}., or a replicated table or its partition ancestry, was changed after the snapshot was exported",
         retry_count=60,
         sleep_time=1,
     )
@@ -4034,14 +4034,24 @@ def test_fresh_attach_table_refuses_publication_changed_after_snapshot(started_c
     cursor.execute(f"DROP PUBLICATION IF EXISTS \"{publication}\"")
 
 
-def test_fresh_attach_table_refuses_partition_attached_after_snapshot(started_cluster):
+@pytest.mark.parametrize("reattach", [False, True])
+def test_fresh_attach_table_refuses_partition_attached_after_snapshot(
+    started_cluster, reattach
+):
     # A published partitioned table publishes its partitions, including the ones attached later, without any change of
     # the catalog rows of the publication. A row committed into a table between the export of the snapshot and
     # `ATTACH PARTITION` is in neither the snapshot nor the replication stream, so the attach must be refused.
-    parent = "fresh_attach_late_partition_parent"
-    table = "fresh_attach_late_partition_leaf"
-    table_uuid = "00000000-0000-0000-0000-000000125966"
-    slot_name = "fresh_attach_late_partition_slot"
+    # With `reattach`, the table is a partition at the snapshot, and it is detached and attached to the same parent
+    # again after it: the ancestry is the same, but a row committed while it is detached is not published either.
+    suffix = "_reattach" if reattach else ""
+    parent = f"fresh_attach_late_partition_parent{suffix}"
+    table = f"fresh_attach_late_partition_leaf{suffix}"
+    table_uuid = (
+        "00000000-0000-0000-0000-000000125967"
+        if reattach
+        else "00000000-0000-0000-0000-000000125966"
+    )
+    slot_name = f"fresh_attach_late_partition_slot{suffix}"
     publication = f"postgres_database_{table}_ch_publication"
     cursor = pg_manager.get_db_cursor()
     cursor.execute(
@@ -4051,6 +4061,10 @@ def test_fresh_attach_table_refuses_partition_attached_after_snapshot(started_cl
         f"CREATE TABLE {table} (key integer NOT NULL, value integer, PRIMARY KEY (key))"
     )
     cursor.execute(f"INSERT INTO {table} VALUES (1, 10)")
+    if reattach:
+        cursor.execute(
+            f"ALTER TABLE {parent} ATTACH PARTITION {table} FOR VALUES FROM (0) TO (1000)"
+        )
     cursor.execute(f"CREATE PUBLICATION \"{publication}\" FOR TABLE {parent}")
 
     replication_connection = get_postgres_conn(
@@ -4061,6 +4075,8 @@ def test_fresh_attach_table_refuses_partition_attached_after_snapshot(started_cl
         auto_commit=True,
     )
     snapshot = create_replication_slot(replication_connection, slot_name=slot_name)
+    if reattach:
+        cursor.execute(f"ALTER TABLE {parent} DETACH PARTITION {table}")
     cursor.execute(f"INSERT INTO {table} VALUES (2, 20)")
     cursor.execute(
         f"ALTER TABLE {parent} ATTACH PARTITION {table} FOR VALUES FROM (0) TO (1000)"
@@ -4080,7 +4096,7 @@ def test_fresh_attach_table_refuses_partition_attached_after_snapshot(started_cl
     )
     assert_logs_contain_with_retry(
         instance,
-        f"replication slot {slot_name}: the publication .{publication}., or the partition ancestry or the schema of a replicated table, was changed after the snapshot was exported",
+        f"replication slot {slot_name}: the publication .{publication}., or a replicated table or its partition ancestry, was changed after the snapshot was exported",
         retry_count=60,
         sleep_time=1,
     )
@@ -4089,6 +4105,8 @@ def test_fresh_attach_table_refuses_partition_attached_after_snapshot(started_cl
     drop_replication_slot(replication_connection, slot_name)
     replication_connection.close()
     cursor.execute(f"DROP PUBLICATION IF EXISTS \"{publication}\"")
+    cursor.execute(f"DROP TABLE IF EXISTS {parent}")
+    cursor.execute(f"DROP TABLE IF EXISTS {table}")
 
 
 def test_database_initial_snapshot_retried_after_connection_loss(started_cluster):
@@ -5160,3 +5178,52 @@ if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
     cluster.shutdown()
+
+
+def test_detach_permanently_keeps_column_list_of_other_tables(started_cluster):
+    # `DETACH TABLE ... PERMANENTLY` rewrites `materialized_postgresql_tables_list` without the detached table. A table
+    # replicated with a subset of columns must keep its column list there: the publication still publishes it with the
+    # column list, and the next startup refuses a publication with a column list that the setting does not request.
+    mat_db = "detach_keeps_column_list_db"
+    table_a = "detach_keeps_column_list_a"
+    table_b = "detach_keeps_column_list_b"
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(
+        f"CREATE TABLE {table_a} (key integer NOT NULL, value integer, extra integer, PRIMARY KEY (key))"
+    )
+    cursor.execute(f"INSERT INTO {table_a} VALUES (1, 10, 100)")
+    pg_manager.create_postgres_table(table_b)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_b} SELECT number, number FROM numbers(10)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table_a}(key, value), {table_b}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    assert_eq_with_retry(
+        instance, f"SELECT key, value FROM {mat_db}.{table_a} ORDER BY key", "1\t10\n"
+    )
+    check_tables_are_synchronized(instance, table_b, materialized_database=mat_db)
+
+    instance.query(f"DETACH TABLE {mat_db}.{table_b} PERMANENTLY")
+    assert f"{table_a}(key, value)" in instance.query(f"SHOW CREATE DATABASE {mat_db}")
+
+    instance.restart_clickhouse()
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"INSERT INTO {table_a} VALUES (2, 20, 200)")
+    assert_eq_with_retry(
+        instance,
+        f"SELECT key, value FROM {mat_db}.{table_a} ORDER BY key",
+        "1\t10\n2\t20\n",
+    )
+
+    pg_manager.drop_materialized_db(mat_db)
+    cursor.execute(f"DROP TABLE IF EXISTS {table_a}")
+    cursor.execute(f"DROP TABLE IF EXISTS {table_b}")
