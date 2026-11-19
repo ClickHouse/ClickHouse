@@ -1001,6 +1001,35 @@ def test_where(started_cluster):
     where_mongo_table.drop()
 
 
+def test_merge_outer_join(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "merge_outer_join")
+    merge_outer_join_table = db["merge_outer_join"]
+    merge_outer_join_table.insert_one({"id": 1, "description": "one"})
+
+    node = started_cluster.instances["node"]
+    node.query(
+        f"CREATE OR REPLACE TABLE merge_outer_join (id UInt64, description String) ENGINE = MongoDB('mongo1:27017', 'test', 'merge_outer_join', 'root', '{mongo_pass}')"
+    )
+
+    # The row the RIGHT JOIN pads has an empty `description`, so MongoDB must not apply the filter.
+    # The `Merge` table comes first: a remote table that is not the leftmost one is read without the filter.
+    assert (
+        node.query(
+            "SELECT o.id FROM merge(currentDatabase(), '^merge_outer_join$') AS p "
+            "RIGHT JOIN (SELECT number + 1 AS id FROM numbers(2)) AS o ON o.id = p.id "
+            "WHERE p.description != 'one' ORDER BY o.id"
+        )
+        == "2\n"
+    )
+
+    node.query("DROP TABLE merge_outer_join")
+    merge_outer_join_table.drop()
+
+
 def test_defaults(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
