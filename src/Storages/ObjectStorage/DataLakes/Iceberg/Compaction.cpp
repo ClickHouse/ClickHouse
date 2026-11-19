@@ -1335,6 +1335,33 @@ void compactIcebergTable(
                     default_spec_fields->size());
         }
 
+        /// The partition tuples are reused as is, so they are only valid under the default spec if each data file was written
+        /// with the same partition fields: the same source columns and transforms in the same order. A spec with the same
+        /// number of fields but other sources, e.g. `identity(a)` after the default spec changed to `identity(b)`, would make
+        /// the rewritten files claim wrong partition values.
+        for (const auto & partition : plan.partitions)
+        {
+            for (const auto & data_file : partition)
+            {
+                const auto & data_file_specification = *data_file->partition_specification;
+                bool same_fields = data_file_specification.size() == default_spec_fields->size();
+                for (size_t i = 0; same_fields && i < data_file_specification.size(); ++i)
+                {
+                    const auto default_field = default_spec_fields->getObject(static_cast<UInt32>(i));
+                    same_fields = default_field->has(Iceberg::f_source_id)
+                        && data_file_specification[i].source_id == default_field->getValue<Int32>(Iceberg::f_source_id)
+                        && data_file_specification[i].transform_name == default_field->getValue<String>(Iceberg::f_partition_transform);
+                }
+                if (!same_fields)
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Iceberg compaction cannot rewrite data file '{}' under the default partition spec {}: the file was written "
+                        "with other partition fields (e.g. after a partition spec change). The table is left unchanged.",
+                        data_file->data_object_info->getPath(),
+                        default_spec_id);
+            }
+        }
+
         auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path);
         writeDataFiles(
             plan,
