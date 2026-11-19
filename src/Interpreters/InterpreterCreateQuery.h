@@ -97,8 +97,11 @@ public:
     static void prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr context, const String & cluster_name);
 
     /// The engine of a table created from the table function, when its `TABLE ENGINE` grant is required, i.e. when the
-    /// engine has a source. A definition that cannot be a table is refused.
-    static std::optional<String> getSourceEngineOfTableFunction(const ASTPtr & table_function_ast, const ContextPtr & query_context);
+    /// engine has a source. A definition that cannot be a table is refused. `is_replayed_definition` is passed on to
+    /// `ITableFunction::setReplayedDefinition`: a definition the server stored itself has to load under the rules it was
+    /// accepted by.
+    static std::optional<String> getSourceEngineOfTableFunction(
+        const ASTPtr & table_function_ast, const ContextPtr & query_context, bool is_replayed_definition);
 
     static String getDatabaseDefaultTableEngineName(const ASTCreateQuery & create, ContextPtr local_context);
 
