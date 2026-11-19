@@ -3,8 +3,10 @@
 #include <Common/Exception.h>
 #include <Common/Hex.h>
 
+#include <Poco/Exception.h>
 #include <Poco/Net/HTTPResponseParser.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/SocketImpl.h>
 #include <Poco/NumberParser.h>
 
 #include <cstring>
@@ -88,7 +90,7 @@ HTTPRequestBodyWriteBuffer::HTTPRequestBodyWriteBuffer(
     , content_length(body_info_.content_length)
     , memory(std::min(buf_size, max_transfer_at_once) + chunk_header_reserve + chunk_footer_size)
 {
-    /// Every flush leaves as a single `writeAllRaw`, whose length `Poco` narrows down to `int`,
+    /// Every flush is sent with `writeBody`, and `Poco` narrows the length of a send down to `int`,
     /// so the buffer is capped the same way the read side caps a single transfer.
     buf_size = std::min(buf_size, max_transfer_at_once);
 
@@ -103,6 +105,92 @@ HTTPRequestBodyWriteBuffer::~HTTPRequestBodyWriteBuffer()
     /// `requestBodyComplete` false, and the pool drops the connection instead of handing it to
     /// the next request.
     cancel();
+}
+
+bool HTTPRequestBodyWriteBuffer::checkResponse()
+{
+    feedHTTPResponseParser(session);
+    const auto & parser = session.responseParser();
+    if (parser.statusLineComplete() && parser.response().getStatus() >= Poco::Net::HTTPResponse::HTTP_MULTIPLE_CHOICES)
+        return true;
+
+    /// The rest of a response that is not an error comes after the body: stop reading it now.
+    if (parser.complete())
+        response_header_complete = true;
+    return false;
+}
+
+bool HTTPRequestBodyWriteBuffer::checkResponseAfterSendError()
+{
+    /// A success that is complete cannot stand for a body that did not arrive.
+    if (response_header_complete)
+        return false;
+    while (true)
+    {
+        const int received = session.fillBufferNow();
+        if (checkResponse())
+            return true;
+        if (received <= 0 || response_header_complete)
+            return false;
+    }
+}
+
+void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
+{
+    if (stopped)
+        return;
+
+    constexpr int select_read = Poco::Net::SocketImpl::SELECT_READ;
+    constexpr int select_write = Poco::Net::SocketImpl::SELECT_WRITE;
+    auto & socket = *session.socket().impl();
+
+    /// The send timeout bounds the time without progress; zero means no limit.
+    const Poco::Timespan send_timeout = session.getSendTimeout();
+    const Poco::Timespan no_limit(-1);
+    Poco::Timespan wait_left = send_timeout.totalMicroseconds() > 0 ? send_timeout : no_limit;
+
+    /// The server closed the connection without a response: the next send reports how it ended.
+    bool peer_closed = false;
+
+    while (size > 0)
+    {
+        const bool watch_response = !peer_closed && !response_header_complete;
+        const int ready = socket.waitForSendOrReceive(wait_left, select_write | (watch_response ? select_read : 0));
+        if (ready == 0)
+            throw Poco::TimeoutException("Timeout while sending the HTTP request body");
+
+        if (watch_response && (ready & select_read))
+        {
+            if (session.fillBufferNow() < 0)
+                peer_closed = true;
+            if (checkResponse())
+            {
+                stopped = true;
+                return;
+            }
+        }
+
+        if (!(ready & select_write))
+            continue;
+
+        const int sent = session.sendNow(data, static_cast<std::streamsize>(size));
+        if (sent < 0)
+        {
+            /// An answer that arrived before the reset is the result, not the send error.
+            if (checkResponseAfterSendError())
+            {
+                stopped = true;
+                return;
+            }
+            session.throwHeldSendError();
+        }
+        if (sent > 0)
+        {
+            data += sent;
+            size -= static_cast<size_t>(sent);
+            wait_left = send_timeout.totalMicroseconds() > 0 ? send_timeout : no_limit;
+        }
+    }
 }
 
 void HTTPRequestBodyWriteBuffer::nextImpl()
@@ -124,11 +212,11 @@ void HTTPRequestBodyWriteBuffer::nextImpl()
                     "HTTP request body is larger than its Content-Length: {} bytes to write of {}",
                     bytes_written + size,
                     content_length);
-            session.writeAllRaw(working_buffer.begin(), static_cast<std::streamsize>(size));
+            writeBody(working_buffer.begin(), size);
             break;
 
         case Poco::Net::HTTPClientSession::BodyEncoding::UntilEOF:
-            session.writeAllRaw(working_buffer.begin(), static_cast<std::streamsize>(size));
+            writeBody(working_buffer.begin(), size);
             break;
 
         case Poco::Net::HTTPClientSession::BodyEncoding::Chunked:
@@ -145,7 +233,7 @@ void HTTPRequestBodyWriteBuffer::nextImpl()
 
             memcpy(data + size, "\r\n", chunk_footer_size);
 
-            session.writeAllRaw(header, static_cast<std::streamsize>(data + size + chunk_footer_size - header));
+            writeBody(header, static_cast<size_t>(data + size + chunk_footer_size - header));
             break;
         }
     }
@@ -157,8 +245,17 @@ void HTTPRequestBodyWriteBuffer::finalizeImpl()
 {
     next();
 
+    /// The server has answered with an error, and the rest of the body was dropped: the request stays incomplete.
+    if (stopped)
+        return;
+
     if (encoding == Poco::Net::HTTPClientSession::BodyEncoding::Chunked)
-        session.writeAllRaw("0\r\n\r\n", 5);
+    {
+        writeBody("0\r\n\r\n", 5);
+        /// The error response can arrive while the terminator is being sent.
+        if (stopped)
+            return;
+    }
 
     if (encoding == Poco::Net::HTTPClientSession::BodyEncoding::ContentLength && bytes_written != content_length)
         throw Exception(
@@ -505,15 +602,6 @@ receiveHTTPResponse(HTTPSessionPtr session, Poco::Net::HTTPResponse & response, 
 {
     auto & session_ref = *session;
     return receiveHTTPResponseImpl(std::move(session), session_ref, response, buf_size);
-}
-
-std::unique_ptr<HTTPResponseReadBuffer>
-receiveEarlyHTTPResponse(HTTPSessionPtr session, Poco::Net::HTTPResponse & response, size_t buf_size)
-{
-    if (!session->receiveEarlyResponse(response))
-        return nullptr;
-    auto & session_ref = *session;
-    return makeHTTPResponseReadBuffer(std::move(session), session_ref, response, buf_size);
 }
 
 }

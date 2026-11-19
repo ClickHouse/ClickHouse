@@ -189,6 +189,12 @@ namespace Net
         /// Same as `writeRaw`, but loops until all `length` bytes are written.
         /// Throws `MessageException` if the socket stops accepting data.
 
+        int sendNow(const char * buffer, std::streamsize length);
+        /// `SocketImpl::sendNow` with the send data hooks.
+
+        void throwHeldSendError();
+        /// Throws the held send error, and stores it in the session as a failed write does.
+
         int buffered() const;
         /// Returns the number of bytes in the buffer.
 
@@ -197,6 +203,9 @@ namespace Net
         /// beginning. On a socket that the caller has set to non-blocking mode, takes only what has
         /// already arrived. Returns the number of bytes added, 0 when nothing is available or the
         /// buffer is full, and -1 when the peer has closed the connection.
+
+        int fillBufferNow();
+        /// Same as `fillBuffer`, but takes only what has already arrived, in any socket mode.
 
         const char * bufferedData() const { return _pCurrent; }
         /// Returns the unread bytes of the read buffer; `buffered` is their number.
@@ -277,6 +286,9 @@ namespace Net
 
         HTTPSession(const HTTPSession &);
         HTTPSession & operator=(const HTTPSession &);
+
+        int prepareBufferSpace();
+        /// Creates the read buffer, or moves its unread bytes to its beginning. Returns its free space.
 
         StreamSocket _socket;
         std::unique_ptr<char[]> _pBuffer;
