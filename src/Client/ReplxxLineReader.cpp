@@ -1,7 +1,10 @@
 #include <Client/ClientBaseHelpers.h>
 #include <Client/ClientSlashCommands.h>
 #include <Client/ReplxxLineReader.h>
+#include <Core/Defines.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/Lexer.h>
+#include <Parsers/ParserInsertQuery.h>
 #include <base/errnoToString.h>
 
 #include <IO/ReadBufferFromFile.h>
@@ -27,6 +30,7 @@
 #include <filesystem>
 #include <fmt/format.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include "config.h" // USE_SKIM
 
@@ -76,6 +80,52 @@ std::vector<std::string> extractIdentifiers(const char * text)
 void rightTrim(String & s)
 {
     s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), s.end());
+}
+
+bool endsWithQueryDelimiter(const String & query, const DB::LineReader::Patterns & delimiters)
+{
+    if (!std::ranges::any_of(delimiters, [&](const char * delimiter) { return query.ends_with(delimiter); }))
+        return false;
+
+    const char * begin = query.data();
+    const char * end = begin + query.size();
+    DB::Lexer lexer(begin, end);
+    DB::Token first = lexer.nextToken();
+    while (!first.isSignificant())
+        first = lexer.nextToken();
+
+    for (auto token = first; !token.isEnd(); token = lexer.nextToken())
+    {
+        if (token.end == end)
+        {
+            if (token.type == DB::TokenType::Semicolon || token.type == DB::TokenType::VerticalDelimiter)
+                return true;
+            break;
+        }
+    }
+
+    /// Data after `INSERT ... FORMAT` is not SQL and can contain unmatched quotes or comment markers.
+    if (first.type != DB::TokenType::BareWord || !equalsCaseInsensitive(std::string_view(first.begin, first.size()), "INSERT"))
+        return false;
+
+    DB::Tokens tokens(begin, end);
+    DB::IParser::Pos pos(tokens, DB::DBMS_DEFAULT_MAX_PARSER_DEPTH, DB::DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    DB::ParserInsertQuery parser(end, false);
+    DB::ASTPtr ast;
+    DB::Expected expected;
+    try
+    {
+        if (parser.parse(pos, ast, expected))
+        {
+            const auto & insert = ast->as<DB::ASTInsertQuery &>();
+            return insert.data && !insert.format.empty();
+        }
+    }
+    catch (const DB::Exception &)
+    {
+        /// An invalid or incomplete header cannot establish the start of inline data.
+    }
+    return false;
 }
 
 std::string getEditor()
@@ -641,7 +691,16 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         /// a newline into the edit buffer and does not use the lexer, so the paste stays under a
         /// single prompt even with `--highlight 0`. The explicit `--multiline` continuation still
         /// requires the highlighter, preserving the previous behavior.
-        if (!last_is_delimiter && ((highlighter && multiline) || hasInputData()))
+        const bool multiline_editing = highlighter && multiline;
+        bool ends_with_delimiter = last_is_delimiter;
+        if (multiline_editing)
+        {
+            /// Highlighting can lag behind the input buffer when Enter arrives with other keystrokes.
+            String query = rx.get_state().text();
+            rightTrim(query);
+            ends_with_delimiter = endsWithQueryDelimiter(query, delimiters);
+        }
+        if (!ends_with_delimiter && (multiline_editing || hasInputData()))
             return rx.invoke(Replxx::ACTION::NEW_LINE, code);
         last_is_delimiter = false;
         return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
