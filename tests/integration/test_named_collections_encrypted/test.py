@@ -4,6 +4,7 @@ import os
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 NAMED_COLLECTIONS_CONFIG = os.path.join(
@@ -36,6 +37,9 @@ def cluster():
             external_dirs=["/backups/"],
             stay_alive=True,
         )
+        # Apache ZooKeeper rather than Keeper: Keeper changes the `cversion` of the parent on a write
+        # to a child, which the update loop of the server polls, and that would hide a replica
+        # missing the rewrite of an entry it could not read (test_zookeeper_storage_missing_key_rewritten).
         cluster.add_instance(
             "node_with_keeper_encrypted",
             main_configs=[
@@ -46,6 +50,7 @@ def cluster():
             ],
             stay_alive=True,
             with_zookeeper=True,
+            use_keeper=False,
         )
         cluster.add_instance(
             "node_with_keeper_2_encrypted",
@@ -59,6 +64,7 @@ def cluster():
             external_dirs=["/backups/"],
             stay_alive=True,
             with_zookeeper=True,
+            use_keeper=False,
         )
 
         logging.info("Starting cluster...")
@@ -444,5 +450,46 @@ def test_zookeeper_storage_missing_key(cluster):
     node2.query("DROP USER restorer")
     node2.query("DROP NAMED COLLECTION visible")
     node1.query("DROP NAMED COLLECTION locked")
+    set_zookeeper_storage_keys(node2, f"<key_hex>{KEY_A}</key_hex>")
+    node2.restart_clickhouse()
+
+
+def test_zookeeper_storage_missing_key_rewritten(cluster):
+    # node1 holds key A (the module configuration), node2 holds key B alone: node2 skips the entry
+    # node1 writes. node1 then gets key B as the current key and rewrites the entry with it, and
+    # node2 loads the entry without a restart, although the set of entries did not change.
+    node1 = cluster.instances["node_with_keeper_encrypted"]
+    node2 = cluster.instances["node_with_keeper_2_encrypted"]
+
+    set_zookeeper_storage_keys(node2, f"<key_hex>{KEY_B}</key_hex>")
+    node2.restart_clickhouse()
+    node1.query("CREATE NAMED COLLECTION rewritten AS key1=1")
+    # node2 skips the entry before it is rewritten: the rewrite is what it has to notice, not the
+    # creation.
+    node2.wait_for_log_line("Cannot read named collection 'rewritten', skipping it")
+    assert (
+        node2.query(
+            "SELECT count() FROM system.named_collections WHERE name = 'rewritten'"
+        )
+        == "0\n"
+    )
+
+    set_zookeeper_storage_keys(
+        node1,
+        f'<key_hex id="0">{KEY_A}</key_hex><key_hex id="1">{KEY_B}</key_hex>'
+        "<current_key_id>1</current_key_id>",
+    )
+    node1.restart_clickhouse()
+    node1.query("ALTER NAMED COLLECTION rewritten SET key1=2")
+    assert_eq_with_retry(
+        node2,
+        "SELECT collection['key1'] FROM system.named_collections WHERE name = 'rewritten'",
+        "2",
+    )
+
+    # Back to the module's configuration for the other tests.
+    node1.query("DROP NAMED COLLECTION rewritten")
+    set_zookeeper_storage_keys(node1, f"<key_hex>{KEY_A}</key_hex>")
+    node1.restart_clickhouse()
     set_zookeeper_storage_keys(node2, f"<key_hex>{KEY_A}</key_hex>")
     node2.restart_clickhouse()

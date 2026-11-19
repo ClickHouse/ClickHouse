@@ -107,8 +107,9 @@ used for decryption. A running server does not pick up changes to the keys, not 
 old key and are re-encrypted with the current key when they are next written: by
 `ALTER NAMED COLLECTION`, `CREATE OR REPLACE NAMED COLLECTION`, or a restore from a backup. A server
 which lacks the key a collection is encrypted with reports an error naming the fingerprint of that
-key, so remove an old key from the configuration only after every collection encrypted with it has
-been rewritten.
+key, and skips the collection when loading: it loads again once the server is restarted with the
+key, or once a server holding the key rewrites the collection. Remove an old key from the
+configuration only after every collection encrypted with it has been rewritten.
 
 ```xml
 <clickhouse>
