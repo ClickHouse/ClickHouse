@@ -25,7 +25,6 @@ keeper_path="/s3queue_move_destination_access_${db}"
 src="http://localhost:11111/test/${db}_move_src/"
 dst="http://localhost:11111/test/${db}_move_dst/"
 backup="Disk('backups', '05441_${CLICKHOUSE_TEST_UNIQUE_NAME}')"
-backup_src="Disk('backups', '05441_${CLICKHOUSE_TEST_UNIQUE_NAME}_src')"
 keys="after_processing_move_access_key_id = 'clickhouse', after_processing_move_secret_access_key = 'clickhouse'"
 attach_uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
 azure_connection_string="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;"
@@ -35,8 +34,6 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS ${db}.t SYNC;
     DROP TABLE IF EXISTS ${db}.t_create SYNC;
     DROP TABLE IF EXISTS ${db}.t_delete SYNC;
-    DROP TABLE IF EXISTS ${db}.t_src SYNC;
-    DROP TABLE IF EXISTS ${db}.t_src_other SYNC;
     DROP TABLE IF EXISTS ${db}.t_as SYNC;
     DROP TABLE IF EXISTS ${db}.t_as_cluster SYNC;
     DROP TABLE IF EXISTS ${db}.t_as_cluster_new SYNC;
@@ -357,20 +354,6 @@ $CLICKHOUSE_CLIENT --user "${user_create}" -q "
 "
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.tables WHERE database = '${db}' AND name = 't_backup_cluster'"
 
-# `RESTORE` is checked like `CREATE`: a queue with a different source cannot use an existing `keeper_path`.
-$CLICKHOUSE_CLIENT -q "
-    CREATE TABLE ${db}.t_src (x UInt8) ENGINE = S3Queue('${dst}', 'clickhouse', 'clickhouse', 'CSV')
-    SETTINGS mode = 'unordered', keeper_path = '${keeper_path}_src';
-    BACKUP TABLE ${db}.t_src TO ${backup_src} FORMAT Null;
-    DROP TABLE ${db}.t_src SYNC;
-    CREATE TABLE ${db}.t_src_other (x UInt8) ENGINE = S3Queue('${src}', 'clickhouse', 'clickhouse', 'CSV')
-    SETTINGS mode = 'unordered', keeper_path = '${keeper_path}_src';
-"
-$CLICKHOUSE_CLIENT -q "
-    RESTORE TABLE ${db}.t_src FROM ${backup_src} SETTINGS structure_only = 1 FORMAT Null
-    -- { serverError METADATA_MISMATCH }
-"
-
 echo "-- CREATE AS and CREATE MATERIALIZED VIEW with WRITE on S3"
 
 # The same queries succeed with the grant, so `WRITE` on `S3` was the only missing one.
@@ -416,8 +399,6 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS ${db}.t SYNC;
     DROP TABLE IF EXISTS ${db}.t_create SYNC;
     DROP TABLE IF EXISTS ${db}.t_delete SYNC;
-    DROP TABLE IF EXISTS ${db}.t_src SYNC;
-    DROP TABLE IF EXISTS ${db}.t_src_other SYNC;
     DROP TABLE IF EXISTS ${db}.t_as SYNC;
     DROP TABLE IF EXISTS ${db}.t_as_cluster SYNC;
     DROP TABLE IF EXISTS ${db}.t_as_cluster_new SYNC;

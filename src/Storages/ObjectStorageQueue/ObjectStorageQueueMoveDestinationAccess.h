@@ -21,7 +21,8 @@ class RemoteHostFilter;
 /// `after_processing_move_connection_string` and `after_processing_move_container` for Azure, with or without the legacy
 /// `s3queue_` prefix. Changing only the move keys or prefix stays inside a destination an authorized user set.
 /// An empty value disables the move destination, so it is not a destination and needs no grant.
-/// If `own_engine`, `after_processing` other than `keep` needs the same unfiltered `WRITE`.
+/// If `own_engine` (the table has this engine, or its engine is not known, as for `ON CLUSTER`), `after_processing`
+/// other than `keep` needs the same unfiltered `WRITE`.
 AccessRightsElements getS3QueueMoveDestinationAccess(const SettingsChanges & changes, bool own_engine);
 AccessRightsElements getAzureQueueMoveDestinationAccess(const SettingsChanges & changes, bool own_engine);
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/SettingsChanges.h>
+#include <Core/Names.h>
 #include <Core/SettingsEnums.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -81,18 +81,17 @@ struct ObjectStorageQueueTableMetadata
     {
     }
 
-    /// Takes from `other` the settings that `changes` name.
-    void syncChangeableSettings(const ObjectStorageQueueTableMetadata & other, const SettingsChanges & changes)
+    void syncChangeableSettings(const ObjectStorageQueueTableMetadata & other, const NameSet & names)
     {
-        if (changes.tryGet("after_processing"))
+        if (names.contains("after_processing"))
             after_processing = other.after_processing.load();
-        if (changes.tryGet("loading_retries"))
+        if (names.contains("loading_retries"))
             loading_retries = other.loading_retries.load();
-        if (changes.tryGet("processing_threads_num"))
+        if (names.contains("processing_threads_num"))
             processing_threads_num = other.processing_threads_num.load();
-        if (changes.tryGet("tracked_files_limit"))
+        if (names.contains("tracked_files_limit"))
             tracked_files_limit = other.tracked_files_limit.load();
-        if (changes.tryGet("tracked_file_ttl_sec"))
+        if (names.contains("tracked_file_ttl_sec"))
             tracked_files_ttl_sec = other.tracked_files_ttl_sec.load();
     }
 

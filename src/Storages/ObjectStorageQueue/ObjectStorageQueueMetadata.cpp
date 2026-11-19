@@ -530,7 +530,10 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     if (is_initial_query)
         zookeeper->set(table_metadata_path, new_metadata_str, stat.version);
 
-    table_metadata.syncChangeableSettings(new_table_metadata, changes);
+    NameSet changed_names;
+    for (const auto & change : changes)
+        changed_names.insert(change.name);
+    table_metadata.syncChangeableSettings(new_table_metadata, changed_names);
 }
 
 void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)

@@ -1830,16 +1830,25 @@ void StorageObjectStorageQueue::alter(
         const size_t dependencies_count = getDependencies();
         bool requires_detached_mv = false;
 
-        String metadata_in_keeper;
-        ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop(
-            [&] { metadata_in_keeper = getZooKeeper()->get(zk_path / "metadata"); });
-        const auto table_metadata_in_keeper = ObjectStorageQueueTableMetadata::parse(metadata_in_keeper);
-        auto settings_in_keeper = getSettings(&table_metadata_in_keeper);
+        auto read_settings_in_keeper = [this]()
+        {
+            String metadata_in_keeper;
+            ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop(
+                [&] { metadata_in_keeper = getZooKeeper()->get(zk_path / "metadata"); });
+            const auto table_metadata_in_keeper = ObjectStorageQueueTableMetadata::parse(metadata_in_keeper);
+            return getSettings(&table_metadata_in_keeper);
+        };
         auto settings_in_memory = getSettings(&metadata->getTableMetadata());
+        std::optional<ObjectStorageQueueSettings> settings_in_keeper;
         auto differs_from_queue = [&](const SettingChange & setting)
         {
-            return ObjectStorageQueueTableMetadata::isStoredInKeeper(setting.name)
-                && (settings_in_keeper.get(setting.name) != setting.value || settings_in_memory.get(setting.name) != setting.value);
+            if (!ObjectStorageQueueTableMetadata::isStoredInKeeper(setting.name))
+                return false;
+            if (settings_in_memory.get(setting.name) != setting.value)
+                return true;
+            if (!settings_in_keeper)
+                settings_in_keeper.emplace(read_settings_in_keeper());
+            return settings_in_keeper->get(setting.name) != setting.value;
         };
 
         for (auto & setting : new_settings)

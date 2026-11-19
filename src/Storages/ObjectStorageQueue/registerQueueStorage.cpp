@@ -6,7 +6,6 @@
 #include <Core/UUID.h>
 #include <Common/Macros.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/DDLTask.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
@@ -192,6 +191,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         auto path = configuration->getPathForRead();
         path.path = args.getContext()->getMacros()->expand(path.path, info);
         configuration->setPathForRead(path);
+        /// Each server reads own path but they share same keeper_path so they should be considered the same.
         source.path_pattern.clear();
     }
 
@@ -203,8 +203,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     /// weakly by `WithContext` and used by background tasks, so a transient settings copy would expire.
     const bool allow_server_credentials_in_user_queries
         = args.getLocalContext()->getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
-    const bool strict_metadata_check = (args.is_restore_from_backup && !isSecondaryDDLReplay(args.getLocalContext()))
-        || !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext());
+    const bool strict_metadata_check = !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext());
 
     return std::make_shared<StorageObjectStorageQueue>(
         std::move(queue_settings),
