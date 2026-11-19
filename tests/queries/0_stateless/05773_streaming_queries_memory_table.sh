@@ -59,7 +59,9 @@ $STREAMING_CLIENT -q "INSERT INTO ring VALUES (0)"
 read_until "$fifo_3" "0" > /dev/null
 # The output of a client that exits while nothing reads its FIFO is lost, so the reader starts first.
 read_until "$fifo_3" "TOO_SLOW" > "$fifo_3.out" &
-$STREAMING_CLIENT --max_block_size=1 --min_insert_block_size_rows=1 --min_insert_block_size_bytes=0 -q "INSERT INTO ring SELECT number FROM numbers(1, 100)"
+# Separate inserts: the blocks of one insert are added at once (with a single insert thread), and the table does not remove
+# the blocks it has just got, so the stream would not fall behind.
+$STREAMING_CLIENT -q "$(for i in $(seq 1 100); do echo "INSERT INTO ring VALUES ($i);"; done)"
 wait
 grep -o -m1 "TOO_SLOW" "$fifo_3.out"
 rm -f "$fifo_3.out"
