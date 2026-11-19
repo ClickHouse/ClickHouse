@@ -353,8 +353,8 @@ void loadNamedCollectionConfig(cppkafka::Configuration & kafka_config, const Str
         // Cut prefix with '.' before actual config tag.
         const auto param_name = key.substr(config_prefix.size() + 1);
         const auto value = collection->get<String>(key);
-        /// The check when the table is created is not sufficient: `ALTER NAMED COLLECTION` can add a property later,
-        /// and a table that was created before the check existed is loaded without it.
+        /// The check when the table is created or loaded is not sufficient: the collection is read again here,
+        /// and `ALTER NAMED COLLECTION` can add a property while the table exists.
         checkNamedCollectionProperty(*collection, param_name, value);
         setKafkaConfigValue(kafka_config, param_name, value);
     }

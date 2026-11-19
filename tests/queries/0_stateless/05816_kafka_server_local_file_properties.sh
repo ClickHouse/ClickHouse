@@ -76,9 +76,13 @@ function alter_collection_of_existing_table()
     echo "${key}:"
     run "SELECT count() FROM ${table} SETTINGS stream_like_engine_allow_direct_select = 1"
     run "INSERT INTO ${table} VALUES (1)"
-    # The table is loaded from its metadata, but it cannot create a consumer.
-    run "DETACH TABLE ${table}; ATTACH TABLE ${table};"
-    run "SELECT count() FROM ${table} SETTINGS stream_like_engine_allow_direct_select = 1"
+    # A table that is read back from its metadata is checked in the same way as a new table.
+    $CLICKHOUSE_CLIENT -q "DETACH TABLE ${table}"
+    run "ATTACH TABLE ${table}"
+    # The table is attached again when the collection does not have the property.
+    # `ALTER NAMED COLLECTION ... DELETE` is not used: the formatted query cannot be parsed back if the key has a dot.
+    $CLICKHOUSE_CLIENT -q "CREATE OR REPLACE NAMED COLLECTION ${all_collections[-1]} AS ${required_keys}"
+    run "ATTACH TABLE ${table}"
 }
 
 echo '--- All properties are rejected in a collection created by SQL'

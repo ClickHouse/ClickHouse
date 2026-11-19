@@ -117,11 +117,6 @@ void registerStorageKafka(StorageFactory & factory)
         size_t args_count = engine_args.size();
         const bool has_settings = args.storage_def->settings;
 
-        /// A definition read back from metadata was accepted before. Some checks apply only to a freshly introduced
-        /// definition, so existing tables stay loadable.
-        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
-            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
-
         auto kafka_settings = std::make_unique<KafkaSettings>();
         String collection_name;
         if (auto named_collection = tryGetNamedCollectionWithOverrides(
@@ -132,10 +127,9 @@ void registerStorageKafka(StorageFactory & factory)
             &args.table_id,
             args.storage_def->settings))
         {
-            /// This gives the error when the table is created. For an existing table, `KafkaConfigLoader` does
-            /// the same check when it creates a consumer or a producer, thus the table loads but cannot connect.
-            if (is_fresh_definition)
-                KafkaConfigLoader::checkNamedCollection(*named_collection);
+            /// The named collection is checked every time, also when the definition is read back from metadata
+            /// (server startup, short `ATTACH`): the collection can change after the table is created.
+            KafkaConfigLoader::checkNamedCollection(*named_collection);
 
             kafka_settings->loadFromNamedCollection(named_collection);
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
@@ -223,6 +217,9 @@ void registerStorageKafka(StorageFactory & factory)
 
         /// The limit depends on the local CPU count, so a definition read back from metadata may have been
         /// accepted on a bigger server. Validate only a freshly introduced one, so existing tables stay loadable.
+        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+
         if (is_fresh_definition
             && !args.getLocalContext()->getSettingsRef()[Setting::kafka_disable_num_consumers_limit] && num_consumers > max_consumers)
         {

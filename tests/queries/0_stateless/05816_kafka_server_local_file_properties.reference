@@ -40,11 +40,11 @@ kafka.ssl_key_pem: OK
 kafka.ssl_key_location:
 Kafka property `ssl.key.location` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `ssl.key.pem` instead. (BAD_ARGUMENTS)
 Kafka property `ssl.key.location` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `ssl.key.pem` instead. (BAD_ARGUMENTS)
-OK
 Kafka property `ssl.key.location` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `ssl.key.pem` instead. (BAD_ARGUMENTS)
+OK
 kafka.ssl_key_pem: OK
 kafka.ssl_key_location\0suffix:
 Kafka property name `ssl_key_location\0suffix` contains a null character. (BAD_ARGUMENTS)
 Kafka property name `ssl_key_location\0suffix` contains a null character. (BAD_ARGUMENTS)
+Kafka property name `kafka.ssl_key_location\0suffix` contains a null character. (BAD_ARGUMENTS)
 OK
-Kafka property name `ssl_key_location\0suffix` contains a null character. (BAD_ARGUMENTS)
