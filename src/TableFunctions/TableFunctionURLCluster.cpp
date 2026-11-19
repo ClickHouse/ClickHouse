@@ -52,6 +52,7 @@ StoragePtr TableFunctionURLCluster::getStorage(
             /*distributed_processing=*/ true);
     }
 
+    const bool send_not_overridable = sendNotOverridableAutoToCluster(context, cluster_name);
     return std::make_shared<StorageURLCluster>(
         context,
         cluster_name,
@@ -59,9 +60,10 @@ StoragePtr TableFunctionURLCluster::getStorage(
         format,
         compression_method,
         StorageID(getDatabaseName(), table_name),
-        is_structure_not_overridable ? ColumnsDescription{} : columns,
+        is_structure_not_overridable && !send_not_overridable ? ColumnsDescription{} : columns,
         ConstraintsDescription{},
-        configuration);
+        configuration,
+        send_not_overridable);
 }
 
 void registerTableFunctionURLCluster(TableFunctionFactory & factory)

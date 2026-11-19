@@ -150,7 +150,8 @@ public:
 
     /// Add/replace structure and format arguments in the AST arguments if they have 'auto' values.
     virtual void addStructureAndFormatToArgsIfNeeded(
-        ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) = 0;
+        ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure,
+        bool replace_not_overridable) = 0;
 
     [[nodiscard]] bool isNamespaceWithGlobs() const;
 
@@ -427,9 +428,14 @@ public:
     /// Azure uses it the same way.
     bool is_loading_from_existing_metadata = false;
 
-    /// Set by the storage when the table definition is replayed from stored metadata (see `isReplayedTableDefinition`):
+    /// Set by the storage when the table definition is replayed from stored metadata (see `isReplayedTableDefinition`),
+    /// and by a `*Cluster` table function on a node for a query authenticated by the cluster secret:
     /// the inferred `format` or `structure` stored over a `NOT OVERRIDABLE` `'auto'` of the named collection is then accepted.
     bool is_replayed_definition = false;
+
+    /// Whether the structure is a `NOT OVERRIDABLE` `'auto'` of a named collection: the nodes of a cluster without a secret
+    /// then infer it, so the initiator does as well.
+    bool is_structure_not_overridable = false;
 
     /// False when the storage is instantiated from anything other than a user-issued `CREATE`
     /// (ATTACH, server startup, RESTORE, replicated-DDL replay). `initPartitionStrategy` must not

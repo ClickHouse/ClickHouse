@@ -59,24 +59,8 @@ public:
         {
             /// In case of named collection, just add key-value pairs "format='...', structure='...'"
             /// at the end of arguments to override existed format and structure with "auto" values.
-            /// A `NOT OVERRIDABLE` "auto" is replaced only if `replace_not_overridable`: only a replayed definition accepts it.
-            auto can_replace = [&](const String & key)
-            {
-                return collection->getOrDefault<String>(key, "auto") == "auto"
-                    && (replace_not_overridable || collection->isOverridable(key, /* default_value= */ true));
-            };
-            if (can_replace("format"))
-            {
-                ASTs format_equal_func_args = {make_intrusive<ASTIdentifier>("format"), make_intrusive<ASTLiteral>(format_)};
-                auto format_equal_func = makeASTOperator("equals", std::move(format_equal_func_args));
-                args.push_back(format_equal_func);
-            }
-            if (with_structure && can_replace("structure"))
-            {
-                ASTs structure_equal_func_args = {make_intrusive<ASTIdentifier>("structure"), make_intrusive<ASTLiteral>(structure_)};
-                auto structure_equal_func = makeASTOperator("equals", std::move(structure_equal_func_args));
-                args.push_back(structure_equal_func);
-            }
+            addInferredFormatAndStructureToNamedCollectionArgs(
+                args, *collection, format_, structure_, with_structure, replace_not_overridable);
         }
         else
         {
@@ -116,7 +100,7 @@ protected:
     String delegate_function_uri;
     /// Whether the URL argument was a relative reference resolved against the `url_base` setting.
     bool is_relative_url = false;
-    /// Whether the structure is a `NOT OVERRIDABLE` "auto" of a named collection, so it cannot be sent to the nodes of a cluster.
+    /// Whether the structure is a `NOT OVERRIDABLE` "auto" of a named collection, so it is sent only to the nodes of a cluster with a secret.
     bool is_structure_not_overridable = false;
 
 private:
