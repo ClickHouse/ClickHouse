@@ -165,7 +165,7 @@ public:
         return current_value;
     }
 
-    size_t itemsLeft() const
+    [[nodiscard]] size_t itemsLeft() const
     {
         return reinterpret_cast<const char *>(data_end) - reinterpret_cast<const char *>(data);
     }
@@ -448,7 +448,7 @@ struct StopwatchTimer
         stopwatch.stop();
     }
 
-    const std::vector<std::tuple<const char*, UInt64>> & getResults() const
+    [[nodiscard]] const std::vector<std::tuple<const char*, UInt64>> & getResults() const
     {
         return results;
     }
@@ -461,7 +461,7 @@ private:
 CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePtr data_type)
 {
     const std::string codec_statement = "(" + codec_string + ")";
-    Tokens tokens(codec_statement.begin().base(), codec_statement.end().base());
+    Tokens tokens(codec_statement.data(), codec_statement.data() + codec_statement.size());
     IParser::Pos token_iterator(tokens, 0, 0);
 
     Expected expected;
@@ -1792,8 +1792,8 @@ TEST(CompressionCodecMultipleTest, UnconfiguredNestedCodec)
     /// A `LOGICAL_ERROR` aborts in debug and sanitizer builds.
 #ifndef DEBUG_OR_SANITIZER_BUILD
     auto decoder = std::make_shared<CompressionCodecMultiple>();
-    EXPECT_THROW(decoder->getCodecDescription(), Exception);
-    EXPECT_THROW(decoder->getFullCodecDescription(), Exception);
+    EXPECT_THROW((void)decoder->getCodecDescription(), Exception);
+    EXPECT_THROW((void)decoder->getFullCodecDescription(), Exception);
     /// Reject an unconfigured nested `Multiple` during construction, before requesting its description.
     EXPECT_THROW(CompressionCodecMultiple{Codecs{decoder}}, Exception);
 #endif
