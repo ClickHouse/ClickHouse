@@ -386,7 +386,8 @@ bool CSVFormatReader::readField(
     /// A field is empty if it is followed by the field delimiter or the end of the row.
     /// The row can end before the last file column with `input_format_csv_allow_variable_number_of_columns`.
     const bool is_empty_field = buf->eof() || *buf->position() == format_settings.csv.delimiter
-        || *buf->position() == '\n' || *buf->position() == '\r';
+        || *buf->position() == '\n'
+        || (*buf->position() == '\r' && (format_settings.csv.allow_cr_end_of_line || isCRAtEndOfRow(*buf)));
 
     /// Note: Tuples are serialized in CSV as separate columns, but with empty_as_default or null_as_default
     /// only one empty or NULL column will be expected
@@ -498,7 +499,8 @@ bool CSVFormatReader::checkForSuffix()
 bool CSVFormatReader::checkForEndOfRow()
 {
     skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
-    return buf->eof() || *buf->position() == '\n' || *buf->position() == '\r';
+    return buf->eof() || *buf->position() == '\n'
+        || (*buf->position() == '\r' && (format_settings.csv.allow_cr_end_of_line || isCRAtEndOfRow(*buf)));
 }
 
 CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)

@@ -1,0 +1,96 @@
+#pragma once
+
+#include <Formats/FormatSettings.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/MapWithMemoryTracking.h>
+
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Formats/Impl/Puffin/PuffinCommon.h>
+
+#include <functional>
+
+namespace DB
+{
+
+struct PuffinFooter
+{
+    VectorWithMemoryTracking<PuffinBlob> blobs;
+    VectorWithMemoryTracking<UInt8> data;
+};
+
+PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read);
+
+String readPuffinBlobBytes(
+    const PuffinBlob & blob, ReadBuffer & buf, const VectorWithMemoryTracking<UInt8> & data, bool seekable_read);
+
+class PuffinMetadataInputFormat : public IInputFormat
+{
+public:
+    PuffinMetadataInputFormat(ReadBuffer & buf, SharedHeader header_, const FormatSettings & format_settings_);
+
+    String getName() const override { return "PuffinMetadata"; }
+
+    void resetParser() override;
+
+private:
+    Chunk read() override;
+
+    bool seekable_read = true;
+    PuffinFooter footer;
+    bool initialized = false;
+    size_t blob_index = 0;
+};
+
+class PuffinInputFormat : public IInputFormat
+{
+public:
+    PuffinInputFormat(ReadBuffer & buf, SharedHeader header_, const FormatSettings & format_settings_);
+
+    String getName() const override { return "Puffin"; }
+
+    void resetParser() override;
+
+private:
+    Chunk read() override;
+
+    bool seekable_read = true;
+    bool need_deleted_rows = true;
+    PuffinFooter footer;
+    bool initialized = false;
+    size_t blob_index = 0;
+};
+
+class PuffinMetadataSchemaReader : public ISchemaReader
+{
+public:
+    explicit PuffinMetadataSchemaReader(ReadBuffer & in_);
+    NamesAndTypesList readSchema() override;
+
+    /// The format produces a fixed set of named columns and the parser fills only the subset of them
+    /// requested by name, regardless of `input_format_skip_unknown_fields`.
+    [[nodiscard]] bool mapsColumnsByName() const override { return true; }
+    [[nodiscard]] bool alwaysSkipsUnknownFields() const override { return true; }
+};
+
+class PuffinSchemaReader : public ISchemaReader
+{
+public:
+    explicit PuffinSchemaReader(ReadBuffer & in_);
+    NamesAndTypesList readSchema() override;
+
+    /// The format produces a fixed set of named columns and the parser fills only the subset of them
+    /// requested by name, regardless of `input_format_skip_unknown_fields`.
+    [[nodiscard]] bool mapsColumnsByName() const override { return true; }
+    [[nodiscard]] bool alwaysSkipsUnknownFields() const override { return true; }
+};
+
+/// Validates the `deletion-vector-v1` blob envelope (length, magic, CRC) and calls `on_position`
+/// for every deleted row position in ascending order.
+void forEachDeletionVectorPosition(std::string_view blob, const std::function<void(UInt64)> & on_position);
+
+class FormatFactory;
+void registerInputFormatPuffin(FormatFactory & factory);
+void registerPuffinSchemaReaders(FormatFactory & factory);
+
+}
