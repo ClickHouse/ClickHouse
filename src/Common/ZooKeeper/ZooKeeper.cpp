@@ -1440,30 +1440,43 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 
 void ZooKeeper::deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value)
 {
-    deleteEphemeralNodeIfContentMatches(path, [&fast_delete_if_equal_value](const std::string & actual_content)
+    if (auto removed = tryDeleteEphemeralNodeIfContentMatches(path, fast_delete_if_equal_value); !removed)
+        throw DB::Exception(DB::ErrorCodes::REPLICA_ALREADY_EXISTS, "{}", removed.error());
+}
+
+void ZooKeeper::deleteEphemeralNodeIfContentMatches(const std::string & path, std::function<bool(const std::string &)> condition)
+{
+    if (auto removed = tryDeleteEphemeralNodeIfContentMatches(path, std::move(condition)); !removed)
+        throw DB::Exception(DB::ErrorCodes::REPLICA_ALREADY_EXISTS, "{}", removed.error());
+}
+
+std::expected<void, String> ZooKeeper::tryDeleteEphemeralNodeIfContentMatches(
+    const std::string & path, const std::string & fast_delete_if_equal_value)
+{
+    return tryDeleteEphemeralNodeIfContentMatches(path, [&fast_delete_if_equal_value](const std::string & actual_content)
     {
         return actual_content == fast_delete_if_equal_value;
     });
 }
 
-void ZooKeeper::deleteEphemeralNodeIfContentMatches(const std::string & path, std::function<bool(const std::string &)> condition)
+std::expected<void, String> ZooKeeper::tryDeleteEphemeralNodeIfContentMatches(
+    const std::string & path, std::function<bool(const std::string &)> condition)
 {
     Coordination::EventPtr eph_node_disappeared = std::make_shared<Poco::Event>();
     String content;
     Coordination::Stat stat;
     if (!tryGet(path, content, &stat, eph_node_disappeared))
-        return;
+        return {};
 
     if (condition(content))
     {
         auto code = tryRemove(path, stat.version);
         /// The node was rewritten after it was read, so the condition no longer describes it.
         if (code == Coordination::Error::ZBADVERSION)
-            throw DB::Exception(
-                DB::ErrorCodes::REPLICA_ALREADY_EXISTS,
+            return std::unexpected(fmt::format(
                 "Ephemeral node {} was rewritten while it was being removed. Node data when it was read: '{}'",
                 path,
-                content);
+                content));
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
             throw Coordination::Exception::fromPath(code, path);
     }
@@ -1472,15 +1485,15 @@ void ZooKeeper::deleteEphemeralNodeIfContentMatches(const std::string & path, st
         LOG_WARNING(log, "Ephemeral node ('{}') already exists but it isn't owned by us. Will wait until it disappears", path);
         int32_t timeout_ms = 3 * args.session_timeout_ms;
         if (!eph_node_disappeared->tryWait(timeout_ms))
-            throw DB::Exception(
-                DB::ErrorCodes::REPLICA_ALREADY_EXISTS,
+            return std::unexpected(fmt::format(
                 "Ephemeral node {} still exists after {}s and is not owned by us: most likely another session "
                 "still holds it, or a previous session's node has not expired yet. It can also mean that "
                 "session_timeout_ms in the client's config differs from the server's. Node data: '{}'",
                 path,
                 timeout_ms / 1000,
-                content);
+                content));
     }
+    return {};
 }
 
 Coordination::ReconfigResponse ZooKeeper::reconfig(
