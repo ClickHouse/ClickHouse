@@ -9,10 +9,6 @@
 1
 0
 0
--- a conversion chain over a narrow column is charged for the strings it produces
-1
-0
-0
 -- a sparse JSON path behind a cast runs after a selective LowCardinality filter
 1
 0
@@ -21,15 +17,19 @@
 1
 0
 0
+-- a conversion chain over a narrow column is charged for the strings it produces
+1
+0
+0
 -- a conversion of a full column to LowCardinality is charged for the values it hashes
 1
-13789
-13789
+1374
+1374
 -- a function that does not run on the dictionary is charged for its values
 1
-4703
-4703
+478
+478
 -- a lambda that captures no column is charged for running its body
 1
-641
-641
+83
+83

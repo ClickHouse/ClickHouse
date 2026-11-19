@@ -1,3 +1,4 @@
+-- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None)
 -- Regression test: when statistics are enabled, the PREWHERE optimizer must
 -- combine selectivity (estimated_row_count) with I/O cost (columns_size)
 -- using the classic cost / (1 - selectivity) rule, not sort by selectivity alone.
@@ -45,7 +46,7 @@ CREATE TABLE t_prewhere_cost_decoded (a UInt32 CODEC(NONE), s String CODEC(ZSTD(
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = 'basic, uniq_v2';
 INSERT INTO t_prewhere_cost_decoded
-SELECT toUInt32(cityHash64(number)), concat('k', toString(intDiv(number, 50000)), '-', repeat('ab-cd-', 5)) FROM numbers(200000);
+SELECT toUInt32(cityHash64(number)), concat('k', toString(intDiv(number, 5000)), '-', repeat('ab-cd-', 5)) FROM numbers(20000);
 OPTIMIZE TABLE t_prewhere_cost_decoded FINAL;
 
 SELECT '-- a well-compressed wide string is not cheaper than a selective fixed-size column';
@@ -67,37 +68,14 @@ SELECT count() FROM t_prewhere_cost_decoded WHERE a < 4294967 AND endsWith(s, 'z
 
 DROP TABLE t_prewhere_cost_decoded;
 
-DROP TABLE IF EXISTS t_prewhere_cost_functions;
-CREATE TABLE t_prewhere_cost_functions (n UInt8 CODEC(NONE), w UInt32 CODEC(NONE))
-ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = 'basic, uniq_v2';
-INSERT INTO t_prewhere_cost_functions SELECT toUInt8(cityHash64(number, 1)), toUInt32(cityHash64(number, 2)) FROM numbers(200000);
-OPTIMIZE TABLE t_prewhere_cost_functions FINAL;
-
-SELECT '-- a conversion chain over a narrow column is charged for the strings it produces';
-SELECT position(explain, 'less(') > 0 AND position(explain, 'less(') < position(explain, 'toUInt64OrZero(')
-FROM (
-    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_functions WHERE toUInt64OrZero(toString(n)) = 1000 AND w < 50000000
-    SETTINGS min_marks_per_part_to_load_statistics = 0
-) WHERE explain LIKE '%Prewhere filter column%';
-
-SELECT count() FROM t_prewhere_cost_functions WHERE toUInt64OrZero(toString(n)) = 1000 AND w < 50000000;
-SELECT count() FROM t_prewhere_cost_functions WHERE toUInt64OrZero(toString(n)) = 1000 AND w < 50000000
-SETTINGS allow_reorder_prewhere_conditions = 0;
-
-DROP TABLE t_prewhere_cost_functions;
-
 DROP TABLE IF EXISTS t_prewhere_cost_json;
 CREATE TABLE t_prewhere_cost_json (lc LowCardinality(String) CODEC(NONE), j JSON CODEC(ZSTD(1)))
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = 'basic, uniq_v2';
+INSERT INTO t_prewhere_cost_json (lc) SELECT concat('v', toString(cityHash64(number, 3) % 30)) FROM numbers(19800);
 INSERT INTO t_prewhere_cost_json
-SELECT
-    concat('v', toString(cityHash64(number, 3) % 30)),
-    if(intDiv(number, 2000) % 100 = 0,
-        format('{{"k0":{},"k1":{}}}', toString(cityHash64(number, 4) % 5000000), toString(number % 1000)),
-        format('{{"k1":{}}}', toString(number % 1000)))::JSON
-FROM numbers(200000);
+SELECT concat('v', toString(cityHash64(number, 3) % 30)), format('{{"k0":{}}}', toString(cityHash64(number, 4) % 5000000))::JSON
+FROM numbers(200);
 OPTIMIZE TABLE t_prewhere_cost_json FINAL;
 
 SELECT '-- a sparse JSON path behind a cast runs after a selective LowCardinality filter';
@@ -117,78 +95,77 @@ DROP TABLE IF EXISTS t_prewhere_cost_lc;
 CREATE TABLE t_prewhere_cost_lc (lc LowCardinality(String) CODEC(NONE), u UInt64 CODEC(NONE))
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = 'basic, uniq_v2';
-INSERT INTO t_prewhere_cost_lc SELECT concat('v', toString(cityHash64(number, 5) % 10)), cityHash64(number, 6) % 1000000 FROM numbers(200000);
+INSERT INTO t_prewhere_cost_lc SELECT concat('v', toString(cityHash64(number, 5) % 10)), cityHash64(number, 6) % 1000000 FROM numbers(20000);
 OPTIMIZE TABLE t_prewhere_cost_lc FINAL;
 
 SELECT '-- a function over LowCardinality runs on the dictionary, so it stays cheap';
-SELECT position(explain, 'lower(') > 0 AND position(explain, 'lower(') < position(explain, 'u, 5')
+SELECT position(explain, 'lower(') > 0 AND position(explain, 'lower(') < position(explain, 'u, 500000')
 FROM (
-    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_lc WHERE lower(lc) = 'v1' AND u = 5
+    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_lc WHERE lower(lc) = 'v1' AND u = 500000
     SETTINGS min_marks_per_part_to_load_statistics = 0
 ) WHERE explain LIKE '%Prewhere filter column%';
 
-SELECT count() FROM t_prewhere_cost_lc WHERE lower(lc) = 'v1' AND u = 5;
-SELECT count() FROM t_prewhere_cost_lc WHERE lower(lc) = 'v1' AND u = 5 SETTINGS allow_reorder_prewhere_conditions = 0;
+SELECT count() FROM t_prewhere_cost_lc WHERE lower(lc) = 'v1' AND u = 500000;
+SELECT count() FROM t_prewhere_cost_lc WHERE lower(lc) = 'v1' AND u = 500000 SETTINGS allow_reorder_prewhere_conditions = 0;
 
 DROP TABLE t_prewhere_cost_lc;
 
-DROP TABLE IF EXISTS t_prewhere_cost_lc_cast;
-CREATE TABLE t_prewhere_cost_lc_cast (s String CODEC(NONE), w UInt32 CODEC(NONE))
+DROP TABLE IF EXISTS t_prewhere_cost_functions;
+DROP TABLE IF EXISTS t_prewhere_cost_join_attr;
+CREATE TABLE t_prewhere_cost_join_attr (k LowCardinality(String), v LowCardinality(String)) ENGINE = Join(ANY, LEFT, k) SETTINGS join_use_nulls = 0;
+INSERT INTO t_prewhere_cost_join_attr SELECT concat('v', toString(number)), concat('w', toString(number)) FROM numbers(30);
+CREATE TABLE t_prewhere_cost_functions
+(
+    n UInt8 CODEC(NONE), s String CODEC(NONE), lc LowCardinality(String) CODEC(NONE), a Array(UInt8) CODEC(NONE), w UInt32 CODEC(NONE)
+)
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = 'basic, uniq_v2', string_serialization_version = 'single_stream';
-INSERT INTO t_prewhere_cost_lc_cast SELECT concat('k', toString(cityHash64(number, 7) % 10)), toUInt32(cityHash64(number, 8)) FROM numbers(200000);
-OPTIMIZE TABLE t_prewhere_cost_lc_cast FINAL;
+INSERT INTO t_prewhere_cost_functions
+SELECT toUInt8(cityHash64(number, 1)), concat('k', toString(cityHash64(number, 7) % 10)), concat('v', toString(cityHash64(number, 9) % 30)),
+    [toUInt8(cityHash64(number, 11) % 256)], toUInt32(cityHash64(number, 2))
+FROM numbers(20000);
+OPTIMIZE TABLE t_prewhere_cost_functions FINAL;
+
+SELECT '-- a conversion chain over a narrow column is charged for the strings it produces';
+SELECT position(explain, 'less(') > 0 AND position(explain, 'less(') < position(explain, 'toUInt64OrZero(')
+FROM (
+    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_functions WHERE toUInt64OrZero(toString(n)) = 1000 AND w < 50000000
+    SETTINGS min_marks_per_part_to_load_statistics = 0
+) WHERE explain LIKE '%Prewhere filter column%';
+
+SELECT count() FROM t_prewhere_cost_functions WHERE toUInt64OrZero(toString(n)) = 1000 AND w < 50000000;
+SELECT count() FROM t_prewhere_cost_functions WHERE toUInt64OrZero(toString(n)) = 1000 AND w < 50000000
+SETTINGS allow_reorder_prewhere_conditions = 0;
 
 SELECT '-- a conversion of a full column to LowCardinality is charged for the values it hashes';
 SELECT position(explain, 'less(') > 0 AND position(explain, 'less(') < position(explain, 'toLowCardinality(')
 FROM (
-    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_lc_cast WHERE toLowCardinality(s) = 'k1' AND w < 3000000000
+    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_functions WHERE toLowCardinality(s) = 'k1' AND w < 3000000000
     SETTINGS min_marks_per_part_to_load_statistics = 0
 ) WHERE explain LIKE '%Prewhere filter column%';
 
-SELECT count() FROM t_prewhere_cost_lc_cast WHERE toLowCardinality(s) = 'k1' AND w < 3000000000;
-SELECT count() FROM t_prewhere_cost_lc_cast WHERE toLowCardinality(s) = 'k1' AND w < 3000000000 SETTINGS allow_reorder_prewhere_conditions = 0;
-
-DROP TABLE t_prewhere_cost_lc_cast;
-
-DROP TABLE IF EXISTS t_prewhere_cost_join;
-DROP TABLE IF EXISTS t_prewhere_cost_join_attr;
-CREATE TABLE t_prewhere_cost_join_attr (k LowCardinality(String), v LowCardinality(String)) ENGINE = Join(ANY, LEFT, k) SETTINGS join_use_nulls = 0;
-INSERT INTO t_prewhere_cost_join_attr SELECT concat('v', toString(number)), concat('w', toString(number)) FROM numbers(30);
-CREATE TABLE t_prewhere_cost_join (lc LowCardinality(String) CODEC(NONE), w UInt32 CODEC(NONE))
-ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = 'basic, uniq_v2';
-INSERT INTO t_prewhere_cost_join SELECT concat('v', toString(cityHash64(number, 9) % 30)), toUInt32(cityHash64(number, 10)) FROM numbers(200000);
-OPTIMIZE TABLE t_prewhere_cost_join FINAL;
+SELECT count() FROM t_prewhere_cost_functions WHERE toLowCardinality(s) = 'k1' AND w < 3000000000;
+SELECT count() FROM t_prewhere_cost_functions WHERE toLowCardinality(s) = 'k1' AND w < 3000000000 SETTINGS allow_reorder_prewhere_conditions = 0;
 
 SELECT '-- a function that does not run on the dictionary is charged for its values';
 SELECT position(explain, 'less(') > 0 AND position(explain, 'less(') < position(explain, 'joinGet(')
 FROM (
-    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_join WHERE joinGet('t_prewhere_cost_join_attr', 'v', lc) = 'w1' AND w < 3000000000
+    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_functions WHERE joinGet('t_prewhere_cost_join_attr', 'v', lc) = 'w1' AND w < 3000000000
     SETTINGS min_marks_per_part_to_load_statistics = 0
 ) WHERE explain LIKE '%Prewhere filter column%';
 
-SELECT count() FROM t_prewhere_cost_join WHERE joinGet('t_prewhere_cost_join_attr', 'v', lc) = 'w1' AND w < 3000000000;
-SELECT count() FROM t_prewhere_cost_join WHERE joinGet('t_prewhere_cost_join_attr', 'v', lc) = 'w1' AND w < 3000000000 SETTINGS allow_reorder_prewhere_conditions = 0;
-
-DROP TABLE t_prewhere_cost_join;
-DROP TABLE t_prewhere_cost_join_attr;
-
-DROP TABLE IF EXISTS t_prewhere_cost_lambda;
-CREATE TABLE t_prewhere_cost_lambda (a Array(UInt8) CODEC(NONE), w UInt32 CODEC(NONE))
-ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = 'basic, uniq_v2';
-INSERT INTO t_prewhere_cost_lambda SELECT [toUInt8(cityHash64(number, 11) % 256)], toUInt32(cityHash64(number, 12)) FROM numbers(200000);
-OPTIMIZE TABLE t_prewhere_cost_lambda FINAL;
+SELECT count() FROM t_prewhere_cost_functions WHERE joinGet('t_prewhere_cost_join_attr', 'v', lc) = 'w1' AND w < 3000000000;
+SELECT count() FROM t_prewhere_cost_functions WHERE joinGet('t_prewhere_cost_join_attr', 'v', lc) = 'w1' AND w < 3000000000 SETTINGS allow_reorder_prewhere_conditions = 0;
 
 SELECT '-- a lambda that captures no column is charged for running its body';
 SELECT position(explain, 'less(') > 0 AND position(explain, 'less(') < position(explain, 'arrayExists(')
 FROM (
-    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_lambda WHERE arrayExists(x -> toUInt64OrZero(toString(x)) = 7, a) AND w < 3500000000
+    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_functions WHERE arrayExists(x -> toUInt64OrZero(toString(x)) = 7, a) AND w < 3500000000
     SETTINGS min_marks_per_part_to_load_statistics = 0
 ) WHERE explain LIKE '%Prewhere filter column%';
 
-SELECT count() FROM t_prewhere_cost_lambda WHERE arrayExists(x -> toUInt64OrZero(toString(x)) = 7, a) AND w < 3500000000;
-SELECT count() FROM t_prewhere_cost_lambda WHERE arrayExists(x -> toUInt64OrZero(toString(x)) = 7, a) AND w < 3500000000 SETTINGS allow_reorder_prewhere_conditions = 0;
+SELECT count() FROM t_prewhere_cost_functions WHERE arrayExists(x -> toUInt64OrZero(toString(x)) = 7, a) AND w < 3500000000;
+SELECT count() FROM t_prewhere_cost_functions WHERE arrayExists(x -> toUInt64OrZero(toString(x)) = 7, a) AND w < 3500000000 SETTINGS allow_reorder_prewhere_conditions = 0;
 
-DROP TABLE t_prewhere_cost_lambda;
+DROP TABLE t_prewhere_cost_functions;
+DROP TABLE t_prewhere_cost_join_attr;
