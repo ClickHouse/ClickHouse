@@ -85,6 +85,9 @@ struct SelectQueryOptions
     /// The query as received from the initiator of a distributed read, not a subquery of it.
     bool is_secondary_query_root = false;
 
+    /// The plan is built only to be inspected not to be executed. Such a plan must not wait for a concurrent execution.
+    bool is_inspection_only = false;
+
     SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
@@ -208,6 +211,12 @@ struct SelectQueryOptions
     SelectQueryOptions & setExplain(bool value = true)
     {
         is_explain = value;
+        return *this;
+    }
+
+    SelectQueryOptions & setInspectionOnly(bool value = true)
+    {
+        is_inspection_only = value;
         return *this;
     }
 

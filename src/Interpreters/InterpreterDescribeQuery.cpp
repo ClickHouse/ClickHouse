@@ -159,7 +159,10 @@ void InterpreterDescribeQuery::fillColumnsFromSubquery(const ASTTableExpression 
 void InterpreterDescribeQuery::fillColumnsFromSubqueryImpl(const ASTPtr & select_query, const ContextPtr & current_context)
 {
     SelectQueryOptions select_query_options;
-    SharedHeader sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(select_query, current_context, select_query_options);
+    /// Only the header is needed, so don't wait for a concurrent execution of an identical subquery in the query result cache.
+    /// The query is still fully analyzed (not `only_analyze`), as it was before: e.g. the scalar subqueries are evaluated.
+    select_query_options.setInspectionOnly();
+    SharedHeader sample_block = InterpreterSelectQueryAnalyzer(select_query, current_context, select_query_options).getSampleBlock();
 
     for (auto && column : *sample_block)
         columns.emplace_back(column.name, column.type);

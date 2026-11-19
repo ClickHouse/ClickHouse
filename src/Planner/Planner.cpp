@@ -601,7 +601,8 @@ static void addStreamInQueryResultCacheStepIfNeeded(
 
 static bool isPlanBuiltOnlyForInspection(const SelectQueryOptions & select_query_options)
 {
-    return select_query_options.only_analyze || select_query_options.is_explain || select_query_options.build_logical_plan;
+    return select_query_options.only_analyze || select_query_options.is_explain || select_query_options.is_inspection_only
+        || select_query_options.build_logical_plan;
 }
 
 static bool coalesceSubqueryQueryResultCacheHerd(
