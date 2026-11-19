@@ -1,0 +1,114 @@
+-- 1. GROUP BY the first key column
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          Aggregating
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (RangePartitionedRead default.t_range_agg_events)
+6000	33000	272483500
+6000	33000	272483500
+-- 2. GROUP BY two key columns: the ranges use the two columns
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          Aggregating
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (RangePartitionedRead default.t_range_agg_events)
+33000	33000	272483500
+33000	33000	272483500
+-- 3. GROUP BY a column that is not the first key column: no ranges
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          MergingAggregated
+            ShuffleExchange
+              Aggregating
+                Expression ((Before GROUP BY + Change column names to column identifiers))
+                  ReadFromMergeTree (ParallelRead default.t_range_agg_events)
+33000	33000
+33000	33000
+-- 4. a join on the key and GROUP BY the key
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          Aggregating
+            Expression (Before GROUP BY)
+              JoinLogical (Shuffle HashJoin (co-located by keyRanges(#0; 3 borders)) )
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (RangePartitionedRead default.t_range_agg_events)
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (RangePartitionedRead default.t_range_agg_groups)
+3000	26250	206162250
+3000	26250	206162250
+-- 5. two joins and GROUP BY the key of the last table
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          Aggregating
+            Expression (Before GROUP BY)
+              JoinLogical (Shuffle HashJoin (co-located by keyRanges(#0; 3 borders))  swapped)
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (RangePartitionedRead default.t_range_agg_events)
+                JoinLogical (Shuffle HashJoin (co-located by keyRanges(#0; 3 borders))  swapped)
+                  Expression (Change column names to column identifiers)
+                    ReadFromMergeTree (RangePartitionedRead default.t_range_agg_details)
+                  Expression (Change column names to column identifiers)
+                    ReadFromMergeTree (RangePartitionedRead default.t_range_agg_groups)
+2000	21250	59763
+2000	21250	59763
+-- 6. LEFT join and GROUP BY the key of the right table: the rows with no match are one group on all nodes
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          Aggregating
+            Expression (Before GROUP BY)
+              ShuffleExchange
+                JoinLogical (Shuffle HashJoin (co-located by keyRanges(#0; 3 borders)) )
+                  Expression (Change column names to column identifiers)
+                    ReadFromMergeTree (RangePartitionedRead default.t_range_agg_events)
+                  Expression (Change column names to column identifiers)
+                    ReadFromMergeTree (RangePartitionedRead default.t_range_agg_groups)
+3000	42250	16005
+3000	42250	16005
+-- 7. LEFT join and GROUP BY the key of the left table
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          Aggregating
+            Expression (Before GROUP BY)
+              JoinLogical (Shuffle HashJoin (co-located by keyRanges(#0; 3 borders)) )
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (RangePartitionedRead default.t_range_agg_events)
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (RangePartitionedRead default.t_range_agg_groups)
+6000	42250	2016
+6000	42250	2016
+-- 8. a broadcast join on another column keeps the rows of the left table on their nodes
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          Aggregating
+            Expression (Before GROUP BY)
+              JoinLogical (Broadcast HashJoin )
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (RangePartitionedRead default.t_range_agg_events)
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (ReplicatedRead default.t_range_agg_details)
+4000	4000	11994
+4000	4000	11994

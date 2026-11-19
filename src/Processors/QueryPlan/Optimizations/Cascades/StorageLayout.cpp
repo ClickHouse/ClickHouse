@@ -14,6 +14,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/DagNameTranslation.h>
+#include <Processors/QueryPlan/PartsSplitter.h>
 #include <Storages/KeyDescription.h>
 #include <fmt/ranges.h>
 #include <algorithm>
@@ -240,16 +241,40 @@ StorageLayoutFunctionPtr StorageLayoutFunction::tryCreate(const KeyDescription &
         return nullptr;
 
     std::shared_ptr<StorageLayoutFunction> function(new StorageLayoutFunction);
-    function->dag = ActionsDAG::cloneSubDAG({component}, /*remove_aliases=*/ true);
+    auto & expression = function->form.emplace<PartitionExpression>();
+    expression.dag = ActionsDAG::cloneSubDAG({component}, /*remove_aliases=*/ true);
 
     SipHash hash;
-    StructureCollector collector(function->argument_names, function->argument_types, hash);
-    collector.visit(*function->dag.getOutputs().front());
+    StructureCollector collector(expression.argument_names, function->argument_types, hash);
+    collector.visit(*expression.dag.getOutputs().front());
 
     /// A component with no arguments is a constant: all rows are in one group.
-    if (function->argument_names.empty())
+    if (expression.argument_names.empty())
         return nullptr;
 
+    function->structure_hash = hash.get64();
+    return function;
+}
+
+StorageLayoutFunctionPtr StorageLayoutFunction::createKeyRanges(
+    DataTypes key_types, bool in_reverse_order, VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> borders)
+{
+    SipHash hash;
+    hash.update(key_types.size());
+    for (const auto & type : key_types)
+        hash.update(type->getName());
+    hash.update(in_reverse_order);
+    hash.update(borders.size());
+    for (const auto & border : borders)
+    {
+        hash.update(border.size());
+        for (const auto & value : border)
+            applyVisitor(FieldVisitorHash(hash), value);
+    }
+
+    std::shared_ptr<StorageLayoutFunction> function(new StorageLayoutFunction);
+    function->form = KeyRanges{.in_reverse_order = in_reverse_order, .borders = std::move(borders)};
+    function->argument_types = std::move(key_types);
     function->structure_hash = hash.get64();
     return function;
 }
@@ -258,14 +283,38 @@ bool StorageLayoutFunction::equals(const StorageLayoutFunction & other) const
 {
     if (this == &other)
         return true;
-    if (structure_hash != other.structure_hash || argument_names.size() != other.argument_names.size())
+    if (structure_hash != other.structure_hash || form.index() != other.form.index()
+        || argument_types.size() != other.argument_types.size())
         return false;
-    return sameStructure(*dag.getOutputs().front(), argument_names, *other.dag.getOutputs().front(), other.argument_names);
+
+    if (const auto * expression = tryGetPartitionExpression())
+    {
+        const auto & other_expression = std::get<PartitionExpression>(other.form);
+        return sameStructure(
+            *expression->dag.getOutputs().front(), expression->argument_names,
+            *other_expression.dag.getOutputs().front(), other_expression.argument_names);
+    }
+
+    for (size_t i = 0; i < argument_types.size(); ++i)
+    {
+        if (!argument_types[i]->equals(*other.argument_types[i]))
+            return false;
+    }
+    const auto & ranges = std::get<KeyRanges>(form);
+    const auto & other_ranges = std::get<KeyRanges>(other.form);
+    return ranges.in_reverse_order == other_ranges.in_reverse_order && ranges.borders == other_ranges.borders;
 }
 
 String StorageLayoutFunction::dump() const
 {
-    return dumpNode(*dag.getOutputs().front(), argument_names);
+    if (const auto * expression = tryGetPartitionExpression())
+        return dumpNode(*expression->dag.getOutputs().front(), expression->argument_names);
+
+    /// The border values are not here: they can be long, and they change with the data.
+    Strings arguments;
+    for (size_t i = 0; i < argument_types.size(); ++i)
+        arguments.push_back(fmt::format("#{}", i));
+    return fmt::format("keyRanges({}; {} borders)", fmt::join(arguments, ", "), std::get<KeyRanges>(form).borders.size());
 }
 
 bool sameStorageLayoutFunction(const StorageLayoutFunctionPtr & left, const StorageLayoutFunctionPtr & right)
@@ -285,12 +334,25 @@ StorageLayouts getStorageLayouts(const KeyDescription & partition_key)
             continue;
 
         StorageLayout layout;
-        for (const auto & argument_name : function->getArgumentNames())
+        for (const auto & argument_name : function->tryGetPartitionExpression()->argument_names)
             layout.argument_columns.push_back({argument_name});
         layout.function = std::move(function);
         layouts.push_back(std::move(layout));
     }
     return layouts;
+}
+
+/// The output names that carry one of the input columns `names` unchanged.
+static NameSet renameColumns(const NameSet & names, const UnorderedMapWithMemoryTracking<String, Names> & input_to_outputs)
+{
+    NameSet renamed;
+    for (const auto & name : names)
+    {
+        auto it = input_to_outputs.find(name);
+        if (it != input_to_outputs.end())
+            renamed.insert(it->second.begin(), it->second.end());
+    }
+    return renamed;
 }
 
 StorageLayouts remapStorageLayouts(const StorageLayouts & layouts, const ActionsDAG & actions)
@@ -306,13 +368,7 @@ StorageLayouts remapStorageLayouts(const StorageLayouts & layouts, const Actions
         bool all_arguments_reach_output = true;
         for (const auto & argument : layout.argument_columns)
         {
-            NameSet renamed_argument;
-            for (const auto & name : argument)
-            {
-                auto it = input_to_outputs.find(name);
-                if (it != input_to_outputs.end())
-                    renamed_argument.insert(it->second.begin(), it->second.end());
-            }
+            NameSet renamed_argument = renameColumns(argument, input_to_outputs);
             if (renamed_argument.empty())
             {
                 all_arguments_reach_output = false;
@@ -323,6 +379,73 @@ StorageLayouts remapStorageLayouts(const StorageLayouts & layouts, const Actions
 
         if (all_arguments_reach_output)
             result.push_back(std::move(renamed_layout));
+    }
+    return result;
+}
+
+void KeyRangeLayoutCandidate::resize(size_t size)
+{
+    key_columns.resize(size);
+    key_types.resize(size);
+}
+
+std::optional<KeyRangeLayoutCandidate> getKeyRangeLayoutCandidate(
+    const KeyDescription & primary_key, const KeyDescription & sorting_key, const Block & output_header, size_t read_group)
+{
+    if (!primary_key.expression)
+        return {};
+
+    const auto & key_actions = primary_key.expression->getActionsDAG();
+    const auto & reverse_flags = sorting_key.reverse_flags;
+
+    KeyRangeLayoutCandidate candidate;
+    candidate.in_reverse_order = !reverse_flags.empty() && reverse_flags.front();
+    candidate.read_groups.push_back(read_group);
+
+    for (size_t i = 0; i < primary_key.column_names.size(); ++i)
+    {
+        const bool is_reverse = i < reverse_flags.size() && reverse_flags[i];
+        if (is_reverse != candidate.in_reverse_order || !isSafePrimaryDataKeyType(*primary_key.data_types[i]))
+            break;
+
+        /// A key column that is an expression is not used: the query computes the expression again, and its
+        /// settings can give other values than the ones that the table stores in the primary index.
+        const auto * key_column = key_actions.tryFindInOutputs(primary_key.column_names[i]);
+        while (key_column && key_column->type == ActionsDAG::ActionType::ALIAS)
+            key_column = key_column->children.front();
+        if (!key_column || key_column->type != ActionsDAG::ActionType::INPUT || !output_header.has(key_column->result_name))
+            break;
+
+        candidate.key_columns.push_back({key_column->result_name});
+        candidate.key_types.push_back(primary_key.data_types[i]);
+    }
+
+    if (candidate.key_columns.empty())
+        return {};
+    return candidate;
+}
+
+KeyRangeLayoutCandidates remapKeyRangeLayoutCandidates(const KeyRangeLayoutCandidates & candidates, const ActionsDAG & actions)
+{
+    const auto input_to_outputs = identityOutputNames(actions);
+
+    KeyRangeLayoutCandidates result;
+    for (const auto & candidate : candidates)
+    {
+        KeyRangeLayoutCandidate renamed_candidate = candidate;
+        size_t size = 0;
+        for (; size < candidate.key_columns.size(); ++size)
+        {
+            NameSet renamed_column = renameColumns(candidate.key_columns[size], input_to_outputs);
+            if (renamed_column.empty())
+                break;
+            renamed_candidate.key_columns[size] = std::move(renamed_column);
+        }
+
+        if (size == 0)
+            continue;
+        renamed_candidate.resize(size);
+        result.push_back(std::move(renamed_candidate));
     }
     return result;
 }

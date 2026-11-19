@@ -6,6 +6,7 @@
 #include <Core/Joins.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -93,6 +94,32 @@ std::optional<size_t> findPartitionKeyComponent(const ReadFromMergeTree & read_s
 /// Returns nullptr when the read cannot be split this way (`FINAL`, nothing to read, an unsupported feature).
 GroupExpressionPtr tryMakePartitionedReadVariant(
     const GroupExpressionPtr & expression, size_t component_index, const DistributionDescription & distribution);
+
+/// Pairs (column of the left input, column of the right input) that a join compares for equality.
+using JoinEqualities = VectorWithMemoryTracking<std::pair<String, String>>;
+
+/// The key columns by whose ranges the table reads below the group can divide its result (see
+/// `KeyRangeLayoutCandidate`), in the column names of the group's output. Found on first use; empty unless
+/// `distributed_plan_use_primary_key_range_layout` is set.
+const KeyRangeLayoutCandidates & getKeyRangeLayoutCandidates(Memo & memo, GroupId group_id);
+
+/// The number of the first key columns of the two candidates that have equal types and that `equalities`
+/// connect, column by column. 0 when the candidates cannot be divided at the same borders.
+size_t getCommonKeyRangePrefix(
+    const KeyRangeLayoutCandidate & left, const KeyRangeLayoutCandidate & right, const JoinEqualities & equalities);
+
+/// The function that divides the rows of the table reads `read_groups` into `node_count` ranges of their
+/// first key columns with `key_types`. The borders come from the primary index of the parts that all the
+/// reads selected, so that the ranges hold about the same number of rows. The memo keeps the function: each
+/// rule that asks for the same reads gets the same one. Returns nullptr when the reads select no parts.
+StorageLayoutFunctionPtr getKeyRangeLayoutFunction(
+    Memo & memo, const VectorWithMemoryTracking<GroupId> & read_groups, const DataTypes & key_types, bool in_reverse_order, size_t node_count);
+
+/// Clones a read with its marks put into `distribution.node_count` buckets at the borders of the key range
+/// function of `distribution`, and wraps it into a physical expression that delivers `distribution`.
+/// Returns nullptr when the required columns are not the first key columns of the table, or when the read
+/// cannot be split this way (`FINAL`, nothing to read, an unsupported feature).
+GroupExpressionPtr tryMakeKeyRangeReadVariant(const GroupExpressionPtr & expression, const DistributionDescription & distribution);
 
 /// Clones a plan step and returns it as its concrete type; throws if the clone has another type.
 template <typename Step>

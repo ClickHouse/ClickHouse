@@ -93,6 +93,16 @@ SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
     bool in_reverse_order,
     const LoggerPtr & logger);
 
+/// Divides the mark ranges at given borders, for example the borders that `splitIntersectingPartsRangesIntoLayers`
+/// made for the parts of another table. Layer `i` gets each granule that can hold a key in
+/// `(borders[i-1], borders[i]]`, so a granule with keys on the two sides of a border is in two layers, and the
+/// reader of a layer must remove the rows of the other layers (see `addLayerRangeFilterToPipe`).
+/// Returns `borders.size() + 1` layers, or nothing when a part has fewer key columns in memory than the borders have.
+VectorWithMemoryTracking<RangesInDataParts> splitPartsRangesByBorders(
+    const RangesInDataParts & ranges_in_data_parts,
+    const VectorWithMemoryTracking<SplitPartsByRanges::Values> & borders,
+    bool in_reverse_order);
+
 Pipes readByLayers(
     SplitPartsByRanges split_ranges,
     const KeyDescription & primary_key,
@@ -101,8 +111,8 @@ Pipes readByLayers(
 
 /// Trims `pipe` to PK-range layer `layer_index` (the interval (borders[layer_index-1], borders[layer_index]])
 /// via a FilterSortedStreamByRange; no-op for the open first/last interval. Used by the distributed
-/// parallel-FINAL read to drop boundary-granule rows that belong to neighbouring buckets. The pipe's
-/// streams must be sorted by the primary key.
+/// parallel-FINAL read and by a read divided by key ranges to drop boundary-granule rows that belong to
+/// neighbouring buckets. The rows of each chunk of the pipe must be in the order of the primary key.
 void addLayerRangeFilterToPipe(
     Pipe & pipe,
     const KeyDescription & primary_key,

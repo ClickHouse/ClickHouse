@@ -23,7 +23,7 @@ namespace
 {
 
 /// Minimal metadata of a table with a single column `k` and `ORDER BY k` -- a primary key that
-/// `deriveReverseOrder` accepts, which is what the `needs_merge` lanes of a distributed `FINAL`
+/// `deriveReverseOrder` accepts, which is what the `Kind::Merge` lanes of a distributed `FINAL`
 /// read require.
 StorageMetadataPtr makeMetadata(ContextPtr context)
 {
@@ -42,7 +42,7 @@ StorageMetadataPtr makeMetadata(ContextPtr context)
 
 }
 
-/// A primary-key-range layer may be empty, and an initiator may serialize it as a `needs_merge`
+/// A primary-key-range layer may be empty, and an initiator may serialize it as a `Kind::Merge`
 /// lane anyway. The in-order lane getter creates one source per part, so such a lane yields an
 /// empty pipe, which has no header. `buildDistributedFinalPipe` must skip it instead of throwing
 /// `Cannot add simple transform to empty Pipe` on the first transform.
@@ -68,7 +68,7 @@ TEST(BuildDistributedFinalPipe, SkipsEmptyMergeLanes)
     /// A single empty merge lane: the whole task produces nothing.
     {
         VectorWithMemoryTracking<DistributedReadBucket> lanes;
-        lanes.push_back({/*marks=*/ {}, /*needs_merge=*/ true, /*borders=*/ {}, /*index=*/ 0});
+        lanes.push_back({/*marks=*/ {}, DistributedReadBucket::Kind::Merge, /*borders=*/ {}, /*index=*/ 0});
 
         std::optional<ActionsDAG> out_projection;
         Pipe result = buildDistributedFinalPipe(
@@ -89,8 +89,8 @@ TEST(BuildDistributedFinalPipe, SkipsEmptyMergeLanes)
         non_empty_marks.push_back(std::move(part_marks));
 
         VectorWithMemoryTracking<DistributedReadBucket> lanes;
-        lanes.push_back({/*marks=*/ {}, /*needs_merge=*/ true, /*borders=*/ {}, /*index=*/ 0});
-        lanes.push_back({std::move(non_empty_marks), /*needs_merge=*/ true, /*borders=*/ {}, /*index=*/ 0});
+        lanes.push_back({/*marks=*/ {}, DistributedReadBucket::Kind::Merge, /*borders=*/ {}, /*index=*/ 0});
+        lanes.push_back({std::move(non_empty_marks), DistributedReadBucket::Kind::Merge, /*borders=*/ {}, /*index=*/ 0});
 
         std::optional<ActionsDAG> out_projection;
         Pipe result = buildDistributedFinalPipe(

@@ -642,10 +642,16 @@ public:
     /// one bucket, and another table with the same component puts them into the bucket with the same number.
     /// Returns the bucket count, or 0 when the read cannot be split this way.
     size_t setupDistributedReadBucketsByPartitionValue(size_t component_index, size_t target_buckets);
+    /// Puts the analyzed marks into `target_buckets` distributed-read buckets by ranges of the first primary key
+    /// columns: bucket `i` reads the rows with a key in `(borders[i-1], borders[i]]`. Another table that is
+    /// divided at the same borders puts rows with equal keys into the bucket with the same number.
+    /// Returns the bucket count, or 0 when the read cannot be split this way.
+    size_t setupDistributedReadBucketsByKeyRanges(
+        const VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> & borders, bool in_reverse_order, size_t target_buckets);
     /// The part of all marks of a distributed read that its largest bucket holds: 1/N for N equal buckets,
     /// more when the buckets are not equal. 0 when the read is not distributed or has no marks.
     [[nodiscard]] Float64 getLargestDistributedReadBucketShare() const;
-    /// Serializes each bucket (its marks, the merge flag, and a merge layer's borders + index) into a
+    /// Serializes each bucket (its marks, its kind, and for a merge or trim bucket the borders + index) into a
     /// per-bucket blob shipped as the per-read bucket task parameter; empty unless this is a distributed read.
     VectorWithMemoryTracking<String> serializeDistributedReadBuckets() const;
     /// Makes a list of shards to read in parallel in distributed query plan

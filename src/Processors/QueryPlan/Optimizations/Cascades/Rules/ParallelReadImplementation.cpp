@@ -44,6 +44,20 @@ std::vector<GroupExpressionPtr> ParallelReadImplementation::applyImpl(GroupExpre
     const auto * read_step = typeid_cast<const ReadFromMergeTree *>(expression->getQueryPlanStep());
     const size_t node_count = required_properties.distribution.node_count;
 
+    /// The parent requires the rows divided by ranges of key values at given borders. Only this read can
+    /// deliver that, and only when the required columns are the first columns of the primary key of its table.
+    if (required_properties.distribution.layout_function && required_properties.distribution.layout_function->tryGetKeyRanges())
+    {
+        auto read_by_ranges_expression = tryMakeKeyRangeReadVariant(expression, required_properties.distribution);
+        if (!read_by_ranges_expression)
+        {
+            LOG_TEST(getLogger("ParallelRead"), "No read by key ranges for '{}': the read cannot be split by {} over the required columns",
+                read_step->getStepDescription(), required_properties.distribution.layout_function->dump());
+            return {};
+        }
+        return addPhysicalToMemo(read_by_ranges_expression, required_properties, memo);
+    }
+
     /// The parent requires the rows divided by a function that a table stores. Only this read can deliver
     /// that, and only when its table has the function as a partition key component over the required columns.
     if (required_properties.distribution.layout_function)

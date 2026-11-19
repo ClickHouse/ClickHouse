@@ -29,15 +29,28 @@ void addMergingFinal(
     bool enable_vertical_final,
     bool read_in_reverse = false);
 
-/// One lane of a distributed task's read: the marks it reads. When `needs_merge` it is a FINAL intersecting
-/// layer (read in order, trimmed to `(borders[index-1], borders[index]]`, then merge-deduplicated); otherwise
-/// a plain or non-intersecting read with `borders`/`index` unused.
+/// One lane of a distributed task's read: the marks it reads, and what the task does with their rows.
 struct DistributedReadBucket
 {
+    /// The values are written to the task parameter as one byte.
+    enum class Kind : UInt8
+    {
+        /// A plain or non-intersecting read; `borders` and `index` are unused.
+        Plain = 0,
+        /// A FINAL intersecting layer: read in order, trimmed to `(borders[index-1], borders[index]]`,
+        /// then merge-deduplicated.
+        Merge = 1,
+        /// A read divided by ranges of key values: its marks also hold the granules that cross a border,
+        /// so the rows are trimmed to `(borders[index-1], borders[index]]`.
+        Trim = 2,
+    };
+
     RangesInDataPartsDescription marks;
-    bool needs_merge = false;
+    Kind kind = Kind::Plain;
     VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> borders;
     size_t index = 0;
+
+    [[nodiscard]] bool hasBorders() const { return kind != Kind::Plain; }
 };
 
 /// Reads one lane's marks into a pipe -- the part-source-specific seam of `buildDistributedFinalPipe`.

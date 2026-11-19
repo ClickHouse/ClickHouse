@@ -88,6 +88,10 @@ public:
     /// Filled on first use by `getDeliveredStorageLayouts`.
     std::optional<StorageLayouts> storage_layouts;
 
+    /// The key columns by whose ranges the reads below can divide the result of this group.
+    /// Filled on first use by `getKeyRangeLayoutCandidates`.
+    std::optional<KeyRangeLayoutCandidates> key_range_layout_candidates;
+
 private:
     const GroupId group_id;
     bool is_explored = false;

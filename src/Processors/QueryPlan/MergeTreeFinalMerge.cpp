@@ -210,7 +210,7 @@ Pipe buildDistributedFinalPipe(
     RangesInDataPartsDescription non_intersecting_marks;
     for (const auto & lane : lanes)
     {
-        if (!lane.needs_merge)
+        if (lane.kind != DistributedReadBucket::Kind::Merge)
         {
             for (const auto & part_marks : lane.marks)
                 non_intersecting_marks.push_back(part_marks);

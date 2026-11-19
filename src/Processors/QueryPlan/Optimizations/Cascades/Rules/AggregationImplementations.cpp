@@ -63,6 +63,7 @@ public:
     void addShuffleAggregation(size_t node_count);
     void addSingleKeyShuffleAggregations(const std::vector<size_t> & candidate_node_counts);
     void addCoLocatedAggregations(size_t node_count);
+    void addCoLocatedAggregationsByKeyRanges(size_t node_count);
 
     /// See `addShuffleAggregation` for why each condition disables the shuffle strategy.
     [[nodiscard]] bool isShuffleApplicable() const
@@ -281,6 +282,40 @@ void AggregationImplementation::StrategyEnumerator::addCoLocatedAggregations(siz
     }
 }
 
+/// Co-located by key ranges - the input comes from tables sorted by some of the group keys, so the reads can
+/// divide it by ranges of those keys. The rows of one group are then on one node, and each node produces
+/// final results with no exchange below the aggregation.
+void AggregationImplementation::StrategyEnumerator::addCoLocatedAggregationsByKeyRanges(size_t node_count)
+{
+    const auto & keys = agg_step.getParams().keys;
+    for (const auto & candidate : getKeyRangeLayoutCandidates(memo, expression->inputs[0].group_id))
+    {
+        DistributionDescription by_ranges;
+        by_ranges.node_count = node_count;
+
+        /// The first key columns of the tables that are all group keys. More of them give more places for a border.
+        for (const auto & key_column : candidate.key_columns)
+        {
+            auto key = std::ranges::find_if(keys, [&](const String & key_name) { return key_column.contains(key_name); });
+            if (key == keys.end())
+                break;
+            by_ranges.columns.push_back({*key});
+        }
+
+        const size_t key_size = by_ranges.columns.size();
+        if (key_size == 0)
+            continue;
+
+        const DataTypes key_types(candidate.key_types.begin(), candidate.key_types.begin() + key_size);
+        by_ranges.layout_function = getKeyRangeLayoutFunction(memo, candidate.read_groups, key_types, candidate.in_reverse_order, node_count);
+        if (!by_ranges.layout_function)
+            continue;
+
+        addAlternative(strategySingleton<ShuffleAggregationStrategy>(), by_ranges, by_ranges,
+            fmt::format("Co-located (by {}) {}", by_ranges.layout_function->dump(), agg_step.getStepDescription()));
+    }
+}
+
 std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     const auto * agg_step = typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep());
@@ -377,6 +412,12 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
         {
             for (size_t candidate_node_count : candidate_node_counts)
                 strategies.addCoLocatedAggregations(candidate_node_count);
+        }
+
+        if (memo.getContext().distributed_plan_use_primary_key_range_layout)
+        {
+            for (size_t candidate_node_count : candidate_node_counts)
+                strategies.addCoLocatedAggregationsByKeyRanges(candidate_node_count);
         }
     }
 
