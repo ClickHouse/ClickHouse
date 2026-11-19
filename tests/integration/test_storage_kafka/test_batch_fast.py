@@ -4570,6 +4570,13 @@ def test_kafka_stream_cursor(kafka_cluster, create_query_generator):
         )
         assert_eq_with_retry(instance, f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'", "1")
         admin_client.create_partitions({topic: NewPartitions(total_count=3)})
+        # The metadata of the producer does not have the new partition yet.
+        for _ in range(60):
+            producer = k.get_kafka_producer(kafka_cluster.kafka_port, k.producer_serializer, 15)
+            if 2 in producer.partitions_for(topic):
+                break
+            producer.close()
+            time.sleep(0.5)
         produce(2, [20])
         assert request.get_answer() == "20\n"
 
