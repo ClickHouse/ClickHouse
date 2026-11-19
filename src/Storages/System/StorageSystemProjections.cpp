@@ -1,23 +1,16 @@
-#include <Storages/System/StorageSystemProjections.h>
-#include <Storages/System/DatabaseTablesCursor.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <Storages/StorageAlias.h>
-#include <Storages/System/extractTablesFilter.h>
-#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/ISource.h>
@@ -25,6 +18,14 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/System/DatabaseTablesCursor.h>
+#include <Storages/System/StorageSystemProjections.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
+#include <Storages/System/extractTablesFilter.h>
+#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
+#include <Storages/VirtualColumnUtils.h>
 
 
 namespace DB
@@ -46,6 +47,9 @@ StorageSystemProjections::StorageSystemProjections(const StorageID & table_id_)
         {"table", std::make_shared<DataTypeString>(), "Table name."},
         {"name", std::make_shared<DataTypeString>(), "Projection name."},
         {"type", std::move(projection_type_datatype), "Projection type."},
+        {"total_rows", std::make_shared<DataTypeUInt64>(), "Total number of rows."},
+        {"data_compressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of compressed data, in bytes."},
+        {"data_uncompressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of decompressed data, in bytes."},
         {"sorting_key", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Projection sorting key."},
         {"query", std::make_shared<DataTypeString>(), "Projection query."},
         {"settings",
@@ -129,6 +133,13 @@ protected:
                     continue;
                 const auto & projections = metadata_snapshot->getProjections();
 
+                /// Same active-part snapshot as #70106. `StorageAlias::isMergeTree()` is true for an alias of a
+                /// MergeTree table, and that object is not a `MergeTreeData`, so only cast the real engine.
+                MergeTreeData::DataPartsVector parts;
+                if (table->isMergeTree() && !table->as<StorageAlias>())
+                    parts = static_cast<const MergeTreeData &>(*table).getDataPartsVectorForInternalUsage(
+                        {MergeTreeData::DataPartState::Active}, nullptr);
+
                 for (const auto & projection : projections)
                 {
                     ++rows_count;
@@ -148,6 +159,31 @@ protected:
                     // 'type' column
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(projection.type);
+
+                    size_t total_rows = 0;
+                    size_t data_compressed = 0;
+                    size_t data_uncompressed = 0;
+                    for (const auto & part : parts)
+                    {
+                        auto projection_parts = part->getProjectionParts();
+                        auto projection_part = projection_parts[projection.name];
+                        auto column_size = projection_part->getTotalColumnsSize();
+
+                        total_rows += projection_part->rows_count;
+                        data_compressed += column_size.data_compressed;
+                        data_uncompressed += column_size.data_uncompressed;
+                    }
+
+                    // 'total_rows' column
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(total_rows);
+                    // 'data_compressed_bytes' column
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(data_compressed);
+                    // 'data_uncompressed_bytes' column
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(data_uncompressed);
+
                     // 'sorting_key' column
                     if (column_mask[src_index++])
                     {
