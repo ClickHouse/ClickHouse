@@ -1,19 +1,16 @@
 #pragma once
 
-#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <limits>
 #include <optional>
-#include <type_traits>
 #include <utility>
-
-#include <base/sort.h>
 
 #include <Common/NaNUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesQuantileHelpers.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSlidingSum.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSortedValues.h>
@@ -47,52 +44,6 @@ struct AggregateFunctionTimeseriesMadToGridTraits
     /// The sorted values of the window, so the median is read from them without sorting.
     using Summary = AggregateFunctionTimeseriesSortedValues<ValueType>;
 
-    /// The k-th smallest (counting from 0) of the deviations `|values[i] - median|`, where `values` are `count` real values
-    /// in ascending order, `median` is finite and `k < count`. If `with_next`, the (k + 1)-th smallest deviation is returned
-    /// as well, which requires `k + 1 < count`.
-    template <bool with_next>
-    static std::conditional_t<with_next, std::pair<Float64, Float64>, Float64>
-    kthSmallestDeviation(const ValueType * values, size_t count, Float64 median, size_t k)
-    {
-        constexpr Float64 infinity = std::numeric_limits<Float64>::infinity();
-
-        /// The k + 1 values closest to the median are consecutive in `values`, so the k-th deviation is the smallest
-        /// `max(deviation_of_first(begin), deviation_of_last(begin))` over the start `begin` of k + 1 consecutive values.
-        auto deviation_of_first = [&](size_t begin) { return median - static_cast<Float64>(values[begin]); };
-        auto deviation_of_last = [&](size_t begin) { return static_cast<Float64>(values[begin + k]) - median; };
-
-        /// The first deviation does not grow with `begin` and the second one does not shrink, so the minimum is at the first
-        /// `begin` where the second one is not less than the first one, or right before it.
-        size_t low = 0;
-        size_t high = count - k - 1;
-        while (low < high)
-        {
-            const size_t middle = low + (high - low) / 2;
-            if (deviation_of_first(middle) <= deviation_of_last(middle))
-                high = middle;
-            else
-                low = middle + 1;
-        }
-
-        const Float64 kth_deviation_at_low = std::max(deviation_of_first(low), deviation_of_last(low));
-        const Float64 kth_deviation_before_low = low > 0 ? std::max(deviation_of_first(low - 1), deviation_of_last(low - 1)) : infinity;
-        /// `abs` turns `-0.0` (`median - value` for zeros) into `+0.0`, as `|value - median|` in Prometheus.
-        const Float64 kth_deviation = std::abs(std::min(kth_deviation_at_low, kth_deviation_before_low));
-
-        if constexpr (!with_next)
-            return kth_deviation;
-        else
-        {
-            /// The (k + 1)-th deviation is the deviation of the closer one of the two values next to the k + 1 closest values.
-            const size_t begin = kth_deviation_before_low < kth_deviation_at_low ? low - 1 : low;
-            auto deviation_at = [&](size_t index) { return std::abs(static_cast<Float64>(values[index]) - median); };
-            const Float64 next_deviation = std::min(
-                begin > 0 ? deviation_at(begin - 1) : infinity,
-                begin + k + 1 < count ? deviation_at(begin + k + 1) : infinity);
-            return std::make_pair(kth_deviation, next_deviation);
-        }
-    }
-
     /// Sliding aggregator: keeps the sorted values of the window and computes their median absolute deviation, or only the
     /// result if `one_bucket_windows`.
     struct Aggregator
@@ -103,9 +54,14 @@ struct AggregateFunctionTimeseriesMadToGridTraits
 
         /// Each window is one bucket (the window is not longer than the step, or the grid start equals the end), read by one
         /// grid point only: `add` computes the result from it unsorted, and only the result is kept.
-        bool one_bucket_windows = false;
+        bool one_bucket_windows;
         std::optional<ResultType> one_bucket_result;
         GridScaleTimestampType one_bucket_end{};
+
+        explicit Aggregator(bool one_bucket_windows_)
+            : one_bucket_windows(one_bucket_windows_)
+        {
+        }
 
         void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
         {
@@ -121,7 +77,7 @@ struct AggregateFunctionTimeseriesMadToGridTraits
             if (one_bucket_windows)
             {
                 /// Replaces the result of the previous grid point, which is out of this window.
-                one_bucket_result = madOfUnsorted(std::move(values));
+                one_bucket_result = calculateTimeseriesMad(std::move(values));
                 one_bucket_end = bucket_end_timestamp;
                 return;
             }
@@ -142,42 +98,6 @@ struct AggregateFunctionTimeseriesMadToGridTraits
             sliding_sum.removeBefore(cut_off);
         }
 
-        /// The median absolute deviation of non-empty unsorted values, with both medians selected instead of sorting.
-        static Float64 madOfUnsorted(VectorWithMemoryTracking<ValueType> values)
-        {
-            if (std::any_of(values.begin(), values.end(), [](ValueType value) { return isNaN(value); }))
-                return std::numeric_limits<Float64>::quiet_NaN();
-
-            const Float64 median = *calculateTimeseriesQuantile(values, 0.5);
-            if (!std::isfinite(median))
-                return std::numeric_limits<Float64>::quiet_NaN();
-
-            /// The middle deviation, or the two middle ones weighted by 0.5. No deviation is NaN, so `std::less` orders them.
-            auto median_of_deviations = [](auto & deviations) -> Float64
-            {
-                const size_t middle = (deviations.size() - 1) / 2;
-                ::nth_element(deviations.begin(), deviations.begin() + middle, deviations.end());
-                if (deviations.size() % 2 == 1)
-                    return deviations[middle];
-                return deviations[middle] * 0.5 + *std::min_element(deviations.begin() + middle + 1, deviations.end()) * 0.5;
-            };
-
-            /// `Float64` deviations, as in `kthSmallestDeviation`: in place for `Float64` values, in a buffer for `Float32`.
-            if constexpr (std::is_same_v<ValueType, Float64>)
-            {
-                for (Float64 & value : values)
-                    value = std::abs(value - median);
-                return median_of_deviations(values);
-            }
-            else
-            {
-                VectorWithMemoryTracking<Float64> deviations(values.size());
-                for (size_t i = 0; i < values.size(); ++i)
-                    deviations[i] = std::abs(static_cast<Float64>(values[i]) - median);
-                return median_of_deviations(deviations);
-            }
-        }
-
         [[nodiscard]] std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
         {
             if (one_bucket_windows)
@@ -192,7 +112,7 @@ struct AggregateFunctionTimeseriesMadToGridTraits
             if (isNaN(values.front()))
                 return std::numeric_limits<Float64>::quiet_NaN();
 
-            const Float64 median = *summary.quantile(0.5);
+            const Float64 median = *calculateTimeseriesQuantileOfSorted(values, 0.5);
 
             /// A median interpolated between -Inf and +Inf is NaN. An infinite median makes the deviations of the samples
             /// equal to it NaN (`Inf - Inf`), and there are always enough of them to cover the median position of the deviations.
@@ -204,9 +124,9 @@ struct AggregateFunctionTimeseriesMadToGridTraits
             const size_t count = values.size();
             const size_t middle = (count - 1) / 2;
             if (count % 2 == 1)
-                return kthSmallestDeviation</* with_next = */ false>(values.data(), count, median, middle);
+                return calculateTimeseriesKthSmallestDeviation</* with_next = */ false>(values.data(), count, median, middle);
 
-            const auto [lower_deviation, upper_deviation] = kthSmallestDeviation</* with_next = */ true>(values.data(), count, median, middle);
+            const auto [lower_deviation, upper_deviation] = calculateTimeseriesKthSmallestDeviation</* with_next = */ true>(values.data(), count, median, middle);
             return lower_deviation * 0.5 + upper_deviation * 0.5;
         }
     };
@@ -234,9 +154,7 @@ public:
 
     Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
-        Aggregator aggregator;
-        aggregator.one_bucket_windows = Base::buckets_per_window == 1;
-        return aggregator;
+        return Aggregator{Base::buckets_per_window == 1};
     }
 };
 
