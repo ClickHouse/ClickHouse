@@ -725,6 +725,9 @@ void PocoHTTPClient::makeRequestInternalImpl(
             if (enable_s3_requests_logging)
                 LOG_TEST(log, "Receiving response...");
             auto response_body = receiveHTTPResponse(session, poco_response, DBMS_DEFAULT_BUFFER_SIZE);
+            if (request_body->stoppedByResponse())
+                LOG_DEBUG(log, "The server answered {} before the whole request body was sent to {}",
+                    static_cast<int>(poco_response.getStatus()), uri);
 
             watch.stop();
             addMetric(request, S3MetricType::Microseconds, watch.elapsedMicroseconds());

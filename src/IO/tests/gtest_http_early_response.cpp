@@ -202,6 +202,7 @@ TYPED_TEST(HTTPEarlyResponseTest, ErrorStopsTheBody)
     Poco::Net::HTTPResponse response;
     auto response_body = DB::receiveHTTPResponse(*this->session, response);
     EXPECT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+    EXPECT_TRUE(body->stoppedByResponse());
     EXPECT_FALSE(this->session->isRequestBodyComplete());
     EXPECT_FALSE(this->peer.poll(Poco::Timespan(0, 100'000), Poco::Net::Socket::SELECT_READ));
 }
@@ -266,6 +267,7 @@ TYPED_TEST(HTTPEarlyResponseTest, AnswerBeforeTheResetThatFailsTheSend)
     DB::writeString(std::string(this->body_size, 'x'), *body);
     body->finalize();
     EXPECT_TRUE(hooks->answered);
+    EXPECT_TRUE(body->stoppedByResponse());
 
     Poco::Net::HTTPResponse response;
     auto response_body = DB::receiveHTTPResponse(*this->session, response);

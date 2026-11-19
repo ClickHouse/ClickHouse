@@ -39,6 +39,9 @@ public:
     HTTPRequestBodyWriteBuffer(
         Poco::Net::HTTPClientSession & session_, Poco::Net::HTTPClientSession::BodyInfo body_info_, size_t buf_size);
 
+    /// The server answered with an error before the end of the body, and the rest of it was dropped.
+    bool stoppedByResponse() const { return stopped; }
+
     ~HTTPRequestBodyWriteBuffer() override;
 
     /// Whether the request has a body at all. Writing to the buffer of a request without a body
