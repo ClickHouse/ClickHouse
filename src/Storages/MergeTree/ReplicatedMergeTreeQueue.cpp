@@ -25,6 +25,7 @@
 #include <ranges>
 #include <shared_mutex>
 #include <Poco/Timestamp.h>
+#include <Databases/IDatabase.h>
 
 namespace ProfileEvents
 {
