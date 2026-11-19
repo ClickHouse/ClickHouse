@@ -32,7 +32,6 @@ class SettingsChanges;
 class AccessControl;
 struct IAccessEntity;
 class Context;
-struct QueryPrivilegesInfo;
 using ContextPtr = std::shared_ptr<const Context>;
 
 class ContextAccess : public std::enable_shared_from_this<ContextAccess>
@@ -57,12 +56,9 @@ public:
     /// The function returns nullptr if there is no filter to apply.
     RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
-#if CLICKHOUSE_CLOUD
-    std::shared_ptr<const EnabledMaskingPolicies> getEnabledMaskingPolicies() const;
-#endif
     /// Returns the quota to track resource consumption.
     std::shared_ptr<const EnabledQuota> getQuota() const;
-    std::vector<QuotaUsage> getQuotaUsages() const;
+    std::optional<QuotaUsage> getQuotaUsage() const;
 
     /// Returns the default settings, i.e. the settings which should be applied on user's login.
     SettingsChanges getDefaultSettings() const;
@@ -82,17 +78,6 @@ public:
     void checkAccess(const ContextPtr & context, const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
     void checkAccess(const ContextPtr & context, const AccessRightsElement & element) const;
     void checkAccess(const ContextPtr & context, const AccessRightsElements & elements) const;
-
-    /// Same as above, but records the checked privileges in `privileges_info` instead of the query context,
-    /// for the checks which are done when the context is not available, e.g. when a function is built.
-    void checkAccess(QueryPrivilegesInfo & privileges_info, const AccessFlags & flags) const;
-    void checkAccess(QueryPrivilegesInfo & privileges_info, const AccessFlags & flags, std::string_view database) const;
-    void checkAccess(QueryPrivilegesInfo & privileges_info, const AccessFlags & flags, std::string_view database, std::string_view table) const;
-    void checkAccess(QueryPrivilegesInfo & privileges_info, const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
-    void checkAccess(QueryPrivilegesInfo & privileges_info, const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
-    void checkAccess(QueryPrivilegesInfo & privileges_info, const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
-    void checkAccess(QueryPrivilegesInfo & privileges_info, const AccessRightsElement & element) const;
-    void checkAccess(QueryPrivilegesInfo & privileges_info, const AccessRightsElements & elements) const;
 
     void checkGrantOption(const ContextPtr & context, const AccessFlags & flags) const;
     void checkGrantOption(const ContextPtr & context, const AccessFlags & flags, std::string_view database) const;
@@ -144,27 +129,12 @@ public:
     /// Checks if grantees are allowed for the current user, throws an exception if not.
     void checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const;
 
-    /// A session whose access rights are limited by the GRANTS clause of an authentication method cannot
-    /// administer roles. Besides the role DDL guarded in checkAccessImplHelper, this includes changing which
-    /// roles are activated by default for a user (SET DEFAULT ROLE / ALTER USER ... DEFAULT ROLE), which is
-    /// authorized with plain ALTER_USER and is therefore not caught by that flag-based guard. Throws if the
-    /// current session is limited by such a clause.
-    void checkCanAdministerDefaultRoles() const;
-
-    /// Throws READONLY if the current session is in readonly mode and so cannot change grants.
-    void checkCanChangeGrants() const;
-
     /// Checks access of grants with parameter where a filter can be applied.
     /// For example, for `GRANT READ ON S3('s3://foo.*') TO user` calling `checkAccess(READ, "S3")` will throw an error
     /// because we are checking for `READ` permissions for all possible URLs.
     ///
     /// But calling `checkAccessWithFilter(READ, "S3", "s3://foo/bar.csv")` will succeed, because we have just enough rights.
     void checkAccessWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view filter) const;
-
-    /// The non-throwing counterpart of `checkAccessWithFilter`, for callers that have to observe the
-    /// decision instead of failing the query (e.g. to decide whether an operation may look at the data
-    /// at all, without disclosing through the error message what it would have seen).
-    bool isGrantedWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view filter) const;
 
     static AccessRights addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control);
 
@@ -178,27 +148,25 @@ private:
     void setUser(const UserPtr & user_) const TSA_REQUIRES(mutex);
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const TSA_REQUIRES(mutex);
     void findRowPoliciesOfInitialUser() const TSA_REQUIRES(mutex);
-    void findRowPoliciesOfInitialUserImpl(
-        std::shared_ptr<const EnabledRowPolicies> & row_policies, std::vector<String> & unknown_current_roles) const TSA_REQUIRES(mutex);
     void calculateAccessRights() const TSA_REQUIRES(mutex);
 
     template <bool throw_if_denied, bool grant_option, bool wildcard>
-    bool checkAccessImpl(QueryPrivilegesInfo & privileges_info, const AccessFlags & flags) const;
+    bool checkAccessImpl(const ContextPtr & context, const AccessFlags & flags) const;
 
     template <bool throw_if_denied, bool grant_option, bool wildcard, typename... Args>
-    bool checkAccessImpl(QueryPrivilegesInfo & privileges_info, const AccessFlags & flags, std::string_view database, const Args &... args) const;
+    bool checkAccessImpl(const ContextPtr & context, const AccessFlags & flags, std::string_view database, const Args &... args) const;
 
     template <bool throw_if_denied, bool grant_option, bool wildcard>
-    bool checkAccessImpl(QueryPrivilegesInfo & privileges_info, const AccessRightsElement & element) const;
+    bool checkAccessImpl(const ContextPtr & context, const AccessRightsElement & element) const;
 
     template <bool throw_if_denied, bool grant_option, bool wildcard>
-    bool checkAccessImpl(QueryPrivilegesInfo & privileges_info, const AccessRightsElements & elements) const;
+    bool checkAccessImpl(const ContextPtr & context, const AccessRightsElements & elements) const;
 
     template <bool throw_if_denied, bool grant_option, bool wildcard, typename... Args>
-    bool checkAccessImplHelper(QueryPrivilegesInfo & privileges_info, AccessFlags flags, const Args &... args) const;
+    bool checkAccessImplHelper(const ContextPtr & context, AccessFlags flags, const Args &... args) const;
 
     template <bool throw_if_denied, bool grant_option, bool wildcard>
-    bool checkAccessImplHelper(QueryPrivilegesInfo & privileges_info, const AccessRightsElement & element) const;
+    bool checkAccessImplHelper(const ContextPtr & context, const AccessRightsElement & element) const;
 
     template <bool throw_if_denied>
     bool checkAdminOptionImpl(const ContextPtr & context, const UUID & role_id) const;
@@ -241,15 +209,6 @@ private:
     mutable std::shared_ptr<const AccessRights> access_with_implicit TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledRowPolicies> enabled_row_policies TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledRowPolicies> row_policies_of_initial_user TSA_GUARDED_BY(mutex);
-    /// The subscription for changes of roles, which change the forwarded current roles of the initial user.
-    mutable scope_guard subscription_for_roles_of_initial_user_changes TSA_GUARDED_BY(mutex);
-    /// Forwarded current roles of the initial user which do not exist on this node. If not empty, reading tables is denied.
-    mutable std::vector<String> unknown_current_roles_of_initial_user TSA_GUARDED_BY(mutex);
-    /// Whether the last attempt to find the row policies of the initial user threw. If true, reading tables is denied.
-    mutable bool failed_to_find_row_policies_of_initial_user TSA_GUARDED_BY(mutex) = false;
-#if CLICKHOUSE_CLOUD
-    mutable std::shared_ptr<const EnabledMaskingPolicies> enabled_masking_policies TSA_GUARDED_BY(mutex);
-#endif
     mutable std::shared_ptr<const EnabledQuota> enabled_quota TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledSettings> enabled_settings TSA_GUARDED_BY(mutex);
 };
@@ -286,12 +245,9 @@ public:
     /// The function returns nullptr if there is no filter to apply.
     ALWAYS_INLINE RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const { return access->getRowPolicyFilter(database, table_name, filter_type); }
 
-#if CLICKHOUSE_CLOUD
-    ALWAYS_INLINE std::shared_ptr<const EnabledMaskingPolicies> getEnabledMaskingPolicies() const { return access->getEnabledMaskingPolicies(); }
-#endif
     /// Returns the quota to track resource consumption.
     ALWAYS_INLINE std::shared_ptr<const EnabledQuota> getQuota() const { return access->getQuota(); }
-    ALWAYS_INLINE std::vector<QuotaUsage> getQuotaUsages() const { return access->getQuotaUsages(); }
+    ALWAYS_INLINE std::optional<QuotaUsage> getQuotaUsage() const { return access->getQuotaUsage(); }
 
     /// Returns the default settings, i.e. the settings which should be applied on user's login.
     ALWAYS_INLINE SettingsChanges getDefaultSettings() const { return access->getDefaultSettings(); }
@@ -362,16 +318,8 @@ public:
     /// Checks if grantees are allowed for the current user, throws an exception if not.
     ALWAYS_INLINE void checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const { access->checkGranteesAreAllowed(grantee_ids); }
 
-    /// Rejects changing users' default roles when the current session is limited by an authentication method's GRANTS clause.
-    ALWAYS_INLINE void checkCanAdministerDefaultRoles() const { access->checkCanAdministerDefaultRoles(); }
-
-    ALWAYS_INLINE void checkCanChangeGrants() const { access->checkCanChangeGrants(); }
-
     /// Checks access of grants with parameter where a filter can be applied.
     ALWAYS_INLINE void checkAccessWithFilter(const AccessFlags & flags, std::string_view parameter, std::string_view filter) const { access->checkAccessWithFilter(context, flags, parameter, filter); }
-
-    /// Checks access of grants with parameter where a filter can be applied, without throwing.
-    ALWAYS_INLINE bool isGrantedWithFilter(const AccessFlags & flags, std::string_view parameter, std::string_view filter) const { return access->isGrantedWithFilter(context, flags, parameter, filter); }
 
 private:
     ContextAccessPtr access;

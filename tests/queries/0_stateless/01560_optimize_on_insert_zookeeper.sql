@@ -1,5 +1,4 @@
 -- Tags: zookeeper
-SET optimize_on_insert = 1;
 
 DROP TABLE IF EXISTS empty1;
 DROP TABLE IF EXISTS empty2;

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-msan
-# Float coercions in ROW_DIRECT and BUFFERED_V1 RowBinary.
-# Float32 → Float32, Float64 → Float64 (same kind) and Float32 → Float64 (widening) must work.
+# Float same-kind coercions in ROW_DIRECT and BUFFERED_V1 RowBinary.
+# Float32 → Float32 and Float64 → Float64 must work (same WASM kind).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} << EOF
+${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
 DROP FUNCTION IF EXISTS wasm_raw_f32;
 DROP FUNCTION IF EXISTS wasm_raw_f64;
 DROP FUNCTION IF EXISTS wasm_rb_f32;
@@ -17,7 +17,7 @@ EOF
 
 cat ${CUR_DIR}/wasm/identity_int.wasm | ${CLICKHOUSE_CLIENT} --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'identity_int_float', code FROM input('code String') FORMAT RawBlob"
 
-${CLICKHOUSE_CLIENT} << EOF
+${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
 CREATE FUNCTION wasm_raw_f32
     LANGUAGE WASM ABI ROW_DIRECT
     FROM 'identity_int_float' :: 'identity_raw_f32'
@@ -59,10 +59,6 @@ SELECT wasm_rb_f32(toFloat32(0.0));
 SELECT wasm_rb_f64(toFloat64(1.5));
 SELECT wasm_rb_f64(toFloat64(-2.5));
 SELECT wasm_rb_f64(toFloat64(0.0));
-
--- Float32 → Float64 widening: both ROW_DIRECT and BUFFERED_V1.
-SELECT wasm_raw_f64(toFloat32(1.5));
-SELECT wasm_rb_f64(toFloat32(1.5));
 
 -- Multiple rows.
 SELECT wasm_rb_f64(toFloat64(number)) FROM numbers(4);

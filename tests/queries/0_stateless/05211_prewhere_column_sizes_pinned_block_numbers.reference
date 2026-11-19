@@ -1,7 +1,0 @@
-parts	2	2
-quorum_status	1
-unpinned_rows	4000
-pinned_rows	2000
-          Prewhere filter column: notEmpty(a)
-          Prewhere filter column: and(notEmpty(a), notEmpty(b)) (removed)
-pinned_result	2048000

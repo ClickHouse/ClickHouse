@@ -1,3 +1,4 @@
+#include <cassert>
 
 #include <Compression/CompressedReadBufferFromFile.h>
 
@@ -12,13 +13,6 @@ namespace ErrorCodes
     extern const int SEEK_POSITION_OUT_OF_BOUND;
 }
 
-/// Cached: `getLogger` takes a process-global mutex, and these buffers are created per column stream
-/// of every read task.
-static LoggerPtr getCompressedReadBufferFromFileLogger()
-{
-    static LoggerPtr log = getLogger("CompressedReadBufferFromFile");
-    return log;
-}
 
 bool CompressedReadBufferFromFile::nextImpl()
 {
@@ -30,13 +24,15 @@ bool CompressedReadBufferFromFile::nextImpl()
         if (!size_compressed)
             return false;
 
+        LOG_TEST(log, "Decompressing {} bytes from {} to {} bytes", size_compressed, file_in.getFileName(), size_decompressed);
+
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
         /// This is for clang static analyzer.
-        chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+        assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
 
         memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
-        working_buffer = WorkingBuffer::fromPaddedStorage(memory, 0, size_decompressed);
+        working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
 
         decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
 
@@ -60,7 +56,7 @@ CompressedReadBufferFromFile::CompressedReadBufferFromFile(std::unique_ptr<ReadB
     : BufferWithOwnMemory<ReadBuffer>(0)
     , p_file_in(std::move(buf))
     , file_in(*p_file_in)
-    , log(getCompressedReadBufferFromFileLogger(), /* allowed_count */ 1, /* interval */ 1)
+    , log(getLogger("CompressedReadBufferFromFile"), /* allowed_count */ 1, /* interval */ 1)
 {
     compressed_in = &file_in;
     allow_different_codecs = allow_different_codecs_;
@@ -76,11 +72,10 @@ void CompressedReadBufferFromFile::prefetch(Priority priority)
 
 void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block)
 {
-    chassert(size_compressed || working_buffer.empty());
-
     /// Nothing to do if we already at required position
     if (!size_compressed && static_cast<size_t>(file_in.getPosition()) == offset_in_compressed_file && /// correct position in compressed file
-        nextimpl_working_buffer_offset == offset_in_decompressed_block) /// we will move our position to correct one
+        ((!buffer().empty() && offset() == offset_in_decompressed_block)     /// correct position in buffer or
+         || nextimpl_working_buffer_offset == offset_in_decompressed_block)) /// we will move our position to correct one
         return;
 
     /// Our seek is within working_buffer, so just move the position
@@ -127,13 +122,13 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
             size_t size_decompressed = 0;
             size_t size_compressed_without_checksum = 0;
 
-            bytes += offset();
-            resetWorkingBuffer();
-            size_compressed = 0;
             size_t new_size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
+            size_compressed = 0; /// file_in no longer points to the end of the block in working_buffer.
 
             if (!new_size_compressed)
                 return bytes_read;
+
+            LOG_TEST(log, "Decompressing {} bytes from {} to {} bytes", new_size_compressed, file_in.getFileName(), size_decompressed);
 
             auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
@@ -149,11 +144,12 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
             {
                 /// Need to skip some bytes in decompressed data (seek happened before readBig call).
                 size_compressed = new_size_compressed;
+                bytes += offset();
 
                 /// This is for clang static analyzer.
-                chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+                assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
                 memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
-                working_buffer = WorkingBuffer::fromPaddedStorage(memory, 0, size_decompressed);
+                working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
                 /// Synchronous mode must be set since we need read partial data immediately from working buffer to target buffer.
                 decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
 
@@ -174,11 +170,12 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
             else
             {
                 size_compressed = new_size_compressed;
+                bytes += offset();
 
                 /// This is for clang static analyzer.
-                chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+                assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
                 memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
-                working_buffer = WorkingBuffer::fromPaddedStorage(memory, 0, size_decompressed);
+                working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
                 // Asynchronous mode can be set here because working_buffer wouldn't be overwritten any more since this is the last block.
                 decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
 

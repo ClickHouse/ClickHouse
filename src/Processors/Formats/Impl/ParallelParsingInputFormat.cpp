@@ -8,31 +8,12 @@
 namespace DB
 {
 
-/// Set to the running format's `parsing_finished` only while this thread is inside
-/// `segmentatorThreadFunction`. A `FileSegmentationEngine` that may read far past `min_bytes` in one
-/// call -- Avro reads a whole OCF block, which cannot be split across segments -- polls it to stop
-/// mid-read when the pipeline finishes (LIMIT, `timeout_overflow_mode='break'`, a background exception);
-/// the between-calls `while (!parsing_finished)` check is too coarse for it. Null on other threads and
-/// for every other format (they return near `min_bytes`, so the coarse check already stops them).
-static thread_local const std::atomic<bool> * segmentator_parsing_finished = nullptr;
-
-bool isSegmentatorParsingFinished()
-{
-    return segmentator_parsing_finished && segmentator_parsing_finished->load();
-}
-
 void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread_group)
 {
     ThreadGroupSwitcher switcher(thread_group, ThreadName::PARALLEL_PARSING_SEGMENTATOR);
 
-    segmentator_parsing_finished = &parsing_finished;
-    SCOPE_EXIT({ segmentator_parsing_finished = nullptr; });
-
     try
     {
-        /// Created once per stream: an engine may keep state across segments (e.g. Avro caches the file header).
-        auto file_segmentation_engine = file_segmentation_engine_creator(format_settings);
-
         while (!parsing_finished)
         {
             const auto segmentator_unit_number = segmentator_ticket_number % processing_units.size();
@@ -46,12 +27,13 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread
             if (parsing_finished)
                 break;
 
-            chassert(unit.status == READY_TO_INSERT);
+            assert(unit.status == READY_TO_INSERT);
 
             // Segmentating the original input.
             unit.segment.resize(0);
 
             size_t segment_start = getDataOffsetMaybeCompressed(*in);
+            auto file_segmentation_engine = file_segmentation_engine_creator(format_settings);
             auto [have_more_data, currently_read_rows] = file_segmentation_engine(*in, unit.segment, min_chunk_bytes, max_block_size);
 
             unit.original_segment_size = getDataOffsetMaybeCompressed(*in) - segment_start;
@@ -96,7 +78,6 @@ void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_numb
         input_format->setRowsReadBefore(unit.offset);
         input_format->setErrorsLogger(errors_logger);
         input_format->setSerializationHints(serialization_hints);
-        input_format->setColumnMapper(column_mapper);
 
         InternalParser parser(input_format);
 
@@ -215,7 +196,7 @@ Chunk ParallelParsingInputFormat::read()
                 return {};
             }
 
-            chassert(unit->status == READY_TO_READ);
+            assert(unit->status == READY_TO_READ);
 
             if (!unit->chunk_ext.chunk.empty())
                 break;
@@ -241,7 +222,7 @@ Chunk ParallelParsingInputFormat::read()
         next_block_in_current_unit = 0;
     }
 
-    chassert(next_block_in_current_unit.value() < unit->chunk_ext.chunk.size());
+    assert(next_block_in_current_unit.value() < unit->chunk_ext.chunk.size());
 
     Chunk res = std::move(unit->chunk_ext.chunk.at(*next_block_in_current_unit));
     last_block_missing_values = std::move(unit->chunk_ext.block_missing_values[*next_block_in_current_unit]);

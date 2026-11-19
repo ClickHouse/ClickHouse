@@ -11,7 +11,9 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVariant.h>
 
 #include <Interpreters/Context.h>
 
@@ -21,7 +23,6 @@
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/NullableUtils.h>
 
 namespace DB
 {
@@ -35,6 +36,20 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+/// Row-wise source null map (ColumnUInt8, 1 = source value is NULL), or nullptr
+/// when the column cannot hold NULLs. Dynamic/Variant encode NULLs with their
+/// null discriminator instead of a separate null map.
+static ColumnPtr getSourceNullMap(const IColumn & source_column)
+{
+    if (const auto * source_nullable = checkAndGetColumn<ColumnNullable>(&source_column))
+        return source_nullable->getNullMapColumnPtr();
+    if (const auto * source_dynamic = checkAndGetColumn<ColumnDynamic>(&source_column))
+        return source_dynamic->getVariantColumn().createNullMap();
+    if (const auto * source_variant = checkAndGetColumn<ColumnVariant>(&source_column))
+        return source_variant->createNullMap();
+    return nullptr;
 }
 
 class FunctionCastOrDefault final : public IFunction
@@ -53,27 +68,19 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    /// Documentation-only — result type is parsed from the const-string
-    /// type-name (2nd argument). If the value can't be cast, the optional
-    /// default (3rd argument) is returned instead.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(Any, const String, [Any]) -> Any";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         size_t arguments_size = arguments.size();
         if (arguments_size != 2 && arguments_size != 3)
@@ -126,34 +133,11 @@ public:
         return result_type;
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
-    {
-        const ColumnWithTypeAndName & column_to_cast = arguments[0];
-
-        /// If the source column is const (and default value column, if present, is also const),
-        /// execute on a single row and wrap the result in ColumnConst.
-        bool input_is_const = isColumnConst(*column_to_cast.column);
-        bool default_is_const = arguments.size() < 3 || isColumnConst(*arguments[2].column);
-
-        if (input_is_const && default_is_const)
-        {
-            ColumnsWithTypeAndName single_row_args = arguments;
-            for (auto & arg : single_row_args)
-                if (arg.column)
-                    arg.column = arg.column->cloneResized(1);
-
-            auto single_result = executeOnNonConstArguments(single_row_args, return_type, 1);
-            return ColumnConst::create(std::move(single_result), input_rows_count);
-        }
-
-        return executeOnNonConstArguments(arguments, return_type, input_rows_count);
-    }
-
-    [[nodiscard]] ColumnPtr executeOnNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t /*input_rows_count*/) const
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t) const override
     {
         const ColumnWithTypeAndName & column_to_cast = arguments[0];
         auto non_const_column_to_cast = column_to_cast.column->convertToFullColumnIfConst();
-        ColumnWithTypeAndName column_to_cast_non_const{non_const_column_to_cast, column_to_cast.type, column_to_cast.name};
+        ColumnWithTypeAndName column_to_cast_non_const { non_const_column_to_cast, column_to_cast.type, column_to_cast.name };
 
         ColumnsWithTypeAndName cast_args
         {
@@ -167,8 +151,10 @@ public:
         auto probe_type = cast_or_null_resolver->getReturnType(cast_args);
         auto cast_func = cast_or_null_resolver->build(cast_args);
         auto cast_result = cast_func->execute(cast_args, probe_type, non_const_column_to_cast->size(), false);
-        auto cast_null_map_column = getOuterNullMap(*cast_result);
-        auto source_null_map_column = getOuterNullMap(*non_const_column_to_cast);
+        auto cast_result_full = cast_result->convertToFullColumnIfLowCardinality();
+        auto cast_null_map_column = getSourceNullMap(*cast_result_full);
+        auto source_column_full = non_const_column_to_cast->convertToFullColumnIfLowCardinality();
+        auto source_null_map_column = getSourceNullMap(*source_column_full);
         const auto * cast_null_map_data = cast_null_map_column
             ? &assert_cast<const ColumnUInt8 &>(*cast_null_map_column).getData()
             : nullptr;
@@ -246,7 +232,7 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
 private:
     FunctionCastOrDefault impl;
@@ -254,34 +240,19 @@ private:
     DataTypePtr type;
     WhichDataType which;
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
 
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return impl.useDefaultImplementationForNulls(); }
-    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return impl.useDefaultImplementationForNothing(); }
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return impl.useDefaultImplementationForLowCardinalityColumns();}
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants();}
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    bool useDefaultImplementationForNulls() const override { return impl.useDefaultImplementationForNulls(); }
+    bool useDefaultImplementationForNothing() const override { return impl.useDefaultImplementationForNothing(); }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return impl.useDefaultImplementationForLowCardinalityColumns();}
+    bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants();}
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
         return impl.isSuitableForShortCircuitArgumentsExecution(arguments);
     }
 
-    /// Documentation-only — the result type is the destination type bound at
-    /// construction time. For `Decimal*` / `DateTime64` a const-`UInt` scale
-    /// is required before the optional default value; for `DateTime` /
-    /// `DateTime64` a const-`String` timezone may follow; the trailing
-    /// argument is the optional fallback that's returned when parsing fails.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        const String target = type->getName();
-        if (isDecimal(type) || isDateTime64(type))
-            return "(Any, const UInt8, [const String], [" + target + "]) -> " + target;
-        if (isDateTimeOrDateTime64(type))
-            return "(Any, [const String], [" + target + "]) -> " + target;
-        return "(Any, [" + target + "]) -> " + target;
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args = {{"Value", nullptr, nullptr, "any type"}};
         FunctionArgumentDescriptors optional_args;
@@ -370,7 +341,7 @@ private:
         return impl.getReturnTypeImpl(arguments_with_cast_type);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_size) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_size) const override
     {
         /// Scale and time zone
         size_t additional_arguments_size = (which.isDecimal() || which.isDateTime64()) + which.isDateTimeOrDateTime64();
@@ -431,9 +402,9 @@ SELECT accurateCastOrDefault(42, 'String')
 SELECT accurateCastOrDefault('abc', 'UInt32', 999::UInt32)
         )",
         R"(
-┌─accurateCastOrDefault('abc', 'UInt32', CAST('999', 'UInt32'))─┐
-│                                                           999 │
-└───────────────────────────────────────────────────────────────┘
+┌─accurateCastOrDefault('abc', 'UInt32', 999)─┐
+│                                         999 │
+└─────────────────────────────────────────────┘
         )"
     },
     {
@@ -455,7 +426,7 @@ SELECT accurateCastOrDefault('abc', 'UInt32')
     factory.registerFunction<FunctionCastOrDefault>(accurateCastOrDefault_documentation);
 
     FunctionDocumentation::Description toUInt8OrDefault_description = R"(
-Like [`toUInt8`](#toUInt8), this function converts an input value to a value of type [UInt8](/reference/data-types/int-uint) but returns the default value in case of an error.
+Like [`toUInt8`](#toUInt8), this function converts an input value to a value of type [UInt8](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toUInt8OrDefault_syntax = "toUInt8OrDefault(expr[, default])";
@@ -476,7 +447,7 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt8OrDefault", std::make_shared<DataTypeUInt8>()); },
         toUInt8OrDefault_documentation);
     FunctionDocumentation::Description toUInt16OrDefault_description = R"(
-Like [`toUInt16`](#toUInt16), this function converts an input value to a value of type [UInt16](/reference/data-types/int-uint) but returns the default value in case of an error.
+Like [`toUInt16`](#toUInt16), this function converts an input value to a value of type [UInt16](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toUInt16OrDefault_syntax = "toUInt16OrDefault(expr[, default])";
@@ -497,7 +468,7 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt16OrDefault", std::make_shared<DataTypeUInt16>()); },
         toUInt16OrDefault_documentation);
     FunctionDocumentation::Description toUInt32OrDefault_description = R"(
-Like [`toUInt32`](#toUInt32), this function converts an input value to a value of type [UInt32](/reference/data-types/int-uint) but returns the default value in case of an error.
+Like [`toUInt32`](#toUInt32), this function converts an input value to a value of type [UInt32](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toUInt32OrDefault_syntax = "toUInt32OrDefault(expr[, default])";
@@ -518,7 +489,7 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt32OrDefault", std::make_shared<DataTypeUInt32>()); },
         toUInt32OrDefault_documentation);
     FunctionDocumentation::Description toUInt64OrDefault_description = R"(
-Like [`toUInt64`](#toUInt64), this function converts an input value to a value of type [UInt64](/reference/data-types/int-uint) but returns the default value in case of an error.
+Like [`toUInt64`](#toUInt64), this function converts an input value to a value of type [UInt64](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toUInt64OrDefault_syntax = "toUInt64OrDefault(expr[, default])";
@@ -539,7 +510,7 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt64OrDefault", std::make_shared<DataTypeUInt64>()); },
         toUInt64OrDefault_documentation);
     FunctionDocumentation::Description toUInt128OrDefault_description = R"(
-Like [`toUInt128`](#toUInt128), this function converts an input value to a value of type [`UInt128`](/reference/data-types/int-uint) but returns the default value in case of an error.
+Like [`toUInt128`](#toUInt128), this function converts an input value to a value of type [`UInt128`](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toUInt128OrDefault_syntax = "toUInt128OrDefault(expr[, default])";
@@ -560,7 +531,7 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt128OrDefault", std::make_shared<DataTypeUInt128>()); },
         toUInt128OrDefault_documentation);
     FunctionDocumentation::Description toUInt256OrDefault_description = R"(
-Like [`toUInt256`](#toUInt256), this function converts an input value to a value of type [UInt256](/reference/data-types/int-uint) but returns the default value in case of an error.
+Like [`toUInt256`](#toUInt256), this function converts an input value to a value of type [UInt256](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toUInt256OrDefault_syntax = "toUInt256OrDefault(expr[, default])";
@@ -582,7 +553,7 @@ If no `default` value is passed then `0` is returned in case of an error.
         toUInt256OrDefault_documentation);
 
     FunctionDocumentation::Description toInt8OrDefault_description = R"(
-Like [`toInt8`](#toInt8), this function converts an input value to a value of type [Int8](/reference/data-types/int-uint) but returns the default value in case of an error.
+Like [`toInt8`](#toInt8), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toInt8OrDefault_syntax = "toInt8OrDefault(expr[, default])";
@@ -603,7 +574,7 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt8OrDefault", std::make_shared<DataTypeInt8>()); },
         toInt8OrDefault_documentation);
     FunctionDocumentation::Description toInt16OrDefault_description = R"(
-Like [`toInt16`](#toInt16), this function converts an input value to a value of type [Int16](/reference/data-types/int-uint) but returns the default value in case of an error.
+Like [`toInt16`](#toInt16), this function converts an input value to a value of type [Int16](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toInt16OrDefault_syntax = "toInt16OrDefault(expr[, default])";
@@ -624,7 +595,7 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt16OrDefault", std::make_shared<DataTypeInt16>()); },
         toInt16OrDefault_documentation);
     FunctionDocumentation::Description toInt32OrDefault_description = R"(
-Like [`toInt32`](#toInt32), this function converts an input value to a value of type [Int32](/reference/data-types/int-uint) but returns the default value in case of an error.
+Like [`toInt32`](#toInt32), this function converts an input value to a value of type [Int32](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toInt32OrDefault_syntax = "toInt32OrDefault(expr[, default])";
@@ -645,7 +616,7 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt32OrDefault", std::make_shared<DataTypeInt32>()); },
         toInt32OrDefault_documentation);
     FunctionDocumentation::Description toInt64OrDefault_description = R"(
-Like [`toInt64`](#toInt64), this function converts an input value to a value of type [Int64](/reference/data-types/int-uint) but returns the default value in case of an error.
+Like [`toInt64`](#toInt64), this function converts an input value to a value of type [Int64](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toInt64OrDefault_syntax = "toInt64OrDefault(expr[, default])";
@@ -666,7 +637,7 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt64OrDefault", std::make_shared<DataTypeInt64>()); },
         toInt64OrDefault_documentation);
     FunctionDocumentation::Description toInt128OrDefault_description = R"(
-Like [`toInt128`](#toInt128), this function converts an input value to a value of type [Int128](/reference/data-types/int-uint) but returns the default value in case of an error.
+Like [`toInt128`](#toInt128), this function converts an input value to a value of type [Int128](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toInt128OrDefault_syntax = "toInt128OrDefault(expr[, default])";
@@ -687,7 +658,7 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt128OrDefault", std::make_shared<DataTypeInt128>()); },
         toInt128OrDefault_documentation);
     FunctionDocumentation::Description toInt256OrDefault_description = R"(
-Like [`toInt256`](#toInt256), this function converts an input value to a value of type [Int256](/reference/data-types/int-uint) but returns the default value in case of an error.
+Like [`toInt256`](#toInt256), this function converts an input value to a value of type [Int256](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toInt256OrDefault_syntax = "toInt256OrDefault(expr[, default])";
@@ -709,7 +680,7 @@ If no `default` value is passed then `0` is returned in case of an error.
         toInt256OrDefault_documentation);
 
     FunctionDocumentation::Description toFloat32OrDefault_description = R"(
-Like [`toFloat32`](#toFloat32), this function converts an input value to a value of type [Float32](/reference/data-types/float) but returns the default value in case of an error.
+Like [`toFloat32`](#toFloat32), this function converts an input value to a value of type [Float32](../data-types/float.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toFloat32OrDefault_syntax = "toFloat32OrDefault(expr[, default])";
@@ -730,7 +701,7 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toFloat32OrDefault", std::make_shared<DataTypeFloat32>()); },
         toFloat32OrDefault_documentation);
     FunctionDocumentation::Description toFloat64OrDefault_description = R"(
-Like [`toFloat64`](#toFloat64), this function converts an input value to a value of type [Float64](/reference/data-types/float) but returns the default value in case of an error.
+Like [`toFloat64`](#toFloat64), this function converts an input value to a value of type [Float64](../data-types/float.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toFloat64OrDefault_syntax = "toFloat64OrDefault(expr[, default])";
@@ -752,7 +723,7 @@ If no `default` value is passed then `0` is returned in case of an error.
         toFloat64OrDefault_documentation);
 
     FunctionDocumentation::Description toDateOrDefault_description = R"(
-Like [toDate](#toDate) but if unsuccessful, returns a default value which is either the second argument (if specified), or otherwise the lower boundary of [Date](/reference/data-types/date).
+Like [toDate](#toDate) but if unsuccessful, returns a default value which is either the second argument (if specified), or otherwise the lower boundary of [Date](../data-types/date.md).
     )";
     FunctionDocumentation::Syntax toDateOrDefault_syntax = "toDateOrDefault(expr[, default])";
     FunctionDocumentation::Arguments toDateOrDefault_arguments = {
@@ -772,9 +743,7 @@ Like [toDate](#toDate) but if unsuccessful, returns a default value which is eit
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDateOrDefault", std::make_shared<DataTypeDate>()); },
         toDateOrDefault_documentation);
     FunctionDocumentation::Description toDate32OrDefault_description = R"(
-Converts the argument to the [Date32](/reference/data-types/date32) data type. If the argument cannot be converted, which includes a numeric value outside of the range of [Date32](/reference/data-types/date32), the function returns a default value which is either the second argument (if specified), or otherwise `1900-01-01`, the historical default value of [Date32](/reference/data-types/date32) (not its lower boundary, which is `0000-01-01`). If the argument has [Date](/reference/data-types/date) type, its borders are taken into account.
-
-Note that, unlike [toDate32](#toDate32), this function does not saturate an out-of-range numeric argument to the boundaries of [Date32](/reference/data-types/date32); such an argument is treated as unconvertible.
+Converts the argument to the [Date32](../data-types/date32.md) data type. If the value is outside the range, `toDate32OrDefault` returns the lower border value supported by [Date32](../data-types/date32.md). If the argument has [Date](../data-types/date.md) type, it's borders are taken into account. Returns default value if an invalid argument is received.
     )";
     FunctionDocumentation::Syntax toDate32OrDefault_syntax = "toDate32OrDefault(expr[, default])";
     FunctionDocumentation::Arguments toDate32OrDefault_arguments = {
@@ -784,8 +753,7 @@ Note that, unlike [toDate32](#toDate32), this function does not saturate an out-
     FunctionDocumentation::ReturnedValue toDate32OrDefault_returned_value = {"Value of type Date32 if successful, otherwise returns the default value if passed or 1900-01-01 if not.", {"Date32"}};
     FunctionDocumentation::Examples toDate32OrDefault_examples = {
         {"Successful conversion", "SELECT toDate32OrDefault('1930-01-01', toDate32('2020-01-01'))", "1930-01-01"},
-        {"Failed conversion", "SELECT toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))", "2020-01-01"},
-        {"Out-of-range number", "SELECT toDate32OrDefault(toUInt64(18446744073709551615), toDate32('2020-01-01'))", "2020-01-01"}
+        {"Failed conversion", "SELECT toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))", "2020-01-01"}
     };
     FunctionDocumentation::Category toDate32OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toDate32OrDefault_introduced_in = {21, 11};
@@ -795,7 +763,7 @@ Note that, unlike [toDate32](#toDate32), this function does not saturate an out-
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDate32OrDefault", std::make_shared<DataTypeDate32>()); },
         toDate32OrDefault_documentation);
     FunctionDocumentation::Description toDateTimeOrDefault_description = R"(
-Like [toDateTime](#toDateTime) but if unsuccessful, returns a default value which is either the third argument (if specified), or otherwise the lower boundary of [DateTime](/reference/data-types/datetime).
+Like [toDateTime](#toDateTime) but if unsuccessful, returns a default value which is either the third argument (if specified), or otherwise the lower boundary of [DateTime](../data-types/datetime.md).
     )";
     FunctionDocumentation::Syntax toDateTimeOrDefault_syntax = "toDateTimeOrDefault(expr[, timezone, default])";
     FunctionDocumentation::Arguments toDateTimeOrDefault_arguments = {
@@ -815,8 +783,8 @@ Like [toDateTime](#toDateTime) but if unsuccessful, returns a default value whic
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDateTimeOrDefault", std::make_shared<DataTypeDateTime>()); },
         toDateTimeOrDefault_documentation);
     FunctionDocumentation::Description toDateTime64OrDefault_description = R"(
-Like [toDateTime64](#toDateTime64), this function converts an input value to a value of type [DateTime64](/reference/data-types/datetime64),
-but returns either the default value of [DateTime64](/reference/data-types/datetime64)
+Like [toDateTime64](#toDateTime64), this function converts an input value to a value of type [DateTime64](../data-types/datetime64.md),
+but returns either the default value of [DateTime64](../data-types/datetime64.md)
 or the provided default if an invalid argument is received.
     )";
     FunctionDocumentation::Syntax toDateTime64OrDefault_syntax = "toDateTime64OrDefault(expr, scale[, timezone, default])";
@@ -829,7 +797,7 @@ or the provided default if an invalid argument is received.
     FunctionDocumentation::ReturnedValue toDateTime64OrDefault_returned_value = {"Value of type DateTime64 if successful, otherwise returns the default value if passed or 1970-01-01 00:00:00.000 if not.", {"DateTime64"}};
     FunctionDocumentation::Examples toDateTime64OrDefault_examples = {
         {"Successful conversion", "SELECT toDateTime64OrDefault('1976-10-18 00:00:00.30', 3)", "1976-10-18 00:00:00.300"},
-        {"Failed conversion", "SELECT toDateTime64OrDefault('1976-10-18 00:00:00 30', 3, 'UTC', toDateTime64('2001-01-01 00:00:00.00',3))", "2001-01-01 00:00:00.000"}
+        {"Failed conversion", "SELECT toDateTime64OrDefault('1976-10-18 00:00:00 30', 3, 'UTC', toDateTime64('2001-01-01 00:00:00.00',3))", "2000-12-31 23:00:00.000"}
     };
     FunctionDocumentation::Category toDateTime64OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toDateTime64OrDefault_introduced_in = {21, 11};
@@ -840,7 +808,7 @@ or the provided default if an invalid argument is received.
         toDateTime64OrDefault_documentation);
 
     FunctionDocumentation::Description toDecimal32OrDefault_description = R"(
-Like [`toDecimal32`](#toDecimal32), this function converts an input value to a value of type [Decimal(9, S)](/reference/data-types/decimal) but returns the default value in case of an error.
+Like [`toDecimal32`](#toDecimal32), this function converts an input value to a value of type [Decimal(9, S)](../data-types/decimal.md) but returns the default value in case of an error.
     )";
     FunctionDocumentation::Syntax toDecimal32OrDefault_syntax = "toDecimal32OrDefault(expr, S[, default])";
     FunctionDocumentation::Arguments toDecimal32OrDefault_arguments = {
@@ -862,7 +830,7 @@ Like [`toDecimal32`](#toDecimal32), this function converts an input value to a v
         toDecimal32OrDefault_documentation);
 
     FunctionDocumentation::Description toDecimal64OrDefault_description = R"(
-Like [`toDecimal64`](#toDecimal64), this function converts an input value to a value of type [Decimal(18, S)](/reference/data-types/decimal) but returns the default value in case of an error.
+Like [`toDecimal64`](#toDecimal64), this function converts an input value to a value of type [Decimal(18, S)](../data-types/decimal.md) but returns the default value in case of an error.
     )";
     FunctionDocumentation::Syntax toDecimal64OrDefault_syntax = "toDecimal64OrDefault(expr, S[, default])";
     FunctionDocumentation::Arguments toDecimal64OrDefault_arguments = {
@@ -884,7 +852,7 @@ Like [`toDecimal64`](#toDecimal64), this function converts an input value to a v
         toDecimal64OrDefault_documentation);
 
     FunctionDocumentation::Description toDecimal128OrDefault_description = R"(
-Like [`toDecimal128`](#toDecimal128), this function converts an input value to a value of type [Decimal(38, S)](/reference/data-types/decimal) but returns the default value in case of an error.
+Like [`toDecimal128`](#toDecimal128), this function converts an input value to a value of type [Decimal(38, S)](../data-types/decimal.md) but returns the default value in case of an error.
     )";
     FunctionDocumentation::Syntax toDecimal128OrDefault_syntax = "toDecimal128OrDefault(expr, S[, default])";
     FunctionDocumentation::Arguments toDecimal128OrDefault_arguments = {
@@ -906,7 +874,7 @@ Like [`toDecimal128`](#toDecimal128), this function converts an input value to a
         toDecimal128OrDefault_documentation);
 
     FunctionDocumentation::Description toDecimal256OrDefault_description = R"(
-Like [`toDecimal256`](#toDecimal256), this function converts an input value to a value of type [Decimal(76, S)](/reference/data-types/decimal) but returns the default value in case of an error.
+Like [`toDecimal256`](#toDecimal256), this function converts an input value to a value of type [Decimal(76, S)](../data-types/decimal.md) but returns the default value in case of an error.
     )";
     FunctionDocumentation::Syntax toDecimal256OrDefault_syntax = "toDecimal256OrDefault(expr, S[, default])";
     FunctionDocumentation::Arguments toDecimal256OrDefault_arguments = {
@@ -950,8 +918,8 @@ SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-
         )",
         R"(
 ┌─toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
-│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                    │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                     │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
@@ -961,8 +929,8 @@ SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0
         )",
         R"(
 ┌─toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
-│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                         │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                          │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -975,7 +943,7 @@ SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0
 
 
     FunctionDocumentation::Description toIPv4OrDefault_description = R"(
-Converts a string or a UInt32 form of an IPv4 address to [`IPv4`](/reference/data-types/ipv4) type.
+Converts a string or a UInt32 form of an IPv4 address to [`IPv4`](../data-types/ipv4.md) type.
 If the IPv4 address has an invalid format, it returns `0.0.0.0` (0 IPv4), or the provided IPv4 default.
     )";
     FunctionDocumentation::Syntax toIPv4OrDefault_syntax = "toIPv4OrDefault(string[, default])";
@@ -998,9 +966,9 @@ SELECT
     toIPv4OrDefault(malformed_string, toIPv4('8.8.8.8')) AS provided_default;
         )",
         R"(
-┌─valid───────┬─default_value─┬─provided_default─┐
-│ 192.168.1.1 │ 0.0.0.0       │ 8.8.8.8          │
-└─────────────┴───────────────┴──────────────────┘
+┌─valid─────────┬─default_value─┬─provided_default─┐
+│ 192.168.1.1   │ 0.0.0.0       │ 8.8.8.8          │
+└───────────────┴───────────────┴──────────────────┘
         )"
     }
     };
@@ -1013,7 +981,7 @@ SELECT
         toIPv4OrDefault_documentation);
 
     FunctionDocumentation::Description toIPv6OrDefault_description = R"(
-Converts a string or a UInt128 form of IPv6 address to [`IPv6`](/reference/data-types/ipv6) type.
+Converts a string or a UInt128 form of IPv6 address to [`IPv6`](../data-types/ipv6.md) type.
 If the IPv6 address has an invalid format, it returns `::` (0 IPv6) or the provided IPv6 default.
     )";
     FunctionDocumentation::Syntax toIPv6OrDefault_syntax = "toIPv6OrDefault(string[, default])";
@@ -1036,9 +1004,9 @@ SELECT
     toIPv6OrDefault(malformed_string, toIPv6('::1')) AS provided_default;
         )",
         R"(
-┌─valid────────────────────────┬─default_value─┬─provided_default─┐
-│ 2001:db8:85a3::8a2e:370:7334 │ ::            │ ::1              │
-└──────────────────────────────┴───────────────┴──────────────────┘
+┌─valid──────────────────────────────────┬─default_value─┬─provided_default─┐
+│ 2001:db8:85a3::8a2e:370:7334           │ ::            │ ::1              │
+└────────────────────────────────────────┴───────────────┴──────────────────┘
         )"
     }
     };

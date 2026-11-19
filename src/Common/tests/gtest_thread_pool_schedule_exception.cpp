@@ -2,7 +2,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 
-#include <base/defines.h>
 #include <gtest/gtest.h>
 
 

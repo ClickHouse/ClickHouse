@@ -16,12 +16,12 @@ namespace
 class AggregateFunctionCombinatorResample final : public IAggregateFunctionCombinator
 {
 public:
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return "Resample";
     }
 
-    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
+    DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -30,16 +30,7 @@ public:
         return DataTypes(arguments.begin(), arguments.end() - 1);
     }
 
-    [[nodiscard]] VectorWithMemoryTracking<size_t> getVariantArgumentsToConvert(const DataTypes & arguments) const override
-    {
-        if (!arguments.empty() && isVariant(arguments.back()))
-            return {arguments.size() - 1};
-        return {};
-    }
-
-    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
-
-    [[nodiscard]] Array transformParameters(const Array & params) const override
+    Array transformParameters(const Array & params) const override
     {
         if (params.size() < 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -48,7 +39,7 @@ public:
         return Array(params.begin(), params.end() - 3);
     }
 
-    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
+    AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,
@@ -78,8 +69,8 @@ public:
 
         if (which.isNativeInt() || which.isEnum() || which.isInterval())
         {
-            Int64 begin = 0;
-            Int64 end = 0;
+            Int64 begin;
+            Int64 end;
 
             // notice: UInt64 -> Int64 may lead to overflow
             if (!params[params.size() - 3].tryGet<Int64>(begin))
@@ -106,13 +97,9 @@ public:
 
 }
 
-void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorResample>(), Documentation{
-        .description = "Applied as a suffix to an aggregate function name (e.g. `sumResample`), it partitions the data into intervals `[start, end)` of width `step` according to a resampling key column and aggregates each interval separately, returning an array of results. `start` must be less than `end`: a range that spans no interval throws an exception. The interval bounds and step are passed in the first parameter list; the nested aggregate function arguments and the resampling key are passed in the second.",
-        .syntax = "<aggregate_function>Resample(start, end, step)(<aggregate_function_arguments>, resampling_key)",
-        .related = {}});
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorResample>());
 }
 
 }

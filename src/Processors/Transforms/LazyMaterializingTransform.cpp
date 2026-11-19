@@ -1,7 +1,5 @@
+#include <iostream>
 #include <Processors/Transforms/LazyMaterializingTransform.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnSparse.h>
-
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/sortBlock.h>
@@ -9,7 +7,6 @@
 #include <Core/SortDescription.h>
 #include <Columns/ColumnsNumber.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Common/RadixSort.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
@@ -21,9 +18,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-Block LazyMaterializingTransform::transformHeader(const Block & main_header, const Block & lazy_header, const String & index_column_name)
+Block LazyMaterializingTransform::transformHeader(const Block & main_header, const Block & lazy_header)
 {
-    auto pos = main_header.getPositionByName(index_column_name);
+    auto pos = main_header.getPositionByName("__global_row_index");
     ColumnsWithTypeAndName columns = main_header.getColumnsWithTypeAndName();
     columns.erase(columns.begin() + pos);
     const auto & lazy_columns = lazy_header.getColumnsWithTypeAndName();
@@ -31,29 +28,13 @@ Block LazyMaterializingTransform::transformHeader(const Block & main_header, con
     return Block(std::move(columns));
 }
 
-LazyMaterializingTransform::LazyMaterializingTransform(
-    SharedHeader main_header,
-    SharedHeader lazy_header,
-    ILazyMaterializingRowsPtr lazy_materializing_rows_,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
-    String index_column_name_)
+LazyMaterializingTransform::LazyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, LazyMaterializingRowsPtr lazy_materializing_rows_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : IProcessor(
         InputPorts({main_header, lazy_header}),
-        OutputPorts({OutputPort(std::make_shared<Block>(transformHeader(*main_header, *lazy_header, index_column_name_)))}))
+        OutputPorts({OutputPort(std::make_shared<Block>(transformHeader(*main_header, *lazy_header)))}))
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
     , updater(std::move(updater_))
-    , index_column_name(std::move(index_column_name_))
 {
-}
-
-void LazyMaterializingTransform::setPassThrough(bool value)
-{
-    if (value && !blocksHaveEqualStructure(inputs.back().getHeader(), outputs.front().getHeader()))
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "LazyMaterializingTransform: pass-through requires lazy header to match output header, "
-            "got lazy={} vs output={}",
-            inputs.back().getHeader().dumpStructure(), outputs.front().getHeader().dumpStructure());
-    pass_through = value;
 }
 
 LazyMaterializingTransform::Status LazyMaterializingTransform::prepare()
@@ -98,27 +79,6 @@ LazyMaterializingTransform::Status LazyMaterializingTransform::prepare()
         return Status::Ready;
     }
 
-    if (pass_through)
-    {
-        /// In pass-through mode, forward lazy chunks directly to output
-        /// without buffering or permuting. Main columns are not needed.
-        if (lazy_input.isFinished())
-        {
-            output.finish();
-            return Status::Finished;
-        }
-
-        lazy_input.setNeeded();
-        if (!lazy_input.hasData())
-            return Status::NeedData;
-
-        auto chunk = lazy_input.pull();
-        if (updater)
-            updater->recordOutputChunk(chunk, output.getHeader());
-        output.push(std::move(chunk));
-        return Status::PortFull;
-    }
-
     if (!lazy_input.isFinished())
     {
         lazy_input.setNeeded();
@@ -133,9 +93,7 @@ LazyMaterializingTransform::Status LazyMaterializingTransform::prepare()
             return Status::NeedData;
     }
 
-    /// With a Nullable index every surviving row can be unmatched, and then the lazy input delivers nothing,
-    /// but the lazy columns still have to be added, at their defaults.
-    if (!chunks.empty() || !lazy_chunk_prepared)
+    if (!chunks.empty())
         return Status::Ready;
 
     output.push(std::move(*result_chunk));
@@ -156,73 +114,9 @@ LazyMaterializingRows::LazyMaterializingRows(RangesInDataParts ranges_in_data_pa
 {
 }
 
-void LazyMaterializingRows::addPartsOfMainRead(const RangesInDataParts & parts, const StorageSnapshotPtr & storage_snapshot)
-{
-    /// Only what addresses the rows: the hints of how the main read reads them, such as the filter of a vector search, would
-    /// drop rows the main read returned.
-    for (const auto & part : parts)
-    {
-        if (part.data_part->isProjectionPart() && projection_parts_by_parent_part_offsets)
-        {
-            if (!part.parent_part)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "The projection part {} is read without its parent part", part.data_part->name);
-
-            const MarkRanges whole_part{{0, part.parent_part->index_granularity->getMarksCountWithoutFinal()}};
-            ranges_in_data_parts.emplace_back(
-                part.parent_part, nullptr, part.part_index_in_query, part.part_starting_offset_in_query, whole_part,
-                RangesInDataPartReadHints{});
-        }
-        else
-        {
-            if (part.data_part->isProjectionPart())
-                snapshots_of_projection_parts[part.part_index_in_query] = storage_snapshot;
-
-            ranges_in_data_parts.emplace_back(
-                part.data_part, part.parent_part, part.part_index_in_query, part.part_starting_offset_in_query, part.ranges,
-                RangesInDataPartReadHints{});
-        }
-    }
-}
-
 void LazyMaterializingRows::filterRangesAndFillRows(const PaddedPODArray<UInt64> & sorted_indexes)
 {
     rows_in_parts.clear();
-
-    /// The reads of the main branch added their parts one after another, in the order of the rows. Several reads can read
-    /// ranges of the same part - the two branches of lazy FINAL - so its ranges are united.
-    std::ranges::stable_sort(ranges_in_data_parts, {}, &RangesInDataPart::part_starting_offset_in_query);
-    size_t united_parts = 0;
-    for (size_t index = 0; index < ranges_in_data_parts.size(); ++index)
-    {
-        auto & part = ranges_in_data_parts[index];
-        if (united_parts == 0 || ranges_in_data_parts[united_parts - 1].part_index_in_query != part.part_index_in_query)
-        {
-            if (united_parts != index)
-                ranges_in_data_parts[united_parts] = std::move(part);
-            ++united_parts;
-            continue;
-        }
-
-        auto & united = ranges_in_data_parts[united_parts - 1];
-        if (united.data_part != part.data_part)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "LazyMaterializingTransform: The rows of the part {} are read from {} and from {}",
-                part.part_index_in_query, united.data_part->name, part.data_part->name);
-
-        united.ranges.insert(united.ranges.end(), part.ranges.begin(), part.ranges.end());
-        std::ranges::sort(united.ranges, {}, &MarkRange::begin);
-
-        MarkRanges merged;
-        for (const auto & range : united.ranges)
-        {
-            if (!merged.empty() && range.begin <= merged.back().end)
-                merged.back().end = std::max(merged.back().end, range.end);
-            else
-                merged.push_back(range);
-        }
-        united.ranges = std::move(merged);
-    }
-    ranges_in_data_parts.erase(ranges_in_data_parts.begin() + united_parts, ranges_in_data_parts.end());
 
     /// Here we have a list of part/ranges and the list of sorted indexes.
     /// We need to remove unused granules from ranges, possibly splitting them to smaller ones.
@@ -329,67 +223,37 @@ void LazyMaterializingRows::filterRangesAndFillRows(const PaddedPODArray<UInt64>
 
 void LazyMaterializingTransform::prepareMainChunk()
 {
-    UInt64 squash_ms = 0;
-    UInt64 sort_ms = 0;
-    UInt64 permute_ms = 0;
-    UInt64 prepare_offsets_ms = 0;
-    UInt64 filter_intervals_ms = 0;
+    UInt64 squash_ms;
+    UInt64 sort_ms;
+    UInt64 permute_ms;
+    UInt64 prepare_offsets_ms;
+    UInt64 filter_intervals_ms;
 
     Stopwatch main_chunk_watch;
 
     {
         Stopwatch squashing_watch;
 
-        result_chunk = Squashing::squashWithoutChunkInfo(std::move(chunks));
+        /// call private method squash without handling ChunkInfos
+        result_chunk = Squashing::squash(std::move(chunks));
         chunks.clear();
         squash_ms = squashing_watch.elapsedMilliseconds();
     }
 
-    auto total_rows = result_chunk->getNumRows();
-    auto pos = getInputs().front().getHeader().getPositionByName(index_column_name);
+    auto rows = result_chunk->getNumRows();
+    auto pos = getInputs().front().getHeader().getPositionByName("__global_row_index");
     auto columns = result_chunk->detachColumns();
     auto index_col = columns[pos];
     columns.erase(columns.begin() + pos);
-    result_chunk = Chunk(std::move(columns), total_rows);
+    result_chunk = Chunk(std::move(columns), rows);
 
-    /// The index is read as plain numbers below, so strip the representation wrappers: a join hands its columns
-    /// over as `ColumnReplicated`, and without ORDER BY no sorting materializes them on the way here.
-    index_col = index_col->convertToFullIfWrapped();
+    /// Here we create a block with one column with empty name, and sort description with empty name.
+    /// It just works.
+    Block block({{index_col, std::make_shared<DataTypeUInt64>(), {}}});
+    SortDescription descr;
+    descr.emplace_back(std::string{});
 
-    /// A NULL index is a row a join matched nothing for. Only the other rows are looked up, and the
-    /// defaults go in at these positions once the lazy columns are read.
-    if (const auto * nullable_index = typeid_cast<const ColumnNullable *>(index_col.get()))
     {
-        const auto & null_map = nullable_index->getNullMapData();
-        matched_rows.emplace(null_map.size());
-        for (size_t row = 0; row < null_map.size(); ++row)
-            (*matched_rows)[row] = !null_map[row];
-
-        index_col = nullable_index->getNestedColumnPtr()->filter(*matched_rows, -1);
-    }
-
-    auto rows = index_col->size();
-
-    if (pass_through)
-    {
-        /// In pass-through mode we only need sorted indexes, no permutation.
-        Stopwatch sort_watch;
-
-        auto mutable_col = IColumn::mutate(std::move(index_col));
-        sorted_indexes = std::move(assert_cast<ColumnUInt64 &>(*mutable_col).getData());
-        radixSortLSD(sorted_indexes.data(), sorted_indexes.size());
-
-        sort_ms = sort_watch.elapsedMilliseconds();
-        permute_ms = 0;
-    }
-    else
-    {
-        /// Here we create a block with one column with empty name, and sort description with empty name.
-        /// It just works.
-        Block block({{index_col, std::make_shared<DataTypeUInt64>(), {}}});
-        SortDescription descr;
-        descr.emplace_back(std::string{});
-
         Stopwatch permutation_watch;
         stableGetPermutation(block, descr, permutation);
         sort_ms = permutation_watch.elapsedMilliseconds();
@@ -418,14 +282,13 @@ void LazyMaterializingTransform::prepareMainChunk()
         /// Deduplicate indexes.
         if (offsets.size() != rows)
         {
-            /// The i-th distinct index starts where the previous one ends, at `offsets[i - 1]`, which is never before `i`.
             size_t prev_offset = 0;
             for (size_t i = 0; i < offsets.size(); ++i)
             {
-                sorted_indexes[i] = sorted_indexes[prev_offset];
+                sorted_indexes[prev_offset] = sorted_indexes[i];
                 prev_offset = offsets[i];
             }
-            sorted_indexes.resize(offsets.size());
+            sorted_indexes.resize(prev_offset);
         }
         prepare_offsets_ms = prepare_offsets_watch.elapsedMilliseconds();
     }
@@ -447,9 +310,9 @@ void LazyMaterializingTransform::prepareMainChunk()
 
 void LazyMaterializingTransform::prepareLazyChunk()
 {
-    UInt64 squash_ms = 0;
+    UInt64 squash_ms;
     UInt64 reverse_permutation_ms = 0;
-    UInt64 permute_ms = 0;
+    UInt64 permute_ms;
 
     Stopwatch total_watch;
 
@@ -457,21 +320,16 @@ void LazyMaterializingTransform::prepareLazyChunk()
     // for (auto & chunk : chunks)
     //     std::cerr << "Chunk with " << chunk.getNumRows() << " rows\n";
 
-    lazy_chunk_prepared = true;
-
     Chunk chunk;
     {
         Stopwatch squash_watch;
 
-        chunk = Squashing::squashWithoutChunkInfo(std::move(chunks));
+        /// call private method squash without handling ChunkInfos
+        chunk = Squashing::squash(std::move(chunks));
         chunks.clear();
 
         squash_ms = squash_watch.elapsedMilliseconds();
     }
-
-    /// Nothing arrived, which happens when no surviving row had a row of the source to read.
-    if (chunk.getNumColumns() == 0)
-        chunk = Chunk(getInputs().back().getHeader().cloneEmptyColumns(), 0);
 
     if (chunk.getNumRows() != offsets.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -507,52 +365,6 @@ void LazyMaterializingTransform::prepareLazyChunk()
                 col = col->permute(inverted_permutation, rows);
         }
         permute_ms = permute_watch.elapsedMilliseconds();
-    }
-
-    /// At a row a join left unmatched the lazy read has nothing, and the value is the one the join stands there: the
-    /// default of the type, as `IDataType::insertDefaultInto` makes it, which is not the default of the column for every
-    /// type - an `Enum` has its first element, a `Date32` the epoch.
-    if (matched_rows)
-    {
-        const auto & lazy_header = getInputs().back().getHeader();
-        for (size_t column = 0; column < lazy_columns.size(); ++column)
-        {
-            const auto & type = lazy_header.getByPosition(column).type;
-            /// The rows are inserted into a column the type creates, which is a full one.
-            const auto full_column = recursiveRemoveSparse(lazy_columns[column]->convertToFullColumnIfConst());
-            const auto & lazy_column = *full_column;
-
-            auto expanded = type->createColumn();
-            expanded->reserve(matched_rows->size());
-            size_t next_lazy_row = 0;
-            size_t row = 0;
-            while (row < matched_rows->size())
-            {
-                size_t run_end = row;
-                const bool matched = (*matched_rows)[row];
-                while (run_end < matched_rows->size() && static_cast<bool>((*matched_rows)[run_end]) == matched)
-                    ++run_end;
-
-                if (matched)
-                {
-                    expanded->insertRangeFrom(lazy_column, next_lazy_row, run_end - row);
-                    next_lazy_row += run_end - row;
-                }
-                else
-                {
-                    for (size_t unmatched = row; unmatched < run_end; ++unmatched)
-                        type->insertDefaultInto(*expanded);
-                }
-                row = run_end;
-            }
-
-            if (next_lazy_row != lazy_column.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "LazyMaterializingTransform: {} rows of the lazy chunk for {} matched rows", lazy_column.size(), next_lazy_row);
-
-            lazy_columns[column] = std::move(expanded);
-        }
-        rows = matched_rows->size();
     }
 
     auto columns = result_chunk->detachColumns();
