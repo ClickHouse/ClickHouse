@@ -104,7 +104,7 @@ protected:
     {
         auto & pools = DB::HTTPConnectionPools::instance();
         const DB::HTTPConnectionPools::Limits limits;
-        pools.setLimits(limits, limits, limits);
+        pools.setLimits(limits, limits, limits, limits);
         pools.dropCache();
         DB::CurrentThread::getProfileEvents().resetCounters();
         server.start();
