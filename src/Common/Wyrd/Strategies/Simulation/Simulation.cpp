@@ -74,7 +74,7 @@ SimulationResult Simulation::run(std::function<void()> main)
 
     return SimulationResult{
         .status = status,
-        .exception_message = exception ? getExceptionMessage(exception, false) : broken_invariant,
+        .exception_message = exception ? getExceptionMessage(exception, false) : broken_invariant.value_or(""),
         .total_steps = steps,
         .digest = digest.get64(),
         .timeline = formatTimeline(timeline),
@@ -100,7 +100,7 @@ SimulationResult::Status Simulation::runLoop()
         current_simulation = nullptr;
         running_thread = nullptr;
 
-        if (!broken_invariant.empty())
+        if (broken_invariant)
             return SimulationResult::Status::BrokenInvariant;
 
         if (next->finished())

@@ -9,6 +9,7 @@
 #include <exception>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <source_location>
 #include <string>
 
@@ -81,7 +82,7 @@ private:
     UInt64 clock_ns = 0;
     SipHash digest;
     std::exception_ptr exception;
-    std::string broken_invariant;
+    std::optional<std::string> broken_invariant;
 };
 
 }
