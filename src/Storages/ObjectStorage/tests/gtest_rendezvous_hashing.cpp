@@ -35,6 +35,7 @@ namespace
         ~TestIterator() override = default;
         ObjectInfoPtr next(size_t) override
         {
+            std::lock_guard lock(mutex);
             if (objects.empty())
                 return nullptr;
             auto res = objects.front();
@@ -43,10 +44,32 @@ namespace
         }
         size_t estimatedKeysCount() override
         {
+            std::lock_guard lock(mutex);
             return objects.size();
         }
     private:
+        std::mutex mutex;
         std::list<ObjectInfoPtr> objects;
+    };
+
+    class IteratorBlockingAtEnd : public IObjectIterator
+    {
+    public:
+        IteratorBlockingAtEnd(std::shared_ptr<IObjectIterator> iterator_, std::shared_future<void> released_)
+            : iterator(std::move(iterator_)), released(std::move(released_))
+        {
+        }
+        ObjectInfoPtr next(size_t id) override
+        {
+            if (auto object = iterator->next(id))
+                return object;
+            released.wait();
+            return nullptr;
+        }
+        size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
+    private:
+        const std::shared_ptr<IObjectIterator> iterator;
+        const std::shared_future<void> released;
     };
 
     // Make path like '/path/file0'
@@ -367,6 +390,30 @@ TEST(RendezvousHashing, WaitsForOwnerBeforeTakingItsFiles)
     ASSERT_GE(std::chrono::steady_clock::now() - start, wait_for_owner);
     ASSERT_TRUE(checkHead(stolen_paths, {0, 2, 3, 4}));
     ASSERT_EQ(distributor.getNextTask(0), nullptr);
+}
+
+TEST(RendezvousHashing, GivesQueuedFilesWhileIteratorIsBlocked)
+{
+    std::promise<void> release;
+    auto iterator = std::make_shared<IteratorBlockingAtEnd>(makeIterator(), release.get_future().share());
+    std::vector<std::string> replicas = {"replica2", "replica1"};
+    StorageObjectStorageStableTaskDistributor distributor(iterator, std::move(replicas), false);
+
+    std::vector<std::string> paths;
+    ASSERT_TRUE(extractNForReplica(distributor, paths, 0, 6));
+    ASSERT_TRUE(checkHead(paths, {1, 5, 6, 7, 8, 9}));
+
+    auto blocked = std::async(std::launch::async, [&distributor] { return distributor.getNextTask(0); });
+    const auto blocked_status = blocked.wait_for(std::chrono::milliseconds(100));
+
+    auto queued = std::async(std::launch::async, [&distributor] { return distributor.getNextTask(1); });
+    const auto queued_status = queued.wait_for(std::chrono::seconds(30));
+    release.set_value();
+
+    ASSERT_EQ(blocked_status, std::future_status::timeout);
+    ASSERT_EQ(queued_status, std::future_status::ready);
+    ASSERT_NE(queued.get(), nullptr);
+    ASSERT_NE(blocked.get(), nullptr);
 }
 
 TEST(RendezvousHashing, DoesNotWaitForConnectedOwner)
