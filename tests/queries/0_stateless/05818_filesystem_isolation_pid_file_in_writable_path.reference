@@ -6,6 +6,7 @@ enforce, in a mount inside path: refused
 enforce, pid file writable inside: refused
 enforce, through the upper directory of an overlay of path: refused
 enforce, in an overlay of path as its upper directory: refused
+enforce, through the upper directory of an overlay of path given by a link: refused
 enforce, through a link outside of path: refused
 enforce, through a link and .. outside of path: refused
 marker: unchanged

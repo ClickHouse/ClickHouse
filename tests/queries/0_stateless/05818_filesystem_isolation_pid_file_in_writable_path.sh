@@ -23,6 +23,7 @@ enforce, in a mount inside path: refused
 enforce, pid file writable inside: refused
 enforce, through the upper directory of an overlay of path: refused
 enforce, in an overlay of path as its upper directory: refused
+enforce, through the upper directory of an overlay of path given by a link: refused
 enforce, through a link outside of path: refused
 enforce, through a link and .. outside of path: refused
 marker: unchanged"
@@ -147,6 +148,11 @@ RESULT=$(run enforce "$DIR/overlay/upper/run/server.pid" replace_directory_in_ov
 echo "enforce, through the upper directory of an overlay of path: $RESULT"
 # The reverse: `path` is the upper directory, and the pid file is in the overlay, whose files are stored there.
 echo "enforce, in an overlay of path as its upper directory: $(run enforce "$DIR/merged/run/server.pid" true "" "$DIR/overlay/upper")"
+umount "$DIR/merged"
+# The same with the upper directory given to `mount` through a symbolic link, which its options keep.
+ln -s "$DIR/overlay/upper" "$DIR/overlay/upper_link"
+mount -t overlay overlay -o "lowerdir=$DIR/overlay/lower,upperdir=$DIR/overlay/upper_link,workdir=$DIR/overlay/work" "$DIR/merged"
+echo "enforce, through the upper directory of an overlay of path given by a link: $(run enforce "$DIR/overlay/upper/run/server.pid" true "" "$DIR/merged")"
 umount "$DIR/merged"
 umount "$DIR/overlay"
 

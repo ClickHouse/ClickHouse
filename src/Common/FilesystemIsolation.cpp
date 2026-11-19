@@ -1358,7 +1358,8 @@ std::string checkPidFile(const std::string & pid_file, const std::vector<Mount> 
         const auto upper = location.mount.filesystem_type == "overlay" ? getOverlayUpperDirectory(location.mount.super_options) : std::nullopt;
         if (!upper)
             return {};
-        return getFilesystemLocation((fs::path(*upper) / fs::path(location.path).relative_path()).string(), mount_info);
+        /// The option keeps the path as it was given to `mount`, which can have symbolic links.
+        return getFilesystemLocation((fs::canonical(*upper) / fs::path(location.path).relative_path()).string(), mount_info);
     };
     std::vector<std::pair<const Mount *, FilesystemLocation>> writable_locations;
     auto add_writable_location = [&](const Mount & mount, FilesystemLocation location)
