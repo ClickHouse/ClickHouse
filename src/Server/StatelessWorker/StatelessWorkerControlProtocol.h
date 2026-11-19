@@ -25,7 +25,7 @@ namespace DB
 ///
 /// A frame is a `StreamingExchangeProtocol::PacketHeader` (type and body size, host byte order), then the body; each
 /// type caps its body size. The initiator opens with `ControlHello`, which binds the connection to one query, and sends
-/// nothing else until the `ControlHelloReply`. Every later body starts with a `varUInt` request id, increasing per
+/// nothing else until the `ControlHelloReply`. Every later body starts with a `varUInt` request id, unique per
 /// connection; a reply carries the id of its request, and id 0 stands for the connection.
 ///
 ///   ControlHello       I->W  varUInt version, varUInt purpose, unique_query_id, auth_token, user, password, initiator

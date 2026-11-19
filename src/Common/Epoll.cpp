@@ -71,6 +71,19 @@ void Epoll::remove(int fd)
         throw ErrnoException(ErrorCodes::EPOLL_ERROR, "Cannot remove descriptor from epoll");
 }
 
+void Epoll::modify(int fd, void * ptr, uint32_t events) // NOLINT(readability-make-member-function-const): the kqueue one re-adds
+{
+    epoll_event event{};
+    event.events = events | EPOLLPRI;
+    if (ptr)
+        event.data.ptr = ptr;
+    else
+        event.data.fd = fd;
+
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &event) == -1)
+        throw ErrnoException(ErrorCodes::EPOLL_ERROR, "Cannot modify descriptor in epoll");
+}
+
 size_t Epoll::getManyReady(int max_events, epoll_event * events_out, int timeout) const
 {
     if (events_count == 0)
@@ -277,6 +290,13 @@ void Epoll::remove(int fd)
         if (kevent(epoll_fd, &change, 1, nullptr, 0, nullptr) == -1 && errno != ENOENT)
             throw ErrnoException(ErrorCodes::EPOLL_ERROR, "Cannot remove descriptor from kqueue");
     }
+}
+
+void Epoll::modify(int fd, void * ptr, uint32_t events)
+{
+    /// kqueue has a filter per direction, so a direction that is dropped must be deleted; re-adding does both.
+    remove(fd);
+    add(fd, ptr, events);
 }
 
 size_t Epoll::getManyReady(int max_events, epoll_event * events_out, int timeout) const

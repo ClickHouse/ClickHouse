@@ -181,6 +181,7 @@ namespace DB
     M(USER_DEFINED_WATCH, "UserDefWatch") \
     M(VORTEX_DECODER, "VortexDecoder") \
     M(VORTEX_READER, "VortexReader") \
+    M(WORKER_CONTROL_LOOP, "SWControlLoop") \
     M(WORKLOAD_ENTRY_WATCH, "WrkldEntWatch") \
     M(WORKLOAD_RESOURCE_MANAGER, "WorkloadResMgr") \
     M(ZOOKEEPER_ACL_WATCHER, "ZooACLWatch") \

@@ -1585,6 +1585,10 @@ The server successfully detected this situation and will download merged part fr
     M(DistributedPlanTaskStatusRequests, "Number of `get_statuses` requests a query sent to stateless workers, each about its tasks on one worker.", ValueType::Number) \
     M(DistributedPlanTaskCancelRequests, "Number of `cancel_tasks` requests a query sent to stateless workers, each cancelling its tasks on one worker.", ValueType::Number) \
     M(DistributedPlanTaskForgetRequests, "Number of `forget_tasks` requests a query sent to stateless workers, each releasing its ended tasks on one worker.", ValueType::Number) \
+    M(DistributedPlanControlConnects, "Number of control connections a query opened to stateless workers, one per worker and distributed plan.", ValueType::Number) \
+    M(DistributedPlanControlPings, "Number of `Ping` frames sent on the control connections to stateless workers, after a second without sending.", ValueType::Number) \
+    M(DistributedPlanControlSendBytes, "Number of bytes sent on the control connections to stateless workers.", ValueType::Bytes) \
+    M(DistributedPlanControlReceiveBytes, "Number of bytes received on the control connections to stateless workers.", ValueType::Bytes) \
     M(DistributedPlanLocalExecution, "Set to 1 when a make_distributed_plan query was executed in-process via the local executor (distributed_plan_execute_locally) instead of being dispatched to remote workers.", ValueType::Number) \
     M(DistributedPlanHostsUsed, "Number of distinct hosts that were assigned at least one task when executing a query with make_distributed_plan.", ValueType::Number) \
     M(DistributedPlanWorkerPartsReceived, "Number of data parts the coordinator assigned to a worker of a distributed query plan, summed over the bucketed reads a query runs on that worker. A part assigned to several buckets counts once per read.", ValueType::Number) \

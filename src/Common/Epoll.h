@@ -91,6 +91,10 @@ public:
     /// Remove file descriptor to epoll.
     void remove(int fd);
 
+    /// Replaces the events and the `ptr` of a descriptor added before, as `add` takes them.
+    void modify(int fd, void * ptr, uint32_t events);
+    void modify(int fd, uint32_t events) { modify(fd, nullptr, events); }
+
     /// Get events from epoll. Events are written in events_out, this function returns an amount of
     /// ready events. The timeout argument specifies the number of milliseconds to wait for ready
     /// events. Timeout of -1 causes epoll_wait() to block indefinitely, while specifying a timeout

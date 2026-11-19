@@ -150,6 +150,7 @@
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
 #include <Server/StatelessWorker/StatelessWorkerControlServer.h>
 #include <Server/StatelessWorker/StatelessWorkerEndpoint.h>
+#include <Server/StatelessWorker/WorkerControlLoop.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
@@ -1675,6 +1676,13 @@ try
         return port_name == "keeper_server.tcp_port" || port_name == "keeper_server.tcp_port_secure";
     };
 
+    auto stop_worker_control_loop = []
+    {
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        WorkerControlLoop::instance().shutdown();
+#endif
+    };
+
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
     SCOPE_EXIT_SAFE({
@@ -1693,6 +1701,9 @@ try
         }
 
         async_metrics->stop();
+
+        /// After the queries, whose control connections it runs.
+        stop_worker_control_loop();
 
         /** Ask to cancel background jobs all table engines,
           *  and also query_log.

@@ -628,6 +628,7 @@
     M(TaskTrackerThreads, "Number of threads used by the distributed query remote task tracker.") \
     M(TaskTrackerThreadsActive, "Number of threads in the distributed query remote task tracker thread pool running a task.") \
     M(TaskTrackerThreadsScheduled, "Number of queued or active jobs in the distributed query remote task tracker thread pool.") \
+    M(DistributedPlanControlConnections, "Number of open control connections from this initiator to stateless workers.") \
     M(DistributedPlanTaskDispatchThreads, "Number of threads that send the descriptions of distributed query tasks to the stateless workers.") \
     M(DistributedPlanTaskDispatchThreadsActive, "Number of threads sending the description of a distributed query task to a stateless worker.") \
     M(DistributedPlanTaskDispatchThreadsScheduled, "Number of queued or active jobs sending the descriptions of distributed query tasks to the stateless workers.") \
