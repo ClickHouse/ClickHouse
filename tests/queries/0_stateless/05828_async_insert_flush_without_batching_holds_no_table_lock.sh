@@ -16,14 +16,15 @@ trap '${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FAILPOINT}"' EXIT
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_flush_lock (n UInt64) ENGINE = MergeTree ORDER BY n"
 
-# The busy timeout of the queue shard is shared with other tests, which can raise it to the maximum, so the maximum is
-# kept moderate. It is still longer than any pause between the inserts, so none of them is flushed at once because the
-# previous one was longer than the maximum ago.
+# The busy timeout of the queue shard is shared with other tests, which leave values of up to 600000 ms in it. The huge
+# decrease rate drops it to the minimum, unless another insert came to the shard less than the minimum before; then the
+# moderate maximum bounds the wait. The maximum is still longer than any pause between the inserts, so none of them is
+# flushed at once because the previous one was longer than the maximum ago.
 function insert()
 {
     ${CLICKHOUSE_CLIENT} --async_insert 1 --wait_for_async_insert 1 --async_insert_select_as_async_insert 1 \
         --async_insert_use_adaptive_busy_timeout 1 --async_insert_busy_timeout_min_ms 500 \
-        --async_insert_busy_timeout_max_ms 20000 \
+        --async_insert_busy_timeout_max_ms 20000 --async_insert_busy_timeout_decrease_rate 1000000000 \
         --query_id "${CLICKHOUSE_DATABASE}_$1" --query "INSERT INTO t_flush_lock SELECT 1"
 }
 

@@ -4,11 +4,13 @@
 DROP TABLE IF EXISTS t_async_sequential;
 CREATE TABLE t_async_sequential (n UInt64) ENGINE = MergeTree ORDER BY n;
 
--- Other tests leave busy timeouts of up to 600000 ms in the queue shards, and an insert waits for the shard timeout clamped
--- to its maximum, so the maximum is kept low. It is still well above the gap between the inserts, so none of them is flushed
--- at once because the previous one was longer than the maximum ago.
+-- Other tests leave busy timeouts of up to 600000 ms in the queue shards. The huge decrease rate drops such a timeout to the
+-- minimum, unless another insert came to the shard less than the minimum before; then the low maximum bounds the wait. It is
+-- still well above the gap between the inserts, so none of them is flushed at once because the previous one was longer than
+-- the maximum ago.
 SET async_insert = 1, wait_for_async_insert = 1, async_insert_use_adaptive_busy_timeout = 1,
-    async_insert_busy_timeout_min_ms = 3000, async_insert_busy_timeout_max_ms = 10000;
+    async_insert_busy_timeout_min_ms = 3000, async_insert_busy_timeout_max_ms = 10000,
+    async_insert_busy_timeout_decrease_rate = 1000000000;
 
 -- The first insert can be flushed at once without the change, when the queue shard was idle for long, so it is not checked.
 INSERT INTO t_async_sequential VALUES (0);
