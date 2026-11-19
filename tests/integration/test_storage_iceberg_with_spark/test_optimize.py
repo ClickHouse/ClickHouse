@@ -404,10 +404,15 @@ def test_optimize_refuses_partition_spec_of_another_source(started_cluster_icebe
 
     # The partition spec changes from `identity(a)` to `identity(b)`: the arity is the same, but the old partition
     # tuples hold values of `a`, so rewriting the old files under the new spec would declare wrong values of `b`.
+    # Spark must not merge the manifests itself: a data file listed in several manifests is refused by an earlier check.
     spark.sql(
         f"""
         CREATE TABLE {TABLE_NAME} (a int, b int) USING iceberg PARTITIONED BY (a)
-        TBLPROPERTIES ('format-version' = '2', 'write.delete.mode' = 'merge-on-read')
+        TBLPROPERTIES (
+            'format-version' = '2',
+            'write.delete.mode' = 'merge-on-read',
+            'commit.manifest-merge.enabled' = 'false'
+        )
         """
     )
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 10)")
