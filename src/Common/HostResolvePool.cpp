@@ -1,9 +1,11 @@
 #include <Common/HostResolvePool.h>
 
 #include <Common/DNSResolver.h>
+#include <Common/FailPoint.h>
 #include <Common/NetException.h>
 #include <Common/thread_local_rng.h>
 #include <Common/MemoryTrackerSwitcher.h>
+#include <Common/logger_useful.h>
 
 #include <mutex>
 #include <algorithm>
@@ -29,6 +31,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int DNS_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char host_resolvers_pool_pause_before_insert[];
 }
 
 HostResolverMetrics HostResolver::getMetrics()
@@ -365,25 +372,40 @@ void HostResolversPool::dropCache()
 {
     std::lock_guard lock(mutex);
     host_pools.clear();
+    ++generation;
 }
 
 HostResolver::Ptr HostResolversPool::getResolver(const String & host)
 {
+    UInt64 generation_before_resolve;
     {
         std::lock_guard lock(mutex);
 
         auto it = host_pools.find(host);
         if (it != host_pools.end())
             return it->second;
+
+        generation_before_resolve = generation;
     }
 
     /// Creating a `HostResolver` resolves the host, which can take seconds when DNS is slow
     /// or unreachable. Do it outside of the pool-wide lock, otherwise one slow lookup blocks
     /// the requests to all other hosts as well as `dropCache`.
-    /// If several threads create a resolver for the same host concurrently, the first one inserted wins.
     auto resolver = HostResolver::create(host);
 
+    FailPointInjection::pauseFailPoint(FailPoints::host_resolvers_pool_pause_before_insert);
+
     std::lock_guard lock(mutex);
+
+    /// If the cache was dropped during the resolution, the result may predate the drop.
+    /// Use it for this request only, so that the requests started after the drop resolve the host again.
+    if (generation != generation_before_resolve)
+    {
+        LOG_DEBUG(getLogger("HostResolversPool"), "Not caching the resolver for host {}, because the cache was dropped during the resolution", host);
+        return resolver;
+    }
+
+    /// If several threads create a resolver for the same host concurrently, the first one inserted wins.
     return host_pools.emplace(host, std::move(resolver)).first->second;
 }
 
