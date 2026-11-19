@@ -31,9 +31,9 @@ class DeleteBitmap;
 constexpr size_t PROBE_BATCH_SIZE = 32;
 
 /// Reads a part's `unique_key_index.sst` through `IDataPartStorage`, so remote
-/// disks work as well. Holds no read buffer or settings: each block read opens
-/// a throwaway buffer with the reading thread's settings, so one reader can be
-/// shared across queries (the reader cache).
+/// disks work as well. Holds no read buffer or settings between operations:
+/// block reads reuse a buffer scoped to one operation, opened with the reading
+/// thread's settings, so one reader can be shared across queries (the reader cache).
 class SSTFileReader
 {
 public:
@@ -49,7 +49,7 @@ public:
 
     /// Resident bytes: `no_block_cache` preloads the SST's index + filter blocks
     /// at open, so this is `index_size + filter_size`. Feeds the reader cache's weight.
-    size_t memoryUsage() const { return memory_usage; }
+    [[nodiscard]] size_t memoryUsage() const { return memory_usage; }
 
     /// Delegates to `SstFileReader::VerifyChecksum` - re-reads every block.
     rocksdb::Status verifyChecksum() const;

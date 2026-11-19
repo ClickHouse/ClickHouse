@@ -102,9 +102,9 @@ TEST_F(UniqueKeySSTReaderCacheTest, WeightReflectsResidentIndexAndFilter)
     EXPECT_EQ(weight(*small), small->memoryUsage() + UniqueKeySSTReaderWeightFunction::UNIQUE_KEY_SST_READER_CACHE_OVERHEAD);
 }
 
-/// A reader keeps no read buffer, opening one per read instead. Probing it
-/// concurrently must still return every row, and it stays usable for the
-/// whole-file read of `verifyChecksum`.
+/// A reader keeps no buffer between operations. Concurrent probes each reuse
+/// an operation-local buffer and must still return every row; the reader also
+/// stays usable for whole-file checksum verification.
 TEST_F(UniqueKeySSTReaderCacheTest, SharedReaderServesConcurrentProbes)
 {
     constexpr size_t NUM_KEYS = 64;

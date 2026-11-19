@@ -84,9 +84,48 @@ namespace
         return buffer;
     }
 
-    /// `FSRandomAccessFile` over `IDataPartStorage`. Keeps no buffer: each read
-    /// opens a throwaway one with the reading thread's settings (`getReadSettings`),
-    /// so a reader shared through the cache carries no query's state into another.
+    /// Reuses one lazily-opened buffer for a single reader operation. RocksDB
+    /// calls `Read` without operation context, so the current wrapper is found
+    /// through a thread-local pointer; nested wrappers restore the previous one.
+    class ReadBufferWrapper;
+    thread_local ReadBufferWrapper * current_read_wrapper = nullptr;
+
+    class ReadBufferWrapper
+    {
+    public:
+        ReadBufferWrapper() : previous(current_read_wrapper) { current_read_wrapper = this; }
+        ~ReadBufferWrapper() { current_read_wrapper = previous; }
+
+        ReadBufferWrapper(const ReadBufferWrapper &) = delete;
+        ReadBufferWrapper & operator=(const ReadBufferWrapper &) = delete;
+
+        size_t readAt(
+            const void * owner,
+            const IDataPartStorage & storage,
+            const String & file_name,
+            uint64_t offset,
+            char * to,
+            size_t n)
+        {
+            if (buffer_owner != owner)
+            {
+                buffer = openPositionalBuffer(storage, file_name, getReadSettings());
+                buffer_owner = owner;
+            }
+            return buffer->readBigAt(to, n, offset, {});
+        }
+
+    private:
+        ReadBufferWrapper * previous;
+        const void * buffer_owner = nullptr;
+        std::unique_ptr<SeekableReadBuffer> buffer;
+    };
+
+    /// `FSRandomAccessFile` over `IDataPartStorage`. Keeps no buffer between
+    /// reader operations: within one operation a buffer is reused (see
+    /// `ReadBufferWrapper`), opened with the reading thread's settings
+    /// (`getReadSettings`), so a reader shared through the cache carries no
+    /// query's state into another.
     class ReadBufferBasedRandomAccessFile : public rocksdb::FSRandomAccessFile
     {
     public:
@@ -118,8 +157,16 @@ namespace
                 }
                 n = std::min(n, static_cast<size_t>(file_size - offset));
 
-                auto buffer = openPositionalBuffer(*storage, file_name, getReadSettings());
-                size_t bytes_read = buffer->readBigAt(scratch, n, offset, {});
+                size_t bytes_read = 0;
+                if (current_read_wrapper)
+                {
+                    bytes_read = current_read_wrapper->readAt(this, *storage, file_name, offset, scratch, n);
+                }
+                else
+                {
+                    auto buffer = openPositionalBuffer(*storage, file_name, getReadSettings());
+                    bytes_read = buffer->readBigAt(scratch, n, offset, {});
+                }
                 *result = rocksdb::Slice(scratch, bytes_read);
                 return rocksdb::IOStatus::OK();
             }
@@ -243,6 +290,7 @@ namespace
 
 SSTFileReader::SSTFileReader(const DataPartStoragePtr & storage, const String & sst_file_name)
 {
+    ReadBufferWrapper read_wrapper;
     sst_env = rocksdb::NewCompositeEnv(std::make_shared<ReadBufferFileSystem>(storage));
 
     /// Bloom policy must match `SSTIndexWriter`.
@@ -306,6 +354,7 @@ std::shared_ptr<const rocksdb::TableProperties> SSTFileReader::getProperties() c
 
 rocksdb::Status SSTFileReader::verifyChecksum() const
 {
+    ReadBufferWrapper read_wrapper;
     return index_reader->VerifyChecksum();
 }
 
@@ -335,6 +384,8 @@ void SSTProbeTargetPart::findRowIndexBatch(
     if (!reader)
         throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
             "UNIQUE KEY SST probe target has no readable index (invalid reader)");
+
+    ReadBufferWrapper read_wrapper;
 
     /// Chunk buffers are reused across chunks; all state is call-local.
     std::vector<rocksdb::Slice> chunk_keys;

@@ -1,4 +1,4 @@
--- Tags: no-ordinary-database, no-async-insert, no-fasttest
+-- Tags: no-ordinary-database, no-async-insert, no-fasttest, no-replicated-database, no-shared-merge-tree
 -- The SST reader cache: a repeated dedup probe of the same part must reuse the
 -- already-opened reader instead of reopening the SST (footer + index + filter).
 -- A cached reader reads with each probing query's own settings, so a probe
