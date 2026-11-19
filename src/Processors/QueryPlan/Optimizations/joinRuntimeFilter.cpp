@@ -557,7 +557,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         }
         else
         {
-            /// `Bool` equals `UInt8`, but the join compares such keys by value.
+            /// `IDataType::equals` treats `Bool` and `UInt8` as one type, so the join compares such keys as numbers and `UInt8` 2
+            /// matches neither `false` nor `true`. A `Bool` filter would cast 2 to `true`, so the filter is built in `UInt8`.
             common_types.push_back(JoinCommon::compareBoolKeysAsUInt8(join_key_build_side.type, join_key_build_side.type, join_key_probe_side.type));
         }
     }
