@@ -4182,7 +4182,10 @@ TEST_F(MetadataPlainRewritableDiskTest, ExplicitFileListWithInvalidKeyRemovesNot
     writeObject(object_storage, a_metadata_key, fmt::format("{}\nfiles: 1\nf\t{}\t6\n", removed_logical_path, fs::absolute(victim_key).lexically_normal().string()));
 
     /// The forged file list makes the load fail, and nothing is deleted.
-    EXPECT_THROW(std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", hard_links_enabled), Exception);
+    EXPECT_THROW({
+        auto broken = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", hard_links_enabled);
+        broken->shutdown();
+    }, Exception);
     EXPECT_EQ(readObject(object_storage, victim_key), "victim");
     EXPECT_TRUE(object_storage->exists(StoredObject(a_metadata_key)));
 
