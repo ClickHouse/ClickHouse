@@ -345,6 +345,9 @@ namespace Net
 
         bool holdsSendError() const;
 
+        int readNow(NonBlockingFilterBIO & filter, void * buffer, int length);
+        /// `SSL_read` through the filter in the non-blocking mode, without the throttler.
+
         NonBlockingFilterBIO * _nonBlockingFilter = nullptr;
         /// Owned by the BIO of `_pSSL`.
         int _nowWriteLength = 0;

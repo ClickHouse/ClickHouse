@@ -238,7 +238,7 @@ int NonBlockingFilterBIO::readNonBlocking(BIO* bio, char* data, int length)
 	{
 		/// The peer can wait for the queued bytes before it answers.
 		sendQueued();
-		const int received = socket.receiveNow(data, length);
+		const int received = socket.receiveNowUnthrottled(data, length);
 		if (received > 0)
 			return received;
 		if (received == 0)

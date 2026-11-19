@@ -733,6 +733,17 @@ int SocketImpl::receiveNow(void* buffer, int length)
 	if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
 
 	throttleRecv(length, false);
+	const int rc = receiveNowUnthrottled(buffer, length);
+	if (rc > 0)
+		useRecvThrottlerBudget(rc);
+	return rc;
+}
+
+
+int SocketImpl::receiveNowUnthrottled(void* buffer, int length)
+{
+	if (length <= 0) throw InvalidArgumentException("receiveNow needs a positive length");
+	if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
 
 	int rc = 0;
 	int err = 0;
@@ -753,8 +764,6 @@ int SocketImpl::receiveNow(void* buffer, int length)
 	}
 	if (rc == 0)
 		return -1;
-
-	useRecvThrottlerBudget(rc);
 	return rc;
 }
 
