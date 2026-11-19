@@ -506,7 +506,10 @@ int SecureSocketImpl::receiveBytes(void* buffer, int length, int flags)
 	{
 		while (_nonBlockingFilter && _nonBlockingFilter->hasQueued())
 		{
-			const int received = receiveNow(buffer, length);
+			/// The budget of this receive is booked above.
+			const int received = readNow(*_nonBlockingFilter, buffer, length);
+			if (received > 0)
+				_pSocket->useRecvThrottlerBudget(received);
 			if (received != 0)
 				return received > 0 ? received : 0;
 			if (waitForSendOrReceive(remaining_time, SocketImpl::SELECT_READ) == 0)
@@ -679,9 +682,21 @@ int SecureSocketImpl::receiveNow(void* buffer, int length)
 	ScopedLock lock(*_mutex);
 	if (length <= 0)
 		throw InvalidArgumentException("receiveNow needs a positive length");
+	NonBlockingFilterBIO& filter = nonBlockingFilter();
+
+	/// Outside the OpenSSL call, and counted in plaintext, as `receiveBytes` does.
+	_pSocket->throttleRecv(static_cast<size_t>(length), false);
+	const int rc = readNow(filter, buffer, length);
+	if (rc > 0)
+		_pSocket->useRecvThrottlerBudget(rc);
+	return rc;
+}
+
+
+int SecureSocketImpl::readNow(NonBlockingFilterBIO& filter, void* buffer, int length)
+{
 	if (_nowReceiveEnded)
 		return -1;
-	NonBlockingFilterBIO& filter = nonBlockingFilter();
 
 	NonBlockingFilterBIO::NonBlockingScope scope(filter);
 	SSLOperationResult result = performSSLOperation(_pSSL, [this, buffer, length]

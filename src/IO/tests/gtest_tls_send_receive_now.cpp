@@ -418,6 +418,25 @@ TEST(TLSSendReceiveNow, SendNowThrottlesOnce)
 }
 
 
+/// `receiveNow` books the plaintext with the receive throttler outside OpenSSL, as `receiveBytes`
+/// does. An error of the throttler then leaves the connection usable; inside a BIO callback, it
+/// would fail the TLS connection.
+TEST(TLSSendReceiveNow, ReceiveThrottlerErrorKeepsTheConnection)
+{
+    TLSLoopbackPair pair;
+    pair.server.sendBytes("abc", 3);
+    pair.client.setReceiveThrottler(std::make_shared<ThrowingOnceThrottler>());
+
+    Poco::Timespan timeout(5, 0);
+    ASSERT_EQ(pair.socket().waitForSendOrReceive(timeout, select_read), select_read);
+    char buffer[16];
+    EXPECT_THROW(pair.socket().receiveNow(buffer, static_cast<int>(sizeof(buffer))), Poco::IOException);
+
+    ASSERT_EQ(pair.receiveSome(buffer, static_cast<int>(sizeof(buffer))), 3);
+    EXPECT_EQ(std::string(buffer, 3), "abc");
+}
+
+
 /// The throttler waits outside OpenSSL: a wait inside a BIO callback could suspend a fiber in the
 /// middle of an OpenSSL call. An error of the throttler then leaves the connection usable; inside a
 /// callback, it would fail the TLS connection.

@@ -20,8 +20,8 @@ namespace Net
     /// `SecureSocketImpl`. OpenSSL allows no I/O after `SSL_ERROR_WANT_WRITE` or a failed write
     /// (`SSL_get_error(3)`). In the non-blocking mode, the filter sends what the socket accepts now,
     /// queues the rest, and drops the bytes after a send error, which the socket holds: OpenSSL never
-    /// sees a pending or a failed write. It never waits, also not for the throttler: a fiber must not
-    /// suspend inside an OpenSSL call. In the blocking mode, it passes everything to the next BIO;
+    /// sees a pending or a failed write. It never uses the throttler: a fiber must not suspend inside
+    /// an OpenSSL call, and its error must not reach OpenSSL. In the blocking mode, it passes everything to the next BIO;
     /// a write sends the queued bytes first. Owned by its BIO; used under the mutex of the TLS socket.
     {
     public:

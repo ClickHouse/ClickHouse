@@ -509,7 +509,8 @@ namespace Net
         /// Checks the return code `rc` and updates recv throttler budget.
 
         int sendNowUnthrottled(const void * buffer, int length);
-        /// `sendNow` without the throttler, for a caller that throttles the data itself.
+        int receiveNowUnthrottled(void * buffer, int length);
+        /// `sendNow` and `receiveNow` without the throttler, for a caller that throttles the data itself.
 
     protected:
         SocketImpl(const SocketImpl &);
