@@ -483,6 +483,9 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
             .ignoreSettingConstraints());
 
     result.required_columns = select.getRequiredColumns();
+    /// the calculation counts the rows of the block, so the block needs a column
+    if (result.required_columns.empty())
+        result.required_columns.push_back(ExpressionActions::getSmallestColumn(columns.getAllPhysical()).name);
     result.sample_block = *select.getSampleBlock();
 
     StorageInMemoryMetadata metadata;
