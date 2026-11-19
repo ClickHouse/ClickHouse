@@ -109,6 +109,7 @@ struct DataFilePlan
 struct Plan
 {
     bool need_optimize = false;
+    bool has_equality_deletes = false;
     using PartitionPlan = std::vector<std::shared_ptr<DataFilePlan>>;
     std::vector<PartitionPlan> partitions;
     IcebergHistory history;
@@ -296,6 +297,8 @@ static Plan getPlan(
             for (const auto & pos_delete_file : files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
                 if (seen_position_delete_files.insert(pos_delete_file->parsed_entry->file_path_key).second)
                     all_positional_delete_files.push_back(pos_delete_file);
+            if (!files_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
+                plan.has_equality_deletes = true;
 
             for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
             {
@@ -1648,6 +1651,27 @@ void compactIcebergTable(
         persistent_table_components.metadata_compression_method);
     if (plan.need_optimize)
     {
+        /// The rewrite applies only position deletes and rebuilds only the history of the current snapshot under `main`.
+        if (plan.has_equality_deletes)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Compaction of Iceberg tables with equality deletes is not supported. The table is left unchanged.");
+        if (const auto refs = plan.initial_metadata_object->getObject(Iceberg::f_refs))
+            for (const auto & ref_name : refs->getNames())
+                if (ref_name != Iceberg::f_main)
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Compaction of Iceberg tables with snapshot references other than `main` is not supported, found `{}`. "
+                        "The table is left unchanged.",
+                        ref_name);
+        for (const auto & history_record : plan.history)
+            if (!history_record.is_current_ancestor)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Compaction of Iceberg tables with snapshots outside the history of the current snapshot is not supported, "
+                    "found snapshot {}. The table is left unchanged.",
+                    history_record.snapshot_id);
+
         /// Compaction rewrites files through the same positional mapping as the sink/UPDATE while
         /// the file is shaped by the possibly-stale `sample_block_`; guard against schema drift.
         auto current_schema_id = plan.initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);

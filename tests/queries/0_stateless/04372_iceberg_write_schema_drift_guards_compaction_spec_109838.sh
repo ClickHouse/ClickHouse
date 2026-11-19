@@ -121,6 +121,71 @@ OPTIMIZE TABLE ${TABLE};
 SELECT c0, c1, has(splitByChar(',', '${paths_before}'), _path) FROM ${TABLE} ORDER BY c0;
 "
 
+# ============================================================================================
+# OPTIMIZE compaction (Compaction.cpp): histories the rewrite cannot rebuild
+# ============================================================================================
+
+# --- OPTIMIZE with live equality deletes: rejected, the deleted rows stay deleted -------------
+# The rewrite applies only position deletes; without the check it brings back 99 deleted rows.
+reset
+cp -r "${CURDIR}/data_minio/deletes_db/eq_deletes_table" "${TABLE_PATH%/}"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE} ENGINE = IcebergLocal('${TABLE_PATH}') SETTINGS allow_experimental_iceberg_compaction=1"
+${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${TABLE}" 2>&1 | grep -oF "NOT_IMPLEMENTED" | head -1
+${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ICEBERG METADATA CACHE"
+${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(id) FROM ${TABLE}"
+
+# Three single-row inserts, a metadata edit passed as python on stdin (gets `m` and `chain`, the
+# current snapshot's history oldest first), then a position delete of the row `c0 = $1`.
+three_inserts_edit_then_delete() {
+    local edit
+    edit=$(cat)
+    ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+    CREATE TABLE ${TABLE} (c0 Int32) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') SETTINGS iceberg_format_version=2, allow_experimental_iceberg_compaction=1;
+    INSERT INTO ${TABLE} VALUES (1);
+    INSERT INTO ${TABLE} VALUES (2);
+    INSERT INTO ${TABLE} VALUES (3);
+    "
+    python3 -c "
+import json, os, re, sys
+d = sys.argv[1]
+n = max(int(x.group(1)) for f in os.listdir(d) if (x := re.fullmatch(r'v(\d+)\.metadata\.json', f)))
+m = json.load(open(os.path.join(d, f'v{n}.metadata.json')))
+parent = {s['snapshot-id']: s.get('parent-snapshot-id') for s in m['snapshots']}
+chain = [m['current-snapshot-id']]
+while parent.get(chain[-1]) in parent:
+    chain.append(parent[chain[-1]])
+chain.reverse()
+exec(sys.argv[2])
+m['last-updated-ms'] += 1000
+json.dump(m, open(os.path.join(d, f'v{n + 1}.metadata.json'), 'w'))
+" "${TABLE_PATH}/metadata" "${edit}"
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ICEBERG METADATA CACHE"
+    ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${TABLE} DELETE WHERE c0 = $1"
+}
+
+optimize_then_show_refs_and_rows() {
+    ${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${TABLE}" 2>&1 | grep -oF "NOT_IMPLEMENTED" | head -1
+    python3 -c "import json, sys; print(sorted(json.load(open(sys.argv[1]))['refs']))" "$(ls -v "${TABLE_PATH}"/metadata/v*.metadata.json | tail -1)"
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ICEBERG METADATA CACHE"
+    ${CLICKHOUSE_CLIENT} --query "SELECT arraySort(groupArray(c0)) FROM ${TABLE}"
+}
+
+# --- OPTIMIZE with a tag: rejected, the tag is kept (the rebuilt metadata has only `main`) ---
+reset
+three_inserts_edit_then_delete 2 <<'PY'
+m['refs']['t'] = {'snapshot-id': chain[0], 'type': 'tag'}
+PY
+optimize_then_show_refs_and_rows
+
+# --- OPTIMIZE after a rollback: rejected (the rebuild would make the rolled-back snapshot current)
+reset
+three_inserts_edit_then_delete 1 <<'PY'
+m['current-snapshot-id'] = chain[1]
+m['refs']['main']['snapshot-id'] = chain[1]
+m['snapshot-log'].append({'snapshot-id': chain[1], 'timestamp-ms': m['last-updated-ms'] + 1000})
+PY
+optimize_then_show_refs_and_rows
+
 # The server must still be alive after all scenarios (no abort).
 ${CLICKHOUSE_CLIENT} --query "SELECT 1"
 
