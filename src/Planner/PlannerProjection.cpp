@@ -158,8 +158,6 @@ ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDesc
     auto source = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, source_columns);
     query_tree = buildProjectionQueryTree(query_ast, source, query_context);
     auto & query_node = query_tree->as<QueryNode &>();
-    /// with the alias, the identifier of a column is different from the name of each expression
-    query_node.getJoinTreeNode()->setAlias("__table1");
 
     /// the analysis resolved the tree with the context of the query node
     planner_context = std::make_shared<PlannerContext>(
