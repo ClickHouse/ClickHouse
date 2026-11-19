@@ -61,7 +61,6 @@ void SerializationDecimalBase<T>::deserializeBinaryBulk(IColumn & column, ReadBu
     typename ColumnType::Container & x = typeid_cast<ColumnType &>(column).getData();
     const size_t initial_size = x.size();
     x.resize(initial_size + limit);
-    /// The unused capacity and the right padding of `x` may be overwritten.
     const size_t size = istr.readBigWithPadding(
         reinterpret_cast<char *>(&x[initial_size]), sizeof(FieldType) * limit, (x.capacity() - x.size()) * sizeof(FieldType) + x.pad_right);
     x.resize(initial_size + size / sizeof(FieldType));

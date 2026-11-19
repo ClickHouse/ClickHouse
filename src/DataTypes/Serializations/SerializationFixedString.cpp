@@ -124,7 +124,6 @@ void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffe
             throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
 
         data.resize(new_data_size);
-        /// The unused capacity and the right padding of `data` may be overwritten.
         const size_t read_bytes = istr.readBigWithPadding(
             reinterpret_cast<char *>(&data[initial_size]), bytes_to_read, data.capacity() - data.size() + data.pad_right);
 

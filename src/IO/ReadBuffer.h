@@ -194,16 +194,12 @@ public:
       */
     [[nodiscard]] virtual size_t readBig(char * to, size_t n) { return read(to, n); }
 
-    /** Same as readBig, but the caller allows to overwrite `padding` bytes after `to + n`
-      * (for example, the unused capacity and the right padding of a PODArray).
-      * A compressed buffer uses it to decompress a block ending exactly at `to + n` straight to `to`
-      * with a codec that writes past the end of its output (LZ4), instead of decompressing it to its own memory and copying.
+    /** Same as readBig, but the caller allows to overwrite `padding` bytes after `to + n`,
+      * so a codec that writes past the end of its output (LZ4) can decompress straight to `to`.
       */
     [[nodiscard]] virtual size_t readBigWithPadding(char * to, size_t n, size_t /*padding*/) { return readBig(to, n); }
 
-    /** Reads n bytes with readBig, if there are less - throws an exception.
-      * `padding` is the number of bytes after `to + n` that may be overwritten, see readBigWithPadding.
-      */
+    /** Reads n bytes with readBig, if there are less - throws an exception. */
     void readBigStrict(char * to, size_t n, size_t padding = 0);
 
     /** Do something to allow faster subsequent call to 'nextImpl' if possible.
