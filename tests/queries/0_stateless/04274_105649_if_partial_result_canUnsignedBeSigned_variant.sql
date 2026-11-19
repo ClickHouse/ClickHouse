@@ -13,7 +13,6 @@
 -- produced `Nullable(Int64)` instead of the declared `Variant(Int64, UInt64)`,
 -- triggering the assertion in `executeActionForPartialResult` at planning time.
 
-SET enable_analyzer = 1;
 SET use_variant_as_common_type = 1;
 
 -- Minimal reproducer: no table required.

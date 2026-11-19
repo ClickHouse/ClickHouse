@@ -76,6 +76,7 @@ public:
     Int64 getInt(size_t n) const override;
     UInt64 get64(size_t n) const override;
     std::string_view getDataAt(size_t n) const override;
+    bool supportsGetDataAt() const override { return values->supportsGetDataAt(); }
 
     ColumnPtr convertToFullColumnIfSparse() const override;
 
@@ -211,10 +212,10 @@ public:
         {
         }
 
-        bool ALWAYS_INLINE isDefault() const { return current_offset == offsets_size || current_row != offsets[current_offset]; }
-        size_t ALWAYS_INLINE getValueIndex() const { return isDefault() ? 0 : current_offset + 1; }
-        size_t ALWAYS_INLINE getCurrentRow() const { return current_row; }
-        size_t ALWAYS_INLINE getCurrentOffset() const { return current_offset; }
+        [[nodiscard]] bool ALWAYS_INLINE isDefault() const { return current_offset == offsets_size || current_row != offsets[current_offset]; }
+        [[nodiscard]] size_t ALWAYS_INLINE getValueIndex() const { return isDefault() ? 0 : current_offset + 1; }
+        [[nodiscard]] size_t ALWAYS_INLINE getCurrentRow() const { return current_row; }
+        [[nodiscard]] size_t ALWAYS_INLINE getCurrentOffset() const { return current_offset; }
         size_t ALWAYS_INLINE increaseCurrentRow() { return ++current_row; }
         size_t ALWAYS_INLINE increaseCurrentOffset() { return ++current_offset; }
 

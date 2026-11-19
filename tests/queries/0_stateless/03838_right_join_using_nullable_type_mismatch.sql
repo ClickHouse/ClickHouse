@@ -4,7 +4,6 @@
 -- expected return type (Nullable) doesn't match the actual input column type (non-Nullable).
 -- See: https://github.com/ClickHouse/ClickHouse/issues/96101
 
-SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 0;
 
 DROP TABLE IF EXISTS t1;

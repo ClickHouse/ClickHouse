@@ -15,9 +15,9 @@ doc_type: 'guide'
 QUOTA を使用すると、一定期間にわたるリソース使用量を制限したり、リソースの使用状況を追跡したりできます。
 QUOTA はユーザー設定で構成し、通常は &#39;users.xml&#39; に設定します。
 
-システムには、単一のクエリの複雑さを制限する機能もあります。[クエリの複雑さに関する制限](/ja/concepts/features/configuration/settings/query-complexity) のセクションを参照してください。
+システムには、単一のクエリ複雑性を制限する機能もあります。[クエリ複雑性に関する制限](/ja/concepts/features/configuration/settings/query-complexity) のセクションを参照してください。
 
-クエリの複雑さに関する制限とは異なり、QUOTA には次の特徴があります。
+クエリ複雑性に関する制限とは異なり、QUOTA には次の特徴があります。
 
 * 単一のクエリを制限するのではなく、一定期間内に実行される一連のクエリに制限を課します。
 * 分散クエリ処理において、すべてのリモートサーバーで消費されたリソースを計上します。
@@ -25,16 +25,16 @@ QUOTA はユーザー設定で構成し、通常は &#39;users.xml&#39; に設�
 それでは、QUOTA を定義する &#39;users.xml&#39; ファイル内のセクションを見ていきましょう。
 
 ```xml
-<!-- QUOTA -->
+<!-- Quotas -->
 <quotas>
-    <!-- QUOTA名 -->
+    <!-- Quota name. -->
     <default>
-        <!-- 期間に対する制限。異なる制限を持つ複数のインターバルを設定できます。 -->
+        <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
         <interval>
-            <!-- インターバルの長さ -->
+            <!-- Length of the interval. -->
             <duration>3600</duration>
 
-            <!-- 無制限。指定したインターバルのデータを収集するのみ。 -->
+            <!-- Unlimited. Just collect data for the specified time interval. -->
             <queries>0</queries>
             <query_selects>0</query_selects>
             <query_inserts>0</query_inserts>
@@ -52,15 +52,16 @@ QUOTA はユーザー設定で構成し、通常は &#39;users.xml&#39; に設�
 
 ```xml
 <statbox>
-    <!-- 期間に対する制限。異なる制限を持つ複数のインターバルを設定できます。 -->
+    <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
     <interval>
-        <!-- インターバルの長さ。 -->
+        <!-- Length of the interval. -->
         <duration>3600</duration>
 
         <queries>1000</queries>
         <query_selects>100</query_selects>
         <query_inserts>100</query_inserts>
         <written_bytes>5000000</written_bytes>
+        <written_rows>100000</written_rows>
         <errors>100</errors>
         <result_rows>1000000000</result_rows>
         <read_rows>100000000000</read_rows>
@@ -107,6 +108,8 @@ QUOTA はユーザー設定で構成し、通常は &#39;users.xml&#39; に設�
 `read_bytes` - すべてのリモートサーバーでクエリを実行するために、テーブルから読み取られた合計サイズ。
 
 `written_bytes` - 書き込み操作の合計サイズ。
+
+`written_rows` - `INSERT` クエリによって書き込まれた行の総数。
 
 `execution_time` – 秒単位のクエリの総実行時間 (実時間) 。
 

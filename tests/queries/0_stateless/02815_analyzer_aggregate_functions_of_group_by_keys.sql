@@ -1,4 +1,3 @@
-set enable_analyzer = 1;
 
 SELECT 'set optimize_aggregators_of_group_by_keys = 1';
 set optimize_aggregators_of_group_by_keys = 1;

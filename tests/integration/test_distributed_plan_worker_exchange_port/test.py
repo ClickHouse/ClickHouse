@@ -59,6 +59,7 @@ STREAMING_SETTINGS = ", ".join(
         "distributed_plan_default_reader_bucket_count = 3",
         "distributed_plan_force_exchange_kind = 'Streaming'",
         "enable_join_runtime_filters = 0",
+        "distributed_plan_fallback_to_local_execution = 0",
     ]
 )
 

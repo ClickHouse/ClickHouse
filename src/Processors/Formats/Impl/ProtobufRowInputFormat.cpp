@@ -173,7 +173,7 @@ void registerInputFormatProtobuf(FormatFactory & factory)
                     settings.protobuf.input_flatten_google_wrappers,
                     settings.protobuf.oneof_presence,
                     settings.protobuf.google_protos_path);
-            });
+            }, /*supports_reset_parser=*/ true);
         factory.markFormatSupportsSubsetOfColumns(with_length_delimiter ? "Protobuf" : "ProtobufSingle");
     }
 
@@ -213,7 +213,7 @@ message MessageType {
 
 ClickHouse tries to find a column named `x.y.z` (or `x_y_z` or `X.y_Z` and so on).
 
-Nested messages are suitable for input or output of a [nested data structures](/reference/data-types/nested-data-structures).
+Nested messages are suitable for input or output of a [nested data structures](/reference/data-types/nested-data-structures/index).
 
 For **mapped** fields that are missing on the wire:
 
@@ -300,9 +300,7 @@ message MessageType {
 };
 ```
 
-<details>
-<summary>Generating the binary file</summary>
-
+<Accordion title="Generating the binary file">
 If you already know how to serialize and deserialize data in the `Protobuf` format, you can skip this step.
 
 We'll use Python to serialize some data into `protobuf_message.bin` and read it into ClickHouse.
@@ -413,8 +411,7 @@ Run the script to generate the binary file:
 ```bash
 python generate_protobuf_data.py
 ```
-
-</details>
+</Accordion>
 
 Create a ClickHouse table matching the schema:
 
@@ -446,7 +443,7 @@ With your Protobuf schema, you can now deserialize the data which was written ou
 
 ### Reading and writing data using ClickHouse Cloud {#basic-examples-cloud}
 
-With ClickHouse Cloud you are not able to upload a Protobuf schema file. However, you can use the `format_protobuf_schema`
+With ClickHouse Cloud you are not able to upload a Protobuf schema file. However, you can use the `format_schema_source`
 setting to specify the schema in the query. In this example, we show you how to read serialized data from your local
 machine and insert it into a table in ClickHouse Cloud.
 
@@ -476,13 +473,13 @@ Possible values:
 Insert the data into ClickHouse Cloud, specifying the schema as a string, run:
 
 ```bash
-cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --password <password> --query "INSERT INTO testing.protobuf_messages SETTINGS format_schema_source='syntax = "proto3";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};', format_schema='schemafile:MessageType' FORMAT Protobuf"
+cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --password <password> --query "INSERT INTO test.protobuf_messages SETTINGS format_schema_source='string', format_schema='syntax = \"proto3\";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};', format_schema_message_name='MessageType' FORMAT Protobuf"
 ```
 
 Select the data inserted into the table:
 
 ```bash
-clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
+clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM test.protobuf_messages"
 ```
 
 ```response
@@ -498,7 +495,7 @@ You can also store your Protobuf schema in a table.
 Create a table on ClickHouse Cloud to insert data into:
 
 ```sql
-CREATE TABLE testing.protobuf_schema (
+CREATE TABLE test.protobuf_schema (
   schema String
 )
 ENGINE = MergeTree()
@@ -506,19 +503,32 @@ ORDER BY tuple();
 ```
 
 ```sql
-INSERT INTO testing.protobuf_schema VALUES ('syntax = "proto3";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};');
+INSERT INTO test.protobuf_schema VALUES ('syntax = "proto3";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};');
 ```
 
-Insert the data into ClickHouse Cloud, specifying the schema as a query to run:
+If you ran the previous example, empty the table first, so that the result below matches:
+
+```sql
+TRUNCATE TABLE test.protobuf_messages;
+```
+
+Insert the data into ClickHouse Cloud, specifying the schema as a query to run.
+Send this insert over the [HTTP interface](/concepts/features/interfaces/http#insert-protobuf), where the server parses the data and runs the schema query: `clickhouse client` parses input data on the client side, where the schema query fails.
+curl's `--url-query` option (curl 7.87 and later) URL-encodes each parameter, so the query and the schema query can be written as they are:
 
 ```bash
-cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --password <password> --query "INSERT INTO testing.protobuf_messages SETTINGS format_schema_source='SELECT schema FROM testing.protobuf_schema', format_schema='schemafile:MessageType' FORMAT Protobuf"
+curl 'https://<hostname>:8443/' --user 'default:<password>' \
+    --url-query 'query=INSERT INTO test.protobuf_messages FORMAT Protobuf' \
+    --url-query 'format_schema_source=query' \
+    --url-query 'format_schema=SELECT schema FROM test.protobuf_schema' \
+    --url-query 'format_schema_message_name=MessageType' \
+    --data-binary @protobuf_messages.bin
 ```
 
 Select the data inserted into the table:
 
 ```bash
-clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
+clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM test.protobuf_messages"
 ```
 
 ```response
@@ -568,8 +578,6 @@ SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf
 
     factory.setDocumentation("ProtobufSingle", Documentation{
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 <CloudNotSupportedBadge/>
 
 | Input | Output | Alias |

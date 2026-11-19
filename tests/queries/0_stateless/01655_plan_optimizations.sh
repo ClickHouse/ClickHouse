@@ -25,7 +25,7 @@ $CLICKHOUSE_CLIENT -q "
     ) where y != 0 order by s, y"
 
 echo "> (analyzer) filter should be pushed down after aggregating, column after aggregation is const"
-$CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
+$CLICKHOUSE_CLIENT -q "
     explain actions = 1 select s, y, y != 0 from (select sum(x) as s, y from (
         select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0" | grep -o "Aggregating\|Filter\|COLUMN Const(UInt8) -> notEquals(__table1.y, 0_UInt8)"
@@ -35,7 +35,7 @@ $CLICKHOUSE_CLIENT -q "
     ) where y != 0 order by s, y, y != 0"
 
 echo "> (analyzer) one condition of filter should be pushed down after aggregating, other condition is aliased"
-$CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
+$CLICKHOUSE_CLIENT -q "
     explain actions = 1 select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s != 4" |
@@ -46,7 +46,7 @@ $CLICKHOUSE_CLIENT -q "
     ) where y != 0 and s != 4 order by s, y"
 
 echo "> (analyzer) one condition of filter should be pushed down after aggregating, other condition is cast"
-$CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
+$CLICKHOUSE_CLIENT -q "
     explain actions = 1 select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s - 4" |
@@ -57,7 +57,7 @@ $CLICKHOUSE_CLIENT -q "
     ) where y != 0 and s - 4 order by s, y"
 
 echo "> (analyzer) one condition of filter should be pushed down after aggregating, other two conditions are ANDed"
-$CLICKHOUSE_CLIENT --enable_analyzer=1 --convert_query_to_cnf=0 -q "
+$CLICKHOUSE_CLIENT --convert_query_to_cnf=0 -q "
     explain actions = 1 select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s - 8 and s - 4" |
@@ -68,7 +68,7 @@ $CLICKHOUSE_CLIENT -q "
     ) where y != 0 and s - 8 and s - 4 order by s, y"
 
 echo "> (analyzer) two conditions of filter should be pushed down after aggregating and ANDed, one condition is aliased"
-$CLICKHOUSE_CLIENT --enable_analyzer=1 --convert_query_to_cnf=0 -q "
+$CLICKHOUSE_CLIENT --convert_query_to_cnf=0 -q "
     explain actions = 1 select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s != 8 and y - 4" |
@@ -79,7 +79,7 @@ $CLICKHOUSE_CLIENT -q "
     ) where y != 0 and s != 8 and y - 4 order by s, y"
 
 echo "> (analyzer) filter is split, one part is filtered before ARRAY JOIN"
-$CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
+$CLICKHOUSE_CLIENT -q "
     explain actions = 1 select x, y from (
         select range(number) as x, number + 1 as y from numbers(3)
     ) array join x where y != 2 and x != 0 settings serialize_query_plan = 0" |
@@ -101,7 +101,7 @@ $CLICKHOUSE_CLIENT -q "
 #     ) where y != 0 and s != 4 order by s, x, y"
 
 echo "> (analyzer) filter is pushed down before Distinct"
-$CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
+$CLICKHOUSE_CLIENT -q "
     explain actions = 1 select x, y from (
         select distinct x, y from (select number % 2 as x, number % 3 as y from numbers(10))
     ) where y != 2" |
@@ -112,7 +112,7 @@ $CLICKHOUSE_CLIENT -q "
     ) where y != 2 order by x, y"
 
 echo "> (analyzer) filter is pushed down before sorting steps"
-$CLICKHOUSE_CLIENT --enable_analyzer=1 --convert_query_to_cnf=0 -q "
+$CLICKHOUSE_CLIENT --convert_query_to_cnf=0 -q "
     explain actions = 1 select x, y from (
         select number % 2 as x, number % 3 as y from numbers(6) order by y desc
     ) where x != 0 and y != 0" |
@@ -123,7 +123,7 @@ $CLICKHOUSE_CLIENT -q "
     ) where x != 0 and y != 0"
 
 echo "> (analyzer) filter is pushed down before TOTALS HAVING and aggregating"
-$CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
+$CLICKHOUSE_CLIENT -q "
     explain actions = 1 select * from (
         select y, sum(x) from (select number as x, number % 4 as y from numbers(10)) group by y with totals
     ) where y != 2" |
@@ -146,7 +146,7 @@ $CLICKHOUSE_CLIENT -q "
 
 # `query_plan_join_swap_table = 0` below to fix the query plan
 echo "> (analyzer) one condition of filter is pushed down before LEFT JOIN"
-$CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
+$CLICKHOUSE_CLIENT -q "
     explain actions = 1
     select number as a, r.b from numbers(4) as l any left join (
         select number + 2 as b from numbers(3)
@@ -158,12 +158,12 @@ $CLICKHOUSE_CLIENT -q "
     ) as r on a = r.b where a != 1 and b != 2 settings query_plan_join_swap_table = 0" | sort
 
 echo "> (analyzer) one condition of filter is pushed down before INNER JOIN"
-$CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
+$CLICKHOUSE_CLIENT -q "
     explain actions = 1
     select number as a, r.b from numbers(4) as l any inner join (
         select number + 2 as b from numbers(3)
     ) as r on a = r.b where a != 1 and b != 2 settings query_plan_join_swap_table = 0, enable_join_runtime_filters = 0" |
-        grep -o "  Join\|Filter column: and(notEquals(__table1.number, 1_UInt8), notEquals(__table1.number, 2_UInt8))\|Filter column: and(notEquals(__table2.b, 2_UInt8), notEquals(__table2.b, 1_UInt8))"
+        grep -o "  Join\|Filter column: and(notEquals(__table1.number, 1_UInt8), notEquals(__table1.number, 2_UInt8))\|Filter column: and(notEquals(__table2.b, 1_UInt8), notEquals(__table2.b, 2_UInt8))"
 $CLICKHOUSE_CLIENT -q "
     select number as a, r.b from numbers(4) as l any inner join (
         select number + 2 as b from numbers(3)
@@ -183,7 +183,7 @@ $CLICKHOUSE_CLIENT -q "
 echo "> function calculation should be done after sorting and limit (if possible)"
 echo "> (analyzer) function calculation should be done after sorting and limit (if possible)"
 echo "> Expression should be divided into two subexpressions and only one of them should be moved after Sorting"
-$CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
+$CLICKHOUSE_CLIENT -q "
     explain actions = 1 select number as n, sipHash64(n) from numbers(100) order by number + 1 limit 5" |
     sed 's/^ *//g' | grep -o "^ *\(Expression (.*Before ORDER BY.*)\|Sorting\|FUNCTION \w\+\)"
 echo "> this query should be executed without throwing an exception"

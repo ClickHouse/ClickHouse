@@ -7,6 +7,7 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/Merges/Algorithms/RowRef.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -54,6 +55,8 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     if (!version_column.empty())
         version_column_number = header_->getPositionByName(version_column);
 
+    next_waiting_selections_check = max_block_size_rows;
+
     /// With a version or an is_deleted column every row of a run must be examined, and row
     /// sources for a vertical merge must be recorded per row. Without them the only effect of
     /// processing a row is replacing `selected_row` with it, so runs can be fast-forwarded.
@@ -61,6 +64,7 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     /// last one, so the fast-forward to the last row of the run does not apply either.
     can_skip_to_run_end = version_column_number == -1 && is_deleted_column_number == -1
         && out_row_sources_buf == nullptr && !enable_vertical_final && !read_in_reverse;
+    nonzero_level_parts_have_unique_keys = true;
     uses_runs_of_equal_keys = can_skip_to_run_end;
 }
 
@@ -77,6 +81,13 @@ void ReplacingSortedAlgorithm::initialize(Inputs inputs)
     /// that block holds no runs of equal keys, the detection is disabled and the merge has to
     /// cost exactly what it costs with the plain heap.
     skip_runs_of_equal_keys = can_skip_to_run_end && batch_detection_enabled;
+    source_key_runs.assign(sources.size(), {});
+}
+
+void ReplacingSortedAlgorithm::consume(Input & input, size_t source_num)
+{
+    source_key_runs[source_num].end = 0;
+    IMergingAlgorithmWithSharedChunks::consume(input, source_num);
 }
 
 /// True when the group's winning row must not reach the output: a `CLEANUP` tombstone, or a row
@@ -124,10 +135,14 @@ void ReplacingSortedAlgorithm::insertRowImpl()
     if (enable_vertical_final)
     {
         /// We just record the position to be selected in the chunk
-        if (!selected_row.owned_chunk->replace_final_selection)
-            selected_row.owned_chunk->replace_final_selection = ColumnUInt64::create();
-
-        selected_row.owned_chunk->replace_final_selection->insert(selected_row.row_num);
+        auto & chunk = *selected_row.owned_chunk;
+        if (!chunk.replace_final_selection)
+        {
+            chunk.replace_final_selection = ColumnUInt64::create();
+            chunk.replace_final_selection_start = num_selected_rows;
+        }
+        chunk.replace_final_selection->insert(selected_row.row_num);
+        ++num_selected_rows;
 
         /// This is the last row we can select from `selected_row.owned_chunk`, keep it to emit later
         if (selected_row.current_cursor == nullptr)
@@ -171,6 +186,9 @@ void ReplacingSortedAlgorithm::insertChunk(size_t source_num, Chunk chunk)
 
 IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
 {
+    if (!waiting_selections.empty())
+        return popWaitingSelection();
+
     /// Skipping final: we've done processing some chunk and can emit them
     if (!to_be_emitted.empty())
     {
@@ -201,6 +219,14 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
             /// If there are enough rows and the last one is calculated completely
             if (merged_data->hasEnoughRows())
                 return Status(merged_data->pull());
+
+            if (enable_vertical_final && num_selected_rows >= next_waiting_selections_check)
+            {
+                next_waiting_selections_check = num_selected_rows + merged_data->maxBlockSize();
+                emitLongWaitingSelections();
+                if (!waiting_selections.empty())
+                    return popWaitingSelection();
+            }
 
             /// Write the data for the previous primary key.
             if (!selected_row.empty())
@@ -233,6 +259,7 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
 
             if (enable_vertical_final)
             {
+                num_selected_rows += current_chunk.getNumRows();
                 current_chunk.getChunkInfos().add(std::make_shared<ChunkSelectFinalAllRows>());
                 Status status(std::move(current_chunk));
                 status.required_source = source_num;
@@ -318,7 +345,13 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
 
             if (run_begin + 1 < run_bound)
             {
-                size_t run_end = getEqualRangeEndAssumeSorted(current->sort_columns, current->desc, run_begin, run_bound);
+                auto & key_runs = source_key_runs[current->order];
+                if (key_runs.end != run_bound)
+                {
+                    key_runs.runs.reset(current->desc.size());
+                    key_runs.end = run_bound;
+                }
+                size_t run_end = getEqualRangeEndAssumeSorted(key_runs.runs, current->sort_columns, current->desc, run_begin, run_bound);
                 if (run_end > run_begin + 1)
                 {
                     /// Jump to the last row of the run; the loop processes it as usual.
@@ -341,6 +374,8 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         }
     }
 
+    chassert(waiting_selections.empty());
+
     /// If have enough rows, return block, because it prohibited to overflow requested number of rows.
     if (merged_data->hasEnoughRows())
         return Status(merged_data->pull());
@@ -358,6 +393,32 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
     }
 
     return Status(merged_data->pull(), true);
+}
+
+IMergingAlgorithm::Status ReplacingSortedAlgorithm::popWaitingSelection()
+{
+    Chunk chunk = std::move(waiting_selections.front());
+    waiting_selections.pop();
+    return Status(std::move(chunk));
+}
+
+void ReplacingSortedAlgorithm::emitLongWaitingSelections()
+{
+    for (auto & source : sources)
+    {
+        auto & chunk = source.chunk;
+        if (!chunk || !chunk->replace_final_selection)
+            continue;
+
+        /// A chunk of an input holding 1/num_inputs of the keys is merged within about num_inputs * rows selected rows.
+        const size_t max_wait = std::max<size_t>(merged_data->maxBlockSize(), 2 * sources.size() * chunk->getNumRows());
+        if (num_selected_rows - chunk->replace_final_selection_start < max_wait)
+            continue;
+
+        Chunk selection = chunk->clone();
+        selection.getChunkInfos().add(std::make_shared<ChunkSelectFinalIndices>(std::move(chunk->replace_final_selection)));
+        waiting_selections.push(std::move(selection));
+    }
 }
 
 void ReplacingSortedAlgorithm::saveChunkForSkippingFinalFromSelectedRow()
@@ -379,6 +440,7 @@ void ReplacingSortedAlgorithm::saveChunkForSkippingFinalFromSource(size_t curren
             /// Later when we change the value of `selected_row`, if `selected_row` is the sole owner of its chunk and the chunk has selected rows,
             /// we will emit it
             selected_row.current_cursor = nullptr;
+            chunk = nullptr;
         }
         else
         {

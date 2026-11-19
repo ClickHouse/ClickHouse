@@ -12,12 +12,18 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/IDataType.h>
+#include <Interpreters/RowDataStore.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
 #include <Common/memcpySmall.h>
+#include <Common/typeid_cast.h>
+#include <base/PackedStringRef.h>
+#include <base/unaligned.h>
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -30,6 +36,75 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// A contiguous run of source rows in one block, or - when `block_no` is `default_rows` - a run of
+/// unmatched rows. A reranged build side and an `Array`'s nested column are both made of runs.
+struct GatherRange
+{
+    static constexpr UInt32 default_rows = std::numeric_limits<UInt32>::max();
+
+    UInt32 block_no = 0;
+    UInt64 begin = 0;
+    UInt64 length = 0;
+
+    [[nodiscard]] constexpr bool isDefault() const { return block_no == default_rows; }
+};
+
+using GatherRanges = PaddedPODArray<GatherRange>;
+
+/// Buffers shared by all output columns of one emit call, since expanding a selection gives the same
+/// answer for every column. A column stored as `ColumnReplicated` is the exception: its row remap is
+/// per column, so it gets its own `remapped` pass over `flat`.
+struct EmitScratch
+{
+    PaddedPODArray<UInt64> flat;
+    PaddedPODArray<UInt64> remapped;
+    GatherRanges ranges;
+    bool flat_ready = false;
+    bool ranges_ready = false;
+};
+
+/// Expands a list shaped selection into flat words a batch at a time.
+// A batch boundary can fall inside a key's run, so the iterator into
+/// the word being expanded carries over to the next call.
+class FlatWordCursor
+{
+public:
+    FlatWordCursor(const RefWordSelection & selection, UInt64 * flat_)
+        : word(selection.begin), words_end(selection.end), refs(RowRefList::fromWord(0)), flat(flat_)
+    {
+    }
+
+    const UInt64 * next(size_t batch_size)
+    {
+        size_t count = 0;
+        while (count < batch_size)
+        {
+            if (!refs.ok())
+            {
+                if (word == words_end)
+                    break;
+                const UInt64 next_word = *word++;
+                if (!next_word)
+                {
+                    flat[count++] = 0;
+                    continue;
+                }
+                refs = RowRefList::ForwardIterator(refsOf(next_word));
+            }
+            for (; count < batch_size && refs.ok(); ++refs)
+                flat[count++] = *refs;
+        }
+        chassert(count == batch_size);
+        return flat;
+    }
+
+private:
+    const UInt64 * word;
+    const UInt64 * words_end;
+    RowRefList::ForwardIterator refs;
+    UInt64 * flat;
+};
 
 /// 32 rows of lead cover one source row's memory latency.
 constexpr size_t look_ahead = 32;
@@ -44,27 +119,35 @@ constexpr UInt64 no_open_run = 1;
 /// `STRIDE` is 0 when the width is only known at run time, as for a `FixedString(n)` of arbitrary `n`.
 /// A compile-time width turns the copy into one load and one store. `default_pattern` is the `stride`
 /// bytes a zero ref word writes.
-template <bool from_row_list, size_t STRIDE>
+/// `from_row_store` reads the plane as a row store's field: `row_store_row_length` bytes from one row's
+/// value to the next, instead of the values sitting back to back.
+template <bool from_row_list, bool from_row_store, size_t STRIDE>
 void gatherFixedStride(
     IColumn & dst,
     const void * const * sources,
     size_t dynamic_stride,
+    std::optional<size_t> row_store_row_length,
     const UInt64 * row_refs_begin,
     const UInt64 * row_refs_end,
     size_t rows_to_add,
     const char * default_pattern)
 {
     const size_t stride = STRIDE ? STRIDE : dynamic_stride;
+    const size_t row_step = from_row_store ? *row_store_row_length : stride;
     const std::span<char> out_span = dst.insertRawUninitialized(rows_to_add);
     chassert(out_span.size() == rows_to_add * stride);
 
     char * out = out_span.data();
 
+    auto source_at = [&](UInt64 ref_word)
+    {
+        return static_cast<const char *>(sources[refWordBlockNo(ref_word)])
+            + static_cast<size_t>(refWordRowNo(ref_word)) * row_step;
+    };
+
     auto copy_ref = [&](UInt64 ref_word)
     {
-        const char * from = static_cast<const char *>(sources[refWordBlockNo(ref_word)])
-            + static_cast<size_t>(refWordRowNo(ref_word)) * stride;
-        memcpy(out, from, stride);
+        memcpy(out, source_at(ref_word), stride);
         out += stride;
     };
 
@@ -76,9 +159,7 @@ void gatherFixedStride(
             /// Only an inline word carries a (block_no, row_number) address.
             const UInt64 ahead = row_refs_begin[i + look_ahead];
             if (refWordIsInline(ahead))
-                __builtin_prefetch(
-                    static_cast<const char *>(sources[refWordBlockNo(ahead)])
-                    + static_cast<size_t>(refWordRowNo(ahead)) * stride);
+                __builtin_prefetch(source_at(ahead));
         }
 
         const UInt64 word = row_refs_begin[i];
@@ -126,6 +207,7 @@ void gatherFixedDispatch(
     IColumn & dst,
     const void * const * sources,
     size_t stride,
+    std::optional<size_t> row_store_row_length,
     const UInt64 * row_refs_begin,
     const UInt64 * row_refs_end,
     size_t rows_to_add,
@@ -134,7 +216,14 @@ void gatherFixedDispatch(
     withStride(
         stride,
         [&]<size_t STRIDE>
-        { gatherFixedStride<from_row_list, STRIDE>(dst, sources, stride, row_refs_begin, row_refs_end, rows_to_add, default_pattern); });
+        {
+            if (row_store_row_length)
+                gatherFixedStride<from_row_list, true, STRIDE>(
+                    dst, sources, stride, row_store_row_length, row_refs_begin, row_refs_end, rows_to_add, default_pattern);
+            else
+                gatherFixedStride<from_row_list, false, STRIDE>(
+                    dst, sources, stride, row_store_row_length, row_refs_begin, row_refs_end, rows_to_add, default_pattern);
+        });
 }
 
 /// `row' = indexes[row]`, so the word addresses the replicated block's nested column. An identity
@@ -278,7 +367,9 @@ void gatherRawRanges(
     withStride(stride, [&]<size_t STRIDE> { gatherRawRangesStride<STRIDE>(dst, bases, stride, ranges, total_rows, default_pattern); });
 }
 
-void gatherNodeRows(IColumn & dst, const GatherNode & node, const UInt64 * words, size_t count);
+void gatherNodeRows(
+    IColumn & dst, const GatherNode & node, const UInt64 * words, size_t count,
+    std::optional<size_t> row_store_row_length = std::nullopt);
 void gatherNodeRanges(IColumn & dst, const GatherNode & node, const GatherRanges & ranges, size_t total_rows);
 
 /// The unmatched row of a `Kind::Rows` node. Below a `Nullable` the row is NULL and the enclosing
@@ -303,11 +394,15 @@ void copyRows(IColumn & dst, const IColumn & src, size_t begin, size_t length)
 
 /// `Nullable` over a fixed-width column in one pass: each word is read once and serves both planes,
 /// with one lead prefetch per plane, instead of a null-map pass and a value pass over the same words.
-template <size_t STRIDE>
-void gatherNullableFixedStride(ColumnNullable & dst, const GatherNode & node, const UInt64 * words, size_t count)
+/// In the row store, the null byte and the value are adjacent bytes of the same row.
+template <bool from_row_store, size_t STRIDE>
+void gatherNullableFixedStride(
+    ColumnNullable & dst, const GatherNode & node, const UInt64 * words, size_t count, std::optional<size_t> row_store_row_length)
 {
     const GatherNode & nested = node.children[0];
     const size_t stride = STRIDE ? STRIDE : nested.stride;
+    const size_t null_step = from_row_store ? *row_store_row_length : 1;
+    const size_t value_step = from_row_store ? *row_store_row_length : stride;
     const void * const * null_by_block = node.data_by_block.data();
     const void * const * value_by_block = nested.data_by_block.data();
     const char * default_pattern = nested.default_pattern.data();
@@ -327,8 +422,9 @@ void gatherNullableFixedStride(ColumnNullable & dst, const GatherNode & node, co
             {
                 const UInt32 ahead_block = refWordBlockNo(ahead);
                 const size_t ahead_row = refWordRowNo(ahead);
-                __builtin_prefetch(static_cast<const char *>(null_by_block[ahead_block]) + ahead_row);
-                __builtin_prefetch(static_cast<const char *>(value_by_block[ahead_block]) + ahead_row * stride);
+                __builtin_prefetch(static_cast<const char *>(null_by_block[ahead_block]) + ahead_row * null_step);
+                if constexpr (!from_row_store)
+                    __builtin_prefetch(static_cast<const char *>(value_by_block[ahead_block]) + ahead_row * value_step);
             }
         }
         const UInt64 word = words[i];
@@ -341,23 +437,37 @@ void gatherNullableFixedStride(ColumnNullable & dst, const GatherNode & node, co
         }
         const UInt32 block_no = refWordBlockNo(word);
         const size_t row = refWordRowNo(word);
-        null_out[i] = static_cast<const char *>(null_by_block[block_no])[row];
-        memcpy(value_out, static_cast<const char *>(value_by_block[block_no]) + row * stride, stride);
+        const size_t null_offset = row * null_step;
+        /// `value_by_block` already points at the byte after the null flag at the same offset.
+        const size_t value_offset = from_row_store ? null_offset : row * value_step;
+        null_out[i] = static_cast<const char *>(null_by_block[block_no])[null_offset];
+        memcpy(value_out, static_cast<const char *>(value_by_block[block_no]) + value_offset, stride);
         value_out += stride;
     }
     chassert(value_out == value_span.data() + value_span.size());
 }
 
-void gatherNullableRows(ColumnNullable & dst, const GatherNode & node, const UInt64 * words, size_t count)
+void gatherNullableRows(
+    ColumnNullable & dst, const GatherNode & node, const UInt64 * words, size_t count,
+    std::optional<size_t> row_store_row_length = std::nullopt)
 {
     const GatherNode & nested = node.children[0];
     if (nested.kind == GatherNode::Kind::Fixed)
     {
-        withStride(nested.stride, [&]<size_t STRIDE> { gatherNullableFixedStride<STRIDE>(dst, node, words, count); });
+        withStride(
+            nested.stride,
+            [&]<size_t STRIDE>
+            {
+                if (row_store_row_length)
+                    gatherNullableFixedStride<true, STRIDE>(dst, node, words, count, row_store_row_length);
+                else
+                    gatherNullableFixedStride<false, STRIDE>(dst, node, words, count, row_store_row_length);
+            });
         return;
     }
-    gatherFixedDispatch<false>(dst.getNullMapColumn(), node.data_by_block.data(), 1, words, words + count, count, &null_map_default);
-    gatherNodeRows(dst.getNestedColumn(), node.children[0], words, count);
+    gatherFixedDispatch<false>(
+        dst.getNullMapColumn(), node.data_by_block.data(), 1, row_store_row_length, words, words + count, count, &null_map_default);
+    gatherNodeRows(dst.getNestedColumn(), nested, words, count, row_store_row_length);
 }
 
 /// The characters of `gatherStringRows`, one copy per run of consecutive rows of one block. `row_no`
@@ -472,6 +582,100 @@ void gatherStringRows(ColumnString & dst, const GatherNode & node, const UInt64 
     gatherStringChars(out_chars, out_chars_end, words, count, offsets_by_block, chars_by_block);
 }
 
+/// A row store string column is gathered in two steps. While the batches run we copy only the
+/// 16-byte refs out of the rows, so we know the total size of the chars when the batches are done
+/// and can allocate them exactly once, instead of growing them batch by batch.
+struct RowStoreStringRefs
+{
+    ColumnString * strings = nullptr;
+    IColumn * null_map = nullptr;
+    const GatherNode * null_node = nullptr;
+    const GatherNode * value_node = nullptr;
+    size_t row_length = 0;
+    PaddedPODArray<UnhashedPackedStringRef> values;
+    UInt64 cursor = 0;
+    size_t staged_rows = 0;
+};
+
+RowStoreStringRefs initRowStoreStringRefs(IColumn & column, const GatherNode & node, size_t rows, size_t row_length)
+{
+    RowStoreStringRefs refs;
+    refs.value_node = node.kind == GatherNode::Kind::Nullable ? &node.children.front() : &node;
+    chassert(refs.value_node->kind == GatherNode::Kind::String);
+    refs.row_length = row_length;
+    if (node.kind == GatherNode::Kind::Nullable)
+    {
+        auto & nullable_column = assert_cast<ColumnNullable &>(column);
+        refs.null_map = &nullable_column.getNullMapColumn();
+        refs.null_node = &node;
+        refs.strings = &assert_cast<ColumnString &>(nullable_column.getNestedColumn());
+    }
+    else
+        refs.strings = &assert_cast<ColumnString &>(column);
+
+    refs.values.resize(rows);
+    refs.cursor = refs.strings->getChars().size();
+    return refs;
+}
+
+void gatherColumnStringOffsetsAndRefs(RowStoreStringRefs & refs, const UInt64 * words, size_t count)
+{
+    if (refs.null_map)
+        gatherFixedDispatch<false>(
+            *refs.null_map, refs.null_node->data_by_block.data(), 1, refs.row_length, words, words + count, count, &null_map_default);
+
+    const void * const * values_by_block = refs.value_node->data_by_block.data();
+    auto value_at = [&](UInt64 word)
+    {
+        return static_cast<const char *>(values_by_block[refWordBlockNo(word)]) + static_cast<size_t>(refWordRowNo(word)) * refs.row_length;
+    };
+
+    ColumnString::Offsets & offsets = refs.strings->getOffsets();
+    const size_t old_rows = offsets.size();
+    offsets.resize(old_rows + count);
+    UnhashedPackedStringRef * batch_values = refs.values.data() + refs.staged_rows;
+    UInt64 * batch_offsets = offsets.data() + old_rows;
+    UInt64 batch_cursor = refs.cursor;
+    for (size_t i = 0; i < count; ++i)
+    {
+        if (i + look_ahead < count)
+        {
+            const UInt64 ahead = words[i + look_ahead];
+            if (ahead)
+                __builtin_prefetch(value_at(ahead));
+        }
+        const UInt64 word = words[i];
+        if (word)
+        {
+            batch_values[i] = unalignedLoad<UnhashedPackedStringRef>(value_at(word));
+            batch_cursor += batch_values[i].size();
+        }
+        else
+            batch_values[i] = {}; /// An unmatched row is the empty string.
+        batch_offsets[i] = batch_cursor;
+    }
+    refs.cursor = batch_cursor;
+    refs.staged_rows += count;
+}
+
+void gatherColumnStringChars(RowStoreStringRefs & refs)
+{
+    ColumnString::Chars & chars = refs.strings->getChars();
+    const size_t old_chars = chars.size();
+    if (refs.cursor == old_chars)
+    {
+        refs.values = {};
+        return;
+    }
+    chars.resize_exact(refs.cursor);
+    UInt8 * out_chars = chars.data() + old_chars;
+    for (size_t i = 0; i < refs.staged_rows; ++i)
+        out_chars = refs.values[i].copyTo(out_chars);
+    chassert(out_chars == chars.data() + chars.size());
+    /// Free the refs right away, the next column still has its own.
+    refs.values = {};
+}
+
 void gatherArrayRows(ColumnArray & dst, const GatherNode & node, const UInt64 * words, size_t count)
 {
     const void * const * offsets_by_block = node.data_by_block.data();
@@ -512,10 +716,10 @@ void gatherArrayRows(ColumnArray & dst, const GatherNode & node, const UInt64 * 
     gatherNodeRanges(dst.getData(), node.children[0], child_ranges, child_rows);
 }
 
-void gatherTupleRows(ColumnTuple & dst, const GatherNode & node, const UInt64 * words, size_t count)
+void gatherTupleRows(ColumnTuple & dst, const GatherNode & node, const UInt64 * words, size_t count, std::optional<size_t> row_store_row_length)
 {
     for (size_t i = 0; i < node.children.size(); ++i)
-        gatherNodeRows(dst.getColumn(i), node.children[i], words, count);
+        gatherNodeRows(dst.getColumn(i), node.children[i], words, count, row_store_row_length);
 }
 
 void gatherVariantRows(ColumnVariant & dst, const GatherNode & node, const UInt64 * words, size_t count)
@@ -749,19 +953,20 @@ void gatherRowsByRanges(IColumn & dst, const GatherNode & node, const GatherRang
     }
 }
 
-void gatherNodeRows(IColumn & dst, const GatherNode & node, const UInt64 * words, size_t count)
+void gatherNodeRows(IColumn & dst, const GatherNode & node, const UInt64 * words, size_t count, std::optional<size_t> row_store_row_length)
 {
     using enum GatherNode::Kind;
     switch (node.kind)
     {
         case Fixed:
             gatherFixedDispatch<false>(
-                dst, node.data_by_block.data(), node.stride, words, words + count, count, node.default_pattern.data());
+                dst, node.data_by_block.data(), node.stride, row_store_row_length, words, words + count, count,
+                node.default_pattern.data());
             break;
-        case Nullable: gatherNullableRows(assert_cast<ColumnNullable &>(dst), node, words, count); break;
+        case Nullable: gatherNullableRows(assert_cast<ColumnNullable &>(dst), node, words, count, row_store_row_length); break;
         case String: gatherStringRows(assert_cast<ColumnString &>(dst), node, words, count); break;
         case Array: gatherArrayRows(assert_cast<ColumnArray &>(dst), node, words, count); break;
-        case Tuple: gatherTupleRows(assert_cast<ColumnTuple &>(dst), node, words, count); break;
+        case Tuple: gatherTupleRows(assert_cast<ColumnTuple &>(dst), node, words, count, row_store_row_length); break;
         case Variant: gatherVariantRows(assert_cast<ColumnVariant &>(dst), node, words, count); break;
         case Map: gatherNodeRows(assert_cast<ColumnMap &>(dst).getNestedColumn(), node.children[0], words, count); break;
         case Rows: gatherRowsByRuns(dst, node, words, count); break;
@@ -806,6 +1011,21 @@ void gatherNodeRanges(IColumn & dst, const GatherNode & node, const GatherRanges
     throwNoGatherKernel(type, column, "the emitted type and the stored column are different shapes");
 }
 
+/// The `stride` bytes an unmatched row of a fixed-width column writes. Held as data rather than
+/// derived, because a fixed-width default is not always bitwise zero - an `Enum`'s is its first value.
+/// `type` is null below a `Nullable`, where `insertDefault` fills the nested planes from the nested
+/// *column*'s default instead; the two differ for an `Enum`, and `assumeNotNull` sees it.
+std::vector<char> fixedDefaultPattern(const IColumn & column, const IDataType * type)
+{
+    MutableColumnPtr default_row = column.cloneEmpty();
+    if (type)
+        type->insertDefaultInto(*default_row);
+    else
+        default_row->insertDefault();
+    const std::string_view default_bytes = default_row->getRawData();
+    return {default_bytes.begin(), default_bytes.end()};
+}
+
 /// The declared types of the columns `ColumnPlanes::children` holds for a column of `type`.
 DataTypes childTypes(ColumnPlanes::Shape shape, const IDataType & type)
 {
@@ -820,6 +1040,40 @@ DataTypes childTypes(ColumnPlanes::Shape shape, const IDataType & type)
         case Fixed:
         case String:
         case Rows: return {};
+    }
+}
+
+void gatherColumn(
+    IColumn & dst, const GatherColumn & src, const RefWordSelection & selection, EmitScratch & scratch,
+    std::optional<size_t> row_store_row_length = std::nullopt)
+{
+    chassert(src.node);
+    const GatherNode & node = *src.node;
+
+    /// Keeping a sorted build side's runs as runs is the whole point of having reranged it. A
+    /// replicated source is the exception: `row' = indexes[row]` breaks any run.
+    if (selection.shape == RefWordShape::Ranges && !src.remap_by_block)
+    {
+        chassert(!row_store_row_length);
+        gatherNodeRanges(dst, node, rangesOf(selection, scratch), selection.rows);
+    }
+
+    /// The dominant case - fixed width, no replicated block - reads the flat and list shapes as
+    /// they are. Every other kernel needs the one word per row that `flatWords` produces.
+    else if (node.kind == GatherNode::Kind::Fixed && !src.remap_by_block)
+    {
+        if (selection.shape == RefWordShape::Flat)
+            gatherFixedDispatch<false>(
+                dst, node.data_by_block.data(), node.stride, row_store_row_length, selection.begin, selection.end, selection.rows,
+                node.default_pattern.data());
+        else
+            gatherFixedDispatch<true>(
+                dst, node.data_by_block.data(), node.stride, row_store_row_length, selection.begin, selection.end, selection.rows,
+                node.default_pattern.data());
+    }
+    else
+    {
+        gatherNodeRows(dst, node, flatWords(selection, src.remap_by_block, scratch), selection.rows, row_store_row_length);
     }
 }
 }
@@ -860,17 +1114,10 @@ void resolveGatherNode(
         node.data_by_block.resize(num_blocks);
         switch (planes.shape)
         {
-            case Fixed: {
-                MutableColumnPtr default_row = column.cloneEmpty();
-                if (default_from_type)
-                    type->insertDefaultInto(*default_row);
-                else
-                    default_row->insertDefault();
-                const std::string_view default_bytes = default_row->getRawData();
-                chassert(default_bytes.size() == node.stride);
-                node.default_pattern.assign(default_bytes.begin(), default_bytes.end());
+            case Fixed:
+                node.default_pattern = fixedDefaultPattern(column, default_from_type ? type.get() : nullptr);
+                chassert(node.default_pattern.size() == node.stride);
                 break;
-            }
             case String: node.aux_by_block.resize(num_blocks); break;
             case Variant:
                 if (planes.children.empty() || planes.children.size() >= ColumnVariant::NULL_DISCRIMINATOR)
@@ -908,34 +1155,168 @@ void resolveGatherNode(
             node.children[i], child_types[i], *planes.children[i], block_no, num_blocks, default_from_type && planes.shape == Tuple);
 }
 
-void gatherColumn(IColumn & dst, const GatherColumn & src, const RefWordSelection & selection, EmitScratch & scratch)
+void resolveRowStoreGatherNode(
+    GatherNode & node,
+    const DataTypePtr & type,
+    const RowDataStore & row_store,
+    const RowDataStore::FieldLayout & field,
+    size_t block_no,
+    size_t num_blocks,
+    bool default_from_type)
 {
-    chassert(src.node);
-    const GatherNode & node = *src.node;
+    using enum GatherNode::Kind;
+    using FieldShape = RowDataStore::FieldPlanes::Shape;
 
-    /// Keeping a sorted build side's runs as runs is the whole point of having reranged it. A
-    /// replicated source is the exception: `row' = indexes[row]` breaks any run.
-    if (selection.shape == RefWordShape::Ranges && !src.remap_by_block)
+    const RowDataStore::FieldPlanes planes = row_store.getPlanes(field);
+
+    GatherNode * value_node = &node;
+    DataTypePtr value_type = type;
+    bool value_default_from_type = default_from_type;
+    if (planes.null_map.has_value())
     {
-        gatherNodeRanges(dst, node, rangesOf(selection, scratch), selection.rows);
+        if (!node.column_type)
+        {
+            const MutableColumnPtr emit_column = type->createColumn();
+            const IColumn & emit_column_ref = *emit_column;
+            if (!typeid_cast<const ColumnNullable *>(&emit_column_ref))
+                throwTypeDisagrees(*type, emit_column_ref);
+
+            node.column_type = &typeid(emit_column_ref);
+            node.kind = Nullable;
+            node.children.resize(1);
+            node.data_by_block.resize(num_blocks);
+        }
+        node.data_by_block[block_no] = *planes.null_map;
+
+        value_node = &node.children.front();
+        value_type = removeNullable(type);
+        value_default_from_type = false;
     }
-    /// The dominant case - fixed width, no replicated block - reads the flat and list shapes as
-    /// they are. Every other kernel needs the one word per row that `flatWords` produces.
-    else if (node.kind == GatherNode::Kind::Fixed && !src.remap_by_block)
+
+    const bool first = !value_node->column_type;
+    if (first)
     {
-        if (selection.shape == RefWordShape::Flat)
-            gatherFixedDispatch<false>(
-                dst, node.data_by_block.data(), node.stride, selection.begin, selection.end, selection.rows,
-                node.default_pattern.data());
-        else
-            gatherFixedDispatch<true>(
-                dst, node.data_by_block.data(), node.stride, selection.begin, selection.end, selection.rows,
-                node.default_pattern.data());
+        const MutableColumnPtr emit_column = value_type->createColumn();
+        const IColumn & emit_column_ref = *emit_column;
+        if (typeid_cast<const ColumnNullable *>(&emit_column_ref))
+            throwTypeDisagrees(*value_type, emit_column_ref);
+
+        switch (planes.shape)
+        {
+            case FieldShape::Fixed:
+                if (!emit_column_ref.isFixedAndContiguous() || emit_column_ref.sizeOfValueIfFixed() != planes.stride)
+                    throwNoGatherKernel(*value_type, emit_column_ref, "the row store holds it at another width");
+                value_node->kind = Fixed;
+                value_node->default_pattern = fixedDefaultPattern(emit_column_ref, value_default_from_type ? value_type.get() : nullptr);
+                chassert(value_node->default_pattern.size() == planes.stride);
+                break;
+            case FieldShape::String:
+                if (!typeid_cast<const ColumnString *>(&emit_column_ref) || planes.stride != sizeof(UnhashedPackedStringRef))
+                    throwNoGatherKernel(*value_type, emit_column_ref, "the row store holds it as an `UnhashedPackedStringRef`");
+                value_node->kind = String;
+                break;
+            case FieldShape::Tuple:
+            {
+                const auto * emit_tuple = typeid_cast<const ColumnTuple *>(&emit_column_ref);
+                if (!emit_tuple || emit_tuple->tupleSize() != planes.children.size())
+                    throwTypeDisagrees(*value_type, emit_column_ref);
+                value_node->kind = Tuple;
+                break;
+            }
+        }
+
+        value_node->column_type = &typeid(emit_column_ref);
+        value_node->stride = planes.stride;
+        value_node->children.resize(planes.children.size());
+        value_node->data_by_block.resize(num_blocks);
     }
-    else
+    else if (value_node->stride != planes.stride || value_node->children.size() != planes.children.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Join emit cannot read a right column of type {} from the row store: the stored blocks lay it out differently",
+            type->getName());
+
+    value_node->data_by_block[block_no] = planes.data;
+
+    const DataTypes child_types = childTypes(value_node->kind, *value_type);
+    for (size_t i = 0; i < planes.children.size(); ++i)
+        resolveRowStoreGatherNode(value_node->children[i], child_types[i], row_store, *planes.children[i], block_no, num_blocks, value_default_from_type);
+}
+
+void gatherJoinOutputColumns(
+    MutableColumns & columns,
+    std::span<const GatherColumn> gather,
+    const RefWordSelection & selection,
+    std::optional<size_t> row_store_row_length)
+{
+    chassert(columns.size() == gather.size());
+
+    /// Header derivation (`JoiningTransform::transformHeader`) runs the join over an empty block, and
+    /// reaches here with nothing recorded and nothing to append.
+    if (selection.begin == selection.end)
+        return;
+
+    EmitScratch scratch;
+    for (size_t dst_idx = 0; dst_idx < gather.size(); ++dst_idx)
     {
-        gatherNodeRows(dst, node, flatWords(selection, src.remap_by_block, scratch), selection.rows);
+        if (!gather[dst_idx].node || gather[dst_idx].in_row_store)
+            continue;
+
+        gatherColumn(*columns[dst_idx], gather[dst_idx], selection, scratch);
     }
+
+    if (!row_store_row_length.has_value())
+        return;
+
+    const size_t batch_rows = rowStoreBatchSize(*row_store_row_length);
+
+    /// The column-major pass above expands the whole selection for any column that is not plain
+    /// fixed width, so reuse its array when it is there and expand a batch at a time when it is not.
+    const bool flatten_per_batch = selection.shape != RefWordShape::Flat && !scratch.flat_ready;
+    if (flatten_per_batch)
+        scratch.flat.resize(std::min(batch_rows, selection.rows));
+
+    const UInt64 * flat = flatten_per_batch ? nullptr : flatWords(selection, /*remap_by_block=*/ nullptr, scratch);
+
+    auto is_string_node = [](const GatherNode & node)
+    {
+        const GatherNode & value_node = node.kind == GatherNode::Kind::Nullable ? node.children.front() : node;
+        return value_node.kind == GatherNode::Kind::String;
+    };
+
+    std::vector<std::optional<RowStoreStringRefs>> string_refs(gather.size());
+
+    FlatWordCursor cursor{selection, scratch.flat.data()};
+    for (size_t batch_begin = 0; batch_begin < selection.rows; batch_begin += batch_rows)
+    {
+        const size_t rows = std::min(batch_rows, selection.rows - batch_begin);
+        const UInt64 * words = flatten_per_batch ? cursor.next(rows) : flat + batch_begin;
+        const RefWordSelection batch{
+            .begin = words, .end = words + rows, .rows = rows, .shape = RefWordShape::Flat};
+
+        EmitScratch batch_scratch;
+        for (size_t dst_idx = 0; dst_idx < gather.size(); ++dst_idx)
+        {
+            if (!gather[dst_idx].in_row_store)
+                continue;
+            /// Sized once for the whole selection, as every batch appends to the same column.
+            if (batch_begin == 0)
+            {
+                columns[dst_idx]->reserve(columns[dst_idx]->size() + selection.rows);
+                if (is_string_node(*gather[dst_idx].node))
+                    string_refs[dst_idx] = initRowStoreStringRefs(*columns[dst_idx], *gather[dst_idx].node, selection.rows, *row_store_row_length);
+            }
+
+            if (string_refs[dst_idx])
+                gatherColumnStringOffsetsAndRefs(*string_refs[dst_idx], words, rows);
+            else
+                gatherColumn(*columns[dst_idx], gather[dst_idx], batch, batch_scratch, row_store_row_length);
+        }
+    }
+
+    for (auto & refs : string_refs)
+        if (refs)
+            gatherColumnStringChars(*refs);
 }
 
 }

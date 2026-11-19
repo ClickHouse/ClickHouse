@@ -143,7 +143,7 @@ for user in "${ALL_USERS[@]}"; do
     # - the client application exits and returns control to the shell;
     # - the server closes the session and records the logout event to the session log.
     # We cannot expect that after the control is returned to the shell, the server records the logout event.
-    while true
+    while clickhouse_test_time_left
     do
         [[ 3 -eq $(${CLICKHOUSE_CLIENT} -q "
             SELECT COUNT(*) FROM (

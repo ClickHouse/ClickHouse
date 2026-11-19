@@ -93,7 +93,7 @@ ColumnsDescription ZooKeeperLogElement::getColumnsDescription()
         {"data", std::make_shared<DataTypeString>(), "The data written to the ZooKeeper node (for the SET and CREATE requests — what the request wanted to write, for the response to the GET request — what was read) or an empty string."},
 
         {"is_ephemeral", std::make_shared<DataTypeUInt8>(), "Is the ZooKeeper node being created as an ephemeral."},
-        {"is_sequential", std::make_shared<DataTypeUInt8>(), "Is the ZooKeeper node being created as an sequential."},
+        {"is_sequential", std::make_shared<DataTypeUInt8>(), "Is the ZooKeeper node being created as a sequential."},
 
         {"version", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>()), "The version of the ZooKeeper node that the request expects when executing. This is supported for CHECK, SET, REMOVE requests (is relevant -1 if the request does not check the version or NULL for other requests that do not support version checking)."},
 
