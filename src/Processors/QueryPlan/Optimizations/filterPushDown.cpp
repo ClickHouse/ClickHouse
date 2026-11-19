@@ -1283,26 +1283,15 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> takeNewConditionsOn(c
     if (!conditions)
         return {};
 
-    auto atoms = ActionsDAG::extractConjunctionAtoms(conditions->getOutputs().front());
-    /// a copy runs once for each row below the step, the filter once for each group; below the step a key can be a constant
-    std::erase_if(atoms, [](const ActionsDAG::Node * atom)
-    {
-        return isSensitiveToEvaluationCount(ActionsDAG::cloneSubDAG({atom}, false)) || !ActionsDAG::getInputsReadByRepresentation(*atom).empty();
-    });
-    auto names = atoms | std::views::transform(&ActionsDAG::Node::result_name) | std::ranges::to<NameSet>();
-    /// a copy of a part of the filter also runs on the rows that the other part rejects, so then it must not throw
-    bool copies_whole_filter = std::ranges::all_of(
-        ActionsDAG::extractConjunctionAtoms(&filter.getExpression().findInOutputs(filter.getFilterColumnName())),
-        [&](const String & name) { return names.contains(name); },
-        &ActionsDAG::Node::result_name);
-
     ActionsDAG::NodeRawConstPtrs new_conditions;
     std::ranges::copy_if(
-        atoms | std::views::reverse, /// back to the order of the filter
+        ActionsDAG::extractConjunctionAtoms(conditions->getOutputs().front()) | std::views::reverse, /// back to the order of the filter
         std::back_inserter(new_conditions),
         [&](const ActionsDAG::Node * condition)
         {
-            return (copies_whole_filter || cannotThrow(condition))
+            /// below the step a copy runs for each row, also for the rows that the other conditions reject, and folds a constant key without short-circuit
+            return cannotThrow(condition) && !isSensitiveToEvaluationCount(ActionsDAG::cloneSubDAG({condition}, false))
+                && ActionsDAG::getInputsReadByRepresentation(*condition).empty()
                 && step.getConditionsCopiedBelow().insert(condition->result_name).second;
         });
 

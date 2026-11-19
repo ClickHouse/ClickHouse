@@ -68,7 +68,7 @@ SELECT 'not pushed: group_by_use_nulls';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id = 4) WHERE explain LIKE '%Condition:%' SETTINGS group_by_use_nulls = 1;
 SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id = 4 ORDER BY ALL SETTINGS group_by_use_nulls = 1;
 
-SELECT 'a condition that can throw, the whole filter is on the keys';
+SELECT 'only the conditions that cannot throw, the whole filter is on the keys';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id = 4 AND k != 1 AND intDiv(10, toInt64(k) - 1) > 0) WHERE explain LIKE '%Condition:%';
 SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id = 4 AND k != 1 AND intDiv(10, toInt64(k) - 1) > 0 ORDER BY ALL;
 
@@ -78,6 +78,18 @@ SELECT id, k, sum(v) AS sv FROM t_rollup_filter GROUP BY ROLLUP(id, k) HAVING sv
 SELECT id, k, sum(v) AS sv FROM t_rollup_filter GROUP BY CUBE(id, k) HAVING sv > 50 AND id = 4 AND intDiv(10, toInt64(k) - 1) > 0 ORDER BY ALL;
 SELECT k, count() AS c FROM (SELECT if(number < 2, 1, 2) AS k FROM numbers(3)) GROUP BY ROLLUP(k) HAVING c = 1 AND intDiv(10, toInt64(k) - 1) > 0 ORDER BY ALL;
 SELECT k, count() AS c FROM (SELECT if(number < 2, 1, 2) AS k FROM numbers(3)) GROUP BY CUBE(k) HAVING c = 1 AND intDiv(10, toInt64(k) - 1) > 0 ORDER BY ALL;
+
+SELECT 'not pushed: a condition that can throw on a constant key';
+-- below the aggregation the key is a constant, and the constant folding of a copy does not short-circuit
+SELECT k, count() AS c FROM (SELECT toInt64(1) AS k FROM numbers(10)) GROUP BY ROLLUP(k) HAVING k != 1 AND intDiv(10, k - 1) > 0 ORDER BY ALL;
+SELECT k, count() AS c FROM (SELECT toInt64(1) AS k FROM numbers(10)) GROUP BY CUBE(k) HAVING k != 1 AND intDiv(10, k - 1) > 0 ORDER BY ALL;
+SELECT k, count() AS c FROM (SELECT toInt64(1) AS k FROM numbers(10)) GROUP BY ROLLUP(k) HAVING if(k != 1, intDiv(10, k - 1), 0) > 0 ORDER BY ALL;
+SELECT k, count() AS c FROM (SELECT toInt64(1) AS k FROM numbers(10)) GROUP BY CUBE(k) HAVING if(k != 1, intDiv(10, k - 1), 0) > 0 ORDER BY ALL;
+SELECT k, count() AS c FROM (SELECT toNullable(toInt64(1)) AS k FROM numbers(10)) GROUP BY ROLLUP(k) HAVING k != 1 AND intDiv(10, k - 1) > 0 ORDER BY ALL;
+SELECT k, count() AS c FROM (SELECT toNullable(toInt64(1)) AS k FROM numbers(10)) GROUP BY CUBE(k) HAVING k != 1 AND intDiv(10, k - 1) > 0 ORDER BY ALL;
+-- no group has the key 1, so the filter does not divide by zero
+SELECT k, count() AS c FROM (SELECT toInt64(1) AS k FROM numbers(0)) GROUP BY ROLLUP(k) HAVING intDiv(10, k - 1) > 0 ORDER BY ALL;
+SELECT k, count() AS c FROM (SELECT toInt64(1) AS k FROM numbers(0)) GROUP BY CUBE(k) HAVING intDiv(10, k - 1) > 0 ORDER BY ALL;
 
 SELECT 'only the conditions without side effects';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k) HAVING id = 4 AND id + sleepEachRow(0) = 4) WHERE explain LIKE '%Condition:%';
