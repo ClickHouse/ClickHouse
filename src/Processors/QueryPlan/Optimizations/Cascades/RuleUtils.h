@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/StorageLayout.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Core/Joins.h>
 #include <Common/typeid_cast.h>
@@ -33,7 +34,7 @@ bool isTopNSort(const IQueryPlanStep & step);
 /// Node counts the rules create speculative multi-node variants at. Returns {max_node_count} -
 /// the full cluster. Intermediate counts are not candidates: they multiply the search space
 /// without winning on the workloads measured so far.
-inline std::vector<size_t> getCandidateNodeCounts(size_t max_node_count)
+inline VectorWithMemoryTracking<size_t> getCandidateNodeCounts(size_t max_node_count)
 {
     if (max_node_count <= 1)
         return {};

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Joins.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SettingsEnums.h>
 #include <Common/Logger_fwd.h>
 #include <Interpreters/Context_fwd.h>
@@ -305,7 +306,7 @@ struct QueryPlanOptimizationSettings
     UInt64 join_runtime_filter_min_probe_rows = 1000;
     bool join_runtime_filter_size_from_hash_table_stats = false;
 
-    std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
+    std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- assigned from `SettingFieldMultiEnum`, which converts only to std::vector
 
     size_t min_columns_for_join_lazy_indexing = 0;
     size_t max_limit_for_join_lazy_indexing = 0;
@@ -321,6 +322,10 @@ struct QueryPlanOptimizationSettings
     size_t max_parallel_replicas = 1;
     size_t automatic_parallel_replicas_mode;
     size_t min_bytes_per_task_for_reading;
+    /// Testing only: ignore the cap on how many threads a read can usefully occupy, which otherwise
+    /// decides a small read before the cost model is consulted. It does not touch
+    /// `automatic_parallel_replicas_min_bytes_per_replica`, which still applies on its own.
+    bool automatic_parallel_replicas_ignore_thresholds;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
     float automatic_parallel_replicas_max_duplicated_read_ratio;
     float automatic_parallel_replicas_statistics_drift_ratio;
