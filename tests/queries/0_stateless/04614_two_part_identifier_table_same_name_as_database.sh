@@ -37,9 +37,7 @@ SELECT ${DB}.${DB} FROM ${DB}.${DB}, (SELECT 1 AS \`${DB}.${DB}\`)
 SETTINGS joined_subquery_requires_alias = 0;
 "
 
-# The qualified matcher is the one context where the two-part qualifier miss must fall through:
-# \`db.db.*\` resolves the qualifier \`db.db\` as an expression first, and that lookup must be
-# allowed to fail so that the qualifier is bound as a table expression next.
+# The qualifier of \`db.db.*\` is not found as an expression and is bound as a table expression next.
 $CLICKHOUSE_CLIENT --query "
 SELECT ${DB}.${DB}.* FROM ${DB}.${DB};
 "
