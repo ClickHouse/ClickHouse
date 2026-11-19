@@ -4424,36 +4424,43 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     }
 }
 
-/// Runs the AST fuzzer from `BlockIO::onFinish`, after the query's own finish callbacks: its `query_log` entry
-/// does not include the fuzzing, and on HTTP the response is already sent and the session released.
-static void addASTFuzzerFinishCallback(BlockIO & io, const ASTPtr & ast, const ContextMutablePtr & context, QueryFlags flags)
+/// Returns the AST fuzzer run for a query, or nothing when the fuzzer is off for it.
+static std::function<void()> makeASTFuzzerRunner(const ASTPtr & ast, const ContextMutablePtr & context, QueryFlags flags)
 {
     if (flags.internal || context->getClientInfo().is_shared_catalog_internal || !ast)
-        return;
+        return {};
 
     Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
     if (!(ast_fuzzer_runs_value > 0))
-        return;
+        return {};
 
     bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
-    io.finish_callbacks.emplace_back(
-        [ast, context, ast_fuzzer_runs_value, any_query](const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point)
+    return [ast, context, ast_fuzzer_runs_value, any_query]()
+    {
+        try
         {
-            try
-            {
-                executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
-            }
-            catch (const Exception & e)
-            {
-                if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-                    throw; /// Oracle mismatch — propagate so CI sees it
-                tryLogCurrentException("ASTFuzzer");
-            }
-            catch (...)
-            {
-                tryLogCurrentException("ASTFuzzer");
-            }
-        });
+            executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                throw; /// Oracle mismatch — propagate so CI sees it
+            tryLogCurrentException("ASTFuzzer");
+        }
+        catch (...)
+        {
+            tryLogCurrentException("ASTFuzzer");
+        }
+    };
+}
+
+/// Runs the AST fuzzer from `BlockIO::onFinish`, after the query's own finish callbacks, so its `query_log` entry
+/// does not include the fuzzing.
+static void addASTFuzzerFinishCallback(BlockIO & io, const ASTPtr & ast, const ContextMutablePtr & context, QueryFlags flags)
+{
+    if (auto run_ast_fuzzer = makeASTFuzzerRunner(ast, context, flags))
+        io.finish_callbacks.emplace_back(
+            [run = std::move(run_ast_fuzzer)](const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point) { run(); });
 }
 
 
@@ -5141,6 +5148,9 @@ void executeQuery(
         return true;
     };
 
+    /// Run after `query_finish_callback`, which sends the HTTP response and releases the session, on both paths below.
+    std::function<void()> run_ast_fuzzer;
+
     try
     {
         if (pipeline.pushing())
@@ -5258,7 +5268,7 @@ void executeQuery(
         if (implicit_tcl_executor->transactionRunning())
             implicit_tcl_executor->commit(context);
 
-        addASTFuzzerFinishCallback(streams, ast, context, flags);
+        run_ast_fuzzer = makeASTFuzzerRunner(ast, context, flags);
     }
     catch (...)
     {
@@ -5401,6 +5411,9 @@ void executeQuery(
 
         finishExecutedQuery(streams, finish_callback);
     }
+
+    if (run_ast_fuzzer)
+        run_ast_fuzzer();
 }
 
 void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_callback)
