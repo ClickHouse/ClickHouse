@@ -1,5 +1,6 @@
 #include "config.h"
 #include <Poco/URI.h>
+#include <Disks/IDisk.h>
 
 
 #if USE_AZURE_BLOB_STORAGE
@@ -55,12 +56,12 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-const std::unordered_set<std::string_view> required_configuration_keys = {
+[[clang::no_destroy]] const std::unordered_set<std::string_view> required_configuration_keys = {
     "blob_path",
     "container",
 };
 
-const std::unordered_set<std::string_view> optional_configuration_keys = {
+[[clang::no_destroy]] const std::unordered_set<std::string_view> optional_configuration_keys = {
     "format",
     "compression",
     "structure",
