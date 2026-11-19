@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Wyrd/Strategies/Simulation/SimulationParams.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::Wyrd
@@ -34,7 +35,7 @@ private:
     /// Thread states.
     VectorWithMemoryTracking<SimulatedThread *> runnable_threads;
     VectorWithMemoryTracking<SimulatedThread *> held_threads;
-    VectorWithMemoryTracking<SimulatedThread *> threads_in_lock_free_scope;
+    UnorderedMapWithMemoryTracking<const SimulatedThread *, size_t> lock_free_depth;
 
     /// Currently running thread information.
     SimulatedThread * current_thread = nullptr;

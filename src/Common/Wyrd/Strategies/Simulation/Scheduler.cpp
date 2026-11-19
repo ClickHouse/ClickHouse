@@ -9,11 +9,6 @@ namespace DB::Wyrd
 namespace
 {
 
-bool contains(const VectorWithMemoryTracking<SimulatedThread *> & threads, const SimulatedThread * thread)
-{
-    return std::ranges::contains(threads, thread);
-}
-
 void moveRandom(VectorWithMemoryTracking<SimulatedThread *> & from, VectorWithMemoryTracking<SimulatedThread *> & to)
 {
     if (!from.empty())
@@ -41,11 +36,11 @@ SimulatedThread * Scheduler::pickNext()
 
 bool Scheduler::shouldHold() const
 {
-    if (!contains(threads_in_lock_free_scope, current_thread))
+    if (!lock_free_depth.contains(current_thread))
         return false;
     if (held_threads.size() >= params.max_suspended_threads)
         return false;
-    if (std::ranges::none_of(runnable_threads, [this](const SimulatedThread * thread) { return contains(threads_in_lock_free_scope, thread); }))
+    if (std::ranges::none_of(runnable_threads, [this](const SimulatedThread * thread) { return lock_free_depth.contains(thread); }))
         return false;
     return randomEvent(params.lock_free_suspend_probability);
 }
@@ -90,18 +85,22 @@ void Scheduler::onRunnable(SimulatedThread * thread)
 
 void Scheduler::onLockFreeEnter()
 {
-    threads_in_lock_free_scope.push_back(current_thread);
+    ++lock_free_depth[current_thread];
 }
 
 void Scheduler::onLockFreeLeave()
 {
-    std::erase(threads_in_lock_free_scope, current_thread);
+    --lock_free_depth[current_thread];
+    if (lock_free_depth[current_thread] > 0)
+        return;
+
+    lock_free_depth.erase(current_thread);
     moveRandom(held_threads, runnable_threads);
 }
 
 void Scheduler::onProgress()
 {
-    if (!contains(threads_in_lock_free_scope, current_thread))
+    if (!lock_free_depth.contains(current_thread))
         return;
 
     if (randomEvent(params.resume_probability))
