@@ -11,6 +11,7 @@
 #include <Common/Exception.h>
 #include <Common/WriteOutcome.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <IO/WriteBufferFromFileDecorator.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/CompressionMethod.h>
@@ -44,11 +45,11 @@ using ExistsAnswer = std::function<bool(size_t call)>;
 /// sent.
 using StorageOutcome = std::optional<WriteOutcome>;
 
-/// The buffer of a storage that tracks the outcome: its write fails with the error that the test supplies.
+/// The buffer of a storage: its write fails with the error that the test supplies, and it reports `outcome`.
 class FailingWriteBuffer : public WriteBufferFromFileBase
 {
 public:
-    FailingWriteBuffer(WriteErrorThrower throw_write_error_, std::string path_, WriteOutcome outcome_)
+    FailingWriteBuffer(WriteErrorThrower throw_write_error_, std::string path_, std::optional<WriteOutcome> outcome_)
         : WriteBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0)
         , throw_write_error(std::move(throw_write_error_))
         , path(std::move(path_))
@@ -65,7 +66,7 @@ private:
 
     WriteErrorThrower throw_write_error;
     std::string path;
-    WriteOutcome outcome;
+    std::optional<WriteOutcome> outcome;
 };
 
 /// `writeMetadataFileAndVersionHint` reports a commit that published nothing as `false`, which every caller reads as
@@ -160,9 +161,39 @@ private:
     mutable size_t exists_calls = 0;
 };
 
-/// Drives the real commit against a stub whose write fails with whatever `throw_write_error` throws.
-bool commitWithFailingWrite(
-    WriteErrorThrower throw_write_error, ExistsAnswer exists_answer = [](size_t) { return false; }, StorageOutcome storage_outcome = {})
+/// A storage whose failing buffer reports `outcome` and goes through `wrap`, as through a cache of the storage.
+class WrappingObjectStorage final : public ThrowingObjectStorage
+{
+public:
+    using Wrap = std::function<std::unique_ptr<WriteBufferFromFileBase>(std::unique_ptr<WriteBufferFromFileBase>)>;
+
+    WrappingObjectStorage(std::optional<WriteOutcome> outcome_, Wrap wrap_)
+        : ThrowingObjectStorage({}, [](size_t) { return false; }, {})
+        , outcome(outcome_)
+        , wrap(std::move(wrap_))
+    {
+    }
+
+    std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
+        const StoredObject & object,
+        WriteMode,
+        std::optional<ObjectAttributes>,
+        size_t,
+        const WriteSettings &) override
+    {
+        return wrap(std::make_unique<FailingWriteBuffer>(
+            [](const std::string & path) { throw Exception(ErrorCodes::S3_ERROR, "Write of {} failed in the test stub", path); },
+            object.remote_path,
+            outcome));
+    }
+
+private:
+    std::optional<WriteOutcome> outcome;
+    Wrap wrap;
+};
+
+/// Drives the real commit against `object_storage`.
+bool commitTo(ObjectStoragePtr object_storage)
 {
     Iceberg::IcebergPathResolver resolver(
         "/table",
@@ -179,9 +210,16 @@ bool commitWithFailingWrite(
         metadata_file_info,
         "{}",
         Iceberg::IcebergPathFromMetadata::deserialize("/table/metadata/version-hint.text"),
-        std::make_shared<ThrowingObjectStorage>(std::move(throw_write_error), std::move(exists_answer), storage_outcome),
+        object_storage,
         getContext().context,
         /*try_write_version_hint=*/ false);
+}
+
+/// Drives the real commit against a stub whose write fails with whatever `throw_write_error` throws.
+bool commitWithFailingWrite(
+    WriteErrorThrower throw_write_error, ExistsAnswer exists_answer = [](size_t) { return false; }, StorageOutcome storage_outcome = {})
+{
+    return commitTo(std::make_shared<ThrowingObjectStorage>(std::move(throw_write_error), std::move(exists_answer), storage_outcome));
 }
 
 /// Same, with a write that fails with a plain `Exception` carrying `write_error_code`.
@@ -268,6 +306,31 @@ TEST(IcebergCommitPropagation, TrackedRefusalIsNotALostRace)
     catch (const Exception & e)
     {
         EXPECT_EQ(e.code(), ErrorCodes::FILE_ALREADY_EXISTS) << e.message();
+    }
+}
+
+TEST(IcebergCommitPropagation, LostRaceThroughADecoratorStaysRetryable)
+{
+    /// A cache wraps the buffer of the storage, e.g. in `CachedOnDiskWriteBufferFromFile`, and forwards its outcome.
+    EXPECT_FALSE(commitTo(std::make_shared<WrappingObjectStorage>(
+        WriteOutcome::ConditionFailed,
+        [](std::unique_ptr<WriteBufferFromFileBase> buffer) -> std::unique_ptr<WriteBufferFromFileBase>
+        { return std::make_unique<WriteBufferFromFileDecorator>(std::move(buffer)); })));
+}
+
+TEST(IcebergCommitPropagation, WriteWithoutAnOutcomeIsUnknown)
+{
+    /// Nothing tells whether the metadata file is published, so the commit keeps its files.
+    try
+    {
+        bool committed = commitTo(std::make_shared<WrappingObjectStorage>(
+            std::nullopt, [](std::unique_ptr<WriteBufferFromFileBase> buffer) { return buffer; }));
+        FAIL() << "Expected an unknown outcome, got " << committed;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION) << e.message();
+        EXPECT_TRUE(e.message().contains("the storage reports no outcome of the write")) << e.message();
     }
 }
 

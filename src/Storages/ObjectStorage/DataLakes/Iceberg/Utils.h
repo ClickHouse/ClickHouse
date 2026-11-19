@@ -55,9 +55,6 @@ void writeMessageToFile(
     DB::CompressionMethod compression_method = DB::CompressionMethod::None,
     std::optional<DB::WriteOutcome> * write_outcome = nullptr);
 
-/// Whether a conditional write failed because another writer created or changed the object first.
-bool isConditionalWriteConflict(const DB::Exception & e);
-
 /// Writes the metadata file with If-None-Match. Returns true when it is published, also if a later step of the write
 /// failed. Returns false when nothing was published: the path already exists, or another writer won the race. Throws
 /// `UNKNOWN_STATUS_OF_TRANSACTION` when the outcome of the upload is unknown.

@@ -17,6 +17,9 @@ public:
 
     std::string getFileName() const override;
 
+    /// Only the innermost buffer of a storage publishes the object.
+    std::optional<WriteOutcome> getWriteOutcome() const override;
+
     void preFinalize() override;
 
     const WriteBuffer & getImpl() const { return *impl; }

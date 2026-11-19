@@ -75,11 +75,6 @@
 #include <IO/S3/getObjectInfo.h>
 #endif
 
-#if USE_AZURE_BLOB_STORAGE
-#include <azure/core/exception.hpp>
-#include <azure/core/http/http_status_code.hpp>
-#endif
-
 
 using namespace DB;
 
@@ -95,9 +90,6 @@ extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_METHOD;
 extern const int READONLY;
 extern const int NOT_IMPLEMENTED;
-extern const int FILE_ALREADY_EXISTS;
-extern const int STALE_VERSION;
-extern const int S3_ERROR;
 extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
@@ -392,13 +384,6 @@ void writeMessageToFile(
     out->finalize();
 }
 
-bool isConditionalWriteConflict(const Exception & e)
-{
-    return e.code() == ErrorCodes::FILE_ALREADY_EXISTS
-        || e.code() == ErrorCodes::STALE_VERSION
-        || (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"));
-}
-
 /// Whether the storage refused the request itself rather than its condition, so that a retry is refused again.
 static bool isRefusedWrite(const Exception & e)
 {
@@ -415,32 +400,19 @@ static bool isRefusedWrite(const Exception & e)
     return false;
 }
 
-/// Whether `path` is known to be absent; a failed check proves nothing.
-static bool isKnownAbsent(const DB::ObjectStoragePtr & object_storage, const std::string & path)
-{
-    try
-    {
-        return !object_storage->exists(StoredObject(path));
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
-    }
-}
-
 /// The upload was sent and failed without proof either way, so it may have published the new version.
-[[noreturn]] static void throwCommitOutcomeUnknown(const String & storage_metadata_path)
+[[noreturn]] static void throwCommitOutcomeUnknown(const String & storage_metadata_path, std::string_view reason = "")
 {
     /// The new error tells the caller to keep the files, and the log keeps the original one with its stack trace.
     tryLogCurrentException(
         getLogger("IcebergWrites"),
-        fmt::format("The outcome of writing metadata file {} is unknown", storage_metadata_path),
+        fmt::format("The outcome of writing metadata file {} is unknown{}", storage_metadata_path, reason),
         LogsLevel::warning);
     throw Exception(
         ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
-        "The outcome of writing metadata file {} is unknown, so the files of the new version are kept: {}",
+        "The outcome of writing metadata file {} is unknown{}, so the files of the new version are kept: {}",
         storage_metadata_path,
+        reason,
         getCurrentExceptionMessage(false));
 }
 
@@ -484,16 +456,23 @@ bool writeMetadataFile(
     DB::ContextPtr context)
 {
     auto storage_metadata_path = resolver.resolve(metadata_file_info.path);
-    /// A storage that tracks the outcome of the upload, e.g. S3, reports it, so a failure tells whether the new version
-    /// is published. For any other storage the outcome follows from the error.
-    std::optional<WriteOutcome> write_outcome;
-    bool write_attempted = false;
     try
     {
         if (object_storage->exists(StoredObject(storage_metadata_path)))
             return false;
+    }
+    catch (...)
+    {
+        /// Nothing is sent yet, so the commit can retry. A refused check is refused again on every retry.
+        if (const auto * e = current_exception_cast<const Exception *>(); e && isRefusedWrite(*e))
+            throw;
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
+    }
 
-        write_attempted = true;
+    std::optional<WriteOutcome> write_outcome;
+    try
+    {
         Iceberg::writeMessageToFile(
             metadata_file_content,
             storage_metadata_path,
@@ -504,55 +483,12 @@ bool writeMetadataFile(
             metadata_file_info.compression_method,
             &write_outcome);
     }
-    catch (const Exception & e)
-    {
-        if (write_attempted && write_outcome)
-            return decideByWriteOutcome(*write_outcome, storage_metadata_path);
-        if (isConditionalWriteConflict(e))
-        {
-            LOG_DEBUG(
-                getLogger("IcebergWrites"), "Metadata file {} was written by a concurrent commit: {}", storage_metadata_path, e.message());
-            return false;
-        }
-        /// A refused write is not a lost race, and retrying the commit cannot get past it. Once the write was sent,
-        /// a refusal (e.g. of the check after an upload) proves nothing was written only while the file is absent.
-        if (isRefusedWrite(e) && (!write_attempted || isKnownAbsent(object_storage, storage_metadata_path)))
-            throw;
-        if (write_attempted)
-            throwCommitOutcomeUnknown(storage_metadata_path);
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
-    }
-#if USE_AZURE_BLOB_STORAGE
-    catch (const Azure::Core::RequestFailedException & e)
-    {
-        if (write_attempted && write_outcome)
-            return decideByWriteOutcome(*write_outcome, storage_metadata_path);
-        /// Azure answers 409 `BlobAlreadyExists` to `If-None-Match: *` over an existing blob, and 412 `ConditionNotMet`
-        /// to a failed `If-Match`.
-        if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
-            || e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed)
-        {
-            LOG_DEBUG(
-                getLogger("IcebergWrites"), "Metadata file {} was written by a concurrent commit: {}", storage_metadata_path, e.what());
-            return false;
-        }
-        if (write_attempted)
-            throwCommitOutcomeUnknown(storage_metadata_path);
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
-    }
-#endif
     catch (...)
     {
-        if (write_attempted && write_outcome)
-            return decideByWriteOutcome(*write_outcome, storage_metadata_path);
-        if (write_attempted)
-            throwCommitOutcomeUnknown(storage_metadata_path);
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
+        if (!write_outcome)
+            throwCommitOutcomeUnknown(storage_metadata_path, ", because the storage reports no outcome of the write");
+        return decideByWriteOutcome(*write_outcome, storage_metadata_path);
     }
-
     return true;
 }
 
@@ -618,6 +554,7 @@ bool tryWriteVersionHintFile(
         }
 
         /// lastly, let's update it
+        std::optional<WriteOutcome> write_outcome;
         try
         {
             /// Write just the version number for Spark/spec compatibility.
@@ -627,25 +564,29 @@ bool tryWriteVersionHintFile(
                 object_storage,
                 context,
                 write_if_none_match,
-                /* write-if-match */ etag);
+                /* write-if-match */ etag,
+                CompressionMethod::None,
+                &write_outcome);
 
             if (!assert_version_exactly)
                 return true;
         }
-        catch (const Exception & e)
+        catch (...)
         {
-            if (isConditionalWriteConflict(e))
+            /// The next attempt reads the hint again, so it also tells whether an attempt of unknown outcome landed.
+            if (write_outcome == WriteOutcome::Applied)
+            {
+                if (!assert_version_exactly)
+                    return true;
+            }
+            else if (write_outcome == WriteOutcome::ConditionFailed)
                 LOG_DEBUG(
                     getLogger("IcebergWrites"),
                     "Version hint {} was changed by a concurrent writer: {}",
                     storage_version_hint_path,
-                    e.message());
+                    getCurrentExceptionMessage(false));
             else
                 tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
     return false;
