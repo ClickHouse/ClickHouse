@@ -29,6 +29,12 @@ select
     tupleElement(st[3], 'max') = '00002999'
 from (select arrayMap(rg -> tupleElement(tupleElement(rg, 'columns')[1], 'statistics'), row_groups) as st
       from file(currentDatabase() || '_a.parquet', ParquetMetadata));
+-- The truncated bounds are flagged inexact. In the Thrift compact encoding, `is_max_value_exact` and
+-- `is_min_value_exact` follow `min_value` as one byte each: 0x11 is true, 0x12 is false.
+select
+    countSubstrings(raw, concat('{', unhex('1808'), '00001000', unhex('1211'))) > 0,
+    countSubstrings(raw, concat(unhex('188020'), '00002000', repeat('a', 4088), unhex('1112'))) > 0
+from file(currentDatabase() || '_a.parquet', RawBLOB, 'raw String');
 
 select 'long values are not pruned';
 select count() from file(currentDatabase() || '_a.parquet') where s = repeat('z', 5000) || '00001500';

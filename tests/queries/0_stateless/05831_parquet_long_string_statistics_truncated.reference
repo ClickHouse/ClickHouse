@@ -3,6 +3,7 @@ layout
 42000
 chunk statistics
 1	1	1	1
+1	1
 long values are not pruned
 1
 1
