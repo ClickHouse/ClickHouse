@@ -936,7 +936,10 @@ void StorageRabbitMQ::readStream(
         .handle_error_mode = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode],
         .max_block_size = getMaxBlockSize(),
         .poll_timeout_ms = std::max<size_t>(100, modified_context->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds()),
-        .table_name = getStorageID().getTableName(),
+        .flush_interval_ms = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_flush_interval_ms].changed
+            ? (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_flush_interval_ms]
+            : static_cast<UInt64>(modified_context->getSettingsRef()[Setting::stream_flush_interval_ms].totalMilliseconds()),
+        .storage_id = getStorageID(),
     };
 
     auto source = std::make_shared<RabbitMQStreamSource>(

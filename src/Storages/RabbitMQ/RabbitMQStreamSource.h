@@ -6,8 +6,10 @@
 #include <Interpreters/Context_fwd.h>
 #include <Processors/ISource.h>
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
+#include <Interpreters/StorageID.h>
 #include <Storages/StorageSnapshot.h>
 #include <Common/Logger.h>
+#include <Common/Stopwatch.h>
 
 #include <deque>
 #include <map>
@@ -28,7 +30,7 @@ namespace DB
 /// A queue absent in the cursor is read from the beginning.
 ///
 /// RabbitMQ does not report the end of a stream queue, so a bounded stream (`STREAM BOUNDED`) finishes
-/// once no message arrives during `poll_timeout_ms`.
+/// once no message arrives during `poll_timeout_ms`. A chunk is returned once `flush_interval_ms` passes since its start.
 class RabbitMQStreamSource final : public ISource
 {
 public:
@@ -41,7 +43,9 @@ public:
         StreamingHandleErrorMode handle_error_mode = StreamingHandleErrorMode::DEFAULT;
         size_t max_block_size = 0;
         size_t poll_timeout_ms = 0;
-        String table_name;
+        /// The rows read are returned once this much time passes since the start of a chunk (0 - only by the row limit).
+        size_t flush_interval_ms = 0;
+        StorageID storage_id = StorageID::createEmpty();
     };
 
     RabbitMQStreamSource(
@@ -74,6 +78,12 @@ private:
     void start();
     void reportFinalCursor() const;
 
+    /// Drives the event loop until a message is received or `timeout_ms` passes, sending heartbeats meanwhile.
+    /// Returns whether a message was received.
+    bool waitForMessage(uint64_t timeout_ms);
+
+    void addToDeadLetterQueue(const Message & message, const String & error) const;
+
     Params params;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
@@ -86,6 +96,8 @@ private:
     std::unique_ptr<RabbitMQConnection> connection;
     std::unique_ptr<AMQP::TcpChannel> channel;
     String channel_error;
+    /// Since the last heartbeat sent on the connection.
+    Stopwatch heartbeat_watch;
 
     /// Filled by the callbacks of the channel, which run while this source drives the event loop.
     std::deque<Message> received;

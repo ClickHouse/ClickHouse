@@ -4144,7 +4144,7 @@ def test_rabbitmq_stream_cursor(rabbitmq_cluster, db, unique):
     {queue: offset}. The messages stay in the queue."""
     instance.query(
         f"""
-        CREATE TABLE {db}.rabbitmq (key UInt64, value UInt64)
+        CREATE TABLE {db}.rabbitmq (key UInt64, value UInt64, n Nullable(UInt64), m UInt64 MATERIALIZED key + 1)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:5672',
                      rabbitmq_exchange_name = '{unique}_stream',
@@ -4159,11 +4159,12 @@ def test_rabbitmq_stream_cursor(rabbitmq_cluster, db, unique):
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
 
-    def publish(keys):
+    def publish(keys, exchange=f"{unique}_stream"):
         connection = pika.BlockingConnection(parameters)
         channel = connection.channel()
         for key in keys:
-            channel.basic_publish(exchange=f"{unique}_stream", routing_key="", body=json.dumps({"key": key, "value": key}))
+            body = key if isinstance(key, str) else json.dumps({"key": key, "value": key})
+            channel.basic_publish(exchange=exchange, routing_key="", body=body)
         connection.close()
 
     def query(q):
@@ -4181,6 +4182,15 @@ def test_rabbitmq_stream_cursor(rabbitmq_cluster, db, unique):
     # With one queue, the queue is named by `rabbitmq_queue_base`.
     queue = f"{unique}_stream"
     assert query(f"SELECT key FROM {db}.rabbitmq STREAM BOUNDED CURSOR {{'{queue}': 0}} ORDER BY ALL") == "1\n2\n"
+
+    # The read starts after the offset of the cursor, which must have a successor.
+    assert "BAD_ARGUMENTS" in instance.query_and_get_error(
+        f"SELECT key FROM {db}.rabbitmq STREAM BOUNDED CURSOR {{'{queue}': 9223372036854775807}}",
+        settings={"enable_streaming_queries": 1},
+    )
+
+    # A materialized column is filled with the default of its type, a subcolumn is extracted from its parent.
+    assert query(f"SELECT key, m, n.null FROM {db}.rabbitmq STREAM BOUNDED ORDER BY ALL") == "0\t0\t1\n1\t0\t1\n2\t0\t1\n"
 
     # An unbounded stream waits for new messages.
     publish([3])
@@ -4211,6 +4221,62 @@ def test_rabbitmq_stream_cursor(rabbitmq_cluster, db, unique):
     assert refresh_until("5\t10\n") == "5\t10\n"
     assert refresh() == "5\t10\n"
     instance.query(f"DROP TABLE {db}.rabbitmq_mv")
+
+    # A `LIMIT` would stop the read before it reports the cursor, so the next refresh would append the same rows again.
+    assert "NOT_IMPLEMENTED" in instance.query_and_get_error(
+        f"""CREATE MATERIALIZED VIEW {db}.rabbitmq_mv_limit REFRESH EVERY 10 YEAR APPEND INCREMENTAL
+            TO {db}.rabbitmq_target EMPTY AS SELECT key FROM {db}.rabbitmq LIMIT 1"""
+    )
+
+    # A chunk is returned once the flush interval passes, even if messages keep arriving faster than the poll timeout.
+    # The chunk is limited by `max_insert_block_size` rows (a million by default), so without the flush interval the read
+    # would return only after the publisher stops.
+    stop_publishing = threading.Event()
+
+    def publish_continuously():
+        connection = pika.BlockingConnection(parameters)
+        channel = connection.channel()
+        key = 100
+        while not stop_publishing.wait(0.1) and key < 1000:
+            channel.basic_publish(exchange=f"{unique}_stream", routing_key="", body=json.dumps({"key": key, "value": key}))
+            key += 1
+        connection.close()
+
+    publisher = threading.Thread(target=publish_continuously)
+    publisher.start()
+    try:
+        assert instance.query(
+            f"SELECT key FROM {db}.rabbitmq STREAM CURSOR {{'{queue}': 4}} LIMIT 1",
+            settings={"enable_streaming_queries": 1, "stream_poll_timeout_ms": 1000, "stream_flush_interval_ms": 500},
+        ) == "100\n"
+        assert publisher.is_alive()
+    finally:
+        stop_publishing.set()
+        publisher.join()
+
+    # With `rabbitmq_handle_error_mode = 'dead_letter_queue'`, a malformed message is recorded in
+    # `system.dead_letter_queue` and the read continues.
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq_dlq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:5672',
+                     rabbitmq_exchange_name = '{unique}_stream_dlq',
+                     rabbitmq_queue_base = '{unique}_stream_dlq',
+                     rabbitmq_queue_settings_list = 'x-queue-type=stream',
+                     rabbitmq_handle_error_mode = 'dead_letter_queue',
+                     rabbitmq_format = 'JSONEachRow';
+        """
+    )
+    publish(["not a json", 7], exchange=f"{unique}_stream_dlq")
+    assert_eq_with_retry(
+        instance, f"SELECT key FROM {db}.rabbitmq_dlq STREAM BOUNDED", "7\n",
+        settings={"enable_streaming_queries": 1, "stream_poll_timeout_ms": 1000},
+    )
+    instance.query("SYSTEM FLUSH LOGS dead_letter_queue")
+    assert int(instance.query(
+        f"SELECT count() > 0 FROM system.dead_letter_queue WHERE rabbitmq_exchange_name = '{unique}_stream_dlq' AND raw_message = 'not a json'"
+    )) == 1
 
     # A classic queue has nothing to stream from.
     instance.query(
