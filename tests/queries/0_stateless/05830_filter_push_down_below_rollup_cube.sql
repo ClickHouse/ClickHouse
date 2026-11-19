@@ -2,6 +2,8 @@
 -- no-parallel-replicas: EXPLAIN indexes = 1 shows the key condition of a local read only
 
 SET query_plan_filter_push_down = 1;
+-- a separate filter is not pushed through the filter of HAVING
+SET query_plan_merge_filters = 1;
 
 DROP TABLE IF EXISTS t_rollup_filter;
 CREATE TABLE t_rollup_filter (id UInt32, k UInt32, s String, v UInt64) ENGINE = MergeTree ORDER BY (id, k, s);
