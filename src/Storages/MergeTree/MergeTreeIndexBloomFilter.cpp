@@ -3313,7 +3313,6 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     , json_argument_types(std::move(json_argument_types_))
     , is_shadowing_json_subcolumn(std::move(is_shadowing_json_subcolumn_))
     , index_nodes(indexed_expression_dag_.getOutputs())
-    , json_index_columns(collectJSONIndexColumns(header, index_nodes))
     , validate_enum_literals_in_operators(context_->getSettingsRef()[Setting::validate_enum_literals_in_operators])
 {
     if (!predicate || !isBloomIndexExpressionContextStable(indexed_expression_dag_))
@@ -3321,6 +3320,9 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
         rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
         return;
     }
+
+    /// Collecting JSON index columns calls getName() on the indexed functions.
+    json_index_columns = collectJSONIndexColumns(header, index_nodes);
 
     RPNBuilder<RPNElement> builder(
         predicate,
@@ -3934,14 +3936,21 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         default_type->insertDefaultInto(*padded_column);
         ColumnPtr default_column = std::move(padded_column);
 
+        /// A synthetic NULL may never occur in the data. Leave a throwing cast to query execution.
         for (auto it = array_input.array_cast_targets.rbegin(); it != array_input.array_cast_targets.rend(); ++it)
         {
+            if (default_column->isNullAt(0) && !canContainNull(**it))
+                return false;
+
             default_column = castColumn(ColumnWithTypeAndName{default_column, default_type, ""}, *it);
             default_type = *it;
         }
 
         for (auto it = scalar_cast_targets.rbegin(); it != scalar_cast_targets.rend(); ++it)
         {
+            if (default_column->isNullAt(0) && !canContainNull(**it))
+                return false;
+
             default_column = castColumn(ColumnWithTypeAndName{default_column, default_type, ""}, *it);
             default_type = *it;
         }
