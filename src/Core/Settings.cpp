@@ -10552,6 +10552,12 @@ Minimum estimated ratio of join output rows to build-side rows to enable transfo
     \
     /* ####################################################### */ \
     /* AI function settings */ \
+    DECLARE_WITH_ALIAS(Bool, allow_ai_functions, true, R"(
+Allow the use of AI functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`, `aiEmbed`, `aiSimilarity`). If disabled, a query that uses them throws an exception.
+)", 0, allow_experimental_ai_functions, \
+        {"26.11", true, true, "Added an alias for setting `allow_experimental_ai_functions`."}, \
+        {"26.9", false, true, "AI functions are beta and enabled by default. At the time the setting was named `allow_experimental_ai_functions`, which is now an alias of it. Keep the default regardless of `compatibility`.", CompatibilitySetting::Ignore}, \
+        {"26.4", false, false, "New setting. At the time the setting was named `allow_experimental_ai_functions`, which is now an alias of it."}) \
     DECLARE(UInt64, ai_function_request_timeout_sec, 60, R"(
 Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
 )", BETA, \
@@ -11348,9 +11354,6 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, String, function_implementation, "") \
     MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false, \
         {"26.6", false, false, "The setting is obsolete, the feature has been removed."}) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_ai_functions, false, \
-        {"26.9", false, false, "The setting is obsolete, AI functions are beta now and enabled by default."}, \
-        {"26.4", false, false, "New setting"}) \
     MAKE_OBSOLETE(M, Bool, query_condition_cache_store_conditions_as_plaintext, false, \
         {"25.4", false, false, "New setting"}) \
     MAKE_OBSOLETE(M, Bool, update_insert_deduplication_token_in_dependent_materialized_views, 0, \
