@@ -2156,13 +2156,15 @@ class ObjectJSONNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
     ObjectJSONNode(
+        const DataTypePtr & object_type_,
         const DataTypeObject::TypedPathsMap & typed_paths_types_,
         std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
         const DataTypePtr & type_of_nested_objects,
         bool source_filled_by_caller_ = false)
-        : typed_paths_types(typed_paths_types_)
+        : object_type(object_type_)
+        , typed_paths_types(typed_paths_types_)
         , typed_path_nodes(std::move(typed_path_nodes_))
         , paths_to_skip(paths_to_skip_)
         , dynamic_node(std::make_unique<DynamicNode<JSONParser>>(type_of_nested_objects))
@@ -2185,17 +2187,16 @@ public:
 
         if (element.isNull() && format_settings.null_as_default && insert_settings.null_as_default_in_complex_types)
         {
+            if (!all_typed_paths_have_trivial_defaults)
+            {
+                object_type->insertDefaultInto(column);
+                return true;
+            }
+
+            /// The defaults of the types are the zeroes of the columns.
             auto & column_object = assert_cast<ColumnObject &>(column);
-            if (all_typed_paths_have_trivial_defaults)
-            {
-                for (auto * col : column_object.getSortedTypedPathColumns())
-                    col->insertDefault();
-            }
-            else
-            {
-                for (auto & [typed_path, typed_column] : column_object.getTypedPaths())
-                    typed_paths_types.at(typed_path)->insertDefaultInto(*typed_column);
-            }
+            for (auto * col : column_object.getSortedTypedPathColumns())
+                col->insertDefault();
             for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
                 dynamic_column->insertDefault();
             column_object.getSharedDataColumn().insertDefault();
@@ -2970,6 +2971,8 @@ private:
         return false;
     }
 
+    /// Inserts the default rows for NULLs when the defaults of the typed paths are not trivial.
+    DataTypePtr object_type;
     DataTypeObject::TypedPathsMap typed_paths_types;
     std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;
     bool all_typed_paths_have_trivial_defaults = true;
@@ -3215,6 +3218,7 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(
             {
                 case DataTypeObject::SchemaFormat::JSON:
                     return std::make_unique<ObjectJSONNode<JSONParser>>(
+                        type,
                         typed_paths,
                         std::move(typed_path_nodes),
                         object_type.getPathsToSkip(),

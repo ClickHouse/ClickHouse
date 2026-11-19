@@ -564,7 +564,22 @@ bool ColumnObject::hasOnlyTypeDefaults() const
             return false;
     }
 
-    return shared_data->hasOnlyTypeDefaults();
+    if (!shared_data->hasOnlyTypeDefaults())
+        return false;
+
+    if (!hasSource())
+        return true;
+
+    /// A column that is not stored is restored as default rows with the zeroes of the columns in the typed paths,
+    /// so any other source text, like the text of an object with skipped paths, has to be stored.
+    const auto text = default_source_text.empty() ? createDefaultSourceText() : default_source_text;
+    const auto & source_column = getSourceColumn();
+    for (size_t i = 0; i != source_column.size(); ++i)
+    {
+        if (source_column.getDataAt(i) != text)
+            return false;
+    }
+    return true;
 }
 
 std::string_view ColumnObject::getDataAt(size_t) const
@@ -1148,8 +1163,9 @@ String ColumnObject::createDefaultSourceText() const
         empty_typed_paths[path] = column->cloneEmpty();
 
     auto default_row = ColumnObject::create(std::move(empty_typed_paths), max_dynamic_paths, max_dynamic_types);
-    /// Typed paths get the defaults of their types, which are not always the zeroes of their columns.
-    object_type->insertDefaultInto(*default_row);
+    /// The zeroes of the columns, as in the rows added by `insertDefault`. The defaults of the types are handled
+    /// by `DataTypeObject::insertDefaultInto`.
+    default_row->insertDefault();
 
     FormatSettings format_settings = getFormatSettings();
     format_settings.json.json_type_use_source = false;

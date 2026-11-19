@@ -30,9 +30,11 @@ SELECT 'the text of a default row contains typed paths';
 SELECT json, json.__source FROM format(JSONEachRow, 'json JSON(with_source=1, a UInt32)', '{"json" : null}') SETTINGS input_format_null_as_default = 1;
 SELECT json, json.__source FROM format(JSONEachRow, 'json JSON(with_source=1)', '{"json" : null}') SETTINGS input_format_null_as_default = 1;
 
-SELECT 'the text of a default row has the defaults of the types, not the zeroes of the columns';
+SELECT 'the text of a default row matches the defaults in its typed paths: of the types or of the columns';
 SELECT json, json.__source FROM format(JSONEachRow, 'json JSON(with_source=1, e Enum8(\'minus\' = -1, \'zero\' = 0))', '{"json" : null}') SETTINGS input_format_null_as_default = 1;
 SELECT json, json.__source FROM format(JSONEachRow, 'json JSON(with_source=1, e Enum8(\'ok\' = 1))', '{"json" : null}') SETTINGS input_format_null_as_default = 1;
+SELECT json, json.__source FROM (SELECT arrayElement(materialize(['{"e" : "minus"}'::JSON(with_source=1, e Enum8('minus' = -1, 'zero' = 0))]), 2) AS json);
+SELECT json, json.__source FROM (SELECT assumeNotNull(materialize(CAST(NULL, 'Nullable(JSON(with_source=1, e Enum8(\'minus\' = -1, \'zero\' = 0)))'))) AS json);
 SELECT 'the common type keeps the source only if all types have it';
 SELECT toTypeName(if(1, '{}'::JSON(with_source=1, a UInt32), '{}'::JSON(with_source=1, b UInt32)));
 SELECT toTypeName(if(1, '{}'::JSON(with_source=1, max_dynamic_paths=8), '{}'::JSON(with_source=1, max_dynamic_paths=16)));
@@ -73,6 +75,14 @@ SELECT count() FROM t_json_source_index WHERE json.__source.size = 7 SETTINGS us
 SELECT count() FROM t_json_source_index WHERE json.__source = '{"a":1}' SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'idx_paths'; -- { serverError INDEX_NOT_USED }
 SELECT count() FROM t_json_source_index WHERE json.__source = '{"a":1}' SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'idx_values'; -- { serverError INDEX_NOT_USED }
 DROP TABLE t_json_source_index;
+
+SELECT 'a column with only default paths is stored if its source is not the default text';
+DROP TABLE IF EXISTS t_json_source_skip_empty;
+CREATE TABLE t_json_source_skip_empty (id UInt64, json JSON(with_source=1, SKIP secret), tup Tuple(json JSON(with_source=1, SKIP secret)))
+ENGINE = MergeTree ORDER BY id SETTINGS skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns';
+INSERT INTO t_json_source_skip_empty VALUES (1, '{ "secret" : "original" }', tuple('{ "secret" : "nested" }'));
+SELECT json, json.__source, tup.json.__source FROM t_json_source_skip_empty;
+DROP TABLE t_json_source_skip_empty;
 
 SELECT 'generateRandom creates the source from the generated objects';
 SELECT count(), countIf(isValidJSON(json.__source)) FROM (SELECT * FROM generateRandom('json JSON(with_source=1)', 42, 10, 3) LIMIT 100);
