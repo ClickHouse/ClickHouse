@@ -139,6 +139,7 @@ static OptimizerContext buildContext(const ContextPtr & query_context, const Que
     context.distributed_plan_force_shuffle_aggregation = optimization_settings.distributed_plan_force_shuffle_aggregation;
     context.distributed_plan_partial_aggregation_before_shuffle = optimization_settings.distributed_plan_partial_aggregation_before_shuffle;
     context.cascades_aggregation_pushdown = optimization_settings.cascades_aggregation_pushdown;
+    context.distributed_plan_use_partition_key_layout = optimization_settings.distributed_plan_use_partition_key_layout;
     context.exact_rows_before_limit = optimization_settings.exact_rows_before_limit;
 
     return context;
