@@ -34,8 +34,8 @@ Se respetan las configuraciones de agregación externa (`max_bytes_before_extern
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "nueva configuración. Habilita el volcado adaptativo de datos en memoria al almacenamiento externo."}]}]} />
 
-Hace que el procesador vuelque datos al almacenamiento externo de forma adaptativa. Actualmente, se admiten los hash joins que pueden volcar datos, tanto
-`grace_hash` como la vía adaptativa `hash` / `parallel_hash`.
+Vuelca de forma adaptativa al almacenamiento externo los procesadores elegibles de agregación, ordenación, `DISTINCT` y unión hash cuando la consulta está bajo presión de memoria.
+Entre las uniones hash compatibles se incluyen `grace_hash` y la vía adaptativa `hash` / `parallel_hash`.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -88,6 +88,16 @@ Solo surte efecto junto con `make_distributed_plan = 1`: esta configuración por
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Habilita la optimización de consultas mediante la cual se analizan los resultados de funciones y subconsultas, y se reescribe la consulta si hay constantes
+
+## enable_elasticsearch {#enable_elasticsearch}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nueva configuración para controlar la habilitación de la integración experimental con Elasticsearch (el motor de tabla `Elasticsearch` y la función de tabla `elasticsearch`)."}]}]} />
+
+Activa la integración experimental con Elasticsearch: el motor de tabla `Elasticsearch` y la función de tabla `elasticsearch`.
 
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
@@ -160,6 +170,23 @@ Habilita las funciones para el análisis de funnel.
 
 Propagar las sentencias WITH a las consultas UNION y a todas las subconsultas
 
+## enable_group_by_top_k_dynamic_filtering {#enable_group_by_top_k_dynamic_filtering}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nueva configuración: `GROUP BY key [ORDER BY key] LIMIT n` publica el límite del montículo top-K en el paso de lectura de `MergeTree`, que lo usa para filtrar filas y omitir gránulos. Un valor de `compatibility` inferior a 26.10 lo deshabilita."}]}]} />
+
+Para [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/es/reference/settings/session-settings/enable#enable_group_by_top_k_optimization): cuando la primera clave de `GROUP BY` usada para la clasificación es una columna leída de una tabla `MergeTree`, la agregación publica el límite de su montículo top-K en el paso de lectura en cuanto el montículo contiene `LIMIT` claves. A partir de ese momento, el paso de lectura descarta las filas cuya clave queda fuera de ese límite antes de leer las demás columnas (`PREWHERE`) y omite gránulos completos que quedan fuera de él mediante la clave primaria o un índice de omisión de datos `minmax` sobre esa columna.
+
+Esto se aplica a `GROUP BY key ORDER BY key LIMIT n` y a `GROUP BY key LIMIT n` sin `ORDER BY`, donde cualquier conjunto de `n` grupos es una respuesta válida.
+
+No se aplica a lecturas con `FINAL` ni con réplicas paralelas: `FINAL` debe ver todas las versiones de una fila, y el límite no se propaga a las lecturas en réplicas remotas.
+
+Valores posibles:
+
+* 0 — Deshabilitado.
+* 1 — Habilitado.
+
 ## enable_group_by_top_k_optimization {#enable_group_by_top_k_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -217,6 +244,16 @@ Valores posibles:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1"},{"label": "Nueva opción de configuración para controlar la caché de resolución de identificadores en el analizador de consultas"}]}]} />
 
 Activa la caché de resolución de identificadores en el analizador de consultas. La caché comparte nodos de alias ya resueltos para evitar la explosión del AST cuando se hace referencia al mismo alias varias veces. Establézcalo en false para desactivar la caché si se sospecha que produce resultados incorrectos.
+
+## enable_ipcrypt {#enable_ipcrypt}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración para habilitar las funciones experimentales de cifrado de direcciones IP."}]}]} />
+
+Habilita las funciones experimentales de cifrado de direcciones IP (`ipcryptEncrypt`, `ipcryptDecrypt`, `ipcryptPrefixEncrypt`, `ipcryptPrefixDecrypt`).
 
 ## enable_job_stack_trace {#enable_job_stack_trace}
 
@@ -418,6 +455,16 @@ Todos los servidores que participan en una consulta distribuida deben tener el m
 
 Si es true, los datos pueden parsearse directamente en columnas con serialización personalizada (p. ej., Sparse) según las pistas de serialización obtenidas de la tabla.
 
+## enable_pco_codec {#enable_pco_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración para habilitar el códec de compresión `PCO`, en fase Beta."}]}]} />
+
+Habilita el códec de compresión `PCO`.
+
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -544,6 +591,19 @@ Cuando está desactivado, cualquier expresión de tabla que use el modificador `
 en el momento de generar el plan. Este es el control general de la
 funcionalidad de consultas en streaming; otras capacidades pueden estar controladas por sus propios ajustes.
 
+## enable_subcolumn_codecs {#enable_subcolumn_codecs}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nueva configuración para habilitar la declaración de códecs en subcolumnas."}]}]} />
+
+Permite declarar códecs de compresión para las subcolumnas de una columna, como los elementos de un `Tuple` o las claves y valores de un `Map`,
+mediante entradas `CODEC name (...)` en `CREATE TABLE` y con `ALTER TABLE ... MODIFY COLUMN name CODEC(...)`.
+Las tablas que ya contienen estas declaraciones funcionan independientemente de este parámetro de configuración, y las declaraciones siempre pueden eliminarse.
+Un servidor de una versión anterior no puede adjuntar una tabla con códecs de subcolumnas.
+
 ## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />
@@ -593,11 +653,11 @@ Permite crear los tipos de datos [Time](/es/reference/data-types/time) y [Time64
 
 ## enable_trino_dialect {#enable_trino_dialect}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nueva configuración para habilitar el valor `trino` de la configuración `dialect`, que traduce la sintaxis SQL de Trino y asigna los nombres de funciones de Trino a sus equivalentes en ClickHouse."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nueva configuración para habilitar el valor `trino` de la configuración `dialect`, que traduce la sintaxis SQL de Trino y asigna los nombres de funciones de Trino a sus equivalentes en ClickHouse."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "El dialecto `trino` pasó a Beta."}]}]} />
 
 Habilita el valor `trino` de la configuración `dialect`.
 
@@ -680,6 +740,16 @@ Valores posibles:
 
 * 0 - Deshabilitado
 * 1 - Habilitado
+
+## enable_xgboost {#enable_xgboost}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración para habilitar la integración experimental con XGBoost (la estructura del diccionario `XGBOOST` y la función `predictXGBoost`)."}]}]} />
+
+Habilita la integración experimental con XGBoost: la estructura del diccionario `XGBOOST` y la función `predictXGBoost`.
 
 ## enable_zxc_codec {#enable_zxc_codec}
 

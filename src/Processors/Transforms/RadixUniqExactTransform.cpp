@@ -183,8 +183,8 @@ struct SlotHash
 /// itself: the load factor of 0.5 is kept by the callers, which rebuild the set (see `growLocalSet`).
 struct SlotGrower : HashTableGrower<1>
 {
-    size_t place(size_t x) const { return x >> (64 - size_degree); }
-    bool overflow(size_t /*elems*/) const { return false; }
+    [[nodiscard]] size_t place(size_t x) const { return x >> (64 - size_degree); }
+    [[nodiscard]] bool overflow(size_t /*elems*/) const { return false; }
 };
 
 /// A `HashSet` with the interface the streams and the buckets use.
@@ -233,9 +233,9 @@ public:
             insertMany<false>(keys, num_keys);
     }
 
-    size_t size() const { return set.size(); }
-    size_t capacity() const { return set.getBufferSizeInCells(); }
-    size_t numCellsInUse() const { return set.size() - set.hasZero(); }
+    [[nodiscard]] size_t size() const { return set.size(); }
+    [[nodiscard]] size_t capacity() const { return set.getBufferSizeInCells(); }
+    [[nodiscard]] size_t numCellsInUse() const { return set.size() - set.hasZero(); }
 
     template <typename Func>
     void forEach(Func && func) const
@@ -874,9 +874,9 @@ private:
         /// The capacity is `MIN_BLOCK_SIZE << size_class`.
         UInt32 size_class;
 
-        size_t capacity() const { return MIN_BLOCK_SIZE << size_class; }
+        [[nodiscard]] size_t capacity() const { return MIN_BLOCK_SIZE << size_class; }
         Key * keys() { return reinterpret_cast<Key *>(this + 1); }
-        const Key * keys() const { return reinterpret_cast<const Key *>(this + 1); }
+        [[nodiscard]] const Key * keys() const { return reinterpret_cast<const Key *>(this + 1); }
     };
 
     /// The keys follow the header, aligned.
@@ -1840,7 +1840,7 @@ void RadixUniqExactRouteTransform::work()
     /// Only the distinct values of the dictionary that the rows use are routed: a shared dictionary can be much larger
     /// than the chunk. They are `Nullable` for `LowCardinality(Nullable)`.
     if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
-        column = column_low_cardinality->getMinimalDictionaryEncodedColumn(0, column_low_cardinality->size()).dictionary;
+        column = column_low_cardinality->getMinimalDictionary(0, column_low_cardinality->size());
     {
         RADIX_UNIQ_EXACT_TRACK_MEMORY(state);
         if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
