@@ -1,4 +1,4 @@
--- `input_format_tsv_enum_as_number` is an input format setting: it must not make a comparison read an enum name as a number.
+-- `input_format_tsv_enum_as_number` is a setting of the TSV formats: elsewhere a string is still read as an enum name.
 
 SET input_format_tsv_enum_as_number = 1;
 
@@ -12,3 +12,13 @@ SELECT groupArray(level) FROM t_enum_cmp WHERE level != 'Error' SETTINGS validat
 SELECT groupArray(level) FROM t_enum_cmp WHERE level > 4;
 
 DROP TABLE t_enum_cmp;
+
+-- Other readers of a whole string as an enum
+SELECT * FROM format(Form, 'e Enum8(\'a\' = 1, \'b\' = 2)', 'e=b');
+SELECT CAST('b' AS Variant(Enum8('a' = 1, 'b' = 2), Array(UInt8)));
+
+-- `TSVRaw` still reads the value
+SELECT * FROM format(TSVRaw, 'e Enum8(\'a\' = 1, \'b\' = 2)', '2');
+SELECT * FROM format(TSVRaw, 'e Nullable(Enum8(\'a\' = 1, \'b\' = 2))', '2');
+SELECT * FROM format(TSVRaw, 'e Enum8(\'a\' = 1, \'b\' = 2)', '2x'); -- { serverError UNEXPECTED_DATA_AFTER_PARSED_VALUE }
+SELECT * FROM format(TSVRaw, 'e Enum8(\'a\' = 1, \'b\' = 2)', 'b'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
