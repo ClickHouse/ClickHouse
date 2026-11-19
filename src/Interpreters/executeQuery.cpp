@@ -2286,10 +2286,11 @@ static std::optional<BlockIO> tryExecuteQueryPlan(
 
     auto finish_callback_finalize_pipeline = [
         query_result_cache_usage,
+        context,
         // Need to be cached, since will be changed after complete()
         pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
     {
-        return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
+        return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline, context);
     };
     auto finish_callback = [elem, context, ast, implicit_tcl_executor,
                                 query_result_cache_usage, internal, log_as_internal,
@@ -4754,7 +4755,7 @@ static BlockIO executeQueryImpl(
             /// Also make possible for caller to log successful query finish and exception during execution.
 
             /// The prepare callback flushes pipeline progress and resets the pipeline
-            auto finish_callback_finalize_pipeline = [
+            std::function<QueryPipelineFinalizedInfo(QueryPipeline &&)> finish_callback_finalize_pipeline = [
                 query_result_cache_usage,
                 context,
                 // Need to be cached, since will be changed after complete()
