@@ -28,9 +28,9 @@ public:
     }
 
     void next() override { delegate->next(); }
-    bool isValid() const override { return delegate->isValid(); }
+    [[nodiscard]] bool isValid() const override { return delegate->isValid(); }
 
-    String path() const override
+    [[nodiscard]] String path() const override
     {
         auto delegate_path = delegate->path();
 
@@ -44,7 +44,7 @@ public:
         return delegate_path.substr(path_prefix.size());
     }
 
-    String name() const override { return delegate->name(); }
+    [[nodiscard]] String name() const override { return delegate->name(); }
 
 private:
     DirectoryIteratorPtr delegate;

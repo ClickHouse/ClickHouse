@@ -332,7 +332,7 @@ public:
 
     /// Whether the sizes and modification times of objects are cached in memory. Such a cache
     /// is not invalidated by changes made through another server sharing the same storage.
-    virtual bool cachesObjectMetadata() const
+    [[nodiscard]] virtual bool cachesObjectMetadata() const
     {
         return false;
     }
