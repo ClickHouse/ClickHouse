@@ -276,7 +276,7 @@ public:
 
     /// Weeks are counted from `first_weekday`; the other units have no state.
     template <typename Transform>
-    TransformDateTime64<Transform> makeTransform(UInt32 scale) const
+    [[nodiscard]] TransformDateTime64<Transform> makeTransform(UInt32 scale) const
     {
         if constexpr (std::is_same_v<Transform, ToRelativeWeekNumImpl<ResultPrecision::Extended>>)
             return TransformDateTime64<Transform>(Transform{first_weekday}, scale);

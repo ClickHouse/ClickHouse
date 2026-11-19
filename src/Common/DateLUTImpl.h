@@ -131,7 +131,7 @@ struct WeekSpec
     }
 
     /// The number of days from the first day of the week to `day_of_week` (1 = Monday ... 7 = Sunday), 0-6.
-    constexpr UInt8 daysSinceStartOfWeek(UInt8 day_of_week) const
+    [[nodiscard]] constexpr UInt8 daysSinceStartOfWeek(UInt8 day_of_week) const
     {
         return ::daysSinceStartOfWeek(day_of_week, first_weekday);
     }

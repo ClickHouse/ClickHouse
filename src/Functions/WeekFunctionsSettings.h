@@ -20,14 +20,14 @@ struct WeekFunctionsSettings
 
     /// The first day of the week, 1 = Monday ... 7 = Sunday: `week_functions_starting_day`, or `default_first_weekday`
     /// if it is `'auto'`.
-    UInt8 firstWeekday(UInt8 default_first_weekday) const;
+    [[nodiscard]] UInt8 firstWeekday(UInt8 default_first_weekday) const;
 
     /// `spec` with the settings that are not `'auto'` applied.
-    WeekSpec apply(WeekSpec spec) const;
+    [[nodiscard]] WeekSpec apply(WeekSpec spec) const;
 
     /// `spec` with `week_functions_starting_day` applied, if it is not `'auto'`. The other two settings number weeks,
     /// not days, so they don't apply to `toDayOfWeek`.
-    WeekDaySpec apply(WeekDaySpec spec) const;
+    [[nodiscard]] WeekDaySpec apply(WeekDaySpec spec) const;
 };
 
 }

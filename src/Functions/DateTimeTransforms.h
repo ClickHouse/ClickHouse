@@ -2976,7 +2976,7 @@ struct ToRelativeWeekNumImpl
         return {WeekFunctionsSettings(context).firstWeekday(1)};
     }
 
-    auto execute(Int64 t, const DateLUTImpl & time_zone) const
+    [[nodiscard]] auto execute(Int64 t, const DateLUTImpl & time_zone) const
     {
         if constexpr (precision_ == ResultPrecision::Extended)
             return time_zone.toRelativeWeekNum(t, first_weekday);
@@ -2985,11 +2985,11 @@ struct ToRelativeWeekNumImpl
             return static_cast<UInt16>(
                 std::clamp<Int64>(time_zone.toRelativeWeekNum(t, first_weekday), 0, std::numeric_limits<UInt16>::max()));
     }
-    UInt16 execute(UInt32 t, const DateLUTImpl & time_zone) const
+    [[nodiscard]] UInt16 execute(UInt32 t, const DateLUTImpl & time_zone) const
     {
         return static_cast<UInt16>(time_zone.toRelativeWeekNum(static_cast<time_t>(t), first_weekday));
     }
-    auto execute(Int32 d, const DateLUTImpl & time_zone) const
+    [[nodiscard]] auto execute(Int32 d, const DateLUTImpl & time_zone) const
     {
         if constexpr (precision_ == ResultPrecision::Extended)
             return time_zone.toRelativeWeekNum(ExtendedDayNum(d), first_weekday);
@@ -2997,7 +2997,7 @@ struct ToRelativeWeekNumImpl
             return static_cast<UInt16>(
                 std::clamp<Int64>(time_zone.toRelativeWeekNum(ExtendedDayNum(d), first_weekday), 0, std::numeric_limits<UInt16>::max()));
     }
-    UInt16 execute(UInt16 d, const DateLUTImpl & time_zone) const
+    [[nodiscard]] UInt16 execute(UInt16 d, const DateLUTImpl & time_zone) const
     {
         return static_cast<UInt16>(time_zone.toRelativeWeekNum(DayNum(d), first_weekday));
     }
