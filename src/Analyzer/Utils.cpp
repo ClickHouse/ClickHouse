@@ -152,6 +152,10 @@ bool subtreeMayReadViewSourceImpl(const IQueryTreeNode * node, const StorageID &
             || hiddenFilterMayReadTable(*storage, node->getOriginalAlias(), current_context)))
         return true;
 
+    /// A scalar subquery folded into a constant keeps the subquery as its source expression, not as a child.
+    if (const auto * constant_node = node->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
+        return subtreeMayReadViewSourceImpl(constant_node->getSourceExpression().get(), view_source_id, current_context);
+
     for (const auto & child : node->getChildren())
         if (subtreeMayReadViewSourceImpl(child.get(), view_source_id, current_context))
             return true;
