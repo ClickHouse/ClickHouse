@@ -63,7 +63,7 @@ extern const SettingsUInt64 output_format_avro_rows_in_file;
 
 namespace NATSSetting
 {
-extern const NATSSettingsString nats_credentials;
+extern const NATSSettingsSecretString nats_credentials;
 extern const NATSSettingsString nats_credential_file;
 extern const NATSSettingsString nats_ca_file;
 extern const NATSSettingsString nats_client_cert_file;
@@ -76,8 +76,8 @@ extern const NATSSettingsStreamingHandleErrorMode nats_handle_error_mode;
 extern const NATSSettingsUInt64 nats_max_block_size;
 extern const NATSSettingsUInt64 nats_max_rows_per_message;
 extern const NATSSettingsString nats_consumer_name;
-extern const NATSSettingsUInt64 nats_num_consumers;
-extern const NATSSettingsString nats_password;
+extern const NATSSettingsNonZeroUInt64 nats_num_consumers;
+extern const NATSSettingsSecretString nats_password;
 extern const NATSSettingsString nats_queue_group;
 extern const NATSSettingsUInt64 nats_reconnect_wait;
 extern const NATSSettingsString nats_schema;
@@ -86,7 +86,7 @@ extern const NATSSettingsString nats_server_list;
 extern const NATSSettingsUInt64 nats_skip_broken_messages;
 extern const NATSSettingsUInt64 nats_startup_connect_tries;
 extern const NATSSettingsString nats_subjects;
-extern const NATSSettingsString nats_token;
+extern const NATSSettingsSecretString nats_token;
 extern const NATSSettingsString nats_url;
 extern const NATSSettingsString nats_stream;
 extern const NATSSettingsString nats_username;
@@ -197,10 +197,10 @@ StorageNATS::StorageNATS(
             "Setting `nats_subjects` must contain at least one subject, and subjects must not be empty");
     }
     auto nats_username = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_username]);
-    auto nats_password = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_password]);
-    auto nats_token = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_token]);
+    auto nats_password = getContext()->getMacros()->expand(String((*nats_settings)[NATSSetting::nats_password].value));
+    auto nats_token = getContext()->getMacros()->expand(String((*nats_settings)[NATSSetting::nats_token].value));
     auto nats_credential_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credential_file]);
-    auto nats_credentials = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credentials]);
+    auto nats_credentials = getContext()->getMacros()->expand(String((*nats_settings)[NATSSetting::nats_credentials].value));
     auto nats_ca_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_ca_file]);
     auto nats_client_cert_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_client_cert_file]);
     auto nats_client_key_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_client_key_file]);
@@ -229,10 +229,10 @@ StorageNATS::StorageNATS(
         = {.url = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_url]),
            .servers = parseList(getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_server_list]), ','),
            .username = nats_username.empty() ? global_username : nats_username,
-           .password = nats_password.empty() ? global_password : nats_password,
-           .token = nats_token.empty() ? global_token : nats_token,
+           .password = SecretString(nats_password.empty() ? global_password : nats_password),
+           .token = SecretString(nats_token.empty() ? global_token : nats_token),
            .credential_file = nats_credential_file.empty() ? global_credential_file : nats_credential_file,
-           .credentials = nats_credentials,
+           .credentials = SecretString(nats_credentials),
            .ca_file = nats_ca_file,
            .client_cert_file = nats_client_cert_file,
            .client_key_file = nats_client_key_file,
@@ -782,6 +782,7 @@ StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot,
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
         max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
     return std::make_shared<MessageQueueSink>(
+        std::make_shared<const Block>(metadata_snapshot->getSampleBlock()),
         std::make_shared<const Block>(metadata_snapshot->getSampleBlockNonMaterialized()),
         getFormatName(),
         max_rows,
@@ -1490,10 +1491,10 @@ void registerStorageNATS(StorageFactory & factory)
         /// the check that prevents dropping credentials from a named collection.
         auto macros = args.getContext()->getMacros();
         (*nats_settings)[NATSSetting::nats_username] = macros->expand((*nats_settings)[NATSSetting::nats_username]);
-        (*nats_settings)[NATSSetting::nats_password] = macros->expand((*nats_settings)[NATSSetting::nats_password]);
-        (*nats_settings)[NATSSetting::nats_token] = macros->expand((*nats_settings)[NATSSetting::nats_token]);
+        (*nats_settings)[NATSSetting::nats_password] = macros->expand(String((*nats_settings)[NATSSetting::nats_password].value));
+        (*nats_settings)[NATSSetting::nats_token] = macros->expand(String((*nats_settings)[NATSSetting::nats_token].value));
         (*nats_settings)[NATSSetting::nats_credential_file] = macros->expand((*nats_settings)[NATSSetting::nats_credential_file]);
-        (*nats_settings)[NATSSetting::nats_credentials] = macros->expand((*nats_settings)[NATSSetting::nats_credentials]);
+        (*nats_settings)[NATSSetting::nats_credentials] = macros->expand(String((*nats_settings)[NATSSetting::nats_credentials].value));
         (*nats_settings)[NATSSetting::nats_ca_file] = macros->expand((*nats_settings)[NATSSetting::nats_ca_file]);
         (*nats_settings)[NATSSetting::nats_client_cert_file] = macros->expand((*nats_settings)[NATSSetting::nats_client_cert_file]);
         (*nats_settings)[NATSSetting::nats_client_key_file] = macros->expand((*nats_settings)[NATSSetting::nats_client_key_file]);
@@ -1521,6 +1522,25 @@ void registerStorageNATS(StorageFactory & factory)
 
         if ((*nats_settings)[NATSSetting::nats_consumer_name].changed && !(*nats_settings)[NATSSetting::nats_stream].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "To use NATS jet stream, you must specify `nats_stream` setting");
+
+        /// The consumer semaphore takes an `int`. A bigger value can wrap to a valid one, so it is rejected only for a new definition,
+        /// to keep existing tables loadable.
+        const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
+        const UInt64 num_consumers = (*nats_settings)[NATSSetting::nats_num_consumers].value;
+        if (is_fresh_definition && num_consumers > std::numeric_limits<int>::max())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `nats_num_consumers` can not be bigger than {}, got {}",
+                std::numeric_limits<int>::max(),
+                num_consumers);
+
+        const UInt64 reconnect_wait = (*nats_settings)[NATSSetting::nats_reconnect_wait].value;
+        if (is_fresh_definition && reconnect_wait > std::numeric_limits<int>::max())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `nats_reconnect_wait` can not be bigger than {}, got {}",
+                std::numeric_limits<int>::max(),
+                reconnect_wait);
 
         return std::make_shared<StorageNATS>(
             args.table_id,
@@ -1754,9 +1774,7 @@ The number of rows in one NATS message depends on whether the format is row-base
 ## Using JetStream {#using-jetstream}
 
 Before using NATS engine with NATS JetStream, you must create a NATS stream and a durable pull consumer. For this, you can use, for example, the nats utility from the [NATS CLI](https://github.com/nats-io/natscli) package:
-<details>
-<summary>creating stream</summary>
-
+<Accordion title="creating stream">
 ```bash
 $ nats stream add
 ? Stream Name stream_name
@@ -1811,11 +1829,9 @@ State:
            Last Sequence: 0
         Active Consumers: 0
 ```
-</details>
+</Accordion>
 
-<details>
-<summary>creating durable pull consumer</summary>
-
+<Accordion title="creating durable pull consumer">
 ```bash
 $ nats consumer add
 ? Select a Stream stream_name
@@ -1851,7 +1867,7 @@ Last Delivered Message: Consumer sequence: 0 Stream sequence: 0
     Unprocessed Messages: 0
            Waiting Pulls: 0 of maximum 512
 ```
-</details>
+</Accordion>
 
 After creating stream and durable pull consumer, we can create a table with NATS engine. To do this, you need to initialize: nats_stream, nats_consumer_name, and nats_subjects:
 

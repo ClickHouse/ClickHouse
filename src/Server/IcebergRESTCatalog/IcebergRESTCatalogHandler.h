@@ -13,6 +13,7 @@
 #include <Poco/URI.h>
 
 #include <optional>
+#include <vector>
 
 namespace DB
 {
@@ -46,18 +47,63 @@ private:
     void handleTableExists(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
     void handleDropTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, const Poco::URI & uri, HTTPServerResponse & response, const Context & context) const;
     void handleUpdateTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, const String & body, HTTPServerResponse & response, const Context & context) const;
+    void handleCommitTransaction(const IcebergRESTCatalogWarehouse & warehouse, const String & body, HTTPServerResponse & response, const Context & context) const;
     void handleRenameTable(const IcebergRESTCatalogWarehouse & warehouse, const String & body, HTTPServerResponse & response, const Context & context) const;
     void handleReportMetrics(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
 
-    /// Writes the new metadata file and moves the table pointer to it with a version check. Sends the response.
-    void commitTableMetadata(
+    /// Finishes a stage-create: a commit with `assert-create` to a table that does not exist yet.
+    void handleStagedCreateCommit(
+        const IcebergRESTCatalogWarehouse & warehouse,
+        const IcebergNamespaceName & ns,
+        const String & table,
+        const Poco::JSON::Array & updates,
+        HTTPServerResponse & response,
+        const Context & context) const;
+
+    /// Writes the first metadata file and registers the table. Removes the file if the table is not registered.
+    [[nodiscard]] IcebergRESTCatalogWarehouse::CreateTableResult writeAndRegisterTable(
         const IcebergRESTCatalogWarehouse & warehouse,
         const IcebergNamespaceName & ns,
         const String & table,
         const IcebergTablePointer & pointer,
         const Poco::JSON::Object::Ptr & metadata,
-        CompressionMethod compression_method,
+        CompressionMethod compression_method) const;
+
+    /// One table of a commit after its requirements passed and its updates were applied in memory.
+    struct PreparedTableCommit
+    {
+        IcebergNamespaceName ns;
+        String table;
+        IcebergTablePointer current;
+        Poco::JSON::Object::Ptr metadata;
+        CompressionMethod compression_method = CompressionMethod::None;
+        /// Empty when `updates` was empty: nothing to write, nothing to move.
+        String new_location;
+    };
+
+    /// Checks requirements and applies updates in memory. Sends the error response and returns nullopt on a client error.
+    std::optional<PreparedTableCommit> prepareTableCommit(
+        const IcebergRESTCatalogWarehouse & warehouse,
+        const IcebergNamespaceName & ns,
+        const String & table,
+        const IcebergTablePointer & pointer,
+        const Poco::JSON::Array & requirements,
+        const Poco::JSON::Array & updates,
         HTTPServerResponse & response) const;
+
+    /// Writes the new metadata files, then moves every table pointer in one Keeper multi with a version check.
+    /// Returns true when the commit was applied. Otherwise removes the written files, sends the error response and returns false.
+    bool commitPreparedTables(
+        const IcebergRESTCatalogWarehouse & warehouse, const std::vector<PreparedTableCommit> & prepared, HTTPServerResponse & response) const;
+    static void sendUpdateTableError(
+        HTTPServerResponse & response, IcebergRESTCatalogWarehouse::UpdateTableResult result, const IcebergNamespaceName & ns, const String & table);
+
+    /// Warehouse management API (issue #127488).
+    void handleCreateWarehouse(const String & body, HTTPServerResponse & response, const Context & context) const;
+    void handleListWarehouses(HTTPServerResponse & response) const;
+    void handleGetWarehouse(const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
+    void handleReplaceWarehouseCredential(const IcebergRESTRouteMatch & match, const String & body, HTTPServerResponse & response, const Context & context) const;
+    void handleDeleteWarehouse(const IcebergRESTRouteMatch & match, HTTPServerResponse & response, const Context & context) const;
 
     static void checkNotReadonly(const Context & context, const String & action);
     static void checkDDLAllowed(const Context & context, const String & action);
@@ -65,9 +111,10 @@ private:
     static std::optional<IcebergNamespaceName> getNamespaceOrSendNotFound(
         const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response);
 
-    Poco::JSON::Object::Ptr readTableMetadata(const IcebergRESTCatalogWarehouse & warehouse, const IcebergTablePointer & pointer) const;
+    [[nodiscard]] Poco::JSON::Object::Ptr readTableMetadata(const IcebergRESTCatalogWarehouse & warehouse, const IcebergTablePointer & pointer) const;
 
-    static void sendLoadTableResult(const String & metadata_location, const Poco::JSON::Object::Ptr & metadata, HTTPServerResponse & response);
+    /// A staged table has no metadata file yet, so `metadata_location` is empty.
+    static void sendLoadTableResult(const std::optional<String> & metadata_location, const Poco::JSON::Object::Ptr & metadata, HTTPServerResponse & response);
     static void sendCommitTableResult(const String & metadata_location, const Poco::JSON::Object::Ptr & metadata, HTTPServerResponse & response);
     /// Maps `NOT_IMPLEMENTED` to `UnsupportedOperationException` and other codes to `BadRequestException`.
     static void sendCommitRequestError(HTTPServerResponse & response, int code, const String & message);
@@ -81,6 +128,7 @@ private:
         HTTPServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status, const String & type, const String & message);
     static void sendNoSuchNamespace(HTTPServerResponse & response, const IcebergNamespaceName & ns);
     static void sendNoSuchTable(HTTPServerResponse & response, const IcebergNamespaceName & ns, const String & table);
+    static void sendNoSuchWarehouse(HTTPServerResponse & response, const String & name);
 
     LoggerPtr log;
     IServer & server;
