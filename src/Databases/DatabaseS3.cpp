@@ -35,6 +35,7 @@ namespace Setting
 {
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 readonly;
 }
 
 static const std::unordered_set<std::string_view> optional_configuration_keys = {
@@ -131,7 +132,11 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
         return nullptr;
 
     /// TableFunctionS3 throws exceptions, if table cannot be created.
-    auto table_storage = table_function->execute(function, context_, name, /*cached_columns_=*/{}, /*use_global_context=*/false, /*is_insert_query=*/true);
+    const bool is_insert_query = !context_->getSettingsRef()[Setting::readonly];
+    /// The table is referenced by an identifier, which cannot be sent to replicas as a `-Cluster` table function.
+    ContextMutablePtr context_copy = Context::createCopy(context_);
+    context_copy->setSetting("parallel_replicas_for_cluster_engines", Field(false));
+    auto table_storage = table_function->execute(function, context_copy, name, /*cached_columns_=*/{}, /*use_global_context=*/false, is_insert_query);
     /// Intentionally not cached -- see the note above.
 
     return table_storage;

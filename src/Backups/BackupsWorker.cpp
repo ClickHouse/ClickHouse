@@ -454,6 +454,8 @@ struct BackupsWorker::BackupStarter
     {
         backup_settings = BackupSettings::fromBackupQuery(*backup_query);
         backup_context->makeQueryContext();
+        /// `readonly` does not restrict BACKUP, which also writes to its destination (`WRITE` on its source).
+        backup_context->setSetting("readonly", Field(0u));
 
         /// `makeQueryContext` above resets `backup_context` to a fresh, empty `QueryPrivilegesInfo`. Sharing
         /// the originating one accounts privileges checked on copies of `backup_context` to the BACKUP query,

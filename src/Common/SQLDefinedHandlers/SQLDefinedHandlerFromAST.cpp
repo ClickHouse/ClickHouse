@@ -98,7 +98,7 @@ bool statementRequiresMutatingMethod(const IAST & statement)
         return false;
     /// `EXECUTE AS <user>` - bare or wrapping a statement - checks the `IMPERSONATE` privilege, which belongs
     /// to `ACCESS_MANAGEMENT` and is therefore denied under any `readonly` (see `ContextAccess`,
-    /// `write_dcl_access` is part of `not_readonly_flags`). So impersonation can never run over a safe method
+    /// not on its `readonly` allow-list). So impersonation can never run over a safe method
     /// and requires a mutating one, whatever the wrapped statement is. The session-visible effect of the bare
     /// form is additionally fenced off by `statementHasSideEffectsUnderReadonly`.
     if (statement.as<ASTExecuteAsQuery>())

@@ -84,6 +84,49 @@ namespace
         return filtered;
     }
 
+    bool isAllowedInReadonlyMode(const AccessFlags & flags, UInt64 readonly)
+    {
+        /// Leaf types only: a group would also admit the children added to it later.
+        static const AccessFlags readonly_1 = AccessFlags{AccessType::SELECT} | AccessType::SHOW_DATABASES | AccessType::SHOW_TABLES
+            | AccessType::SHOW_COLUMNS | AccessType::SHOW_DICTIONARIES | AccessType::SHOW_USERS | AccessType::SHOW_ROLES
+            | AccessType::SHOW_ROW_POLICIES | AccessType::SHOW_QUOTAS | AccessType::SHOW_SETTINGS_PROFILES
+            | AccessType::SHOW_MASKING_POLICIES | AccessType::SHOW_FILESYSTEM_CACHES | AccessType::SHOW_NAMED_COLLECTIONS
+            | AccessType::SHOW_NAMED_COLLECTIONS_SECRETS | AccessType::SHOW_HANDLERS | AccessType::SHOW_CONNECTIONS | AccessType::CHECK
+            | AccessType::dictGet | AccessType::displaySecretsInShowAndSelect | AccessType::addressToLine
+            | AccessType::addressToLineWithInlines | AccessType::addressToSymbol | AccessType::demangle | AccessType::aiClassify
+            | AccessType::aiEmbed | AccessType::aiExtract | AccessType::aiFilter | AccessType::aiGenerate | AccessType::aiRedact
+            | AccessType::aiSimilarity | AccessType::aiTranslate | AccessType::BACKUP
+            /// They permit nothing alone: the access type they qualify is checked as well.
+            | AccessType::READ | AccessType::NAMED_COLLECTION | AccessType::TABLE_ENGINE | AccessType::CLUSTER | AccessType::SET_DEFINER;
+        static const AccessFlags readonly_2 = readonly_1 | AccessType::CREATE_TEMPORARY_TABLE | AccessType::CREATE_TEMPORARY_VIEW;
+        return !readonly || ((readonly == 1) ? readonly_1 : readonly_2).contains(flags);
+    }
+
+    template <typename AccessDenied>
+    bool readonlyAccessDenied(const ContextAccessParams & params, AccessDenied && access_denied)
+    {
+        if (params.interface == ClientInfo::Interface::HTTP && params.http_method == ClientInfo::HTTPMethod::GET)
+        {
+            return access_denied(ErrorCodes::READONLY,
+                "{}: Cannot execute query in readonly mode. "
+                "For queries over HTTP, method GET implies readonly. "
+                "You should use method POST for modifying queries");
+        }
+        return access_denied(ErrorCodes::READONLY, "{}: Cannot execute query in readonly mode");
+    }
+
+    bool isGrantedByFilter(const AccessRights & access_rights, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter)
+    {
+        if (to_check_by_filter.empty())
+            return false;
+        for (const auto & filter : access_rights.getFilters(parameter))
+        {
+            if (re2::RE2::FullMatch(to_check_by_filter, filter.path) && filter.access_flags.contains(flags))
+                return true;
+        }
+        return false;
+    }
+
     /// Helper for using in templates.
     std::string_view getDatabase() { return {}; }
 
@@ -916,13 +959,6 @@ bool ContextAccess::checkAccessImplHelper(QueryPrivilegesInfo & privileges_info,
         const AccessFlags resource_ddl = AccessType::CREATE_RESOURCE | AccessType::DROP_RESOURCE;
         const AccessFlags named_collection_ddl = AccessType::CREATE_NAMED_COLLECTION | AccessType::DROP_NAMED_COLLECTION | AccessType::ALTER_NAMED_COLLECTION;
         const AccessFlags handler_ddl = AccessType::CREATE_HANDLER | AccessType::ALTER_HANDLER | AccessType::DROP_HANDLER;
-        const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;
-        const AccessFlags table_and_dictionary_and_function_ddl = table_ddl | dictionary_ddl | function_ddl;
-        const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
-        const AccessFlags write_dcl_access = AccessType::ACCESS_MANAGEMENT - AccessType::SHOW_ACCESS;
-
-        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_and_function_ddl | workload_ddl | resource_ddl | named_collection_ddl | handler_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
-        const AccessFlags not_readonly_1_flags = AccessType::CREATE_TEMPORARY_TABLE | AccessType::CREATE_TEMPORARY_VIEW;
 
         const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl | workload_ddl | resource_ddl | named_collection_ddl | handler_ddl;
         const AccessFlags introspection_flags = AccessType::INTROSPECTION;
@@ -950,18 +986,8 @@ bool ContextAccess::checkAccessImplHelper(QueryPrivilegesInfo & privileges_info,
     {
         if constexpr (grant_option)
             return access_denied(ErrorCodes::READONLY, "{}: Cannot change grants in readonly mode.");
-        if ((flags & precalc.not_readonly_flags) ||
-            ((params.readonly == 1) && (flags & precalc.not_readonly_1_flags)))
-        {
-            if (params.interface == ClientInfo::Interface::HTTP && params.http_method == ClientInfo::HTTPMethod::GET)
-            {
-                return access_denied(ErrorCodes::READONLY,
-                    "{}: Cannot execute query in readonly mode. "
-                    "For queries over HTTP, method GET implies readonly. "
-                    "You should use method POST for modifying queries");
-            }
-            return access_denied(ErrorCodes::READONLY, "{}: Cannot execute query in readonly mode");
-        }
+        if (!isAllowedInReadonlyMode(flags, params.readonly))
+            return readonlyAccessDenied(params, access_denied);
     }
 
     if (!params.allow_ddl && !grant_option)
@@ -1271,24 +1297,22 @@ bool ContextAccess::isGrantedWithFilter(const ContextPtr & context, const Access
     if (isGranted(context, flags, parameter))
         return true;
 
-    if (!to_check_by_filter.empty())
-    {
-        auto access_rights = getAccessRights();
-        auto filters = access_rights->getFilters(parameter);
-        for (const auto & filter : filters)
-        {
-            if (re2::RE2::FullMatch(to_check_by_filter, filter.path) && filter.access_flags.contains(flags))
-                return true;
-        }
-    }
-
-    return false;
+    return isAllowedInReadonlyMode(flags, params.readonly) && isGrantedByFilter(*getAccessRights(), flags, parameter, to_check_by_filter);
 }
 
 void ContextAccess::checkAccessWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter) const
 {
     if (isGrantedWithFilter(context, flags, parameter, to_check_by_filter))
         return;
+
+    if (!isAllowedInReadonlyMode(flags, params.readonly) && isGrantedByFilter(*getAccessRights(), flags, parameter, to_check_by_filter))
+    {
+        readonlyAccessDenied(params, [&]<typename... FmtArgs>(int error_code, FormatStringHelper<String, FmtArgs...> fmt_string, FmtArgs && ...fmt_args) -> bool
+        {
+            context->addQueryPrivilegesInfo(AccessRightsElement{flags, parameter}.toStringWithoutOptions(), false);
+            throw Exception(error_code, std::move(fmt_string), getUserName(), std::forward<FmtArgs>(fmt_args)...);
+        });
+    }
 
     /// Not granted: let the regular check produce the exception with a proper message.
     checkAccess(context, flags, parameter);

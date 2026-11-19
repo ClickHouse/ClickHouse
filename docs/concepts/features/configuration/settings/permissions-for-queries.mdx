@@ -41,6 +41,13 @@ writing; `readonly = 1` refuses it.
 `BACKUP` is not restricted by `readonly` at any value: a session that has the privileges to back a
 table up can write a backup even at `readonly = 1`. Do not rely on `readonly` to prevent backups.
 
+`readonly` permits a query only if every privilege it needs is one of `SELECT`, the `SHOW` privileges,
+`CHECK`, `dictGet`, the introspection and AI functions, `displaySecretsInShowAndSelect`, `BACKUP`, `READ`
+on a source, `NAMED COLLECTION`, `TABLE ENGINE`, `CLUSTER` and `SET DEFINER`, and at `readonly = 2` also
+`CREATE TEMPORARY TABLE` and `CREATE TEMPORARY VIEW`. Any other privilege, including one added in a later
+version, makes the query fail with `READONLY`; writing to a source (`WRITE`), as `INSERT INTO FUNCTION`
+does, is refused at any value above 0.
+
 Most table functions need the `CREATE TEMPORARY TABLE` privilege, so a `SELECT` that reads from one is
 refused at `readonly = 1` but not at `readonly = 2`. Some, such as `numbers`, are allowed in read-only
 mode.
@@ -50,8 +57,8 @@ For any value above 0, none of the following is permitted on a persistent table:
 queries (`CREATE`, `ALTER TABLE`, `ALTER VIEW`, `RENAME`, `EXCHANGE`, `ATTACH`, `DETACH`, `DROP`,
 `TRUNCATE TABLE`). `SYSTEM` statements that require a privilege from the `SYSTEM` group, and `CREATE`, `ALTER`
 and `DROP` of users, roles, row policies, masking policies, quotas and settings profiles are not
-permitted either. Named collection management is an exception: `readonly` does not restrict
-`CREATE NAMED COLLECTION`, `ALTER NAMED COLLECTION` or `DROP NAMED COLLECTION`.
+permitted either. `KILL TRANSACTION` and named collection management (`CREATE NAMED COLLECTION`,
+`ALTER NAMED COLLECTION`, `DROP NAMED COLLECTION`) are refused too.
 
 Changing grants is refused too, locally and `ON CLUSTER`: granting a privilege or a role with `GRANT`,
 granting privileges with `GRANT CURRENT GRANTS`, and revoking a privilege or a role with `REVOKE`.
@@ -104,9 +111,7 @@ You cannot run `SET allow_ddl = 1` if `allow_ddl = 0` for the current session.
 
 `allow_ddl` does not restrict access management queries: `GRANT`, `REVOKE` and `CREATE`, `ALTER` and
 `DROP` of users, roles, row policies, masking policies, quotas and settings profiles are unaffected by
-it. `CREATE TEMPORARY TABLE` and named collection management are unaffected too, as are
-`ALTER DATABASE ... MODIFY SETTING`, `ALTER DATABASE ... MODIFY COMMENT` and `UNDROP TABLE`, which
-`readonly` does not restrict either. Inside a `CREATE` or `ALTER` of a user, a role or a settings
+it. `CREATE TEMPORARY TABLE` is unaffected too. Inside a `CREATE` or `ALTER` of a user, a role or a settings
 profile, a `SETTINGS allow_ddl = 1` clause is refused while the current session has `allow_ddl = 0`,
 and a `SETTINGS allow_ddl = 0` clause is accepted. An embedded setting is checked against the
 session's own settings constraints, which is also why `SET allow_ddl = 1` is refused.
