@@ -777,9 +777,8 @@ private:
             }
         }
 
-        /// A phrase must lie within one element, so the tokens of an Array are not flattened for it.
-        const bool match_phrase_per_element = apply_postprocessor && function_name == "hasPhrase"
-            && isArray(new_children[0]->result_type) && tokenizer->getType() != ITokenizer::Type::Array;
+        /// Flattened tokens of an Array would let a phrase span elements.
+        const bool match_phrase_per_element = apply_postprocessor && function_name == "hasPhrase" && isArray(new_children[0]->result_type);
 
         /// Rewrite the haystack into the postprocessed tokens the index stores, so the row-level
         /// function still matches when the index isn't read directly (direct read off, or unmaterialized

@@ -2552,9 +2552,9 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
 
     bool enable_positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS) != 0;
 
-    /// Only the elements of an `Array` row are separated. With the `array` tokenizer every element is one token, and a phrase spans elements.
+    /// Only the elements of an `Array` row are separated.
     UInt64 position_increment_gap = extractFieldOption<UInt64>(options, ARGUMENT_POSITION_INCREMENT_GAP).value_or(DEFAULT_POSITION_INCREMENT_GAP);
-    if (!enable_positions || !isArray(index.data_types[0]) || tokenizer->getType() == ITokenizer::Type::Array)
+    if (!enable_positions || !isArray(index.data_types[0]))
         position_increment_gap = 0;
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
@@ -2635,10 +2635,6 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     {
         if (!positions)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' requires '{} = 1'", ARGUMENT_POSITION_INCREMENT_GAP, ARGUMENT_POSITIONS);
-
-        if (tokenizer->getType() == ITokenizer::Type::Array)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' is not supported with the `{}` tokenizer",
-                ARGUMENT_POSITION_INCREMENT_GAP, ArrayTokenizer::getExternalName());
 
         if (*position_increment_gap < 1 || *position_increment_gap > MAX_POSITION_INCREMENT_GAP)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be between 1 and {}, but got {}",

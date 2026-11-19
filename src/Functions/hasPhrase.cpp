@@ -170,8 +170,7 @@ void executeMatchPhrase(
     }
 }
 
-/// The elements of an array input are tokenized as the index tokenizes them, and a phrase must lie within one
-/// element. With the `array` tokenizer every element is one token, so a phrase spans elements instead.
+/// A phrase must lie within one element.
 template <typename StringColumn>
 requires std::same_as<StringColumn, ColumnString> || std::same_as<StringColumn, ColumnFixedString>
 void executeMatchPhraseOnArray(
@@ -186,7 +185,6 @@ void executeMatchPhraseOnArray(
 {
     MatchPhraseMatcher matcher(phrase_tokens, failure_table);
     const auto & offsets = col_input.getOffsets();
-    const bool phrase_spans_elements = tokenizer->getType() == ITokenizer::Type::Array;
 
     col_result.resize(input_rows_count);
 
@@ -203,8 +201,7 @@ void executeMatchPhraseOnArray(
             if (elements_nullable && elements_nullable->isNullAt(element_index))
                 continue;
 
-            if (!phrase_spans_elements)
-                matcher.reset();
+            matcher.reset();
 
             std::string_view element = col_elements.getDataAt(element_index);
             forEachToken(*tokenizer, element.data(), element.size(), matcher([&] { col_result[i] = 1; }));

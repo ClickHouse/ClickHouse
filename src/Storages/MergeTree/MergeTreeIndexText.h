@@ -91,8 +91,7 @@ struct MergeTreeIndexTextParams
     size_t posting_list_block_size = 1024 * 1024;
     bool enable_positions = false;
     UInt8 positions_codec = static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor);
-    /// Free positions between the elements of an `Array` row, so that a phrase cannot span two elements.
-    /// 0 for other columns and with the `array` tokenizer, whose phrases span elements.
+    /// Free positions between the elements of an `Array` row; 0 for other columns.
     UInt8 position_increment_gap = 0;
     ASTPtr preprocessor;
     ASTPtr postprocessor;
