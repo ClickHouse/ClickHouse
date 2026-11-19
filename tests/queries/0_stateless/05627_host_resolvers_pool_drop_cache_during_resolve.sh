@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # no-parallel: the failpoint pauses the first resolver created by any thread of the server.
 
 # `SYSTEM CLEAR DNS CACHE` must not be undone by a resolution that started before it:
