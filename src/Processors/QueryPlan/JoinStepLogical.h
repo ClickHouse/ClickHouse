@@ -222,6 +222,8 @@ public:
     /// Swap left and right sides
     void swapInputs();
 
+    static bool isDummyResultColumn(const ActionsDAG::Node & node);
+
     UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
 
