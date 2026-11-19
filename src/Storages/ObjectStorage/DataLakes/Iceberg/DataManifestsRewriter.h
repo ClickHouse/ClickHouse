@@ -53,18 +53,18 @@ public:
         const ManifestFileCacheKeys & data_manifests,
         const std::function<bool(const IcebergPathFromMetadata &)> & skip_file = {});
 
-    size_t getDataFilesCount() const { return data_files_count; }
+    [[nodiscard]] size_t getDataFilesCount() const { return data_files_count; }
 
     /// Whether a collected data file has `key_metadata` (an encrypted data file). A rewrite cannot carry it over,
     /// so the caller must not call `write` then.
-    bool hasEncryptedDataFiles() const { return has_encrypted_data_files; }
+    [[nodiscard]] bool hasEncryptedDataFiles() const { return has_encrypted_data_files; }
 
     /// Whether a collected data file has a partition value, or the partition spec of a collected data file has a
     /// partition type or a source column, that `generateManifestFile` cannot write.
-    bool hasUnsupportedPartitionValues() const { return has_unsupported_partition_values; }
+    [[nodiscard]] bool hasUnsupportedPartitionValues() const { return has_unsupported_partition_values; }
 
     /// The number of manifests `write` produces. `max_entries_per_manifest` is used only with `Grouping::SpanPartitions`.
-    size_t getOutputManifestsCount(size_t max_entries_per_manifest) const;
+    [[nodiscard]] size_t getOutputManifestsCount(size_t max_entries_per_manifest) const;
 
     /// The new manifests, parallel arrays in the form `generateManifestList` takes them.
     struct Result
@@ -117,11 +117,11 @@ private:
     const ResolvedPartitionSpec & resolvePartitionSpec(Int32 spec_id, Int32 files_schema_id);
     /// Whether the transform functions of the partition spec `spec_id` accept its source columns, which reading a
     /// manifest of the spec requires.
-    bool canInstantiatePartitionSpec(Int32 spec_id) const;
+    [[nodiscard]] bool canInstantiatePartitionSpec(Int32 spec_id) const;
     /// Whether the manifest has an entry that is not `DELETED`. Reads only the entry statuses, so it does not need the
     /// partition spec of the manifest.
     static bool hasLiveEntries(const ManifestFileCacheableInfo & manifest_file);
-    Poco::JSON::Object::Ptr getSchemaObjectById(Int32 schema_id) const;
+    [[nodiscard]] Poco::JSON::Object::Ptr getSchemaObjectById(Int32 schema_id) const;
 
     void writeManifest(
         FileNamesGenerator & generator,
