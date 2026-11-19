@@ -744,8 +744,8 @@ details.accordion > summary,
    Sticky sidebar header (search + Ask AI)
    ============================================
 
-   Mintlify's scroll viewport lives directly inside `#sidebar-content`. The
-   viewport's inner wrapper has three children, in order:
+   Mintlify's scroll viewport is the first child of `#sidebar-content`. Its
+   presentation wrapper has three children, in order:
      [0] the logo + dark-mode-toggle row  (div.flex.justify-between.items-center)
      [1] the search + Ask AI row          (div.flex.flex-col.gap-4.mt-6)
      [2] the page navigation              (#navigation-items)
@@ -753,25 +753,25 @@ details.accordion > summary,
    scrollbar continues to work. Pin the logo and search rows within that
    viewport while the navigation scrolls beneath them.
    `#sidebar` is `hidden lg:flex`, so this only affects the desktop sidebar. */
-#sidebar-content > div[role="presentation"] > div[role="presentation"] > div:first-child,
-#sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2) {
+#sidebar-content > div > div[role="presentation"] > div:first-child,
+#sidebar-content > div > div[role="presentation"] > div:nth-child(2) {
     position: sticky;
     z-index: 20;
     background: #ffffff;
 }
 
-#sidebar-content > div[role="presentation"] > div[role="presentation"] > div:first-child {
+#sidebar-content > div > div[role="presentation"] > div:first-child {
     top: 0;
     z-index: 21;
 }
 
-#sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2) {
+#sidebar-content > div > div[role="presentation"] > div:nth-child(2) {
     top: 3.5rem;
 }
 
 /* Cover the complete sticky header, including the space above, between, and
    below its two rows, so menu items cannot show through while scrolling. */
-#sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2)::before {
+#sidebar-content > div > div[role="presentation"] > div:nth-child(2)::before {
     position: absolute;
     z-index: -1;
     top: -5rem;
@@ -783,15 +783,15 @@ details.accordion > summary,
     pointer-events: none;
 }
 
-.dark #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:first-child,
-.dark #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2),
-:is(.dark) #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:first-child,
-:is(.dark) #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2) {
+.dark #sidebar-content > div > div[role="presentation"] > div:first-child,
+.dark #sidebar-content > div > div[role="presentation"] > div:nth-child(2),
+:is(.dark) #sidebar-content > div > div[role="presentation"] > div:first-child,
+:is(.dark) #sidebar-content > div > div[role="presentation"] > div:nth-child(2) {
     background: #151515;
 }
 
-.dark #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2)::before,
-:is(.dark) #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2)::before {
+.dark #sidebar-content > div > div[role="presentation"] > div:nth-child(2)::before,
+:is(.dark) #sidebar-content > div > div[role="presentation"] > div:nth-child(2)::before {
     background: #151515;
 }
 
@@ -4206,6 +4206,7 @@ div:has(> #ch-product-availability) > #ch-page-ask-row {
 /* Shared top-navigation presentation. Menu-specific rules above only arrange
    products, section headings, icons, and partner captions. */
 :root {
+    --ch-icon: #374151; /* gray-700 */
     --ch-nav-text: #374151;
     --ch-nav-strong: #111827;
     --ch-nav-muted: #6b7280;
@@ -4213,11 +4214,15 @@ div:has(> #ch-product-availability) > #ch-page-ask-row {
     --ch-nav-active: rgba(17, 24, 39, 0.08);
 }
 .dark {
+    --ch-icon: #9ca3af; /* gray-400 */
     --ch-nav-text: #b3b3b3;
     --ch-nav-strong: #ffffff;
     --ch-nav-muted: #a3a3a3;
     --ch-nav-hover: rgba(255, 255, 255, 0.05);
     --ch-nav-active: rgba(255, 255, 255, 0.08);
+}
+.ch-icon {
+    color: var(--ch-icon);
 }
 [role="menu"]:has(> .nav-dropdown-item) {
     border-radius: 8px !important;

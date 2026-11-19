@@ -423,8 +423,6 @@ void registerTableFunctionPaimonCluster(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionPaimonCluster>(
         {.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-
 <ExperimentalBadge />
 
 This is an extension to the [paimon](/reference/functions/table-functions/paimon) table function.

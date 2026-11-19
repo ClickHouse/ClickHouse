@@ -256,7 +256,8 @@ SinkToStoragePtr StorageObjectStorageCluster::write(
         configuration->update(object_storage, local_context);
 
     return StorageObjectStorage::createSink(
-        configuration, object_storage, getStorageID(), format_settings, catalog, metadata_snapshot, local_context);
+        configuration, object_storage, getStorageID(), format_settings, catalog, metadata_snapshot, local_context,
+        getPartitionedWriteAccessCheck());
 }
 
 bool StorageObjectStorageCluster::supportsParallelInsert() const
@@ -572,7 +573,9 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         nullptr,
         local_context->getFileProgressCallback(),
         /*ignore_archive_globs=*/false,
-        /*skip_object_metadata=*/true);
+        /*skip_object_metadata=*/true,
+        /*with_tags=*/false,
+        format_settings);
 
     /// Dataset formats (e.g. `Lance`) produce synthetic tasks that carry their own snapshot and fragment metadata.
     /// They are not physical objects in `configuration->format`, so they cannot be split into buckets.
