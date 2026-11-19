@@ -3,7 +3,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Poco/String.h>
 #include <Common/SipHash.h>
-#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/maskURIPassword.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -25,42 +24,14 @@ namespace
     /// of the `HTTP` source, whose values often carry API tokens. The headers are hidden as a whole,
     /// names included: the query is logged before the dictionary source validates its structure,
     /// so a malformed definition must not leak either.
+    /// The `url` and `endpoint` of the `HTTP` source are hidden whole: the userinfo, the path or the query can carry credentials.
     bool isSecretKey(const String & key)
     {
         return key == "password"
             || key == "ssl_ca_pem" || key == "ssl_cert_pem" || key == "ssl_key_pem"
             || key == "sslrootcert_pem" || key == "sslcert_pem" || key == "sslkey_pem"
-            || key == "headers" || key == "header";
-    }
-
-    /// Keys whose value is partly secret: the `uri` of the `MongoDB` source, and the `url` or `endpoint` of the `HTTP` source.
-    bool isPartlySecretKey(const String & key)
-    {
-        return key == "uri" || key == "url" || key == "endpoint";
-    }
-
-    /// Masks the secret part of the value of a key for which `isPartlySecretKey` holds: the password in the `uri`,
-    /// and the password and the sensitive query parameters in the `url` or `endpoint`.
-    /// `value` is the formatted value. Returns whether anything was masked.
-    bool maskPartlySecretValue(const String & key, String & value)
-    {
-        if (key == "uri")
-            return maskURIPassword(&value);
-
-        /// A value that is no string literal can carry the secret in pieces: hide it whole.
-        if (value.size() < 2 || value.front() != '\'' || value.back() != '\'')
-        {
-            value = "'[HIDDEN]'";
-            return true;
-        }
-
-        String url = value.substr(1, value.size() - 2);
-        bool masked = maskURIPassword(&url);
-        String without_parameters = maskSensitiveQueryParametersInURI(url);
-        masked |= without_parameters != url;
-        if (masked)
-            value = "'" + without_parameters + "'";
-        return masked;
+            || key == "headers" || key == "header"
+            || key == "url" || key == "endpoint";
     }
 }
 
@@ -118,24 +89,20 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
         /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
         ostr << "'[HIDDEN]'";
     }
+    else if (!settings.show_secrets && (first == "uri"))
+    {
+        // Hide password from URI in the defention of a dictionary
+        WriteBufferFromOwnString temp_buf;
+        FormatSettings tmp_settings(settings.one_line);
+        FormatState tmp_state;
+        second->format(temp_buf, tmp_settings, tmp_state, frame);
+
+        maskURIPassword(&temp_buf.str());
+        ostr << temp_buf.str();
+    }
     else
     {
-        String masked;
-        if (!settings.show_secrets && isPartlySecretKey(first))
-        {
-            WriteBufferFromOwnString temp_buf;
-            FormatSettings tmp_settings(settings.one_line);
-            FormatState tmp_state;
-            second->format(temp_buf, tmp_settings, tmp_state, frame);
-            masked = temp_buf.str();
-            if (!maskPartlySecretValue(first, masked))
-                masked.clear();
-        }
-
-        if (!masked.empty())
-            ostr << masked;
-        else
-            second->format(ostr, settings, state, frame);
+        second->format(ostr, settings, state, frame);
     }
 
     if (second_with_brackets)
@@ -147,10 +114,11 @@ bool ASTPair::hasSecretParts() const
 {
     if (isSecretKey(first))
         return true;
-    if (isPartlySecretKey(first))
+    /// The `uri` is a secret part only when it carries a password, see `formatImpl`.
+    if (first == "uri")
     {
-        String value = second->formatWithSecretsOneLine();
-        if (maskPartlySecretValue(first, value))
+        String uri = second->formatWithSecretsOneLine();
+        if (maskURIPassword(&uri))
             return true;
     }
     return second->hasSecretParts();
