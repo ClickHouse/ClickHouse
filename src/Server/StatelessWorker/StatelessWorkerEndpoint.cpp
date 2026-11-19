@@ -73,7 +73,7 @@ void readParameters(QueryPlanParameters & parameters, ReadBuffer & in)
     }
 }
 
-void writeExchangeStreams(const std::vector<ExchangeStreamId> & streams, WriteBuffer & out)
+void writeExchangeStreams(const VectorWithMemoryTracking<ExchangeStreamId> & streams, WriteBuffer & out)
 {
     writeVarUInt(streams.size(), out);
     for (const auto & stream_id : streams)
@@ -84,7 +84,7 @@ void writeExchangeStreams(const std::vector<ExchangeStreamId> & streams, WriteBu
     }
 }
 
-void readExchangeStreams(std::vector<ExchangeStreamId> & streams, ReadBuffer & in)
+void readExchangeStreams(VectorWithMemoryTracking<ExchangeStreamId> & streams, ReadBuffer & in)
 {
     size_t streams_size = 0;
     readVarUInt(streams_size, in);
@@ -182,7 +182,7 @@ void readSettingsChanges(SettingsChanges & settings_changes, ReadBuffer & in)
     }
 }
 
-void writeRuntimeFilterDescriptors(const std::vector<RuntimeFilterReceiveDescriptor> & descriptors, UInt64 version, WriteBuffer & out)
+void writeRuntimeFilterDescriptors(const VectorWithMemoryTracking<RuntimeFilterReceiveDescriptor> & descriptors, UInt64 version, WriteBuffer & out)
 {
     if (version < DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS)
     {
@@ -207,7 +207,7 @@ void writeRuntimeFilterDescriptors(const std::vector<RuntimeFilterReceiveDescrip
     }
 }
 
-void readRuntimeFilterDescriptors(std::vector<RuntimeFilterReceiveDescriptor> & descriptors, UInt64 version, ReadBuffer & in)
+void readRuntimeFilterDescriptors(VectorWithMemoryTracking<RuntimeFilterReceiveDescriptor> & descriptors, UInt64 version, ReadBuffer & in)
 {
     if (version < DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS)
         return;
