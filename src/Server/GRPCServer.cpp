@@ -1749,32 +1749,42 @@ namespace
     void Call::startReadingQueryInfo()
     {
         reading_query_info.set(true);
-        call_responder->read(next_query_info_while_reading, [this](bool ok)
+        /// If the read is not submitted (e.g. registering its callback throws), nothing would reset the flag,
+        /// and `close` would wait for it forever.
+        try
         {
-            /// Called on queue_thread.
-            if (ok)
+            call_responder->read(next_query_info_while_reading, [this](bool ok)
             {
-                const auto & nqi = next_query_info_while_reading;
-                if (check_query_info_contains_cancel_only)
+                /// Called on queue_thread.
+                if (ok)
                 {
-                    if (!nqi.query().empty() || !nqi.query_id().empty() || !nqi.settings().empty() || !nqi.database().empty()
-                        || !nqi.input_data().empty() || !nqi.input_data_delimiter().empty() || !nqi.output_format().empty()
-                        || !nqi.user_name().empty() || !nqi.password().empty() || !nqi.quota().empty() || !nqi.session_id().empty())
+                    const auto & nqi = next_query_info_while_reading;
+                    if (check_query_info_contains_cancel_only)
                     {
-                        LOG_WARNING(log, "Cannot add extra information to a query which is already executing. Only the 'cancel' field can be set");
+                        if (!nqi.query().empty() || !nqi.query_id().empty() || !nqi.settings().empty() || !nqi.database().empty()
+                            || !nqi.input_data().empty() || !nqi.input_data_delimiter().empty() || !nqi.output_format().empty()
+                            || !nqi.user_name().empty() || !nqi.password().empty() || !nqi.quota().empty() || !nqi.session_id().empty())
+                        {
+                            LOG_WARNING(log, "Cannot add extra information to a query which is already executing. Only the 'cancel' field can be set");
+                        }
                     }
+                    if (nqi.cancel())
+                        want_to_cancel = true;
                 }
-                if (nqi.cancel())
-                    want_to_cancel = true;
-            }
-            else
-            {
-                /// We cannot throw an exception right here because this code is executed
-                /// on queue_thread.
-                failed_to_read_query_info = true;
-            }
+                else
+                {
+                    /// We cannot throw an exception right here because this code is executed
+                    /// on queue_thread.
+                    failed_to_read_query_info = true;
+                }
+                reading_query_info.set(false);
+            });
+        }
+        catch (...)
+        {
             reading_query_info.set(false);
-        });
+            throw;
+        }
     }
 
     /// The memory held by a query info buffered by `readAheadQueryInfo`. Not only `input_data` counts:
