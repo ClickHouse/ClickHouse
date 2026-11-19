@@ -89,12 +89,15 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::incrementForLogMessage
     ProfileEvents::incrementLoggerElapsedNanoseconds
     ProfileEvents::getName
+    ProfileEvents::getByName
+    ProfileEvents::tryGetByName
     ProfileEvents::Timer
     ProfileEvents::Type
     ProfileEvents::TypeEnum
     ProfileEvents::ValueType
     ProfileEvents::dumpToMapColumn
     ProfileEvents::getProfileEvents
+    ProfileEvents::subtractIncrements
     ProfileEvents::ThreadIdToCountersSnapshot
     ProfileEvents::LOCAL_NAME
     ProfileEvents::keeper_profile_events
@@ -278,11 +281,14 @@ directories_to_lint_std_containers_usages=(
     src/Functions
     src/IO
     src/Loggers
+    src/Processors/Formats
     src/Processors/Merges
     src/Processors/Executors
     src/Processors/Sources
+    src/Processors/Transforms
     src/QueryPipeline
     src/TableFunctions
+    src/WindowFunctions
 )
 
 for dir in "${directories_to_lint_std_containers_usages[@]}"; do
@@ -422,7 +428,7 @@ join -v1 <(grep '\.h$' "$STYLE_TMPDIR/nobase_all" | grep -v 'utils/wasm-parser/s
 # 14: Abbreviation checks and error message style
 {
 # Wrong spelling of abbreviations, e.g. SQL is right, Sql is wrong. XMLHttpRequest is very wrong.
-xargs < "$STYLE_TMPDIR/all_excluded" rg -H -n 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -E 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ai::JsonValue|IcebergWrites|arrow::flight|SqlInfo|CommandGetSqlInfo|CommandGetDbSchemas|commandGetDbSchemas|ArrowFlightSql|FlightSql.html|TcpExtListenOverflows|WhenToUseJson' | $FILTER_DOCS &&
+xargs < "$STYLE_TMPDIR/all_excluded" rg -H -n 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -E 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ai::JsonValue|IcebergWrites|arrow::flight|SqlInfo|CommandGetSqlInfo|CommandGetDbSchemas|commandGetDbSchemas|ArrowFlightSql|FlightSql.html|TcpExtListenOverflows|WhenToUseJson|makeTcpConnectionFactory|TcpConnectionOptions' | $FILTER_DOCS &&
     echo "^ Abbreviations such as SQL, XML, HTTP, should be in all caps. For example, SQL is right, Sql is wrong. XMLHttpRequest is very wrong."
 
 xargs < "$STYLE_TMPDIR/all_excluded" grep -F -i 'ErrorCodes::LOGICAL_ERROR, "Logical error:' &&
