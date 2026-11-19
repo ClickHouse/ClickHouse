@@ -14,6 +14,7 @@
 namespace DB
 {
 
+class AccessFlags;
 class Context;
 
 /** Interface for table functions.
@@ -103,6 +104,13 @@ public:
     /// in readonly mode and the query is not an insert.
     void checkCreateTemporaryTableAccess(ContextPtr context, bool is_insert_query) const;
 
+    /// `uri` normalized by Poco; an unparsable URI becomes empty.
+    static String normalizeURIForAccessCheck(const String & uri);
+
+    /// Checks the source grant for `uri`; a location that no filter would see as accessed needs the whole-source grant.
+    static void checkSourceAccessForURI(
+        const ContextPtr & context, const AccessFlags & flags, AccessTypeObjects::Source source, const String & uri);
+
     virtual ~ITableFunction() = default;
 
 protected:
@@ -135,8 +143,6 @@ protected:
         static const String empty;
         return empty;
     }
-
-    String getFunctionURINormalized() const;
 };
 
 /// Properties of table function that are independent of argument types and parameters.
