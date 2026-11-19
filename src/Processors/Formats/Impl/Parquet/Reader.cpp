@@ -5419,8 +5419,7 @@ bool Reader::canCacheFilteredColumn(size_t primitive_idx) const
     const PrimitiveColumnInfo & pc = primitive_columns.at(primitive_idx);
     if (pc.idx_in_output_block >= columns_cache_identities.size() || columns_cache_identities[pc.idx_in_output_block] == 0)
         return false;
-    /// Decoded into values only this query may see: '' for strings its filter rejects, or a `ColumnReplicated`.
-    if (pc.string_value_filter || pc.decode_dictionary_as_replicated || pc.levels.back().rep != 0)
+    if (pc.levels.back().rep != 0)
         return false;
     const auto & output_idx = sample_block_to_output_columns_idx.at(pc.idx_in_output_block);
     if (!output_idx.has_value())
@@ -5504,7 +5503,11 @@ void Reader::lookUpFilteredColumns(const RowGroup & row_group, RowSubgroup & row
             ++misses;
         }
 
-        if (columns_cache_writes_possible && canWriteToColumnsCache() && cache.shouldAdmit())
+        /// Decoded into values only this read may see: '' for strings its filter rejects, or a `ColumnReplicated`.
+        /// An entry holds the file's values, which any read may take.
+        const PrimitiveColumnInfo & pc = primitive_columns[i];
+        if (columns_cache_writes_possible && canWriteToColumnsCache() && !pc.string_value_filter && !pc.decode_dictionary_as_replicated
+            && cache.shouldAdmit())
             subchunk.filtered_cache_identity = identity;
     }
 

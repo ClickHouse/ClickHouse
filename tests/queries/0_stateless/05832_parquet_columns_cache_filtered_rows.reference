@@ -10,7 +10,12 @@ default expression	4	42857	6422058992	43
 null as default	4	42857	6422057186	43
 nulls rejected	4	42814	6422057186
 nullable	4	42857	6422143043	43
+V1	5	178	402365193804445574
+V2	5	314	2873298303706383979
 --- the cache was used
 1	1
+--- the read-only reads took the filtered string column from the cache
+V1_2	1	1
+V2_2	1	1
 --- an entry of the rows that passed holds fewer rows than its range
 1	1

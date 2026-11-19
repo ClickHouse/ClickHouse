@@ -897,7 +897,7 @@ private:
     void addToColumnsCacheWrite(
         RowGroup & row_group, const RowSubgroup & row_subgroup, size_t idx_in_output_block, ColumnPtr & column, bool has_substituted_defaults);
     void withdrawColumnsCacheWrite(RowGroup::ColumnsCacheWrite & write) const;
-    /// Whether the primitive column can be taken from and written to the columns cache by its rows, see `lookUpFilteredColumns`.
+    /// Whether the primitive column can be taken from the columns cache by its rows, see `lookUpFilteredColumns`.
     bool canCacheFilteredColumn(size_t primitive_idx) const;
     void addFilteredColumnToCache(
         const RowGroup & row_group, const RowSubgroup & row_subgroup, size_t idx_in_output_block, UInt128 identity, ColumnPtr & column) const;

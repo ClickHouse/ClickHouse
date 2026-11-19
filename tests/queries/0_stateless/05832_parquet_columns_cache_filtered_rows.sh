@@ -14,17 +14,18 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet"
 FILE_PATH="${USER_FILES_PATH}/${FILE}"
 
-# Two row groups of 200000 and 100000 rows, NULLs in `n` every 1000 rows.
+# Two row groups, NULLs in `n` every 1000 rows, 1000 distinct values in `t`.
 $CLICKHOUSE_CLIENT -q "
     INSERT INTO FUNCTION file('${FILE}', Parquet)
-    SELECT number AS k, number % 7 AS f, toString(number * 7919) AS s, if(number % 1000 = 999, NULL, number) AS n, toInt16(number % 300) AS w
+    SELECT number AS k, number % 7 AS f, toString(number * 7919) AS s, if(number % 1000 = 999, NULL, number) AS n, toInt16(number % 300) AS w,
+        concat(repeat('x', 40), toString(number % 1000)) AS t, [toUInt8(number % 3)] AS a
     FROM numbers(300000)
     SETTINGS output_format_parquet_row_group_size = 200000, engine_file_truncate_on_insert = 1"
 # Only a file that has not been modified for a few seconds is cached.
 touch -d "1 minute ago" "${FILE_PATH}"
 
-SOURCE="file('${FILE}', Parquet, 'k UInt64, f UInt64, s String, n Nullable(UInt64), w Int16')"
-SOURCE_NOT_NULL="file('${FILE}', Parquet, 'k UInt64, f UInt64, s String, n UInt64, w Int16')"
+SOURCE="file('${FILE}', Parquet, 'k UInt64, f UInt64, s String, n Nullable(UInt64), w Int16, t String, a Array(UInt8)')"
+SOURCE_NOT_NULL="file('${FILE}', Parquet, 'k UInt64, f UInt64, s String, n UInt64, w Int16, t String, a Array(UInt8)')"
 SETTINGS="enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 1, columns_cache_max_bytes_to_write_to_cache = 0, columns_cache_max_estimated_bytes_to_write_to_cache = 0, optimize_move_to_prewhere = 1, use_query_condition_cache = 0"
 
 # Other tests may have lowered the admission probability of the cache; dropping the cache resets it.
@@ -63,12 +64,41 @@ check "null as default" "SELECT count(), sum(n), countIf(n = 0) FROM ${SOURCE_NO
 check "nulls rejected" "SELECT count(), sum(n) FROM ${SOURCE_NOT_NULL} WHERE f = 3 AND k % 1000 != 999" "input_format_null_as_default = 0"
 check "nullable" "SELECT count(), sum(n), countIf(n IS NULL) FROM ${SOURCE} WHERE f = 4"
 
+# A read that cannot write to the cache decodes a string column of `PREWHERE` with the filter of its condition, but still
+# takes it from the entries another read has written. Once without the cache, once writing, then three times read-only.
+check_read_only()
+{
+    for RUN in 0 1 2 2 2; do
+        case $RUN in
+            0) MODE="${SETTINGS}, use_columns_cache = 0" ;;
+            1) MODE="${SETTINGS}, use_columns_cache = 1" ;;
+            2) MODE="${SETTINGS/enable_writes_to_columns_cache = 1/enable_writes_to_columns_cache = 0}, use_columns_cache = 1" ;;
+        esac
+        $CLICKHOUSE_CLIENT --log_comment "${CLICKHOUSE_TEST_UNIQUE_NAME}_$1_${RUN}" -q "$2 SETTINGS ${MODE}, apply_string_filters_during_scan = 1, allow_reorder_prewhere_conditions = 1"
+    done | sort | uniq -c | sed -e "s/^ *\([0-9]*\) /$1\t\1\t/"
+}
+
+# `t` is the only input of the last step, so it is also decoded as dictionary indexes, except where few rows pass (from
+# `k = 100000`) and the dictionary does not pay off.
+check_read_only "V1" "SELECT count(), sum(cityHash64(t)) FROM ${SOURCE} PREWHERE f + if(k < 100000 OR k % 11 = 0, 0, 100) = 3 AND t LIKE '%x77%'"
+# The last step reads an array, which is never cached.
+check_read_only "V2" "SELECT count(), sum(cityHash64(t)) FROM ${SOURCE} PREWHERE f = 3 AND t LIKE '%x77%' AND a[1] < 2"
+
 echo "--- the cache was used"
 $CLICKHOUSE_CLIENT -q "
     SYSTEM FLUSH LOGS query_log;
     SELECT sum(ProfileEvents['ParquetFilteredColumnsCacheHits']) > 0, sum(ProfileEvents['ParquetFilteredColumnsCacheMisses']) > 0
     FROM system.query_log
     WHERE log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_1' AND type = 'QueryFinish' AND current_database = currentDatabase()"
+
+echo "--- the read-only reads took the filtered string column from the cache"
+$CLICKHOUSE_CLIENT -q "
+    SELECT replaceOne(log_comment, '${CLICKHOUSE_TEST_UNIQUE_NAME}_', ''),
+        sum(ProfileEvents['ParquetFilteredColumnsCacheHits']) > 0, sum(ProfileEvents['StringValueFilterValuesChecked']) = 0
+    FROM system.query_log
+    WHERE log_comment IN ('${CLICKHOUSE_TEST_UNIQUE_NAME}_V1_2', '${CLICKHOUSE_TEST_UNIQUE_NAME}_V2_2') AND type = 'QueryFinish'
+        AND current_database = currentDatabase()
+    GROUP BY log_comment ORDER BY log_comment"
 
 echo "--- an entry of the rows that passed holds fewer rows than its range"
 $CLICKHOUSE_CLIENT -q "
