@@ -1,8 +1,10 @@
--- make_distributed_plan auto-disables use_skip_indexes_on_data_read and compile_expressions
--- (issue #109476), including on worker tasks, whose contexts are rebuilt from the initiator's
--- user-level settings and would otherwise keep the defaults (both are true by default). The
--- settings are enabled explicitly here on purpose: the override is unconditional, because a
--- worker cannot honor them regardless of how they were set.
+-- make_distributed_plan auto-disables compile_expressions (issue #109476), including on worker
+-- tasks, whose contexts are rebuilt from the initiator's user-level settings and would otherwise
+-- keep the default (true). The setting is enabled explicitly here on purpose: the override is
+-- unconditional, because a worker cannot honor it regardless of how it was set.
+-- use_skip_indexes_on_data_read is supported and stays enabled on the worker tasks. With a JOIN the
+-- coordinator applies the skip index in its index analysis, and the workers apply it again while
+-- reading: the result must still match single-node.
 
 DROP TABLE IF EXISTS t_dp_big;
 DROP TABLE IF EXISTS t_dp_small;
@@ -33,7 +35,7 @@ SELECT count(), sum(b.v + 1) FROM t_dp_big AS b INNER JOIN t_dp_small AS s ON b.
     WHERE b.v < 50000
     SETTINGS make_distributed_plan = 0;
 
-SELECT 'worker tasks run with the unsupported settings disabled';
+SELECT 'worker tasks keep use_skip_indexes_on_data_read and run with compile_expressions disabled';
 SYSTEM FLUSH LOGS query_log;
 -- Worker task entries log the task id ('main', 'stage_N_M' - not SQL) as the query text and carry a
 -- query_id of their own ('<plan uuid>::<task id>'), rooted at the initiator through initial_query_id;
