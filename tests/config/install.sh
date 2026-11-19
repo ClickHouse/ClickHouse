@@ -42,12 +42,15 @@ REMOTE_DATABASE_DISK=0
 LLVM_COVERAGE=0
 BUILD_TYPE_CONFIGS_ONLY=0
 DEFAULT_COMPRESSION_CODEC=""
+USE_PARALLEL_REPLICAS_PLAN_BASED=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --fast-test) FAST_TEST=1 && EXPORT_S3_STORAGE_POLICIES=0 ;;
         --s3-storage) EXPORT_S3_STORAGE_POLICIES=1 && USE_S3_STORAGE_FOR_MERGE_TREE=1 && RANDOMIZE_OBJECT_KEY_TYPE=1 ;;
         --parallel-rep) USE_PARALLEL_REPLICAS=1 ;;
+        --parallel-rep-plan-based) USE_PARALLEL_REPLICAS_PLAN_BASED=1 ;;
+        --autopr) USE_AUTOMATIC_PARALLEL_REPLICAS=1 ;;
         --db-replicated) USE_DATABASE_REPLICATED=1 ;;
         --distributed-plan) USE_DISTRIBUTED_PLAN=1 ;;
         --distributed-cache) USE_DISTRIBUTED_CACHE=1 ;;
@@ -259,6 +262,25 @@ if check_clickhouse_version 25.10; then
     ln -sf $SRC_PATH/config.d/keeper_max_request_size.xml $DEST_SERVER_PATH/config.d/
 fi
 ln -sf $SRC_PATH/config.d/logging_no_rotate.xml $DEST_SERVER_PATH/config.d/
+# The server isolates its filesystem in a new mount namespace (and a user namespace, if it lacks `CAP_SYS_ADMIN`).
+# A container that is not privileged, such as the one of the fast test, does not allow that, and the setting
+# stays at its default, `disabled`, there.
+if check_clickhouse_version 26.11 && command -v unshare >/dev/null \
+    && { unshare --mount true 2>/dev/null || unshare --user --map-root-user --mount true 2>/dev/null; }; then
+    ln -sf $SRC_PATH/config.d/filesystem_isolation.xml $DEST_SERVER_PATH/config.d/
+    # Many tests make files in the directory of the tests and in `CLICKHOUSE_TMP` inside it visible to the server,
+    # with symbolic links from `user_files` or by passing their paths, so the directory is kept visible.
+    if [ -d "$SRC_PATH/../queries" ]; then
+        QUERIES_PATH="$(cd "$SRC_PATH/../queries" && pwd -P)"
+        cat > $DEST_SERVER_PATH/config.d/filesystem_isolation_queries_path.xml <<EOF
+<clickhouse>
+    <filesystem_isolation_paths>
+        <read_write>$QUERIES_PATH</read_write>
+    </filesystem_isolation_paths>
+</clickhouse>
+EOF
+    fi
+fi
 ln -sf $SRC_PATH/config.d/merge_tree.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/lost_forever_check.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/tcp_with_proxy.xml $DEST_SERVER_PATH/config.d/
@@ -660,6 +682,16 @@ ln -sf $SRC_PATH/config.d/storage_conf_local.xml $DEST_SERVER_PATH/config.d/
 if [[ "$USE_PARALLEL_REPLICAS" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/enable_parallel_replicas.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/enable_parallel_replicas.xml $DEST_SERVER_PATH/config.d/
+fi
+
+if [[ "$USE_PARALLEL_REPLICAS_PLAN_BASED" == "1" ]]; then
+    ln -sf $SRC_PATH/users.d/enable_parallel_replicas_plan_based.xml $DEST_SERVER_PATH/users.d/
+fi
+
+# The `parallel_replicas` cluster this profile points at is defined in config.d/clusters.xml,
+# which is always installed, so no extra cluster config is linked here.
+if [[ "$USE_AUTOMATIC_PARALLEL_REPLICAS" == "1" ]]; then
+    ln -sf $SRC_PATH/users.d/enable_automatic_parallel_replicas.xml $DEST_SERVER_PATH/users.d/
 fi
 
 if [[ "$USE_ASYNC_INSERT" == "1" ]]; then
