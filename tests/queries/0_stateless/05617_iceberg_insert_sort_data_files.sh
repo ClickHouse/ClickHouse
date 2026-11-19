@@ -29,7 +29,8 @@ report()
 {
     local table="t_${CLICKHOUSE_DATABASE}_$1"
     local sorted tagged
-    sorted=$(${CLICKHOUSE_CLIENT} --max_threads=1 --query "
+    # The reader returns row groups in any order unless asked to preserve it.
+    sorted=$(${CLICKHOUSE_CLIENT} --max_threads=1 --input_format_parquet_preserve_order=1 --query "
         SELECT count(), countIf(sorted) FROM (SELECT groupArray($2) AS keys, keys = $3(keys) AS sorted FROM ${table} GROUP BY _file)
         FORMAT CSV")
     tagged=$(${CLICKHOUSE_CLIENT} --query "

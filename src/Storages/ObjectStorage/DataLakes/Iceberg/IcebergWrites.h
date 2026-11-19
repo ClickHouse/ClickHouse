@@ -196,13 +196,13 @@ private:
     SharedHeader sample_block;
     std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
     /// The sorted chunks of a partition's next data file, merged when it is written.
-    struct PendingFile
+    struct SortedPendingFile
     {
         Chunks sorted_chunks;
         size_t rows = 0;
         size_t bytes = 0;
     };
-    std::unordered_map<ChunkPartitioner::PartitionKey, PendingFile, ChunkPartitioner::PartitionKeyHasher> pending_file_per_partition_key;
+    std::unordered_map<ChunkPartitioner::PartitionKey, SortedPendingFile, ChunkPartitioner::PartitionKeyHasher> sorted_pending_file_per_partition_key;
     /// Bytes of all pending files; writing the largest early bounds it by `iceberg_insert_max_sort_buffer_bytes`.
     size_t pending_bytes = 0;
     ObjectStoragePtr object_storage;
@@ -222,7 +222,7 @@ private:
     Int64 total_chunks_size = 0;
 
     MultipleFileWriter & getWriter(const ChunkPartitioner::PartitionKey & partition_key);
-    void writePendingFile(const ChunkPartitioner::PartitionKey & partition_key, PendingFile & pending_file);
+    void writePendingFile(const ChunkPartitioner::PartitionKey & partition_key, SortedPendingFile & pending_file);
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();

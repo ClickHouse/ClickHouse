@@ -1285,44 +1285,31 @@ static Columns withoutSortColumns(Columns columns, size_t num_columns)
     return columns;
 }
 
-/// Whether ClickHouse orders every key of the default sort order as Iceberg does, so data files sorted by it can
-/// carry its `sort_order_id`. `bucket` and the time transforms give integers; for `identity` and `truncate` the
-/// source type decides; other transforms, such as `void`, are not tagged. ClickHouse orders floating-point numbers
-/// differently (NaN goes by the null order, -0.0 equals +0.0; Iceberg puts NaN last and -0.0 first) and UUIDs (it
-/// compares the second half first), and truncates `binary`, read as `String`, by UTF-8 characters rather than bytes.
-/// Requires a non-empty sorting key: the default sort order then exists and its transforms parse.
+/// ClickHouse orders floats and UUIDs differently from Iceberg, and truncates `binary` by characters, not bytes.
+static bool isOrderedAsInIceberg(const String & transform, const String & type)
+{
+    if (transform == "icebergBucket" || transform == "icebergYear" || transform == "icebergMonth" || transform == "icebergDay"
+        || transform == "icebergHour")
+        return true;
+    if (transform != "identity" && transform != "icebergTruncate")
+        return false;
+    if (type == Iceberg::f_binary)
+        return transform == "identity";
+    return type == Iceberg::f_boolean || type == Iceberg::f_int || type == Iceberg::f_long || type == Iceberg::f_bigint
+        || type == Iceberg::f_date || type == Iceberg::f_time || type.starts_with("timestamp") || type == Iceberg::f_string
+        || type.starts_with("decimal(") || type.starts_with("fixed[");
+}
+
 static bool canTagSortOrder(const Poco::JSON::Object::Ptr & metadata, const Poco::JSON::Object::Ptr & schema)
 {
-    static const std::unordered_set<std::string_view> ordered_types{
-        Iceberg::f_boolean, Iceberg::f_int, Iceberg::f_long, Iceberg::f_bigint, Iceberg::f_date, Iceberg::f_time, Iceberg::f_timestamp,
-        Iceberg::f_timestamptz, Iceberg::f_timestamp_ns, Iceberg::f_timestamptz_ns, Iceberg::f_string};
     const auto types = IcebergSchemaProcessor::collectIcebergPrimitiveTypesById(schema->getArray(Iceberg::f_fields));
     auto sort_fields = Iceberg::getDefaultSortOrderFields(metadata);
     for (UInt32 i = 0; i < sort_fields->size(); ++i)
     {
         auto field = sort_fields->getObject(i);
-        /// Parsed rather than matched, as the transform name is case-insensitive.
         auto transform = Iceberg::parseTransformAndArgument(field->getValue<String>(Iceberg::f_transform));
-        if (!transform)
-            return false;
-        const String & name = transform->transform_name;
-        if (name == "icebergBucket" || name == "icebergYear" || name == "icebergMonth" || name == "icebergDay" || name == "icebergHour")
-            continue;
-        const bool truncate = name == "icebergTruncate";
-        if (!truncate && name != "identity")
-            return false;
-
-        auto it = types.find(field->getValue<Int64>(Iceberg::f_source_id));
-        if (it == types.end())
-            return false;
-        const String & type = it->second;
-        if (type == Iceberg::f_binary)
-        {
-            if (truncate)
-                return false;
-            continue;
-        }
-        if (!ordered_types.contains(type) && !type.starts_with("decimal(") && !type.starts_with("fixed["))
+        auto type = types.find(field->getValue<Int64>(Iceberg::f_source_id));
+        if (!transform || type == types.end() || !isOrderedAsInIceberg(transform->transform_name, type->second))
             return false;
     }
     return true;
@@ -1467,16 +1454,16 @@ void IcebergStorageSink::consume(Chunk & chunk)
         {
             if (!part_chunk.hasRows())
                 continue;
-            auto & pending_file = pending_file_per_partition_key[partition_key];
-            /// Uncompressed, so it bounds only memory; the writer ends files at the compressed byte limit.
-            const size_t chunk_bytes = Chunk(withoutSortColumns(part_chunk.getColumns(), start_columns_size), part_chunk.getNumRows()).bytes();
+            auto & pending_file = sorted_pending_file_per_partition_key[partition_key];
+            /// Uncompressed, sort-key columns included: bounds memory only.
+            const size_t chunk_bytes = part_chunk.bytes();
             if (pending_file.rows && pending_file.rows + part_chunk.getNumRows() > max_rows_in_data_file)
                 writePendingFile(partition_key, pending_file);
-            /// Bounds memory across partitions: write the largest pending files, as smaller sorted files.
+            /// Over the cap: write the largest pending file of any partition, which frees the most memory per file.
             while (max_sort_buffer_bytes && pending_bytes && pending_bytes + chunk_bytes > max_sort_buffer_bytes)
             {
                 auto largest = std::max_element(
-                    pending_file_per_partition_key.begin(), pending_file_per_partition_key.end(),
+                    sorted_pending_file_per_partition_key.begin(), sorted_pending_file_per_partition_key.end(),
                     [](const auto & lhs, const auto & rhs) { return lhs.second.bytes < rhs.second.bytes; });
                 writePendingFile(largest->first, largest->second);
             }
@@ -1515,7 +1502,7 @@ MultipleFileWriter & IcebergStorageSink::getWriter(const ChunkPartitioner::Parti
     return writer_per_partition_key.emplace(partition_key, std::move(writer)).first->second;
 }
 
-void IcebergStorageSink::writePendingFile(const ChunkPartitioner::PartitionKey & partition_key, PendingFile & pending_file)
+void IcebergStorageSink::writePendingFile(const ChunkPartitioner::PartitionKey & partition_key, SortedPendingFile & pending_file)
 {
     /// A pending file becomes one data file; only the byte limit splits it, into sorted pieces.
     auto & writer = getWriter(partition_key);
@@ -1547,7 +1534,7 @@ void IcebergStorageSink::onFinish()
         return;
     }
 
-    for (auto & [partition_key, pending_file] : pending_file_per_partition_key)
+    for (auto & [partition_key, pending_file] : sorted_pending_file_per_partition_key)
         if (pending_file.rows)
             writePendingFile(partition_key, pending_file);
     finalizeBuffers();
