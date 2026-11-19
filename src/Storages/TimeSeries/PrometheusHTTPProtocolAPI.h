@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/Logger_fwd.h>
-#include <Common/Stopwatch.h>
 #include <Core/Names.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
@@ -15,6 +14,7 @@ namespace DB
 class StorageTimeSeries;
 class PrometheusQueryTree;
 class PullingAsyncPipelineExecutor;
+class QueryStatus;
 enum class PrometheusQueryResultType;
 
 namespace PrometheusQueryToSQL
@@ -131,16 +131,16 @@ private:
         const Strings & infos);
 
     /// Runs the probes of the annotations and formats them like Annotations.AsStrings() in Prometheus.
-    /// The probes share the execution time limit of the request with the query: `execution_watch` is started with the request.
+    /// The probes are stopped when the query of the request (`request_status`) is killed or runs out of its execution time.
     void evaluateAnnotations(
         const PrometheusQueryToSQL::Annotations & annotations,
         const String & promql_query,
-        const Stopwatch & execution_watch,
+        QueryStatus & request_status,
         Strings & warnings,
         Strings & infos);
 
     /// Returns the column `name` of an annotation probe.
-    Strings executeAnnotationProbe(const ASTPtr & probe, const Stopwatch & execution_watch);
+    Strings executeAnnotationProbe(const ASTPtr & probe, QueryStatus & request_status);
 
     /// Helper methods.
     void writeQueryResponseHeader(WriteBuffer & response, PrometheusQueryResultType result_type);

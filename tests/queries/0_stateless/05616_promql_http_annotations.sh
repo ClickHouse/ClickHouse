@@ -172,14 +172,13 @@ instant $T 'rate(foo[5m])' --data-urlencode 'filter=value > 0'
 instant $T 'rate(foo[5m])' --data-urlencode 'order=value'
 instant $T 'rate(foo[5m])' --data-urlencode 'sort=-value' --data-urlencode 'limit=1' --data-urlencode 'offset=1'
 
-echo "--- the annotation probes run within what is left of the execution time of the request"
+echo "--- the annotation probes keep the execution time limit of the request, which is checked on the request's status"
 instant $T 'rate(foo[5m]) + rate(foo[10m])' --data-urlencode 'max_execution_time=1234' --data-urlencode "log_comment=${CLICKHOUSE_DATABASE}_time_limit"
 # The query log entries are written after the HTTP response is sent, so retry until they appear.
 for _ in {1..60}; do
     result=$($CLICKHOUSE_CLIENT -q "
 SYSTEM FLUSH LOGS query_log;
-SELECT countIf(query LIKE '%arrayExists%') > 0, countIf(query LIKE '%arrayExists%' AND toFloat64(Settings['max_execution_time']) < 1234),
-    countIf(query NOT LIKE '%arrayExists%' AND Settings['max_execution_time'] = '1234')
+SELECT countIf(query LIKE '%arrayExists%') > 0, countIf(Settings['max_execution_time'] != '1234')
 FROM system.query_log WHERE type = 'QueryFinish' AND log_comment = '${CLICKHOUSE_DATABASE}_time_limit'")
     [[ $result == 1* ]] && break
     sleep 0.5
@@ -189,9 +188,10 @@ echo "$result"
 echo "--- the annotation probe's query result cache write is finalized"
 # The probe's SELECT is eligible for the query result cache. If its write is not finalized, the
 # pending entry is discarded when the probe's pipeline is destroyed and the entry never appears.
-instant $T 'rate(foo[5m])' --data-urlencode 'use_query_cache=1' --data-urlencode 'query_cache_nondeterministic_function_handling=save'
+# The execution time limit doesn't change the cache key of the probe between the requests.
+instant $T 'rate(foo[5m])' --data-urlencode 'use_query_cache=1' --data-urlencode 'query_cache_nondeterministic_function_handling=save' --data-urlencode 'max_execution_time=60'
 $CLICKHOUSE_CLIENT -q "SELECT count() AS probe_cache_entries FROM system.query_cache WHERE query LIKE '%${CLICKHOUSE_DATABASE}%' AND query LIKE '%timeSeriesExtractTag%' AND query LIKE '%arrayExists%'" | grep -o '[0-9]*'
-instant $T 'rate(foo[5m])' --data-urlencode 'use_query_cache=1' --data-urlencode 'query_cache_nondeterministic_function_handling=save'
+instant $T 'rate(foo[5m])' --data-urlencode 'use_query_cache=1' --data-urlencode 'query_cache_nondeterministic_function_handling=save' --data-urlencode 'max_execution_time=60'
 # The query log entry is written after the HTTP response is sent, so retry until it appears.
 for _ in {1..60}; do
     usage=$($CLICKHOUSE_CLIENT -q "

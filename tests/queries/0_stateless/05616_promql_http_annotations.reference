@@ -123,10 +123,10 @@ query: rate(foo[5m])
 success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
 query: rate(foo[5m])
 success 1 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
---- the annotation probes run within what is left of the execution time of the request
+--- the annotation probes keep the execution time limit of the request, which is checked on the request's status
 query: rate(foo[5m]) + rate(foo[10m])
 success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:22)"]
-1	2	0
+1	0
 --- the annotation probe's query result cache write is finalized
 query: rate(foo[5m])
 success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]

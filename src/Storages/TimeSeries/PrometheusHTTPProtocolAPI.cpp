@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
+#include <Common/FailPoint.h>
 #include <Common/Hex.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
@@ -37,6 +38,7 @@
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Core/Settings.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <DataTypes/DataTypeString.h>
@@ -64,9 +66,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace FailPoints
+{
+    extern const char prometheus_annotation_probe_pause_before_pull[];
+}
+
 namespace Setting
 {
-    extern const SettingsSeconds max_execution_time;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 promql_max_points_per_series;
     extern const SettingsBool promql_push_down_label_matchers;
 }
@@ -294,9 +301,6 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     const Params & params,
     QueryFinishCallback query_finish_callback)
 {
-    /// The annotation probes and the query of the request share one execution time limit.
-    Stopwatch execution_watch;
-
     PrometheusQueryEvaluationSettings evaluation_settings;
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
     evaluation_settings.time_series_version = time_series_storage->getVersion();
@@ -358,7 +362,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     {
         Strings warnings;
         Strings infos;
-        evaluateAnnotations(annotations, params.promql_query, execution_watch, warnings, infos);
+        evaluateAnnotations(annotations, params.promql_query, *query_context->getProcessListElement(), warnings, infos);
 
         PullingAsyncPipelineExecutor executor(io.pipeline);
 
@@ -383,7 +387,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 void PrometheusHTTPProtocolAPI::evaluateAnnotations(
     const PrometheusQueryToSQL::Annotations & annotations,
     const String & promql_query,
-    const Stopwatch & execution_watch,
+    QueryStatus & request_status,
     Strings & warnings,
     Strings & infos)
 {
@@ -417,7 +421,7 @@ void PrometheusHTTPProtocolAPI::evaluateAnnotations(
 
         auto it = probe_results.find(annotation.probe.get());
         if (it == probe_results.end())
-            it = probe_results.emplace(annotation.probe.get(), executeAnnotationProbe(annotation.probe, execution_watch)).first;
+            it = probe_results.emplace(annotation.probe.get(), executeAnnotationProbe(annotation.probe, request_status)).first;
 
         for (const auto & name : it->second)
         {
@@ -444,8 +448,12 @@ void PrometheusHTTPProtocolAPI::evaluateAnnotations(
         infos.push_back(fmt::format("{} more info annotations omitted", omitted_infos));
 }
 
-Strings PrometheusHTTPProtocolAPI::executeAnnotationProbe(const ASTPtr & probe, const Stopwatch & execution_watch)
+Strings PrometheusHTTPProtocolAPI::executeAnnotationProbe(const ASTPtr & probe, QueryStatus & request_status)
 {
+    /// The probe is a part of the request: it isn't started after the request is killed or has run out of time.
+    if (!request_status.checkTimeLimit())
+        return {};
+
     LOG_TRACE(log, "SQL query to evaluate an annotation:\n{}", probe->formatForLogging());
 
     auto query_context = Context::createCopy(getContext());
@@ -457,13 +465,6 @@ Strings PrometheusHTTPProtocolAPI::executeAnnotationProbe(const ASTPtr & probe, 
     /// The settings shaping the public result don't apply to the probe, whose only column is `name`.
     query_context->resetSettingsToDefaultValue({"filter", "select", "order", "sort", "limit", "offset", "page"});
     query_context->setHTTPCombinedFilter({});
-
-    /// The probe runs within what is left of the execution time of the request.
-    if (const Int64 max_execution_time_us = query_context->getSettingsRef()[Setting::max_execution_time].totalMicroseconds())
-    {
-        const Int64 left_us = std::max<Int64>(max_execution_time_us - static_cast<Int64>(execution_watch.elapsedMicroseconds()), 1);
-        query_context->setSetting("max_execution_time", Field(static_cast<Float64>(left_us) / 1e6));
-    }
 
     /// The probe rows only build the annotation text: they must not hit the request's public result-size limits,
     /// while the helper work keeps running under the request's resource limits.
@@ -482,11 +483,17 @@ Strings PrometheusHTTPProtocolAPI::executeAnnotationProbe(const ASTPtr & probe, 
     try
     {
         PullingAsyncPipelineExecutor executor(io.pipeline);
+        FailPointInjection::pauseFailPoint(FailPoints::prometheus_annotation_probe_pause_before_pull);
+        /// The probe has its own query id, so `KILL QUERY` and the execution time limit of the request are checked between the pulls.
+        /// Throws if the request is killed or has run out of time with `timeout_overflow_mode = 'throw'`; with 'break' the probe is cut off.
+        const UInt64 check_interval_ms = std::max<UInt64>(100, query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
+        bool cut_off = false;
         Block block;
-        while (executor.pull(block))
+        while (!cut_off && executor.pull(block, check_interval_ms))
         {
+            cut_off = !request_status.checkTimeLimit();
             /// pull() can return an empty block without columns, as writeQueryResponse() also expects.
-            if (!block.rows())
+            if (cut_off || !block.rows())
                 continue;
             const auto & column = block.getByName("name").column;
             for (size_t i = 0; i != column->size(); ++i)
@@ -495,7 +502,9 @@ Strings PrometheusHTTPProtocolAPI::executeAnnotationProbe(const ASTPtr & probe, 
 
         /// Store the buffered result in the query result cache now (no-op if no cache writers exist in the pipeline):
         /// the executor's destructor cancels the pipeline processors, after which the pending write would be discarded.
-        io.pipeline.finalizeWriteInQueryResultCache();
+        /// A probe cut off by the time limit has an incomplete result, which isn't stored.
+        if (!cut_off)
+            io.pipeline.finalizeWriteInQueryResultCache();
     }
     catch (...)
     {
