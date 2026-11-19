@@ -425,7 +425,7 @@ Prior to searching, the function tokenizes the `input` and, when it is a `String
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead — unless a tokenizer is provided as the optional third argument.
 The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `array`, `ngrams`, `asciiCJK`, or `icu`.
 
-If `input` is an [Array(String)](/reference/data-types/array), its elements are tokenized like any other input and a phrase must lie within a single element. With the `array` tokenizer each element is one token and a phrase spans consecutive elements, which is how a column of already tokenized values is searched.
+If `input` is an [Array(String)](/reference/data-types/array), its elements are tokenized like any other input and a phrase must lie within a single element. With the `array` tokenizer each element is one token, so only a phrase of one token, equal to an element, matches.
 If `phrase` is an [Array(String)](/reference/data-types/array), its elements are the tokens to search for, in order and
 including duplicates. Empty phrase elements are ignored, because no tokenizer produces an empty token.
 
@@ -470,12 +470,12 @@ because "brown" appears between "quick" and "fox".
 │                                                   0 │
 └─────────────────────────────────────────────────────┘
         )"},
-           {"Already tokenized values with the `array` tokenizer",
-            "SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'], 'array')",
+           {"Every element is one token with the `array` tokenizer",
+            "SELECT hasPhrase(['quick brown', 'fox'], 'quick brown', 'array')",
             R"(
-┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'], 'array')─┐
-│                                                                        1 │
-└──────────────────────────────────────────────────────────────────────────┘
+┌─hasPhrase(['quick brown', 'fox'], 'quick brown', 'array')─┐
+│                                                         1 │
+└───────────────────────────────────────────────────────────┘
         )"},
            {"A phrase does not span two elements",
             "SELECT hasPhrase(['the quick', 'brown fox'], 'quick brown')",

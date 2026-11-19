@@ -578,7 +578,7 @@ For an index on an `Array` column, the tokens of all elements of a row share one
 The gap keeps a phrase within one element, as [`hasPhrase`](#functions-example-hasphrase) requires, so that the function is answered by direct reads from the index.
 A larger gap increases the size of the positions.
 Elements without tokens (empty strings, `NULL`) add no gap.
-The parameter requires `support_phrase_search = 1` and is not supported with the `array` tokenizer: there every element is one token, and a phrase spans consecutive elements.
+The parameter requires `support_phrase_search = 1`. A phrase never spans two elements, also with the `array` tokenizer, where every element is one token.
 
 <Warning>
 This argument is experimental and should only be used for testing.
