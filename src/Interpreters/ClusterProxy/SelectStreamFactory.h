@@ -9,7 +9,6 @@
 #include <QueryPipeline/UnavailableShardTracker.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageSnapshot.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -24,7 +23,6 @@ using Pipes = std::vector<Pipe>;
 
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
-using QueryPlanPtrs = VectorWithMemoryTracking<QueryPlanPtr>;
 
 struct StorageID;
 
@@ -80,7 +78,7 @@ public:
         const StorageID & main_table,
         const ASTPtr & table_func_ptr,
         ContextPtr context,
-        QueryPlanPtrs & local_plans,
+        std::vector<QueryPlanPtr> & local_plans,
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
@@ -93,7 +91,7 @@ public:
         const StorageID & main_table,
         const ASTPtr & table_func_ptr,
         ContextPtr context,
-        QueryPlanPtrs & local_plans,
+        std::vector<QueryPlanPtr> & local_plans,
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
@@ -112,7 +110,7 @@ private:
         const StorageID & main_table,
         const ASTPtr & table_func_ptr,
         ContextPtr context,
-        QueryPlanPtrs & local_plans,
+        std::vector<QueryPlanPtr> & local_plans,
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,

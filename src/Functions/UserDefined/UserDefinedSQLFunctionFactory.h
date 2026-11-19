@@ -29,19 +29,19 @@ public:
     bool unregisterFunction(const ContextMutablePtr & current_context, const String & function_name, bool throw_if_not_exists);
 
     /// Get function create query for function_name. If no function registered with function_name throws exception.
-    [[nodiscard]] ASTPtr get(const String & function_name) const;
+    ASTPtr get(const String & function_name) const;
 
     /// Get function create query for function_name. If no function registered with function_name return nullptr.
-    [[nodiscard]] ASTPtr tryGet(const String & function_name) const;
+    ASTPtr tryGet(const String & function_name) const;
 
     /// Check if function with function_name registered.
-    [[nodiscard]] bool has(const String & function_name) const;
+    bool has(const String & function_name) const;
 
     /// Get all user defined functions registered names.
-    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     /// Check whether any UDFs have been registered
-    [[nodiscard]] bool empty() const;
+    bool empty() const;
 
     /// Makes backup entries for all user-defined SQL functions.
     void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup) const;

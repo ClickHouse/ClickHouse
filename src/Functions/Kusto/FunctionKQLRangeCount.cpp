@@ -42,22 +42,22 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionKQLRangeCount>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 3; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
     /// A null bound is reported as an error rather than propagated: the count feeds the
     /// `numbers` table function, which takes no NULL.
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        (void)classify(removeNullable(arguments[0]), removeNullable(arguments[1]), removeNullable(arguments[2]));
+        classify(removeNullable(arguments[0]), removeNullable(arguments[1]), removeNullable(arguments[2]));
         return std::make_shared<DataTypeUInt64>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         struct Operand
         {
@@ -152,7 +152,7 @@ private:
         Temporal,
     };
 
-    [[nodiscard]] Domain classify(const DataTypePtr & from, const DataTypePtr & to, const DataTypePtr & step) const
+    Domain classify(const DataTypePtr & from, const DataTypePtr & to, const DataTypePtr & step) const
     {
         /// Integers and decimals count exactly, in `Int256` over their unscaled values: a
         /// `Float64` cannot tell integers above 2^53 apart, and `(0.3 - 0.1) / 0.1` as a

@@ -126,27 +126,27 @@ struct NodePath
     {
     }
 
-    [[nodiscard]] std::string_view str() const { return std::string_view(ptr, len); }
+    std::string_view str() const { return std::string_view(ptr, len); }
 
-    [[nodiscard]] NodePathHash calculateHash() const;
-    [[nodiscard]] NodePathWithHash withCalculatedHash() const;
+    NodePathHash calculateHash() const;
+    NodePathWithHash withCalculatedHash() const;
 
     /// Path of the parent znode: "/" for "/foo", "/a" for "/a/b".
     /// Must not be called on the root path (depth == 0).
-    [[nodiscard]] NodePath parentPath() const;
+    NodePath parentPath() const;
 
     /// Path to child znode: "/foo/bar" + "baz" = "/foo/bar/baz".
-    [[nodiscard]] size_t childPathLen(size_t child_name_len) const;
-    [[nodiscard]] NodePath makeChildPath(std::string_view child_name, std::span<char> out) const;
+    size_t childPathLen(size_t child_name_len) const;
+    NodePath makeChildPath(std::string_view child_name, std::span<char> out) const;
     NodePath childPath(std::string_view child_name, std::string & path_buf) const;
     NodePath childPath(std::string_view child_name, DB::Arena & arena) const;
 
     /// The last component of the path: "b" for "/a/b". Must not be called on the root path.
-    [[nodiscard]] std::string_view baseName() const;
+    std::string_view baseName() const;
 
     /// Order in which znodes are sorted in files: by (depth, path string).
     /// All children of a node are consecutive in this order.
-    [[nodiscard]] int compare(const NodePath & rhs) const
+    int compare(const NodePath & rhs) const
     {
         if (depth != rhs.depth)
             return depth < rhs.depth ? -1 : 1;
@@ -194,7 +194,7 @@ struct NodeRef
     void readPath(NodePath & out_path, std::string & out_path_buf, uint32_t & out_serialized_size, NodeAction & out_action) const;
 
     /// Only serialized size (how much to advance `offset` to get to the next node in the block).
-    [[nodiscard]] uint32_t readSerializedSize() const;
+    uint32_t readSerializedSize() const;
 };
 
 }

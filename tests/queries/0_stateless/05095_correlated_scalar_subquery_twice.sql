@@ -3,6 +3,7 @@
 -- from the analyzer's cache, and that path evaluated it as an ordinary scalar - rejecting the query
 -- with "Cannot evaluate correlated scalar subquery".
 
+SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 
 DROP TABLE IF EXISTS t_correlated_twice;
