@@ -2,7 +2,6 @@
 
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/IDataType.h>
-#include <Interpreters/SetVariants.h>
 #include <Interpreters/SetKeys.h>
 #include <Core/PlainRanges.h>
 #include <Storages/MergeTree/BoolMask.h>
@@ -12,6 +11,8 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/ProcessorMemoryStats.h>
 #include <Interpreters/castColumn.h>
+#include <Columns/ColumnNullable.h>
+#include <Common/Logger_fwd.h>
 
 
 namespace DB
@@ -19,6 +20,10 @@ namespace DB
 
 struct Range;
 using Ranges = VectorWithMemoryTracking<Range>;
+
+struct NonClearableSet;
+template <typename Variant> struct SetVariantsTemplate;
+using SetVariants = SetVariantsTemplate<NonClearableSet>;
 
 class Context;
 class IFunctionBase;
@@ -130,8 +135,6 @@ public:
 
     void checkIsCreated() const;
 
-    void processDateTime64Column(const ColumnWithTypeAndName & column_to_cast, ColumnPtr & result, ColumnPtr & null_map_holder, ConstNullMapPtr & null_map) const;
-
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
       * A set in memory can spill to disk during the call, as described at `setSpillSettings`.
@@ -150,7 +153,7 @@ public:
     const DataTypes & getDataTypes() const { return data_types; }
     const DataTypes & getElementsTypes() const { return set_elements_types; }
 
-    bool hasExplicitSetElements() const { return fill_set_elements || (!set_elements.empty() && set_elements.front()->size() == data->getTotalRowCount()); }
+    bool hasExplicitSetElements() const;
     bool hasSetElements() const { return !set_elements.empty(); }
     Columns getSetElements() const;
 
@@ -170,7 +173,15 @@ public:
     /// Limitations on the maximum size of the set
     const SizeLimits limits;
 
-    /// If true, insert NULL values to set.
+    /** With `transform_null_in = 0`, an outer NULL in any key component excludes the row from the set
+      * and never matches on lookup. With `transform_null_in = 1`, NULLs match in nullable key components.
+      * A NULL field inside a non-null tuple is part of that component's value in either mode.
+      *
+      * A more standard-compliant behavior would return NULL if the left-hand side is NULL and the set is not
+      * empty, or if the left-hand side is not in the set but the set contains at least one NULL. It is more
+      * complicated with tuples: `(1, NULL, 2) IN ((1, NULL, 3))` must return 0, but
+      * `(1, NULL, 2) IN ((1, 1111, 2))` must return NULL. Such behavior is not implemented.
+      */
     const bool transform_null_in;
 
     const size_t max_elements_to_fill;
@@ -182,7 +193,7 @@ private:
     /// This holds the keys in memory. Spilling releases the table and its arena. Spilling while the set is
     /// used changes how the set stores its keys but not which keys it has, so `execute` stays `const`, and
     /// the members that `spillAfterBuild` replaces are `mutable`.
-    mutable std::unique_ptr<SetVariants> data = std::make_unique<SetVariants>();
+    mutable std::unique_ptr<SetVariants> data;
 
     /// They are kept after the build, so the set can spill while it is used.
     SetSpillSettings spill_settings;
@@ -198,21 +209,6 @@ private:
     /// Set by the first lookup that finds that the set has to spill while it is used, and never reset. Only
     /// that lookup spills the set.
     mutable std::atomic<bool> spill_after_build_started = false;
-
-    /** How IN works with Nullable types.
-      *
-      * For simplicity reasons, all NULL values and any tuples with at least one NULL element are ignored in the Set.
-      * And for left hand side values, that are NULLs or contain any NULLs, we return 0 (means that element is not in Set).
-      *
-      * If we want more standard compliant behaviour, we must return NULL
-      *  if lhs is NULL and set is not empty or if lhs is not in set, but set contains at least one NULL.
-      * It is more complicated with tuples.
-      * For example,
-      *      (1, NULL, 2) IN ((1, NULL, 3)) must return 0,
-      *  but (1, NULL, 2) IN ((1, 1111, 2)) must return NULL.
-      *
-      * We have not implemented such sophisticated behaviour.
-      */
 
     /** The data types from which the set was created.
       * When checking for belonging to a set, the types of columns to be checked must match with them.
@@ -252,6 +248,12 @@ private:
 
     bool insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder);
     ProcessorMemoryStats getMemoryStatsUnlocked() const;
+
+    /// Casts the probe `column` to the type of the key `key` as the set stores it, see `insertFromColumns`,
+    /// and adds the rows that cannot be members of the set to `non_member_rows`: the NULLs that match
+    /// nothing, the values that do not fit the key type, and the `DateTime64` values that the key type does
+    /// not hold exactly.
+    ColumnPtr castToKeyType(const ColumnWithTypeAndName & column, size_t key, ColumnPtr & non_member_rows) const;
 
     template <typename Method>
     void insertFromBlockImpl(

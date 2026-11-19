@@ -402,11 +402,11 @@ public:
     {
         size_t batch_index = row_begin;
 
-        ResultWriter writer(to, grid_size);
-        writer.reserve(row_end - row_begin);
-
         try
         {
+            ResultWriter writer(to, grid_size);
+            writer.reserve(row_end - row_begin);
+
             for (; batch_index < row_end; ++batch_index)
             {
                 derived().doInsertResultInto(places[batch_index] + place_offset, writer);
