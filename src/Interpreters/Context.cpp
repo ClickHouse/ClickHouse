@@ -69,6 +69,7 @@
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataFilesCache.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Storages/StreamingStorageRegistry.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
@@ -372,6 +373,7 @@ namespace Setting
     extern const SettingsUInt64 hsts_max_age;
     extern const SettingsString local_filesystem_read_method;
     extern const SettingsBool local_filesystem_read_prefetch;
+    extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_backup_bandwidth;
     extern const SettingsUInt64 max_local_read_bandwidth;
     extern const SettingsUInt64 max_local_write_bandwidth;
@@ -3607,11 +3609,7 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
 
 void Context::addQueryPrivilegesInfo(const String & privilege, bool granted) const
 {
-    std::lock_guard lock(query_privileges_info->mutex);
-    if (granted)
-        query_privileges_info->used_privileges.emplace(privilege);
-    else
-        query_privileges_info->missing_privileges.emplace(privilege);
+    query_privileges_info->add(privilege, granted);
 }
 
 static bool findIdentifier(const ASTFunction * function)
@@ -5964,12 +5962,27 @@ VectorSimilarityIndexCachePtr Context::getVectorSimilarityIndexCache() const
     return shared->vector_similarity_index_cache;
 }
 
-void Context::clearVectorSimilarityIndexCache() const
+void Context::clearVectorSimilarityIndexCache(const StorageID & table_id) const
 {
-    std::lock_guard lock(shared->mutex);
+    if (table_id)
+    {
+        auto table = DatabaseCatalog::instance().getTable(table_id, shared_from_this());
 
-    if (shared->vector_similarity_index_cache)
-        shared->vector_similarity_index_cache->clear();
+        auto table_lock = table->lockForShare(getCurrentQueryId(), getSettingsRef()[Setting::lock_acquire_timeout]);
+
+        auto merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load);
+
+        /// Only `MergeTree` tables can have vector similarity indexes, so there is nothing to clear for other tables.
+        if (merge_tree)
+            merge_tree->clearVectorSimilarityIndexCache();
+    }
+    else
+    {
+        std::lock_guard lock(shared->mutex);
+
+        if (shared->vector_similarity_index_cache)
+            shared->vector_similarity_index_cache->clear();
+    }
 }
 
 void Context::setTextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
@@ -10110,8 +10123,14 @@ StatelessWorkersProviderPtr Context::getStatelessWorkersProvider() const
     auto query_context_ptr = getQueryContext();
     std::lock_guard lock(query_context_ptr->stateless_worker_allocation_mutex);
     if (!query_context_ptr->stateless_worker_provider)
-        query_context_ptr->stateless_worker_provider = query_context_ptr->getStatelessWorkersProvider(
+    {
+        auto provider = query_context_ptr->getStatelessWorkersProvider(
             query_context_ptr->getSettingsRef()[Setting::distributed_plan_worker_cluster]);
+        /// Taken one time, so that the planning and the allocation of the query see the same workers.
+        if (auto query_snapshot = provider->tryGetQuerySnapshot())
+            provider = std::move(query_snapshot);
+        query_context_ptr->stateless_worker_provider = std::move(provider);
+    }
     return query_context_ptr->stateless_worker_provider;
 }
 
