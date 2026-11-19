@@ -685,6 +685,25 @@ MutationsInterpreter::MutationsInterpreter(
     context = std::move(new_context);
 }
 
+/// Type a column has in the part. A column stored only as a missing-column marker
+/// (skip_empty_columns_on_insert) is absent from the part's column list, so resolve its original type
+/// from the serialization infos, applying the rename mapping to find the marker.
+static DataTypePtr getColumnTypeInPart(
+    const MergeTreeData::DataPartPtr & part, const AlterConversionsPtr & alter_conversions, const String & column_name)
+{
+    if (const auto column = part->tryGetColumn(column_name))
+        return column->type;
+
+    auto marker_name = column_name;
+    if (alter_conversions && alter_conversions->isColumnRenamed(marker_name))
+        marker_name = alter_conversions->getColumnOldName(marker_name);
+
+    if (const auto * missing = part->getSerializationInfos().getMissingColumnInfo(marker_name); missing && !missing->type_name.empty())
+        return DataTypeFactory::instance().get(missing->type_name);
+
+    return nullptr;
+}
+
 static NameSet getKeyColumns(const MutationsInterpreter::Source & source, const StorageMetadataPtr & metadata_snapshot)
 {
     const MergeTreeData * merge_tree_data = source.getMergeTreeData();
@@ -895,8 +914,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         {
             if (const auto & part = source.getMergeTreeDataPart())
             {
-                auto part_column = part->tryGetColumn(command.column_name);
-                if (part_column && !part_column->type->equals(*command.data_type))
+                auto old_type = getColumnTypeInPart(part, source.getAlterConversions(), command.column_name);
+                if (old_type && !old_type->equals(*command.data_type))
                     type_changed_columns.insert(command.column_name);
             }
         }
@@ -1128,10 +1147,18 @@ void MutationsInterpreter::prepare(bool dry_run)
     NameSet type_changed_affected_materialized;
     if (!type_changed_columns.empty())
     {
-        auto key_columns = getKeyColumns(source, metadata_snapshot);
+        /// A key column may be a subcolumn (`ORDER BY m.a`), so resolve the key columns to the columns
+        /// they are stored in: a MATERIALIZED column whose subcolumn is a key cannot be recomputed in
+        /// an existing part, and checkAlterIsPossible rejects such an ALTER.
+        NameSet key_storage_columns = source.getMergeTreeData() ? metadata_snapshot->getStorageColumnsRequiredForKeys() : NameSet{};
+        const auto & storage_columns = metadata_snapshot->getColumns();
+        for (const auto & key_column : getKeyColumns(source, metadata_snapshot))
+            if (auto column = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column))
+                key_storage_columns.insert(column->getNameInStorage());
+
         for (const auto & column_name : affected_materialized_closure(type_changed_columns))
         {
-            if (!key_columns.contains(column_name))
+            if (!key_storage_columns.contains(column_name))
                 type_changed_affected_materialized.insert(column_name);
         }
     }
@@ -1647,19 +1674,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 /// Check if the type of this column is changed and there are projections that have this column in the primary key or indices
                 /// that depend on it. We should rebuild such projections and indices
-                DataTypePtr old_type;
-                if (const auto column = merge_tree_data_part->tryGetColumn(command.column_name))
-                    old_type = column->type;
-                else
-                {
-                    const auto & infos = merge_tree_data_part->getSerializationInfos();
-                    auto marker_name = command.column_name;
-                    if (const auto & alter_conversions = source.getAlterConversions();
-                        alter_conversions && alter_conversions->isColumnRenamed(marker_name))
-                        marker_name = alter_conversions->getColumnOldName(marker_name);
-                    if (const auto * missing = infos.getMissingColumnInfo(marker_name); missing && !missing->type_name.empty())
-                        old_type = DataTypeFactory::instance().get(missing->type_name);
-                }
+                DataTypePtr old_type = getColumnTypeInPart(merge_tree_data_part, source.getAlterConversions(), command.column_name);
 
                 if (old_type && command.data_type && !old_type->equals(*command.data_type))
                 {

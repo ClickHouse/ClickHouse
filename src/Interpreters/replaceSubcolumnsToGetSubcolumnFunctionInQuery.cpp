@@ -21,7 +21,7 @@ void replaceSubcolumnsToGetSubcolumnFunctionInQuery(ASTPtr & ast, const NamesAnd
         for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(identifier->getColumnName()))
         {
             auto column = columns.tryGetByName(String(column_name));
-            if (!column || !column->type->hasSubcolumn(String(subcolumn_name)))
+            if (!column || !column->type->hasSubcolumn(subcolumn_name))
                 continue;
 
             ast = makeASTFunction(

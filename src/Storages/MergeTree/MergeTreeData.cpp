@@ -6757,8 +6757,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     Names key_materialized_columns;
     for (const auto & column : old_metadata.getColumns())
     {
+        /// column_to_subcolumns_used_in_keys catches a key that is a subcolumn of this column (`ORDER BY m.a`).
         if (column.default_desc.kind == ColumnDefaultKind::Materialized && column.default_desc.expression
-            && columns_in_keys.contains(column.name))
+            && (columns_in_keys.contains(column.name) || column_to_subcolumns_used_in_keys.contains(column.name)))
             key_materialized_columns.push_back(column.name);
     }
 
