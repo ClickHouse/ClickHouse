@@ -6777,6 +6777,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     }
 
     NameSet dropped_columns;
+    std::unordered_map<String, NameSet> dropped_columns_in_partitions;
 
     std::map<String, const IDataType *> old_types;
     for (const auto & column : old_metadata.getColumns().getAllPhysical())
@@ -6790,10 +6791,11 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     for (const AlterCommand & command : commands)
     {
         checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
-        /// Just validate partition expression
+        /// Validate the partition expression and keep its scope for column removal checks.
+        std::optional<String> partition_id;
         if (command.partition)
         {
-            getPartitionIDFromQuery(command.partition, local_context);
+            partition_id = getPartitionIDFromQuery(command.partition, local_context);
         }
 
         if (command.type == AlterCommand::MODIFY_SETTING || command.type == AlterCommand::RESET_SETTING)
@@ -6949,15 +6951,16 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 }
             }
 
+            auto & command_dropped_columns = partition_id ? dropped_columns_in_partitions[*partition_id] : dropped_columns;
             if (old_metadata.columns.has(command.column_name))
             {
-                dropped_columns.emplace(command.column_name);
+                command_dropped_columns.emplace(command.column_name);
             }
             else
             {
                 const auto & nested = old_metadata.columns.getNested(command.column_name);
                 for (const auto & nested_column : nested)
-                    dropped_columns.emplace(nested_column.name);
+                    command_dropped_columns.emplace(nested_column.name);
             }
         }
         else if (command.type == AlterCommand::RESET_SETTING)
@@ -7489,7 +7492,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
-    if (!dropped_columns.empty() || makes_columns_nonphysical)
+    if (!dropped_columns.empty() || !dropped_columns_in_partitions.empty() || makes_columns_nonphysical)
     {
         auto parts = getDataPartsVectorForInternalUsage();
         auto parts_info = getPartsSnapshotInfo(parts);
@@ -7514,6 +7517,13 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
         for (const auto & part : parts)
         {
+            auto part_dropped_columns = dropped_columns;
+            if (auto it = dropped_columns_in_partitions.find(part->info.getPartitionId()); it != dropped_columns_in_partitions.end())
+                part_dropped_columns.insert(it->second.begin(), it->second.end());
+
+            if (part_dropped_columns.empty() && !makes_columns_nonphysical)
+                continue;
+
             auto alter_conversions = getAlterConversionsForPart(part, mutations_snapshot, local_context
 #if CLICKHOUSE_CLOUD
                 , nullptr
@@ -7537,13 +7547,13 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 /// `KILL MUTATION` of a `RENAME COLUMN`, leaves a part in that state. The condition
                 /// mirrors the one `splitAndModifyMutationCommands` applies, virtual columns included:
                 /// a part written by a lightweight delete keeps its `_row_exists` through the mutation.
-                if (!dropped_columns.contains(name_in_table)
+                if (!part_dropped_columns.contains(name_in_table)
                     && (old_metadata.columns.has(name_in_table) || old_metadata.virtuals.has(name_in_table)))
                 {
                     at_least_one_column_rest = true;
                 }
 
-                if (!dropped_columns.contains(name_in_table)
+                if (!part_dropped_columns.contains(name_in_table)
                     && !alter_conversions->isColumnDropped(column.name, share_nested_offsets)
                     && (new_metadata.columns.hasPhysical(name_after_alter(name_in_table)) || old_metadata.virtuals.has(name_in_table)))
                 {
@@ -7554,12 +7564,12 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             if (!at_least_one_column_rest)
             {
                 std::string postfix;
-                if (dropped_columns.size() > 1)
+                if (part_dropped_columns.size() > 1)
                     postfix = "s";
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Cannot drop or clear column{} '{}', because all columns "
                                 "in part '{}' will be removed from disk. Empty parts are not allowed",
-                                postfix, boost::algorithm::join(dropped_columns, ", "), part->name);
+                                postfix, boost::algorithm::join(part_dropped_columns, ", "), part->name);
             }
 
             /// Local parts may differ between replicas, so they must not prevent replay of a committed `ALTER`.
