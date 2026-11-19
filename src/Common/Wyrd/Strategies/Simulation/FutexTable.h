@@ -1,9 +1,11 @@
 #pragma once
 
+#include <Common/Wyrd/Namespace.h>
+
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
-namespace DB::Wyrd
+namespace WYRD_NAMESPACE(DB::Wyrd)
 {
 
 struct SimulatedThread;

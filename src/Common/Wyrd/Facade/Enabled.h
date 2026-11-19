@@ -1,6 +1,8 @@
 #pragma once
 
-namespace DB::Wyrd
+#include <Common/Wyrd/Namespace.h>
+
+namespace WYRD_NAMESPACE(DB::Wyrd)
 {
 
 constexpr bool enabled()

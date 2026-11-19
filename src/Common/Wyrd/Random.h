@@ -1,11 +1,13 @@
 #pragma once
 
+#include <Common/Wyrd/Namespace.h>
+
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
 #include <cstddef>
 
-namespace DB::Wyrd
+namespace WYRD_NAMESPACE(DB::Wyrd)
 {
 
 void setRandomSeed(UInt64 seed);

@@ -1,9 +1,10 @@
 #pragma once
 
+#include <Common/Wyrd/Namespace.h>
 #include <Common/Wyrd/Strategies/Simulation/SimulationParams.h>
 #include <Common/VectorWithMemoryTracking.h>
 
-namespace DB::Wyrd
+namespace WYRD_NAMESPACE(DB::Wyrd)
 {
 
 struct SimulatedThread;

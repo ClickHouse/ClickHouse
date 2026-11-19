@@ -1,9 +1,11 @@
 #pragma once
 
+#include <Common/Wyrd/Namespace.h>
+
 #include <chrono>
 #include <cstddef>
 
-namespace DB::Wyrd
+namespace WYRD_NAMESPACE(DB::Wyrd)
 {
 
 struct AdversaryParams

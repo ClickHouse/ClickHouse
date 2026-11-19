@@ -1,11 +1,13 @@
 #pragma once
 
+#include <Common/Wyrd/Namespace.h>
+
 #include <fmt/format.h>
 
 #include <string>
 #include <string_view>
 
-namespace DB::Wyrd
+namespace WYRD_NAMESPACE(DB::Wyrd)
 {
 
 void logMessage(std::string message);

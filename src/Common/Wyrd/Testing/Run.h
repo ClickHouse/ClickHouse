@@ -1,12 +1,13 @@
 #pragma once
 
+#include <Common/Wyrd/Namespace.h>
 #include <Common/Wyrd/Strategies/Adversary/AdversaryParams.h>
 #include <Common/Wyrd/Strategies/Simulation/SimulationParams.h>
 
 #include <functional>
 #include <optional>
 
-namespace DB::Wyrd
+namespace WYRD_NAMESPACE(DB::Wyrd)
 {
 
 struct TestParams

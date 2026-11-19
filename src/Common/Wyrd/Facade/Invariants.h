@@ -1,10 +1,12 @@
 #pragma once
 
+#include <Common/Wyrd/Namespace.h>
+
 #include <fmt/format.h>
 
 #include <string>
 
-namespace DB::Wyrd
+namespace WYRD_NAMESPACE(DB::Wyrd)
 {
 
 void abort(std::string message);

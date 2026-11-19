@@ -16,15 +16,12 @@
 
 static std::atomic<bool> leaked_unfinished_threads = false;
 
-namespace DB
-{
-
-namespace ErrorCodes
+namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
 
-namespace Wyrd
+namespace WYRD_NAMESPACE(DB::Wyrd)
 {
 
 struct TraceRecord
@@ -247,8 +244,6 @@ void Simulation::brokenInvariant(std::string message)
 {
     broken_invariant = std::move(message);
     running_thread->suspend();
-}
-
 }
 
 }

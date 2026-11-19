@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Wyrd/Facade/Atomic.h>
+#include <Common/Wyrd/Namespace.h>
 
 #include <base/types.h>
 
@@ -8,7 +9,7 @@
 
 #include <string>
 
-namespace DB::Wyrd
+namespace WYRD_NAMESPACE(DB::Wyrd)
 {
 
 class ExclusiveScope

@@ -9,7 +9,7 @@
 #    include <sched.h>
 #endif
 
-namespace DB::Wyrd
+namespace WYRD_NAMESPACE(DB::Wyrd)
 {
 
 namespace

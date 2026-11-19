@@ -1,12 +1,14 @@
 #pragma once
 
+#include <Common/Wyrd/Namespace.h>
+
 #include <base/types.h>
 
 #include <boost/context/fiber.hpp>
 
 #include <functional>
 
-namespace DB::Wyrd
+namespace WYRD_NAMESPACE(DB::Wyrd)
 {
 
 struct SimulatedThread

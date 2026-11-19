@@ -1,7 +1,7 @@
 #include <Common/Wyrd/Strategies/Adversary/InjectFault.h>
 #include <Common/Wyrd/Strategies/Adversary/Access.h>
 
-namespace DB::Wyrd
+namespace WYRD_NAMESPACE(DB::Wyrd)
 {
 
 void injectFault(const char *, std::source_location)

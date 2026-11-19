@@ -1,8 +1,9 @@
 #pragma once
 
+#include <Common/Wyrd/Namespace.h>
 #include <Common/Wyrd/Strategies/Adversary/Adversary.h>
 
-namespace DB::Wyrd
+namespace WYRD_NAMESPACE(DB::Wyrd)
 {
 
 Adversary * adversary();

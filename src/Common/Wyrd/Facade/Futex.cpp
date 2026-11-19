@@ -10,7 +10,7 @@
 #    include <Common/futex.h>
 #endif
 
-namespace DB::Wyrd
+namespace WYRD_NAMESPACE(DB::Wyrd)
 {
 
 #if defined(WYRD_SIMULATION)

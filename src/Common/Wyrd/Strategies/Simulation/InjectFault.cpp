@@ -2,7 +2,7 @@
 #include <Common/Wyrd/Strategies/Simulation/Simulation.h>
 #include <Common/Wyrd/Strategies/Simulation/Syscall.h>
 
-namespace DB::Wyrd
+namespace WYRD_NAMESPACE(DB::Wyrd)
 {
 
 void injectFault(const char * operation, std::source_location location)

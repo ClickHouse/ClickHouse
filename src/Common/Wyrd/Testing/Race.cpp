@@ -1,7 +1,7 @@
 #include <Common/Wyrd/Testing/Race.h>
 #include <Common/Wyrd/Facade/Futex.h>
 
-namespace DB::Wyrd
+namespace WYRD_NAMESPACE(DB::Wyrd)
 {
 
 Race & Race::add(size_t count, std::function<void(size_t)> body)

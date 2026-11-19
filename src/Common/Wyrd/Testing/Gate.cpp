@@ -1,7 +1,7 @@
 #include <Common/Wyrd/Testing/Gate.h>
 #include <Common/Wyrd/Facade/Futex.h>
 
-namespace DB::Wyrd
+namespace WYRD_NAMESPACE(DB::Wyrd)
 {
 
 void Gate::pass()

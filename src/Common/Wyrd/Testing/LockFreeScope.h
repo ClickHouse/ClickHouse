@@ -1,6 +1,8 @@
 #pragma once
 
-namespace DB::Wyrd
+#include <Common/Wyrd/Namespace.h>
+
+namespace WYRD_NAMESPACE(DB::Wyrd)
 {
 
 /// Marks a scope in which the adversary may suspend the calling thread to test lock-freedom of the others.

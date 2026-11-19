@@ -11,7 +11,7 @@
 #    include <Common/Wyrd/Strategies/Adversary/InjectFault.h>
 #endif
 
-namespace DB::Wyrd
+namespace WYRD_NAMESPACE(DB::Wyrd)
 {
 
 #if defined(WYRD_SIMULATION)
