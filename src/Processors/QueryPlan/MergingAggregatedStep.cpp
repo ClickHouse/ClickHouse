@@ -29,6 +29,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool distributed_aggregation_memory_efficient;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
+    extern const QueryPlanSerializationSettingsBool enable_fixed_and_packed_string_keys_in_aggregation;
 }
 
 namespace Setting
@@ -302,6 +303,15 @@ void MergingAggregatedStep::serializeSettings(QueryPlanSerializationSettings & s
         && (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRING_KEYS_SETTING
             || aggregationCanUsePackedStringKeys(*input_headers.front(), params.keys, grouping_sets_params)))
         settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = false;
+
+    /// The same for `enable_fixed_and_packed_string_keys_in_aggregation`, whose plan default `false` is the
+    /// method of a peer that predates it (see `AggregatingStep::serializeSettings`). The value is written
+    /// whenever this step can choose the method, so a peer that predates the name rejects the plan, even one
+    /// that skips unknown names, as the setting is `IMPORTANT`. For the reason above, no two-level condition
+    /// can show that its serialized method would merge the producers' input correctly.
+    if (params.enable_fixed_and_packed_string_keys
+        && aggregationCanUseFixedAndPackedStringKeys(*input_headers.front(), params.keys, grouping_sets_params))
+        settings[QueryPlanSerializationSetting::enable_fixed_and_packed_string_keys_in_aggregation] = true;
 }
 
 void MergingAggregatedStep::serialize(Serialization & ctx) const
@@ -418,7 +428,8 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::max_block_size],
         ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization],
         ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte],
-        ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation]);
+        ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation],
+        ctx.settings[QueryPlanSerializationSetting::enable_fixed_and_packed_string_keys_in_aggregation]);
 
     auto merging_aggregated_step = std::make_unique<MergingAggregatedStep>(
         ctx.input_headers.front(),
