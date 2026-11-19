@@ -1,14 +1,9 @@
 <test>
     <!--
-        Two large tables join on a low-cardinality key. `WHERE` has cross-side ranges and an
-        equality on two copies of a small lookup table; the selective predicates sit on lookups.
-
-        Each sales row matches about 325 inventory rows. With the ranges above that join, the
-        two facts stay one relation. Merging the ranges lets reorder filter sales first.
-
-        `sipHash64` of the 128-byte payloads is in `PREWHERE` so the reordered plan stays above
-        0.1s. One thread keeps the blocked plan under 2s. Runtime filters and cached hash-table
-        stats are off so the measured difference is the reorder.
+        Two large fact tables join on a low-cardinality key, and the selective predicates sit on
+        small lookups. Merging the cross-side ranges lets join reorder filter sales before joining
+        inventory. `sipHash64` of the payloads keeps the fast plan above 0.1s; one thread keeps the
+        slow plan under 2s. Runtime filters and hash-table stats are off to isolate the reorder.
     -->
     <settings>
         <max_threads>1</max_threads>

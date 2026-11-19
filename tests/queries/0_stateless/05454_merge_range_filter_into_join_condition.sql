@@ -116,15 +116,6 @@ SELECT 'R14b-values', countIf(n8 != 2) = 0 FROM (SELECT l.n8 AS n8 FROM rf_l l J
 SELECT 'R15', countIf(explain LIKE '%Expression: %or(%') = 0, countIf(explain LIKE '%Expression: %less(%') = 0 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1 SELECT * FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x < r.y OR l.z > r.z SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
 SELECT 'R15', 0, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x < r.y OR l.z > r.z) SETTINGS query_plan_merge_filter_into_join_condition = 0;
 SELECT 'R15', 1, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x < r.y OR l.z > r.z) SETTINGS query_plan_merge_filter_into_join_condition = 1;
-SELECT 'R16', countIf(explain LIKE '%Expression: %less(%') > 0, countIf(explain LIKE '%Expression: %greater(%') > 0 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1 SELECT * FROM rf_l l JOIN rf_r r ON l.f = r.f WHERE l.x < r.y AND l.z > r.z SETTINGS join_algorithm = 'hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
-SELECT 'R16', 0, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.f = r.f WHERE l.x < r.y AND l.z > r.z) SETTINGS join_algorithm = 'hash', query_plan_merge_filter_into_join_condition = 0;
-SELECT 'R16', 1, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.f = r.f WHERE l.x < r.y AND l.z > r.z) SETTINGS join_algorithm = 'hash', query_plan_merge_filter_into_join_condition = 1;
-SELECT 'R16b', countIf(explain LIKE '%Expression: %less(%') > 0, countIf(explain LIKE '%Expression: %greater(%') > 0 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1 SELECT * FROM rf_l l JOIN rf_r r ON l.t = r.t WHERE l.x < r.y AND l.z > r.z SETTINGS join_algorithm = 'hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
-SELECT 'R16b', 0, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.t = r.t WHERE l.x < r.y AND l.z > r.z) SETTINGS join_algorithm = 'hash', query_plan_merge_filter_into_join_condition = 0;
-SELECT 'R16b', 1, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.t = r.t WHERE l.x < r.y AND l.z > r.z) SETTINGS join_algorithm = 'hash', query_plan_merge_filter_into_join_condition = 1;
-SELECT 'R17', countIf(explain LIKE '%IEJoin%') > 0 FROM (EXPLAIN PLAN actions = 1 SELECT * FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x < r.y AND l.z > r.z SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
-SELECT 'R17', 0, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x < r.y AND l.z > r.z) SETTINGS join_algorithm = 'ie_join,hash', query_plan_merge_filter_into_join_condition = 0;
-SELECT 'R17', 1, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x < r.y AND l.z > r.z) SETTINGS join_algorithm = 'ie_join,hash', query_plan_merge_filter_into_join_condition = 1;
 
 CREATE TABLE ro_a (id UInt32, k Int64, x Int64, y Int64) ENGINE = Memory;
 CREATE TABLE ro_b (id UInt32, ak Int64, ck Int64) ENGINE = Memory;
@@ -141,29 +132,6 @@ SELECT 'G2-plan', countIf(explain LIKE '%a%⋈%c%' OR explain LIKE '%c%⋈%a%') 
 FROM (EXPLAIN PLAN actions = 1 SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x AND a.y > c.y SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, use_hash_table_stats_for_join_reordering = 0, query_plan_merge_filter_into_join_condition = 1);
 SELECT 'G2-default', 0, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x AND a.y > c.y) SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 0;
 SELECT 'G2-default', 1, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x AND a.y > c.y) SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 1;
-
-SELECT 'G1-hash', 0, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS join_algorithm = 'hash', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'G1-hash', 1, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS join_algorithm = 'hash', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 1;
-SELECT 'G1-sorting', 0, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS join_algorithm = 'full_sorting_merge,hash', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'G1-sorting', 1, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS join_algorithm = 'full_sorting_merge,hash', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 1;
-SELECT 'G2-ie-first', 0, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x AND a.y > c.y) SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'G2-ie-first', 1, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x AND a.y > c.y) SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 1;
-
-SELECT 'G1-partial-plan', countIf(explain LIKE '%Filter column: %<%') > 0 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1 SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x SETTINGS join_algorithm = 'partial_merge', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 1);
-SELECT 'G1-partial', 0, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS join_algorithm = 'partial_merge', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'G1-partial', 1, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS join_algorithm = 'partial_merge', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 1;
-SELECT 'G1-default-legacy-plan', countIf(explain LIKE '%Expression: %less(%') > 0 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1 SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x SETTINGS join_algorithm = 'default', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 1);
-SELECT 'G1-default-legacy', 0, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS join_algorithm = 'default', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'G1-default-legacy', 1, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS join_algorithm = 'default', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 1;
-SELECT 'G1-auto-plan', countIf(explain LIKE '%Filter column: %<%') > 0 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1 SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x SETTINGS join_algorithm = 'auto', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 1);
-SELECT 'G1-auto', 0, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS join_algorithm = 'auto', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'G1-auto', 1, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS join_algorithm = 'auto', query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 1;
-
-SELECT 'G1-greedy', 0, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join', query_plan_optimize_join_order_algorithm = 'greedy', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'G1-greedy', 1, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join', query_plan_optimize_join_order_algorithm = 'greedy', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 1;
-SELECT 'G1-dpsub-greedy', 0, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join', query_plan_optimize_join_order_algorithm = 'dpsub,greedy', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'G1-dpsub-greedy', 1, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join', query_plan_optimize_join_order_algorithm = 'dpsub,greedy', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 1;
-SELECT 'G1-count', count() = 6667 FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS query_plan_merge_filter_into_join_condition = 0, query_plan_optimize_join_order_limit = 1;
 
 -- A later range must not run before the conjunct that would have rejected the row.
 SELECT 'R18-short-circuit', 0, count()
@@ -280,35 +248,3 @@ FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1
         ON l.k + rowNumberInAllBlocks() = r.k
     WHERE l.x < r.x AND l.z > r.z
     SETTINGS join_algorithm = 'ie_join,hash', max_threads = 1, query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
-
--- `String` and `FixedString` compare with zero padding, also as `ie_join` range keys and as equality keys.
-SELECT 'R23-string-le', 0, count()
-FROM values('s String, x Int32', ('a\0', 1)) AS l CROSS JOIN values('s FixedString(1), x Int32', ('a', 2)) AS r
-WHERE l.s <= r.s AND l.x < r.x
-SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'R23-string-le', 1, count()
-FROM values('s String, x Int32', ('a\0', 1)) AS l CROSS JOIN values('s FixedString(1), x Int32', ('a', 2)) AS r
-WHERE l.s <= r.s AND l.x < r.x
-SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1;
-SELECT 'R23-string-gt', 0, count()
-FROM values('s String, x Int32', ('a\0', 1)) AS l CROSS JOIN values('s FixedString(1), x Int32', ('a', 2)) AS r
-WHERE l.s > r.s AND l.x < r.x
-SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'R23-string-gt', 1, count()
-FROM values('s String, x Int32', ('a\0', 1)) AS l CROSS JOIN values('s FixedString(1), x Int32', ('a', 2)) AS r
-WHERE l.s > r.s AND l.x < r.x
-SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1;
-SELECT 'R23-plan', countIf(explain LIKE '%IEJoin%') > 0
-FROM (EXPLAIN PLAN
-    SELECT count()
-    FROM values('s String, x Int32', ('a\0', 1)) AS l CROSS JOIN values('s FixedString(1), x Int32', ('a', 2)) AS r
-    WHERE l.s <= r.s AND l.x < r.x
-    SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
-SELECT 'R23-string-key', 0, count()
-FROM values('s String, x Int32, y Int32', ('a\0', 1, 3)) AS l JOIN values('s FixedString(1), x Int32, y Int32', ('a', 2, 2)) AS r ON l.s = r.s
-WHERE l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'R23-string-key', 1, count()
-FROM values('s String, x Int32, y Int32', ('a\0', 1, 3)) AS l JOIN values('s FixedString(1), x Int32, y Int32', ('a', 2, 2)) AS r ON l.s = r.s
-WHERE l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1;
