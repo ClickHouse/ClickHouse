@@ -27,7 +27,7 @@ __host__ inline void checkCuda(cudaError_t status, const char * message)
 
 __host__ bool isClickHouseException(const std::exception & exception);
 
-/// A view of an array of the host that the code of both standard libraries reads: `std::span` of one is not of the other.
+/// Shared by code of libstdc++ and libc++, whose `std::span` differ.
 template <typename T>
 struct GPUSpan
 {
@@ -76,14 +76,10 @@ enum class GPUAggregationKind : int
     Sum = 0,
     Min = 1,
     Max = 2,
-    /// Of the rows, of no column. Only in a `GROUP BY`.
     Count = 3,
-    /// `avg`, into a `Float64`. Only in a `GROUP BY`.
     Mean = 4,
 };
 
-/// One aggregate of a `GROUP BY`: of the value column `column`, or of no column for `GPUAggregationKind::Count`, into a
-/// column of `result_type`.
 struct GPUGroupByAggregate
 {
     static constexpr uint32_t no_column = ~uint32_t{0};

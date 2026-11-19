@@ -7,7 +7,6 @@
 namespace DB::GPU
 {
 
-/// A `sum`, a `min` or a `max` of the values of every batch, reduced in `stream`.
 class CudfReduction
 {
 public:
@@ -19,8 +18,7 @@ public:
 
     __host__ void addBatch(DeviceColumnView values);
 
-    /// The reduction of every batch so far, as a column of one row on the device that lives as long as this does, or
-    /// of no rows where there was no batch.
+    /// Lives as long as this; has no rows if there was no batch.
     __host__ DeviceColumnView finalize();
 
 private:

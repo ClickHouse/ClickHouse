@@ -33,7 +33,7 @@ namespace
 
 constexpr size_t max_batch_rows = (1UL << 31) - 1;
 
-/// What a row takes on the device: the bytes of a column of values of varying width are counted as one.
+/// A variable-width column counts as one byte per row.
 size_t rowBytesOf(const DataTypes & types)
 {
     size_t bytes = 0;
@@ -70,7 +70,6 @@ std::shared_ptr<StreamPtr> sharedStream()
     return std::make_shared<StreamPtr>(createStream());
 }
 
-/// The result of a `sum` is wider than what it sums; a `min` or a `max` is of the type it takes.
 GPUElementType resultTypeFor(GPUElementType element_type, GPUAggregationKind aggregation)
 {
     return aggregation == GPUAggregationKind::Sum ? sumResultTypeFor(element_type) : element_type;
@@ -98,7 +97,6 @@ std::vector<GPUGroupByAggregate> aggregatesOrThrow(size_t num_columns, std::vect
     return aggregates;
 }
 
-/// The bytes of a mask of a bit per row of `rows`, in 32-bit words.
 size_t maskBytes(size_t rows)
 {
     return (rows + 31) / 32 * sizeof(uint32_t);
@@ -128,7 +126,7 @@ GPUDeviceBatch::~GPUDeviceBatch()
     if (!consumed || !consumer || !upload_stream)
         return;
 
-    /// The uploader frees the memory in the order of its stream, after what the consumer's stream did with it.
+    /// The uploader's stream frees the memory, so it must wait for the consumer's stream.
     try
     {
         checkCuda(cudaEventRecord(consumed.get(), consumer), "Cannot mark a point in the stream of a GPU batch's consumer");
@@ -136,7 +134,6 @@ GPUDeviceBatch::~GPUDeviceBatch()
     }
     catch (...)
     {
-        /// The memory is not freed before the consumer's stream is done with it.
         tryLogCurrentException(__PRETTY_FUNCTION__);
         cudaStreamSynchronize(consumer);
     }

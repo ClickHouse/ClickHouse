@@ -3,33 +3,21 @@
 #include <cudf/stream_compaction.hpp>
 #include <cudf/strings/strings_column_view.hpp>
 #include <cudf/unary.hpp>
+#include <cudf/utilities/error.hpp>
 
+#include <rmm/error.hpp>
 #include <rmm/mr/cuda_async_view_memory_resource.hpp>
 #include <rmm/mr/per_device_resource.hpp>
 
 #include <cstdint>
 #include <exception>
 #include <limits>
-#include <mutex>
+#include <stdexcept>
 #include <string>
 #include <utility>
-#include <vector>
-
-/// Of libc++abi: the exception being handled, with a reference of the caller.
-extern "C" void * __cxa_current_primary_exception() noexcept;
 
 namespace DB::GPU
 {
-
-__host__ void keepCurrentException()
-{
-    static std::mutex mutex;
-    /// Never destroyed, and reachable, so a leak checker does not report them.
-    static auto * kept = new std::vector<void *>;
-    void * exception = __cxa_current_primary_exception();
-    std::lock_guard lock(mutex);
-    kept->push_back(exception);
-}
 
 __host__ void setCudfMemoryPool(cudaMemPool_t pool)
 {
@@ -42,6 +30,37 @@ __host__ void setCudfMemoryPool(cudaMemPool_t pool)
 __host__ void resetCudfMemoryPool()
 {
     guarded("resetting the memory resource of cuDF", [] { rmm::mr::reset_current_device_resource(); });
+}
+
+namespace
+{
+
+/// libstdc++ keeps the message of a `std::logic_error` or a `std::runtime_error` as a pointer after the vtable.
+template <typename StandardException>
+__host__ const char * messageOf(const StandardException & exception)
+{
+#if !defined(__GLIBCXX__)
+#    error "The device code is expected to be compiled with libstdc++"
+#endif
+    static_assert(sizeof(StandardException) == 2 * sizeof(void *));
+    return *reinterpret_cast<const char * const *>(reinterpret_cast<const char *>(&exception) + sizeof(void *));
+}
+
+}
+
+__host__ std::string messageOfDeviceException(const std::exception & exception)
+{
+    if (const auto * out_of_memory = dynamic_cast<const rmm::out_of_memory *>(&exception))
+        return std::string("out of device memory: ") + out_of_memory->what();
+    if (const auto * cuda_error = dynamic_cast<const cudf::cuda_error *>(&exception))
+        return std::string("CUDA error: ") + messageOf<std::runtime_error>(*cuda_error);
+    if (const auto * logic_error = dynamic_cast<const cudf::logic_error *>(&exception))
+        return messageOf<std::logic_error>(*logic_error);
+
+    std::string message = "an exception the device library does not know";
+    if (const cudaError_t last = cudaPeekAtLastError(); last != cudaSuccess)
+        message += std::string(", the device reports: ") + cudaGetErrorString(last);
+    return message;
 }
 
 __host__ cudf::data_type cudfTypeOf(GPUElementType element_type)

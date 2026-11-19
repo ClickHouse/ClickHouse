@@ -33,7 +33,7 @@ __host__ std::unique_ptr<cudf::reduce_aggregation> reduceAggregationFor(GPUAggre
     throwGPUError(("unknown aggregation " + std::to_string(static_cast<int>(aggregation))).c_str());
 }
 
-/// How many batches' results are kept before they are reduced into one.
+/// Partial results kept before they are reduced into one.
 constexpr size_t max_partials = 1024;
 
 }
@@ -46,7 +46,6 @@ struct CudfReduction::State
     const cudf::data_type output_type;
     const std::unique_ptr<cudf::reduce_aggregation> aggregation;
 
-    /// The results of the batches, a row each.
     std::vector<std::unique_ptr<cudf::column>> partials;
     std::unique_ptr<cudf::column> result;
     std::unique_ptr<cudf::column> result_offsets;

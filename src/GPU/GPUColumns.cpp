@@ -65,7 +65,6 @@ void fillFixed(IColumn & column, GPUElementType element_type, size_t rows, std::
     if (values.size() != rows * sizeOf(element_type))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} bytes of {} values of {} bytes", values.size(), rows, sizeOf(element_type));
 
-    /// The bytes of a `FixedString` key, grouped as an integer as wide.
     if (auto * fixed_string = typeid_cast<ColumnFixedString *>(&column))
     {
         if (fixed_string->getN() != sizeOf(element_type) || !fixed_string->empty())

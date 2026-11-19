@@ -352,7 +352,6 @@ const IDeviceColumn & ColumnUploadPipe::deviceColumn() const
 DeviceColumnBuffer ColumnUploadPipe::takeDeviceColumn()
 {
     DeviceColumnBuffer taken(std::move(device));
-    /// In place, as the buffers have no assignment.
     switch (columnKindOf(column_type))
     {
         case GPUColumnKind::Fixed:

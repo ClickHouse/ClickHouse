@@ -32,14 +32,11 @@ std::optional<GPUAggregationKind> aggregationOf(const String & aggregate_functio
 
 String aggregationName(GPUAggregationKind aggregation);
 
-/// The element type a key of a `GROUP BY` is grouped as: that of `elementTypeOf`, and the integer as wide as a
-/// `FixedString` of 1, 2, 4 or 8 bytes, whose bytes are grouped by as they are.
+/// Also a `FixedString` of 1, 2, 4 or 8 bytes, grouped by its bytes as an integer as wide.
 std::optional<GPUElementType> keyElementTypeOf(const IDataType & type);
 
 std::vector<GPUElementType> groupByKeysOrThrow(const DataTypes & key_types);
 
-/// Whether the device aggregates the arguments into the results: without keys by reductions, with keys of `key_types`
-/// by a `CudfGroupBy`. A `count` has no argument.
 bool canAggregateOnDevice(
     const DataTypes & key_types,
     const DataTypes & argument_types,

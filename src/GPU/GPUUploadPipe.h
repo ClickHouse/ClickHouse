@@ -119,7 +119,6 @@ private:
 };
 
 
-/// The memory of a column on the device, of a fixed width or of varying width.
 using DeviceColumnBuffer = std::variant<DeviceFixedColumnBuffer, DeviceVariableColumnBuffer>;
 
 
@@ -175,15 +174,12 @@ public:
 
     const IDeviceColumn & flush() override;
 
-    /// Sends what is staged without waiting for it: the device column holds it once the pipe's stream gets this far.
-    /// The staging is taken again only after the copy, which `reset` and the next `stage` wait for.
+    /// The staging is reused only after the copy, which `reset` and the next `stage` wait for.
     const IDeviceColumn & sendWithoutWaiting();
 
-    /// What is on the device, or is going there in the order of the pipe's stream.
     const IDeviceColumn & deviceColumn() const;
 
-    /// Takes the device column of what was sent, which is there in the order of the pipe's stream and is freed in that
-    /// order as well, and starts an empty one: the pipe stages the next batch while the caller holds this one.
+    /// Freed in the order of the pipe's stream; the pipe stages the next batch while the caller holds this one.
     DeviceColumnBuffer takeDeviceColumn();
 
     void reset() override;
