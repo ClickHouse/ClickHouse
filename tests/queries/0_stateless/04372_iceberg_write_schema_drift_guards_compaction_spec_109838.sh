@@ -186,6 +186,13 @@ m['snapshot-log'].append({'snapshot-id': chain[1], 'timestamp-ms': m['last-updat
 PY
 optimize_then_show_refs_and_rows
 
+# --- OPTIMIZE with `snapshots` not in commit order (the spec allows any): rejected, rows unchanged
+reset
+three_inserts_edit_then_delete 1 <<'PY'
+m['snapshots'][1], m['snapshots'][2] = m['snapshots'][2], m['snapshots'][1]
+PY
+optimize_then_show_refs_and_rows
+
 # --- OPTIMIZE keeps the retention policy of `main` (`expire_snapshots` reads it) -------------
 reset
 three_inserts_edit_then_delete 2 <<'PY'

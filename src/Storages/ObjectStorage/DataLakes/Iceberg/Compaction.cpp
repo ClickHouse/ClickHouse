@@ -1658,7 +1658,7 @@ void compactIcebergTable(
         persistent_table_components.metadata_compression_method);
     if (plan.need_optimize)
     {
-        /// The rewrite applies only position deletes and rebuilds only the history of the current snapshot under `main`.
+        /// The rewrite applies only position deletes and replays, in array order, only the history of the current snapshot under `main`.
         if (plan.has_equality_deletes)
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
@@ -1671,13 +1671,23 @@ void compactIcebergTable(
                         "Compaction of Iceberg tables with snapshot references other than `main` is not supported, found `{}`. "
                         "The table is left unchanged.",
                         ref_name);
-        for (const auto & history_record : plan.history)
+        for (size_t i = 0; i < plan.history.size(); ++i)
+        {
+            const auto & history_record = plan.history[i];
             if (!history_record.is_current_ancestor)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Compaction of Iceberg tables with snapshots outside the history of the current snapshot is not supported, "
                     "found snapshot {}. The table is left unchanged.",
                     history_record.snapshot_id);
+            if (i > 0 && history_record.parent_id != plan.history[i - 1].snapshot_id)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Compaction of Iceberg tables whose snapshots are not listed in commit order is not supported, "
+                    "found snapshot {} after snapshot {}. The table is left unchanged.",
+                    history_record.snapshot_id,
+                    plan.history[i - 1].snapshot_id);
+        }
 
         /// Compaction rewrites files through the same positional mapping as the sink/UPDATE while
         /// the file is shaped by the possibly-stale `sample_block_`; guard against schema drift.
