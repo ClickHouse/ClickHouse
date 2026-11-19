@@ -14,6 +14,7 @@ namespace DB::ErrorCodes
 {
     extern const int FAULT_INJECTED;
     extern const int CORRUPTED_DATA;
+    extern const int READONLY;
 }
 
 using namespace DB;
@@ -58,6 +59,23 @@ TEST(UndoWithRetries, DoesNotRepeatCorruptedData)
     {
         if (++attempts < 4)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "The marker is gone");
+    }), Exception);
+
+    EXPECT_EQ(attempts, 1u);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::DiskPlainRewritableUndoStageRetries], retries_before);
+}
+
+/// A read-only object storage refuses every write for its whole life, so asking again cannot get the stage through. The
+/// stage goes through from the fourth attempt, so a repeat shows as a missing exception rather than a hang.
+TEST(UndoWithRetries, DoesNotRepeatReadonly)
+{
+    const auto retries_before = ProfileEvents::global_counters[ProfileEvents::DiskPlainRewritableUndoStageRetries];
+
+    size_t attempts = 0;
+    EXPECT_THROW(undoWithRetries(getLogger("UndoWithRetries"), "remove the directory metadata", [&]
+    {
+        if (++attempts < 4)
+            throw Exception(ErrorCodes::READONLY, "Object storage is readonly");
     }), Exception);
 
     EXPECT_EQ(attempts, 1u);

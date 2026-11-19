@@ -16,6 +16,7 @@ struct MultiplyDecimalsImpl
 {
     static constexpr auto name = "multiplyDecimal";
     static constexpr auto suitable_for_short_circuit = false;
+    static constexpr bool valid_on_default_arguments = true;
 
     template <typename FirstType, typename SecondType>
     static Decimal256

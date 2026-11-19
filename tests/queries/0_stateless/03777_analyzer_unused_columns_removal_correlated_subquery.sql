@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET correlated_subqueries_substitute_equivalent_expressions = 0;
 SET optimize_trivial_insert_select = 0;

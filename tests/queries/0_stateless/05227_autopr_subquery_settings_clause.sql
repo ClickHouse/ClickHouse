@@ -20,8 +20,6 @@ CREATE TABLE t_autopr_subquery_settings_mid (x UInt64) ENGINE = MergeTree ORDER 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_replicas_local_plan=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
 
-SET enable_analyzer=1;
-
 -- Both prewhere switches are pinned because the harness randomizes each of them off independently: the
 -- `WHERE` shapes below are the shape under test only when the `WHERE` becomes a `PREWHERE`, which is
 -- where the diverging set name reaches the read step's hash.

@@ -97,6 +97,10 @@ struct MergeListElement : boost::noncopyable
     std::atomic<Float64> progress{};
     std::atomic<bool> is_cancelled{};
 
+    /// Set once `MergeTask::prepare` has settled it: a regular merge that removes expired values is
+    /// cancellable by `SYSTEM STOP TTL MERGES`, one that had removal disabled up front is not.
+    std::atomic<bool> is_removing_expired_values{};
+
     UInt64 total_size_bytes_compressed{};
     UInt64 total_size_bytes_uncompressed{};
     UInt64 total_size_marks{};
@@ -137,10 +141,12 @@ struct MergeListElement : boost::noncopyable
     ThreadGroupPtr thread_group;
     CurrentMetrics::Increment num_parts_metric_increment;
 
+    /// `thread_group_` is the group of the task that runs the merge or mutation. If it is null, a new group is created.
     MergeListElement(
         const StorageID & table_id_,
         FutureMergedMutatedPartPtr future_part,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        ThreadGroupPtr thread_group_ = nullptr);
 
     MergeInfo getInfo() const;
 

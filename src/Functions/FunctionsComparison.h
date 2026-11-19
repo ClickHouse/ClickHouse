@@ -60,6 +60,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 /// For the array/tuple element-comparison path, when there is a scalar position pair a `String`/`FixedString` on one side
@@ -105,6 +106,29 @@ static bool hasAlignedStringVsNonStringElement(const DataTypePtr & left_type, co
     const bool left_is_string = left_which.isStringOrFixedString();
     const bool right_is_string = right_which.isStringOrFixedString();
     return left_is_string != right_is_string;
+}
+
+/// Whether `type` has a `String` compared with a `FixedString` of `other_type`: such values are compared zero-padded,
+/// unlike after a cast to the common type `String`. Tuples are compared element-wise, so their elements count at any
+/// depth; arrays and maps are compared after a cast to the common type, so theirs do not.
+static bool hasAlignedStringVsFixedStringElement(const DataTypePtr & type, const DataTypePtr & other_type)
+{
+    const auto own = removeLowCardinalityAndNullable(type);
+    const auto other = removeLowCardinalityAndNullable(other_type);
+    if (isString(own) && isFixedString(other))
+        return true;
+
+    const auto * own_tuple = checkAndGetDataType<DataTypeTuple>(own.get());
+    const auto * other_tuple = checkAndGetDataType<DataTypeTuple>(other.get());
+    if (!own_tuple || !other_tuple || own_tuple->getElements().size() != other_tuple->getElements().size())
+        return false;
+
+    for (size_t i = 0; i < own_tuple->getElements().size(); ++i)
+    {
+        if (hasAlignedStringVsFixedStringElement(own_tuple->getElement(i), other_tuple->getElement(i)))
+            return true;
+    }
+    return false;
 }
 
 /// For the array element-comparison path: a bare `Nothing` position carries no value, so the element
@@ -214,7 +238,7 @@ ColumnPtr executeDecimal(const ColumnWithTypeAndName & col_left, const ColumnWit
   */
 
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
 /// Compares `size` 16-byte values ordered by their bytes (`IPv6`, `FixedString(16)`); `Op` is over `int`.
 template <typename Op, bool b_is_constant>
 X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE void compareBigEndian16_x86_64_v4(
@@ -267,14 +291,14 @@ struct NumComparisonImpl
         }
     }))
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     using OrderedOpOverInt = typename OrderedComparisonOverInt<Op>::Type;
     static constexpr bool is_ordered_ipv6 = std::is_same_v<A, IPv6> && std::is_same_v<B, IPv6> && !std::is_void_v<OrderedOpOverInt>;
 #endif
 
     static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             if constexpr (is_ordered_ipv6)
@@ -307,7 +331,7 @@ struct NumComparisonImpl
         }
     }))
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     /// Takes `b` by value, so that only the AVX-512 path needs it in memory.
     static void X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE vectorConstantOrderedIPv6_x86_64_v4(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
@@ -318,7 +342,7 @@ struct NumComparisonImpl
 
     static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             if constexpr (is_ordered_ipv6)
@@ -438,7 +462,7 @@ struct StringComparisonImpl
         const ColumnString::Chars & b_data,
         PaddedPODArray<UInt8> & c)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             compareBigEndian16_x86_64_v4<Op, false>(a_data.data(), b_data.data(), c.data(), a_data.size() / 16);
@@ -457,7 +481,7 @@ struct StringComparisonImpl
         const ColumnString::Chars & b_data,
         PaddedPODArray<UInt8> & c)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             compareBigEndian16_x86_64_v4<Op, true>(a_data.data(), b_data.data(), c.data(), a_data.size() / 16);
@@ -933,10 +957,35 @@ inline bool comparisonCanThrow(const DataTypePtr & left_type, const DataTypePtr 
         left_scaled && left_scaled == scale_and_kind(right, which_right))
         return false;
 
+    /// Tuples are compared element-wise by `executeTuple`. A tuple comparison cannot throw if and
+    /// only if both sides have the same non-zero number of elements and each corresponding element
+    /// comparison cannot throw.
+    if (const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(left.get()))
+    {
+        if (const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(right.get()))
+        {
+            const auto & left_elements = left_tuple->getElements();
+            const auto & right_elements = right_tuple->getElements();
+
+            if (left_elements.empty() || left_elements.size() != right_elements.size())
+                return true;
+
+            for (size_t i = 0; i < left_elements.size(); ++i)
+            {
+                if (comparisonCanThrow(left_elements[i], right_elements[i]))
+                    return true;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
     /// Values of exactly the same type are compared by `IColumn::compareAt`, which reads the values
-    /// as they are stored. `Variant`, `Dynamic` and `JSON` are excluded: a comparison of those
-    /// dispatches on the type of every individual row.
-    if (left->equals(*right) && !which_left.isVariant() && !which_left.isDynamic() && !which_left.isObject())
+    /// as they are stored. `Variant`, `Dynamic`, `JSON` and `Tuple` are excluded: a comparison of
+    /// those dispatches on the type of every individual row, or decomposes into element comparisons.
+    if (left->equals(*right) && !which_left.isVariant() && !which_left.isDynamic() && !which_left.isObject() && !which_left.isTuple())
         return false;
 
     return true;
@@ -971,9 +1020,9 @@ public:
 
     explicit FunctionComparison(ComparisonParams params_) : params(std::move(params_)) {}
 
-    bool ALWAYS_INLINE  useDefaultImplementationForNulls() const override { return is_null_safe_cmp_mode ? false : true; }
-    bool ALWAYS_INLINE  useDefaultImplementationForVariant() const override { return is_null_safe_cmp_mode ? false : params.use_variant_default_implementation; }
-    bool isNameInsensitive() const override { return true; }
+    [[nodiscard]] bool ALWAYS_INLINE  useDefaultImplementationForNulls() const override { return is_null_safe_cmp_mode ? false : true; }
+    [[nodiscard]] bool ALWAYS_INLINE  useDefaultImplementationForVariant() const override { return is_null_safe_cmp_mode ? false : params.use_variant_default_implementation; }
+    [[nodiscard]] bool isNameInsensitive() const override { return true; }
 private:
     const ComparisonParams params;
 
@@ -1233,6 +1282,20 @@ private:
         return c_res;
     }
 
+    [[nodiscard]] bool acceptsArgumentTypes(const DataTypes & arguments, const DataTypePtr & result_type) const
+    {
+        try
+        {
+            return getReturnTypeImpl(arguments)->equals(*result_type);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
+                return false;
+            throw;
+        }
+    }
+
     ColumnPtr executeWithConstString(
             const DataTypePtr & result_type, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
             const DataTypePtr & left_type, const DataTypePtr & right_type, size_t input_rows_count) const
@@ -1274,23 +1337,61 @@ private:
 
         Field converted = convertFieldToType(string_value, *type_to_compare, type_string, params.format_settings);
 
-        /// If not possible to convert, comparison with =, <, >, <=, >= yields to false and comparison with != yields to true.
+        DataTypePtr type_of_converted = type_to_compare;
         if (converted.isNull())
         {
-            return DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
+            converted = convertFieldToTypeWithWiderIntegers(string_value, type_of_converted, type_string, params.format_settings);
+            const DataTypes wider_arguments
+                = left_const ? DataTypes{type_of_converted, type_to_compare} : DataTypes{type_to_compare, type_of_converted};
+            /// `executeImpl` is safe only for argument types that `getReturnTypeImpl` accepts.
+            if (!converted.isNull() && !acceptsArgumentTypes(wider_arguments, result_type))
+                converted = Field();
         }
 
-        ColumnPtr column_converted = type_to_compare->createColumnConst(input_rows_count, converted);
+        /// If not possible to convert, != yields true and = false; ordering yields false unless the constant is outside the type's range.
+        if (converted.isNull())
+        {
+            if constexpr (IsOperation<Op>::less || IsOperation<Op>::less_or_equals
+                       || IsOperation<Op>::greater || IsOperation<Op>::greater_or_equals)
+            {
+                /// Every value of the type is on one known side of an out-of-range integer constant.
+                /// `x <= C` and `x > C` must stay complementary: an inverting rewrite relies on it.
+                const auto range = string_value.getType() == Field::Types::String
+                    ? classifyIntegerLiteralRange(string_value.safeGet<String>(), *type_to_compare)
+                    : IntegerLiteralRange::NotApplicable;
+
+                if (range == IntegerLiteralRange::AboveMax || range == IntegerLiteralRange::BelowMin)
+                {
+                    const bool left_is_less
+                        = left_const ? range == IntegerLiteralRange::BelowMin : range == IntegerLiteralRange::AboveMax;
+                    const bool result = left_is_less
+                        ? IsOperation<Op>::less || IsOperation<Op>::less_or_equals
+                        : IsOperation<Op>::greater || IsOperation<Op>::greater_or_equals;
+                    return result_type->createColumnConst(input_rows_count, static_cast<UInt8>(result));
+                }
+
+                /// A composite constant that could not be read with wider integer elements has no single side to answer for.
+                const WhichDataType which_to_compare(removeNullable(type_to_compare));
+                if (which_to_compare.isArray() || which_to_compare.isTuple() || which_to_compare.isMap())
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                        "Cannot compare with '{}': an integer in it does not fit {}, and the constant cannot be compared by value",
+                        string_value.safeGet<String>(), type_to_compare->getName());
+            }
+
+            return result_type->createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
+        }
+
+        ColumnPtr column_converted = type_of_converted->createColumnConst(input_rows_count, converted);
 
         ColumnsWithTypeAndName tmp_columns{
-            {left_const ? column_converted : col_left_untyped->getPtr(), type_to_compare, ""},
-            {!left_const ? column_converted : col_right_untyped->getPtr(), type_to_compare, ""},
+            {left_const ? column_converted : col_left_untyped->getPtr(), left_const ? type_of_converted : type_to_compare, ""},
+            {!left_const ? column_converted : col_right_untyped->getPtr(), !left_const ? type_of_converted : type_to_compare, ""},
         };
 
         return executeImpl(tmp_columns, result_type, input_rows_count);
     }
 
-    ColumnPtr executeTuple(
+    [[nodiscard]] ColumnPtr executeTuple(
         const DataTypePtr & result_type, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1,
         size_t input_rows_count) const
     {
@@ -1361,11 +1462,11 @@ private:
         return executeTupleImpl(x, y, tuple_size, input_rows_count);
     }
 
-    ColumnPtr executeTupleImpl(const ColumnsWithTypeAndName & x,
+    [[nodiscard]] ColumnPtr executeTupleImpl(const ColumnsWithTypeAndName & x,
                           const ColumnsWithTypeAndName & y, size_t tuple_size,
                           size_t input_rows_count) const;
 
-    ColumnPtr executeTupleEqualityImpl(
+    [[nodiscard]] ColumnPtr executeTupleEqualityImpl(
             std::shared_ptr<IFunctionOverloadResolver> func_compare,
             std::shared_ptr<IFunctionOverloadResolver> func_convolution,
             const ColumnsWithTypeAndName & x,
@@ -1402,7 +1503,7 @@ private:
         return impl->execute(convolution_columns, impl->getResultType(), input_rows_count, /* dry_run = */ false);
     }
 
-    ColumnPtr executeTupleLessGreaterImpl(
+    [[nodiscard]] ColumnPtr executeTupleLessGreaterImpl(
             std::shared_ptr<IFunctionOverloadResolver> func_compare_head,
             std::shared_ptr<IFunctionOverloadResolver> func_compare_tail,
             std::shared_ptr<IFunctionOverloadResolver> func_and,
@@ -1505,7 +1606,7 @@ private:
         return c_res;
     }
 
-    ColumnPtr executeGeneric(const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1) const
+    [[nodiscard]] ColumnPtr executeGeneric(const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1) const
     {
         DataTypePtr common_type = getLeastSupertype(DataTypes{c0.type, c1.type});
         ColumnPtr c0_converted = castColumn(c0, common_type);
@@ -1534,7 +1635,7 @@ private:
         size_t num_elements = 0;
     };
 
-    GatheredArrayElements gatherAlignedArrayElements(
+    [[nodiscard]] GatheredArrayElements gatherAlignedArrayElements(
         const ColumnWithTypeAndName & column_type_name0,
         const ColumnWithTypeAndName & column_type_name1,
         size_t input_rows_count) const
@@ -1651,7 +1752,7 @@ private:
     /// Lexicographic equality of two arrays: they are equal iff their lengths match and all aligned elements are equal
     /// (a NULL element is equal only to another NULL). For `!=` and `isDistinctFrom` (instantiated with `NotEqualsOp`)
     /// the result is inverted into inequality.
-    ColumnPtr executeArrayLexicographicEqualityImpl(
+    [[nodiscard]] ColumnPtr executeArrayLexicographicEqualityImpl(
         const FunctionOverloadResolverPtr & equals_resolver,
         const ColumnWithTypeAndName & column_type_name0,
         const ColumnWithTypeAndName & column_type_name1,
@@ -1700,7 +1801,7 @@ private:
 
     /// Lexicographic order comparison (`<`, `<=`, `>`, `>=`) of two arrays: the first differing aligned element decides via `order_resolver`
     /// A NULL element is equal only to another NULL and sorts after every non-NULL value. The result is always a non-Nullable `UInt8`
-    ColumnPtr executeArrayLexicographicLessGreaterImpl(
+    [[nodiscard]] ColumnPtr executeArrayLexicographicLessGreaterImpl(
         const FunctionOverloadResolverPtr & equals_resolver,
         const FunctionOverloadResolverPtr & order_resolver,
         const ColumnWithTypeAndName & column_type_name0,
@@ -1782,7 +1883,7 @@ private:
 
     /// Entry point for array-vs-array comparison: chooses the strategy based on the least
     /// supertype of the arguments.
-    ColumnPtr  executeArray(
+    [[nodiscard]] ColumnPtr  executeArray(
         const ColumnWithTypeAndName & c0,
         const ColumnWithTypeAndName & c1,
         size_t input_rows_count) const
@@ -1795,22 +1896,22 @@ private:
     }
 
     /// Implemented as a template specialization per operator (`=`, `!=`, `<`, `<=`, `>`, `>=` and the null-safe variants)
-    ColumnPtr executeArrayLexicographic(
+    [[nodiscard]] ColumnPtr executeArrayLexicographic(
         const ColumnWithTypeAndName & column_type_name0,
         const ColumnWithTypeAndName & column_type_name1,
         size_t input_rows_count) const;
 
 public:
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
     void updateHash(SipHash & hash) const override { params.updateHash(hash); }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    ComparisonOrderDomain getComparisonOrderDomain(const DataTypes & arguments) const override
+    [[nodiscard]] ComparisonOrderDomain getComparisonOrderDomain(const DataTypes & arguments) const override
     {
         if constexpr (is_null_safe_cmp_mode || IsOperation<Op>::not_equals)
             return {};
@@ -1824,18 +1925,58 @@ public:
         return left_domain;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// Documentation-only — comparison is defined for numbers (cross-type via
+    /// least-supertype), strings, dates, UUIDs, IPv4/IPv6, equivalent enums,
+    /// and same-arity tuples (element-wise). Result is `UInt8` for the
+    /// null-safe variants (`isDistinctFrom` / `isNotDistinctFrom`) and for
+    /// non-Nullable inputs; otherwise `Nullable(UInt8)` propagates from any
+    /// Nullable element. The DSL doesn't capture this matrix concisely, so
+    /// the legacy `getReturnTypeImpl(DataTypes)` remains authoritative;
+    /// the string is surfaced via `system.functions`.
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(Any, Any) -> UInt8";
+    }
+
+    /// Bypass the DSL — the (Any, Any) -> UInt8 signature is documentation-only
+    /// and does not capture Nullable propagation for tuples. Delegate to the
+    /// legacy `DataTypes` overload, which performs full validation and wraps
+    /// the result in `Nullable(UInt8)` when any tuple element is nullable.
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & arg : arguments)
+            types.push_back(arg.type);
+        return getReturnTypeImpl(types);
+    }
 
     /// A comparison is cheap, so it is not worth executing it lazily, but it is not free of
     /// exceptions either: comparing a date to a string parses that string. These two properties
     /// have to be answered separately.
-    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
     {
-        return arguments.size() != 2 || comparisonCanThrow(arguments[0].type, arguments[1].type);
+        if (arguments.size() != 2)
+            return true;
+        if (!comparisonCanThrow(arguments[0].type, arguments[1].type))
+            return false;
+        /// A constant string is converted to the other argument's type once, before any row is compared (`executeWithConstString`).
+        for (size_t i = 0; i < 2; ++i)
+        {
+            const ColumnConst * constant = arguments[i].column ? checkAndGetColumnConstStringOrFixedString(arguments[i].column) : nullptr;
+            if (!constant)
+                continue;
+            const DataTypePtr type_to_compare = removeNullable(removeLowCardinality(arguments[1 - i].type));
+            const DataTypePtr type_string = removeNullable(removeLowCardinality(arguments[i].type));
+            return comparisonCanThrow(type_to_compare, type_to_compare)
+                || tryConvertFieldToType(constant->getField(), *type_to_compare, type_string.get(), params.format_settings).isNull();
+        }
+        return true;
     }
-
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if ((name == NameEquals::name || name == NameNotEquals::name))
         {
@@ -1977,12 +2118,12 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         checkStackSize();
 
@@ -2171,7 +2312,7 @@ public:
         return executeGeneric(col_with_type_and_name_left, col_with_type_and_name_right);
     }
 
-    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    [[nodiscard]] ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
         for (const auto & argument : arguments)
         {
@@ -2223,7 +2364,7 @@ public:
         });
     }
 
-    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & result_type) const override
+    [[nodiscard]] bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & result_type) const override
     {
         if (2 != arguments.size())
             return false;

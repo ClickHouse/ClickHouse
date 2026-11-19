@@ -3,7 +3,6 @@
 -- on a single node: split across N nodes each one counts its own stream from zero, so a filter
 -- `rowNumberInAllBlocks() < 1000` returns up to N * 1000 rows instead of 1000.
 
-SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;
