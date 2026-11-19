@@ -146,6 +146,17 @@ ${CLICKHOUSE_CLIENT} --use_top_k_dynamic_filtering 1 --enable_multiple_prewhere_
   --max_threads 1 --max_block_size 4096 --preferred_block_size_bytes 0 --use_query_condition_cache 0 \
   --query_id "$qid_topk_frag" -q "SELECT a FROM t_split_fragment PREWHERE c = 1 ORDER BY b LIMIT 10 FORMAT Null"
 
+# -------- A user predicate on the join key, fused with the runtime filter on that same key, is still counted ----
+# The runtime filter `__applyFilter(b)` and the user `b < 8192` read the same column b, so the splitter would group
+# them into one step; marking that fused step non-PREWHERE would drop the user predicate's effect and report 0
+# (issue #131263). The dynamic filter is split into its own step, so `b < 8192` is attributed on its own: it keeps
+# granule 0 and rejects granules 1..24, the same as with the runtime filter off -- 25 read, 24 dropped, 191808 rows.
+qid_rf_user_key="${CLICKHOUSE_DATABASE}_rf_user_key_$RANDOM$RANDOM"
+${CLICKHOUSE_CLIENT} --enable_join_runtime_filters 1 --enable_join_runtime_filters_index_analysis 0 \
+  --optimize_move_to_prewhere 1 --query_plan_join_swap_table 0 --enable_multiple_prewhere_read_steps 1 \
+  --max_threads 1 --use_query_condition_cache 0 \
+  --query_id "$qid_rf_user_key" -q "SELECT t.a FROM t_facts t JOIN t_dim d ON t.b = d.x WHERE t.b < 8192 FORMAT Null"
+
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
 # granules read / granules dropped / rows dropped by PREWHERE.
@@ -159,6 +170,7 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 #   topK fused:     0, 0, 0          (mixed fused step not separable, not attributed)
 #   topK leading:  25, 0, 170        (top-K before the user step thinned the granule; user step emptied remnant)
 #   topK fragment: 10, 0, 36864      (top-K emptied one block-fragment of the granule; contamination kept per mark)
+#   RF user key:   25, 24, 191808    (user predicate on the join key, fused with the runtime filter, still counted)
 dump_events "$qid_topk"
 dump_events "$qid_rf"
 dump_events "$qid_pw"
@@ -169,5 +181,6 @@ dump_events "$qid_rf_partial_small"
 dump_events "$qid_topk_fused"
 dump_events "$qid_topk_lead"
 dump_events "$qid_topk_frag"
+dump_events "$qid_rf_user_key"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_facts; DROP TABLE t_dim; DROP TABLE t_prefix; DROP TABLE t_split_fragment"

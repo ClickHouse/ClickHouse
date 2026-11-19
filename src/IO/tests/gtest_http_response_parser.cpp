@@ -143,6 +143,7 @@ const std::vector<std::string> inputs = {
     "HTTP/1.1  503   Slow Down \r\nRetry-After: 1\r\n\r\n",
     "HTTP/1.1 200 OK\r\nA: =?UTF-8?B?aGVsbG8=?=\r\n\r\n",
     "HTTP/1.1 200 OK\r\n\rgarbage\r\nbody",
+    "HTTP/1.1 200 OK\r\nA: b\rX\r\n\r\n",
     "HTTP/1.1 200 OK\r\nA: " + std::string(9000, 'v') + "\r\n\r\n",
     "HTTP/1.1 200 OK\r\n" + std::string(300, 'n') + ": 1\r\n\r\n",
     "HTTP/1.1 200 " + std::string(600, 'r') + "\r\n\r\n",
@@ -200,9 +201,9 @@ TEST(HTTPResponseParser, LimitsHoldBeforeTheHeaderEnds)
         parser.feed(data.data(), data.size());
     };
 
-    EXPECT_THROW(feed_unterminated("HTTP/1.1 404 Not Found\r\nA: 1\r\nB: 2\r\nC: 3\r\nD"), Poco::Net::MessageException);
-    EXPECT_THROW(feed_unterminated("HTTP/1.1 404 Not Found\r\nA: 1234567890\r\n 1234567890"), Poco::Net::MessageException);
-    EXPECT_THROW(feed_unterminated("HTTP/1.1 100 Continue\r\nA: 1\r\nB: 2\r\nC: 3\r\nD"), Poco::Net::MessageException);
+    EXPECT_THROW(feed_unterminated("HTTP/1.1 404 Not Found\r\nA: 1\r\nB: 2\r\nC: 3\r\nD"), Poco::Net::HTTPHeaderLimitException);
+    EXPECT_THROW(feed_unterminated("HTTP/1.1 404 Not Found\r\nA: 1234567890\r\n 1234567890"), Poco::Net::HTTPHeaderLimitException);
+    EXPECT_THROW(feed_unterminated("HTTP/1.1 100 Continue\r\nA: 1\r\nB: 2\r\nC: 3\r\nD"), Poco::Net::HTTPHeaderLimitException);
 }
 
 /// The status line is available before the rest of the header arrives.
@@ -239,5 +240,5 @@ TEST(HTTPResponseParser, ResetKeepsTheLimits)
 
     parser.reset();
     EXPECT_FALSE(parser.statusLineComplete());
-    EXPECT_THROW(parser.feed(second.data(), second.size()), Poco::Net::MessageException);
+    EXPECT_THROW(parser.feed(second.data(), second.size()), Poco::Net::HTTPHeaderLimitException);
 }
