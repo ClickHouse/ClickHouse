@@ -364,6 +364,33 @@ TEST(LanceScanCoordinator, ConcurrentConsumersReceiveEveryBatchExactlyOnce)
     EXPECT_EQ(coordinator->state(), Lance::ScanCoordinator::State::Ended);
 }
 
+/// A fragment with deletion vectors can yield an empty batch before the surviving rows.
+/// The empty batch must be skipped, not treated as the end of the scan.
+TEST(LanceScanCoordinator, EmptyBatchDoesNotEndScan)
+{
+    for (const std::optional<UInt64> row_limit : {std::optional<UInt64>{}, std::optional<UInt64>{10}})
+    {
+        auto state = std::make_shared<FakeBatchProviderState>();
+        auto coordinator = Lance::ScanCoordinator::createWithProvider(
+            std::make_unique<FakeBatchProvider>(
+                state, std::vector<std::shared_ptr<arrow::RecordBatch>>{makeBatch(0, 0), makeBatch(2, 2), makeBatch(4, 0)}),
+            false,
+            row_limit);
+
+        std::vector<Int64> ids;
+        while (auto batch = coordinator->nextBatch())
+        {
+            const auto array = std::static_pointer_cast<arrow::Int64Array>(batch->recordBatch()->column(0));
+            for (int64_t row = 0; row < array->length(); ++row)
+                ids.push_back(array->Value(row));
+        }
+
+        EXPECT_EQ(ids, (std::vector<Int64>{2, 3}));
+        EXPECT_EQ(state->released_batches, 3);
+        EXPECT_EQ(coordinator->state(), Lance::ScanCoordinator::State::Ended);
+    }
+}
+
 TEST(LanceReadCancellation, SiblingReadsHaveIndependentHandles)
 {
     auto first = std::make_shared<Lance::ReadCancellation>(nullptr);

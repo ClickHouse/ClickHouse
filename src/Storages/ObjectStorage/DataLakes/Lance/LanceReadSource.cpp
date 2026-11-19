@@ -212,56 +212,65 @@ std::optional<ScanCoordinator::Batch> ScanCoordinator::nextBatch()
     /// sliced, and dropped here without charging or crediting the query. See `Batch::release`.
     MemoryTrackerBlockerInThread blocker(VariableContext::User);
 
-    {
-        std::lock_guard lock(state_mutex);
-        if (current_state != State::Running)
-            return std::nullopt;
-    }
-
     std::optional<Scan::Batch> next;
-    try
+    while (true)
     {
-        next = provider->nextBatch();
-    }
-    catch (...)
-    {
-        refreshCurrentMetrics();
-        bool propagate = false;
         {
             std::lock_guard lock(state_mutex);
-            /// Another consumer may have observed the natural end of the data while this one was failing
-            /// to take a batch: the batch is lost, so the failure must not be suppressed.
-            if (current_state == State::Running || (current_state == State::Ended && reached_end_of_data))
-            {
-                current_state = State::Failed;
-                first_exception = std::current_exception();
-                propagate = true;
-            }
+            if (current_state != State::Running)
+                return std::nullopt;
         }
-        provider->requestCancel();
-        if (propagate)
-            std::rethrow_exception(first_exception);
-        return std::nullopt;
-    }
-    refreshCurrentMetrics();
 
-    if (!next)
-    {
-        /// The Rust producer records an error before publishing its single error message.
-        /// A different consumer can observe channel close immediately after that message
-        /// is claimed; it must not win the race and replace `Failed` with `Ended`.
-        if (provider->stats().producer_error != 0)
-            return std::nullopt;
+        try
         {
-            std::lock_guard lock(state_mutex);
-            if (current_state == State::Running)
-            {
-                current_state = State::Ended;
-                reached_end_of_data = true;
-            }
+            next = provider->nextBatch();
         }
-        accountStatsOnce();
-        return std::nullopt;
+        catch (...)
+        {
+            refreshCurrentMetrics();
+            bool propagate = false;
+            {
+                std::lock_guard lock(state_mutex);
+                /// Another consumer may have observed the natural end of the data while this one was failing
+                /// to take a batch: the batch is lost, so the failure must not be suppressed.
+                if (current_state == State::Running || (current_state == State::Ended && reached_end_of_data))
+                {
+                    current_state = State::Failed;
+                    first_exception = std::current_exception();
+                    propagate = true;
+                }
+            }
+            provider->requestCancel();
+            if (propagate)
+                std::rethrow_exception(first_exception);
+            return std::nullopt;
+        }
+        refreshCurrentMetrics();
+
+        if (!next)
+        {
+            /// The Rust producer records an error before publishing its single error message.
+            /// A different consumer can observe channel close immediately after that message
+            /// is claimed; it must not win the race and replace `Failed` with `Ended`.
+            if (provider->stats().producer_error != 0)
+                return std::nullopt;
+            {
+                std::lock_guard lock(state_mutex);
+                if (current_state == State::Running)
+                {
+                    current_state = State::Ended;
+                    reached_end_of_data = true;
+                }
+            }
+            accountStatsOnce();
+            return std::nullopt;
+        }
+
+        /// An empty batch is not the end of the data: e.g. a fragment with deletion vectors can yield an
+        /// empty batch followed by the surviving rows. Skip it and keep reading.
+        if (next->rows != 0)
+            break;
+        releaseBatch(next->bytes);
     }
 
     const UInt64 claimed_rows = claimRows(next->rows);
