@@ -22,6 +22,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ZstdContext.h>
 
+#include <algorithm>
 #include <atomic>
 #include <memory>
 #include <mutex>
@@ -152,6 +153,9 @@ std::atomic<size_t> num_incremental_frames = 0;
 /// Enough for the wide columns of the streams of a few concurrent queries per core.
 constexpr size_t max_incremental_frames_per_core = 4;
 
+/// A stream that switches from reading frames to the end to reading their beginnings decompresses at most this many at once.
+constexpr size_t max_frames_to_decompress_at_once = 64;
+
 /// The caller blocks the memory tracker of the query, as decompression contexts are not charged to queries, and
 /// `MEMORY_LIMIT_EXCEEDED` of the global one, as a context may be returned to its pool in a destructor.
 ContextPools<ZstdDCtxPtr>::Holder getDecompressionContext()
@@ -249,6 +253,12 @@ struct ZstdIncrementalDecompressor::Impl
     char * dest = nullptr;
     size_t dest_size = 0;
     size_t decompressed = 0;
+
+    /// Decompressing a frame block by block costs more per byte than at once, so after a frame read to the end the next
+    /// `frames_to_decompress_at_once` frames are decompressed at once. Their number doubles while frames are read to the end
+    /// and starts over from 1 after a frame left before its end.
+    size_t frames_to_decompress_at_once = 0;
+    size_t next_frames_to_decompress_at_once = 1;
 };
 
 ZstdIncrementalDecompressor::ZstdIncrementalDecompressor() = default;
@@ -267,6 +277,9 @@ void ZstdIncrementalDecompressor::reset()
     if (!inProgress())
         return;
 
+    if (impl->decompressed && impl->decompressed < impl->dest_size)
+        impl->next_frames_to_decompress_at_once = 1;
+
     /// The frame no longer holds the context, so the bound of the pools applies to it.
     --num_incremental_frames;
     MemoryTrackerBlockerInThread blocker;
@@ -277,6 +290,12 @@ void ZstdIncrementalDecompressor::reset()
 bool ZstdIncrementalDecompressor::start(const char * source, size_t source_size, char * dest, size_t dest_size)
 {
     reset();
+
+    if (impl && impl->frames_to_decompress_at_once)
+    {
+        --impl->frames_to_decompress_at_once;
+        return false;
+    }
 
     /// The one-shot decompression also takes several frames, skippable frames and trailing data: leave them to it.
     if (ZSTD_findFrameCompressedSize(source, source_size) != source_size)
@@ -363,6 +382,8 @@ size_t ZstdIncrementalDecompressor::decompressAtLeast(size_t min_bytes)
                 "Cannot decompress ZSTD-encoded data: the size after decompression ({}) is different than the expected size ({})",
                 impl->decompressed, impl->dest_size);
         chassert(impl->source_pos == impl->source_size);
+        impl->frames_to_decompress_at_once = impl->next_frames_to_decompress_at_once;
+        impl->next_frames_to_decompress_at_once = std::min(2 * impl->next_frames_to_decompress_at_once, max_frames_to_decompress_at_once);
         reset();
     }
 
