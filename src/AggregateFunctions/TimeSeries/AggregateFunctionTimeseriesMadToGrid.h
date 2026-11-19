@@ -105,7 +105,6 @@ struct AggregateFunctionTimeseriesMadToGridTraits
         /// grid point only: `add` computes the result from it unsorted, and only the result is kept.
         bool one_bucket_windows = false;
         std::optional<ResultType> one_bucket_result;
-        GridScaleTimestampType one_bucket_end{};
 
         void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
         {
@@ -120,9 +119,7 @@ struct AggregateFunctionTimeseriesMadToGridTraits
 
             if (one_bucket_windows)
             {
-                /// Replaces the result of the previous grid point, which is out of this window.
                 one_bucket_result = madOfUnsorted(std::move(values));
-                one_bucket_end = bucket_end_timestamp;
                 return;
             }
 
@@ -135,8 +132,8 @@ struct AggregateFunctionTimeseriesMadToGridTraits
         {
             if (one_bucket_windows)
             {
-                if (one_bucket_end <= cut_off)
-                    one_bucket_result.reset();
+                /// The bucket of the previous grid point is out of the window, and the bucket of this one is added after.
+                one_bucket_result.reset();
                 return;
             }
             sliding_sum.removeBefore(cut_off);
