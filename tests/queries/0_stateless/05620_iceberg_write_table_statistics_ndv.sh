@@ -201,6 +201,13 @@ local_query "CREATE TABLE t_unlisted ENGINE = IcebergLocal('${WORK_DIR}/t_unlist
     INSERT INTO t_unlisted SELECT number + 1000, toString(number % 10 + 10) FROM numbers(1000);"
 stats t_unlisted "id s"
 
+echo "array, tuple and map columns get no sketch, the primitive columns beside them do"
+local_query "CREATE TABLE t_nested (id Int64, a Array(Int32), t Tuple(x Int32, y String), m Map(String, Int32), s String)
+    ENGINE = IcebergLocal('${WORK_DIR}/t_nested/');
+    INSERT INTO t_nested SELECT number, [number % 3], (number % 5, toString(number)), map('k', number % 7), toString(number % 10) FROM numbers(1000);
+    INSERT INTO t_nested SELECT number + 1000, [number % 3], (number % 5, toString(number)), map('k', number % 7), toString(number % 10 + 10) FROM numbers(1000);"
+stats t_nested "id s"
+
 echo "expire_snapshots removes the statistics of the expired snapshots"
 run t_insert "INSERT INTO t_insert $(values 30000 100); ALTER TABLE t_insert EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1);" \
     | grep statistics
