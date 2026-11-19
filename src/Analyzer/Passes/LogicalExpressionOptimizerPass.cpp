@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/Utils.h>
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionFactory.h>
@@ -916,6 +917,14 @@ static AddComparisonFilterResult addComparisonFilter(
     const auto & raw_type = getComparisonFilterExpressionNode(expression)->getResultType();
     auto expr_type = removeLowCardinality(raw_type);
 
+    /// A converted constant is not an exact orderable point for a `Variant` expression, so it must not
+    /// drive pruning. Staying opaque also vetoes the global fold-to-false collapse.
+    if (anyInTypeTree(*expr_type, [](const IDataType & type) { return isVariant(type); }))
+    {
+        filter_map[expression].opaque_filters.push_back(std::move(new_filter));
+        return AddComparisonFilterResult::ADDED;
+    }
+
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
     /// A string ordered against an `Enum` constant, also in a tuple element, compares by value, not by the converted name.
     /// `=` and `!=` read a string constant as an `Enum` number under `input_format_tsv_enum_as_number`, the conversion above reads a name.
@@ -1210,6 +1219,8 @@ struct CommonExpressionExtractionResult
     //   Result: new_node = nullptr, common_expressions = {A, B}
     QueryTreeNodePtr new_node;
     QueryTreeNodes common_expressions;
+    // The first `leading_common_expressions` of `common_expressions` start every disjunct, in this order.
+    size_t leading_common_expressions = 0;
 };
 
 /// True if an element of `nodes` absent from `kept` contains `arrayJoin`.
@@ -1436,10 +1447,39 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
     // The complete elimination is handled above, so at this point we can be sure there are at least 2 arguments.
     chassert(new_or_arguments.size() >= 2);
 
+    /// The longest sequence of conditions that every disjunct starts with.
+    auto get_and_arguments = [&flattened_ands](const QueryTreeNodePtr & original_or_argument) -> const QueryTreeNodes &
+    {
+        auto it = flattened_ands.find(original_or_argument);
+        const auto & or_argument = it != flattened_ands.end() ? it->second : original_or_argument;
+        return or_argument->as<FunctionNode &>().getArguments().getNodes();
+    };
+    const auto & first_and_arguments = get_and_arguments(or_argument_nodes.front());
+    QueryTreeNodePtrWithHashSet leading_exprs_set;
+    for (size_t i = 0; i < first_and_arguments.size(); ++i)
+    {
+        const auto & leading_expr = keys(first_and_arguments[i]);
+        bool starts_every_disjunct = std::ranges::all_of(or_argument_nodes, [&](const QueryTreeNodePtr & or_argument)
+        {
+            const auto & and_arguments = get_and_arguments(or_argument);
+            return i < and_arguments.size() && keys(and_arguments[i]) == leading_expr;
+        });
+        if (!starts_every_disjunct)
+            break;
+        leading_exprs_set.insert(leading_expr);
+    }
+
+    auto leading_exprs_end = std::stable_partition(
+        common_exprs.begin(), common_exprs.end(), [&](const QueryTreeNodePtr & expr) { return leading_exprs_set.contains(keys(expr)); });
+    size_t leading_common_expressions = leading_exprs_end - common_exprs.begin();
+
     if (auto optimized_disjunction =  tryExtractCommonExpressionsInDisjunction(new_or_arguments, keys, context))
     {
         auto new_disjunction_node = optimized_disjunction->new_node ? optimized_disjunction->new_node : optimized_disjunction->common_expressions[0];
-        return CommonExpressionExtractionResult{ .new_node = std::move(new_disjunction_node), .common_expressions = std::move(common_exprs) };
+        return CommonExpressionExtractionResult{
+            .new_node = std::move(new_disjunction_node),
+            .common_expressions = std::move(common_exprs),
+            .leading_common_expressions = leading_common_expressions};
     }
 
     auto new_or_node = std::make_shared<FunctionNode>("or");
@@ -1448,12 +1488,13 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
 
     resolveOrdinaryFunctionNodeByName(*new_or_node, "or", context);
 
-    return CommonExpressionExtractionResult{new_or_node, common_exprs};
+    return CommonExpressionExtractionResult{new_or_node, common_exprs, leading_common_expressions};
 }
 
 /// Rebuild the root of a logical operator as an `and` over `arguments`, converted to `result_type`.
 /// A lone argument is still wrapped in `and(arg, 1)`, because the plain `_CAST(arg, UInt8)` below
 /// would map values like `0.5` to `0` where the enclosing operator read them as true.
+/// Returns nullptr when the result is not `Nothing` but `result_type` is: no value converts to `Nothing`.
 static QueryTreeNodePtr buildAndNodeWithResultType(QueryTreeNodes arguments, const DataTypePtr & result_type, const ContextPtr & context)
 {
     if (arguments.size() == 1 && arguments.front()->getResultType()->equals(*result_type))
@@ -1469,7 +1510,11 @@ static QueryTreeNodePtr buildAndNodeWithResultType(QueryTreeNodes arguments, con
 
     QueryTreeNodePtr result = std::move(and_function_node);
     if (!result->getResultType()->equals(*result_type))
+    {
+        if (isNothing(result_type))
+            return nullptr;
         result = buildCastFunction(result, result_type, context);
+    }
     return result;
 }
 
@@ -1485,7 +1530,8 @@ static void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const Cont
         if (result.new_node != nullptr)
             new_root_arguments.push_back(std::move(result.new_node));
 
-        node = buildAndNodeWithResultType(std::move(new_root_arguments), node->getResultType(), context);
+        if (auto new_node = buildAndNodeWithResultType(std::move(new_root_arguments), node->getResultType(), context))
+            node = std::move(new_node);
     }
 }
 
@@ -1509,10 +1555,13 @@ static void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const Con
         {
             extracted_something = true;
             auto & result = *maybe_result;
+            auto & common_expressions = result.common_expressions;
+            for (size_t i = 0; i < result.leading_common_expressions; ++i)
+                insert_possible_new_top_level_arg(std::move(common_expressions[i]));
             if (result.new_node != nullptr)
                 insert_possible_new_top_level_arg(std::move(result.new_node));
-            for (auto& common_expr: result.common_expressions)
-                insert_possible_new_top_level_arg(std::move(common_expr));
+            for (size_t i = result.leading_common_expressions; i < common_expressions.size(); ++i)
+                insert_possible_new_top_level_arg(std::move(common_expressions[i]));
         }
         else
         {
@@ -1523,7 +1572,8 @@ static void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const Con
     if (!extracted_something)
         return;
 
-    node = buildAndNodeWithResultType(std::move(new_top_level_arguments), node->getResultType(), context);
+    if (auto new_node = buildAndNodeWithResultType(std::move(new_top_level_arguments), node->getResultType(), context))
+        node = std::move(new_node);
 }
 
 static void tryOptimizeCommonExpressions(QueryTreeNodePtr & node, FunctionNode& function_node, const ContextPtr & context)
@@ -2848,6 +2898,14 @@ private:
             /// `in` rejects Dynamic-structure arguments outright, so building it would turn a working
             /// OR chain into an error. Keep the original comparisons.
             if (expression.node->getResultType()->hasDynamicStructure())
+            {
+                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
+                continue;
+            }
+
+            /// `equals` on a `Variant` may compare the constant within each row's own alternative, while
+            /// the set stores it in one alternative, so the two can match different rows.
+            if (anyInTypeTree(*expression.node->getResultType(), [](const IDataType & type) { return isVariant(type); }))
             {
                 std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
                 continue;

@@ -12,6 +12,7 @@
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
+#include <utility>
 
 namespace DB::ErrorCodes
 {
@@ -202,7 +203,7 @@ ColumnUploadPipe::ColumnUploadPipe(const IDataType & type, size_t stage_bytes_)
 }
 
 ColumnUploadPipe::ColumnUploadPipe(const IDataType & type, size_t stage_bytes_, cuda::stream_ref stream_)
-    : column_type(columnTypeOrThrow(type))
+    : column_type(uploadTypeOrThrow(type))
     , stage_bytes(stage_bytes_)
     , stream(stream_)
     , device(deviceColumnFor(column_type, stream))
@@ -335,6 +336,35 @@ const IDeviceColumn & ColumnUploadPipe::flush()
     sendStagedToDevice();
     waitForUploads();
     return std::visit([](const auto & column) -> const IDeviceColumn & { return column; }, device);
+}
+
+const IDeviceColumn & ColumnUploadPipe::sendWithoutWaiting()
+{
+    sendStagedToDevice();
+    return deviceColumn();
+}
+
+const IDeviceColumn & ColumnUploadPipe::deviceColumn() const
+{
+    return std::visit([](const auto & column) -> const IDeviceColumn & { return column; }, device);
+}
+
+DeviceColumnBuffer ColumnUploadPipe::takeDeviceColumn()
+{
+    DeviceColumnBuffer taken(std::move(device));
+    switch (columnKindOf(column_type))
+    {
+        case GPUColumnKind::Fixed:
+            device.emplace<DeviceFixedColumnBuffer>(column_type, stream);
+            break;
+        case GPUColumnKind::Variable:
+            device.emplace<DeviceVariableColumnBuffer>(stream);
+            break;
+    }
+    staged_rows = 0;
+    staged_bytes = 0;
+    staged_chars = 0;
+    return taken;
 }
 
 void ColumnUploadPipe::waitForUploads()

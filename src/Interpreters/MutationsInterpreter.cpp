@@ -50,6 +50,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Identifier.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/QueryNode.h>
@@ -64,7 +65,6 @@
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/CollectTableExpressionData.h>
-#include <Planner/CollectMaterializedCTE.h>
 #include <Planner/Utils.h>
 #include <Interpreters/Context.h>
 #include <Parsers/makeASTForLogicalFunction.h>
@@ -73,6 +73,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <unordered_set>
 
 namespace ProfileEvents
 {
@@ -87,10 +88,7 @@ namespace Setting
     extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
     extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsUInt64 interactive_delay;
-    extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsNonZeroUInt64 max_block_size;
-    extern const SettingsUInt64 max_rows_to_transfer;
-    extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
@@ -661,6 +659,12 @@ MutationsInterpreter::MutationsInterpreter(
     /// Mutation source reads build a synthetic `SELECT` without a table expression,
     /// so parallel replicas must not be used for them.
     new_context->setSetting("enable_parallel_replicas", Field(0));
+    /// A mutation runs locally, its set subqueries too.
+    new_context->setSetting("make_distributed_plan", Field(0));
+    /// `JOIN` -> `IN` in a set subquery would make the right side of the join the source of a new set,
+    /// which index analysis can build before the subquery materializes the CTEs and builds the sets that
+    /// the source reads.
+    new_context->setSetting("query_plan_convert_join_to_in", Field(0));
 
     context = std::move(new_context);
 }
@@ -2184,15 +2188,13 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 ? actions_chain.getLastStepAvailableOutputColumns()
                 : input_columns;
 
-            /// Build a combined expression list for all update expressions.
-            auto update_expr_list = make_intrusive<ASTExpressionList>();
-            for (const auto & kv : stage.column_to_updated)
-                update_expr_list->children.push_back(kv.second);
-
-            auto update_tree = buildQueryTree(update_expr_list, execution_context);
-            QueryAnalyzer update_analyzer(/*only_analyze=*/!execute_scalar_subqueries);
-            update_analyzer.resolve(update_tree, table_node, execution_context);
-            collectSetsAndSourceColumns(update_tree, planner_context, true);
+            /// Reuse the resolved expressions whose sets were collected above. Resolving the ASTs
+            /// again produces unaliased subqueries with different set keys, registering and building
+            /// a second copy of each set. The update expressions follow the filters in `expression`.
+            const auto & expression_nodes = expression->getChildren();
+            auto updates_begin = expression_nodes.begin() + num_filters;
+            auto update_tree = std::make_shared<ListNode>(QueryTreeNodes(
+                updates_begin, updates_begin + stage.column_to_updated.size()));
 
             auto update_actions = std::make_shared<ActionsAndProjectInputsFlag>();
             update_actions->dag = ActionsDAG(available_columns_for_step);
@@ -2338,26 +2340,25 @@ MutationsInterpreter::Stage::~Stage() = default;
 MutationsInterpreter::Stage::Stage(Stage &&) noexcept = default;
 MutationsInterpreter::Stage & MutationsInterpreter::Stage::operator=(Stage &&) noexcept = default;
 
-/// Build QueryPlans for subquery sets (IN subqueries) on the analyzer path,
-/// then add a DelayedCreatingSetsStep to the plan. This mirrors
-/// addBuildSubqueriesForSetsStepIfNeeded from the Planner.
-static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const PreparedSetsPtr & prepared_sets, ContextPtr context_)
+/// Plan the subqueries of the sets (IN subqueries) of a stage and add the sets that are not built yet
+/// to `subqueries`. The mutation plan does not build them: see `addStreamsForLaterStages`.
+static void planSubqueriesForSets(
+    const PreparedSetsPtr & prepared_sets,
+    const ContextPtr & context_,
+    PreparedSets::Subqueries & subqueries,
+    std::unordered_set<const FutureSetFromSubquery *> & seen_subqueries)
 {
     if (!prepared_sets)
         return;
 
-    auto subqueries = prepared_sets->getSubqueries();
-    if (subqueries.empty())
-        return;
-
-    /// Materialized CTEs referenced by each planned set subquery.
-    std::vector<OrderedMaterializedCTEs> materialized_ctes_per_subquery;
-
-    for (auto & subquery : subqueries)
+    for (auto & subquery : prepared_sets->getSubqueries())
     {
-        if (subquery->get())
+        if (subquery->get() || !seen_subqueries.insert(subquery.get()).second)
             continue;
 
+        subqueries.push_back(subquery);
+
+        /// Without a query tree the subquery is planned already.
         auto query_tree = subquery->detachQueryTree();
         if (!query_tree)
             continue;
@@ -2372,9 +2373,7 @@ static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const Prepar
         createUniqueAliasesIfNecessary(query_tree, context_);
 
         auto subquery_options = SelectQueryOptions{}.subquery();
-        /// Sets may use Materialized CTEs; mirror the regular planner path
-        /// (`addBuildSubqueriesForSetsStepIfNeeded`) so CTE materialization is
-        /// preserved when the IN subquery references one.
+        /// The set is built by a pipeline of its own, so its plan must materialize the CTEs it reads.
         subquery_options.forceMaterializeCTE();
         subquery_options.ignore_limits = false;
         Planner subquery_planner(
@@ -2382,36 +2381,8 @@ static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const Prepar
             subquery_options,
             std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
         subquery_planner.buildQueryPlanIfNeeded();
-
-        /// The subquery planner has built the plans of the CTEs it references, so the collector
-        /// admits them here (`hasPlanOrBuilt`). They are planted below, after the sets step.
-        materialized_ctes_per_subquery.push_back(collectMaterializedCTEs(query_tree, SelectQueryOptions{}));
-
-        auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
-        /// The set source is kept aside, so its contexts must follow this plan's distributed-plan decision.
-        query_plan.takeContextsFrom(subquery_plan);
-        subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
+        subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
     }
-
-    const auto & settings = context_->getSettingsRef();
-    SizeLimits network_transfer_limits(
-        settings[Setting::max_rows_to_transfer],
-        settings[Setting::max_bytes_to_transfer],
-        settings[Setting::transfer_overflow_mode]);
-    auto prepared_sets_cache = context_->getPreparedSetsCache();
-
-    auto step = std::make_unique<DelayedCreatingSetsStep>(
-        query_plan.getCurrentHeader(),
-        std::move(subqueries),
-        network_transfer_limits,
-        prepared_sets_cache);
-    query_plan.addStep(std::move(step));
-
-    /// `DelayedCreatingSetsStep::makePlansForSets` strips the safety-net `DelayedMaterializingCTEsStep`
-    /// from a set plan built at run time and relies on the outer plan to gate the CTE readers, which
-    /// the `Planner` provides for a `SELECT`. This plan is assembled here, so plant that step here.
-    for (const auto & materialized_ctes : materialized_ctes_per_subquery)
-        addBuildSubqueriesForMaterializedCTEsIfNeeded(query_plan, SelectQueryOptions{}, materialized_ctes);
 }
 
 std::optional<ActionsDAG> MutationsInterpreter::createFilterDAGForStage(const Stage & stage)
@@ -2552,12 +2523,14 @@ void MutationsInterpreter::initQueryPlan(Stage & first_stage, QueryPlan & plan)
     plan.setConcurrencyControl(false);
 
     source.read(first_stage, plan, metadata_snapshot, context, settings);
-
-    buildSubqueryPlansForSetsAndAdd(plan, first_stage.new_prepared_sets, context);
 }
 
 QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
 {
+    /// The sets of each stage, in the order of the stages.
+    std::vector<PreparedSets::Subqueries> subqueries_per_stage;
+    std::unordered_set<const FutureSetFromSubquery *> seen_subqueries;
+
     for (const Stage & stage : prepared_stages)
     {
         const auto & chain_steps = stage.new_actions_chain->getSteps();
@@ -2580,13 +2553,26 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
                     plan.getCurrentHeader(), std::move(dag)));
         }
 
-        buildSubqueryPlansForSetsAndAdd(plan, stage.new_prepared_sets, context);
+        planSubqueriesForSets(stage.new_prepared_sets, context, subqueries_per_stage.emplace_back(), seen_subqueries);
     }
 
+    /// The stages of the mutation plan must keep their shape, so the plan is not optimized.
     QueryPlanOptimizationSettings do_not_optimize_plan_settings(context);
     do_not_optimize_plan_settings.optimize_plan = false;
+    auto builder = plan.buildQueryPipeline(do_not_optimize_plan_settings, BuildQueryPipelineSettings(context));
 
-    auto pipeline = std::move(*plan.buildQueryPipeline(do_not_optimize_plan_settings, BuildQueryPipelineSettings(context)));
+    /// The set subqueries are ordinary reads, so they are not in the plan: each set is built by a pipeline
+    /// of its own, from a fully optimized plan (e.g. its filter moves to `PREWHERE`), before any row reaches
+    /// the stages. A set that the read has already built for index analysis is skipped.
+    /// Each stage has sets of its own, so two stages can have different sets with the same key in the
+    /// `PreparedSetsCache`. If they are built at the same time, the second one waits for the first in the
+    /// same executor, which a mutation runs with one thread. So the sets of each stage get their own
+    /// `CreatingSets`: an outer one builds its sets before the inner one starts.
+    for (auto & subqueries : subqueries_per_stage)
+        if (!subqueries.empty())
+            builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), context);
+
+    auto pipeline = std::move(*builder);
 
     pipeline.addSimpleTransform([&](const SharedHeader & header)
     {
