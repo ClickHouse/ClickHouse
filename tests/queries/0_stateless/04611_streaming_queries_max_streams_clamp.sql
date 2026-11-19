@@ -25,12 +25,7 @@ SELECT countIf(explain LIKE '%MergeTreeCommitOrderSource%') > 0
 FROM
 (
     EXPLAIN PIPELINE
-    SELECT count() FROM
-    (
-        (SELECT x FROM t_stream_max_streams_clamp GROUP BY ALL)
-        EXCEPT DISTINCT
-        (SELECT x FROM t_stream_max_streams_clamp STREAM GROUP BY ALL)
-    )
+    SELECT x FROM t_stream_max_streams_clamp STREAM
     -- max_threads must be > 1: the async branch only amplifies requested_num_streams when
     -- it is not 1, so with max_threads = 1 the pathological setting never reaches reserve.
     SETTINGS max_threads = 4,
@@ -45,12 +40,7 @@ SELECT countIf(explain LIKE '%MergeTreeCommitOrderSource%') > 0
 FROM
 (
     EXPLAIN PIPELINE
-    SELECT count() FROM
-    (
-        (SELECT x FROM t_stream_max_streams_clamp GROUP BY ALL)
-        EXCEPT DISTINCT
-        (SELECT x FROM t_stream_max_streams_clamp STREAM GROUP BY ALL)
-    )
+    SELECT x FROM t_stream_max_streams_clamp STREAM
     SETTINGS max_threads = 1025,
              max_streams_to_max_threads_ratio = 1e12,
              allow_asynchronous_read_from_io_pool_for_merge_tree = 1
