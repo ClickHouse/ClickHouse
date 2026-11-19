@@ -48,7 +48,7 @@ The functions [`currentHandler`](/reference/functions/regular-functions/other-fu
 
 ## Access control {#access-control}
 
-`CREATE HANDLER`, `DROP HANDLER` and `ALTER HANDLER` require the `CREATE HANDLER`, `DROP HANDLER` and `ALTER HANDLER` grants respectively.
+`CREATE HANDLER`, `DROP HANDLER` and `ALTER HANDLER` require the `CREATE HANDLER`, `DROP HANDLER` and `ALTER HANDLER` grants respectively. These privileges and `SHOW HANDLERS` form the `HANDLER ADMIN` privilege group; they are not part of the `CREATE`, `ALTER` and `DROP` privilege groups.
 
 Reading the [`system.handlers`](/reference/system-tables/handlers) table requires the `SHOW HANDLERS` grant. Secrets that may be embedded in a handler's query are masked there unless the user is additionally allowed to see secrets (see [`system.handlers`](/reference/system-tables/handlers)).
 

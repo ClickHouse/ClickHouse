@@ -59,7 +59,17 @@ struct DynamicS3DiskCredentialInfo
 /// The server-managed S3 credential restriction is applied even on metadata load. The pre-resolution outcome
 /// is reported through `*info`; after resolving `include`, the caller must call `forceAnonymousS3DiskConfig`
 /// (when `info->load_anonymously`) or `validateResolvedS3DiskCredentials`.
-[[ maybe_unused ]] Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & disk_args, ContextPtr context, bool is_loading_from_existing_metadata = false, DynamicS3DiskCredentialInfo * info = nullptr, bool for_system_database = false);
+///
+/// `stored_definition`: the definition was read from the metadata the server stored for the table (short `ATTACH`).
+/// Like `is_loading_from_existing_metadata`, it allows a repeated key that a definition stored by an older version
+/// may have, but it does not skip the other restrictions.
+[[ maybe_unused ]] Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(
+    const ASTs & disk_args,
+    ContextPtr context,
+    bool is_loading_from_existing_metadata = false,
+    DynamicS3DiskCredentialInfo * info = nullptr,
+    bool for_system_database = false,
+    bool stored_definition = false);
 
 /// Rewrite a dynamic disk configuration so its S3 client is built anonymously (see `getDiskConfigurationFromASTImpl`).
 void forceAnonymousS3DiskConfig(Poco::Util::AbstractConfiguration & config);
