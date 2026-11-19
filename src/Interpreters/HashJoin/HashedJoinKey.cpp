@@ -243,6 +243,78 @@ void HashedJoinKey::buildRange(size_t begin, size_t end, UInt128 * __restrict ke
 #endif
 }
 
+void HashedJoinKey::markRepeatedRows(size_t begin, size_t end, UInt8 * skip) const
+{
+    chassert(hashesRowsInBatches());
+    if (end - begin < 2)
+        return;
+
+    /// `repeated[i]`: row `begin + i` has the bytes that `hash128` hashes for row `begin + i - 1`. Each part is compared for
+    /// all the rows, so that the loops over fixed-size values vectorize.
+    PaddedPODArray<UInt8> repeated;
+    repeated.resize_fill(end - begin, 1);
+    repeated[0] = 0;
+    UInt8 * __restrict same = repeated.data() - begin;
+
+    auto compare_values = [&]<typename T>(const UInt8 * data, UInt8 * __restrict result)
+    {
+        for (size_t row = begin + 1; row < end; ++row)
+            result[row] &= unalignedLoad<T>(data + row * sizeof(T)) == unalignedLoad<T>(data + (row - 1) * sizeof(T));
+    };
+
+    for (const auto & part : parts)
+    {
+        /// The value of a NULL is not hashed, so only the null flags are compared for it.
+        PaddedPODArray<UInt8> values_same;
+        UInt8 * __restrict compared = same;
+        if (part.null_map)
+        {
+            values_same.resize_fill(end - begin, 1);
+            compared = values_same.data() - begin;
+        }
+
+        if (part.offsets)
+        {
+            for (size_t row = begin + 1; row < end; ++row)
+            {
+                const auto start = part.offsets[static_cast<ssize_t>(row) - 1];
+                const auto previous_start = part.offsets[static_cast<ssize_t>(row) - 2];
+                const auto size = part.offsets[row] - start;
+                if (compared[row] && size != start - previous_start)
+                    compared[row] = 0;
+                else if (compared[row] && size)
+                    compared[row] = memcmp(part.data + start, part.data + previous_start, size) == 0;
+            }
+        }
+        else
+        {
+            switch (part.size)
+            {
+                case sizeof(UInt8): compare_values.template operator()<UInt8>(part.data, compared); break;
+                case sizeof(UInt16): compare_values.template operator()<UInt16>(part.data, compared); break;
+                case sizeof(UInt32): compare_values.template operator()<UInt32>(part.data, compared); break;
+                case sizeof(UInt64): compare_values.template operator()<UInt64>(part.data, compared); break;
+                case sizeof(UInt128): compare_values.template operator()<UInt128>(part.data, compared); break;
+                default:
+                    for (size_t row = begin + 1; row < end; ++row)
+                        compared[row] &= memcmp(part.data + row * part.size, part.data + (row - 1) * part.size, part.size) == 0;
+            }
+        }
+
+        if (part.null_map)
+        {
+            const UInt8 * __restrict nulls = part.null_map;
+            for (size_t row = begin + 1; row < end; ++row)
+                same[row] &= (nulls[row] == nulls[row - 1]) & (nulls[row] | compared[row]);
+        }
+    }
+
+    /// A row that repeats the previous one has its hash, unless the previous one is skipped by the caller: then the row is
+    /// hashed, which costs only the hashing. From the last row down, so that `skip[row - 1]` is the caller's.
+    for (size_t row = end - 1; row > begin; --row)
+        skip[row] |= same[row] & !skip[row - 1];
+}
+
 template <typename RowAt>
 void HashedJoinKey::buildFixedRows(RowAt row_at, size_t num_rows, UInt128 * __restrict keys)
 {

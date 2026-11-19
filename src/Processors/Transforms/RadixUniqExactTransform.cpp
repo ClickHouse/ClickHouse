@@ -23,6 +23,7 @@
 #include <base/getL2CacheSize.h>
 #include <base/unaligned.h>
 #include <Interpreters/AggregationCommon.h>
+#include <Interpreters/HashJoin/KeyGetter.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/TemporaryFileFrameReader.h>
@@ -1608,8 +1609,8 @@ void RadixUniqExactState<UInt256>::routeColumn(size_t stream, const IColumn & co
 /// The fixed-size values of 9 to 16 bytes are represented by a bijection of themselves (zero-padded), the strings of up
 /// to 15 bytes by a bijection of their bytes and size (see `packShortString`), the longer strings by the 128-bit
 /// `SipHash` of their bytes with the top bit set (see `LONG_STRING_KEY_BIT`), and the values of the other types by the 128-bit `SipHash`
-/// of `updateHashWithValue`, as in `uniqExact`. Consecutive duplicates are compared by their bytes before they are
-/// hashed. The values of the other types are not compared: `compareAt` can find equal the values with different hashes
+/// of `updateHashWithValue`, as in `uniqExact`. Consecutive duplicates of strings are compared by their bytes before they
+/// are hashed, those of the other types by their hashes, as `compareAt` can find equal the values with different hashes
 /// (e.g. -0.0 and 0.0 in a `Tuple`).
 template <>
 void RadixUniqExactState<UInt128>::routeColumn(size_t stream, const IColumn & column, const UInt8 * null_map)
@@ -1661,6 +1662,25 @@ void RadixUniqExactState<UInt128>::routeColumn(size_t stream, const IColumn & co
             stream, column.size(), null_map,
             [&](size_t row) { return sipHash128Padded(chars + row * n, n); },
             [&](size_t lhs, size_t rhs) { return memcmp(chars + lhs * n, chars + rhs * n, n) == 0; });
+    }
+    else if (HashedJoinKey key({&column}); key.hashesRowsInBatches())
+    {
+        /// The hashes of `uniqExact` (`ColumnsHashing::hash128`), which `HashedJoinKey` computes for many rows at once for
+        /// tuples, `Nullable` values, strings and numbers. The rows that repeat the bytes of the previous routed row are
+        /// skipped before they are hashed, as their hash is the same.
+        PaddedPODArray<UInt8> skip;
+        if (null_map)
+            skip.assign(null_map, null_map + column.size());
+        else
+            skip.resize_fill(column.size(), 0);
+        key.markRepeatedRows(0, column.size(), skip.data());
+
+        PaddedPODArray<UInt128> hashes(column.size());
+        key.buildRange(0, column.size(), hashes.data(), skip.data());
+        routeRows(
+            stream, column.size(), skip.data(),
+            [&](size_t row) { return hashes[row]; },
+            [&](size_t lhs, size_t rhs) { return hashes[lhs] == hashes[rhs]; });
     }
     else
     {
