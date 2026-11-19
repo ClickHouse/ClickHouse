@@ -12,7 +12,8 @@ the agent's account. When the summary's Final Verdict is `✅ Approve`, the job 
 submits an `APPROVE` review on the reviewed commit, so the approval is recorded
 on GitHub (needed for compliance); any other verdict dismisses the app's earlier
 approvals of the PR. A review whose sessions the provider stopped as a cybersecurity risk does not
-approve: its summary comes from the fallback model and can miss a finding.
+approve: its summary comes from the fallback model and can miss a finding. A PR of an external
+author (not an owner, member or collaborator) never gets an approval: the diff is untrusted input of the review.
 
 The agent occasionally hits transient GitHub authorization errors mid-run
 ("Authorization error, you may need to run /login"). The whole attempt is
@@ -225,6 +226,7 @@ query($owner: String!, $name: String!, $number: Int!, $after: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       viewerDidAuthor
+      authorAssociation
       headRefOid
       reviews(states: [APPROVED], first: 100, after: $after) {
         pageInfo { hasNextPage endCursor }
@@ -278,6 +280,8 @@ def _update_approval(info, cyber_risk_flagged):
 
     if cyber_risk_flagged:
         print("Not approving: a review session was stopped as a cybersecurity risk")
+    elif pr["authorAssociation"] not in ("OWNER", "MEMBER", "COLLABORATOR"):
+        print(f"Not approving: the PR author is external, got [{pr['authorAssociation']}]")
     elif _review_approves():
         if any((r.get("commit") or {}).get("oid") == info.sha for r in own_approvals):
             print(f"Commit {info.sha} is already approved")
