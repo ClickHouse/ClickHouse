@@ -1,0 +1,4 @@
+ts_copy	\'2020-01-01 00:00:00\'	\'2020-01-01 00:00:00\'
+ts_own	toDateTime64(\'2020-01-01 00:00:00\', 3, \'Asia/Tokyo\')	toDateTime64(\'2020-01-01 00:00:00\', 3, \'Asia/Tokyo\')
+ts_source	\'2020-01-01 00:00:00\'	\'2020-01-01 00:00:00\'
+Replicated ts_own	toDateTime64(\'2020-01-01 00:00:00\', 3, \'Asia/Tokyo\')	toDateTime64(\'2020-01-01 00:00:00\', 3, \'Asia/Tokyo\')

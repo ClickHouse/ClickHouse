@@ -1,0 +1,47 @@
+CREATE	[2]
+WHERE event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')
+MODIFY TTL	[2]
+AS	WHERE event = \'2020-01-01 00:00:00\'
+MODIFY COLUMN, MODIFY TTL	[2]
+ADD COLUMN, MODIFY TTL	WHERE event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')
+CLEAR COLUMN, MODIFY TTL	WHERE event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')
+Nested DROP, ADD, MODIFY TTL	[2]
+Nested to String	WHERE arrayExists(x -> (x = \'keep\'), n.ts) SETTINGS
+Nested ADD, MODIFY COLUMN	WHERE arrayExists(x -> (x = \'keep\'), n.ts) SETTINGS
+Tuple element, CREATE	[2]
+Tuple element, MODIFY TTL	[2]
+Tuple element, DELETE	[2]
+GROUP BY SET	1
+MODIFY TTL GROUP BY SET	1
+lambda	WHERE arrayExists(event -> (event = \'keep\'), tags) AND (event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\'))
+MODIFY TTL lambda	WHERE arrayExists(event -> (event = \'keep\'), tags) AND (event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\'))
+lambda element	WHERE arrayExists(n -> (n.event = \'keep\'), arr)
+DELETE lambda	['other']
+lambda DateTime	WHERE arrayExists(event -> (event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')), arr) OR arrayExists(x -> (x = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')), arr) OR mapExists((k, v) -> (v = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')), m) OR arrayFold((acc, x) -> (acc OR (x = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\'))), arr, false) OR arrayExists(a -> arrayExists(b -> (b = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')), a), nested) OR arrayExists(event -> (event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')), arrayMap(y -> y, arr))
+lambda fixed argument	WHERE (length(arrayPartialSort((x, y) -> (y = \'keep\'), 1, arr, tags)) > 0) OR (length(arrayTopK((x, y) -> (x = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')), 1, arr, tags)) > 0)
+MODIFY TTL lambda fixed argument	WHERE length(arrayBottomK((x, y) -> (y = \'keep\'), 1, arr, tags))
+SELECT lambda DateTime	1
+DELETE lambda DateTime	2
+lambda tuple	WHERE arrayExists((event, tag) -> ((event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')) AND (tag = \'keep\')), arr) OR (arrayPackBitsToFixedString((tag, event) -> (event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')), 1, packed) != unhex(\'00\'))
+DELETE lambda tuple	[2,4]
+DELETE alias	[3]
+DELETE temporal alias	[2]
+event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')
+DELETE changed temporal alias	[2,4,6]
+event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')))
+n = toDateTime(\'2020-01-02 00:00:00\', \'Asia/Tokyo\')))
+event = if(equals(toTypeName(event), \'DateTime\'), toDateTime(\'2020-01-03 00:00:00\', \'Asia/Tokyo\'), toDateTime64(\'2020-01-03 00:00:00\', 3, \'Asia/Tokyo\'))))
+DELETE lower precision alias	[3]
+event = if(equals(toTypeName(event), \'DateTime64(3)\'), toDateTime64(\'2020-01-01 00:00:00\', 3, \'Asia/Tokyo\'), toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\'))))
+n.ts = if(equals(toTypeName(n.ts), \'DateTime64(3)\'), toDateTime64(\'2020-01-01 09:00:00\', 3, \'Asia/Tokyo\'), toDateTime(\'2020-01-01 09:00:00\', \'Asia/Tokyo\'))))
+DELETE Nullable tuple	[3]
+n.ts = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')))
+x.ts = toDateTime(\'2020-01-01 09:00:00\', \'Asia/Tokyo\')), arr))
+event = \'2020-01-01 00:00:00\')
+DELETE prefer column Memory	[2]
+DELETE lambda-scoped alias	[2]
+(DELETE WHERE arrayExists(x -> ((x AS event) = 1), [1]) AND (event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')))
+(DELETE WHERE arrayExists(x -> (isNotNull(toString(x) AS event) AND (event = \'2020-01-01 00:00:00\')), [id]))
+DELETE subquery-scoped alias	[1,2]
+DELETE scalar subquery alias	[1]
+s = \'2020-01-01 00:00:00\')

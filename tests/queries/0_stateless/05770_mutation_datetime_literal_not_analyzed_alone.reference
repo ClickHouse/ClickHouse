@@ -1,0 +1,5 @@
+--- UPDATE ... WHERE NULL with a value that does not resolve alone
+1	20
+--- an invalid TTL is rejected by its validation
+Missing columns: 'missing_column'
+Missing columns: 'missing_column'

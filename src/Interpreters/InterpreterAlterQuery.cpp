@@ -246,7 +246,7 @@ bool hasCommands(const CommandSegments & segments)
     return std::ranges::any_of(segments, [](const auto & segment) { return std::holds_alternative<CommandsType>(segment); });
 }
 
-CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
+CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const ContextPtr & context)
 {
     SegmentsHolder segments_holder;
     const auto & settings = context->getSettingsRef();
@@ -298,32 +298,6 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
                             command_ast->formatForErrorMessage(), rewritten_command_ast->formatForErrorMessage());
-                }
-            }
-
-            /// When session_timezone is set, string literals compared to DateTime columns
-            /// must be wrapped with explicit timezone to avoid misinterpretation in the
-            /// background mutation thread which lacks the session context.
-            const auto & session_tz = settings[Setting::session_timezone].value;
-            if (!session_tz.empty())
-            {
-                auto source_alter = mutation_command->ast();
-                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
-                auto tz_rewritten_ast = rewriteDateTimeLiteralsWithTimezone(
-                    *source_alter, metadata_snapshot->columns, session_tz);
-                if (tz_rewritten_ast)
-                {
-                    auto * tz_alter_command = tz_rewritten_ast->as<ASTAlterCommand>();
-                    mutation_command = MutationCommand::parse(
-                        *tz_alter_command,
-                        /* parse_alter_commands = */ false,
-                        /* with_pure_metadata_commands = */ false,
-                        settings[Setting::max_parser_depth],
-                        settings[Setting::max_parser_backtracks]);
-                    if (!mutation_command)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Alter command '{}' is rewritten to invalid command '{}'",
-                            source_alter->formatForErrorMessage(), tz_rewritten_ast->formatForErrorMessage());
                 }
             }
 
@@ -402,6 +376,40 @@ void validateReplicatedDatabaseSegments(const CommandSegments & segments, const 
                     "to execute ALTERs of different types (replicated and non replicated) in single query");
 }
 
+/// A mutation is executed in the background without the session too, so with `session_timezone` a string literal compared
+/// with a `DateTime` column gets the time zone of the session explicitly. The columns and the types of the aliases are those of
+/// `metadata`, taken when the mutation is submitted, after the preceding segments of the statement are committed: in
+/// `ADD COLUMN c ..., UPDATE ... WHERE ... c ...` the column `c` exists only then.
+void rewriteDateTimeLiteralsInMutations(
+    MutationCommands & commands, const StoragePtr & table, const StorageMetadataPtr & metadata, const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    const String & session_timezone = settings[Setting::session_timezone].value;
+    if (session_timezone.empty())
+        return;
+
+    const auto storage_snapshot = table->getStorageSnapshotWithoutData(metadata, context);
+    for (auto & command : commands)
+    {
+        const auto source_alter = command.ast();
+        const auto rewritten_ast = rewriteDateTimeLiteralsWithTimezone(*source_alter, table, storage_snapshot, session_timezone, context);
+        if (!rewritten_ast)
+            continue;
+
+        auto rewritten_command = MutationCommand::parse(
+            *rewritten_ast->as<ASTAlterCommand>(),
+            /* parse_alter_commands = */ false,
+            /* with_pure_metadata_commands = */ false,
+            settings[Setting::max_parser_depth],
+            settings[Setting::max_parser_backtracks]);
+        if (!rewritten_command)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Alter command '{}' is rewritten to invalid command '{}'",
+                source_alter->formatForErrorMessage(), rewritten_ast->formatForErrorMessage());
+        command = std::move(*rewritten_command);
+    }
+}
+
 std::optional<BlockIO> tryRewriteToLightweightUpdate(CommandSegments & segments, const StoragePtr & table, const ContextPtr & context, const ASTPtr & query_ptr)
 {
     bool has_update_commands = false;
@@ -432,7 +440,7 @@ std::optional<BlockIO> tryRewriteToLightweightUpdate(CommandSegments & segments,
         return throw_if_needed("Not only update commands were passed to alter");
 
     chassert(segments.size() == 1);
-    const MutationCommands & mutation_commands = std::get<MutationCommands>(segments.at(0));
+    MutationCommands & mutation_commands = std::get<MutationCommands>(segments.at(0));
 
     if (!settings[Setting::enable_lightweight_update])
         return throw_if_needed("Lightweight updates are not allowed. Set 'enable_lightweight_update = 1' to allow them");
@@ -444,6 +452,10 @@ std::optional<BlockIO> tryRewriteToLightweightUpdate(CommandSegments & segments,
         return throw_if_needed(supports.error().text);
 
     LOG_DEBUG(getLogger("InterpreterAlterQuery"), "Will execute query '{}' as a lightweight update", query_ptr->formatForErrorMessage());
+
+    /// Here instead of in `runCommandSegments`, which this path skips; the caller holds the share lock.
+    const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
+    rewriteDateTimeLiteralsInMutations(mutation_commands, table, metadata_snapshot, context);
 
     BlockIO res;
     res.pipeline = table->updateLightweight(mutation_commands, context);
@@ -469,6 +481,39 @@ void checkStatisticsMutationsAreAllowed(const MutationCommands & commands, const
     {
         if (command.type == MutationCommand::MATERIALIZE_STATISTICS || command.type == MutationCommand::DROP_STATISTICS)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+    }
+}
+
+/// The `TTL` of a table is evaluated by background merges without the session, so a `DateTime` string literal in it would be
+/// read in the server time zone, not in `session_timezone`: make its time zone explicit in each `MODIFY TTL`, as for the
+/// mutations. The type of a column in the `TTL` is the one that the preceding commands give it, such as
+/// `MODIFY COLUMN event DateTime('UTC')`, so `metadata` is the metadata committed when the locks of the commands are held, and
+/// the preceding commands that change columns are applied to a copy of it by `AlterCommand::apply`, as `alter` applies them:
+/// with the flattening of `Nested` and the commands that `prepare` marked to ignore, such as `ADD COLUMN IF NOT EXISTS` of an
+/// existing column. The other commands do not change the columns, and are left to `checkAlterIsPossible`, which also rejects
+/// those that the storage does not support.
+void rewriteDateTimeLiteralsInTTL(
+    AlterCommands & commands, const StorageInMemoryMetadata & metadata, bool share_nested, const ContextPtr & context)
+{
+    const String & session_timezone = context->getSettingsRef()[Setting::session_timezone].value;
+    if (session_timezone.empty()
+        || !std::ranges::any_of(commands, [](const AlterCommand & command) { return command.type == AlterCommand::MODIFY_TTL && command.ttl; }))
+        return;
+
+    StorageInMemoryMetadata working_metadata = metadata;
+    for (auto & command : commands)
+    {
+        if (command.type == AlterCommand::MODIFY_TTL && command.ttl)
+        {
+            /// The command keeps its own copy of the query of the command too.
+            rewriteDateTimeLiteralsWithTimezone(command.ttl, working_metadata.columns, session_timezone, context);
+            if (auto * command_ast = command.ast ? command.ast->as<ASTAlterCommand>() : nullptr; command_ast && command_ast->ttl)
+                rewriteDateTimeLiteralsWithTimezone(command_ast->ttl->ptr(), working_metadata.columns, session_timezone, context);
+        }
+        else if (!command.ignore
+            && (command.type == AlterCommand::ADD_COLUMN || command.type == AlterCommand::DROP_COLUMN
+                || command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::RENAME_COLUMN))
+            command.apply(working_metadata, context, share_nested, &metadata.columns);
     }
 }
 
@@ -502,6 +547,8 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
             alter_commands->prepare(*metadata_snapshot, share_nested);
+            /// After `prepare`, which marks the commands to ignore, and before `checkAlterIsPossible`, which checks the `TTL`.
+            rewriteDateTimeLiteralsInTTL(*alter_commands, *metadata_snapshot, share_nested, context);
             table->checkAlterIsPossible(*alter_commands, context);
             context->onQueryExecutionStarted();
             table->alter(*alter_commands, context, alter_lock, ddl_guard);
@@ -520,6 +567,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 table->checkMutationIsPossible(*mutation_commands, settings);
                 checkStatisticsMutationsAreAllowed(*mutation_commands, settings);
                 auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
+                rewriteDateTimeLiteralsInMutations(*mutation_commands, table, metadata_snapshot, context);
                 /// Checked ahead of the full validation below, which repeats it, so that a
                 /// nondeterministic mutation is reported as such even when the predicate also
                 /// fails to analyze.
@@ -795,7 +843,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
 
-    auto segments = parseAlterCommandSegments(alter, table, getContext());
+    auto segments = parseAlterCommandSegments(alter, getContext());
     validateSegmentsCombination(segments);
     validateMutationsAllowed(segments, database, getContext());
     validateReplicatedDatabaseSegments(segments, database);

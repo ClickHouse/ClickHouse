@@ -1,0 +1,24 @@
+--- a lambda alias in another scope named like a function
+1
+event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')
+2
+--- an alias of the alias of a lambda
+2
+2
+--- a lambda over an expression
+WHERE arrayExists(event -> (event = \'keep\'), arrayMap(t -> t, tags))
+2
+--- a lambda alias invoked with arrays of the same type
+2
+4
+--- an aliased literal
+2
+3
+--- IN with an element that is not a constant
+2
+--- IN with an element that is not a constant and an expression on the left
+(DELETE WHERE toStartOfDay(event) IN tuple(\'2020-01-01 00:00:00\', toDateTime(id)))
+--- a comparison in a subquery
+2
+--- an alias that does not resolve with the other value of prefer_column_name_to_alias
+2

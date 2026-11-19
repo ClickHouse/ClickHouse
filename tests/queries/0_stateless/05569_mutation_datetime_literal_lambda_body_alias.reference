@@ -1,0 +1,18 @@
+--- a DateTime alias inside a lambda
+1
+event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\'))), [1]))
+2
+--- an alias inside a lambda that invokes the alias of a lambda
+event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')
+2
+--- an alias inside a lambda that calls the alias of a lambda
+2
+--- an alias inside a lambda that calls the alias of a lambda through another alias
+2
+1
+--- a DateTime alias inside a lambda that calls a function named like another alias
+event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')
+2
+--- a String alias inside a lambda
+event = \'keep\')), [1]))
+1
