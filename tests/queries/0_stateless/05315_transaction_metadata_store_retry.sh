@@ -46,11 +46,11 @@ function report_retry_lines()
     $CLICKHOUSE_CLIENT -q "
         WITH
             (SELECT groupUniqArray(extract(message, 'for (${kind} .+), will retry')) FROM system.text_log
-                WHERE event_date >= yesterday() AND message LIKE 'Cannot store transaction metadata for ${kind} % ${where}, will retry%') AS retried,
+                WHERE event_date >= yesterday() AND event_time >= now() - 600 AND message LIKE 'Cannot store transaction metadata for ${kind} % ${where}, will retry%') AS retried,
             (SELECT groupArray(extract(message, 'for (${kind} .+) after [0-9]+ attempts')) FROM system.text_log
-                WHERE event_date >= yesterday() AND message LIKE 'Stored transaction metadata for ${kind} % ${where} after % attempts') AS stored,
+                WHERE event_date >= yesterday() AND event_time >= now() - 600 AND message LIKE 'Stored transaction metadata for ${kind} % ${where} after % attempts') AS stored,
             (SELECT groupUniqArray(toUInt64OrZero(extract(message, 'after ([0-9]+) attempts'))) FROM system.text_log
-                WHERE event_date >= yesterday() AND message LIKE 'Stored transaction metadata for ${kind} % ${where} after % attempts') AS attempts
+                WHERE event_date >= yesterday() AND event_time >= now() - 600 AND message LIKE 'Stored transaction metadata for ${kind} % ${where} after % attempts') AS attempts
         SELECT 'retried objects', length(retried), 'stored after retry', length(stored), 'same object', retried = stored, 'attempts', attempts
         FORMAT TSV"
 }

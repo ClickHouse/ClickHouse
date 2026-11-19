@@ -1396,7 +1396,7 @@ Extracts text content from HTML or XHTML.
 
 This function removes HTML tags, comments, and script/style elements, leaving only the text content. It handles:
 - Removal of all HTML/XML tags
-- Removal of comments (`{/* */}`)
+- Removal of comments (`<!-- -->`)
 - Removal of script and style elements with their content
 - Processing of CDATA sections (copied verbatim)
 - Proper whitespace handling and normalization
@@ -2366,7 +2366,7 @@ Extracts the first string in `haystack` that matches the regexp pattern and corr
 regexpExtract(haystack, pattern[, index])
 ```
 
-**Aliases**: `REGEXP_SUBSTR`, `REGEXP_EXTRACT`
+**Aliases**: `REGEXP_EXTRACT`, `REGEXP_SUBSTR`
 
 **Arguments**
 

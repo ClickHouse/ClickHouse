@@ -454,6 +454,7 @@ Possible values:
 - with_buckets — Split keys into buckets during serialization. Using buckets improves reading individual keys from the Map.
 
 The number of buckets in `with_buckets` serialization is determined by [max_buckets_in_map](#max_buckets_in_map) and [map_buckets_strategy](#map_buckets_strategy).
+A `Map` whose key type contains `JSON` or `Dynamic` is always written in one bucket, regardless of other bucket settings.
 )", 0, \
         {"26.3", "basic", "basic", "Add a setting to control Map serialization version"}) \
     DECLARE(MergeTreeMapSerializationVersion, map_serialization_version_for_zero_level_parts, "basic", R"(
@@ -680,7 +681,8 @@ Wide part with Full storage. The persisted mutation commands and their
 versions are unchanged.
 Set to false to execute each command separately.
 )", 0, \
-        {"26.10", false, true, "Enable row-mask update coalescing by default"}) \
+        {"26.10", true, true, "The change was backported to 26.8 and is recorded there."}, \
+        {"26.8", false, true, "Enable row-mask update coalescing by default"}) \
     DECLARE(UInt64, max_row_mask_update_coalescing_keys, 256, R"(
 Maximum number of keys in one coalesced row-mask update. The effective limit
 also respects `max_rows_in_set` in the background query settings. Values below
@@ -815,7 +817,7 @@ Max amount of parts which can be merged at once (0 - disabled). Doesn't affect
 OPTIMIZE FINAL query.
 )", 0) \
     DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
-    Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md)
+    Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/reference/statements/alter/statistics)
     or [during INSERTs](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert))", 0, \
         {"26.1", true, true, "New setting"}) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
@@ -1083,12 +1085,12 @@ one step takes longer time
     DECLARE(Bool, merge_use_batch_sorting_queue, false, R"(
 Use the batch sorting queue to reduce per-row queue overhead when merging sorted streams.
 
-Only applies to merges that do not change rows, i.e. plain `MergeTree`
-(`Ordinary` merge mode). It has no effect on engines with merge-time
-semantics such as `ReplacingMergeTree`, `CollapsingMergeTree`,
-`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`,
-`GraphiteMergeTree` and `VersionedCollapsingMergeTree`, which keep using the
-default queue regardless of this setting.
+Only applies to merges that do not change rows: the merges of plain `MergeTree` parts
+(`Ordinary` merge mode) and of normal projection parts. The merges of parts of engines with
+merge-time semantics, such as `ReplacingMergeTree`, `CollapsingMergeTree`, `SummingMergeTree`,
+`AggregatingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree` and
+`VersionedCollapsingMergeTree`, and of aggregate projection parts keep using the default queue
+regardless of this setting.
 )", 0, \
         {"26.8", false, false, "New setting to use the batch sorting queue for ordinary `MergeTree` merges."}) \
     DECLARE(Bool, enforce_index_structure_match_on_partition_manipulation, false, R"(
@@ -1523,6 +1525,24 @@ Possible values:
 - 1 - always enabled
 )", 0, \
         {"26.1", 500, 500, "New setting"}) \
+    DECLARE(Float, max_memory_ratio_to_activate_adaptive_write_buffer, 1.f / 32, R"(
+Also activate adaptive write buffers when the buffers a wide part preallocates would take at least this
+fraction of the server's memory limit (`max_server_memory_usage`), regardless of
+`min_columns_to_activate_adaptive_write_buffer`.
+
+A wide part preallocates two buffers of `max_compress_block_size` for every stream it writes - the file
+buffer and the compressor's block buffer - so a table with many columns reserves hundreds of megabytes
+before writing a single byte, and every concurrent merge reserves it again. That is negligible on a large
+server but a significant share of the budget on a small one, where it can make an `INSERT` fail with
+`MEMORY_LIMIT_EXCEEDED`.
+
+It applies to inserts and to merges and mutations of non-replicated tables. Merges and mutations of replicated
+tables ignore it: adaptive write buffers change the offsets stored in the marks, and replicas compare the checksums
+of the parts they merge, so the buffers must not depend on the memory limit of a replica.
+
+Set to `0` to disable this trigger and select adaptive write buffers by column count only.
+)", 0, \
+        {"26.11", 0., 1. / 32, "New setting. Activate adaptive write buffers when the buffers a wide part preallocates would take at least this fraction of the server memory limit, so that a many-column table does not reserve hundreds of megabytes of write buffers on a small server. The previous value disables the trigger, preserving pre-26.11 behavior."}) \
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
 Sets the initial size, in bytes, of each adaptive write buffer used when writing MergeTree data. Buffers grow automatically as needed. Lower values reduce initial memory use, especially for tables with many columns, but may cause more frequent buffer flushes. This is a starting size, not a memory limit.
 
@@ -1930,6 +1950,10 @@ Maximum number of replicas across the service that may concurrently hold the par
 Maximum number of replicas within one availability zone that may concurrently hold the parts-update leader role. Both this limit and `shared_merge_tree_max_parts_update_leaders_in_total` apply. Only available in ClickHouse Cloud.
 )", 0, \
         {"25.1", 2, 2, "Cloud sync"}) \
+    DECLARE(Float, shared_merge_tree_parts_update_leader_tables_budget_factor, 2.0, R"(
+A replica does not take new parts update leader locks once it holds `factor * attached SharedMergeTree tables * shared_merge_tree_max_parts_update_leaders_per_az / active replicas in its AZ` of them. 0 disables the limit. Only available in ClickHouse Cloud.
+)", 0, \
+        {"26.11", 0, 2.0, "New setting"}) \
     DECLARE(UInt64, shared_merge_tree_leader_update_period_seconds, 30, R"(
 Maximum period to recheck leadership for parts update. Only available in
 ClickHouse Cloud
@@ -1946,6 +1970,13 @@ Read virtual parts from leader when possible. Only available in ClickHouse
 Cloud
 )", 0, \
         {"25.1", true, true, "Cloud sync"}) \
+    DECLARE(UInt64, shared_merge_tree_max_noop_updates_from_leader, 16, R"(
+Number of consecutive metadata updates that changed neither virtual parts nor
+mutations, after which a follower reads metadata from Keeper instead of the
+parts update leader until something changes again. 0 disables the switch. Only
+available in ClickHouse Cloud
+)", 0, \
+        {"26.11", 16, 16, "New setting: after this many consecutive no-op metadata updates a follower reads metadata from Keeper instead of the parts update leader"}) \
     DECLARE(UInt64, shared_merge_tree_initial_parts_update_backoff_ms, 50, R"(
 Initial delay, in milliseconds, before retrying a `SharedMergeTree` parts-update operation. Repeated retries increase the delay up to `shared_merge_tree_max_parts_update_backoff_ms`. Only available in ClickHouse Cloud.
 )", 0, \
@@ -2118,6 +2149,27 @@ requests and not return Ok during status check.
 Minimal absolute delay to close, stop serving requests and not
 return Ok during status check.
 )", 0) \
+    DECLARE(Bool, enable_merge_checkpoints, false, R"(
+Save checkpoints of eligible merges, so that an interrupted merge continues from them instead of starting over.
+Only vertical merges into `Wide` parts of at least `merge_checkpoints_min_bytes` are checkpointed for now.
+The first checkpoint is saved once the key columns are merged, the next ones after completed columns,
+at most once per `merge_checkpoints_min_interval_seconds`.
+A checkpoint is removed when a current part covers its result part,
+or when no merge saves it for `temporary_directories_lifetime`.
+Merges with TTL, projections, secondary indexes, patch parts, or non-adaptive marks (`index_granularity_bytes = 0`) are not checkpointed.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting for durable merge checkpoints"}) \
+    DECLARE(UInt64, merge_checkpoints_min_bytes, 10_GiB, R"(
+The minimum total size of the source parts of a merge, in bytes, to checkpoint it with `enable_merge_checkpoints`.
+Smaller merges are not checkpointed: they are cheap to repeat.
+)", EXPERIMENTAL, \
+        {"26.11", 10_GiB, 10_GiB, "New setting for durable merge checkpoints"}) \
+    DECLARE(Seconds, merge_checkpoints_min_interval_seconds, 60, R"(
+The minimum time between two checkpoints of a merge with `enable_merge_checkpoints`.
+A vertical merge always checkpoints once its key columns are merged. After that, it checkpoints after a completed column
+only when this much time has passed since its previous checkpoint.
+)", EXPERIMENTAL, \
+        {"26.11", 60, 60, "New setting for durable merge checkpoints"}) \
     DECLARE(UInt64, enable_vertical_merge_algorithm, 1, R"(
 Allows eligible background merges to use the vertical merge algorithm. Vertical merges process columns separately to reduce peak memory usage for wide tables, potentially at the cost of merge speed. Setting this to `0` forces horizontal merges; a non-zero value only permits vertical merges—the part format, table engine, `TTL` operation, and `vertical_merge_algorithm_min_*` thresholds still determine whether it is selected.
 )", 0) \
@@ -2497,8 +2549,8 @@ Comma-separated list of statistics types to calculate automatically on all suita
 Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
 The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
 )", 0, \
-        {"26.7", "minmax, uniq", "basic, uniq_v2", "Deprecate the `minmax` statistics type and replace it with `basic` (a superset of `minmax`) in the default auto statistics; also replace `uniq` with `uniq_v2` for less overhead on inserts and memory"}, \
-        {"26.4", "", "minmax, uniq", "Enable auto statistics by default"}, \
+        {"26.7", "basic, uniq_v2", "basic, uniq_v2", "26.7 replaced `minmax, uniq` with `basic, uniq_v2` (`basic` is a superset of the deprecated `minmax`, `uniq_v2` has less overhead on inserts, merges and memory). The change is recorded at 26.4, so that `compatibility` with 26.4 to 26.6 does not bring back `minmax, uniq`."}, \
+        {"26.4", "", "basic, uniq_v2", "Enable auto statistics by default. 26.4 to 26.6 shipped `minmax, uniq`, but `compatibility` with these versions gives `basic, uniq_v2`: statistics affect only query planning, not results, and merging the large `uniq` states of every part makes query planning many times slower in newer versions."}, \
         {"25.10", "", "", "New setting"}) \
     DECLARE(UInt64, packed_skip_index_max_bytes, 1024 * 1024, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
@@ -2641,6 +2693,10 @@ ZooKeeper path for zero-copy table-independent info.
     DECLARE(Bool, remote_fs_zero_copy_path_compatible_mode, false, R"(
 Run zero-copy in compatible mode during conversion process.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, cache_temporarily_for_merges, false, R"(
+Background merge and mutation reads use the filesystem cache as a temporary buffer: a miss is read into the cache and served from it, and the cache removes it when nobody holds it anymore, unless a reader or writer outside this mode used it. Only the experimental `ReaderExecutor` supports it; other readers bypass the cache. `force_read_through_cache_for_merges` takes precedence.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New experimental setting."}) \
     DECLARE(Bool, force_read_through_cache_for_merges, false, R"(
 Controls how background merge and mutation reads handle cache misses. When disabled, existing cached ranges are used, but missing ranges are read directly from the underlying storage without populating the cache. When enabled, missing ranges are read through and stored in the filesystem cache, and in the distributed cache when enabled. This can warm data for later reads, but also consumes cache capacity.
 )", EXPERIMENTAL) \
@@ -2703,7 +2759,7 @@ When enabled, merges and mutations choose a codec per block for columns that use
 The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type, each on its own and, when the default codec is a general-purpose compression such as `LZ4` or `ZSTD`, followed by it.
 The smallest output wins and incompressible blocks are stored raw. The choice is made on one block in every `adaptive_codec_selection_period` blocks and reused for the blocks in between.
 A column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`) is never selected adaptively, so encryption is always applied.
-Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions) table function.
+Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions/index) table function.
 )", BETA, \
         {"26.11", false, false, "Adaptive codec selection was moved to Beta."}, \
         {"26.8", false, false, "New setting."}) \
@@ -2834,6 +2890,12 @@ Possible values:
 - `rebuild`
 )", 0, \
         {"24.8", "ignore", "throw", "Do not allow to create inconsistent projection"}) \
+    DECLARE(Bool, allow_vector_similarity_index_in_specialized_merge_tree, false, R"(
+Whether a `vector_similarity` index may be created on a `MergeTree`-family engine other than `MergeTree` / `ReplicatedMergeTree`,
+e.g. `ReplacingMergeTree` or `CollapsingMergeTree`. With such engines, `SELECT ... FINAL` that uses the index may return wrong results.
+The setting is checked only when an index is created, so existing tables and `ATTACH` are not affected.
+)", 0, \
+        {"26.11", true, false, "New setting. Vector similarity indexes are no longer allowed on specialized MergeTree engines by default"}) \
     DECLARE(AlterColumnSecondaryIndexMode, alter_column_secondary_index_mode, AlterColumnSecondaryIndexMode::REBUILD, R"(
 Configures whether to allow `ALTER` commands that modify columns covered by secondary indices, and what action to take if
 they are allowed. By default, such `ALTER` commands are allowed and the indices are rebuilt.
@@ -3267,11 +3329,11 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool backg
     /// instead of accepting it (and even replicating it to other replicas) and then failing later on the first
     /// part write. This mirrors how `TTL ... RECOMPRESS CODEC(...)` is already validated at metadata-creation time.
     if (auto codec = (*this)[MergeTreeSetting::marks_compression_codec].value; !codec.empty())
-        CompressionCodecFactory::instance().get(codec);
+        (void)CompressionCodecFactory::instance().get(codec);
     if (auto codec = (*this)[MergeTreeSetting::primary_key_compression_codec].value; !codec.empty())
-        CompressionCodecFactory::instance().get(codec);
+        (void)CompressionCodecFactory::instance().get(codec);
     if (auto codec = (*this)[MergeTreeSetting::default_compression_codec].value; !codec.empty())
-        CompressionCodecFactory::instance().get(codec);
+        (void)CompressionCodecFactory::instance().get(codec);
 }
 
 void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
