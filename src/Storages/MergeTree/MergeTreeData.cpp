@@ -4092,8 +4092,7 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
     has_lightweight_delete_parts = have_lightweight_in_parts;
     transactions_enabled = have_parts_with_version_metadata;
 
-    /// The writer of the disk has removed these parts. Forgetting them (rather than keeping them as old parts) lets a
-    /// later refresh that lists them again load them again.
+    /// Unlisted parts are erased: `seed` never reloads a part that is still known, even `Outdated`, when it is listed again.
     DataPartsVector gone_parts;
     {
         auto part_lock = lockParts();
