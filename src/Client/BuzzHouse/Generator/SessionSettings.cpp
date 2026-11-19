@@ -494,23 +494,23 @@ std::unordered_map<String, CHSetting> performanceSettings
                      "full_sorting_merge",
                      "grace_hash",
                      "hash",
-                     "ie_join",
+                     "inequality",
                      "parallel_full_sorting_merge",
                      "parallel_hash",
                      "partial_merge",
                      "prefer_partial_merge"});
-                /// `ie_join` only handles an `ON` with two inequality comparisons, so on its own it
+                /// `inequality` only handles an `ON` with two inequality comparisons, so on its own it
                 /// makes every ordinary join fail to plan. Add a fallback when the combination has
                 /// none; `grace_hash` and `parallel_hash` serve just as well, hence the substring test
-                if (res.contains("ie_join") && !res.contains("hash"))
+                if (res.contains("inequality") && !res.contains("hash"))
                     res.insert(res.size() - 1, ",hash");
                 return res;
             },
             {"'default'",
              "'grace_hash'",
              "'direct, hash'",
-             /// `ie_join` only handles an `ON` with two inequality comparisons, so keep `hash` as a fallback
-             "'ie_join, hash'",
+             /// `inequality` only handles an `ON` with two inequality comparisons, so keep `hash` as a fallback
+             "'inequality, hash'",
              "'hash'",
              "'parallel_hash'",
              "'partial_merge'",

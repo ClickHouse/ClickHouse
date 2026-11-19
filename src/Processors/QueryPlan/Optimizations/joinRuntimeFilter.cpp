@@ -334,10 +334,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (!can_use_runtime_filter)
         return false;
 
-    /// When IEJoin takes this join (`ie_join` listed first in `join_algorithm` with a suitable
+    /// When InequalityJoin takes this join (`inequality` listed first in `join_algorithm` with a suitable
     /// ON expression), it is not executed by a hash-family algorithm: a runtime filter cannot
     /// be attached, and the algorithm list must not be pinned to hash-family ones below.
-    if (isIEJoinPreferred(join_operator, join_step->getJoinSettings()))
+    if (isInequalityJoinPreferred(join_operator, join_step->getJoinSettings()))
         return false;
 
     /// For `ASOF`, pruning `join_algorithms` below would force `hash` even if the user picked
@@ -350,7 +350,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             join_algorithms,
             [](JoinAlgorithm algorithm)
             {
-                return algorithm != JoinAlgorithm::DIRECT && algorithm != JoinAlgorithm::IE_JOIN
+                return algorithm != JoinAlgorithm::DIRECT && algorithm != JoinAlgorithm::INEQUALITY
                     && algorithm != JoinAlgorithm::GRACE_HASH && algorithm != JoinAlgorithm::PARTIAL_MERGE
                     && algorithm != JoinAlgorithm::PREFER_PARTIAL_MERGE && algorithm != JoinAlgorithm::DEFAULT;
             });

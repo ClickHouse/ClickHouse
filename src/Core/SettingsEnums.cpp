@@ -60,7 +60,9 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
      {"parallel_full_sorting_merge", JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE},
      {"grace_hash",           JoinAlgorithm::GRACE_HASH},
-     {"ie_join",              JoinAlgorithm::IE_JOIN}})
+     {"inequality",           JoinAlgorithm::INEQUALITY},
+     /// The former name of `inequality`, kept for compatibility. Listed after it, so `inequality` is the name it is shown with.
+     {"ie_join",              JoinAlgorithm::INEQUALITY}})
 
 
 IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
