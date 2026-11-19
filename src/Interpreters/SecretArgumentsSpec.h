@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <optional>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -39,10 +40,21 @@ struct SecretArgumentsSpec
     /// `custom` reads interleaved named and positional arguments itself (`bigquery`), so the generic rules are
     /// not applied: a positional after a named argument and the value of a key that is not a literal are hidden.
     bool custom_reads_named_arguments = false;
+    /// Whether the engine's parser accepts a `key = value` argument with this key (named-collection overrides included).
+    /// If set, every `key = value` argument whose key it rejects, or whose key is not a plain literal, is hidden whole.
+    /// The parser rejects such an argument only after the query is formatted for logging, and the key can be a
+    /// misspelled secret key (`passwd = '...'`) or the secret itself (`'secret' = 'x'`). The value of an accepted key
+    /// that is not a plain literal or identifier is hidden too: it can nest a secret (`table = headers('...' = '...')`).
+    std::function<bool(std::string_view)> accepted_keys = {};
+    /// For a table or database engine: in the named-collection form, if `accepted_keys` hides any argument, every
+    /// argument is hidden, the collection name included. Only an argument written in the definition can carry a
+    /// credential, and each has to be readable enough to tell that it does not (the same as the Azure engines).
+    bool hide_every_argument_if_override_hidden = false;
 
     bool hasArgumentSecrets() const
     {
-        return !positional_secret_slots.empty() || !secret_keys.empty() || (settings_as_arguments && !secret_settings.empty()) || custom;
+        return !positional_secret_slots.empty() || !secret_keys.empty() || (settings_as_arguments && !secret_settings.empty()) || custom
+            || accepted_keys;
     }
 };
 

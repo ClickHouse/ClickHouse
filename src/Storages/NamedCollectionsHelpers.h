@@ -27,8 +27,11 @@ namespace ErrorCodes
 
 /// The `SecretArgumentsSpec` of the MySQL and PostgreSQL families (and `Remote` databases): `password` at
 /// `password_slot` of the explicit form, and as an override with the TLS credentials given as the contents
-/// of a certificate or a key file (see `credentialsPathKeyFor`).
-SecretArgumentsSpec mysqlPostgreSQLSecretArguments(size_t password_slot);
+/// of a certificate or a key file (see `credentialsPathKeyFor`). `accepted_keys` tells the keys the parser of the engine
+/// accepts as `key = value` arguments: any other is hidden whole (see `SecretArgumentsSpec::accepted_keys`). `is_engine`: a table
+/// or database engine, where a hidden override hides every argument (see `SecretArgumentsSpec::hide_every_argument_if_override_hidden`).
+SecretArgumentsSpec
+mysqlPostgreSQLSecretArguments(size_t password_slot, std::function<bool(std::string_view)> accepted_keys, bool is_engine);
 
 /// Throws `BAD_ARGUMENTS` if `key` replaces a stored key (including an alias) that is `NOT OVERRIDABLE`.
 /// Does not check privileges. Used where the override was already authorized when the object was created,
@@ -189,6 +192,14 @@ void validateNamedCollection(
 
         if (!match)
         {
+            /// A key given in the query can be a secret typed in the wrong place (`'secret' = 'x'`). The query is logged
+            /// with that argument hidden (`SecretArgumentsSpec::accepted_keys`), so the message does not repeat it.
+            if (collection.isQueryOverridden(key))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Unexpected key in the arguments of the named collection. Required keys: {}, optional keys: {}",
+                    fmt::join(required_keys, ", "), fmt::join(optional_keys, ", "));
+
              throw Exception(
                  ErrorCodes::BAD_ARGUMENTS,
                  "Unexpected key `{}` in named collection. Required keys: {}, optional keys: {}",

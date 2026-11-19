@@ -891,7 +891,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE, "Cannot create MySQL database, because {}", exception_message);
         }
     };
-    factory.registerDatabase("MySQL", create_fn, mysqlPostgreSQLSecretArguments(3), {
+    factory.registerDatabase("MySQL", create_fn, mysqlPostgreSQLSecretArguments(3, [](std::string_view key) { return StorageMySQL::isNamedCollectionKey(key, /* require_table_or_query= */ false); }, /* is_engine= */ true), {
         .supports_arguments = true,
         .supports_settings = true,
         .is_external = true,

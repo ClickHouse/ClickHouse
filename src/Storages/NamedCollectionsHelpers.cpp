@@ -92,7 +92,8 @@ namespace
             {
                 auto end = key.find(']', i);
                 if (end == std::string_view::npos)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid named collection key '{}'", key);
+                    /// Not repeated in the message: a key given in a query can be a secret typed in the wrong place.
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid named collection key: `[` without a matching `]`");
                 i = end;
             }
             else if (key[i] == '\\' && i + 1 < key.size())
@@ -421,7 +422,7 @@ HTTPHeaderEntries getHeadersFromNamedCollection(const NamedCollection & collecti
     return headers;
 }
 
-SecretArgumentsSpec mysqlPostgreSQLSecretArguments(size_t password_slot)
+SecretArgumentsSpec mysqlPostgreSQLSecretArguments(size_t password_slot, std::function<bool(std::string_view)> accepted_keys, bool is_engine)
 {
     return {
         .positional_secret_slots = {password_slot},
@@ -437,6 +438,8 @@ SecretArgumentsSpec mysqlPostgreSQLSecretArguments(size_t password_slot)
                 if (index != 0)
                     finder.markSecretArgument(index);
         },
+        .accepted_keys = std::move(accepted_keys),
+        .hide_every_argument_if_override_hidden = is_engine,
     };
 }
 

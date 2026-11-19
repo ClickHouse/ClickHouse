@@ -1,0 +1,75 @@
+--- s3 table function
+SELECT * FROM s3(nc, filename = 'data.csv', secret_access_key = '[HIDDEN]', '[HIDDEN]')
+--- s3Cluster table function
+SELECT * FROM s3Cluster('cluster', nc, format = 'CSV', session_token = '[HIDDEN]', '[HIDDEN]')
+--- S3 table engine
+CREATE TABLE t (`x` Int32) ENGINE = S3('[HIDDEN]', '[HIDDEN]', '[HIDDEN]', '[HIDDEN]')
+--- icebergS3 table function
+SELECT * FROM icebergS3(nc, url = 'http://127.0.0.1:1/x/', secret_access_key = '[HIDDEN]', '[HIDDEN]')
+--- mysql table function
+SELECT * FROM mysql(nc, `table` = 't', password = '[HIDDEN]', '[HIDDEN]')
+--- MySQL table engine
+CREATE TABLE t (`x` Int32) ENGINE = MySQL('[HIDDEN]', '[HIDDEN]', '[HIDDEN]', '[HIDDEN]')
+--- MySQL database engine
+CREATE DATABASE d ENGINE = MySQL('[HIDDEN]', '[HIDDEN]', '[HIDDEN]', '[HIDDEN]')
+--- postgresql table function
+SELECT * FROM postgresql(nc, schema = 's', password = '[HIDDEN]', '[HIDDEN]')
+--- PostgreSQL table engine
+CREATE TABLE t (`x` Int32) ENGINE = PostgreSQL('[HIDDEN]', '[HIDDEN]', '[HIDDEN]', '[HIDDEN]')
+--- PostgreSQL database engine
+CREATE DATABASE d ENGINE = PostgreSQL('[HIDDEN]', '[HIDDEN]', '[HIDDEN]', '[HIDDEN]')
+--- MaterializedPostgreSQL database engine
+CREATE DATABASE d ENGINE = MaterializedPostgreSQL('[HIDDEN]', '[HIDDEN]', '[HIDDEN]', '[HIDDEN]')
+--- Remote database engine
+CREATE DATABASE d ENGINE = Remote('[HIDDEN]', '[HIDDEN]', '[HIDDEN]', '[HIDDEN]')
+--- secret as the key
+SELECT * FROM s3(nc, format = 'CSV', '[HIDDEN]')
+--- secret as the key, value that is an expression
+SELECT * FROM s3(nc, format = 'CSV', '[HIDDEN]')
+--- secret appended to the key
+SELECT * FROM mysql(nc, `table` = 't', '[HIDDEN]')
+--- key that is an expression
+SELECT * FROM postgresql(nc, schema = 's', '[HIDDEN]')
+--- mysql TLS path key
+SELECT * FROM mysql(nc, `table` = 't', '[HIDDEN]')
+--- postgresql TLS path key
+SELECT * FROM postgresql(nc, `table` = 't', '[HIDDEN]')
+--- extra_credentials with the secret as the key
+CREATE TABLE t (`x` Int32) ENGINE = S3(nc, format = 'CSV', '[HIDDEN]')
+--- extra_credentials with a computed key
+SELECT * FROM s3(nc, '[HIDDEN]', format = 'CSV')
+--- extra_credentials with valid keys
+SELECT * FROM s3('http://127.0.0.1:1/x', 'CSV', '[HIDDEN]')
+--- extra_credentials in the query tree
+OK
+--- S3 database engine
+CREATE DATABASE d ENGINE = S3(nc, url = 'http://127.0.0.1:1/x/', secret_access_key = '[HIDDEN]')
+--- S3 database engine, misspelled key
+CREATE DATABASE d ENGINE = S3('[HIDDEN]', '[HIDDEN]')
+--- S3 database engine, explicit url
+CREATE DATABASE d ENGINE = S3('http://127.0.0.1:1/x/', 'ak', '[HIDDEN]', use_environment_credentials = 1, '[HIDDEN]')
+--- s3 explicit url, unknown and unread keys
+SELECT * FROM s3('http://127.0.0.1:1/x', 'CSV', '[HIDDEN]', filename = '[HIDDEN]', structure = 'x Int32')
+--- s3 explicit url, two extra_credentials
+SELECT * FROM s3('[HIDDEN]', '[HIDDEN]', '[HIDDEN]', '[HIDDEN]', '[HIDDEN]')
+--- mysql value that is an expression
+SELECT * FROM mysql(nc, `table` = '[HIDDEN]')
+--- aliases and case
+SELECT * FROM mysql(nc, username = 'u', db = 'db', hostname = 'h', '[HIDDEN]')
+--- s3 table function, explicit url
+SELECT * FROM s3('http://127.0.0.1:1/x', 'CSV', secret_access_key = '[HIDDEN]')
+SELECT * FROM s3(nc_s3, filename = \'data.csv\', format = \'CSV\', \'[HIDDEN]\')	1	1
+CREATE TABLE t_s3 (`x` Int32) ENGINE = S3(\'[HIDDEN]\', \'[HIDDEN]\', \'[HIDDEN]\', \'[HIDDEN]\')	1	1
+SELECT * FROM mysql(nc_mysql, \'[HIDDEN]\')	1	1
+SELECT * FROM postgresql(nc_pg, \'[HIDDEN]\')	1	1
+SELECT * FROM s3(nc_s3, filename = \'data.csv\', format = \'CSV\', \'[HIDDEN]\')	1	1
+SELECT * FROM mysql(nc_mysql, \'[HIDDEN]\')	1	1
+SELECT * FROM postgresql(nc_pg, \'[HIDDEN]\')	1	1
+SELECT * FROM mysql(nc_mysql, \'[HIDDEN]\')	1	1
+SELECT * FROM postgresql(nc_pg, \'[HIDDEN]\')	1	1
+SELECT * FROM mysql(nc_mysql, \'[HIDDEN]\')	1	1
+SELECT * FROM s3(\'http://127.0.0.1:1/bucket/data.csv\', \'CSV\', \'x Int32\', \'[HIDDEN]\')	1	1
+CREATE DATABASE d_s3 ENGINE = S3(\'[HIDDEN]\', \'[HIDDEN]\')	1	1
+CREATE DATABASE d_s3 ENGINE = S3(\'[HIDDEN]\', \'[HIDDEN]\')	1	1
+SELECT * FROM s3(\'http://127.0.0.1:1/bucket/data.csv\', \'CSV\', \'x Int32\', \'[HIDDEN]\', \'[HIDDEN]\')	1	1
+CREATE TABLE t_s3_dup (`x` Int32) ENGINE = S3(\'http://127.0.0.1:1/bucket/data.csv\', \'CSV\', \'[HIDDEN]\', \'[HIDDEN]\')	1	1

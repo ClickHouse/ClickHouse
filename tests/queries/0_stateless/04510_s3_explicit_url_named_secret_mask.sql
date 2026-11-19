@@ -1,5 +1,6 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, long
 -- no-fasttest: the S3 table engine is not available in the fast test build.
+-- long: many statements, each with an S3 request or a backup; repeated runs in the flaky check exceed the time limit.
 
 -- session_token, the Google ADC secrets (google_adc_client_secret, google_adc_refresh_token) and
 -- the extra_credentials assume-role material (external_id) passed to the explicit-url or
@@ -7,8 +8,7 @@
 -- so the final assertion can prove none of them leaks. They used to leak in plaintext in SHOW CREATE
 -- and logged query text.
 
--- Engine form: SHOW CREATE hides every secret; the non-secret extra_credentials identifier
--- (role_arn) stays visible while external_id is hidden.
+-- Engine form: SHOW CREATE hides every secret; extra_credentials(...) is hidden whole, its keys included.
 DROP TABLE IF EXISTS t_04510;
 CREATE TABLE t_04510 (x UInt8)
 ENGINE = S3('http://localhost:11111/test/04510', 'ak', 'SEKRIT_SAK',
@@ -136,8 +136,7 @@ SELECT * FROM s3('url_exprkey', 'ak', 'SEKRIT_SAK',
 SELECT * FROM s3('url_fmthdr', format = headers('Authorization' = 'SEKRIT_FMTHDR'),
                  structure = 'x UInt8'); -- { serverError BAD_ARGUMENTS, UNKNOWN_FUNCTION }
 
--- Same inside extra_credentials: role_arn stays visible only for a literal/identifier value; a nested
--- map value carries a secret and must be hidden.
+-- Same inside extra_credentials, which is hidden whole anyway.
 SELECT * FROM s3('url_rolehdr', 'ak', 'SEKRIT_SAK',
                  extra_credentials(role_arn = headers('Authorization' = 'SEKRIT_ROLEHDR'))); -- { serverError BAD_ARGUMENTS, UNKNOWN_FUNCTION }
 
@@ -197,7 +196,7 @@ SELECT * FROM s3(nc_span_missing, secret_access_key = 'SEKRIT_SPAN1', 'SEKRIT_MI
                  session_token = 'SEKRIT_SPAN2',
                  format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
 
--- A constant-expression key can be an effective secret override for a named collection too.
+-- A constant-expression key can be an effective secret override for a named collection too: the whole argument is hidden.
 SELECT * FROM s3(nc_exprkey_missing, concat('secret_', 'access_key') = 'SEKRIT_EXPRVAL',
                  format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
 

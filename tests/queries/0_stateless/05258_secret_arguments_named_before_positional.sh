@@ -31,7 +31,7 @@ other_queries=(
     "SELECT * FROM arrowFlight('127.0.0.1:5006', 'ds', 'user', 'pw')"
     "SELECT * FROM ytsaurus('http://127.0.0.1', '//p', 'pw', 'x Int32')"
     "CREATE DATABASE d ENGINE = MySQL('127.0.0.1:3306', 'db', 'user', 'pw')"
-    # A named collection with a key that is an expression hides its value; a positional after a named override is hidden.
+    # A named collection with a key that is an expression hides the whole argument; a positional after a named override is hidden.
     "SELECT * FROM mysql(creds, concat('pass', 'word') = 'S1')"
     "SELECT * FROM mysql(creds, password = 'S2', 'after')"
     "SELECT * FROM postgresql(creds, concat('pass', 'word') = 'S1')"
