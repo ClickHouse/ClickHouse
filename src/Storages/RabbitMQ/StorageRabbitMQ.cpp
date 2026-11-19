@@ -73,7 +73,7 @@ namespace RabbitMQSetting
     extern const RabbitMQSettingsUInt64 rabbitmq_max_block_size;
     extern const RabbitMQSettingsUInt64 rabbitmq_max_idle_producer_connections;
     extern const RabbitMQSettingsUInt64 rabbitmq_max_rows_per_message;
-    extern const RabbitMQSettingsUInt64 rabbitmq_num_consumers;
+    extern const RabbitMQSettingsNonZeroUInt64 rabbitmq_num_consumers;
     extern const RabbitMQSettingsUInt64 rabbitmq_num_queues;
     extern const RabbitMQSettingsSecretString rabbitmq_password;
     extern const RabbitMQSettingsBool rabbitmq_persistent;
@@ -1659,6 +1659,17 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
         if (!(*rabbitmq_settings)[RabbitMQSetting::rabbitmq_format].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `rabbitmq_format` setting");
+
+        /// The consumer semaphore takes an `int`. A bigger value can wrap to a valid one, so it is rejected only for a new definition,
+        /// to keep existing tables loadable.
+        const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
+        const UInt64 num_consumers = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_num_consumers].value;
+        if (is_fresh_definition && num_consumers > std::numeric_limits<int>::max())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `rabbitmq_num_consumers` can not be bigger than {}, got {}",
+                std::numeric_limits<int>::max(),
+                num_consumers);
 
         return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, args.comment, std::move(rabbitmq_settings), args.mode);
     };

@@ -363,7 +363,8 @@ public:
         bool supports_skip_indexes_on_data_read,
         bool check_row_limits,
         bool skip_ranges_analysis,
-        bool report_index_usage);
+        bool report_index_usage,
+        bool stop_at_first_match);
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
@@ -424,6 +425,8 @@ public:
     bool requestOutputEachPartitionThroughSeparatePortForLimitBy();
     void requestOutputEachPartitionThroughSeparatePortForDistinct();
     void requestOutputEachPartitionThroughSeparatePortForWindow();
+    /// Whether `requestOutputEachPartitionThroughSeparatePortForWindow` would apply, without applying it.
+    bool canOutputEachPartitionThroughSeparatePortForWindow() const;
     bool requestOutputEachPartitionThroughSeparatePortForCreatingSet();
 
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
