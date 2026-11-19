@@ -20,7 +20,7 @@ dependencies = [
 name = "_ch_rust_dwarf"
 version = "0.1.0"
 dependencies = [
- "gimli 0.33.0",
+ "gimli",
  "object 0.39.1",
 ]
 
@@ -6458,7 +6458,7 @@ dependencies = [
  "log",
  "mach2",
  "memfd",
- "object",
+ "object 0.40.0",
  "once_cell",
  "postcard",
  "pulley-interpreter",
@@ -6505,7 +6505,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "indexmap",
  "log",
- "object",
+ "object 0.40.0",
  "postcard",
  "rustc-demangle",
  "semver",
@@ -6553,7 +6553,7 @@ dependencies = [
  "gimli",
  "itertools 0.14.0",
  "log",
- "object",
+ "object 0.40.0",
  "pulley-interpreter",
  "smallvec",
  "target-lexicon",
@@ -6600,7 +6600,7 @@ version = "50.0.1"
 dependencies = [
  "cranelift-codegen",
  "log",
- "object",
+ "object 0.40.0",
  "wasmtime-environ",
 ]
 
