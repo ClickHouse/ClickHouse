@@ -16,6 +16,7 @@
 #include <Common/ErrnoException.h>
 #include <Common/MemoryWorker.h>
 #include <Common/formatReadable.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocCacheArena.h>
 #include <Common/JemallocJITArena.h>
@@ -1841,9 +1842,37 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
+    /// With exclusive CPUs (e.g. the static CPU manager of Kubernetes) there is no CFS quota (`cpu.max` is `max`),
+    /// and the limit is only visible in the cpuset. A cpuset with all online CPUs is not a limit.
+    try
+    {
+        std::optional<ReadBufferFromFilePRead> cpuset_file;
+        if (auto dir = getCgroupsV2PathContainingFile("cpuset.cpus.effective"))
+            openFileIfExists((*dir + "/cpuset.cpus.effective").c_str(), cpuset_file);
+        else
+            openFileIfExists("/sys/fs/cgroup/cpuset/cpuset.effective_cpus", cpuset_file);
+
+        if (cpuset_file)
+        {
+            String cpu_list;
+            readString(cpu_list, *cpuset_file);
+            if (auto cpuset_cpus = countCPUsInList(cpu_list); cpuset_cpus && *cpuset_cpus < getNumberOfLogicalCPUCores())
+            {
+                const auto cpuset_cores = static_cast<Float64>(*cpuset_cpus);
+                max_cpu_cgroups = max_cpu_cgroups > 0 ? std::min(max_cpu_cgroups, cpuset_cores) : cpuset_cores;
+            }
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
     if (max_cpu_cgroups > 0)
     {
-        new_values["CGroupMaxCPU"] = { max_cpu_cgroups, "The maximum number of CPU cores according to CGroups."};
+        new_values["CGroupMaxCPU"] = { max_cpu_cgroups,
+            "The maximum number of CPU cores according to CGroups: the minimum of the CPU quota divided by its period "
+            "and the number of CPUs in the effective cpuset."};
     }
 
     if (cgroupcpu_stat || cgroupcpuacct_stat)
