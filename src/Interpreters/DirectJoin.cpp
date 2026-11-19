@@ -109,6 +109,16 @@ DirectKeyValueJoin::DirectKeyValueJoin(
     right_sample_block_with_storage_column_names = right_sample_block_with_storage_column_names_;
 }
 
+std::optional<IJoin::LookupBatching> DirectKeyValueJoin::getLookupBatching() const
+{
+    const auto batching = storage->getKeysBatching();
+    if (batching == IKeyValueEntity::KeysBatching::None)
+        return {};
+    return LookupBatching{
+        .key = table_join->getOnlyClause().key_names_left[0],
+        .max_parallel_lookups = batching == IKeyValueEntity::KeysBatching::BatchByRanges ? storage->getMaxParallelLookups() : 1};
+}
+
 bool DirectKeyValueJoin::addBlockToJoin(const Block &, size_t, JoinBuildContext)
 {
     throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unreachable code reached");

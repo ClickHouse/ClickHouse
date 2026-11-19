@@ -16,8 +16,11 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageSnapshot.h>
 #include <Common/logger_useful.h>
@@ -29,6 +32,7 @@
 #include <Common/ArenaAllocator.h>
 #include <Common/ProfileEvents.h>
 #include <Functions/CastOverloadResolver.h>
+#include <Common/typeid_cast.h>
 
 
 namespace ProfileEvents
@@ -45,6 +49,54 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+namespace
+{
+
+/// The read of the lookup plan, if the key of the lookup is the first primary key column of its table,
+/// so that the index analysis of a lookup selects the granules around its keys. Otherwise nullptr.
+const ReadFromMergeTree * findReadByFirstPrimaryKeyColumn(const QueryPlan & lookup_plan, const ActionsDAG & filter_dag)
+{
+    /// The input column the output `name` of the expression is, or nullptr if it is computed.
+    auto find_source_column = [](const ActionsDAG & dag, const String & name) -> const ActionsDAG::Node *
+    {
+        const auto * node = dag.tryFindInOutputs(name);
+        while (node && node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.front();
+        return node && node->type == ActionsDAG::ActionType::INPUT ? node : nullptr;
+    };
+
+    const auto * key = find_source_column(filter_dag, filter_dag.getOutputs().front()->result_name);
+    if (!key)
+        return nullptr;
+    String column = key->result_name;
+
+    const auto * node = lookup_plan.getRootNode();
+    for (; node->children.size() == 1; node = node->children.front())
+    {
+        const ActionsDAG * expression = nullptr;
+        if (const auto * expression_step = typeid_cast<const ExpressionStep *>(node->step.get()))
+            expression = &expression_step->getExpression();
+        else if (const auto * filter_step = typeid_cast<const FilterStep *>(node->step.get()))
+            expression = &filter_step->getExpression();
+        else
+            return nullptr;
+
+        const auto * source = find_source_column(*expression, column);
+        if (!source)
+            return nullptr;
+        column = source->result_name;
+    }
+
+    const auto * reading = typeid_cast<const ReadFromMergeTree *>(node->step.get());
+    if (!reading || !node->children.empty())
+        return nullptr;
+
+    const auto & primary_key_columns = reading->getStorageMetadata()->getPrimaryKey().column_names;
+    return !primary_key_columns.empty() && primary_key_columns.front() == column ? reading : nullptr;
+}
+
+}
+
 DirectJoinMergeTreeEntity::DirectJoinMergeTreeEntity(
         QueryPlan && lookup_plan_,
         ActionsDAG filter_dag_,
@@ -54,10 +106,21 @@ DirectJoinMergeTreeEntity::DirectJoinMergeTreeEntity(
     , context(context_)
     , plan_optimization_settings(context)
     , pipeline_build_settings(context)
+    , keys_batching(KeysBatching::Batch)
     , log(getLogger("DirectJoinMergeTreeEntity"))
 {
     if (filter_dag.getOutputs().size() != 1)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Direct join with merge tree supports only single-column key");
+
+    /// Without the index every lookup reads the whole table. With it, a lookup reads at least a granule of every part
+    /// its keys fall into, and the parts usually cover the same keys: more lookups than the largest part has granules
+    /// would read the same granules.
+    if (const auto * reading = findReadByFirstPrimaryKeyColumn(lookup_plan, filter_dag))
+    {
+        keys_batching = KeysBatching::BatchByRanges;
+        for (const auto & part : reading->getParts())
+            max_parallel_lookups = std::max(max_parallel_lookups, part.data_part->index_granularity->getMarksCountWithoutFinal());
+    }
 
     /// The per-key-batch lookup read is stamped `disableQueryConditionCache` at plan time because its
     /// hand-built filter has one identity for every batch, and that stamp is not part of a serialized read.

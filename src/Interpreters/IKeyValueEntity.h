@@ -47,6 +47,22 @@ public:
     /// Header for getByKeys result
     [[nodiscard]] virtual Block getSampleBlock(const Names & required_columns) const = 0;
 
+    /// How the cost of `getByKeys` depends on the keys of a call.
+    enum class KeysBatching : UInt8
+    {
+        /// A lookup per key: it does not matter how the keys are grouped into calls.
+        None,
+        /// A call reads the data whatever its keys are, so the fewer calls the better.
+        Batch,
+        /// A call reads the data around its keys: calls with keys of disjoint ranges read disjoint data.
+        BatchByRanges,
+    };
+
+    [[nodiscard]] virtual KeysBatching getKeysBatching() const { return KeysBatching::None; }
+
+    /// For `BatchByRanges`: an upper bound of how many calls with keys of disjoint ranges read disjoint data.
+    [[nodiscard]] virtual size_t getMaxParallelLookups() const { return 1; }
+
 protected:
     /// Names of result columns. If empty then all columns are required.
     Names key_value_result_names;

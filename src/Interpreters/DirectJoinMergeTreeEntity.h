@@ -34,6 +34,9 @@ public:
 
     Block getSampleBlock(const Names & required_columns) const override;
 
+    KeysBatching getKeysBatching() const override { return keys_batching; }
+    size_t getMaxParallelLookups() const override { return max_parallel_lookups; }
+
 private:
     Chunk executePlan(QueryPlan & plan) const;
 
@@ -42,6 +45,8 @@ private:
     ContextPtr context;
     QueryPlanOptimizationSettings plan_optimization_settings;
     BuildQueryPipelineSettings pipeline_build_settings;
+    KeysBatching keys_batching;
+    size_t max_parallel_lookups = 1;
 
     LoggerPtr log;
 };

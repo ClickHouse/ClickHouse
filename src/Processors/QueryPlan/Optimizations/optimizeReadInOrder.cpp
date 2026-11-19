@@ -133,9 +133,18 @@ struct FindReadingStepContext
     bool inside_collapsing_exchange_pair = false;
 
     /// The joins which must be pinned to their order-preserving mode by `keepLeftPipelineInOrder`
-    /// when the in-order read is installed. `FilledJoinStep` never appears here: a filled join
-    /// preserves the left order unconditionally and needs no pin.
+    /// when the in-order read is installed. A filled join preserves the left order itself, but its
+    /// step may regroup the left rows before it (see `ScatterByKeyRangesTransform`).
     std::list<JoinStep *> joins_to_keep_in_order = {};
+    std::list<FilledJoinStep *> filled_joins_to_keep_in_order = {};
+
+    void keepJoinsInOrder() const
+    {
+        for (auto * join_step : joins_to_keep_in_order)
+            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
+        for (auto * join_step : filled_joins_to_keep_in_order)
+            join_step->keepLeftPipelineInOrder();
+    }
 
     /// Every join the traversal descended through, filled or not. The join-specific guards (the
     /// parallel-replica bailouts and the no-virtual-row INNER check) must see all of them: a
@@ -216,8 +225,7 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
         if (const auto * join_step = typeid_cast<const FilledJoinStep *>(step))
         {
             join_ptr = join_step->getJoin().get();
-            /// FilledJoinStep is expected to preserve left block order, thus no need to call
-            /// keepLeftPipelineInOrder. It also doesn't resize or modify the pipeline.
+            /// The join of a FilledJoinStep preserves the left block order itself.
             chassert(join_ptr->preservesLeftBlockOrder());
         }
 
@@ -240,6 +248,8 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
                     data.traversed_joins.push_back(join_ptr);
                     if (auto * plain_join_step = typeid_cast<JoinStep *>(step))
                         data.joins_to_keep_in_order.push_back(plain_join_step);
+                    else if (auto * filled_join_step = typeid_cast<FilledJoinStep *>(step))
+                        data.filled_joins_to_keep_in_order.push_back(filled_join_step);
                 }
                 return reading_step;
             }
@@ -1509,8 +1519,7 @@ InputOrderInfoPtr buildInputOrderInfo(
                 return nullptr;
             }
 
-            for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
-                join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
+            find_reading_ctx.keepJoinsInOrder();
         }
 
         return order_info.input_order;
@@ -1529,8 +1538,7 @@ InputOrderInfoPtr buildInputOrderInfo(
             if (!can_read)
                 return nullptr;
 
-            for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
-                join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
+            find_reading_ctx.keepJoinsInOrder();
         }
 
         return order_info.input_order;
@@ -1549,8 +1557,7 @@ InputOrderInfoPtr buildInputOrderInfo(
                 order_info.input_order->direction, optimization_settings);
             if (!can_read)
                 return nullptr;
-            for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
-                join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
+            find_reading_ctx.keepJoinsInOrder();
         }
 
         return order_info.input_order;
@@ -1613,8 +1620,7 @@ InputOrder buildInputOrderInfo(
             if (!can_read)
                 return {};
 
-            for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
-                join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
+            find_reading_ctx.keepJoinsInOrder();
         }
 
         return order_info;
@@ -1638,8 +1644,7 @@ InputOrder buildInputOrderInfo(
                 return {};
         }
 
-        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
-            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
+        find_reading_ctx.keepJoinsInOrder();
         return order_info;
     }
 
@@ -1658,8 +1663,7 @@ InputOrder buildInputOrderInfo(
                 return {};
         }
 
-        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
-            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
+        find_reading_ctx.keepJoinsInOrder();
         return order_info;
     }
 
@@ -1759,8 +1763,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
             order_info.input_order->limit))
             return {};
 
-        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
-            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
+        find_reading_ctx.keepJoinsInOrder();
         return order_info;
     }
     if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
@@ -1780,8 +1783,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         if (!merge->requestReadingInOrder(order_info.input_order))
             return {};
 
-        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
-            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
+        find_reading_ctx.keepJoinsInOrder();
         return order_info;
     }
 
@@ -1803,8 +1805,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
                 order_info.input_order->direction, optimization_settings))
             return {};
 
-        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
-            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
+        find_reading_ctx.keepJoinsInOrder();
         return order_info;
     }
 
@@ -1859,8 +1860,7 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
                 order_info.input_order->used_prefix_of_sorting_key_size, order_info.input_order->direction, order_info.input_order->limit))
             return {};
 
-        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
-            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
+        find_reading_ctx.keepJoinsInOrder();
         return order_info;
     }
 
@@ -1879,8 +1879,7 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
         if (!merge->requestReadingInOrder(order_info.input_order))
             return {};
 
-        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
-            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
+        find_reading_ctx.keepJoinsInOrder();
         return order_info;
     }
 

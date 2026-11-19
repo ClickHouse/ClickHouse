@@ -15,11 +15,13 @@
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
+#include <Processors/Transforms/ScatterByKeyRangesTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
 #include <Core/BlockNameMap.h>
+#include <DataTypes/IDataType.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Profiling/Analysis/JoinStatsAnalyzer.h>
@@ -586,13 +588,23 @@ void JoinStep::updateOutputHeader()
         output_header = join_algorithm_header;
 }
 
-static ITransformingStep::Traits getStorageJoinTraits()
+/// The number of parts the left blocks may be split into by ranges of the key before the join,
+/// see `ScatterByKeyRangesTransform`. It sorts the key.
+static size_t getMaxParallelLookups(const IJoin & join, const Block & left_header)
+{
+    const auto batching = join.getLookupBatching();
+    if (!batching || !left_header.getByName(batching->key).type->isComparable())
+        return 1;
+    return std::max<size_t>(batching->max_parallel_lookups, 1);
+}
+
+static ITransformingStep::Traits getStorageJoinTraits(bool splits_lookup_keys)
 {
     return ITransformingStep::Traits
     {
         {
             .returns_single_stream = false,
-            .preserves_number_of_streams = true,
+            .preserves_number_of_streams = !splits_lookup_keys,
             .preserves_sorting = false,
         },
         {
@@ -601,19 +613,34 @@ static ITransformingStep::Traits getStorageJoinTraits()
     };
 }
 
-FilledJoinStep::FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_, size_t max_block_size_)
+FilledJoinStep::FilledJoinStep(
+    const SharedHeader & input_header_, JoinPtr join_, size_t max_block_size_, size_t min_block_size_rows_, size_t min_block_size_bytes_)
     : ITransformingStep(
         input_header_,
         std::make_shared<const Block>(JoiningTransform::transformHeader(*input_header_, join_)),
-        getStorageJoinTraits())
+        getStorageJoinTraits(getMaxParallelLookups(*join_, *input_header_) > 1))
     , join(std::move(join_))
     , max_block_size(max_block_size_)
+    , min_block_size_rows(min_block_size_rows_)
+    , min_block_size_bytes(min_block_size_bytes_)
 {
     if (!join->isFilled())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FilledJoinStep expects Join to be filled");
+
+    if (const auto batching = join->getLookupBatching())
+    {
+        lookup_key = batching->key;
+        max_parallel_lookups = getMaxParallelLookups(*join, *input_header_);
+    }
 }
 
-void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void FilledJoinStep::keepLeftPipelineInOrder()
+{
+    lookup_key.reset();
+    max_parallel_lookups = 1;
+}
+
+void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     QueryExecutionCounters::addExecutedJoin(*join);
 
@@ -622,6 +649,38 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
     {
         pipeline.addDefaultTotals();
         default_totals = true;
+    }
+
+    /// A lookup reads data whatever the number of its keys, so small blocks are squashed as the left side of other joins is.
+    if (lookup_key && (min_block_size_rows > 0 || min_block_size_bytes > 0))
+    {
+        pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+        {
+            if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                return nullptr;
+            return std::make_shared<SimpleSquashingChunksTransform>(header, min_block_size_rows, min_block_size_bytes);
+        });
+    }
+
+    /// With fewer streams than threads, the blocks of a stream are split between several streams, each of them looks its part up.
+    /// The streams share the lookups evenly, the first of them take the remainder.
+    const size_t parallel_lookups = std::min<size_t>(settings.max_threads, max_parallel_lookups);
+    if (lookup_key && parallel_lookups > pipeline.getNumStreams())
+    {
+        const auto & header = pipeline.getSharedHeader();
+        const size_t key_position = header->getPositionByName(*lookup_key);
+        pipeline.transform([&](const OutputPortRawPtrs & ports)
+        {
+            Processors scatters;
+            for (size_t i = 0; i < ports.size(); ++i)
+            {
+                const size_t parts = parallel_lookups / ports.size() + (i < parallel_lookups % ports.size());
+                auto scatter = std::make_shared<ScatterByKeyRangesTransform>(header, parts, key_position);
+                connect(*ports[i], scatter->getInputPort());
+                scatters.push_back(std::move(scatter));
+            }
+            return scatters;
+        });
     }
 
     auto finish_counter = std::make_shared<FinishCounter>(pipeline.getNumStreams());

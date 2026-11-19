@@ -260,6 +260,19 @@ public:
     /// only when `canPreserveLeftBlockOrder` is true.
     virtual void keepLeftPipelineInOrder() {}
 
+    /// Set by a join that looks the left keys up in a storage where a lookup reads data rather than finds
+    /// a key, so that it pays off to look up many keys at once (see `FilledJoinStep`).
+    struct LookupBatching
+    {
+        /// The left key column.
+        String key;
+        /// If greater than 1, lookups of keys of disjoint ranges read disjoint data: a block can be split by
+        /// ranges of the key into parts that are looked up in parallel. More parts than this would read the same data.
+        size_t max_parallel_lookups = 1;
+    };
+
+    [[nodiscard]] virtual std::optional<LookupBatching> getLookupBatching() const { return {}; }
+
     /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.
     virtual void onBuildPhaseFinish() { }
 

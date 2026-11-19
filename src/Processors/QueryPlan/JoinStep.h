@@ -163,7 +163,11 @@ public:
 class FilledJoinStep : public ITransformingStep
 {
 public:
-    FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_, size_t max_block_size_);
+    /// The minimal sizes are as of `JoinStep`: smaller blocks of the left side are squashed for a join that asks for it,
+    /// see `IJoin::getLookupBatching`.
+    FilledJoinStep(
+        const SharedHeader & input_header_, JoinPtr join_, size_t max_block_size_,
+        size_t min_block_size_rows_ = 0, size_t min_block_size_bytes_ = 0);
 
     [[nodiscard]] String getName() const override { return "FilledJoin"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
@@ -176,6 +180,9 @@ public:
     [[nodiscard]] bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
+    /// The query plan requires the row order of the left streams: as for `JoinStep`, they are neither squashed nor regrouped.
+    void keepLeftPipelineInOrder();
+
     [[nodiscard]] StepAnalyzer makeAnalyzer() const override;
 
 private:
@@ -183,7 +190,14 @@ private:
 
     JoinPtr join;
     size_t max_block_size;
+    size_t min_block_size_rows;
+    size_t min_block_size_bytes;
     bool disjunctions_optimization_applied = false;
+
+    /// For a join that looks the left keys up in batches (`IJoin::getLookupBatching`): the key column, and the number
+    /// of parts worth looking up in parallel, which the left blocks are split into by `ScatterByKeyRangesTransform`.
+    std::optional<String> lookup_key;
+    size_t max_parallel_lookups = 1;
 };
 
 }

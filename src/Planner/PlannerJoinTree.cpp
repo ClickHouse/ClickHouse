@@ -3487,6 +3487,8 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
         lookup_reading_step->setAnalyzedResult(nullptr);
         /// Hand-constructed filter dag has same hash key each time, so disable cache
         lookup_reading_step->disableQueryConditionCache();
+        /// A lookup is executed in the thread of the join that makes it: more streams would only take memory for their buffers.
+        lookup_reading_step->setNumStreams(1);
     }
 
     for (const auto & column_name : lookup_plan.getCurrentHeader()->getNames())

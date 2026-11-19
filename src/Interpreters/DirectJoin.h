@@ -40,6 +40,8 @@ public:
     /// Each left row's key is looked up once and the row is emitted in input order.
     bool preservesLeftBlockOrder() const override { return true; }
 
+    std::optional<LookupBatching> getLookupBatching() const override;
+
     bool addBlockToJoin(const Block &, size_t, JoinBuildContext) override;
     void checkTypesOfKeys(const Block &) const override;
 

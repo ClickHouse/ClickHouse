@@ -1789,7 +1789,9 @@ static void constructPhysicalStep(
     auto * join_left_node = node.children[0];
     makeExpressionNodeOnTopOf(*join_left_node, std::move(left_pre_join_actions), nodes, makeDescription("Left Join Actions"));
 
-    auto filled_join_step = std::make_unique<FilledJoinStep>(join_left_node->step->getOutputHeader(), join_ptr, join_settings.max_block_size);
+    auto filled_join_step = std::make_unique<FilledJoinStep>(
+        join_left_node->step->getOutputHeader(), join_ptr, join_settings.max_block_size,
+        join_settings.min_joined_block_size_rows, join_settings.min_joined_block_size_bytes);
     filled_join_step->setDisjunctionsOptimizationApplied(disjunctions_optimization_applied);
     node.step = std::move(filled_join_step);
     node.step->setStepDescription("Filled JOIN");
