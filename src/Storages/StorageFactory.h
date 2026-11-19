@@ -204,7 +204,7 @@ public:
     [[nodiscard]] AccessRightsElements getExportAccessOfAnyEngine(const SettingsChanges & changes) const;
 
 private:
-    AccessRightsElements collectAccess(const ASTCreateQuery & create, GetExportAccessFn * StorageFeatures::*access_fn) const;
+    [[nodiscard]] AccessRightsElements collectAccess(const ASTCreateQuery & create, GetExportAccessFn * StorageFeatures::*access_fn) const;
 
     Storages storages;
 };
