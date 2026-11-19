@@ -51,8 +51,6 @@ class RunnerConfig:
     runner_home: str = f"/Users/{user}/actions-runner" if sys.platform == "darwin" else f"/home/{user}/actions-runner"
     log_file: str = f"/Users/{user}/runner-init.log"
     work_dir: str = "_work"
-    local_ssd_mount: str = "/Volumes/ephemeral0"
-    local_ssd_instance_types: tuple = ("mac-m4pro.metal",)
     runner_org: str = "ClickHouse"
     runner_url: str = ""  # set in __post_init__
     max_total_errors: int = 5
@@ -186,6 +184,8 @@ EC2.autodetect_region()
 
 class Runner:
     PROVISION_MARKER = Path.home() / ".clickhouse-ci-runner-init-version"
+    LOCAL_SSD_MOUNT = "/Volumes/ephemeral0"
+    LOCAL_SSD_INSTANCE_TYPES = ("mac-m4pro.metal",)
 
     def __init__(self, ec2: EC2):
         self.ec2 = ec2
@@ -566,13 +566,13 @@ timedatectl status | grep 'NTP service: active'
 
     def configure_local_ssd(self) -> None:
         # The instance store is empty after a stop, so this runs at every boot, not behind the provisioning marker.
-        if self.instance_type not in config.local_ssd_instance_types:
+        if self.instance_type not in self.LOCAL_SSD_INSTANCE_TYPES:
             return
         deadline = time.time() + 120
-        while not os.path.ismount(config.local_ssd_mount):
-            assert time.time() < deadline, f"{config.local_ssd_mount} is not mounted on {self.instance_type}"
+        while not os.path.ismount(self.LOCAL_SSD_MOUNT):
+            assert time.time() < deadline, f"{self.LOCAL_SSD_MOUNT} is not mounted on {self.instance_type}"
             time.sleep(5)
-        parent = f"{config.local_ssd_mount}/runner"
+        parent = f"{self.LOCAL_SSD_MOUNT}/runner"
         run_bash(f'mkdir -p "{parent}" && chown {config.user} "{parent}"', sudo=True)
         config.work_dir = f"{parent}/_work"
         log(f"Local SSD: the runner work directory is {config.work_dir}")
