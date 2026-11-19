@@ -31,8 +31,6 @@ private:
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
-    void checkAccessToCreateTable(ContextPtr context) const override;
-
     ASTCreateQuery create;
 };
 

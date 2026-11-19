@@ -68,13 +68,6 @@ StoragePtr TableFunctionURLCluster::getStorage(
         configuration);
 }
 
-void TableFunctionURLCluster::checkAccessToCreateTable(ContextPtr context) const
-{
-    TableFunctionURL::checkAccessToCreateTable(context);
-    /// A persisted target runs on the workers as the cluster user as well.
-    checkCallerGrantAppliesOnWorkers(context, cluster_name);
-}
-
 void registerTableFunctionURLCluster(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionURLCluster>({.description = R"DOCS_MD(

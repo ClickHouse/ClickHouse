@@ -105,8 +105,6 @@ protected:
     /// Throws `ACCESS_DENIED` when `callerGrantAppliesOnWorkers` is false.
     static void checkCallerGrantAppliesOnWorkers(const ContextPtr & context, const String & cluster_name);
 
-    void checkAccessToCreateTable(ContextPtr context) const override;
-
     void parseArguments(const ASTPtr & ast, ContextPtr context) override;
     void parseArgumentsImpl(ASTs & args, const ContextPtr & context) override;
 

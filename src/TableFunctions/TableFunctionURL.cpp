@@ -454,28 +454,6 @@ StoragePtr TableFunctionURL::getStorage(
         /*check_redirect_access=*/ !is_table_definition);
 }
 
-void TableFunctionURL::checkAccessToCreateTable(ContextPtr context) const
-{
-    if (is_relative_url)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "A relative URL of a table function persisted in a table is resolved against `url_base` where the query runs, "
-            "and cannot be checked: write the full URL");
-
-    /// A delegated scheme is the delegate's source and follows no HTTP redirect, so it is treated as `AS s3(...)` is.
-    if (delegate)
-        return;
-
-    /// The table is read under the grants on the table, so its creator needs what `ENGINE = URL` needs: `TABLE ENGINE`,
-    /// which no URL filter bounds, and `READ` on the URL itself even when a column list skips the schema inference.
-    checkEngineAccess(context);
-    checkSourceAccess(context, /*is_insert_query=*/ false);
-
-    /// The same fail-close as for a read: index pages are listed without the per-hop check.
-    if (configuration.http_method.empty() && urlPathHasListableGlobs(filename))
-        checkWholeSourceAccessForURLWildcard(context);
-}
-
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
     if (delegate)

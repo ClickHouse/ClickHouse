@@ -1,16 +1,8 @@
 #include <Core/Settings.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTWithAlias.h>
-#include <Poco/String.h>
 #include <Storages/StorageView.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -52,107 +44,6 @@ void TableFunctionView::parseArguments(const ASTPtr & ast_function, ContextPtr /
         }
     }
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' requires a query argument.", getName());
-}
-
-namespace
-{
-    /// What the `WITH` clause and the projection bind to a name, visible in the query and its subqueries.
-    using BoundByAlias = UnorderedMapWithMemoryTracking<String, ASTPtr>;
-
-    void collectAliases(const ASTSelectQuery & select, BoundByAlias & bound)
-    {
-        for (const auto & list : {select.with(), select.select()})
-        {
-            if (!list)
-                continue;
-            for (const auto & child : list->children)
-                if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(child.get()); with_alias && !with_alias->alias.empty())
-                    bound[with_alias->alias] = child;
-        }
-    }
-
-    /// Writes the expressions that bound identifiers stand for into an argument, through chains of aliases, for the
-    /// function to evaluate as it does when it runs. A nested query keeps its own scope and check.
-    void substituteBoundIdentifiers(ASTPtr & ast, const BoundByAlias & bound, size_t alias_hops)
-    {
-        if (alias_hops > 16)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The aliases of the query are chained too deep to resolve");
-        if (ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSubquery>())
-            return;
-
-        if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && !ast->as<ASTTableIdentifier>())
-        {
-            const auto it = bound.find(identifier->name());
-            if (it == bound.end())
-                return;
-            auto value = it->second->clone();
-            substituteBoundIdentifiers(value, bound, alias_hops + 1);
-            if (auto * with_alias = dynamic_cast<ASTWithAlias *>(value.get()))
-                with_alias->alias.clear();
-            ast = value;
-            return;
-        }
-        for (auto & child : ast->children)
-            substituteBoundIdentifiers(child, bound, alias_hops);
-    }
-
-    /// The function with the expressions its arguments are bound to written out, so that it parses as it runs.
-    ASTPtr withAliasesSubstituted(const ASTPtr & table_function, const BoundByAlias & bound)
-    {
-        if (bound.empty())
-            return table_function;
-
-        auto result = table_function->clone();
-        auto & function = result->as<ASTFunction &>();
-        if (function.arguments)
-            for (auto & argument : function.arguments->children)
-                substituteBoundIdentifiers(argument, bound, 0);
-        return result;
-    }
-
-    void checkAccessToCreateTableTargets(const IAST & ast, const ContextPtr & context, BoundByAlias bound);
-
-    /// After the check of a table function, only what no hook covers is walked: a subquery in an argument may read a
-    /// target the function knows nothing of. A nested table function was checked by the carrier, so only its arguments
-    /// are walked in turn; the query of a `view` is walked by the hook of the view.
-    void walkArgumentsWithoutHook(const ASTFunction & function, const ContextPtr & context, const BoundByAlias & bound)
-    {
-        if (!function.arguments)
-            return;
-        const bool is_view = Poco::toLower(function.name) == TableFunctionView::name;
-        for (const auto & argument : function.arguments->children)
-        {
-            if (is_view && argument->as<ASTSelectWithUnionQuery>())
-                continue;
-            if (const auto * nested = argument->as<ASTFunction>(); nested && TableFunctionFactory::instance().isTableFunctionName(nested->name))
-                walkArgumentsWithoutHook(*nested, context, bound);
-            else
-                checkAccessToCreateTableTargets(*argument, context, bound);
-        }
-    }
-
-    /// The query is not analyzed: a carrier such as `remote` may run it where tables unknown here exist.
-    void checkAccessToCreateTableTargets(const IAST & ast, const ContextPtr & context, BoundByAlias bound)
-    {
-        if (const auto * select = ast.as<ASTSelectQuery>())
-            collectAliases(*select, bound);
-
-        if (const auto * table_expression = ast.as<ASTTableExpression>(); table_expression && table_expression->table_function)
-        {
-            ITableFunction::checkAccessToCreateTableTarget(withAliasesSubstituted(table_expression->table_function, bound), context);
-            walkArgumentsWithoutHook(table_expression->table_function->as<ASTFunction &>(), context, bound);
-            return;
-        }
-
-        for (const auto & child : ast.children)
-            checkAccessToCreateTableTargets(*child, context, bound);
-    }
-}
-
-void TableFunctionView::checkAccessToCreateTable(ContextPtr context) const
-{
-    /// A carrier may persist the query and run it under another identity, so the table functions it reads are targets too.
-    checkAccessToCreateTableTargets(*create.select, context, {});
 }
 
 ColumnsDescription TableFunctionView::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const

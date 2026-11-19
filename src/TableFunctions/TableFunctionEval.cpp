@@ -67,16 +67,6 @@ public:
     /// parameters, settings, or time. There is no stable persisted representation, so forbid it.
     bool canBeUsedToCreateTable() const override { return false; }
 
-    /// Nested in a carrier such as `remote(..., view(...))`, the generated query would run where the carrier sends it.
-    void checkAccessToCreateTable(ContextPtr) const override
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Table function '{}' cannot be used to create a table, neither directly nor nested in another table "
-            "function or in a table engine argument",
-            name);
-    }
-
 private:
     StoragePtr executeImpl(
         const ASTPtr & ast_function,

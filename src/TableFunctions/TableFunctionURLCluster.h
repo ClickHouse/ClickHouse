@@ -48,8 +48,6 @@ protected:
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
         const std::string & table_name, const String & compression_method_, bool is_insert_query, bool is_table_definition) const override;
 
-    void checkAccessToCreateTable(ContextPtr context) const override;
-
     const char * getStorageEngineName() const override { return "URLCluster"; }
     const char * getNonClusteredStorageEngineName() const override { return "URL"; }
 };

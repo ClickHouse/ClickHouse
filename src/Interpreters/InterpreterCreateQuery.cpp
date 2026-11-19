@@ -57,7 +57,6 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageAlias.h>
-#include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/SubcolumnCodecs.h>
 #include <Storages/StorageProxy.h>
@@ -112,7 +111,6 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 
-#include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 
@@ -1378,10 +1376,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             && isOnlyReplicatedEngineAllowed(create, DatabaseCatalog::instance().tryGetDatabase(create.getDatabase()), getContext())
             && table_function->hasUnreplicatedTableDataOnDisk())
             throwUnreplicatedTableDataNotAllowed();
-
-        /// A `RESTORE` introduces the definition under the restoring user, like `ENGINE = URL` treats it.
-        if (!isReplayedTableDefinition(mode, create, getContext()) || is_restore_from_backup)
-            ITableFunction::checkAccessToCreateTableTarget(table_function_ast, getContext());
 
         properties.columns = table_function->getActualTableStructureWithAccess(getContext(), /*is_insert_query*/ true);
     }
@@ -2992,9 +2986,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
 
-        /// Both checks already ran in `getTablePropertiesAndNormalizeCreateQuery` when the structure was
-        /// inferred from the function; a definition with an explicit column list skips that inference and
-        /// is checked here.
+        /// Already checked in `getTablePropertiesAndNormalizeCreateQuery` when the structure was inferred
+        /// from the function; a definition with an explicit column list skips that inference and is
+        /// checked here.
         throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
 
         /// Classify the table function before executing it: with a static structure it returns the final storage
@@ -3002,9 +2996,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// against `url_base`), see `ITableFunction::hasUnreplicatedTableDataOnDisk`.
         if (only_replicated_engine_allowed && table_function->hasUnreplicatedTableDataOnDisk())
             throwUnreplicatedTableDataNotAllowed();
-
-        if (!isReplayedTableDefinition(mode, create, getContext()) || is_restore_from_backup)
-            ITableFunction::checkAccessToCreateTableTarget(table_function_ast, getContext());
 
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
@@ -4200,24 +4191,6 @@ BlockIO InterpreterCreateQuery::execute()
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
 
-            /// The worker builds the table with no user, so everything `doCreateTable` checks for a table function
-            /// definition, `AS f(...)` or a `Remote` target, is checked here: for the definition as written, and
-            /// below for one inherited from `AS src`.
-            auto check_table_function_definition = [&](const ASTCreateQuery & query)
-            {
-                if (query.as_table_function)
-                {
-                    auto table_function_ast = query.as_table_function->ptr();
-                    auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
-                    throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
-                    ITableFunction::checkAccessToCreateTableTarget(table_function_ast, getContext());
-                    table_function->checkAccessToExecute(
-                        getContext(), /*is_insert_query=*/ true, /*check_create_temporary_table=*/ true, /*check_source_access=*/ true);
-                }
-                checkAccessToCreateRemoteTableTarget(query, getContext());
-            };
-            check_table_function_definition(create);
-
             /// this branch returns before setEngine, and the worker builds AS src with no user, so
             /// check the inherited definition here, on a copy of the query
             if (!create.as_table.empty())
@@ -4242,7 +4215,6 @@ BlockIO InterpreterCreateQuery::execute()
                 /// getRequiredAccess sees no engine, because this query holds none of its own
                 if (inherited.storage && inherited.storage->engine)
                     getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
-                check_table_function_definition(inherited);
                 if (inherited.as_table_function)
                     if (auto engine_name = getSourceEngineOfTableFunction(inherited.as_table_function->ptr(), getContext()))
                         getContext()->checkAccess(AccessType::TABLE_ENGINE, *engine_name);

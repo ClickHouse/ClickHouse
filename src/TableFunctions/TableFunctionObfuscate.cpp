@@ -87,15 +87,6 @@ ColumnsDescription TableFunctionObfuscate::getActualTableStructure(ContextPtr co
     return ColumnsDescription(sample_block->getNamesAndTypesList());
 }
 
-void TableFunctionObfuscate::checkAccessToCreateTable(ContextPtr) const
-{
-    throw Exception(
-        ErrorCodes::BAD_ARGUMENTS,
-        "Table function '{}' cannot be used to create a table, neither directly nor nested in another table "
-        "function or in a table engine argument",
-        name);
-}
-
 StoragePtr TableFunctionObfuscate::executeImpl(
     const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
