@@ -380,7 +380,9 @@ void SerializationNumber<T>::deserializeBinaryBulk(PaddedPODArray<T> & x, ReadBu
 {
     const size_t initial_size = x.size();
     x.resize(initial_size + limit);
-    const size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(T) * limit);
+    /// The unused capacity and the right padding of `x` may be overwritten.
+    const size_t size = istr.readBigWithPadding(
+        reinterpret_cast<char*>(&x[initial_size]), sizeof(T) * limit, (x.capacity() - x.size()) * sizeof(T) + x.pad_right);
     x.resize(initial_size + size / sizeof(T));
 
     if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)

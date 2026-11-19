@@ -112,7 +112,7 @@ off_t CompressedReadBufferFromFile::getPosition() const
     return file_in.getPosition();
 }
 
-size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
+size_t CompressedReadBufferFromFile::readBigWithPadding(char * to, size_t n, size_t padding)
 {
     try
     {
@@ -140,7 +140,9 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
 
             /// If the decompressed block fits entirely where it needs to be copied and we don't
             /// need to skip some bytes in decompressed data (seek happened before readBig call).
-            if (nextimpl_working_buffer_offset == 0 && size_decompressed + additional_size_at_the_end_of_buffer <= n - bytes_read)
+            /// The codec may write past the end of the block, into the rest of `to` or the padding after it.
+            if (nextimpl_working_buffer_offset == 0 && size_decompressed <= n - bytes_read
+                && size_decompressed + additional_size_at_the_end_of_buffer <= n - bytes_read + padding)
             {
                 decompressTo(to + bytes_read, size_decompressed, size_compressed_without_checksum);
                 bytes_read += size_decompressed;

@@ -57,7 +57,8 @@ public:
 
     [[nodiscard]] off_t getPosition() const override;
 
-    [[nodiscard]] size_t readBig(char * to, size_t n) override;
+    [[nodiscard]] size_t readBig(char * to, size_t n) override { return readBigWithPadding(to, n, 0); }
+    [[nodiscard]] size_t readBigWithPadding(char * to, size_t n, size_t padding) override;
 
     void setProfileCallback(const ReadBufferFromFileBase::ProfileCallback & profile_callback_, clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE)
     {

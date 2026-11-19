@@ -180,7 +180,9 @@ void SerializationIP<IPv>::deserializeBinaryBulk(DB::IColumn & column, DB::ReadB
     typename ColumnVector<IPv>::Container & x = typeid_cast<ColumnVector<IPv> &>(column).getData();
     size_t initial_size = x.size();
     x.resize(initial_size + limit);
-    size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(IPv) * limit);
+    /// The unused capacity and the right padding of `x` may be overwritten.
+    size_t size = istr.readBigWithPadding(
+        reinterpret_cast<char*>(&x[initial_size]), sizeof(IPv) * limit, (x.capacity() - x.size()) * sizeof(IPv) + x.pad_right);
     x.resize(initial_size + size / sizeof(IPv));
 }
 

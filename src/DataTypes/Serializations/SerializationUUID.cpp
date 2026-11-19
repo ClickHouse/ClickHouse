@@ -199,7 +199,9 @@ void SerializationUUID::deserializeBinaryBulk(IColumn & column, ReadBuffer & ist
     typename ColumnVector<UUID>::Container & x = typeid_cast<ColumnVector<UUID> &>(column).getData();
     const size_t initial_size = x.size();
     x.resize(initial_size + limit);
-    const size_t size = istr.readBig(reinterpret_cast<char *>(&x[initial_size]), sizeof(UUID) * limit);
+    /// The unused capacity and the right padding of `x` may be overwritten.
+    const size_t size = istr.readBigWithPadding(
+        reinterpret_cast<char *>(&x[initial_size]), sizeof(UUID) * limit, (x.capacity() - x.size()) * sizeof(UUID) + x.pad_right);
     x.resize(initial_size + size / sizeof(UUID));
 
 #pragma clang diagnostic push

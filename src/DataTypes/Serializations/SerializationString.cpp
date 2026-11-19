@@ -1198,7 +1198,8 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     else
     {
         data.resize(initial_size + bytes_to_read);
-        stream->readBigStrict(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
+        /// The unused capacity and the right padding of `data` may be overwritten.
+        stream->readBigStrict(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read, data.capacity() - data.size() + data.pad_right);
     }
 
     /// Nothing is shared across reads, so the rows read equal the growth of the offsets column.
