@@ -109,7 +109,7 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
 
             if (sparse_indices)
             {
-                /// As in `FilterTransform`: `index` costs per kept row, `filter` per row of the whole filter.
+                /// `index` costs per kept row, `filter` per row of the whole filter.
                 column = column->index(*sparse_indices, 0);
             }
             else if (canInplaceFilter(column))

@@ -1335,8 +1335,7 @@ ColumnPtr ColumnArray::index(const IColumn & indexes, size_t limit) const
     return selectIndexImpl(*this, indexes, limit);
 }
 
-/// For fixed-size values, copying an array as one range costs a virtual `insertRangeFrom` call per row, and gathering its elements
-/// costs 8 bytes of scratch and one write per element. The break-even is about 8 elements per row.
+/// From about this many elements per row, one `insertRangeFrom` per row is cheaper than gathering the elements.
 static constexpr size_t RANGE_COPY_MIN_ELEMENTS_PER_ROW = 8;
 
 template <typename T>
