@@ -2,21 +2,41 @@
 
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PersistentRemovalQueue.h>
-#include <Common/FailPoint.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <Common/Exception.h>
 #include <Common/getRandomASCIIString.h>
 
 #include <filesystem>
 #include <fstream>
+#include <utility>
 
 namespace fs = std::filesystem;
 
-namespace DB::FailPoints
+namespace DB::ErrorCodes
 {
-    extern const char persistent_removal_queue_fail_append[];
+    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
 }
 
 namespace
 {
+
+/// Fails a write after the file is opened, as a write error such as `ENOSPC` does: the file is created but stays empty.
+class FailingDisk : public DB::DiskLocal
+{
+public:
+    using DiskLocal::DiskLocal;
+
+    bool fail_next_write = false;
+
+    std::unique_ptr<DB::WriteBufferFromFileBase> writeFile(
+        const String & path, size_t buf_size, DB::WriteMode mode, const DB::WriteSettings & settings) override
+    {
+        auto buf = DiskLocal::writeFile(path, buf_size, mode, settings);
+        if (std::exchange(fail_next_write, false))
+            throw DB::Exception(DB::ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Injected write failure");
+        return buf;
+    }
+};
 
 class PersistentRemovalQueueTest : public testing::Test
 {
@@ -25,7 +45,7 @@ public:
     {
         path = "./test-removal-queue-dir." + DB::getRandomASCIIString(6);
         fs::create_directories(path);
-        disk = std::make_shared<DB::DiskLocal>("test-removal-queue", path);
+        disk = std::make_shared<FailingDisk>("test-removal-queue", path);
     }
 
     void TearDown() override { fs::remove_all(path); }
@@ -40,7 +60,7 @@ public:
     std::string logPath() const { return fs::path(path) / ".metadata" / "blobs_to_remove.log"; }
 
     std::string path;
-    DB::DiskPtr disk;
+    std::shared_ptr<FailingDisk> disk;
 };
 
 DB::StoredObjects blobs(const std::vector<std::string> & keys)
@@ -121,9 +141,8 @@ TEST_F(PersistentRemovalQueueTest, LogIsRepairedAfterFailedAppend)
 {
     {
         auto queue = open();
-        DB::FailPointInjection::enableFailPoint(DB::FailPoints::persistent_removal_queue_fail_append);
+        disk->fail_next_write = true;
         queue->submitForRemoval(blobs({"key1"}));
-        DB::FailPointInjection::disableFailPoint(DB::FailPoints::persistent_removal_queue_fail_append);
         EXPECT_TRUE(fs::exists(logPath()));
         EXPECT_EQ(fs::file_size(logPath()), 0);
 

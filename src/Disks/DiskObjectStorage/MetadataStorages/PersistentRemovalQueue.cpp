@@ -7,7 +7,6 @@
 #include <Core/Defines.h>
 
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 #include <filesystem>
@@ -20,12 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int FAULT_INJECTED;
-}
-
-namespace FailPoints
-{
-    extern const char persistent_removal_queue_fail_append[];
 }
 
 PersistentRemovalQueue::PersistentRemovalQueue(DiskPtr disk_, const std::string & directory_, size_t compaction_threshold_)
@@ -178,11 +171,6 @@ void PersistentRemovalQueue::appendToLogImpl(EntryType entry_type, const StoredO
 {
     bool file_exists = disk->existsFile(log_path);
     auto buf = disk->writeFile(log_path, /* buf_size */ DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, /* settings */ {});
-
-    fiu_do_on(FailPoints::persistent_removal_queue_fail_append,
-    {
-        throw Exception(ErrorCodes::FAULT_INJECTED, "persistent_removal_queue_fail_append");
-    });
 
     /// Write version header if this is a new file.
     /// An empty or corrupt file cannot exist here: `load` and a failed append make `compactLog` rewrite it with a valid header.
