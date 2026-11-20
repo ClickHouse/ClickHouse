@@ -1,8 +1,8 @@
 <test iceberg="0">
-    <!-- Conversion of 128- and 256-bit integers to floating point. The first three queries take the path for values
-         that fit in 64 bits and the fourth the one for wider values. The fifth mixes both at random, which is the worst
-         case for the branch between them. The last ones read stored columns: wider values of random signs, and random
-         mixes of both kinds of values. -->
+    <!-- Conversion of 128- and 256-bit integers to floating point. The first three queries convert values that fit
+         in 64 bits and the fourth wider values. The fifth mixes both at random, the worst case where the conversion
+         branches on the value. The last ones read stored columns: wider values of random signs, and random mixes of
+         both kinds of values. -->
 
     <settings>
         <max_threads>1</max_threads>

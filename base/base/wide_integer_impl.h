@@ -597,6 +597,15 @@ struct integer<Bits, Signed>::_impl
             + static_cast<long double>(n.items[little(0)]);
     }
 
+    /// x87 converts two items in a few instructions, which costs less than a branch on the value that mixed values mispredict.
+    constexpr static bool use_lowest_item(const integer<Bits, Signed> & n) noexcept
+    {
+        if constexpr (two_items_convert_in_one_rounding && std::numeric_limits<long double>::digits == 64)
+            return false;
+        else
+            return lowest_item_converts_directly && fits_in_lowest_item(n);
+    }
+
     template <typename T>
     constexpr static auto to_Integral(T f) noexcept
     {
@@ -1754,7 +1763,7 @@ constexpr integer<Bits, Signed>::operator T() const noexcept
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed>::operator long double() const noexcept
 {
-    if (_impl::lowest_item_converts_directly && _impl::fits_in_lowest_item(*this))
+    if (_impl::use_lowest_item(*this))
         return _impl::template lowest_item_to_floating_point<long double>(*this);
 
     if constexpr (_impl::two_items_convert_in_one_rounding)
@@ -1785,7 +1794,7 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed>::operator double() const noexcept
 {
-    if (_impl::lowest_item_converts_directly && _impl::fits_in_lowest_item(*this))
+    if (_impl::use_lowest_item(*this))
         return _impl::template lowest_item_to_floating_point<double>(*this);
 
     if constexpr (_impl::two_items_convert_in_one_rounding)
@@ -1797,7 +1806,7 @@ constexpr integer<Bits, Signed>::operator double() const noexcept
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed>::operator float() const noexcept
 {
-    if (_impl::lowest_item_converts_directly && _impl::fits_in_lowest_item(*this))
+    if (_impl::use_lowest_item(*this))
         return _impl::template lowest_item_to_floating_point<float>(*this);
 
     if constexpr (_impl::two_items_convert_in_one_rounding)
