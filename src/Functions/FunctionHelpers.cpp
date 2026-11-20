@@ -576,6 +576,14 @@ ColumnWithTypeAndName castNullableEnumToResultType(const ColumnWithTypeAndName &
     return {castColumn(argument, target_type), target_type, argument.name};
 }
 
+static std::optional<UInt64> findValueAboveInt64(const PaddedPODArray<UInt64> & data)
+{
+    const auto max_value = findExtremeMax(data.data(), 0, data.size());
+    if (max_value && *max_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+        return max_value;
+    return {};
+}
+
 void checkIntegerArgumentFitsInt64(const IColumn & column, std::string_view function_name, std::string_view argument_name)
 {
     const IColumn * values = &column;
@@ -587,9 +595,7 @@ void checkIntegerArgumentFitsInt64(const IColumn & column, std::string_view func
     if (!column_uint64)
         return;
 
-    const auto & data = column_uint64->getData();
-    const auto max_value = findExtremeMax(data.data(), 0, data.size());
-    if (max_value && *max_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+    if (const auto max_value = findValueAboveInt64(column_uint64->getData()))
         throw Exception(
             ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
             "The {} argument of function {} is out of range for Int64: {}",
@@ -612,9 +618,7 @@ static bool uint64ColumnMayHoldValueAboveInt64(const IColumn & column)
     if (!column_uint64)
         return true;
 
-    const auto & data = column_uint64->getData();
-    const auto max_value = findExtremeMax(data.data(), 0, data.size());
-    return max_value && *max_value > static_cast<UInt64>(std::numeric_limits<Int64>::max());
+    return findValueAboveInt64(column_uint64->getData()).has_value();
 }
 
 bool uint64ArgumentMayHoldUnusedValues(const ColumnsWithTypeAndName & arguments)
