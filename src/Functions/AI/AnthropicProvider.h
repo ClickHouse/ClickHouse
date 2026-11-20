@@ -22,7 +22,7 @@ class AnthropicProvider : public IAIProvider
 public:
     AnthropicProvider(const String & endpoint_, std::string_view api_key_, const String & api_version_);
 
-    bool supportsChat() const override { return true; }
+    [[nodiscard]] bool supportsChat() const override { return true; }
     void call(const AIChatRequest & request, const ConnectionTimeouts & timeouts, AIResponse & response) override;
     [[nodiscard]] HTTPHeaderEntries getHeaders() const override;
 

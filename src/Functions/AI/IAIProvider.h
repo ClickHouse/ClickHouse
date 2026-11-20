@@ -207,7 +207,7 @@ public:
     virtual ~IAIProvider() = default;
 
     /// Whether this provider exposes a chat completions endpoint.
-    virtual bool supportsChat() const { return false; }
+    [[nodiscard]] virtual bool supportsChat() const { return false; }
 
     /// Send a chat completion request. Only valid when `supportsChat` is true. Replaces the contents of
     /// `response`, filling the token counts before the payload is validated: so a failed request can still update token counts.
@@ -225,7 +225,7 @@ public:
         const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts, AIEmbeddingResponse & response);
 
     /// Whether this provider exposes a reranking endpoint.
-    virtual bool supportsRerank() const { return false; }
+    [[nodiscard]] virtual bool supportsRerank() const { return false; }
 
     /// Send a reranking request. Only valid when `supportsRerank` is true. Replaces the contents of
     /// `response`, filling the billed `input_tokens`, `output_tokens` and `search_units` before the payload is

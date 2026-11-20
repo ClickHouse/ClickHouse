@@ -73,34 +73,34 @@ public:
         FunctionBaseAI::throwIfNotAllowed(context);
     }
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
     /// func has side effects, f.e. each call updates quota, makes potentially expensive outside call, etc.
-    bool isStateful() const override { return true; }
+    [[nodiscard]] bool isStateful() const override { return true; }
 
     /// Rerankers are not guaranteed to return the same score for the same input across calls (model
     /// updates behind the same name, provider-side nondeterminism), so results must not be reused across
     /// queries. Within a query, folding calls with identical args together is preferable: it keeps the
     /// results consistent and avoids paying for duplicate API calls.
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return true; }
 
     /// Being deterministic in scope of query would otherwise enable executing on the dictionary of a
     /// `LowCardinality` document column. That dictionary may be shared across blocks and hold values
     /// absent from the current block, so we would send (and pay for) documents not present in the data,
     /// and `AIRowsProcessed`/`AIRowsSkipped` would count distinct dictionary values instead of rows.
-    bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
+    [[nodiscard]] bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
-    bool isSuitableForConstantFolding() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
     /// Handle Nullable cols explicitly, since setting this to true may call func with arbitrary input values
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"query", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
@@ -122,7 +122,7 @@ public:
         return makeNullable(std::make_shared<DataTypeFloat32>());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         FunctionBaseAI::checkHasUser(getContext());
 
@@ -268,7 +268,7 @@ private:
     }
 
     ContextPtr context;
-    ContextPtr getContext() const { return context; }
+    [[nodiscard]] ContextPtr getContext() const { return context; }
 };
 
 }

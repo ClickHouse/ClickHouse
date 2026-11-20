@@ -33,7 +33,7 @@ class OpenAIProvider : public IAIProvider
 public:
     OpenAIProvider(const String & endpoint_, std::string_view api_key_);
 
-    bool supportsChat() const override { return true; }
+    [[nodiscard]] bool supportsChat() const override { return true; }
     void call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response) override;
     [[nodiscard]] HTTPHeaderEntries getHeaders() const override;
 
