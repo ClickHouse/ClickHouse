@@ -1367,6 +1367,10 @@ void FuzzConfig::validateClickHouseHealth()
     /// Errors caused by the data, not the server, e.g. a mutation stuck on `MODIFY COLUMN` to a non-Nullable type
     /// over NULLs retries forever. `CANNOT_PARSE_*`, `CANNOT_CONVERT_TYPE`, out of range, `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN`
     static const String data_conversion_errors = "(6, 25, 26, 27, 38, 41, 70, 72, 321, 349, 376, 407, 441, 467, 675, 676)";
+    /// The same errors in a replicated mutation, which records them in its queue entry too. The code is only in the text.
+    static const String unexpected_queue_error = "\"last_exception\" != '' AND NOT (\"type\" = 'MUTATE_PART' AND "
+                                                 "toUInt32OrZero(extract(\"last_exception\", '^Code: ([0-9]+)[.]')) IN "
+        + data_conversion_errors + ")";
 
     if (processServerQuery(
             false,
@@ -1405,13 +1409,15 @@ void FuzzConfig::validateClickHouseHealth()
                 " WHERE exception != '' AND error NOT IN {} AND event_time > (now() - toIntervalSecond(60))"
                 " GROUP BY part_name HAVING count() > 10) tx)"
                 " UNION ALL "
-                "(SELECT count() x, 9 y FROM \"system\".\"replication_queue\" WHERE \"last_exception\" != '')"
+                "(SELECT count() x, 9 y FROM \"system\".\"replication_queue\" WHERE {})"
                 " UNION ALL "
                 "(SELECT count() x, 14 y FROM \"system\".\"replication_queue\""
-                " WHERE \"last_exception\" != '' AND \"num_tries\" > 5)"
+                " WHERE {} AND \"num_tries\" > 5)"
                 ") tx ORDER BY y SETTINGS use_query_cache = 0, use_query_condition_cache = 0 INTO OUTFILE '{}' TRUNCATE FORMAT "
                 "TabSeparated;",
                 data_conversion_errors,
+                unexpected_queue_error,
+                unexpected_queue_error,
                 fuzzer_out_file.generic_string())))
     {
         String buf;
@@ -1442,12 +1448,13 @@ void FuzzConfig::validateClickHouseHealth()
             R"(SELECT "database", "table", "part_name", "exception" FROM "system"."part_log" WHERE exception != '' AND error NOT IN )"
                 + data_conversion_errors + " AND event_time > (now() - toIntervalSecond(60)) ORDER BY event_time DESC LIMIT 3",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'REPLICA', '_ALREADY', '_EXISTS', '%') ORDER BY event_time DESC LIMIT 3)",
-            R"(SELECT "database", "table", "last_exception" FROM "system"."replication_queue" WHERE "last_exception" != '' LIMIT 3)",
+            R"(SELECT "database", "table", "last_exception" FROM "system"."replication_queue" WHERE )" + unexpected_queue_error + " LIMIT 3",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'LOGICAL', '_ERROR', '%') ORDER BY event_time DESC LIMIT 3)",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'CORRUPTED', '_DATA', '%') ORDER BY event_time DESC LIMIT 3)",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'CHECKSUM', '_DOESNT', '_MATCH', '%') ORDER BY event_time DESC LIMIT 3)",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'DATA', '_AFTER', '_MERGE', '_DIFF', '_FROM', '_EXPECTED', '%') ORDER BY event_time DESC LIMIT 3)",
-            R"(SELECT "database", "table", "type", "last_exception", "num_tries" FROM "system"."replication_queue" WHERE "last_exception" != '' AND "num_tries" > 5 ORDER BY "num_tries" DESC LIMIT 3)"};
+            R"(SELECT "database", "table", "type", "last_exception", "num_tries" FROM "system"."replication_queue" WHERE )"
+                + unexpected_queue_error + R"( AND "num_tries" > 5 ORDER BY "num_tries" DESC LIMIT 3)"};
 
         while (std::getline(infile, buf) && !buf.empty() && i < health_errors.size())
         {
