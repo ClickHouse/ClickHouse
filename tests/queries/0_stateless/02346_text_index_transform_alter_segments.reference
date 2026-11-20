@@ -1,0 +1,4 @@
+1. An ordinary index added after a mutation segment, with a rename in each metadata segment.
+idx
+2. The same with a text index transform, on the local host.
+idx_text
