@@ -385,11 +385,6 @@ size_t StorageURLSource::DisclosedGlobIterator::size()
     return pimpl->size();
 }
 
-void StorageURLSource::setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
-{
-    setCredentialsFromURL(credentials, request_uri);
-}
-
 StorageURLSource::StorageURLSource(
     const ReadFromFormatInfo & info,
     std::shared_ptr<IteratorWrapper> uri_iterator_,
@@ -641,7 +636,8 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         for (const auto & [param, value] : params)
             request_uri.addQueryParameter(param, value);
 
-        setCredentials(credentials, request_uri);
+        /// Not inside the `try` below: a forbidden option must fail the read, not fall through to the next one.
+        setCredentialsFromURL(credentials, request_uri, context_->getHTTPHeaderFilter());
 
         const auto & settings = context_->getSettingsRef();
 
@@ -832,7 +828,8 @@ public:
         const ConnectionTimeouts & timeouts_,
         const CompressionMethod compression_method_,
         const HTTPHeaderEntries & headers_,
-        const String & http_method_)
+        const String & http_method_,
+        PartitionedWriteAccessCheck write_access_check_)
         : PartitionedSink(partition_strategy_, context_, std::make_shared<const Block>(sample_block_))
         , uri(uri_)
         , format(format_)
@@ -843,12 +840,17 @@ public:
         , compression_method(compression_method_)
         , headers(headers_)
         , http_method(http_method_)
+        , write_access_check(std::move(write_access_check_))
     {
     }
 
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
         std::string partition_path = partition_strategy->getPathForWrite(uri, partition_id);
+
+        /// The partition id comes from the data, so its destination is checked before anything is written to it.
+        if (write_access_check)
+            write_access_check(context, partition_path);
 
         context->getRemoteHostFilter().checkURL(Poco::URI(partition_path));
         return std::make_shared<StorageURLSink>(
@@ -866,6 +868,7 @@ private:
     const CompressionMethod compression_method;
     const HTTPHeaderEntries headers;
     const String http_method;
+    const PartitionedWriteAccessCheck write_access_check;
 };
 
 std::string IStorageURLBase::getReadMethod() const
@@ -1567,7 +1570,8 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             getHTTPTimeouts(context),
             compression_method,
             headers,
-            http_method);
+            http_method,
+            getPartitionedWriteAccessCheck());
     }
 
     return std::make_shared<StorageURLSink>(

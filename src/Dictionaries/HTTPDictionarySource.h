@@ -31,6 +31,8 @@ public:
         const std::string update_field;
         const UInt64 update_lag;
         const HTTPHeaderEntries header_entries;
+        /// Whether the dictionary was created via DDL (`CREATE DICTIONARY`).
+        const bool created_from_ddl = false;
     };
 
     HTTPDictionarySource(
@@ -63,6 +65,8 @@ public:
 
 private:
     void getUpdateFieldAndDate(Poco::URI & uri);
+
+    void checkCredentials() const;
 
     // wrap buffer using encoding from made request
     QueryPipeline createWrappedBuffer(std::unique_ptr<ReadWriteBufferFromHTTP> http_buffer);
