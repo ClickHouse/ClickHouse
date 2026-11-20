@@ -2711,8 +2711,10 @@ def test_row_policy_on_replica_does_not_block_replay(started_cluster):
     main_node.query(
         f"CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', 'shard1', 'replica1')"
     )
+    # no automatic recovery: it would copy the metadata and hide a refused replay
     dummy_node.query(
-        f"CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', 'shard1', 'replica2')"
+        f"CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', 'shard1', 'replica2') "
+        "SETTINGS max_retries_before_automatic_recovery = 0"
     )
     main_node.query(
         f"CREATE TABLE {db_name}.t (id UInt32, tenant UInt32, note String) ENGINE = MergeTree ORDER BY id"
