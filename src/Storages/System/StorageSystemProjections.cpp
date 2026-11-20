@@ -9,6 +9,7 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ProcessList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -22,6 +23,7 @@
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/System/DatabaseTablesCursor.h>
+#include <Storages/System/StorageSystemPartsBase.h>
 #include <Storages/System/StorageSystemProjections.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/extractTablesFilter.h>
@@ -103,6 +105,15 @@ protected:
         /// Positions of `total_rows`, `data_compressed_bytes` and `data_uncompressed_bytes` in the table structure.
         const bool need_projection_sizes = column_mask[4] || column_mask[5] || column_mask[6];
 
+        /// Collecting the parts for the size columns can take long on a large catalog, so stop it on cancellation or the time limit,
+        /// as `system.parts` does. `checkTimeLimit` throws in the 'throw' overflow mode and returns false in the 'break' mode,
+        /// where the query finishes without the rows of this chunk, because they may be built from a partial snapshot.
+        const QueryStatusPtr query_status = context->getProcessListElement();
+        const auto time_limit_exceeded = [&query_status] { return query_status && !query_status->checkTimeLimit(); };
+        std::function<bool()> need_stop;
+        if (query_status)
+            need_stop = time_limit_exceeded;
+
         size_t rows_count = 0;
         while (rows_count < max_block_size)
         {
@@ -137,6 +148,9 @@ protected:
                     continue;
                 const auto & projections = metadata_snapshot->getProjections();
 
+                /// A part references its storage, also in its destructor, so the storage must outlive `parts`.
+                /// For an `Alias` nothing else here holds the target, so keep it in `parts_storage`, declared before `parts`.
+                std::shared_ptr<const MergeTreeData> parts_storage;
                 /// Collecting the parts is only needed for the size columns, and only when there is a projection to report.
                 MergeTreeData::DataPartsVector parts;
                 if (need_projection_sizes && !projections.empty())
@@ -151,8 +165,14 @@ protected:
 
                     /// `StorageAlias::isMergeTree` forwards to its target, so check the actual type.
                     /// The end of a cyclic chain is an `Alias` and is skipped here, as is a table not loaded yet.
-                    if (const auto merge_tree = castStorage<const MergeTreeData>(data_table, DeferredTable::Skip))
-                        parts = merge_tree->getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, nullptr);
+                    parts_storage = castStorage<const MergeTreeData>(data_table, DeferredTable::Skip);
+                    if (parts_storage)
+                        parts = parts_storage->getDataPartsVectorForInternalUsage(
+                            {MergeTreeData::DataPartState::Active}, {MergeTreeData::DataPartKind::Regular}, nullptr, need_stop);
+
+                    /// The snapshot may have stopped early on the time limit, so do not report sums over a partial snapshot.
+                    if (time_limit_exceeded())
+                        return {};
                 }
 
                 for (const auto & projection : projections)
@@ -180,6 +200,11 @@ protected:
                     size_t data_uncompressed = 0;
                     for (const auto & part : parts)
                     {
+                        if (time_limit_exceeded())
+                            return {};
+
+                        slowDownSystemPartsEnumeration(table_name);
+
                         const auto & projection_parts = part->getProjectionParts();
                         auto projection_part_it = projection_parts.find(projection.name);
                         if (projection_part_it == projection_parts.end() || !projection_part_it->second)
