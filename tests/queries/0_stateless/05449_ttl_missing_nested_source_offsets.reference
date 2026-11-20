@@ -1,0 +1,16 @@
+default before	2	0
+default after	0
+default after	1
+default stored	['id','n.a','ts']
+mixed wide before	0	[1,2]	[]
+mixed wide before	1	[]	[]
+mixed wide before	2	[5]	[0]
+mixed wide after	0
+mixed wide after	1
+mixed wide stored	['id','n.a','ts']
+mixed compact before	0	[1,2]	[]
+mixed compact before	1	[]	[]
+mixed compact before	2	[5]	[0]
+mixed compact after	0
+mixed compact after	1
+mixed compact stored	['id','n.a','ts']
