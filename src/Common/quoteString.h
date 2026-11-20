@@ -37,6 +37,12 @@ String backQuote(std::string_view x);
 /// Quote the identifier with backquotes, if required.
 String backQuoteIfNeed(std::string_view x);
 
+/// Quote the identifier with backquotes, unless it is one bare word: a letter or an underscore,
+/// then letters, digits, and underscores. Unlike `backQuoteIfNeed`, it does not quote keywords.
+/// Use it only where the parser accepts any bare word as an identifier, mostly to keep old
+/// formatting unchanged. Shouldn't be used for new syntax.
+String backQuoteIfNotBareWord(std::string_view x);
+
 /// Quote the identifier with backquotes, for use in MySQL queries.
 String backQuoteMySQL(std::string_view x);
 
