@@ -29,7 +29,6 @@ All functions are sharing a common infrastructure that provides:
 - **Quota enforcement**: Per-query limits on tokens ([`ai_function_max_input_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) and API calls ([`ai_function_max_api_calls_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 - **Retry with backoff**: Transient failures are retried ([`ai_function_max_retries`](/reference/settings/session-settings/ai-function#ai_function_max_retries)) with exponential backoff ([`ai_function_retry_initial_delay_ms`](/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
 - **Concurrent requests**: Requests are issued from a server-wide thread pool, several at a time (controlled by [`ai_function_max_concurrent_requests_per_thread`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread)).
-- **Whitespace trimming**: `aiClassify`, `aiExtract` and `aiFilter` request structured output and strip leading and trailing whitespace from the model reply, so a reply like `\n\nbug` becomes `bug`.
 
 ## Configuration {#configuration}
 
@@ -63,12 +62,6 @@ Calling an AI function requires two privileges:
 GRANT AI FUNCTIONS ON *.* TO ai_user_role;
 GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
 GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
-```
-
-The setting [`allow_ai_functions`](/reference/settings/session-settings/allow#allow_ai_functions) (enabled by default) disables AI functions when set to `0`, for example in a settings profile or with a constraint. With `CONST`, users of the profile cannot enable them:
-
-```sql
-CREATE SETTINGS PROFILE no_ai SETTINGS allow_ai_functions = 0 CONST TO ai_restricted_role;
 ```
 
 AI functions are executed only in queries run by a user. They are rejected in mutations (`ALTER TABLE ... UPDATE`, `ALTER TABLE ... DELETE`) and in the keys, TTL, skip indexes and projections of a table, which are executed in the background, and `Buffer` flushes throw an exception when they evaluate an AI function. `DEFAULT` and `MATERIALIZED` columns are evaluated by the insert; when such a column is added with `ALTER TABLE`, the existing parts compute it in the background, where AI functions are not executed.
@@ -236,48 +229,23 @@ AI function activity is tracked through ClickHouse [ProfileEvents](/reference/sy
 | ProfileEvent | Description |
 |-------|-------------|
 | `AIAPICalls` | Number of HTTP requests made to the AI provider. |
-| `AIInputTokens` | Total input tokens consumed, including cache reads and writes. |
+| `AIInputTokens` | Total input tokens consumed. |
 | `AIOutputTokens` | Total output tokens consumed. |
-| `AICacheReadTokens` | Input tokens read from the provider's prompt cache. |
-| `AICacheWriteTokens` | Input tokens written to the provider's prompt cache. |
-| `AIRequestMicroseconds` | Total time spent in AI provider calls (request serialization, HTTP round trip, response parsing), including failed attempts, excluding retry backoff. |
-| `AIRetryBackoffMicroseconds` | Total time spent waiting before retries of failed AI provider calls. |
 | `AIRowsProcessed` | Number of rows that received a result. |
 | `AIRowsSkipped` | Number of rows skipped (quota exceeded, or error with `ai_function_throw_on_error = 0`). |
-
-Times are summed across executions and threads, so they can exceed query wall-clock time.
-Divide `AIRequestMicroseconds` by `AIAPICalls` to get mean request latency, including failed attempts.
-These counters are per-query, they do not provide per-request latency information.
-If a query calls multiple AI functions, their counts are added together.
-
-Cache counters are subsets of `AIInputTokens`, not additional tokens. They report provider-emitted cache reads/writes, not any internal ClickHouse caching. A provider that omits cache usage contributes
-zero cache tokens.
 
 Query these events:
 
 ```sql
-SYSTEM FLUSH LOGS;
-
 SELECT
-    query_duration_ms,
     ProfileEvents['AIAPICalls'] AS api_calls,
-    ProfileEvents['AIRequestMicroseconds'] / 1000 AS request_ms,
-    request_ms / nullIf(api_calls, 0) AS mean_request_ms,
-    ProfileEvents['AIRetryBackoffMicroseconds'] / 1000 AS retry_backoff_ms,
-    ProfileEvents['AIRowsProcessed'] AS rows_processed,
-    ProfileEvents['AIRowsSkipped'] AS rows_skipped,
     ProfileEvents['AIInputTokens'] AS input_tokens,
-    ProfileEvents['AIOutputTokens'] AS output_tokens,
-    ProfileEvents['AICacheReadTokens'] AS cache_read_tokens,
-    ProfileEvents['AICacheWriteTokens'] AS cache_write_tokens
+    ProfileEvents['AIOutputTokens'] AS output_tokens
 FROM system.query_log
 WHERE query_id = 'query_id'
-AND type IN ('QueryFinish', 'ExceptionWhileProcessing')
+AND type = 'QueryFinish'
 ORDER BY event_time DESC;
 ```
-
-`log_queries` and `log_profile_events` are enabled by default to record these events in `system.query_log`.
-Server-wide totals are also available in `system.events`.
 
 {/*
 The inner content of the tags below are replaced at doc framework build time with

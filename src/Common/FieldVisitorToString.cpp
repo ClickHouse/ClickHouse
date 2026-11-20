@@ -198,4 +198,11 @@ String convertObjectToString(const Object & object)
     return wb.str();
 }
 
+String convertFieldToString(const Field & field)
+{
+    if (field.getType() == Field::Types::Which::String)
+        return field.safeGet<String>();
+    return applyVisitor(FieldVisitorToString(), field);
+}
+
 }

@@ -9,7 +9,6 @@
 #include <Common/ConcurrencyControl.h>
 #include <Common/Scheduler/CPULeaseAllocation.h>
 #include <Common/Scheduler/CPUSlotsAllocation.h>
-#include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Stopwatch.h>
@@ -19,7 +18,6 @@
 #include <Common/logger_useful.h>
 #include <Processors/Executors/Runtime/V1/ExecutionThreadContext.h>
 #include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
-#include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/Executors/Runtime/V1/ExecutingGraph.h>
 #include <Common/MemorySpillScheduler.h>
 #include <QueryPipeline/printPipeline.h>
@@ -70,10 +68,6 @@ struct WorkloadResources
     MemoryReservation * reservation;
     MemoryTracker * tracker;
 
-    // The previously published CPU lease, restored on destruction
-    ISlotLease * prev_cpu_lease = nullptr;
-    bool publishes_lease = false; // moved to the new instance by the move constructor
-
     WorkloadResources(IAcquiredSlot * cpu_slot, const QueryStatusPtr & status)
         : lease(dynamic_cast<ISlotLease*>(cpu_slot))
         , reservation(status ? status->getMemoryReservation() : nullptr)
@@ -84,38 +78,9 @@ struct WorkloadResources
             lease->startConsumption();
             last_renew_ns = clock_gettime_ns();
         }
-
-        // Publish own lease, or hide the outer executor's lease from a nested executor
-        // that does not park (it may have no lease at all)
-        prev_cpu_lease = getCurrentCPULease();
-        if (lease && lease->isParkingEnabled())
-        {
-            setCurrentCPULease(lease);
-            publishes_lease = true;
-        }
-        else if (prev_cpu_lease)
-        {
-            setCurrentCPULease(nullptr);
-            publishes_lease = true;
-        }
     }
 
-    WorkloadResources(WorkloadResources && other) noexcept
-        : lease(other.lease)
-        , last_renew_ns(other.last_renew_ns)
-        , reservation(other.reservation)
-        , tracker(other.tracker)
-        , prev_cpu_lease(other.prev_cpu_lease)
-        , publishes_lease(other.publishes_lease)
-    {
-        other.publishes_lease = false; // the moved-to instance now owns the publication
-    }
-
-    ~WorkloadResources()
-    {
-        if (publishes_lease)
-            setCurrentCPULease(prev_cpu_lease);
-    }
+    WorkloadResources(WorkloadResources && other) = default;
 
     bool isCPULeaseRenewNeeded()
     {
@@ -128,19 +93,19 @@ struct WorkloadResources
         return true;
     }
 
-    [[nodiscard]] bool renewCPULease() const
+    bool renewCPULease() const
     {
         chassert(lease);
         return lease->renew();
     }
 
-    [[nodiscard]] size_t getCPULeaseSlotId() const
+    size_t getCPULeaseSlotId() const
     {
         chassert(lease);
         return lease->slot_id;
     }
 
-    [[nodiscard]] bool isMemorySyncNeeded() const
+    bool isMemorySyncNeeded() const
     {
         return reservation && tracker;
     }
@@ -170,14 +135,12 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> processors, Query
     }
     catch (Exception & exception)
     {
-        /// A logical error here means the pipeline was built incorrectly: append a dump of it.
-        if (exception.code() == ErrorCodes::LOGICAL_ERROR)
-        {
-            WriteBufferFromOwnString buf;
-            printPipeline(*processors, buf);
-            buf.finalize();
-            exception.addMessage("Query pipeline:\n" + buf.str());
-        }
+        /// If exception was thrown while pipeline initialization, it means that query pipeline was not build correctly.
+        /// It is logical error, and we need more information about pipeline.
+        WriteBufferFromOwnString buf;
+        printPipeline(*processors, buf);
+        buf.finalize();
+        exception.addMessage("Query pipeline:\n" + buf.str());
 
         throw;
     }
@@ -215,25 +178,6 @@ void PipelineExecutor::cancel(IProcessor::CancelReason reason)
     graph->cancel(reason);
 }
 
-void PipelineExecutor::cancelWithException(std::exception_ptr cause)
-{
-    /// Recorded before the callback, which can make the other threads throw because of the cancellation.
-    std::call_once(cancel_exception_once, [&]
-    {
-        cancel_exception = std::move(cause);
-        if (exception_callback)
-            exception_callback();
-    });
-    cancel(IProcessor::CancelReason::Exception);
-}
-
-void PipelineExecutor::logAndRethrowException()
-{
-    tasks.logLogicalErrors(log);
-    if (cancel_exception)
-        std::rethrow_exception(cancel_exception);
-}
-
 void PipelineExecutor::cancelReading()
 {
     if (!cancelled_reading)
@@ -263,7 +207,7 @@ void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
     try
     {
         executeImpl(num_threads, concurrency_control);
-        logAndRethrowException();
+        tasks.rethrowFirstThreadException(log);
     }
     catch (...)
     {
@@ -304,7 +248,7 @@ bool PipelineExecutor::executeUntil(std::atomic_bool * yield_flag)
         return true;
 
     /// Execution can be stopped because of exception. Check and rethrow if any.
-    logAndRethrowException();
+    tasks.rethrowFirstThreadException(log);
 
     finalizeExecution();
 
@@ -321,18 +265,8 @@ void PipelineExecutor::setStepProfiler(StepProfilerPtr step_profiler_)
     step_profiler = std::move(step_profiler_);
 }
 
-void PipelineExecutor::setExceptionCallback(std::function<void()> callback)
-{
-    exception_callback = std::move(callback);
-}
-
 void PipelineExecutor::finalizeExecution()
 {
-    /// Stamped before the epilogue the output formats write in `onPipelineFinished` below, which is
-    /// not part of the execution.
-    if (step_profiler)
-        step_profiler->markExecutionFinished();
-
     /// The output formats write their epilogue in `onPipelineFinished` below, and for some of them (`Parquet`,
     /// `ORC`, the parallel formatting) that is a substantial amount of work with its own memory, which used
     /// to be done by the executor threads. It stays within the resource accounting of the query: the CPU slots
@@ -430,11 +364,6 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
 
     auto & context = tasks.getThreadContext(thread_num);
 
-    /// Kept between the executed tasks, so that memory is not allocated after executing every task.
-    Queue queue;
-    Queue async_queue;
-    ExecutingGraph::UpdateNodeBuffers update_node_buffers;
-
     while (!tasks.isFinished())
     {
         if (resources.reservation && tasks.takeSpillNotification())
@@ -452,7 +381,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
         {
             auto * spill_target = resources.reservation ? graph->getSpillTarget(*context.getTask()) : nullptr;
             if (!context.executeTask(spill_target))
-                cancelWithException(context.getException());
+                cancel(IProcessor::CancelReason::Exception);
 
             if (tasks.isFinished())
                 break;
@@ -469,30 +398,20 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
 
             /// Try to execute neighbour processor.
             {
-                /// The queues are emptied by `pushTasks`, unless it was not called or stopped because the execution is finished.
-                while (!queue.empty())
-                    queue.pop();
-                while (!async_queue.empty())
-                    async_queue.pop();
+                Queue queue;
+                Queue async_queue;
 
                 /// Prepare processor after execution.
                 bool updated = false;
                 try
                 {
-                    updated = graph->updateNode(*context.getTask(), queue, async_queue, update_node_buffers) == ExecutingGraph::UpdateNodeStatus::Done;
+                    updated = graph->updateNode(*context.getTask(), queue, async_queue) == ExecutingGraph::UpdateNodeStatus::Done;
                 }
                 catch (...)
                 {
                     context.setException(std::current_exception());
-                    cancelWithException(std::current_exception());
+                    cancel(IProcessor::CancelReason::Exception);
                 }
-
-                /// Release the buffers of `updateNode` now if they have grown too large,
-                /// because this thread may wait for the next task for a long time.
-                update_node_buffers.reset();
-
-                /// The queues are drained by `pushTasks` but keep their capacity; release it if they have grown too large.
-                bool release_queues = queue.size() + async_queue.size() > ExecutingGraph::UpdateNodeBuffers::max_kept_capacity;
 
                 /// Push other tasks to global queue.
                 if (updated)
@@ -503,7 +422,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                     }
                     catch (...)
                     {
-                        cancelWithException(std::current_exception());
+                        cancel(IProcessor::CancelReason::Exception);
                         throw;
                     }
                 }
@@ -512,12 +431,6 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                     /// The execution is being cancelled, maybe by a thread that has not finished the tasks yet. The task
                     /// has been prepared again, so it must not be executed again unless the graph schedules it.
                     context.setTask(nullptr);
-                }
-
-                if (release_queues)
-                {
-                    queue = Queue();
-                    async_queue = Queue();
                 }
             }
 
@@ -538,7 +451,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 {
                     /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK or RESOURCE_ACCESS_DENIED.
                     /// We should cancel execution properly before rethrow.
-                    cancelWithException(std::current_exception());
+                    cancel(IProcessor::CancelReason::Exception);
                     throw;
                 }
             }
@@ -562,7 +475,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 {
                     /// renewCPULease() can throw an exception, for example RESOURCE_ACCESS_DENIED.
                     /// We should cancel execution properly before rethrow.
-                    cancelWithException(std::current_exception());
+                    cancel(IProcessor::CancelReason::Exception);
                     throw;
                 }
             }
@@ -578,7 +491,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 {
                     /// syncMemory() can throw an exception, for example MEMORY_RESERVATION_KILLED.
                     /// We should cancel execution properly before rethrow.
-                    cancelWithException(std::current_exception());
+                    cancel(IProcessor::CancelReason::Exception);
                     throw;
                 }
             }
@@ -668,7 +581,6 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
                             .on_preempt = [this](size_t slot_id) { tasks.preempt(slot_id); },
                             .on_resume = [this](size_t slot_id) { tasks.resume(slot_id); },
                             .workload = query_context->getSettingsRef()[Setting::workload],
-                            .parking_enabled = query_context->getCPUSlotParking(),
                             .trace_cpu_scheduling = trace_cpu_scheduling,
                         },
                         initial_max);
@@ -699,9 +611,6 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
 void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_control)
 {
     is_execution_initialized = true;
-
-    if (step_profiler)
-        step_profiler->markExecutionStarted();
 
     /// Read the flag ONCE. A config reload mid-initialization would otherwise split a
     /// single query between lazy and eager strategies (e.g. allocate lazy with max=1 but
@@ -763,8 +672,8 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
             catch (...)
             {
                 /// In case of exception from executor itself, stop other threads.
+                finish();
                 tasks.getThreadContext(thread_num).setException(std::current_exception());
-                cancelWithException(std::current_exception());
             }
         });
 
@@ -799,11 +708,11 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
 
-        cancelWithException(std::current_exception());
+        cancel(IProcessor::CancelReason::Exception);
         if (pool)
             pool->wait();
 
-        std::rethrow_exception(cancel_exception);
+        throw;
     }
 }
 

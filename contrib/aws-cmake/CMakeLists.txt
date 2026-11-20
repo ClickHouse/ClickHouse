@@ -131,7 +131,7 @@ else()
     set(AWS_SDK_CORE_PLATFORM_SRC)
 endif()
 
-set(USE_AWS_MEMORY_MANAGEMENT ON)
+OPTION(USE_AWS_MEMORY_MANAGEMENT "Aws memory management" OFF)
 configure_file("${AWS_SDK_CORE_DIR}/include/aws/core/SDKConfig.h.in"
     "${CMAKE_CURRENT_BINARY_DIR}/include/aws/core/SDKConfig.h" @ONLY)
 

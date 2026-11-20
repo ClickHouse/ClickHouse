@@ -110,9 +110,7 @@ std::vector<GroupExpressionPtr> OptimizeGroupTask::runEnforcementStage(CascadesO
 
             if (required_properties.isSatisfiedBy(expression->properties))
             {
-                /// The expression can still wait for its cost, or its inputs can have better
-                /// implementations now: the enforcers below are priced on it.
-                optimizer.costAndUpdateBest(expression);
+                optimizer.updateBestPlan(expression);
                 continue;
             }
 
@@ -260,7 +258,9 @@ void OptimizeInputsTask::execute(CascadesOptimizer & optimizer)
         /// Ensure statistics are derived before cost estimation
         optimizer.deriveStatistics(expression->group_id);
 
-        optimizer.costAndUpdateBest(expression);
+        /// Cost the expression and drop it if the group already holds a cheaper best for the
+        /// same properties (same-group best-cost pruning, not a cost-bounded search).
+        optimizer.costAndUpdateBest(expression, /*prune_against_best=*/true);
         return;
     }
     else
