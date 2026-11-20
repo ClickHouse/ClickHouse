@@ -972,8 +972,7 @@ std::vector<bool> getReplicasLiveness(const String & cluster_name, const Cluster
     return is_active;
 }
 
-/// Liveness of the replicas of `cluster` in cluster order, with the local replica forced active.
-/// Empty when it is unknown or does not match the cluster definition.
+/// Liveness of the replicas in cluster order, local replica forced active; empty when unknown.
 static std::vector<bool>
 getParallelReplicasLiveness(const ContextPtr & context, const ClusterPtr & cluster, std::optional<size_t> & local_replica_index)
 {
@@ -1119,7 +1118,6 @@ size_t getReplicasCountForParallelReplicas(const ContextPtr & context, const Clu
     std::optional<size_t> local_replica_index;
     const std::vector<bool> is_active = getParallelReplicasLiveness(context, cluster, local_replica_index);
     size_t available_replicas = std::count(is_active.begin(), is_active.end(), true);
-    /// As in `prepareConnectionPoolsForParallelReplicas`: all replicas when none is known to be active.
     if (available_replicas == 0)
         available_replicas = cluster->getShardsInfo().at(0).getAllNodeCount();
     return std::min<size_t>(available_replicas, context->getSettingsRef()[Setting::max_parallel_replicas]);

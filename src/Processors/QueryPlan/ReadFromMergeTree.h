@@ -775,8 +775,7 @@ private:
     /// The name this read is coordinated under, which every replica must announce identically.
     String getParallelReplicasStreamId() const;
 
-    /// `ClusterProxy::getReplicasCountForParallelReplicas`, computed once: it may read the replicas liveness from Keeper,
-    /// and a read in order builds a `ParallelReadingExtension` per split.
+    /// `ClusterProxy::getReplicasCountForParallelReplicas`, cached: it may read Keeper.
     size_t getReplicasCountForParallelReading();
 
     /// What removing the columns at `unneeded_output_positions` comes to, worked out without changing anything.
