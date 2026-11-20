@@ -1058,12 +1058,14 @@ def analyze_reverts(text, anchor, range_prs=()):
     # runs it is a strict entry in no raw block, so the in-progress section is
     # the record: an earlier verified edit could leave it attributed there only
     # as its own accepted bullet or as the re-apply link on the entry it brought
-    # back, and that link has to stay either way.
+    # back, and that link has to stay either way. And once a later revert took
+    # that entry out again, the ledger is: a deletion it recorded as strict or
+    # already accepted is `required` when the entry comes back.
     reapplying_with_entry = {
         pr
         for pr in cancelling
         if targets[pr] <= set(targets)
-        and (pr in strict_prs or is_attributed(section, pr))
+        and (pr in strict_prs or is_attributed(section, pr) or pr in required)
     }
     cancelling -= reapplying_with_entry
     # Which pull requests have to carry which re-applying links. Asked of every

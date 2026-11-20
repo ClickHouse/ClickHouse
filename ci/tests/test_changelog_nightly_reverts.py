@@ -330,3 +330,90 @@ def test_reapply_own_entry_survives_the_next_run():
     )
     error = _verify(second_base, _edited(UNRELATED_BULLET), second)
     assert error is not None and f"'{OUTER_REVERT}'" in error
+
+
+REMOVER = "600"
+RESTORER = "700"
+CHAIN = {OUTER_REVERT: {INNER_REVERT}, INNER_REVERT: {ORIGINAL}}
+CHAIN_TITLES = {
+    **{pr: METADATA[pr][0] for pr in CHAIN},
+    REMOVER: f'Revert "{METADATA[OUTER_REVERT][0]}"',
+    RESTORER: f'Revert "Revert "{METADATA[OUTER_REVERT][0]}""',
+}
+
+
+def _with_raw(text, *bullets):
+    raw = "\n".join(
+        [
+            cn.RAW_BEGIN,
+            "### ClickHouse release 26.11 (sha) FIXME as compared to 26.10 (sha)",
+            "",
+            "#### NO CL ENTRY",
+            "",
+            *bullets,
+            cn.RAW_END,
+        ]
+    )
+    return cn.insert_before_first_release(text, raw)
+
+
+def _analyze_with_ledger(text, ledger, new_targets, deleted=None, integrated=()):
+    titles = {pr: CHAIN_TITLES[pr] for pr in ledger}
+    with mock.patch.object(
+        cn,
+        "read_revert_ledger",
+        return_value=(ledger, titles, deleted or {}, set(integrated)),
+    ), mock.patch.object(
+        cn,
+        "resolve_revert_targets",
+        return_value=(new_targets, {pr: CHAIN_TITLES[pr] for pr in new_targets}, []),
+    ):
+        return cn.analyze_reverts(text, "2611")
+
+
+def _record_deletions(old_text, new_text, reverts):
+    with mock.patch.object(
+        cn.Shell, "get_output", return_value=old_text
+    ), mock.patch.object(cn, "_read_changelog", return_value=new_text):
+        return cn.revert_licensed_deletions(
+            "base", "26.11", reverts["credits"], reverts["cancelling"]
+        )
+
+
+def test_reapply_own_entry_is_restored_after_its_revert_is_reverted():
+    """The accepted own bullet of `#300` is reverted by `#600` on a later day,
+    and `#600` is reverted by `#700` after that: the bullet then comes back
+    from the ledger, where neither today's raw block nor the section knows it,
+    and has to be restorable - and required."""
+    # `#600` takes the fix out.
+    accepted = _edited(FIX_BULLET, UNRELATED_BULLET)
+    removal_base = _with_raw(
+        accepted, _bullet(REMOVER, f"NO CL ENTRY: '{CHAIN_TITLES[REMOVER]}'.")
+    )
+    removal = _analyze_with_ledger(removal_base, CHAIN, {REMOVER: {OUTER_REVERT}})
+    removed = _edited(UNRELATED_BULLET)
+    assert _verify(removal_base, removed, removal) is None
+    assert _verify(removal_base, accepted, removal) is not None
+    recorded = _record_deletions(removal_base, removed, removal)
+    category, kind, line = recorded[OUTER_REVERT]
+    assert (category, kind, line) == (BUG_FIX, "section", FIX_BULLET)
+
+    # `#700` puts it back.
+    restore_base = _with_raw(
+        removed, _bullet(RESTORER, f"NO CL ENTRY: '{CHAIN_TITLES[RESTORER]}'.")
+    )
+    restore = _analyze_with_ledger(
+        restore_base,
+        {**CHAIN, REMOVER: {OUTER_REVERT}},
+        {RESTORER: {REMOVER}},
+        deleted={OUTER_REVERT: (category, line)},
+        integrated={OUTER_REVERT},
+    )
+    assert OUTER_REVERT not in restore["cancelling"]
+    assert OUTER_REVERT in restore["required"]
+    restored = FIX_BULLET.removesuffix(".") + (
+        f" [#{RESTORER}](https://github.com/ClickHouse/ClickHouse/pull/{RESTORER}) "
+        "([Author](https://github.com/author))."
+    )
+    assert _verify(restore_base, _edited(restored, UNRELATED_BULLET), restore) is None
+    assert _verify(restore_base, _edited(UNRELATED_BULLET), restore) is not None
