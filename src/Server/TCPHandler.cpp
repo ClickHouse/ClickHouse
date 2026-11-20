@@ -1988,6 +1988,12 @@ void TCPHandler::processTablesStatusRequest()
         if (!table)
             continue;
 
+        /// An ordinary session asks about the tables of a query it is going to send, so loading a deferred table
+        /// requires the access that query needs, see `checkAccessBeforeLoadingLazyTable`. The interserver
+        /// mode is authenticated with the cluster secret above and has no user to check.
+        if (!is_interserver_mode)
+            checkAccessBeforeLoadingLazyTable(table, resolved_id, context_to_resolve_table_names, {AccessType::SELECT, AccessType::INSERT, AccessType::SHOW_COLUMNS});
+
         TableStatus status;
         /// Only a replicated MergeTree engine has a delay to report, so only such a table is loaded if it is deferred.
         /// `supportsReplication` is also true for the data lake engines, which have no delay, so the engine
