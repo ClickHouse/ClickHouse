@@ -17,6 +17,7 @@
 #include <fmt/format.h>
 
 #include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -671,7 +672,8 @@ ColumnPtr Set::castToKeyType(const ColumnWithTypeAndName & column, size_t key, C
         /// for a `UInt8` probe, and a `Bool` probe can hold such a byte too, e.g. from `reinterpret`. With
         /// `transform_null_in = 1` the probe keeps its bytes, as primary-key analysis does, which matches a
         /// `Bool` member only against the byte 1 (see `KeyCondition::tryPrepareSetColumnsForIndex`).
-        const bool converts_bool_key = !transform_null_in && isBool(key_type_without_nullable);
+        const bool converts_bool_key = !transform_null_in
+            && (isBool(key_type_without_nullable) || isSimpleAggregateFunctionOfBool(*key_type_without_nullable));
         const bool cast_is_no_op = removeNullable(probe.type)->equals(*key_type_without_nullable) && !converts_bool_key;
         if (canBeAccurateCastOrNullTarget(key_type) && !cast_is_no_op)
         {

@@ -34,6 +34,7 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -1252,7 +1253,8 @@ static bool existsRewriteKeepsInSemantics(const DataTypePtr & left_type, const N
         const auto key_type_without_nullable = removeNullable(key_types[i]);
         const DataTypePtr & column_type = subquery_columns[i].type;
         if (isTuple(key_type_without_nullable) || isVariant(key_type_without_nullable) || !key_types[i]->equals(*column_type)
-            || hasTypeThatCanContainFloat(column_type) || isBool(removeNullable(removeLowCardinality(column_type))))
+            || hasTypeThatCanContainFloat(column_type) || isBool(removeNullable(removeLowCardinality(column_type)))
+            || isSimpleAggregateFunctionOfBool(*removeNullable(removeLowCardinality(column_type))))
             return false;
     }
     return true;
