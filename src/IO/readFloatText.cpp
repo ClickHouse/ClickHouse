@@ -1057,17 +1057,29 @@ template <typename T> bool tryReadFloatTextExtNoExponent(T & x, ReadBuffer & in,
 template <typename T>
 bool tryParseFloatFromPaddedRange(T & x, PaddedRange range)
 {
-    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for tryParseFloatFromPaddedRange must be float or double");
-    if (range.begin() == range.end())
-        return false;
-    T value{};
-    auto res = parseFloatFromBuffer(value, range.begin(), range.end(), /* padded = */ true);
-    if ((res.ec != std::errc() && res.ec != std::errc::result_out_of_range) || res.ptr != range.end())
-        return false;
-    x = value;
-    return true;
+    if constexpr (std::is_same_v<T, BFloat16>)
+    {
+        Float32 tmp = 0;
+        bool res = tryParseFloatFromPaddedRange(tmp, range);
+        if (res)
+            x = BFloat16(tmp);
+        return res;
+    }
+    else
+    {
+        static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for tryParseFloatFromPaddedRange must be float or double");
+        if (range.begin() == range.end())
+            return false;
+        T value{};
+        auto res = parseFloatFromBuffer(value, range.begin(), range.end(), /* padded = */ true);
+        if ((res.ec != std::errc() && res.ec != std::errc::result_out_of_range) || res.ptr != range.end())
+            return false;
+        x = value;
+        return true;
+    }
 }
 
+template bool tryParseFloatFromPaddedRange<BFloat16>(BFloat16 &, PaddedRange);
 template bool tryParseFloatFromPaddedRange<Float32>(Float32 &, PaddedRange);
 template bool tryParseFloatFromPaddedRange<Float64>(Float64 &, PaddedRange);
 

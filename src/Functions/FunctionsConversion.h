@@ -1594,8 +1594,7 @@ struct ConvertThroughParsing
                 /// and `isAllRead` skips it.
                 trimRight(text, '\0');
             }
-            if constexpr (std::is_same_v<FromDataType, DataTypeString>
-                && (std::is_same_v<typename ToDataType::FieldType, Float32> || std::is_same_v<typename ToDataType::FieldType, Float64>))
+            if constexpr (std::is_same_v<FromDataType, DataTypeString> && is_floating_point<typename ToDataType::FieldType>)
             {
                 if (settings.precise_float_parsing)
                 {
