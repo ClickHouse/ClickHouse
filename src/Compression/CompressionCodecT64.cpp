@@ -57,8 +57,8 @@ public:
     // type_idx_ is required for compression, but not for decompression.
     CompressionCodecT64(std::optional<TypeIndex> type_idx_, Variant variant_);
 
-    uint8_t getMethodByte() const override;
-    ASTPtr getCodecDescription() const override;
+    [[nodiscard]] uint8_t getMethodByte() const override;
+    [[nodiscard]] ASTPtr getCodecDescription() const override;
     void updateHash(SipHash & hash) const override;
     std::optional<UInt32> tryGetCompressedSize(const char * source, UInt32 source_size) const override;
 
@@ -66,14 +66,14 @@ protected:
     UInt32 doCompressData(const char * src, UInt32 src_size, char * dst) const override;
     UInt32 doDecompressData(const char * src, UInt32 src_size, char * dst, UInt32 uncompressed_size) const override;
 
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override
+    [[nodiscard]] UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override
     {
         return uncompressed_size + MAX_COMPRESSED_BLOCK_SIZE + COOKIE_SIZE + HEADER_SIZE;
     }
 
-    bool isCompression() const override { return true; }
-    bool isGenericCompression() const override { return false; }
-    String getDescription() const override
+    [[nodiscard]] bool isCompression() const override { return true; }
+    [[nodiscard]] bool isGenericCompression() const override { return false; }
+    [[nodiscard]] String getDescription() const override
     {
         return "Preprocessor. Crops unused high bits; puts them into a 64x64 bit matrix; optimized for 64-bit data types.";
     }
@@ -837,6 +837,16 @@ void CompressionCodecT64::updateHash(SipHash & hash) const
     hash.update(variant);
 }
 
+namespace
+{
+
+bool isApplicableToType(const IDataType & type)
+{
+    return baseType(type.getTypeId()) != TypeIndex::Nothing;
+}
+
+}
+
 void registerCodecT64(CompressionCodecFactory & factory)
 {
     auto reg_func = [&](const ASTPtr & arguments, const IDataType * type) -> CompressionCodecPtr
@@ -868,13 +878,13 @@ void registerCodecT64(CompressionCodecFactory & factory)
         if (type)
         {
             type_idx = type->getTypeId();
-            if (baseType(*type_idx) == TypeIndex::Nothing)
+            if (!isApplicableToType(*type))
                 throw Exception(
                     ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "T64 codec is not supported for specified type {}", type->getName());
         }
         return std::make_shared<CompressionCodecT64>(type_idx, variant);
     };
 
-    factory.registerCompressionCodecWithType("T64", codecId(), reg_func);
+    factory.registerCompressionCodecWithType("T64", codecId(), reg_func, {.is_applicable_to_type = isApplicableToType});
 }
 }

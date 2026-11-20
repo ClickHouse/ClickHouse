@@ -107,7 +107,7 @@ TEST(ProxyCredentials, HTTPSSessionSendsCredentialsWithoutTunnel)
     proxy_config.protocol = "https";
     proxy_config.tunnel = false;
     proxy_config.username = "user";
-    proxy_config.password = "p@ssword";
+    proxy_config.password.assign_range(std::string_view("p@ssword"));
     session.setProxyConfig(proxy_config);
 
     Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/root/data", Poco::Net::HTTPMessage::HTTP_1_1);
@@ -142,7 +142,7 @@ TEST(ProxyCredentials, HTTPSSessionDoesNotSendCredentialsInsideTunnel)
     proxy_config.protocol = "http";
     proxy_config.tunnel = true;
     proxy_config.username = "user";
-    proxy_config.password = "p@ssword";
+    proxy_config.password.assign_range(std::string_view("p@ssword"));
     session.setProxyConfig(proxy_config);
 
     Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/root/data", Poco::Net::HTTPMessage::HTTP_1_1);

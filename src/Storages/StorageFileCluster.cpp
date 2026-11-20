@@ -98,8 +98,7 @@ namespace
 void checkWriteAccessIfFilesAreRenamed(const ContextPtr & context)
 {
     if (!context->getSettingsRef()[Setting::rename_files_after_processing].value.empty())
-        context->getAccess()->checkAccessWithFilter(
-            AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+        StorageFile::checkAccessForRenamingFiles(context);
 }
 
 }

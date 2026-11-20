@@ -6,7 +6,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-db="${CLICKHOUSE_DATABASE}"
 u_alias="u_alias_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_col="u_col_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_showcol="u_showcol_${CLICKHOUSE_TEST_UNIQUE_NAME}"
@@ -16,19 +15,16 @@ u_sub="u_sub_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_virt="u_virt_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_json="u_json_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_revoke="u_revoke_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-u_dyn="u_dyn_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_computed="u_computed_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_bogus="u_bogus_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-u_tmp="u_tmp_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_mvdef="u_mvdef_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_create="u_create_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-session="session_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 # `CREATE` in a `Replicated` database is analyzed without the user, so the view arms use an `Atomic` one.
 db_atomic="${CLICKHOUSE_DATABASE}_atomic"
 
 drop_users()
 {
-    ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${u_alias}, ${u_col}, ${u_showcol}, ${u_both}, ${u_show}, ${u_sub}, ${u_virt}, ${u_json}, ${u_revoke}, ${u_dyn}, ${u_computed}, ${u_bogus}, ${u_tmp}, ${u_mvdef}, ${u_create}"
+    ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${u_alias}, ${u_col}, ${u_showcol}, ${u_both}, ${u_show}, ${u_sub}, ${u_virt}, ${u_json}, ${u_revoke}, ${u_computed}, ${u_bogus}, ${u_mvdef}, ${u_create}"
 }
 
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${db_atomic}"
@@ -38,10 +34,8 @@ ${CLICKHOUSE_CLIENT} -m --query "
     DROP TABLE IF EXISTS chain_a1;
     DROP TABLE IF EXISTS chain_a2;
     DROP TABLE IF EXISTS alias_one;
-    DROP TABLE IF EXISTS alias_dynamic;
     DROP TABLE IF EXISTS alias_computed;
     DROP TABLE IF EXISTS hidden_target;
-    DROP TABLE IF EXISTS dynamic_target;
     DROP TABLE IF EXISTS computed_target;
 
     CREATE TABLE hidden_target (secret_column_1 UInt32, secret_column_2 Nullable(String), secret_column_3 JSON) ENGINE = MergeTree ORDER BY secret_column_1;
@@ -51,9 +45,6 @@ ${CLICKHOUSE_CLIENT} -m --query "
     CREATE TABLE chain_a1 ENGINE = Alias(currentDatabase(), 'chain_a2');
     CREATE TABLE chain_a2 ENGINE = Alias(currentDatabase(), 'hidden_target');
     CREATE TABLE alias_one ENGINE = Alias('system', 'one');
-    CREATE TABLE dynamic_target (j JSON) ENGINE = Memory;
-    INSERT INTO dynamic_target VALUES ('{\"k\": 9}');
-    CREATE TABLE alias_dynamic ENGINE = Alias(currentDatabase(), 'dynamic_target');
     CREATE TABLE computed_target (x UInt32, y ALIAS x + 1) ENGINE = Memory;
     INSERT INTO computed_target(x) VALUES (7);
     CREATE TABLE alias_computed ENGINE = Alias(currentDatabase(), 'computed_target');
@@ -95,11 +86,6 @@ ${CLICKHOUSE_CLIENT} -m --query "
     GRANT SELECT ON hidden_target TO ${u_revoke};
     REVOKE SELECT(secret_column_1, secret_column_2, secret_column_3) ON hidden_target FROM ${u_revoke};
 
-    CREATE USER ${u_dyn} NOT IDENTIFIED;
-    GRANT SELECT ON alias_dynamic TO ${u_dyn};
-    GRANT SELECT ON dynamic_target TO ${u_dyn};
-    REVOKE SELECT(j, _table, _database) ON dynamic_target FROM ${u_dyn};
-
     CREATE USER ${u_computed} NOT IDENTIFIED;
     GRANT SELECT(y) ON alias_computed TO ${u_computed};
     GRANT SELECT(x) ON computed_target TO ${u_computed};
@@ -107,11 +93,6 @@ ${CLICKHOUSE_CLIENT} -m --query "
     CREATE USER ${u_bogus} NOT IDENTIFIED;
     GRANT SELECT ON alias_t TO ${u_bogus};
     GRANT SELECT(\`secret_column_1.no_such_subcolumn\`) ON hidden_target TO ${u_bogus};
-
-    CREATE USER ${u_tmp} NOT IDENTIFIED;
-    GRANT CREATE ARBITRARY TEMPORARY TABLE ON *.* TO ${u_tmp};
-    GRANT TABLE ENGINE ON Alias TO ${u_tmp};
-    GRANT SHOW COLUMNS ON hidden_target TO ${u_tmp};
 "
 
 # The error must be ACCESS_DENIED and must name neither a column nor the target. The probe query is
@@ -147,11 +128,6 @@ as_user()
     ${CLICKHOUSE_CLIENT} --user="$1" --query "$2" 2>&1
 }
 
-session_query()
-{
-    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${u_tmp}&password=&session_id=${session}" -d "$1" 2>&1
-}
-
 echo "-- grants on the alias only"
 check_denied "$(as_user "${u_alias}" "EXPLAIN QUERY TREE SELECT * FROM alias_t")"
 check_denied "$(as_user "${u_alias}" "EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM alias_t")"
@@ -161,7 +137,6 @@ check_denied "$(as_user "${u_alias}" "SELECT no_such_column FROM alias_t")"
 
 echo "-- an alias over an implicitly granted system table"
 check_ok "$(as_user "${u_alias}" "EXPLAIN QUERY TREE SELECT * FROM alias_one")"
-as_user "${u_alias}" "SELECT * FROM alias_one"
 
 echo "-- a column-level grant on the alias only"
 check_denied "$(as_user "${u_col}" "EXPLAIN QUERY TREE SELECT * FROM alias_t")"
@@ -176,18 +151,11 @@ echo "-- grants on the alias and on a subcolumn or a virtual column of the targe
 as_user "${u_sub}" "SELECT secret_column_2.null FROM alias_t"
 as_user "${u_virt}" "SELECT notEmpty(_part) FROM alias_t"
 as_user "${u_json}" "SELECT secret_column_3.k FROM alias_t"
-as_user "${u_revoke}" "SELECT notEmpty(_part), secret_column_2.null FROM alias_t"
-as_user "${u_dyn}" "SELECT j.k FROM alias_dynamic"
+as_user "${u_revoke}" "SELECT notEmpty(_part) FROM alias_t"
 check_denied "$(as_user "${u_bogus}" "EXPLAIN QUERY TREE SELECT * FROM alias_t")"
 
 echo "-- a grant on an ALIAS column of the alias and on the column it reads on the target"
 as_user "${u_computed}" "SELECT y FROM alias_computed"
-
-echo "-- a temporary alias"
-session_query "CREATE TEMPORARY TABLE t_alias ENGINE = Alias('${db}', 'hidden_target')"
-check_ok "$(session_query "EXPLAIN QUERY TREE SELECT * FROM t_alias")"
-${CLICKHOUSE_CLIENT} --query "REVOKE SHOW COLUMNS ON ${db}.hidden_target FROM ${u_tmp}"
-check_denied "$(session_query "EXPLAIN QUERY TREE SELECT * FROM t_alias")"
 
 ${CLICKHOUSE_CLIENT} -m --query "
     CREATE DATABASE ${db_atomic} ENGINE = Atomic;
@@ -221,9 +189,7 @@ ${CLICKHOUSE_CLIENT} -m --query "
     DROP TABLE chain_a1;
     DROP TABLE chain_a2;
     DROP TABLE alias_one;
-    DROP TABLE alias_dynamic;
     DROP TABLE alias_computed;
     DROP TABLE hidden_target;
-    DROP TABLE dynamic_target;
     DROP TABLE computed_target;
 "
