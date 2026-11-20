@@ -46,7 +46,6 @@ SplitCache: the system queue is more important than the data one
 0
 hottest	System	1
 coldest	Data	1
-random	Data	1
 1
 ['Data']
 ['System']

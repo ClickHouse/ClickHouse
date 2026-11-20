@@ -135,9 +135,8 @@ ColumnsDescription StorageFilesystemCache::getColumnsDescription()
 {
     return ColumnsDescription{
         {"priority_rank", std::make_shared<DataTypeUInt64>(),
-         "1-based position of the segment. For 'hottest' and 'coldest': in the output. For 'random': in the queues of the cache "
-         "walked coldest first (SLRU: probationary, then protected; split cache: data, then system), "
-         "not counting the segments which were skipped because they were removed from the cache during the query."},
+         "1-based position of the segment in the output for 'hottest' and 'coldest', i.e. the priority order. "
+         "For 'random': distinct, but in no particular order."},
         {"path", std::make_shared<DataTypeString>(), "The file of the segment on disk, including the `_<size>` suffix of downloaded segments."},
         {"key", std::make_shared<DataTypeString>(), "Cache key."},
         {"offset", std::make_shared<DataTypeUInt64>(), "Offset of the segment in the source file."},

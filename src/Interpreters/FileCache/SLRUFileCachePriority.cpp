@@ -222,7 +222,7 @@ void SLRUFileCachePriority::iterate(UInt64 query_max_elements, UInt64 query_max_
     ObservedQueue observed_probationary = observed_queue;
     observed_probationary.slru_queue = "Probationary";
 
-    /// underlying implementation of LRUFileCachePriority will take care of respecting query_max_elements, query_max_total_size and query_order
+    /// underlying implementation of LRUFileCachePriority will take care of respecting query_max_elements and query_order
     /// The probationary queue contains colder segments than the protected one: it comes first in `COLDEST` and `RANDOM`.
     if (query_order == IterationOrder::HOTTEST)
     {

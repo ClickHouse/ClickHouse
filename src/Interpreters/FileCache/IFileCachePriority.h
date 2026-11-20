@@ -287,6 +287,8 @@ public:
     };
 
     /// Returns the file segments of the queue, selected by their priority.
+    /// It copies the selected queue entries under the priority lock first, and reads their file segments,
+    /// which needs the key locks, after it is released.
     /// `query_max_elements`: Upper bound on returned rows
     /// `query_max_total_size`: upper bound on the sum of size of returned rows; the entry that would cross the bound is not returned.
     /// `query_order`: Defines the order on returned rows
@@ -517,9 +519,9 @@ protected:
     /// because for releasing hold space we do not need strong guarantees.
     virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
 
-    /// Whether `observeFilesystemCache` may return the file segment of a queue entry with this state
-    /// Uses caching of states when the encountered entry state is evicting,moving or preactive to eliminate
-    /// duplicated entries during upgrades/downgrades in the SLRU queue.
+    /// Whether `observeFilesystemCache` may return the file segment of a queue entry with this state.
+    /// During an SLRU upgrade/downgrade, both the old (`Moving` or `Evicting`) and the new (`PreActive`) entry of a segment
+    /// are in the queues: both may be copied, and `observeFilesystemCache` returns only the current entry of the segment.
     static bool isObservable(Entry::State state)
     {
         switch (state)
@@ -540,6 +542,9 @@ protected:
     /// return a redirected guard, and by the Overcommit/Split wrappers to throw.
     virtual CachePriorityGuard & getPriorityGuard() const { return priority_guard; }
 
+    /// `observeFilesystemCache` checks the cancellation flag once per this many entries: a cancelled query only has to stop soon.
+    static constexpr size_t observe_check_cancellation_every = 1024;
+
     const QueueType queue_type;
     std::atomic<size_t> max_size = 0;
     std::atomic<size_t> max_elements = 0;
@@ -554,9 +559,10 @@ protected:
 
 private:
     /// Each concrete implementation of IFileCachePriority should know better how to implement this
-    /// Adds the file segments of this queue to `result`, which may already hold the segments of previous sub-queues
-    /// (SLRU's probationary one, Split's data one): the limits apply to all of them and the ranks continue.
-    /// For `RANDOM`, `result.infos` is a reservoir which all sub-queues share.
+    /// Copies the entries of this queue to `result` under the priority lock, without taking any key lock.
+    /// `result` may already hold the entries of previous sub-queues (SLRU's first one, Split's first one):
+    /// `query_max_elements` and `query_max_total_size` apply to all of them together.
+    /// For `RANDOM`, `result.entries` is a reservoir which all sub-queues share.
     /// `observed_queue` holds the sub-queues chosen by the wrappers above this queue.
     virtual void iterate(
         UInt64 query_max_elements,

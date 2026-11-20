@@ -75,15 +75,14 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM filesystemCache('$lru', 100, 0)"
 
 echo "LRU: random"
 $CLICKHOUSE_CLIENT -m --query "
--- A sample of everything is the whole cache, with the ranks of 'coldest'.
+-- A sample of everything is the whole cache.
 SELECT
-    (SELECT arraySort(groupArray((priority_rank, path))) FROM filesystemCache('$lru', 100, 1000000, 'random'))
-    = (SELECT arraySort(groupArray((priority_rank, path))) FROM filesystemCache('$lru', 100, 1000000, 'coldest'));
--- A smaller sample: distinct ranks, and every row is the segment with that rank in 'coldest'.
+    (SELECT arraySort(groupArray(path)) FROM filesystemCache('$lru', 100, 1000000, 'random'))
+    = (SELECT arraySort(groupArray(path)) FROM filesystemCache('$lru', 100, 1000000, 'coldest'));
+-- A smaller sample: distinct ranks, and every row is a segment of the cache.
 SELECT count(), uniqExact(priority_rank) = count() FROM filesystemCache('$lru', 3, 1000000, 'random');
-SELECT count(), countIf(r.path != c.path)
-FROM filesystemCache('$lru', 3, 1000000, 'random') AS r
-INNER JOIN filesystemCache('$lru', 100, 1000000, 'coldest') AS c USING (priority_rank);
+SELECT count(), countIf(path NOT IN (SELECT path FROM filesystemCache('$lru', 100, 1000000, 'coldest')))
+FROM filesystemCache('$lru', 3, 1000000, 'random');
 SELECT sum(size) <= 25 FROM filesystemCache('$lru', 100, 25, 'random');
 "
 
@@ -126,8 +125,8 @@ SELECT count() FROM
     SELECT cache_path, segment_type FROM system.filesystem_cache WHERE cache_name = '$split'
 );
 "
-# 'hottest' walks the system queue first, 'coldest' and 'random' (whose ranks are those of 'coldest') the data queue first.
-for order in hottest coldest random; do
+# 'hottest' walks the system queue first, 'coldest' the data queue first.
+for order in hottest coldest; do
     if [ "$order" = hottest ]; then first=System; second=Data; else first=Data; second=System; fi
     $CLICKHOUSE_CLIENT --query "
     SELECT '$order', '$first', maxIf(priority_rank, split_queue = '$first') < minIf(priority_rank, split_queue = '$second')

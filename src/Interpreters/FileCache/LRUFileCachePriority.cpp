@@ -294,65 +294,6 @@ void LRUFileCachePriority::iterate(IterateFunc func, FileCacheReserveStat & stat
     iterateImpl(queue.begin(), func, stat, lock);
 }
 
-namespace
-{
-
-/// The summary of the file segment of `entry`, or `nullopt` if the key is being removed, or the segment is gone or empty.
-/// Despite its name, `KeyMetadata::tryLock` waits for the key lock and fails only if the key is no longer `ACTIVE`,
-/// so a key held by another query makes the walk wait while it holds the priority read lock.
-/// The key lock is held only to find the file segment, to make sure it is still in the cache,
-/// and, for a `Moving` or `Evicting` entry, to check that it is still the current queue entry of the segment.
-/// Everything else comes from the queue entry, the key metadata, or atomics of the file segment.
-std::optional<FileSegmentSummaryInfo>
-tryGetSummaryInfo(const IFileCachePriority::Entry & entry, IFileCachePriority::Entry::State state, IFileCachePriority::ObservedQueue observed_queue)
-{
-    auto key_metadata = entry.key_metadata.lock();
-    if (!key_metadata)
-        return std::nullopt;
-
-    FileSegmentPtr file_segment;
-    {
-        auto locked_key = key_metadata->tryLock();
-        if (!locked_key)
-            return std::nullopt;
-
-        auto file_segment_metadata = locked_key->tryGetByOffset(entry.offset);
-        if (!file_segment_metadata)
-            return std::nullopt;
-        file_segment = file_segment_metadata->file_segment;
-
-        /// The old entry of an SLRU move after `setIterator` made the new one current, but before `invalidate`:
-        /// the segment is counted through the new entry, which the walk has met or will meet as `Active`.
-        if (state == IFileCachePriority::Entry::State::Moving || state == IFileCachePriority::Entry::State::Evicting)
-        {
-            /// Lock order: key > file segment (`getQueueIterator`) > `SLRUIterator::entry_mutex` (`getEntry`).
-            /// We could see an Active entry in the protected queue and still old Moving entry
-            auto queue_iterator = file_segment->getQueueIterator();
-            if (!queue_iterator || queue_iterator->getEntry().get() != &entry)
-                return std::nullopt;
-        }
-    }
-
-    /// A `PreActive` entry has size 0 until its SLRU move is committed: the size is still on the old entry.
-    /// The queue entry is always charged with the disk-accounted size of its segment.
-    const size_t size = state == IFileCachePriority::Entry::State::PreActive ? file_segment->getDiskAccountedSize() : entry.size.load();
-    if (size == 0)
-        return std::nullopt;
-
-    return FileSegmentSummaryInfo{
-        .path = key_metadata->getFileSegmentPath(*file_segment),
-        .key = entry.key.toString(),
-        .offset = entry.offset,
-        .size = size,
-        .state = FileSegment::stateToString(file_segment->state()),
-        .split_queue = observed_queue.split_queue.transform([](std::string_view name) { return String(name); }),
-        .slru_queue = observed_queue.slru_queue.transform([](std::string_view name) { return String(name); }),
-        .user_id = key_metadata->origin->user_id,
-    };
-}
-
-}
-
 void LRUFileCachePriority::iterate(
     UInt64 query_max_elements,
     UInt64 query_max_total_size,
@@ -380,86 +321,59 @@ void LRUFileCachePriority::iterate(
     if (result.limit_reached || result.isCancelled())
         return;
 
-    UInt64 next_priority_rank = result.infos.size() + 1;
-
-    /// Returns false to stop the walk on a limit
+    /// Returns false to stop the walk on the limit.
+    /// Only the state of the entry is checked here. The key lock, needed to read the file segment, is taken by
+    /// `observeFilesystemCache` after the priority lock is released, so that a busy key does not block the whole queue.
     auto add_entry = [&](const EntryPtr & entry)
     {
         const auto entry_state = entry->getState();
         if (!isObservable(entry_state))
             return true;
 
-        /// Check if the other entry was already counted during upgrade/downgrade
-        FileCacheKeyAndOffset id{entry->key, entry->offset};
-        if (result.moving_segments.contains(id))
+        /// A new entry before its first space reservation has no segment to return, so it should not take a place in the result.
+        /// A `PreActive` entry has size 0 until its SLRU move is committed, but its segment is there.
+        const size_t entry_size = entry->size.load();
+        if (entry_state != Entry::State::PreActive && entry_size == 0)
             return true;
-
-        /// For `RANDOM`, the segment must be materialized before the random draw, and a segment that cannot be
-        /// materialized (the key was removed, the segment is gone or empty) must be
-        /// skipped entirely, without counting it in `result.seen`.
-        /// Otherwise whether it counts depends on the draw: a draw outside the reservoir would count it
-        /// without checking it, and a draw inside would drop it, which biases the sample towards the
-        /// segments seen earlier.
-        auto info = tryGetSummaryInfo(*entry, entry_state, observed_queue);
-        if (!info)
-            return true;
-
-        /// Record the segment only once it is counted, whatever happens to it next (sampled out, over the limit),
-        /// so that `RANDOM` gives a moving segment one chance, not two.
-        if (entry_state != Entry::State::Active)
-            result.moving_segments.insert(std::move(id));
 
         /// For random sampling we walk through the whole queue
         if (query_order == IterationOrder::RANDOM)
         {
-            /// Algorithm R: the first `query_max_elements` segments fill the reservoir, then the n-th segment
+            /// Algorithm R: the first `query_max_elements` entries fill the reservoir, then the n-th entry
             /// replaces a random one with the probability `query_max_elements / n`.
 
-            /// This is the n-th segment that can be returned, with n = `result.seen`.
-            info->priority_rank = ++result.seen;
+            /// This is the n-th entry, with n = `result.seen`.
+            ++result.seen;
 
-            /// The reservoir is not full yet: take every segment.
-            if (result.infos.size() < query_max_elements)
+            /// The reservoir is not full yet: take every entry.
+            if (result.entries.size() < query_max_elements)
             {
-                result.total_size += info->size;
-                result.infos.push_back(std::move(*info));
+                result.entries.push_back({entry, observed_queue});
                 return true;
             }
 
-            /// The reservoir is full: replace a random segment with the probability `query_max_elements / n`.
+            /// The reservoir is full: replace a random entry with the probability `query_max_elements / n`.
             const UInt64 slot = std::uniform_int_distribution<UInt64>(0, result.seen - 1)(thread_local_rng);
             if (slot < query_max_elements)
-            {
-                /// Keep the total size up to date, so there is no need to iterate again at the end for trimming.
-                result.total_size = result.total_size - result.infos[slot].size + info->size;
-                result.infos[slot] = std::move(*info);
-            }
+                result.entries[slot] = {entry, observed_queue};
             return true;
         }
 
-        /// coldest/hottest, no need for sampling
-        /// don't add an entry which would push over the limit
-        if (info->size > query_max_total_size - result.total_size)
-            return false;
+        /// coldest/hottest, no need for sampling.
+        result.entries.push_back({entry, observed_queue});
 
-        /// cache size so we don't need to calculate it once again
-        result.total_size += info->size;
-        info->priority_rank = next_priority_rank++;
-        result.infos.push_back(std::move(*info));
+        /// This is an approximation: a `PreActive` entry counts as 0
+        result.copied_size += entry_size;
 
-        /// We should stop when size becomes query_max_elements
-        return result.infos.size() < query_max_elements;
+        return result.entries.size() < query_max_elements && result.copied_size <= query_max_total_size;
     };
-
-    /// Checking the cancellation flag on every entry is not needed: a cancelled query only has to release the priority lock soon.
-    static constexpr size_t check_cancellation_every = 1024;
 
     auto add_entries = [&](auto && entries)
     {
         size_t walked = 0;
         for (const auto & entry : entries)
         {
-            if (++walked % check_cancellation_every == 0 && result.isCancelled())
+            if (++walked % observe_check_cancellation_every == 0 && result.isCancelled())
                 return;
 
             if (!add_entry(entry))

@@ -256,11 +256,10 @@ private:
 
     void iterate(IterateFunc func, FileCacheReserveStat & stat) override;
 
-    /// `HOTTEST` and `COLDEST`: appends the file segments of this queue to `result` in `query_order`, until `result` has
-    /// `query_max_elements` segments or the next one would make `result.total_size` exceed `query_max_total_size`.
-    /// Sets `result.limit_reached` when it stops on a limit, and does nothing if it is already set.
-    /// The appended segments get consecutive ranks after the ones already in `result`.
-    /// `RANDOM`: continues the reservoir sampling (Algorithm R) of `result`, coldest first; `query_max_total_size` is ignored.
+    /// Copies the entries of this queue to `result`, without reading their file segments (no key locks).
+    /// `HOTTEST` and `COLDEST`: appends the entries in `query_order` until `result` has `query_max_elements` of them,
+    /// or their sizes pass `query_max_total_size`, then sets `result.limit_reached`. Does nothing if it is already set.
+    /// `RANDOM`: continues the reservoir sampling (Algorithm R) of `result`, coldest first, over the whole queue.
     /// SLRU calls it for both of its sub-queues with the same `result` and its shared lock.
     void iterate(
         UInt64 query_max_elements,

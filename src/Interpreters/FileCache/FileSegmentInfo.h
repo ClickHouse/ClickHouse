@@ -2,7 +2,6 @@
 #include <atomic>
 #include <cctype>
 #include <optional>
-#include <unordered_set>
 #include <vector>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
@@ -85,10 +84,8 @@ namespace DB
 
     struct FileSegmentSummaryInfo
     {
-        /// 1-based position of the segment. For 'hottest' and 'coldest': its position in the output, i.e. the priority order.
-        /// For 'random': its position among the returnable segments of the queues walked coldest first
-        /// (SLRU: probationary, then protected; split cache: system, then data).
-        /// Segments skipped by the walk (removed from the cache, or empty) are not counted.
+        /// 1-based position of the segment in the output for 'hottest' and 'coldest', i.e. the priority order.
+        /// For 'random': distinct, but in no particular order.
         UInt64 priority_rank{0};
         /// Real on-disk file, including the _<size> suffix of downloaded segments
         String path;
@@ -107,28 +104,29 @@ namespace DB
 
     using FileSegmentSummaryInfoList = std::vector<FileSegmentSummaryInfo>;
 
+    /// The state of the walk over the queues in `IFileCachePriority::observeFilesystemCache`, shared by all sub-queues.
+    /// Under the priority lock, the walk only copies queue entries; their file segments are read after it is released.
     struct FileSegmentSummaryInfos
     {
-        FileSegmentSummaryInfoList infos;
-        /// cache total size so that in SplitFileCachePriority we don't need to iterate again before checking system segments
-        UInt64 total_size = 0;
-        /// Set when the walk stopped on `query_max_elements` or `query_max_total_size`.
-        /// The next sub-queue (SLRU's second one, Split's system one) is then not walked at all.
+        struct ObservedEntry
+        {
+            IFileCachePriority::EntryPtr entry;
+            IFileCachePriority::ObservedQueue observed_queue;
+        };
+
+        /// `HOTTEST` and `COLDEST`: the copied entries in the walk order. `RANDOM`: the reservoir.
+        std::vector<ObservedEntry> entries;
+        /// `HOTTEST` and `COLDEST`: the sum of the sizes of the copied entries, as the queue entries see them.
+        UInt64 copied_size = 0;
+        /// `HOTTEST` and `COLDEST`: set when `query_max_elements` entries are copied, or `copied_size` passes `query_max_total_size`.
+        /// The next sub-queue (SLRU's second one, Split's second one) is then not walked at all.
         bool limit_reached{false};
         /// Set by the query to stop the walk early, e.g. on `KILL QUERY` or `max_execution_time`, so that the priority lock
         /// is released without walking the rest of the queue. The result is incomplete then. `nullptr` if the walk cannot be cancelled.
         const std::atomic<bool> * cancellation_flag = nullptr;
 
-        bool isCancelled() const { return cancellation_flag && cancellation_flag->load(std::memory_order_relaxed); }
-        /// `RANDOM` only: the number of segments seen so far that can be returned (segments for which
-        /// `tryGetSummaryInfo` fails are not counted), which all sub-queues sample from as one reservoir.
+        [[nodiscard]] bool isCancelled() const { return cancellation_flag && cancellation_flag->load(std::memory_order_relaxed); }
+        /// `RANDOM` only: the number of entries walked so far, which all sub-queues sample from as one reservoir.
         UInt64 seen = 0;
-        /// Cache for keeping SLRU entries which are observable but not in the active state
-        /// Tries to prevent the following combinations of states:
-        ///     Moving-PreActive (upgrade)
-        ///     Moving-Active(upgrade)
-        ///     Evicting-PreActive(downgrade)
-        ///     Evicting-Active(downgrade)
-        std::unordered_set<FileCacheKeyAndOffset, FileCacheKeyAndOffsetHash> moving_segments;
     };
 }

@@ -130,7 +130,9 @@ A cache with the SLRU policy has two queues: the probationary one is colder than
 
 Caches with the `LRU_OVERCOMMIT` and `SLRU_OVERCOMMIT` policies are not supported.
 
-The result is not an atomic snapshot: the cache keeps changing during the walk, and a segment which is removed from the cache before the walk reaches it is skipped, and the next returned segment takes its rank. When a segment's cache key is locked by another query (e.g. while the segment is being downloaded), the walk waits for it.
+The walk first takes at most `max_elements` entries of the queue (for 'random', the sample), and only then reads their segments, without blocking the queue. The result is not an atomic snapshot: a segment which is removed from the cache in the meantime is skipped, so the result can have fewer than `max_elements` segments even if the cache holds more. When a segment's cache key is locked by another query (e.g. while the segment is being downloaded), the query waits for it.
+
+`max_elements` can be at most the `max_observed_elements` setting of the cache (1000000 by default), unless the cache holds fewer segments.
 
 Unlike `system.filesystem_cache`, which walks all keys of all caches, it walks the eviction queue of one cache, and with 'hottest' and 'coldest' only as far as needed, so it can return the hottest segments (e.g. to prewarm another replica), the next eviction candidates, or a uniform sample of the cache.
 
@@ -138,7 +140,7 @@ It requires the `SELECT` privilege on `system.filesystem_cache`.)",
             .syntax = "filesystemCache(cache_name, max_elements, max_total_size[, order])",
             .arguments = {
                 {"cache_name", "The name of the cache, the same as in `SYSTEM DROP FILESYSTEM CACHE` and `system.filesystem_cache.cache_name`.", {"String"}},
-                {"max_elements", "The maximum number of returned segments.", {"UInt64"}},
+                {"max_elements", "The maximum number of returned segments. At most the `max_observed_elements` setting of the cache, unless the cache holds fewer segments.", {"UInt64"}},
                 {"max_total_size", "The maximum sum of `size` of the returned segments.", {"UInt64"}},
                 {"order", "'hottest' (the default): the highest-priority segments first. 'coldest': the next eviction candidates first. 'random': a uniform sample of segments, in random order.", {"String"}},
             },
