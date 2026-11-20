@@ -1,5 +1,7 @@
 #include <Core/ProtocolDefines.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -13,7 +15,6 @@
 #include <Processors/Transforms/MergingAggregatedTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
-#include <Core/Settings.h>
 
 namespace DB
 {
@@ -424,7 +425,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
         keys,
         aggregates,
         overflow_row,
-        settings[Setting::max_threads],
+        getEffectiveMaxThreads(*ctx.context),
         ctx.settings[QueryPlanSerializationSetting::max_block_size],
         ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization],
         ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte],

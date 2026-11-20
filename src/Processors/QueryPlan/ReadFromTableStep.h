@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Analyzer/TableExpressionModifiers.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -9,7 +10,13 @@ class ReadFromTableStep : public ISourceStep
 {
 public:
     ReadFromTableStep(
-        SharedHeader header, String table_name_, TableExpressionModifiers table_expression_modifiers_, bool use_parallel_replicas_ = false);
+        SharedHeader header,
+        String table_name_,
+        TableExpressionModifiers table_expression_modifiers_,
+        bool use_parallel_replicas_ = false,
+        PrewhereInfoPtr prewhere_info_ = nullptr,
+        FilterDAGInfoPtr row_level_filter_ = nullptr,
+        UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> node_name_to_input_node_column_ = {});
 
     [[nodiscard]] String getName() const override { return "ReadFromTable"; }
 
@@ -23,12 +30,21 @@ public:
     [[nodiscard]] TableExpressionModifiers getTableExpressionModifiers() const { return table_expression_modifiers; }
     [[nodiscard]] bool useParallelReplicas() const { return use_parallel_replicas; }
     bool & useParallelReplicas() { return use_parallel_replicas; }
+    PrewhereInfoPtr getPrewhereInfo() const { return prewhere_info; }
+    FilterDAGInfoPtr getRowLevelFilter() const { return row_level_filter; }
+    const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & getNodeNameToInputNodeColumn() const { return node_name_to_input_node_column; }
 
     [[nodiscard]] QueryPlanStepPtr clone() const override;
 private:
     String table_name;
     TableExpressionModifiers table_expression_modifiers;
     bool use_parallel_replicas = false;
+    PrewhereInfoPtr prewhere_info;
+    /// Row-level security filter (row policy). Carried so that a cache hit re-applies the
+    /// policy: `ReadFromMergeTree` keeps it in `SelectQueryInfo::row_level_filter`, and
+    /// `resolveStorages` restores it onto the freshly bound `SelectQueryInfo`.
+    FilterDAGInfoPtr row_level_filter;
+    UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
 };
 
 }

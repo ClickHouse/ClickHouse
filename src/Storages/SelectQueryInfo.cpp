@@ -61,7 +61,10 @@ std::optional<TableExpressionModifiers::Rational> SelectQueryInfo::getSampleOffs
 
 UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNodeNameToInputNodeColumn() const
 {
-    UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
+    if (!node_name_to_input_node_column.empty())
+        return node_name_to_input_node_column;
+
+    UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> result;
     if (planner_context)
     {
         auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
@@ -72,10 +75,10 @@ UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> SelectQueryIn
             if (table_expression_data.hasAliasColumn(column_name))
                 continue;
             const auto & column = table_expression_data.getColumnOrThrow(column_name);
-            node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(nullptr, column.type, column_name));
+            result.emplace(column_identifier, ColumnWithTypeAndName(nullptr, column.type, column_name));
         }
     }
-    return node_name_to_input_node_column;
+    return result;
 }
 
 PrewhereInfo PrewhereInfo::clone() const
