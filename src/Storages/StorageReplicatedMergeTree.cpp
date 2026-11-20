@@ -12302,16 +12302,31 @@ LostMergeResultDrop StorageReplicatedMergeTree::tryDropFetchOfLostMergeResult(zk
     /// before it is seen by the scans. Each scan reads in the order an entry moves: log, then queues, then parts.
     auto merge_predicate = queue.getMergePredicate(zookeeper, PartitionIdsHint{lost_info.getPartitionId()});
 
+    /// `removePartAndEnqueueFetch` on another replica moves the part from its `parts` to a `GET_PART` in its queue
+    /// without changing the log, and bumps its `is_lost`. If that happens between our scan of its queue and of its
+    /// parts, we would see neither. The version of `is_lost` is checked when the entry is removed.
+    std::vector<std::pair<String, int32_t>> peers_is_lost_versions;
+    {
+        Strings is_lost_paths;
+        for (const String & replica : replicas)
+            if ((replicas_path / replica).string() != replica_path)
+                is_lost_paths.push_back(replicas_path / replica / "is_lost");
+        auto responses = zookeeper->get(is_lost_paths);
+        for (size_t i = 0; i < is_lost_paths.size(); ++i)
+            peers_is_lost_versions.emplace_back(is_lost_paths[i], responses[i].stat.version);
+    }
+
     /// Some replica may be about to produce the lost part (or a covering one): a merge that is in its queue,
     /// or in the log and not pulled by it yet. Merging the sources differently here would make replicas diverge.
-    /// A `GET_PART` entry without a source replica produces nothing, and our own is what we are getting rid of.
+    /// A `GET_PART` entry without a source replica produces nothing, and our own for the lost part is what we are getting rid of.
     /// But the same entry on another replica holds the lost part in that replica's `virtual_parts`: a merge that
     /// intersects the lost part, which we would schedule after the drop, could not be pulled by that replica.
     /// So only our own such entry is ignored.
     auto produces_lost_part = [&](const String & entry_data, bool ignore_own_lost_get_part)
     {
         auto entry = ReplicatedMergeTreeLogEntry::parse(entry_data, Coordination::Stat{}, format_version);
-        if (ignore_own_lost_get_part && entry->type == ReplicatedMergeTreeLogEntry::GET_PART && entry->source_replica.empty())
+        if (ignore_own_lost_get_part && entry->type == ReplicatedMergeTreeLogEntry::GET_PART && entry->source_replica.empty()
+            && entry->new_part_name == lost_part_name)
             return false;
         for (const auto & name : entry->getVirtualPartNames(format_version))
             if (MergeTreePartInfo::fromPartName(name, format_version).contains(lost_info))
@@ -12323,8 +12338,15 @@ LostMergeResultDrop StorageReplicatedMergeTree::tryDropFetchOfLostMergeResult(zk
     {
         auto responses = zookeeper->tryGet(paths);
         for (size_t i = 0; i < paths.size(); ++i)
-            if (responses[i].error == Coordination::Error::ZOK && produces_lost_part(responses[i].data, ignore_own_lost_get_part))
+        {
+            /// The entry may have been removed since it was listed.
+            if (responses[i].error == Coordination::Error::ZNONODE)
+                continue;
+            if (responses[i].error != Coordination::Error::ZOK)
+                throw Coordination::Exception::fromPath(responses[i].error, paths[i]);
+            if (produces_lost_part(responses[i].data, ignore_own_lost_get_part))
                 return true;
+        }
         return false;
     };
 
@@ -12391,6 +12413,8 @@ LostMergeResultDrop StorageReplicatedMergeTree::tryDropFetchOfLostMergeResult(zk
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCheckRequest(fs::path(zookeeper_path) / "log", merge_predicate->getVersion()));
     ops.emplace_back(zkutil::makeCheckRequest(replicas_path, replicas_stat.version));
+    for (const auto & [peer_is_lost_path, peer_is_lost_version] : peers_is_lost_versions)
+        ops.emplace_back(zkutil::makeCheckRequest(peer_is_lost_path, peer_is_lost_version));
     /// Bump the version of `is_lost` to race with `cloneReplica` the same way `removePartAndEnqueueFetch` does.
     ops.emplace_back(zkutil::makeSetRequest(fs::path(replica_path) / "is_lost", is_lost_value, is_lost_stat.version));
 

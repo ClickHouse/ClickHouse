@@ -548,7 +548,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPartAndFix(
                 break;
             if (drop_outcome == LostMergeResultDrop::RetryLater)
             {
-                constexpr time_t retry_drop_after_seconds = 5;
+                constexpr time_t retry_drop_after_seconds = 30;
                 if (recheck_after)
                     *recheck_after = retry_drop_after_seconds;
                 else
