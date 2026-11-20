@@ -1,4 +1,6 @@
-A	100	100
+A	100	100	20
 A objects left: 0
-B	100	100
-C	100	100
+B	100	100	20
+B sources per INSERT	['1']
+C	100	100	20
+C sources per INSERT	['4']

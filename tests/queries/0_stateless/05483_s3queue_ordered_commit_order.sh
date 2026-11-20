@@ -51,7 +51,10 @@ function run_arm()
         sleep 0.5
     done
 
-    $CLICKHOUSE_CLIENT -q "SELECT '${arm}', count(), uniqExact(id) FROM ${CLICKHOUSE_DATABASE}.dst_${arm}"
+    $CLICKHOUSE_CLIENT -q "
+        SELECT '${arm}', count(), uniqExact(id),
+            (SELECT count() FROM system.s3queue_metadata_cache WHERE zookeeper_path = '${keeper_path}' AND status = 'Processed')
+        FROM ${CLICKHOUSE_DATABASE}.dst_${arm}"
 
     if [[ "$settings" == *"'delete'"* ]]; then
         local left
@@ -65,6 +68,16 @@ function run_arm()
         echo "${arm} objects left: $($CLICKHOUSE_CLIENT -q "$left_query")"
     fi
 
+    if [[ "$settings" == *"parallel_inserts = 1"* ]]; then
+        $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS text_log"
+        $CLICKHOUSE_CLIENT -q "
+            SELECT '${arm} sources per INSERT', groupUniqArray(extract(message, 'Using ([0-9]+) processing threads'))
+            FROM system.text_log
+            WHERE event_date >= yesterday() AND event_time >= now() - 600
+                AND logger_name = 'StorageS3Queue (${CLICKHOUSE_DATABASE}.queue_${arm})'
+                AND message LIKE 'Using % processing threads %'"
+    fi
+
     $CLICKHOUSE_CLIENT -q "
         DROP TABLE ${CLICKHOUSE_DATABASE}.mv_${arm};
         DROP TABLE ${CLICKHOUSE_DATABASE}.queue_${arm} SYNC;
@@ -74,7 +87,7 @@ function run_arm()
 
 # #114801: several sources claim files concurrently, one file per INSERT.
 run_arm A "after_processing = 'delete', processing_threads_num = 8, buckets = 1, list_objects_batch_size = 2, max_processed_files_before_commit = 1"
-# One INSERT per processing thread, four buckets.
+# `parallel_inserts = 1`, four buckets: one source per INSERT.
 run_arm B "parallel_inserts = 1, processing_threads_num = 4, buckets = 0, after_processing = 'keep'"
-# One INSERT per processing thread, one bucket.
+# `parallel_inserts = 1`, one bucket: one INSERT reads with all processing threads.
 run_arm C "parallel_inserts = 1, processing_threads_num = 4, buckets = 1, after_processing = 'keep'"
