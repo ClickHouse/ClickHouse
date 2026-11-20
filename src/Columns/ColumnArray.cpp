@@ -1335,6 +1335,10 @@ ColumnPtr ColumnArray::index(const IColumn & indexes, size_t limit) const
     return selectIndexImpl(*this, indexes, limit);
 }
 
+/// For fixed-size values, copying an array as one range costs a virtual `insertRangeFrom` call per row, and gathering its elements
+/// costs 8 bytes of scratch and one write per element. The break-even is about 8 elements per row.
+static constexpr size_t RANGE_COPY_MIN_ELEMENTS_PER_ROW = 8;
+
 template <typename T>
 ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit) const
 {
@@ -1342,26 +1346,42 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
     if (limit == 0)
         return ColumnArray::create(data->cloneEmpty());
 
-    /// Convert indexes to UInt64 in case of overflow.
-    auto nested_indexes_column = ColumnUInt64::create();
-    PaddedPODArray<UInt64> & nested_indexes = nested_indexes_column->getData();
-    nested_indexes.reserve_exact(getOffsets().back());
-
     auto res_offsets_column = ColumnOffsets::create(limit);
     Offsets & res_offsets = res_offsets_column->getData();
     size_t current_offset = 0;
 
     for (size_t i = 0; i < limit; ++i)
     {
-        for (size_t j = 0; j < sizeAt(indexes[i]); ++j)
-            nested_indexes.push_back(offsetAt(indexes[i]) + j);
-        current_offset += sizeAt(indexes[i]);
+        const size_t row_size = sizeAt(indexes[i]);
+        if (row_size > std::numeric_limits<Offset>::max() - current_offset)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many elements in array column: {} + {}", current_offset, row_size);
+        current_offset += row_size;
         res_offsets[i] = current_offset;
     }
 
+    if (current_offset == 0)
+        return ColumnArray::create(data->cloneEmpty(), std::move(res_offsets_column));
+
+    if (data->isFixedAndContiguous() && current_offset / limit >= RANGE_COPY_MIN_ELEMENTS_PER_ROW)
+    {
+        auto res_data = data->cloneEmpty();
+        res_data->reserve(current_offset);
+        for (size_t i = 0; i < limit; ++i)
+            res_data->insertRangeFrom(*data, offsetAt(indexes[i]), sizeAt(indexes[i]));
+        return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
+    }
+
+    /// Convert indexes to UInt64 in case of overflow.
+    auto nested_indexes_column = ColumnUInt64::create();
+    PaddedPODArray<UInt64> & nested_indexes = nested_indexes_column->getData();
+    nested_indexes.reserve_exact(current_offset);
+    for (size_t i = 0; i < limit; ++i)
+        for (size_t j = 0; j < sizeAt(indexes[i]); ++j)
+            nested_indexes.push_back(offsetAt(indexes[i]) + j);
+
     /// Build the nested result first: an empty clone of `data` copies its whole nested structure, which for
     /// `Dynamic` is as deep as the data, and every level of this recursion would hold one.
-    ColumnPtr res_data = current_offset != 0 ? data->index(*nested_indexes_column, current_offset) : data->cloneEmpty();
+    ColumnPtr res_data = data->index(*nested_indexes_column, current_offset);
     return ColumnArray::create(res_data, std::move(res_offsets_column));
 }
 
