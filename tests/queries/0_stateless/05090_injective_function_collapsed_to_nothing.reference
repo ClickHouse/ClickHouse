@@ -96,6 +96,10 @@ SELECT countIf(explain ILIKE '%sort_direction: DESCENDING%') AS keeps_tiebreaker
 1	2
 SELECT countIf(explain ILIKE '%sort_direction: DESCENDING%') AS keeps_tiebreaker, countIf(explain ILIKE '%SORT id%') AS sort_nodes FROM (EXPLAIN QUERY TREE SELECT n FROM t_injective_array_null GROUP BY n ORDER BY bitmaskToArray(n), n DESC SETTINGS optimize_truncate_order_by_after_group_by_keys = 0);
 1	2
+SELECT n FROM t_injective_array_null GROUP BY n ORDER BY bitmaskToArray(n), n DESC;
+0
+\N
+1
 -- Without a Nullable argument the claim still holds, so the key is still unwrapped and the tiebreaker truncated.
 SELECT countIf(explain ILIKE '%bitmaskToArray%') AS unwrapped_fn_nodes FROM (EXPLAIN QUERY TREE SELECT count() FROM t_injective_array_null GROUP BY bitmaskToArray(m));
 0
