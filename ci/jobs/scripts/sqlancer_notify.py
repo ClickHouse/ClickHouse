@@ -44,7 +44,7 @@ TIMEOUT_SEC = 20
 
 # Defaults matching ci/settings/settings.py, used if praktika cannot be imported:
 # an alert is more valuable than a perfectly linked one.
-CI_DB_READ_URL = "https://xy8c38q4lw.us-east-2.aws.clickhouse-staging.com"
+CI_DB_READ_URL = "https://play.clickhouse.com"
 CI_DB_READ_USER = "play"
 CI_DB_NAME = "default"
 CI_DB_TABLE = "checks"

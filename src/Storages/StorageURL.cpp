@@ -10,6 +10,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/Web/Configuration.h>
+#include <boost/algorithm/string/predicate.hpp>
 #include <Storages/prepareReadingFromFormat.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -27,8 +28,6 @@
 #include <IO/WriteBufferFromHTTP.h>
 
 #include <Formats/FormatFactory.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
-#include <Storages/MergeTree/MarkRange.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -53,7 +52,6 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/ProfileEvents.h>
-#include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
 #include <Common/maskSensitiveQueryParameters.h>
@@ -72,7 +70,6 @@
 
 #include <algorithm>
 #include <boost/algorithm/string/case_conv.hpp>
-#include <boost/algorithm/string/predicate.hpp>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
@@ -102,7 +99,6 @@ namespace FailPoints
 namespace Setting
 {
     extern const SettingsBool allow_url_wildcard_from_index_pages;
-    extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsBool enable_url_encoding;
     extern const SettingsBool engine_url_skip_empty_files;
     extern const SettingsUInt64 glob_expansion_max_elements;
@@ -139,11 +135,11 @@ static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 ar
                                                     "url, name of used format (taken from file extension by default), "
                                                     "optional compression method, optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
 
-[[clang::no_destroy]] static const std::unordered_set<std::string_view> required_configuration_keys = {
+static const std::unordered_set<std::string_view> required_configuration_keys = {
     "url",
 };
 
-[[clang::no_destroy]] static const std::unordered_set<std::string_view> optional_configuration_keys = {
+static const std::unordered_set<std::string_view> optional_configuration_keys = {
     "format",
     "compression",
     "compression_method",
@@ -203,8 +199,6 @@ String getSampleURI(String uri, ContextPtr context)
     }
     return uri;
 }
-
-static bool maskURLCredentials(String & url);
 
 static ConnectionTimeouts getHTTPTimeouts(ContextPtr context)
 {
@@ -320,20 +314,6 @@ namespace
         return headers;
     }
 
-    UInt128 hashRequestHeaders(const HTTPHeaderEntries & headers)
-    {
-        SipHash hash;
-        hash.update(headers.size());
-        for (const auto & [header_name, header_value] : headers)
-        {
-            hash.update(header_name.size());
-            hash.update(header_name);
-            hash.update(header_value.size());
-            hash.update(header_value);
-        }
-        return hash.get128();
-    }
-
     StorageURLSource::FailoverOptions getFailoverOptions(const String & uri, size_t max_addresses)
     {
         return parseRemoteDescription(uri, 0, uri.size(), '|', max_addresses);
@@ -349,11 +329,10 @@ static constexpr size_t URL_GLOB_BATCH_SIZE = 1000;
 class StorageURLSource::DisclosedGlobIterator::Impl
 {
 public:
-    Impl(const String & uri_, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_)
+    Impl(const String & uri_, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
         : max_addresses_upper_bound(max_addresses)
         , filter_virtual_columns(virtual_columns)
         , filter_hive_columns(hive_columns)
-        , filter_format_settings(format_settings_)
         , filter_context(context)
     {
         /// A URI without globs is taken as is: it can hold commas of its own, and splitting it on them
@@ -459,7 +438,7 @@ public:
 private:
     /// Not exhausted, so at least one more address exists beyond the batch; the query can never
     /// consume more than the limit anyway.
-    [[nodiscard]] size_t upperBound() const TSA_REQUIRES(mutex)
+    size_t upperBound() const TSA_REQUIRES(mutex)
     {
         /// A non-exhausted iterator always has a generator: a single URI is exhausted at once.
         const auto total = generator->totalCount();
@@ -540,10 +519,8 @@ private:
         for (const auto & uri : uris)
             paths.push_back(Poco::URI(uri).getPath());
 
-        VirtualColumnUtils::filterSourcesByIndexes(
-            uris,
-            VirtualColumnUtils::getFilterByPathAndFileIndexes(
-                paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context, filter_format_settings));
+        VirtualColumnUtils::filterByPathOrFile(
+            uris, paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context);
     }
 
     std::mutex mutex;
@@ -558,7 +535,6 @@ private:
     bool filter_deferred TSA_GUARDED_BY(mutex) = false;
     const NamesAndTypesList filter_virtual_columns;
     const NamesAndTypesList filter_hive_columns;
-    const std::optional<FormatSettings> filter_format_settings;
     const ContextPtr filter_context;
 
     Strings batch TSA_GUARDED_BY(mutex);
@@ -568,8 +544,8 @@ private:
     std::optional<size_t> exact_size;
 };
 
-StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_)
-    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, split_uris, max_addresses, predicate, virtual_columns, hive_columns, context, format_settings_)) {}
+StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
+    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, split_uris, max_addresses, predicate, virtual_columns, hive_columns, context)) {}
 
 String StorageURLSource::DisclosedGlobIterator::next()
 {
@@ -619,11 +595,9 @@ StorageURLSource::StorageURLSource(
     , parser_shared_resources(std::move(parser_shared_resources_))
     , format_filter_info(std::move(format_filter_info_))
     , headers(getHeaders(headers_, context_))
-    , request_headers_hash(hashRequestHeaders(headers_))
     , need_only_count(need_only_count_)
     , storage_id(std::move(storage_id_))
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
-    , allow_query_condition_cache((http_method.empty() || http_method == Poco::Net::HTTPRequest::HTTP_GET) && !callback && params.empty())
 {
     /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
     initialize = [=, this]()
@@ -647,119 +621,65 @@ StorageURLSource::StorageURLSource(
 
             return cancellation->isCancelled();
         };
-        /// Files which the query condition cache excludes entirely are skipped.
-        FileBucketInfoPtr buckets_to_read;
-        while (true)
+        do
         {
-            do
-            {
-                current_uri_options = (*uri_iterator)();
-                if (current_uri_options.empty())
-                    return false;
+            current_uri_options = (*uri_iterator)();
+            if (current_uri_options.empty())
+                return false;
 
-                auto first_option = current_uri_options.cbegin();
-                uri_and_buf = getFirstAvailableURIAndReadBuffer(
-                    first_option,
-                    current_uri_options.end(),
-                    getContext(),
-                    params,
-                    http_method,
-                    callback,
-                    timeouts,
-                    credentials,
-                    headers,
-                    glob_url,
-                    current_uri_options.size() == 1,
-                    cancellation);
+            auto first_option = current_uri_options.cbegin();
+            uri_and_buf = getFirstAvailableURIAndReadBuffer(
+                first_option,
+                current_uri_options.end(),
+                getContext(),
+                params,
+                http_method,
+                callback,
+                timeouts,
+                credentials,
+                headers,
+                glob_url,
+                current_uri_options.size() == 1,
+                cancellation);
 
-                /// A hard teardown of the pipeline noticed between the failover options returns no
-                /// buffer instead of an error, see getFirstAvailableURIAndReadBuffer. No one needs the
-                /// data anymore: end the stream.
-                if (!uri_and_buf.second)
-                    return false;
+            /// A hard teardown of the pipeline noticed between the failover options returns no
+            /// buffer instead of an error, see getFirstAvailableURIAndReadBuffer. No one needs the
+            /// data anymore: end the stream.
+            if (!uri_and_buf.second)
+                return false;
 
-                /// `ReadBuffer::eof` may start the first HTTP GET. Do not let a cancellation that
-                /// arrived after choosing the buffer start that request.
-                FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_empty_file_probe);
-                if (stop_if_query_cancelled())
-                    return false;
-
-                /// If file is empty and engine_url_skip_empty_files=1, skip it and go to the next file.
-            }
-            while (getContext()->getSettingsRef()[Setting::engine_url_skip_empty_files] && uri_and_buf.second->eof());
-
-            /// A cancellation which has arrived while the URI was being chosen - after the loop above
-            /// passed its checks, see getFirstAvailableURIAndReadBuffer - must not start the requests
-            /// below for the metadata of a file no one is left to read: end the stream. Both kinds of
-            /// the cancellation converge here: after a soft one the query succeeds with what it has
-            /// already read, and after a hard teardown the failure or the kill is reported elsewhere.
+            /// `ReadBuffer::eof` may start the first HTTP GET. Do not let a cancellation that
+            /// arrived after choosing the buffer start that request.
+            FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_empty_file_probe);
             if (stop_if_query_cancelled())
                 return false;
 
-            curr_uri = uri_and_buf.first;
-            current_file_last_modified = uri_and_buf.second->tryGetLastModificationTime();
-            current_file_response_date = uri_and_buf.second->tryGetResponseDateOfFileInfo();
-            const ReadWriteBufferFromHTTP & http_buf = *uri_and_buf.second;
-            read_buf = std::move(uri_and_buf.second);
-
-            FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_between_metadata_probes);
-
-            /// The two probes above and below share the metadata of one HEAD request, but when that
-            /// request has failed with a network error, the probe of the modification time has nothing
-            /// to remember, and the probe of the file size would send a fresh HEAD - which a cancellation
-            /// that has arrived in between must prevent the same way the check above prevents the first one.
-            if (stop_if_query_cancelled())
-                return false;
-
-            current_file_size = tryGetFileSizeFromReadBuffer(*read_buf);
-
-            /// With `max_http_get_redirects` the metadata above, and the data later, come from the target of the
-            /// redirects, which can change between queries while `curr_uri` stays the same.
-            current_file_resolved_uri = http_buf.getCurrentURI();
-
-            current_query_condition_cache_file_key = makeQueryConditionCacheFileKey();
-
-            /// A TopN read consults the cache only while `use_query_condition_cache_for_top_k` is on: the
-            /// setting is documented to make TopK reads neither consult nor populate the cache. Entries are
-            /// only written by reads without TopN dynamic filtering (see `generate`), so they apply to a
-            /// TopN read as well.
-            if (!current_query_condition_cache_file_key
-                || (format_filter_info->top_k_filter && !getContext()->getSettingsRef()[Setting::use_query_condition_cache_for_top_k]))
-                break;
-
-            auto query_condition_cache = getContext()->getQueryConditionCache();
-            auto matching_marks = query_condition_cache
-                ? query_condition_cache->read(storage_id.uuid, *current_query_condition_cache_file_key, *format_filter_info->condition_hash)
-                : std::nullopt;
-            if (!matching_marks)
-                break;
-
-            RowGroupIndices matching_row_groups;
-            for (size_t i = 0; i < matching_marks->size(); ++i)
-                if ((*matching_marks)[i])
-                    matching_row_groups.push_back(i);
-
-            /// The URL can carry credentials or a signature, which must not reach the log.
-            String masked_uri = curr_uri.toString();
-            maskURLCredentials(masked_uri);
-            LOG_DEBUG(getLogger("StorageURLSource"),
-                "Query condition cache has dropped {}/{} row groups for condition {} in file {}.",
-                matching_marks->size() - matching_row_groups.size(),
-                matching_marks->size(),
-                format_filter_info->filter_actions_dag->dumpNames(),
-                masked_uri);
-
-            if (!matching_row_groups.empty())
-            {
-                /// Without buckets for the format, the file is read whole.
-                if (auto file_bucket_info = FormatFactory::instance().getFileBucketInfo(format))
-                    buckets_to_read = file_bucket_info->filterByMatchingRowGroups(matching_row_groups);
-                break;
-            }
-
-            /// No row group of the file matches: go to the next one.
-            read_buf.reset();
+            /// If file is empty and engine_url_skip_empty_files=1, skip it and go to the next file.
         }
+        while (getContext()->getSettingsRef()[Setting::engine_url_skip_empty_files] && uri_and_buf.second->eof());
+
+        /// A cancellation which has arrived while the URI was being chosen - after the loop above
+        /// passed its checks, see getFirstAvailableURIAndReadBuffer - must not start the requests
+        /// below for the metadata of a file no one is left to read: end the stream. Both kinds of
+        /// the cancellation converge here: after a soft one the query succeeds with what it has
+        /// already read, and after a hard teardown the failure or the kill is reported elsewhere.
+        if (stop_if_query_cancelled())
+            return false;
+
+        curr_uri = uri_and_buf.first;
+        current_file_last_modified = uri_and_buf.second->tryGetLastModificationTime();
+        read_buf = std::move(uri_and_buf.second);
+
+        FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_between_metadata_probes);
+
+        /// The two probes above and below share the metadata of one HEAD request, but when that
+        /// request has failed with a network error, the probe of the modification time has nothing
+        /// to remember, and the probe of the file size would send a fresh HEAD - which a cancellation
+        /// that has arrived in between must prevent the same way the check above prevents the first one.
+        if (stop_if_query_cancelled())
+            return false;
+
+        current_file_size = tryGetFileSizeFromReadBuffer(*read_buf);
 
         if (auto file_progress_callback = getContext()->getFileProgressCallback())
             file_progress_callback(FileProgress(0, current_file_size.value_or(0)));
@@ -802,8 +722,6 @@ StorageURLSource::StorageURLSource(
                 need_only_count);
 
             input_format->setSerializationHints(info.serialization_hints);
-            input_format->setMapColumnsReadByOneSide(info.map_columns_read_by_keys, info.map_columns_read_by_values);
-            input_format->setBucketsToRead(buckets_to_read);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -1052,96 +970,11 @@ Chunk StorageURLSource::generate()
             && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
-        /// With TopN dynamic filtering a row group can end up without a returned row only because the
-        /// running threshold had excluded it, so such a read must not record it as having no match for
-        /// the predicate. A cancelled read may stop before it has seen every row group, and the ones it
-        /// has not read report no matching rows either.
-        if (read_whole_file && input_format && current_query_condition_cache_file_key && !input_format->isTopKFilterApplied())
-            writeQueryConditionCacheEntry();
-
         releaseReader();
     }
 
     releaseReader();
     return {};
-}
-
-std::optional<String> StorageURLSource::makeQueryConditionCacheFileKey() const
-{
-    /// Only a table with a UUID has cache entries. A row policy pushed into the read is not part of
-    /// `condition_hash`, so with it a row group could be recorded as not matching only because the
-    /// policy rejected its rows, and a later query of another user with the same filter would skip them.
-    if (!allow_query_condition_cache || !format_filter_info || !format_filter_info->condition_hash
-        || format_filter_info->row_level_filter || storage_id.uuid == UUIDHelpers::Nil)
-        return {};
-
-    /// A web server reports no `ETag` here, so the version of a file is its modification time and size.
-    /// `Last-Modified` has a precision of a second, so a rewrite that keeps the size and lands in the same
-    /// second as the previous write produces the same version. Once the last modification is comfortably
-    /// in the past, any further write is guaranteed to change it. `Last-Modified` comes from the clock of the
-    /// web server, which can be behind the clock of this server, so the age of the modification is measured
-    /// against the `Date` of the same response, as RFC 9110 (section 8.8.2.2) does to decide whether
-    /// `Last-Modified` is a strong validator. The window is wider than for local files (see `StorageFileSource`)
-    /// to allow for the precision of the timestamps. Without the modification time, the date or the size,
-    /// the cache is not used.
-    static constexpr Int64 version_settle_seconds = 60;
-    if (!current_file_last_modified || !current_file_response_date || !current_file_size
-        || static_cast<Int64>(*current_file_last_modified) + version_settle_seconds > static_cast<Int64>(*current_file_response_date))
-        return {};
-
-    /// The URL can carry credentials (`user:password@`) or a signature in its query parameters. The cache
-    /// exposes the part name of an entry in `system.query_condition_cache` and in its logs, so the entry is
-    /// keyed by a hash of the URL instead of the URL itself. Both the URL the file was requested by and the one
-    /// it was read from after following the redirects are hashed: the same URL can redirect to different files,
-    /// which can have the same modification time and size, and the requests keep the credentials of the original
-    /// URL after a redirect, so different credentials redirected to the same URL can get different files.
-    /// The credentials the requests were sent with are hashed as well: they persist from a previous URL with
-    /// `user:password@` to the next ones without it, see `setCredentialsFromURL`. So are the request headers:
-    /// they can authenticate the request too (`Authorization`), and can change while the table keeps its UUID,
-    /// for example in a named collection.
-    SipHash hash;
-    for (const auto & component : {curr_uri.toString(), current_file_resolved_uri.toString(), credentials.getUsername(), credentials.getPassword()})
-    {
-        hash.update(component.size());
-        hash.update(component);
-    }
-    hash.update(request_headers_hash);
-    return QueryConditionCache::makeFilePartName(
-        getHexUIntLowercase(hash.get128()), fmt::format("{}_{}", *current_file_last_modified, *current_file_size));
-}
-
-void StorageURLSource::writeQueryConditionCacheEntry() const
-{
-    auto buckets = input_format->getMatchedBuckets();
-    if (!buckets)
-        return;
-
-    const auto & [matched_row_groups, total_row_groups] = *buckets;
-    std::unordered_set<size_t> matched_set(matched_row_groups.begin(), matched_row_groups.end());
-    MarkRanges unmatched_ranges;
-    for (size_t i = 0; i < total_row_groups; ++i)
-    {
-        if (!matched_set.contains(i))
-        {
-            if (!unmatched_ranges.empty() && unmatched_ranges.back().end == i)
-                unmatched_ranges.back().end++;
-            else
-                unmatched_ranges.push_back({UInt64(i), UInt64(i + 1)});
-        }
-    }
-
-    if (unmatched_ranges.empty())
-        return;
-
-    if (auto query_condition_cache = getContext()->getQueryConditionCache())
-        query_condition_cache->write(
-            storage_id.uuid,
-            *current_query_condition_cache_file_key,
-            *format_filter_info->condition_hash,
-            format_filter_info->filter_actions_dag->dumpNames(),
-            unmatched_ranges,
-            total_row_groups,
-            /*has_final_mark=*/false);
 }
 
 void StorageURLSource::onFinish() { parser_shared_resources->finishStream(); }
@@ -1366,18 +1199,12 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
 void StorageURLSource::addNumRowsToCache(const String & uri, size_t num_rows)
 {
-    if (!canUseNumRowsFromSchemaCache(format_settings, getContext()))
-        return;
-
     auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
     StorageURL::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);
 }
 
 std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time)
 {
-    if (!canUseNumRowsFromSchemaCache(format_settings, getContext()))
-        return std::nullopt;
-
     auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
     auto get_last_mod_time = [&]() -> std::optional<time_t>
     {
@@ -1510,8 +1337,7 @@ public:
         const ConnectionTimeouts & timeouts_,
         const CompressionMethod compression_method_,
         const HTTPHeaderEntries & headers_,
-        const String & http_method_,
-        PartitionedWriteAccessCheck write_access_check_)
+        const String & http_method_)
         : PartitionedSink(partition_strategy_, context_, std::make_shared<const Block>(sample_block_))
         , uri(uri_)
         , format(format_)
@@ -1522,17 +1348,12 @@ public:
         , compression_method(compression_method_)
         , headers(headers_)
         , http_method(http_method_)
-        , write_access_check(std::move(write_access_check_))
     {
     }
 
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
         std::string partition_path = partition_strategy->getPathForWrite(uri, partition_id);
-
-        /// The partition id comes from the data, so its destination is checked before anything is written to it.
-        if (write_access_check)
-            write_access_check(context, partition_path);
 
         context->getRemoteHostFilter().checkURL(Poco::URI(partition_path));
         return std::make_shared<StorageURLSink>(
@@ -1550,7 +1371,6 @@ private:
     const CompressionMethod compression_method;
     const HTTPHeaderEntries headers;
     const String http_method;
-    const PartitionedWriteAccessCheck write_access_check;
 };
 
 std::string IStorageURLBase::getReadMethod() const
@@ -1971,8 +1791,6 @@ public:
     bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
     void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
 
-    bool canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const override;
-
     ReadFromURL(
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
@@ -2045,12 +1863,6 @@ bool ReadFromURL::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_c
     return !info.columns_description.hasDefault(sort_column.name);
 }
 
-bool ReadFromURL::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const
-{
-    const auto settings = storage->format_settings ? *storage->format_settings : getFormatSettings(getContext());
-    return formatSkipsDataByStatistics(storage->format_name, settings) && info.canSkipDataByStatisticsOf(column);
-}
-
 void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
@@ -2059,7 +1871,7 @@ void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
-    if (formatNeedsEagerKeyConditionSets(storage->format_name))
+    if (boost::iequals(storage->format_name, "Parquet") || boost::iequals(storage->format_name, "ORC"))
         prepareEagerKeyConditionSets(
             filter_actions_dag,
             storage_snapshot, info.source_header,
@@ -2171,7 +1983,7 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
         /// Iterate through disclosed URLs and make a source for each file. Even a URL
         /// without globs must go through this iterator: it applies a deferred `_path`
         /// / `_file` filter before the source opens the URL.
-        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, is_url_with_globs, max_addresses, predicate, storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context, storage->format_settings);
+        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, is_url_with_globs, max_addresses, predicate, storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context);
 
         /// check if we filtered out all the paths
         if (glob_iterator->size() == 0)
@@ -2209,7 +2021,6 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
         info.getFormatFilter(filter_actions_dag), context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
-    format_filter_info->need_row_numbers = VirtualColumnUtils::hasRowDependentVirtualColumns(info.requested_virtual_columns);
     format_filter_info->top_k_filter = top_k_filter;
 
     for (size_t i = 0; i < num_streams; ++i)
@@ -2316,7 +2127,8 @@ void StorageURLWithFailover::read(
 
 SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
-    const String write_method = http_method.empty() ? Poco::Net::HTTPRequest::HTTP_POST : http_method;
+    if (http_method.empty())
+        http_method = Poco::Net::HTTPRequest::HTTP_POST;
 
     bool has_wildcards = uri.contains(PartitionedSink::PARTITION_ID_WILDCARD);
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
@@ -2345,8 +2157,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             getHTTPTimeouts(context),
             compression_method,
             headers,
-            write_method,
-            getPartitionedWriteAccessCheck());
+            http_method);
     }
 
     return std::make_shared<StorageURLSink>(
@@ -2358,7 +2169,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
         getHTTPTimeouts(context),
         compression_method,
         headers,
-        write_method);
+        http_method);
 }
 
 SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)
@@ -2679,34 +2490,6 @@ static bool urlHasUserInfo(const String & url)
     return authority_end == String::npos || at_pos < authority_end;
 }
 
-bool StorageURL::isAbsoluteURL(const String & url)
-{
-    /// A scheme is [A-Za-z][A-Za-z0-9+.-]*: per RFC 3986.
-    /// We check that the colon appears before any '/', '?', or '#' to avoid false positives
-    /// from embedded URLs in query parameters (e.g. "data.csv?next=https://other/a").
-    /// The scheme must be followed by "//": a name whose first path segment contains a colon
-    /// (e.g. `report:2026.csv`) technically parses as a URI with the scheme `report`, but every
-    /// scheme supported here uses the `scheme://` form, so such a name is not a usable absolute
-    /// URL. Per RFC 3986 it would have to be written as `./report:2026.csv` to be a relative
-    /// reference; instead of demanding that, it is resolved against the base as a relative path.
-    if (url.empty() || !std::isalpha(static_cast<unsigned char>(url[0])))
-        return false;
-
-    auto colon_pos = url.find(':');
-    auto first_special = url.find_first_of("/?#");
-    if (colon_pos == String::npos || (first_special != String::npos && colon_pos > first_special))
-        return false;
-
-    /// Verify all characters before the colon are valid scheme characters.
-    for (size_t i = 1; i < colon_pos; ++i)
-    {
-        char c = url[i];
-        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '+' && c != '-' && c != '.')
-            return false;
-    }
-    return url.compare(colon_pos + 1, 2, "//") == 0;
-}
-
 String StorageURL::resolveURLBase(const String & url, const String & base, const String & base_setting_name)
 {
     if (base.empty())
@@ -2720,8 +2503,35 @@ String StorageURL::resolveURLBase(const String & url, const String & base, const
     }
 
     /// If the URL already contains a scheme at the beginning, return as-is.
-    if (isAbsoluteURL(url))
-        return url;
+    /// A scheme is [A-Za-z][A-Za-z0-9+.-]*: per RFC 3986.
+    /// We check that the colon appears before any '/', '?', or '#' to avoid false positives
+    /// from embedded URLs in query parameters (e.g. "data.csv?next=https://other/a").
+    /// The scheme must be followed by "//": a name whose first path segment contains a colon
+    /// (e.g. `report:2026.csv`) technically parses as a URI with the scheme `report`, but every
+    /// scheme supported here uses the `scheme://` form, so such a name is not a usable absolute
+    /// URL. Per RFC 3986 it would have to be written as `./report:2026.csv` to be a relative
+    /// reference; instead of demanding that, it is resolved against the base as a relative path.
+    if (!url.empty() && std::isalpha(static_cast<unsigned char>(url[0])))
+    {
+        auto colon_pos = url.find(':');
+        auto first_special = url.find_first_of("/?#");
+        if (colon_pos != String::npos && (first_special == String::npos || colon_pos < first_special))
+        {
+            /// Verify all characters before the colon are valid scheme characters.
+            bool valid_scheme = true;
+            for (size_t i = 1; i < colon_pos; ++i)
+            {
+                char c = url[i];
+                if (!std::isalnum(static_cast<unsigned char>(c)) && c != '+' && c != '-' && c != '.')
+                {
+                    valid_scheme = false;
+                    break;
+                }
+            }
+            if (valid_scheme && url.compare(colon_pos + 1, 2, "//") == 0)
+                return url;
+        }
+    }
 
     auto scheme_end = base.find("://");
     /// Not echoed back: the value can carry a credential, and password masking anchors on the `://` it lacks.
@@ -2966,7 +2776,7 @@ AzureURLParts parseAzureURL(const String & url)
 void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(
-        args, "", format_name, context, /*with_structure=*/false, is_replayed_definition, /*replace_not_overridable=*/true);
+        args, "", format_name, context, /*with_structure=*/false, is_replayed_definition);
 
     /// Materialize the resolved URL into engine args so that DETACH/ATTACH and server restart
     /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
@@ -3240,7 +3050,7 @@ private:
             return;
 
         TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(
-            args, /*structure_=*/"", resolved_format, context, /*with_structure=*/false, is_replayed_definition, /*replace_not_overridable=*/true);
+            args, /*structure_=*/"", resolved_format, context, /*with_structure=*/false, is_replayed_definition);
     }
 
     StoragePtr nested;
@@ -3362,11 +3172,6 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
             engine_name, configuration.url);
 
     const String engine_name_str = engine_name;
-
-    /// The query named `URL`, which passed the temporary-table check; the engine built here must pass it too.
-    if (args.query.isTemporary())
-        StorageFactory::instance().checkTemporaryTableEngine(engine_name_str, context);
-
     StorageFactory::Arguments delegate_factory_args
     {
         .engine_name = engine_name_str,
@@ -3608,7 +3413,6 @@ void registerStorageURL(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::URL,
             .has_builtin_setting_fn = Settings::hasBuiltin,
-            .supports_temporary = true,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -3620,7 +3424,7 @@ Syntax: `URL(URL [,Format] [,CompressionMethod])`
 
 - The `URL` parameter must conform to the structure of a Uniform Resource Locator. For an `http`/`https` URL (the default backend), it must point to a server that uses HTTP or HTTPS, and getting a response from the server does not require any additional headers. A URL with a recognized non-HTTP scheme (`file://`, `s3://`, `az://`, `hdfs://`, …) is instead delegated to the matching engine — see [Dispatching by URL scheme](#scheme-dispatch) below.
 
-- The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](/reference/formats/index#formats-overview).
+- The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](/reference/formats#formats-overview).
 
     If this argument is not specified, ClickHouse detects the format automatically from the suffix of the `URL` parameter. If the suffix of `URL` parameter does not match any supported formats, it fails to create table. For example, for engine expression `URL('http://localhost/test.json')`, `JSON` format is applied.
 

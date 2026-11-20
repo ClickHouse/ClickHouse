@@ -5,7 +5,6 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/IJoin.h>
-#include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -13,7 +12,6 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <Common/StackWithMemoryTracking.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -110,7 +108,7 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
     {
         if (node->type == ActionsDAG::ActionType::FUNCTION)
         {
-            StackWithMemoryTracking<const ActionsDAG::Node *> nodes_to_process;
+            std::stack<const ActionsDAG::Node *> nodes_to_process;
             nodes_to_process.push(node);
             while (!nodes_to_process.empty())
             {
@@ -150,12 +148,6 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
         /// JOIN condition: t1.name = t2.name and t1.uid > t2.uid
         /// There can be multiple rows matching the join condition (same name, but different uid).
         if (predicate_op != JoinConditionOperator::Equals)
-            return 0;
-
-        /// The grouping keys are unique as raw values. A key pair the JOIN does not compare exactly, such as
-        /// `FixedString` vs `String`, matches one value to several groups (`'a'` and `'a\0\0'`), so uniqueness is lost.
-        const bool is_key_pair = (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
-        if (is_key_pair && !JoinCommon::isExactJoinKeyEquality(lhs.getType(), rhs.getType()))
             return 0;
 
         if (lhs.fromLeft() && rhs.fromRight())

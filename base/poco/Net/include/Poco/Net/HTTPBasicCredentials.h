@@ -20,8 +20,6 @@
 
 #include "Poco/Net/Net.h"
 
-#include <string_view>
-
 
 namespace Poco
 {
@@ -41,7 +39,7 @@ namespace Net
         HTTPBasicCredentials();
         /// Creates an empty HTTPBasicCredentials object.
 
-        HTTPBasicCredentials(std::string_view username, std::string_view password);
+        HTTPBasicCredentials(const std::string & username, const std::string & password);
         /// Creates a HTTPBasicCredentials object with the given username and password.
 
         explicit HTTPBasicCredentials(const HTTPRequest & request);
@@ -62,13 +60,13 @@ namespace Net
         void clear();
         /// Clears both username and password.
 
-        void setUsername(std::string_view username);
+        void setUsername(const std::string & username);
         /// Sets the username.
 
         const std::string & getUsername() const;
         /// Returns the username.
 
-        void setPassword(std::string_view password);
+        void setPassword(const std::string & password);
         /// Sets the password.
 
         const std::string & getPassword() const;

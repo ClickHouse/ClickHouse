@@ -34,10 +34,12 @@ GRANT CREATE TEMPORARY TABLE ON *.* TO $definer;
 CREATE VIEW $db.definer_view DEFINER = $definer SQL SECURITY DEFINER AS
     SELECT n.number FROM numbers(1) AS n
     INNER JOIN (SELECT 'JOIN_SIDE_KEY' AS k) AS s ON HMAC('sha256', toString(n.number), s.k) = ''
-    WHERE toString(n.number) = (SELECT s FROM $db.private_table);
+    WHERE toString(n.number) = (SELECT s FROM $db.private_table)
+    SETTINGS enable_analyzer = 1;
 
 CREATE VIEW $db.none_view SQL SECURITY NONE AS
-    SELECT number FROM numbers(1) WHERE toString(number) = (SELECT s FROM $db.private_table);
+    SELECT number FROM numbers(1) WHERE toString(number) = (SELECT s FROM $db.private_table)
+    SETTINGS enable_analyzer = 1;
 
 GRANT SELECT ON $db.definer_view TO $definer, $reader;
 GRANT SELECT ON $db.none_view TO $definer, $reader;

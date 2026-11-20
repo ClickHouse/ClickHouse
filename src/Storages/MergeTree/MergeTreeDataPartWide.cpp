@@ -9,7 +9,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
-#include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/CurrentThread.h>
@@ -82,7 +81,7 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
 
 Strings MergeTreeDataPartWide::getPreferredFileOrder() const
 {
-    Strings preferred_order = getCommonMetadataFiles();
+    Strings preferred_order = COMMON_METADATA_FILES;
 
     /// Files for partition key columns MinMax indices
     preferred_order.append_range(getMinMaxIndex()->getProbablyWrittenFiles(*this));
@@ -118,7 +117,7 @@ Strings MergeTreeDataPartWide::getPreferredFileOrder() const
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         for (const String & name : projection.sample_block.getNames())
-            preferred_order.push_back(escapeForFileName(name) + getMarksFileExtension());
+            preferred_order.push_back(name + getMarksFileExtension());
     }
 
     return preferred_order;

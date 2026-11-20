@@ -78,27 +78,3 @@ FROM (SELECT arrayJoin([toDateTime('2021-03-28 03:29:59', 'Europe/Amsterdam'), t
 SELECT
     toStartOfInterval(toDateTime64('2021-03-28 03:45:00', 3, 'Europe/Amsterdam'), INTERVAL 1 QUARTER, toDateTime64('2020-12-28 03:30:00.500', 3, 'Europe/Amsterdam'), 'Europe/Amsterdam'),
     toStartOfInterval(toDateTime('2021-03-28 03:45:00', 'Europe/Amsterdam'), INTERVAL 1 YEAR, toDateTime('2020-03-28 03:30:00', 'Europe/Amsterdam'), 'Europe/Amsterdam');
-
--- An origin in the second occurrence of a repeated hour starts its own bucket. Clocks in `Europe/Amsterdam` move
--- from 03:00 back to 02:00 on 2021-10-31, so 01:30 UTC is the second 02:30; in `America/New_York`, 06:30 UTC on
--- 2021-11-07 is the second 01:30.
-SELECT 'Repeated hour';
-WITH toTimeZone(toDateTime('2021-10-31 01:30:00', 'UTC'), 'Europe/Amsterdam') AS origin
-SELECT t, toTimeZone(toStartOfInterval(t, INTERVAL 1 MONTH, origin, 'Europe/Amsterdam'), 'UTC')
-FROM (SELECT arrayJoin([toDateTime('2021-10-31 01:30:00'), toDateTime('2021-11-15 00:00:00'), toDateTime('2021-11-30 01:29:59'), toDateTime('2021-11-30 01:30:00')]) AS t);
-WITH toTimeZone(toDateTime('2021-10-31 01:30:00', 'UTC'), 'Europe/Amsterdam') AS origin
-SELECT
-    toTimeZone(toStartOfInterval(origin + toIntervalDay(40), INTERVAL 2 MONTH, origin, 'Europe/Amsterdam'), 'UTC'),
-    toTimeZone(toStartOfInterval(origin, INTERVAL 1 QUARTER, origin, 'Europe/Amsterdam'), 'UTC'),
-    toTimeZone(toStartOfInterval(origin, INTERVAL 1 YEAR, origin, 'Europe/Amsterdam'), 'UTC');
-SELECT
-    toTimeZone(toStartOfInterval(toDateTime64('2021-10-31 01:30:00.600', 3), INTERVAL 1 MONTH, toTimeZone(toDateTime64('2021-10-31 01:30:00.500', 3), 'Europe/Amsterdam'), 'Europe/Amsterdam'), 'UTC'),
-    toTimeZone(toStartOfInterval(toDateTime('2021-11-07 06:30:00'), INTERVAL 1 MONTH, toTimeZone(toDateTime('2021-11-07 06:30:00'), 'America/New_York'), 'America/New_York'), 'UTC');
-WITH
-    toTimeZone(toDateTime64('2021-10-31 01:30:00.500', 3), 'Europe/Amsterdam') AS origin,
-    origin + toIntervalMillisecond(number * 7654321) AS t,
-    toStartOfInterval(t, INTERVAL 1 MONTH, origin) AS m,
-    toStartOfInterval(t, INTERVAL 1 QUARTER, origin) AS q,
-    toStartOfInterval(t, INTERVAL 1 YEAR, origin) AS y
-SELECT countIf(m < origin OR m > t), countIf(q < origin OR q > t), countIf(y < origin OR y > t)
-FROM numbers(20000);

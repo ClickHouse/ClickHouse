@@ -1,8 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <Columns/ColumnConst.h>
-#include <Interpreters/ActionsDAGTraversal.h>
-#include <Processors/QueryPlan/FilterStep.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 
 
@@ -34,7 +32,7 @@ struct NodeInfo
     bool may_throw = false;
 
     /// True if both nodes read the same columns and indexes, so their conditions may share a step.
-    [[nodiscard]] bool readsSameColumns(const NodeInfo & other) const
+    bool readsSameColumns(const NodeInfo & other) const
     {
         return required_table_columns == other.required_table_columns && required_indexes == other.required_indexes;
     }
@@ -42,12 +40,13 @@ struct NodeInfo
 
 /// Returns the argument types of a function node, as expected by
 /// IFunctionBase::isSuitableForShortCircuitArgumentsExecution.
+/// Mirrors getDataTypesWithConstInfoFromNodes in ExpressionActions.cpp, which is file local there.
 DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawConstPtrs & nodes)
 {
     DataTypesWithConstInfo types;
     types.reserve(nodes.size());
     for (const auto & child : nodes)
-        types.push_back({child->result_type, child->column != nullptr, child->column.get()});
+        types.push_back({child->result_type, child->column != nullptr});
     return types;
 }
 
@@ -103,7 +102,8 @@ void fillRequiredColumns(
     /// delegates to it as well, through FunctionToExecutableFunctionAdaptor. It is imprecise in
     /// both directions: it reports true for merely expensive functions, and false for some
     /// functions that do throw while parsing row values (for example addDays(String, ...) via
-    /// FunctionDateOrDateTimeAddInterval). Step 4 of `tryBuildPrewhereSteps` clears the flag with `prewhereConditionCannotThrow`.
+    /// FunctionDateOrDateTimeAddInterval). There is no sound can-throw oracle in the tree yet,
+    /// see the TODO on canThrow in IFunctionAdaptors.h.
     if (!node_info.may_throw && node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
         && (node->function_base->isSuitableForShortCircuitArgumentsExecution(getArgumentTypesWithConstInfo(node->children))
             || node->function_base->isExpensive()))
@@ -246,47 +246,6 @@ const ActionsDAG::Node & addFunction(
 
 }
 
-bool isDynamicRuntimePrewhereFilter(const ActionsDAG::Node * node)
-{
-    if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
-        return false;
-
-    const auto & name = node->function_base->getName();
-    /// `__topKFilter`: the dynamic threshold filter `optimizeTopK` injects for `ORDER BY ... LIMIT`.
-    /// `__applyFilter`: a join runtime filter pushed into the probe-side scan.
-    if (name == "__topKFilter" || name == "__applyFilter")
-        return true;
-
-    /// An ANTI join wraps its runtime filter as `or(__applyFilter(...), isNull(key))`.
-    if (name == "or")
-        return std::ranges::any_of(node->children, [](const auto * child) { return isDynamicRuntimePrewhereFilter(child); });
-
-    return false;
-}
-
-bool prewhereConditionCannotThrow(const ActionsDAG::Node * condition)
-{
-    return allReachableNodes({condition}, [](const ActionsDAG::Node * node)
-    {
-        if (node->type == ActionsDAG::ActionType::ARRAY_JOIN || node->type == ActionsDAG::ActionType::PLACEHOLDER)
-            return false;
-
-        /// A function with a known constant result is not executed.
-        if (node->type != ActionsDAG::ActionType::FUNCTION || node->column)
-            return true;
-
-        return node->function_base && !node->function_base->isExpensive()
-            && !node->function_base->canThrow(getArgumentTypesWithConstInfo(node->children));
-    });
-}
-
-bool prewhereIsEntirelyQueryPredicate(const ActionsDAG & prewhere_actions, const String & filter_column_name)
-{
-    ActionsDAG::NodeRawConstPtrs atoms;
-    flattenConjunction(&prewhere_actions.findInOutputs(filter_column_name), atoms);
-    return std::ranges::none_of(atoms, [](const auto * node) { return isDynamicRuntimePrewhereFilter(node); });
-}
-
 /// We want to build a sequence of steps that will compute parts of the prewhere condition.
 /// Each step reads some new columns and computes some new expressions and a filter condition.
 /// The last step computes the final filter condition and the remaining expressions that are required for the main query.
@@ -400,25 +359,14 @@ bool tryBuildPrewhereSteps(
             num_attributed_steps = condition_groups.size();
 
         const bool same_columns = !condition_groups.empty() && nodes_info[condition_groups.back().front()].readsSameColumns(node_info);
-        /// A synthesized dynamic filter (`__topKFilter` of `ORDER BY ... LIMIT`, a join runtime filter `__applyFilter`)
-        /// must never share a step with a user query predicate, even when they read the same columns. In one step the
-        /// two are evaluated together on the same block, so the step's rejections cannot be split between them: counting
-        /// the whole step toward the PREWHERE-effectiveness events would attribute the dynamic filter's rejections to
-        /// PREWHERE, and excluding it would drop the user predicate's (issue #131263). Keeping each in its own step lets
-        /// it be attributed on its own (see `is_query_prewhere`). The shared column is still read once (see
-        /// `group_read_step`), and a leading `__topKFilter` in its own step keeps its filter optional once it is selective.
-        const bool crosses_dynamic_filter_boundary = !condition_groups.empty()
-            && isDynamicRuntimePrewhereFilter(node) != isDynamicRuntimePrewhereFilter(condition_groups.back().front());
 
-        const bool may_throw = node_info.may_throw && !prewhereConditionCannotThrow(node);
-
-        if (same_columns && !may_throw && !is_first_unattributed && !crosses_dynamic_filter_boundary)
+        if (same_columns && !node_info.may_throw && !is_first_unattributed)
         {
             condition_groups.back().push_back(node);
             continue;
         }
 
-        if (!condition_groups.empty() && may_throw)
+        if (!condition_groups.empty() && node_info.may_throw)
             groups_requiring_filtered_input.insert(condition_groups.size());
 
         group_read_step.push_back(same_columns && read_ahead_columns ? group_read_step.back() : condition_groups.size());
@@ -443,7 +391,7 @@ bool tryBuildPrewhereSteps(
     struct Step
     {
         ActionsDAGPtr actions;
-        /// Original condition if the step has one condition, null for an AND of several.
+        /// Original condition, in case if we have only one condition, and it was not cast
         const ActionsDAG::Node * original_node;
         /// Result condition node
         const ActionsDAG::Node * result_node;
@@ -481,7 +429,6 @@ bool tryBuildPrewhereSteps(
         else
         {
             result_node = new_condition_nodes.front();
-            original_node = condition_group.front();
         }
 
         step_dag->getOutputs().insert(step_dag->getOutputs().begin(), result_node);
@@ -494,7 +441,6 @@ bool tryBuildPrewhereSteps(
     /// 7. Find all outputs that were computed in the already built DAGs, mark these nodes as outputs in the steps where they were computed
     /// 8. Add computation of the remaining outputs to the last step with the procedure similar to 4
     std::unordered_set<const ActionsDAG::Node *> all_outputs;
-    ActionsDAG::NodeRawConstPtrs outputs_computed_in_last_step;
     for (const auto * output : original_outputs)
     {
         all_outputs.insert(output);
@@ -522,53 +468,29 @@ bool tryBuildPrewhereSteps(
         {
             const auto & node_in_new_dag = addClonedDAGToDAG(steps.size() - 1, output, steps.back().actions, node_remap, node_to_step);
             steps.back().actions->getOutputs().push_back(&node_in_new_dag);
-            outputs_computed_in_last_step.push_back(output);
         }
     }
 
     /// 9. Build PrewhereExprInfo
     {
-        /// Deferring a step filter needs a reader that neither converts nor fills PREWHERE columns, and a filtering last step.
-        const bool can_skip_forced_filters = force_short_circuit_execution && read_ahead_columns && prewhere_info->need_filter;
-
         for (size_t step_index = 0; step_index < steps.size(); ++step_index)
         {
             auto & step = steps[step_index];
-            const size_t next = step_index + 1;
-            const bool next_step_can_see_rejected_rows = can_skip_forced_filters && next < steps.size()
-                && std::ranges::all_of(condition_groups[next], canBeMovedToTheFrontOfAndChain)
-                && (next + 1 < steps.size() || std::ranges::all_of(outputs_computed_in_last_step, canBeMovedToTheFrontOfAndChain));
-
-            /// Count the step toward the PREWHERE-effectiveness events only when every one of its conditions is
-            /// a user query predicate. A step that carries any synthesized dynamic filter (`ORDER BY ... LIMIT`
-            /// top-K, a join runtime filter) is not attributed to PREWHERE: its conditions are evaluated together
-            /// on the same block, so a mixed step's rejections cannot be split between the user predicate and the
-            /// dynamic filter, and counting it would attribute the dynamic filter's rejections to PREWHERE.
-            const bool step_is_query_prewhere = std::ranges::none_of(
-                condition_groups[step_index], [](const auto * node) { return isDynamicRuntimePrewhereFilter(node); });
-
             PrewhereExprStep new_step
             {
                 .type = PrewhereExprStep::Filter,
                 .actions = std::make_shared<ExpressionActions>(std::move(*step.actions), actions_settings),
                 .filter_column_name = step.result_node->result_name,
-                /// Don't remove a condition that is an original output or that a later step uses.
-                /// An AND of several conditions is a node the steps create, nothing else references it.
-                /// A stored column used as the condition stays: a later step may read it as the parent of a subcolumn.
-                .remove_filter_column = !step.original_node
-                    || (step.original_node->type != ActionsDAG::ActionType::INPUT && !all_outputs.contains(step.original_node)
-                        && node_to_step[step.original_node] <= step_index),
+                /// Don't remove if it's in the list of original outputs
+                .remove_filter_column =
+                    step.original_node && !all_outputs.contains(step.original_node) && node_to_step[step.original_node] <= step_index,
                 /// A step that precedes a may_throw condition must materialize its filter, so that
                 /// the throwing condition is not evaluated on the rows this step rejects.
-                .need_filter = groups_requiring_filtered_input.contains(step_index + 1) || (force_short_circuit_execution && !next_step_can_see_rejected_rows),
+                .need_filter = force_short_circuit_execution || groups_requiring_filtered_input.contains(step_index + 1),
                 .perform_alter_conversions = true,
                 .columns_overwritten_by_chain = {},
                 .mutation_version = std::nullopt,
                 .query_condition_cache_attribution_boundary = step_index + 1 == num_attributed_steps,
-                .is_query_prewhere = step_is_query_prewhere,
-                /// A split step that is not entirely a user predicate carries a synthesized dynamic filter: the
-                /// only non-user conjuncts the splitter sees come from the query predicate's dynamic filters.
-                .is_synthesized_dynamic_filter = !step_is_query_prewhere,
             };
 
             prewhere.steps.push_back(std::make_shared<PrewhereExprStep>(std::move(new_step)));

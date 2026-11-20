@@ -171,7 +171,7 @@ public:
     public:
         virtual ~Iterator() = default;
 
-        [[nodiscard]] virtual EntryPtr getEntry() const = 0;
+        virtual EntryPtr getEntry() const = 0;
 
         /// Note: IncrementSize unlike decrementSize requires a cache lock, because
         /// it requires more consistency guarantees for eviction.
@@ -180,7 +180,7 @@ public:
 
         virtual void decrementSize(size_t size) = 0;
 
-        [[nodiscard]] virtual bool isValid(const CachePriorityGuard::WriteLock &) const = 0;
+        virtual bool isValid(const CachePriorityGuard::WriteLock &) const = 0;
 
         /// Batch removal: the caller holds the queue's write lock across several removes.
         virtual void remove(const CachePriorityGuard::WriteLock &) = 0;
@@ -196,13 +196,13 @@ public:
         /// would only pin the entry allocation until the cleanup discards it).
         virtual void invalidateBeforeRemove(const CachePriorityGuard::WriteLock &) noexcept { invalidate(); }
 
-        [[nodiscard]] virtual QueueEntryType getType() const = 0;
+        virtual QueueEntryType getType() const = 0;
 
-        [[nodiscard]] virtual const Iterator * getNestedOrThis() const { return this; }
+        virtual const Iterator * getNestedOrThis() const { return this; }
         virtual Iterator * getNestedOrThis() { return this; }
 
         /// The structural guard protecting this iterator's queue entry.
-        [[nodiscard]] virtual CachePriorityGuard & getPriorityGuard() const = 0;
+        virtual CachePriorityGuard & getPriorityGuard() const = 0;
 
         virtual void check(const CacheStateGuard::Lock &) const {}
     };
@@ -239,17 +239,13 @@ public:
     /// Check correctness of cache state.
     virtual void check(const CacheStateGuard::Lock &) const;
 
-    /// `reservee_queue_type` is the queue where the space is needed (for example `SLRU_Protected`),
-    /// when the caller cannot pass `reservee`, because the reservee belongs to another priority object.
-    /// `None` means that the queue follows from `reservee`.
-    virtual EvictionInfoPtr collectEvictionInfo( /// NOLINT
+    virtual EvictionInfoPtr collectEvictionInfo(
         size_t size,
         size_t elements,
         IFileCachePriority::Iterator * reservee,
         bool is_total_space_cleanup,
         const IFileCachePriority::OriginInfo & origin,
-        const CacheStateGuard::Lock &,
-        QueueEntryType reservee_queue_type = QueueEntryType::None) = 0;
+        const CacheStateGuard::Lock &) = 0;
 
     enum class IterationResult : uint8_t
     {
@@ -315,50 +311,11 @@ public:
         FromHead,   /// Start from the queue head; do not persist a position.
         Reserve,    /// Foreground reserve path (shared by concurrent reservers).
         Background, /// Background free-space keeping thread.
-        Promotion,  /// SLRU downgrade walk over the protected queue (shared by concurrent promoters).
-    };
-
-    /// A cursor shared by the threads which run the same kind of eviction walk. A lone thread
-    /// resets it and scans from the head in strict LRU order; overlapping threads resume where the
-    /// previous one stopped, a clock-like order that is cheaper than rescanning the head each time.
-    class SharedEvictionCursor : private boost::noncopyable
-    {
-    public:
-        explicit SharedEvictionCursor(EvictionCursor cursor_) : cursor(cursor_) {}
-
-        /// Counts the current thread as an evictor for as long as it may walk.
-        class ActiveEvictor : private boost::noncopyable
-        {
-        public:
-            explicit ActiveEvictor(SharedEvictionCursor & shared_) : shared(shared_)
-            {
-                shared.active_evictors.fetch_add(1, std::memory_order_relaxed);
-            }
-            ~ActiveEvictor() { shared.active_evictors.fetch_sub(1, std::memory_order_relaxed); }
-
-        private:
-            SharedEvictionCursor & shared;
-        };
-
-        /// Resets the cursor when this thread is the only active evictor. Called right before
-        /// the walk, so that it sees the evictors active at that moment.
-        EvictionCursor getCursor(IFileCachePriority & priority) const
-        {
-            if (active_evictors.load(std::memory_order_relaxed) > 1)
-                return cursor;
-            priority.resetEvictionPos(cursor);
-            return EvictionCursor::FromHead;
-        }
-
-    private:
-        const EvictionCursor cursor;
-        std::atomic<size_t> active_evictors = 0;
     };
 
     /// Collect eviction candidates sufficient to free `size` bytes
     /// and `elements` elements from cache.
-    /// Pass the same `reservee_queue_type` as to `collectEvictionInfo`: both must target the same queue.
-    virtual bool collectCandidatesForEviction( /// NOLINT
+    virtual bool collectCandidatesForEviction(
         EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
@@ -367,8 +324,7 @@ public:
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
-        CacheStateGuard &,
-        QueueEntryType reservee_queue_type = QueueEntryType::None) = 0;
+        CacheStateGuard &) = 0;
 
     /// Collect eviction candidates sufficient to have `desired_size`
     /// and `desired_elements_num` as current cache state.
@@ -446,9 +402,9 @@ public:
             priority.holdImpl(size, elements, lock);
         }
 
-        [[nodiscard]] size_t getSize() const { return size; }
+        size_t getSize() const { return size; }
 
-        [[nodiscard]] size_t getElements() const { return elements; }
+        size_t getElements() const { return elements; }
 
         void release(const CacheStateGuard::Lock &) { releaseUnlocked(); }
 
