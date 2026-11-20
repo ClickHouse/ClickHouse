@@ -140,11 +140,15 @@ Number of groups whose key columns were not materialized while a two-level bucke
 
 ### AggregationIndexedTables {#aggregationindexedtables}
 
-How many single-level aggregation hash tables had their cells indexed by partitions of the hashes, so that the merges read the cells of a part of a table without converting it to two-level or walking the whole table. The adaptive aggregation indexes the single-level table of each thread when the thread finishes, unless its key is a single `String` or `FixedString`.
+How many single-level aggregation hash tables had their cells indexed by partitions of the hashes, so that the merges read the cells of a part of a table without converting it to two-level or walking the whole table. The adaptive aggregation indexes the single-level table of each thread when the thread finishes.
 
 ### AggregationOptimizedEqualRangesOfKeys {#aggregationoptimizedequalrangesofkeys}
 
 For how many blocks optimization of equal ranges of keys was applied
+
+### AggregationPartitionsMergedByCellIndex {#aggregationpartitionsmergedbycellindex}
+
+How many hash partitions the parallel merge of single-level aggregation hash tables read through the cell indexes of the tables (see `AggregationIndexedTables`), instead of scanning every cell of every table for each partition (see `enable_parallel_single_level_merge_by_index`).
 
 ### AggregationPreallocatedElementsInHashTables {#aggregationpreallocatedelementsinhashtables}
 
@@ -488,7 +492,7 @@ Number of times automatic parallel replicas did not even build the plan with par
 
 ### AutoParallelReplicasStatisticsDrifted {#autoparallelreplicasstatisticsdrifted}
 
-Number of times the rows read from storage differed from the cached statistics by more than 2x, so automatic parallel replicas recollected them instead of deciding
+Number of times the rows read from storage differed from the cached statistics by more than `automatic_parallel_replicas_statistics_drift_ratio`, so automatic parallel replicas recollected them instead of deciding
 
 ### AzureClients {#azureclients}
 
@@ -825,6 +829,10 @@ Amount of data fetched into filesystem cache by dedicated background threads.
 ### CacheWarmerDataPartsDownloaded {#cachewarmerdatapartsdownloaded}
 
 Number of data parts that were fully fetched by CacheWarmer.
+
+### CacheWarmerDataPartsSkippedSameAvailabilityZone {#cachewarmerdatapartsskippedsameavailabilityzone}
+
+Number of data parts `CacheWarmer` did not fetch because the distributed cache was the only cache to warm and the part was produced in the current availability zone, so that cache already holds it.
 
 ### CannotRemoveEphemeralNode {#cannotremoveephemeralnode}
 
@@ -1600,6 +1608,10 @@ Distributed Cache connection event. The number of open connections to distribute
 
 Distributed Cache connection event. The number of open connections to distributed cache bypassing pool
 
+### DistrCachePooledConnectionsDroppedOnSlowDown {#distrcachepooledconnectionsdroppedonslowdown}
+
+Distributed Cache client event. Number of idle pooled connections closed because their server asked this client to slow down
+
 ### DistrCachePrecomputeRangesMicroseconds {#distrcacheprecomputerangesmicroseconds}
 
 Distributed Cache read buffer event. Time spent to precompute read ranges
@@ -1686,7 +1698,7 @@ Distributed Cache client event. Total number of received Ok packets received fro
 
 ### DistrCacheReceivedSlowDownPackets {#distrcachereceivedslowdownpackets}
 
-Distributed Cache client event. Total number of received SlowDown packets received from distributed cache (the server rejected a new connection because this client has too many open connections relative to its weight)
+Distributed Cache client event. Total number of SlowDown packets received from distributed cache servers: either a new connection was rejected because this client has too many open connections relative to its weight, or too many of this client's requests are stuck on that server
 
 ### DistrCacheReceivedStopPackets {#distrcachereceivedstoppackets}
 
@@ -1780,17 +1792,29 @@ Distributed Cache server event. The number of bytes written to cache in distribu
 
 Distributed Cache server event. The number of bytes read from object storage in distributed cache while reading from filesystem cache
 
+### DistrCacheServerClientDisconnectedMidRequest {#distrcacheserverclientdisconnectedmidrequest}
+
+Distributed Cache server event. Number of `Read` requests the server stopped serving because the connection reached end of stream mid-request: the client closed it, or the registry shut the socket down
+
+### DistrCacheServerClientSlowDownWindowsOpened {#distrcacheserverclientslowdownwindowsopened}
+
+Distributed Cache server event. Number of times the stuck-request scan opened a client's slow-down window, because that client's stuck in-flight requests reached `distributed_cache_slow_down_min_stuck_requests` and a `distributed_cache_slow_down_stuck_requests_ratio` share
+
 ### DistrCacheServerCommittedTemporaryFilesLockWaitMicroseconds {#distrcacheservercommittedtemporaryfileslockwaitmicroseconds}
 
 Distributed Cache server event. Time spent waiting for the committed temporary-files mutex on contention.
 
 ### DistrCacheServerConnectionRegistryClientLockWaitMicroseconds {#distrcacheserverconnectionregistryclientlockwaitmicroseconds}
 
-Distributed Cache server event. Time spent waiting for a per-client connection bucket mutex on contention (register/unregister/identify/eviction)
+Distributed Cache server event. Time spent waiting for a per-client connection bucket mutex on contention (register/unregister/identify/eviction, the stuck-request scan, temporary-data holds, `system.distributed_cache_server_connections`)
 
 ### DistrCacheServerConnectionRegistryLockWaitMicroseconds {#distrcacheserverconnectionregistrylockwaitmicroseconds}
 
 Distributed Cache server event. Time spent waiting for the global connection registry mutex on contention (identify, setClientWeight, eviction, and unregister when a reindex or bucket removal is due)
+
+### DistrCacheServerConnectionsClosedOnStuckRequest {#distrcacheserverconnectionsclosedonstuckrequest}
+
+Distributed Cache server event. Number of connections shut down by the stuck-request scan because their in-flight request made no progress for at least `distributed_cache_stuck_request_no_progress_timeout_ms`, or ran past `distributed_cache_max_request_processing_time_ms`
 
 ### DistrCacheServerConnectionsDroppedOverLimit {#distrcacheserverconnectionsdroppedoverlimit}
 
@@ -1828,6 +1852,10 @@ Distributed Cache server event. Number of RefreshCredentials client packets in D
 
 Distributed Cache server event. Number of requests whose client closed the connection without sending EndRequest (a killed client, a client whose socket was not writable, or an old client), so the server stopped serving them on EOF. Closes driven by this server (shutdown or connection eviction) are not counted
 
+### DistrCacheServerRequestsEndedOnProcessingTime {#distrcacheserverrequestsendedonprocessingtime}
+
+Distributed Cache server event. The number of in-flight requests ended because the server had been processing them for longer than `distributed_cache_max_request_processing_time_ms`: with an `Error` or a `Stop`, or with a `SlowDown` when the client is also asked to back off
+
 ### DistrCacheServerReusedS3CachedClients {#distrcacheserverreuseds3cachedclients}
 
 Distributed Cache server event. The number of reused cached s3 clients
@@ -1839,6 +1867,10 @@ Distributed Cache server event. Time spent in shutdownAllConnections waiting for
 ### DistrCacheServerSkipped {#distrcacheserverskipped}
 
 Distributed Cache server event. The number of times distributed cache server was skipped because of previous failed connection attempts
+
+### DistrCacheServerSlowDownRequests {#distrcacheserverslowdownrequests}
+
+Distributed Cache server event. The number of requests ended with a SlowDown packet while their client's slow-down window was open: at the start of a read or write request, or because the server had been processing one for longer than `distributed_cache_max_request_processing_time_ms`
 
 ### DistrCacheServerStartRequestPackets {#distrcacheserverstartrequestpackets}
 
@@ -1887,6 +1919,10 @@ Distributed Cache event. The number of server switches during read or write beca
 ### DistrCacheSkippedWrites {#distrcacheskippedwrites}
 
 Distributed Cache write buffer event. Number of write buffers that skipped the write-through cache write because no background write slot was free (the limit set by the `distributed_cache_write_pool_size` server setting was reached) or a background write could not be started. The data is still written to object storage
+
+### DistrCacheSlowedDownServerSkipped {#distrcachesloweddownserverskipped}
+
+Distributed Cache client event. Number of times a distributed cache server was passed over because it asked this client to slow down
 
 ### DistrCacheStaleReconnections {#distrcachestalereconnections}
 
@@ -2660,6 +2696,10 @@ Filesystem cache space reservation attempt
 
 Filesystem cache space reservation time
 
+### FilesystemCacheSkippedBusyPriorityLock {#filesystemcacheskippedbusyprioritylock}
+
+Number of downgrade walks of an SLRU filesystem cache promotion skipped because a writer held or waited for the priority lock
+
 ### FilesystemCacheStateLockMicroseconds {#filesystemcachestatelockmicroseconds}
 
 Lock filesystem cache time for state lock
@@ -2731,6 +2771,30 @@ Counts the total number of times the global thread pool has shrunk by removing t
 ### GlobalThreadPoolThreadCreationMicroseconds {#globalthreadpoolthreadcreationmicroseconds}
 
 Total time spent waiting for new threads to start.
+
+### GPUAggregationBatches {#gpuaggregationbatches}
+
+Number of batches of rows sent to a GPU by the experimental GPU aggregation. One batch is one transfer and one reduction or grouping.
+
+### GPUAggregationMicroseconds {#gpuaggregationmicroseconds}
+
+Total time spent transferring batches of rows to a GPU and aggregating them there.
+
+### GPUAggregationRows {#gpuaggregationrows}
+
+Number of rows aggregated on a GPU by the experimental GPU aggregation.
+
+### GranulesDroppedByPartitionKey {#granulesdroppedbypartitionkey}
+
+Number of marks (index granules) excluded from reading a MergeTree table by the partition key and its min-max index during index analysis.
+
+### GranulesDroppedByPrimaryKey {#granulesdroppedbyprimarykey}
+
+Number of marks (index granules) excluded from reading a MergeTree table by the primary key during index analysis.
+
+### GranulesDroppedBySkipIndexes {#granulesdroppedbyskipindexes}
+
+Number of marks (index granules) excluded from reading a MergeTree table by data skipping indexes during index analysis. Indexes applied at read time (`use_skip_indexes_on_data_read`) are not counted.
 
 ### GranulesReadByPrewhereReaders {#granulesreadbyprewherereaders}
 
@@ -2818,11 +2882,7 @@ Number of reused server HTTP connections
 
 ### IcebergCompactionCleanupDeferredByReaders {#icebergcompactioncleanupdeferredbyreaders}
 
-Number of times the removal of data files superseded by Iceberg compaction was postponed because a query on this or another replica was still reading a snapshot that references them.
-
-### IcebergCompactionCleanupDeferredBySnapshotLifetime {#icebergcompactioncleanupdeferredbysnapshotlifetime}
-
-Number of times the removal of data files superseded by Iceberg compaction was postponed because the compaction or a snapshot it superseded was fresher than `iceberg_outdated_snapshot_lifetime_seconds`.
+Number of outdated snapshots that the cleanup of an Iceberg table kept until a later run, because a query on this or another replica was still reading them.
 
 ### IcebergGetTableStateMicroseconds {#iceberggettablestatemicroseconds}
 
@@ -5620,6 +5680,10 @@ Number of JOIN Runtime Filter Bloom filter builds skipped because the build-side
 
 Number of JOIN Runtime Filter deliveries abandoned because the receiver disconnected or stopped reading; the affected destination gets no filter and its rows pass unfiltered
 
+### RuntimeFilterDenseBitsetsBuilt {#runtimefilterdensebitsetsbuilt}
+
+Number of JOIN Runtime Filters on (U)Int8 or (U)Int16 keys that switched from the exact set of keys to a dense bitset instead of a Bloom filter
+
 ### RuntimeFilterGranulesConsidered {#runtimefiltergranulesconsidered}
 
 Number of granules examined for read time pruning by JOIN Runtime Filters
@@ -6147,6 +6211,10 @@ How many time does it take to remove parts (executed from multiple threads)
 ### SharedMergeTreePartsKillerRuns {#sharedmergetreepartskillerruns}
 
 How many times parts killer has been running
+
+### SharedMergeTreePartsUpdateLeaderElectionsSkippedByBudget {#sharedmergetreepartsupdateleaderelectionsskippedbybudget}
+
+Parts update leader elections that did not try to take a lock because this replica already holds its budget of leader locks
 
 ### SharedMergeTreeReplicaSetUpdatesFromZooKeeper {#sharedmergetreereplicasetupdatesfromzookeeper}
 
