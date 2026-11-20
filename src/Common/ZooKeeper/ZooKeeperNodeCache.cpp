@@ -76,10 +76,12 @@ ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, Coor
     });
 
     ZNode result;
+    std::string contents;
 
-    result.exists = zookeeper->tryGetWatch(path, result.contents, &result.stat, wrapped_watch_callback);
+    result.exists = zookeeper->tryGetWatch(path, contents, &result.stat, wrapped_watch_callback);
     if (result.exists)
     {
+        result.contents = contents;
         path_to_cached_znode.emplace(path, result);
         return result;
     }
@@ -95,7 +97,8 @@ ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, Coor
 
     /// Node was created between the two previous calls, try again. Watch is already set.
 
-    result.exists = zookeeper->tryGet(path, result.contents, &result.stat);
+    result.exists = zookeeper->tryGet(path, contents, &result.stat);
+    result.contents = contents;
     path_to_cached_znode.emplace(path, result);
     return result;
 }

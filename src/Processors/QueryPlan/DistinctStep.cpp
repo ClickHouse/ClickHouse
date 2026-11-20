@@ -213,7 +213,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
         && (query_status->getMemoryReservation()
             || query_status->getContext()->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler]);
     /// Constant keys produce at most one row and need no external storage.
-    const bool external = !pre_distinct && (external_threshold || scheduler_spilling)
+    const bool external = !pre_distinct && !external_distinct_disabled && (external_threshold || scheduler_spilling)
         && !calculateDistinctKeyColumnsPositions(*pipeline.getSharedHeader(), columns).empty();
 
     if (!pre_distinct && !skip_stream_merging)

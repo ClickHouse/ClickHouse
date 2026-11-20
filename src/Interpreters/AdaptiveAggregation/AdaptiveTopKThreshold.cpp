@@ -9,14 +9,16 @@
 namespace DB
 {
 
-AdaptiveTopKThreshold::AdaptiveTopKThreshold(size_t limit_, bool ascending_, std::optional<UInt64> best_possible_rank_)
+AdaptiveTopKThreshold::AdaptiveTopKThreshold(
+    size_t limit_, bool ascending_, std::optional<UInt64> best_possible_rank_, UInt64 known_floor_)
     : limit(limit_)
     , ascending(ascending_)
     , best_possible_rank(best_possible_rank_)
     , selection_slack(std::max<size_t>(limit_ / 8, 1))
-    , threshold(ascending_ ? std::numeric_limits<UInt64>::max() : 0)
+    , threshold(ascending_ ? std::numeric_limits<UInt64>::max() : known_floor_)
     , select_at(limit_)
 {
+    chassert(!ascending || !known_floor_);
 }
 
 void AdaptiveTopKThreshold::offer(std::span<const UInt64> ranks)
@@ -25,6 +27,19 @@ void AdaptiveTopKThreshold::offer(std::span<const UInt64> ranks)
         offerImpl<std::less<>>(ranks);
     else
         offerImpl<std::greater<>>(ranks);
+}
+
+void AdaptiveTopKThreshold::replaceOffer(UInt64 offered, UInt64 rank)
+{
+    {
+        std::lock_guard lock(mutex);
+        if (const auto kept_offered = std::ranges::find(kept, offered); kept_offered != kept.end())
+        {
+            *kept_offered = rank;
+            return;
+        }
+    }
+    offer({&rank, 1});
 }
 
 template <typename Better>

@@ -2,8 +2,7 @@
 # Tags: no-replicated-database
 # Tag no-replicated-database: a Replicated database does not allow ON CLUSTER
 
-# an entry format before NORMALIZE_CREATE_ON_INITIATOR_VERSION holds the query as written, and the
-# worker builds AS src with no user. the initiator must check the source itself.
+# the worker builds AS src with no user, so the initiator must check the source itself.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -34,7 +33,6 @@ ${CLICKHOUSE_CLIENT} -q "
     GRANT SELECT ON ${db}.url_src TO ${no_url};
 "
 
-legacy=(--user "${user}" --distributed_ddl_output_mode throw --distributed_ddl_entry_format_version 2)
 current=(--user "${user}" --distributed_ddl_output_mode throw)
 
 # prints the missing privilege, or the engine of the copy. each case uses its own name
@@ -49,21 +47,19 @@ function try_copy()
 }
 
 echo "with SHOW COLUMNS only:"
-try_copy copy_legacy "${db}.url_src" "${legacy[@]}"
-try_copy copy_current "${db}.url_src" "${current[@]}"
+try_copy copy "${db}.url_src" "${current[@]}"
 # the server checks and reads a source without a database name in the database of this query
-try_copy copy_legacy_unqualified url_src "${legacy[@]}"
+try_copy copy_unqualified url_src "${current[@]}"
 # this one holds nothing masked, so the copy needs no SELECT
-try_copy copy_legacy_plain "${db}.plain_src" "${legacy[@]}"
+try_copy copy_plain "${db}.plain_src" "${current[@]}"
 
 echo "after GRANT SELECT:"
 ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${db}.url_src TO ${user}"
-try_copy copy_legacy "${db}.url_src" "${legacy[@]}"
-try_copy copy_legacy_unqualified url_src "${legacy[@]}"
+try_copy copy "${db}.url_src" "${current[@]}"
+try_copy copy_unqualified url_src "${current[@]}"
 
 # the engine comes with the source, so the copy needs the grant for the engine too
 echo "with SELECT but without the grant for the engine:"
-try_copy copy_no_url "${db}.url_src" --user "${no_url}" --distributed_ddl_output_mode throw \
-    --distributed_ddl_entry_format_version 2
+try_copy copy_no_url "${db}.url_src" --user "${no_url}" --distributed_ddl_output_mode throw
 
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${user}, ${no_url}"

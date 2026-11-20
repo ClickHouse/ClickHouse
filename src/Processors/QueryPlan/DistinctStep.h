@@ -111,6 +111,9 @@ public:
     /// This affects only performance, so it is not serialized.
     void coalesceOutput() { coalesce_output = true; }
 
+    /// Never spill to disk: deduplicate in memory only.
+    void disableExternalDistinct() { external_distinct_disabled = true; }
+
     /// The input rows are already distinct, so the step only enforces the limit on rows, with the rows it passes as the
     /// set.
     void skipDeduplication() { skip_deduplication = true; }
@@ -137,6 +140,7 @@ private:
     bool parallel_distinct = false;
     bool preserve_input_order = false;
     bool coalesce_output = false;
+    bool external_distinct_disabled = false;
     bool skip_deduplication = false;
     bool deduplicates_except_join = false;
 };
