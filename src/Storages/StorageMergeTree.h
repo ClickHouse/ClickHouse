@@ -61,8 +61,6 @@ public:
 
     std::string getName() const override { return merging_params.getModeName() + "MergeTree"; }
 
-    bool supportsParallelInsert() const override { return true; }
-
     bool supportsStreaming() const override { return true; }
 
     CursorPromotersMap buildPromoters() override;
@@ -207,6 +205,7 @@ private:
 
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
+      * The merge runs on this thread for the query of `query_thread_group`, which gets the counters of the merge.
       * Returns true if merge is finished successfully.
       */
     bool merge(
@@ -216,6 +215,7 @@ private:
             const Names & deduplicate_by_columns,
             bool cleanup,
             const MergeTreeTransactionPtr & txn,
+            const ThreadGroupPtr & query_thread_group,
             PreformattedMessage & out_disable_reason,
             bool optimize_skip_merged_partitions = false);
 
@@ -497,9 +497,9 @@ private:
         MutationsSnapshot() = default;
         MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByVersion mutations_snapshot, DataPartsVector patches_);
 
-        MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
-        std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
-        NameSet getColumnsChangedOnFly() const override;
+        [[nodiscard]] MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
+        [[nodiscard]] std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
+        [[nodiscard]] NameSet getColumnsChangedOnFly() const override;
     };
 
     class PartMutationBackoffPolicy
@@ -519,7 +519,7 @@ private:
             {}
 
 
-            size_t getNextMinExecutionTimeUsResolution() const
+            [[nodiscard]] size_t getNextMinExecutionTimeUsResolution() const
             {
                 if (max_postpone_time_ms == 0)
                     return static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
@@ -535,7 +535,7 @@ private:
                 latest_fail_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
             }
 
-            bool partCanBeMutated() const
+            [[nodiscard]] bool partCanBeMutated() const
             {
                 if (max_postpone_time_ms == 0)
                     return true;
