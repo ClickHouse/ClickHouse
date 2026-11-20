@@ -262,6 +262,13 @@ private:
     /// Merges the sorted tail `[tail_begin, size)` into the sorted and unique prefix `[0, tail_begin)` in place.
     static void mergeSortedTail(Buffer & buf, size_t tail_begin)
     {
+        /// `addMany` puts a sample repeating the last timestamp into the tail, so with the same timestamps coming from many series the tail
+        /// often begins at the end of the prefix, and `compactBeforeGrowth` would otherwise merge it every few samples.
+        if (buf[tail_begin - 1].first <= buf[tail_begin].first)
+        {
+            deduplicateSorted(buf, tail_begin);
+            return;
+        }
         std::inplace_merge(buf.begin(), buf.begin() + tail_begin, buf.end(), lessByTimestamp);
         deduplicateSorted(buf);
     }
