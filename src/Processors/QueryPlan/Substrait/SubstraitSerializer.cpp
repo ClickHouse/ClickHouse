@@ -480,10 +480,10 @@ SubstraitPlanSerializer::convertReadFromMergeTree(const ReadFromMergeTree & read
     }
 
     const auto & header = *read.getOutputHeader();
-    const auto & virtuals = read.getStorageSnapshot()->metadata->virtuals;
+    const auto & table_columns = read.getStorageSnapshot()->metadata->getColumns();
     for (const auto & column : header)
-        if (virtuals.has(column.name))
-            return blocked(fmt::format("virtual column {} is not representable in a Substrait read", column.name));
+        if (!table_columns.hasPhysical(column.name))
+            return blocked(fmt::format("column {} is not a physical column of the table", column.name));
 
     auto schema = convertHeaderToSchema(header, extensions);
     if (!schema)
@@ -953,6 +953,7 @@ constexpr bool QueryPlanOptimizationSettings::* substrait_compatible_optimizatio
 
 void disableSubstraitIncompatiblePlanning(const ContextMutablePtr & context)
 {
+    context->setSetting("optimize_functions_to_subcolumns", false); /// Should be possible in future.
     context->setSetting("optimize_trivial_count_query", false); /// I don't see how to serialize this right now.
     context->setSetting("correlated_subqueries_use_in_memory_buffer", false); /// No Substrait form for this.
 }
