@@ -172,7 +172,7 @@ public:
     Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
-    /// For `Array` and `Map` the hash map stores a row of the shard's `ColumnAttributeContainer`.
+    /// For `Array`, `Map` and `Object` the hash map stores a row of the shard's `ColumnAttributeContainer`.
     /// No default member initializer: `PackedHashMap` packs only POD mapped values.
     template <typename Value>
     struct ColumnAttributeRow
@@ -232,11 +232,11 @@ private:
             CollectionsHolder<Object>>
             containers;
 
-        /// Values of `Array` and `Map` attributes, one column per shard.
-        std::variant<std::monostate, ColumnAttributeShards<Array>, ColumnAttributeShards<Map>> column_values;
+        /// Values of `Array`, `Map` and `Object` attributes, one column per shard.
+        std::variant<std::monostate, ColumnAttributeShards<Array>, ColumnAttributeShards<Map>, ColumnAttributeShards<Object>> column_values;
     };
 
-    /// Returns the value of a found cell; for `Array` and `Map` it refers to a row of the shard's column.
+    /// Returns the value of a found cell; for `Array`, `Map` and `Object` it refers to a row of the shard's column.
     template <typename AttributeType, typename Cell>
     AttributeLookupValue<AttributeType> getCellValue(const Attribute & attribute, UInt64 shard, const Cell & cell) const
     {
@@ -489,26 +489,15 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
             if constexpr (is_column_attribute_value<ValueType>)
             {
                 auto * out = column.get();
-
-                getItemsShortCircuitImpl<ValueType, false>(
-                    attribute,
-                    extractor,
-                    [&](const size_t, const ColumnAttributeValue<ValueType> & value) { value.insertInto(*out); },
-                    [&](size_t) { out->insertDefault(); },
-                    default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
-            {
-                auto * out = column.get();
                 if (is_attribute_nullable)
                 {
                     getItemsShortCircuitImpl<ValueType, true>(
                         attribute,
                         extractor,
-                        [&](size_t row, const Object & value)
+                        [&](size_t row, const ColumnAttributeValue<ValueType> & value)
                         {
                             (*vec_null_map_to)[row] = false;
-                            out->insert(value);
+                            value.insertInto(*out);
                         },
                         [&](size_t row)
                         {
@@ -521,7 +510,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
                     getItemsShortCircuitImpl<ValueType, false>(
                         attribute,
                         extractor,
-                        [&](const size_t, const Object & value) { out->insert(value); },
+                        [&](const size_t, const ColumnAttributeValue<ValueType> & value) { value.insertInto(*out); },
                         [&](size_t) { out->insertDefault(); },
                         default_mask);
             }
@@ -584,31 +573,21 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
             if constexpr (is_column_attribute_value<ValueType>)
             {
                 auto * out = column.get();
-
-                getItemsImpl<ValueType, false>(
-                    attribute,
-                    extractor,
-                    [&](const size_t, const ColumnAttributeValue<ValueType> & value, bool) { value.insertInto(*out); },
-                    default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
-            {
-                auto * out = column.get();
                 if (is_attribute_nullable)
                     getItemsImpl<ValueType, true>(
                         attribute,
                         extractor,
-                        [&](size_t row, const Object & value, bool is_null)
+                        [&](size_t row, const ColumnAttributeValue<ValueType> & value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insert(value);
+                            value.insertInto(*out);
                         },
                         default_value_extractor);
                 else
                     getItemsImpl<ValueType, false>(
                         attribute,
                         extractor,
-                        [&](const size_t, const Object & value, bool) { out->insert(value); },
+                        [&](const size_t, const ColumnAttributeValue<ValueType> & value, bool) { value.insertInto(*out); },
                         default_value_extractor);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
@@ -1179,11 +1158,9 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
             /// of loading a dictionary when the hash table does not fit in the cache.
             /// A source is not required to return the exact attribute type (e.g. `UInt16` for a `UInt64` attribute),
             /// so other columns are read through `Field`, which converts between the types.
-            constexpr bool has_typed_column = !is_column_attribute_value<AttributeValueType> && !std::is_same_v<AttributeValueType, Object>;
-
             bool inserted_from_typed_column = false;
 
-            if constexpr (has_typed_column)
+            if constexpr (!is_column_attribute_value<AttributeValueType>)
             {
                 using ValuesColumnType = std::conditional_t<std::is_same_v<AttributeValueType, std::string_view>,
                     ColumnString,

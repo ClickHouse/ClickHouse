@@ -594,7 +594,10 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::blockToAttributes(cons
 
                 auto & attribute_container = std::get<AttributeContainerShardsType<AttributeValueType>>(attribute.containers)[shard];
 
-                /// `Array` and `Map` cannot be inside `Nullable`.
+                bool value_is_null = column_value_to_insert.isNull();
+                if (attribute_is_nullable)
+                    (*attribute.is_index_null)[shard].emplace_back(value_is_null);
+
                 if constexpr (is_column_attribute_value<AttributeValueType>)
                 {
                     attribute_container.insert(column_value_to_insert);
@@ -603,28 +606,13 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::blockToAttributes(cons
                 {
                     attribute_container.emplace_back();
 
-                    if (attribute_is_nullable)
-                    {
-                        (*attribute.is_index_null)[shard].emplace_back();
-
-                        if (column_value_to_insert.isNull())
-                        {
-                            (*attribute.is_index_null)[shard].back() = true;
-                            return;
-                        }
-                    }
+                    if (value_is_null)
+                        return;
 
                     if constexpr (std::is_same_v<AttributeValueType, std::string_view>)
-                    {
-                        String & value_to_insert = column_value_to_insert.safeGet<String>();
-                        std::string_view string_in_arena_reference = copyStringInArena(*string_arenas[shard], value_to_insert);
-                        attribute_container.back() = string_in_arena_reference;
-                    }
+                        attribute_container.back() = copyStringInArena(*string_arenas[shard], column_value_to_insert.safeGet<String>());
                     else
-                    {
-                        auto value_to_insert = static_cast<AttributeValueType>(column_value_to_insert.safeGet<AttributeValueType>());
-                        attribute_container.back() = value_to_insert;
-                    }
+                        attribute_container.back() = static_cast<AttributeValueType>(column_value_to_insert.safeGet<AttributeValueType>());
                 }
             };
 
@@ -692,26 +680,19 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
             {
                 auto * out = column.get();
 
-                getItemsShortCircuitImpl<ValueType, false>(
-                    attribute, keys_object, [&](const size_t, const ColumnAttributeValue<ValueType> & value, bool) { value.insertInto(*out); }, default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
-            {
-                auto * out = column.get();
-
                 if (is_attribute_nullable)
                     getItemsShortCircuitImpl<ValueType, true>(
                         attribute,
                         keys_object,
-                        [&](size_t row, const Object & value, bool is_null)
+                        [&](size_t row, const ColumnAttributeValue<ValueType> & value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insert(value);
+                            value.insertInto(*out);
                         },
                         default_mask);
                 else
                     getItemsShortCircuitImpl<ValueType, false>(
-                        attribute, keys_object, [&](const size_t, const Object & value, bool) { out->insert(value); }, default_mask);
+                        attribute, keys_object, [&](const size_t, const ColumnAttributeValue<ValueType> & value, bool) { value.insertInto(*out); }, default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
@@ -764,31 +745,21 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
             {
                 auto * out = column.get();
 
-                getItemsImpl<ValueType, false>(
-                    attribute,
-                    keys_object,
-                    [&](const size_t, const ColumnAttributeValue<ValueType> & value, bool) { value.insertInto(*out); },
-                    default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
-            {
-                auto * out = column.get();
-
                 if (is_attribute_nullable)
                     getItemsImpl<ValueType, true>(
                         attribute,
                         keys_object,
-                        [&](size_t row, const Object & value, bool is_null)
+                        [&](size_t row, const ColumnAttributeValue<ValueType> & value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insert(value);
+                            value.insertInto(*out);
                         },
                         default_value_extractor);
                 else
                     getItemsImpl<ValueType, false>(
                         attribute,
                         keys_object,
-                        [&](const size_t, const Object & value, bool) { out->insert(value); },
+                        [&](const size_t, const ColumnAttributeValue<ValueType> & value, bool) { value.insertInto(*out); },
                         default_value_extractor);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
@@ -1145,18 +1116,9 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::calculateBytesAllocate
                 bytes_allocated += sizeof(AttributeContainerType<ValueType>);
 
                 if constexpr (is_column_attribute_value<ValueType>)
-                {
                     bytes_allocated += container.allocatedBytes();
-                }
-                else if constexpr (std::is_same_v<ValueType, Object>)
-                {
-                    /// It is not accurate calculations
-                    bytes_allocated += sizeof(Object) * container.size();
-                }
                 else
-                {
                     bytes_allocated += container.allocated_bytes();
-                }
 
                 bucket_count += container.capacity();
             }

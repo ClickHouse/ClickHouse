@@ -136,8 +136,7 @@ private:
         HashMapWithSavedHash<std::string_view, size_t, DefaultHash<std::string_view>>>;
 
     template <typename Value>
-    using AttributeContainerType = std::conditional_t<is_column_attribute_value<Value>, ColumnAttributeContainer<Value>,
-        std::conditional_t<std::is_same_v<Value, Object>, VectorWithMemoryTracking<Value>, PaddedPODArray<Value>>>;
+    using AttributeContainerType = std::conditional_t<is_column_attribute_value<Value>, ColumnAttributeContainer<Value>, PaddedPODArray<Value>>;
 
     template <typename Value>
     using AttributeContainerShardsType = VectorWithMemoryTracking<AttributeContainerType<Value>>;

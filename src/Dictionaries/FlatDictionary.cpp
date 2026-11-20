@@ -99,26 +99,19 @@ ColumnPtr FlatDictionary::getColumn(
             {
                 auto * out = column.get();
 
-                getItemsShortCircuitImpl<ValueType, false>(
-                    attribute, ids, [&](size_t, const ColumnAttributeValue<ValueType> & value, bool) { value.insertInto(*out); }, default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
-            {
-                auto * out = column.get();
-
                 if (is_attribute_nullable)
                     getItemsShortCircuitImpl<ValueType, true>(
                         attribute,
                         ids,
-                        [&](size_t row, const Object & value, bool is_null)
+                        [&](size_t row, const ColumnAttributeValue<ValueType> & value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insert(value);
+                            value.insertInto(*out);
                         },
                         default_mask);
                 else
                     getItemsShortCircuitImpl<ValueType, false>(
-                        attribute, ids, [&](size_t, const Object & value, bool) { out->insert(value); }, default_mask);
+                        attribute, ids, [&](size_t, const ColumnAttributeValue<ValueType> & value, bool) { value.insertInto(*out); }, default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
@@ -168,31 +161,21 @@ ColumnPtr FlatDictionary::getColumn(
             {
                 auto * out = column.get();
 
-                getItemsImpl<ValueType, false>(
-                    attribute,
-                    ids,
-                    [&](size_t, const ColumnAttributeValue<ValueType> & value, bool) { value.insertInto(*out); },
-                    default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
-            {
-                auto * out = column.get();
-
                 if (is_attribute_nullable)
                     getItemsImpl<ValueType, true>(
                         attribute,
                         ids,
-                        [&](size_t row, const Object & value, bool is_null)
+                        [&](size_t row, const ColumnAttributeValue<ValueType> & value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insert(value);
+                            value.insertInto(*out);
                         },
                         default_value_extractor);
                 else
                     getItemsImpl<ValueType, false>(
                         attribute,
                         ids,
-                        [&](size_t, const Object & value, bool) { out->insert(value); },
+                        [&](size_t, const ColumnAttributeValue<ValueType> & value, bool) { value.insertInto(*out); },
                         default_value_extractor);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
@@ -589,18 +572,9 @@ void FlatDictionary::calculateBytesAllocated()
             bytes_allocated += sizeof(ContainerType<ValueType>);
 
             if constexpr (is_column_attribute_value<ValueType>)
-            {
                 bytes_allocated += container.values.allocatedBytes() + container.key_to_row.allocated_bytes();
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
-            {
-                /// It is not accurate calculations
-                bytes_allocated += sizeof(Object) * container.size();
-            }
             else
-            {
                 bytes_allocated += container.allocated_bytes();
-            }
 
             bucket_count = container.capacity();
         };
@@ -737,8 +711,6 @@ void FlatDictionary::resize(Attribute & attribute, UInt64 key)
 
         if constexpr (is_column_attribute_value<T>)
             container.key_to_row.resize_fill(elements_count, 0);
-        else if constexpr (std::is_same_v<T, Object>)
-            container.resize(elements_count, T{});
         else
             container.resize_fill(elements_count, T{});
     }
@@ -756,35 +728,24 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
 
         auto & container = std::get<ContainerType<ValueType>>(attribute.container);
 
-        /// `Array` and `Map` cannot be inside `Nullable`.
+        loaded_keys[key] = true;
+
+        bool value_is_null = attribute.is_nullable_set && value.isNull();
+        if (value_is_null)
+            attribute.is_nullable_set->insert(key);
+
+        /// A null key still gets a row: lookups copy the row before the null map is applied.
         if constexpr (is_column_attribute_value<ValueType>)
         {
-            const size_t row = container.values.size();
+            container.key_to_row[key] = container.values.size();
             container.values.insert(value);
-            container.key_to_row[key] = row;
-            loaded_keys[key] = true;
         }
-        else
+        else if (!value_is_null)
         {
-            if (attribute.is_nullable_set && value.isNull())
-            {
-                attribute.is_nullable_set->insert(key);
-                loaded_keys[key] = true;
-                return;
-            }
-
-            auto & attribute_value = value.safeGet<AttributeType>();
-            loaded_keys[key] = true;
-
             if constexpr (std::is_same_v<ValueType, std::string_view>)
-            {
-                auto arena_value = copyStringInArena(string_arena, attribute_value);
-                container[key] = arena_value;
-            }
+                container[key] = copyStringInArena(string_arena, value.safeGet<String>());
             else
-            {
-                container[key] = static_cast<ValueType>(attribute_value);
-            }
+                container[key] = static_cast<ValueType>(value.safeGet<AttributeType>());
         }
     };
 

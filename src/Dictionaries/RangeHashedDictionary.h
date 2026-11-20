@@ -148,8 +148,7 @@ private:
         HashMapWithSavedHash<std::string_view, IntervalMap<RangeStorageType>, DefaultHash<std::string_view>>>;
 
     template <typename Value>
-    using AttributeContainerType = std::conditional_t<is_column_attribute_value<Value>, ColumnAttributeContainer<Value>,
-        std::conditional_t<std::is_same_v<Value, Object>, VectorWithMemoryTracking<Value>, PaddedPODArray<Value>>>;
+    using AttributeContainerType = std::conditional_t<is_column_attribute_value<Value>, ColumnAttributeContainer<Value>, PaddedPODArray<Value>>;
 
     struct Attribute final
     {
@@ -410,34 +409,22 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
         {
             auto * out = column.get();
 
-            getItemsInternalImpl<ValueType, false>(
-                attribute,
-                key_to_index,
-                [&](size_t, const ColumnAttributeValue<ValueType> & value, bool)
-                {
-                    value.insertInto(*out);
-                });
-        }
-        else if constexpr (std::is_same_v<ValueType, Object>)
-        {
-            auto * out = column.get();
-
             if (is_attribute_nullable)
                 getItemsInternalImpl<ValueType, true>(
                     attribute,
                     key_to_index,
-                    [&](size_t row, const Object & value, bool is_null)
+                    [&](size_t row, const ColumnAttributeValue<ValueType> & value, bool is_null)
                     {
                         (*vec_null_map_to)[row] = is_null;
-                        out->insert(value);
+                        value.insertInto(*out);
                     });
             else
                 getItemsInternalImpl<ValueType, false>(
                     attribute,
                     key_to_index,
-                    [&](size_t, const Object & value, bool)
+                    [&](size_t, const ColumnAttributeValue<ValueType> & value, bool)
                     {
-                        out->insert(value);
+                        value.insertInto(*out);
                     });
         }
         else if constexpr (std::is_same_v<ValueType, std::string_view>)
@@ -1053,7 +1040,10 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValue(Attribute & a
 
         auto & container = std::get<AttributeContainerType<ValueType>>(attribute.container);
 
-        /// `Array` and `Map` cannot be inside `Nullable`.
+        bool value_is_null = value.isNull();
+        if (unlikely(attribute.is_value_nullable.has_value()))
+            attribute.is_value_nullable->emplace_back(value_is_null);
+
         if constexpr (is_column_attribute_value<ValueType>)
         {
             container.insert(value);
@@ -1062,29 +1052,13 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValue(Attribute & a
         {
             container.emplace_back();
 
-            if (unlikely(attribute.is_value_nullable.has_value()))
-            {
-                bool value_is_null = value.isNull();
-                attribute.is_value_nullable->emplace_back(value_is_null);
-
-                if (unlikely(value_is_null))
-                    return;
-            }
-
-            ValueType value_to_insert;
+            if (unlikely(value_is_null))
+                return;
 
             if constexpr (std::is_same_v<AttributeType, String>)
-            {
-                const auto & string = value.safeGet<String>();
-                std::string_view string_ref = copyStringInArena(string_arena, string);
-                value_to_insert = string_ref;
-            }
+                container.back() = copyStringInArena(string_arena, value.safeGet<String>());
             else
-            {
-                value_to_insert = static_cast<ValueType>(value.safeGet<ValueType>());
-            }
-
-            container.back() = value_to_insert;
+                container.back() = static_cast<ValueType>(value.safeGet<ValueType>());
         }
     };
 

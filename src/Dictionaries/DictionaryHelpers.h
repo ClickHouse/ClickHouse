@@ -352,9 +352,9 @@ public:
 };
 
 template <typename Value>
-constexpr bool is_column_attribute_value = std::is_same_v<Value, Array> || std::is_same_v<Value, Map>;
+constexpr bool is_column_attribute_value = std::is_same_v<Value, Array> || std::is_same_v<Value, Map> || std::is_same_v<Value, Object>;
 
-/// Passed to lookup callbacks for `Array` and `Map` attributes: a row of the stored column, or a default value.
+/// Passed to lookup callbacks for `Array`, `Map` and `Object` attributes: a row of the stored column, or a default value.
 /// Copying the row with `insertFrom` avoids building a `Field` for every found key.
 template <typename Value>
 struct ColumnAttributeValue
@@ -378,7 +378,7 @@ struct ColumnAttributeValue
 template <typename Value>
 using AttributeLookupValue = std::conditional_t<is_column_attribute_value<Value>, ColumnAttributeValue<Value>, Value>;
 
-/// Stores `Array` and `Map` attribute values in one column. Keeping one `Field` per row costs a heap
+/// Stores `Array`, `Map` and `Object` attribute values in one column. Keeping one `Field` per row costs a heap
 /// allocation per row, and each jemalloc slab of such small allocations needs a metadata header that is never freed.
 template <typename Value>
 class ColumnAttributeContainer
@@ -392,7 +392,15 @@ public:
     size_t size() const { return column->size(); }
     size_t capacity() const { return column->capacity(); }
     ColumnAttributeValue<Value> operator[](size_t index) const { return {*column, index}; }
-    void insert(const Field & value) { column->insert(value); }
+    /// A `Null` still takes a row to keep row numbers aligned; nullability is tracked by the layout.
+    void insert(const Field & value)
+    {
+        if (value.isNull())
+            column->insertDefault();
+        else
+            column->insert(value);
+    }
+
     size_t allocatedBytes() const { return column->allocatedBytes(); }
 
 private:

@@ -122,8 +122,7 @@ private:
     };
 
     template <typename Value>
-    using ContainerType = std::conditional_t<is_column_attribute_value<Value>, ColumnAttributeKeyToRow<Value>,
-        std::conditional_t<std::is_same_v<Value, Object>, VectorWithMemoryTracking<Value>, PaddedPODArray<Value>>>;
+    using ContainerType = std::conditional_t<is_column_attribute_value<Value>, ColumnAttributeKeyToRow<Value>, PaddedPODArray<Value>>;
 
     using NullableSet = HashSet<UInt64, DefaultHash<UInt64>, HashTableGrower<>>;
 
