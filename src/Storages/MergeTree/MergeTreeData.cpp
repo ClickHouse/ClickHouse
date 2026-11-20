@@ -5699,14 +5699,9 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
 void MergeTreeData::clearCachesOfTable() const
 {
     auto context = getContext();
-    const UUID uuid = getStorageID().uuid;
-    if (uuid != UUIDHelpers::Nil)
-    {
-        if (auto cache = context->getQueryConditionCache())
-            cache->removeTable(uuid);
+    if (getStorageID().hasUUID())
         if (auto cache = context->getColumnsCache())
-            cache->removeTable(uuid);
-    }
+            cache->removeTable(getStorageID().uuid);
 
     Strings paths = getDataPaths();
     for (auto & path : paths)
@@ -5744,8 +5739,6 @@ void MergeTreeData::dropAllData()
     if (isStaticStorage())
     {
         LOG_INFO(log, "dropAllData: Skip cleanup due to all disks are either read-only or write-once");
-        /// The parts stay, but a table created again with this UUID must not find their cache entries.
-        clearCachesOfTable();
         return;
     }
 

@@ -210,4 +210,35 @@ $CLICKHOUSE_CLIENT -q "SELECT countIf(ProfileEvents['MMappedFileCacheHits'] + Pr
         AND query_id IN ('${CLICKHOUSE_DATABASE}_log_1', '${CLICKHOUSE_DATABASE}_log_2')"
 $CLICKHOUSE_CLIENT -q "DROP TABLE tab_log SYNC"
 
+# Other engines write query condition cache entries under the UUID too: a File table over the same file,
+# created again with other reader settings.
+FILE="${CLICKHOUSE_DATABASE}_05480.parquet"
+$CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('$FILE', Parquet, 'K UInt64, x UInt8') SELECT 1, 1 FROM numbers(100)
+    SETTINGS output_format_parquet_row_group_size = 10, engine_file_truncate_on_insert = 1"
+# Backdate the file so its version token has settled and the cache engages.
+touch -d '2020-01-01 00:00:00' "${USER_FILES_PATH:?}/$FILE"
+
+function create_file()
+{
+    $CLICKHOUSE_CLIENT -q "
+        DROP TABLE IF EXISTS tab_file SYNC;
+        CREATE TABLE tab_file UUID '$1' (k UInt64, x UInt8) ENGINE = File(Parquet, '$FILE')
+            SETTINGS input_format_parquet_case_insensitive_column_matching = $2;"
+}
+
+function query_file()
+{
+    $CLICKHOUSE_CLIENT -q "SELECT sum(x) FROM tab_file WHERE k = 1
+        SETTINGS use_query_condition_cache = 1, optimize_move_to_prewhere = 1"
+}
+
+uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
+# Without case-insensitive matching the file has no column k, which is read as 0.
+create_file "$uuid" 0
+query_file
+create_file "$uuid" 1
+query_file
+$CLICKHOUSE_CLIENT -q "DROP TABLE tab_file SYNC"
+rm -f "${USER_FILES_PATH:?}/$FILE"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE tab SYNC"

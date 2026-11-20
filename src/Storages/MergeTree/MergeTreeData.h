@@ -1180,7 +1180,7 @@ public:
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
     void dropAllData();
 
-    /// Removes the entries of this table from the caches that do not evict them together with its parts.
+    /// Removes the entries of this table from the columns cache and from the caches keyed by file path.
     void clearCachesOfTable() const;
 
     /// With the `table_disk` setting the table directory is the root of the disk, which `dropAllData` cannot remove

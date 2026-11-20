@@ -14,6 +14,7 @@
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/TableNameHints.h>
@@ -1949,7 +1950,9 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
     db_disk->removeFileIfExists(fs::path(table.metadata_path));
 
-    /// The UUID, so the data path, can be reused after this, and the mmap cache is keyed by file path.
+    /// The UUID, so the data path, can be reused after this, and these caches are keyed by them.
+    if (auto query_condition_cache = getContext()->getQueryConditionCache())
+        query_condition_cache->removeTable(table.table_id.uuid);
     if (auto mmap_cache = getContext()->getMMappedFileCache())
     {
         Strings paths;
