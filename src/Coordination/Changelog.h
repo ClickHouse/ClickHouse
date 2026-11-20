@@ -9,6 +9,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <deque>
+#include <exception>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -178,7 +179,18 @@ struct ChangelogFileDescription
         return path;
     }
 
+    /// Waits for the background operations on this file and rethrows the first error of a move,
+    /// including the error of a move whose operation already expired.
     void waitAllAsyncOperations();
+
+    /// Records the failure of a background move of this file. `file_operations` holds weak pointers,
+    /// so the operation that failed can expire once the background thread proceeds to the next one,
+    /// before `waitAllAsyncOperations` observes it. The error stays here until then, and it is not
+    /// cleared afterwards: the unpublished copy that failed to be removed remains on the destination.
+    void setMoveError(std::exception_ptr e);
+
+    std::mutex move_error_mutex;
+    std::exception_ptr move_error;
 };
 
 using ChangelogFileDescriptionPtr = std::shared_ptr<ChangelogFileDescription>;

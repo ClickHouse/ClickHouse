@@ -280,8 +280,23 @@ public:
         return DB::DiskLocal::getFileSize(path);
     }
 
+    /// Fails the removal of a changelog after a failed size request, that is, the removal of the
+    /// unpublished copy after a failed move.
+    void removeFileIfExists(const String & path) override
+    {
+        if (path.starts_with("changelog_") && failed_size_requests > 0 && remaining_remove_failures > 0)
+        {
+            --remaining_remove_failures;
+            ++failed_remove_requests;
+            throw std::runtime_error("injected changelog removal failure");
+        }
+        DB::DiskLocal::removeFileIfExists(path);
+    }
+
     mutable std::atomic<size_t> remaining_failures{0};
     mutable std::atomic<size_t> failed_size_requests{0};
+    std::atomic<size_t> remaining_remove_failures{0};
+    std::atomic<size_t> failed_remove_requests{0};
 };
 
 }
@@ -6013,4 +6028,57 @@ TYPED_TEST(CoordinationChangelogTest, FailedBackgroundMoveRemovesUnpublishedDest
     ASSERT_NO_THROW(restarted.readChangelogAndInitWriter(0, 0));
     EXPECT_EQ(restarted.getNextEntryIndex(), 4);
     EXPECT_EQ(restarted.entryAt(3)->get_term(), 2);
+}
+
+TYPED_TEST(CoordinationChangelogTest, FailedCleanupOfBackgroundMoveFailsRewriteAfterLaterMove)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the move failure behavior is independent of compression";
+
+    ChangelogDirTest regular("./logs_failed_background_move_cleanup_regular");
+    ChangelogDirTest latest("./logs_failed_background_move_cleanup_latest");
+    auto regular_disk = std::make_shared<ChangelogSizeFailingDisk>("regular", regular.path);
+    DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("latest", latest.path);
+    const DB::LogFileSettings log_file_settings{
+        .force_sync = false,
+        .compress_logs = false,
+        .rotate_interval = 5,
+        .startup_read_max_streams = 4,
+    };
+    constexpr std::string_view path = "changelog_1_5.bin";
+    constexpr std::string_view next_path = "changelog_6_10.bin";
+
+    this->keeper_context->setLogDisk(regular_disk);
+    this->keeper_context->setLatestLogDisk(latest_disk);
+    {
+        DB::Changelog changelog(this->log, log_file_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        changelog.readChangelogAndInitWriter(0, 0);
+
+        /// The rotation after entry 5 copies the changelog to the regular disk, but the validation of
+        /// the copy fails, and so does the removal of the copy, which stays complete and matches its
+        /// move marker. The rotation after entry 10 moves the next changelog successfully.
+        regular_disk->remaining_failures = 1;
+        regular_disk->remaining_remove_failures = 1;
+        for (uint64_t index = 1; index <= 11; ++index)
+            changelog.appendEntry(index, getLogEntry("entry_" + std::to_string(index), 1));
+        changelog.flush();
+
+        /// Once the background thread takes the second move, the operation of the first one expires.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while (!regular_disk->existsFile(String(next_path)) && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        ASSERT_TRUE(regular_disk->existsFile(String(next_path)));
+        EXPECT_EQ(regular_disk->failed_size_requests.load(), 1);
+        EXPECT_EQ(regular_disk->failed_remove_requests.load(), 1);
+        EXPECT_TRUE(regular_disk->existsFile(String(path)));
+        EXPECT_TRUE(latest_disk->existsFile(String(path)));
+
+        /// The rewrite must not proceed: the stale copy would restore the old entry 3 on restart.
+        EXPECT_THROW(changelog.writeAt(3, getLogEntry("rewritten_3", 2)), std::exception);
+    }
+
+    DB::Changelog restarted(this->log, log_file_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    ASSERT_NO_THROW(restarted.readChangelogAndInitWriter(0, 0));
+    EXPECT_EQ(restarted.getNextEntryIndex(), 12);
+    EXPECT_EQ(restarted.entryAt(3)->get_term(), 1);
 }

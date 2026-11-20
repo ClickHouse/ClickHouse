@@ -316,6 +316,23 @@ void ChangelogFileDescription::waitAllAsyncOperations()
     }
 
     file_operations.clear();
+
+    std::exception_ptr error;
+    {
+        std::lock_guard lock(move_error_mutex);
+        error = move_error;
+    }
+    if (error)
+        std::rethrow_exception(error);
+}
+
+void ChangelogFileDescription::setMoveError(std::exception_ptr e)
+{
+    if (!e)
+        return;
+    std::lock_guard lock(move_error_mutex);
+    if (!move_error)
+        move_error = e;
 }
 
 void ChangelogFileDescription::ValidRuns::addLocatedRecord(uint64_t index, size_t position, size_t size_in_file)
@@ -5338,6 +5355,7 @@ void Changelog::backgroundChangelogOperationsThread()
                             {
                                 tryLogCurrentException(log, fmt::format("File rename failed on disk {}", changelog->disk->getName()));
                                 changelog_operation->setError(std::current_exception());
+                                changelog->setMoveError(std::current_exception());
                                 return;
                             }
                             changelog->path = std::move(move_operation->new_path);
@@ -5356,7 +5374,7 @@ void Changelog::backgroundChangelogOperationsThread()
                     /// by `writeAt` before the next move, so restart would select the stale destination
                     /// and restore the overwritten entries. `writeAt` waits for this operation before
                     /// appending to the changelog, and a failure to remove the destination is reported
-                    /// to it as a failure of the operation.
+                    /// to it as a failure of the move, which is kept on the changelog.
                     if (!move_result && move_result.error() != KeeperMoveError::DestinationPublishedSourceRemovalFailed
                         && changelog->withReadLock([&] { return changelog->disk != move_operation->new_disk; }))
                     {
@@ -5372,8 +5390,10 @@ void Changelog::backgroundChangelogOperationsThread()
                 }
                 catch (...)
                 {
-                    tryLogCurrentException(log, fmt::format("Failed to move changelog {}", changelog->path));
+                    tryLogCurrentException(log, fmt::format("Failed to move changelog {}", changelog->getPathSafe()));
                     changelog_operation->setError(std::current_exception());
+                    /// The operation may expire before `writeAt` waits for it, so keep the error on the changelog.
+                    changelog->setMoveError(std::current_exception());
                 }
             }
         }
