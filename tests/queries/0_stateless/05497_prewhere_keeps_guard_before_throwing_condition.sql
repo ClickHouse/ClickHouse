@@ -64,10 +64,18 @@ SETTINGS optimize_prewhere_after_pushdown = 1, move_all_conditions_to_prewhere =
 SELECT count() FROM (EXPLAIN actions = 1 SELECT b FROM tbl WHERE a = 'one' AND usage_timestamp != '')
 WHERE explain ILIKE '%Prewhere filter column: and(notEquals(%usage_timestamp%), equals(%a%';
 
+-- `lower` has no `canThrowIfKnown`, so it is treated as a condition that can throw. It is not moved in front of
+-- the first condition, which reads every queried column and stays in WHERE.
+SELECT count() FROM (EXPLAIN actions = 1 SELECT sum(length(a)) FROM tbl WHERE sipHash64(a, b, usage_timestamp) != 0 AND lower(usage_timestamp) = '17')
+WHERE explain ILIKE '%Prewhere filter column:%';
 -- With `disable`, `and` evaluates every condition on all rows, so a later condition is still moved alone.
-SELECT count() FROM (EXPLAIN actions = 1 SELECT sum(length(a)) FROM tbl WHERE sipHash64(a, b, usage_timestamp) != 0 AND usage_timestamp LIKE '17%'
+SELECT count() FROM (EXPLAIN actions = 1 SELECT sum(length(a)) FROM tbl WHERE sipHash64(a, b, usage_timestamp) != 0 AND lower(usage_timestamp) = '17'
 SETTINGS short_circuit_function_evaluation = 'disable')
-WHERE explain ILIKE '%Prewhere filter column:%usage_timestamp%';
+WHERE explain ILIKE '%Prewhere filter column:%lower(%usage_timestamp%';
+-- The same with `optimize_move_to_prewhere_respect_short_circuit = 0`, which keeps short-circuit evaluation enabled.
+SELECT count() FROM (EXPLAIN actions = 1 SELECT sum(length(a)) FROM tbl WHERE sipHash64(a, b, usage_timestamp) != 0 AND lower(usage_timestamp) = '17'
+SETTINGS optimize_move_to_prewhere_respect_short_circuit = 0)
+WHERE explain ILIKE '%Prewhere filter column:%lower(%usage_timestamp%';
 
 -- One read step computes the columns that PREWHERE passes on (here the conversion the projection needs) for all rows.
 SET enable_multiple_prewhere_read_steps = 0;

@@ -43,6 +43,7 @@ namespace Setting
     extern const SettingsBool apply_string_filters_during_scan;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool enable_multiple_prewhere_read_steps;
+    extern const SettingsBool optimize_move_to_prewhere_respect_short_circuit;
 }
 
 namespace
@@ -234,7 +235,9 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
     where_optimizer_context.is_final = is_final;
     where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
-    where_optimizer_context.short_circuit_function_evaluation = settings[Setting::short_circuit_function_evaluation];
+    where_optimizer_context.short_circuit_function_evaluation = settings[Setting::optimize_move_to_prewhere_respect_short_circuit]
+        ? settings[Setting::short_circuit_function_evaluation].value
+        : ShortCircuitFunctionEvaluation::DISABLE;
     where_optimizer_context.has_existing_prewhere = existing_prewhere_actions != nullptr;
     /// The decision does not depend on the columns cache: whether a column is served from the cache, written to it
     /// or read as usual is known only to the reader. The reader does not apply the string filter to a column it writes
