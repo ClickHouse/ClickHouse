@@ -864,8 +864,8 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         }
 
         /// On `RESTORE` we don't use the session context: it may contain a conflicting `mysql_datatypes_support_level`
-        /// setting and make the `RESTORE` fail.
-        if (!args.is_restore_from_backup)
+        /// setting and make the `RESTORE` fail. A short `ATTACH` keeps the stored definition, as on startup.
+        if (!args.is_restore_from_backup && !args.create_query.attach_short_syntax)
             mysql_settings->loadFromQueryContext(args.context, *engine_define);
         if (engine_define->settings)
             mysql_settings->loadFromQuery(*engine_define);
