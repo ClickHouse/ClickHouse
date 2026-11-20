@@ -5,6 +5,7 @@
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -102,7 +103,8 @@ TableNames tablesWithPoliciesOnColumnsOf(const StoragePtr & table, const Context
 void checkRowPoliciesBeforeAlter(
     const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, const AlterCommands & commands, const ContextPtr & context)
 {
-    if (std::none_of(commands.begin(), commands.end(), removesColumn))
+    /// row policies are local to a server, so a replica must apply what its initiator already committed
+    if (isSecondaryDDLReplay(context) || std::none_of(commands.begin(), commands.end(), removesColumn))
         return;
 
     const auto storage_snapshot = table->getStorageSnapshotWithoutData(metadata_snapshot, context);
