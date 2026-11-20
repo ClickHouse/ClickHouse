@@ -33,6 +33,8 @@ PUBLIC_PREFIXES = ("lakes/uk_price_paid_iceberg/", "lakes/uk_price_paid_delta/",
 CATALOG_PORT = 8181  # `weed server` default
 CATALOG_BUCKET = "perf-catalog"
 CATALOG_TABLES = 200
+# Both servers' memory trackers count this job's whole cgroup, so the upload data SeaweedFS buffers counts against their limit.
+SEAWEEDFS_S3_UPLOAD_LIMIT_MB = 1024
 
 
 def endpoint_url(namespace):
@@ -199,6 +201,7 @@ def ensure(log_path):
         temp_dir,
         pid_file=f"{temp_dir}/seaweedfs.pid",
         disable_cache=True,
+        upload_limit_mb=SEAWEEDFS_S3_UPLOAD_LIMIT_MB,
         access_key=S3_ACCESS_KEY,
         secret_key=S3_SECRET_KEY,
     ):
