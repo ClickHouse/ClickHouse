@@ -6,17 +6,21 @@
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/Settings.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
@@ -191,6 +195,50 @@ static std::optional<UInt64> getNormalizedHash(const ActionsDAG::Node * node)
     return normalized->getOutputs()[0]->getHash();
 }
 
+static bool hasStatefulDefault(
+    const String & column_name, const ColumnsDescription & columns, const ContextPtr & context, NameSet & visited_columns);
+
+static bool hasStatefulFunction(
+    const IAST & ast, const ColumnsDescription & columns, const ContextPtr & context, NameSet & visited_columns)
+{
+    if (const auto * function = ast.as<ASTFunction>())
+    {
+        auto function_builder = FunctionFactory::instance().tryGet(function->name, context);
+        if (function_builder && function_builder->isStateful())
+            return true;
+    }
+    else if (const auto * identifier = ast.as<ASTIdentifier>())
+    {
+        return hasStatefulDefault(identifier->name(), columns, context, visited_columns);
+    }
+
+    for (const auto & child : ast.children)
+        if (hasStatefulFunction(*child, columns, context, visited_columns))
+            return true;
+
+    return false;
+}
+
+/// The reader fills the default of a column missing in a part after PREWHERE, on the rows that passed it.
+static bool hasStatefulDefault(
+    const String & column_name, const ColumnsDescription & columns, const ContextPtr & context, NameSet & visited_columns)
+{
+    if (!visited_columns.insert(column_name).second)
+        return false;
+
+    auto column_default = columns.getDefault(column_name);
+    return column_default && column_default->expression
+        && hasStatefulFunction(*column_default->expression, columns, context, visited_columns);
+}
+
+static bool isMissingInSomePart(const String & column_name, const RangesInDataParts & parts)
+{
+    for (const auto & part : parts)
+        if (!part.data_part->getColumnsDescription().has(column_name))
+            return true;
+    return false;
+}
+
 static void setQueryConditionCacheAttribution(
     PrewhereInfo & prewhere_info, const ReadFromMergeTree & read_from_merge_tree_step, const Settings & settings)
 {
@@ -286,7 +334,21 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (is_final && read_from_merge_tree_step && read_from_merge_tree_step->isPrewhereDeferredAfterFinal())
         return;
 
+    /// A stateful function in the filter expression would be calculated only on the rows that passed PREWHERE.
+    if (filter_step->getExpression().hasStatefulFunctions())
+        return;
+
     const auto & queried_columns = source_step_with_filter->requiredSourceColumns();
+
+    if (read_from_merge_tree_step)
+    {
+        const auto & columns = storage_snapshot->metadata->getColumns();
+        NameSet visited_columns;
+        for (const auto & column : queried_columns)
+            if (columns.hasDefault(column) && isMissingInSomePart(column, read_from_merge_tree_step->getParts())
+                && hasStatefulDefault(column, columns, context, visited_columns))
+                return;
+    }
 
     /// Statistics are only used to reorder conditions, so skip if there is just one.
     const auto & filter_root_node = filter_step->getExpression().findInOutputs(filter_step->getFilterColumnName());

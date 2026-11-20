@@ -123,7 +123,8 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
         auto & child_actions = child_filter->getExpression();
         auto & parent_actions = parent_filter->getExpression();
 
-        if (child_actions.hasArrayJoin())
+        /// A stateful function of the parent filter must see only the rows that passed the child filter.
+        if (child_actions.hasArrayJoin() || parent_actions.hasStatefulFunctions())
             return 0;
 
         const auto & child_filter_node = child_actions.findInOutputs(child_filter->getFilterColumnName());
