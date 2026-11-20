@@ -465,27 +465,34 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
     return predicate_value > 0;
 }
 
-const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_node)
+Names getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_node)
 {
-    static const Names no_aliases;
-
     QueryTreeNodePtr current = query_or_union_node;
     while (current)
     {
         if (const auto * query_node = current->as<QueryNode>())
-            /// On a resolved node the stored list can be longer than the projection, because column
-            /// pruning shrinks the projection columns but not the list.
-            return query_node->isResolved() ? no_aliases : query_node->getProjectionAliasesToOverride();
+        {
+            if (!query_node->isResolved())
+                return query_node->getProjectionAliasesToOverride();
+
+            /// A resolved query is written with the renamed projection names, unless it keeps its own (INTERPOLATE).
+            /// The stored list can be longer than the pruned projection, so the names come from the projection columns.
+            Names column_aliases;
+            if (query_node->hasProjectionNamesBeforeOverride())
+                for (const auto & projection_column : query_node->getProjectionColumns())
+                    column_aliases.push_back(projection_column.name);
+            return column_aliases;
+        }
 
         const auto * union_node = current->as<UnionNode>();
         if (!union_node)
-            return no_aliases;
+            return {};
 
         const auto & queries = union_node->getQueries().getNodes();
         current = queries.empty() ? nullptr : queries[0];
     }
 
-    return no_aliases;
+    return {};
 }
 
 static ASTPtr convertIntoTableExpressionAST(

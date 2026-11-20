@@ -965,9 +965,13 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
         auto project_names = projection_analysis_result.projection_column_names_with_display_aliases;
         const auto & interpolated_column_names = sort_analysis_result_optional->interpolated_column_names;
         /// A result column takes the interpolated values only if it is the column the target interpolates.
-        for (auto & [name, alias] : project_names)
-            if (auto it = interpolated_column_names.find(alias); it != interpolated_column_names.end() && it->second == name)
-                name = sort_analysis_result_optional->interpolate_target_column_names.at(alias);
+        for (size_t i = 0; i < project_names.size(); ++i)
+        {
+            auto & name = project_names[i].first;
+            const auto & target_name = query_node.getProjectionNameBeforeOverride(i);
+            if (auto it = interpolated_column_names.find(target_name); it != interpolated_column_names.end() && it->second == name)
+                name = sort_analysis_result_optional->interpolate_target_column_names.at(target_name);
+        }
 
         project_names_actions->dag.project(project_names, keep_inputs);
     }

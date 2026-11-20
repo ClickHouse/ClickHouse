@@ -67,6 +67,7 @@ QueryNode::QueryNode(ContextMutablePtr context_)
 
 void QueryNode::resolveProjectionColumns(NamesAndTypes projection_columns_value)
 {
+    projection_names_before_override.clear();
 
     // Ensure the number of aliases matches the number of projection columns
     if (!this->projection_aliases_to_override.empty())
@@ -78,8 +79,13 @@ void QueryNode::resolveProjectionColumns(NamesAndTypes projection_columns_value)
                 projection_columns_value.size(),
                 this->projection_aliases_to_override.size());
 
+        bool keep_names = hasInterpolate();
         for (size_t i = 0; i < projection_columns_value.size(); ++i)
+        {
+            if (keep_names)
+                projection_names_before_override.push_back(std::move(projection_columns_value[i].name));
             projection_columns_value[i].name = this->projection_aliases_to_override[i];
+        }
     }
     projection_columns = std::move(projection_columns_value);
 }
@@ -97,17 +103,21 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
 
         projection_nodes[write_index] = projection_nodes[i];
         projection_columns[write_index] = projection_columns[i];
+        if (hasProjectionNamesBeforeOverride())
+            projection_names_before_override[write_index] = projection_names_before_override[i];
         ++write_index;
     }
 
     projection_nodes.erase(projection_nodes.begin() + write_index, projection_nodes.end());
     projection_columns.erase(projection_columns.begin() + write_index, projection_columns.end());
+    if (hasProjectionNamesBeforeOverride())
+        projection_names_before_override.resize(write_index);
 
     if (hasInterpolate())
     {
         std::unordered_set<String> used_projection_columns;
-        for (const auto & projection : projection_columns)
-            used_projection_columns.insert(projection.name);
+        for (size_t i = 0; i < projection_columns.size(); ++i)
+            used_projection_columns.insert(getProjectionNameBeforeOverride(i));
 
         auto & interpolate_node = getInterpolate();
         auto & interpolate_list_nodes = interpolate_node->as<ListNode &>().getNodes();
@@ -396,6 +406,7 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_shuffle == rhs_typed.is_shuffle &&
         is_limit_after_all == rhs_typed.is_limit_after_all &&
         projection_columns == rhs_typed.projection_columns &&
+        projection_names_before_override == rhs_typed.projection_names_before_override &&
         settings_changes == rhs_typed.settings_changes &&
         default_settings == rhs_typed.default_settings &&
         query_parameters == rhs_typed.query_parameters;
@@ -431,6 +442,12 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     {
         state.update(projection_alias.size());
         state.update(projection_alias);
+    }
+
+    for (const auto & name : projection_names_before_override)
+    {
+        state.update(name.size());
+        state.update(name);
     }
 
     state.update(is_materialized);
@@ -502,6 +519,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->default_settings = default_settings;
     result_query_node->query_parameters = query_parameters;
     result_query_node->projection_aliases_to_override = projection_aliases_to_override;
+    result_query_node->projection_names_before_override = projection_names_before_override;
 
     return result_query_node;
 }
@@ -587,7 +605,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
             auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(projection_expression_list_ast.children[i].get());
 
             if (ast_with_alias)
-                ast_with_alias->setAlias(projection_columns[i].name);
+                ast_with_alias->setAlias(getProjectionNameBeforeOverride(i));
         }
     }
 
