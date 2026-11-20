@@ -534,9 +534,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         const auto & join_key_build_side = join_keys_build_side[i];
         const auto & join_key_probe_side = join_keys_probe_side[i];
 
+        DataTypePtr common_type = join_key_build_side.type;
         if (!join_key_build_side.type->equals(*join_key_probe_side.type))
         {
-            auto common_type = tryGetLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type});
+            common_type = tryGetLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type});
             if (!common_type)
             {
                 /// The keys still can be joined by the values that they have in common, see
@@ -553,12 +554,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 /// (`04669_join_key_no_supertype` asserts this for `LEFT ANTI`, where it would change results).
                 return false;
             }
-            common_types.push_back(JoinCommon::compareBoolKeysAsUInt8(std::move(common_type), join_key_build_side.type, join_key_probe_side.type));
         }
-        else
-        {
-            common_types.push_back(JoinCommon::compareBoolKeysAsUInt8(join_key_build_side.type, join_key_build_side.type, join_key_probe_side.type));
-        }
+        common_types.push_back(JoinCommon::compareBoolKeysAsUInt8(std::move(common_type), join_key_build_side.type, join_key_probe_side.type));
     }
 
     const auto distinct_keys_hint = getBuildSideDistinctKeys(*join_step, optimization_settings);
