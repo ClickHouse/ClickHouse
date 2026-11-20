@@ -34,11 +34,11 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return Data::name(); }
+    String getName() const override { return Data::name(); }
 
     static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<T>>(); }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -80,13 +80,13 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return Policy::name; }
+    String getName() const override { return Policy::name; }
 
     static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<T>>(); }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
-    [[nodiscard]] DataTypePtr getStateType() const override
+    DataTypePtr getStateType() const override
     {
         return this->argument_types.at(0);
     }
@@ -125,11 +125,11 @@ public:
         }
     }
 
-    [[nodiscard]] bool isVersioned() const override { return true; }
+    bool isVersioned() const override { return true; }
 
-    [[nodiscard]] size_t getDefaultVersion() const override { return 1; }
+    size_t getDefaultVersion() const override { return 1; }
 
-    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
+    size_t getVersionFromRevision(size_t revision) const override
     {
         if (revision >= STATE_VERSION_1_MIN_REVISION)
             return 1;
@@ -344,7 +344,7 @@ SELECT groupBitmapAnd(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%'
         )",
         R"(
 ┌─groupBitmapAnd(z)─┐
-│                 3 │
+│               3   │
 └───────────────────┘
         )"
     },
@@ -400,7 +400,7 @@ SELECT groupBitmapOr(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%')
         )",
         R"(
 ┌─groupBitmapOr(z)─┐
-│               15 │
+│             15   │
 └──────────────────┘
         )"
     },
@@ -455,7 +455,7 @@ SELECT groupBitmapXor(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%'
         )",
         R"(
 ┌─groupBitmapXor(z)─┐
-│                10 │
+│              10   │
 └───────────────────┘
         )"
     },
@@ -466,7 +466,7 @@ SELECT arraySort(bitmapToArray(groupBitmapXorState(z))) FROM bitmap_column_expr_
         )",
         R"(
 ┌─arraySort(bitmapToArray(groupBitmapXorState(z)))─┐
-│ [1,3,5,6,8,10,11,13,14,15]                       │
+│ [1, 3, 5, 6, 8, 10, 11, 13, 14, 15]              │
 └──────────────────────────────────────────────────┘
         )"
     }

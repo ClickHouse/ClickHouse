@@ -34,7 +34,7 @@ public:
         bool with_fill = false);
 
     /// Get sort expression
-    [[nodiscard]] const QueryTreeNodePtr & getExpression() const
+    const QueryTreeNodePtr & getExpression() const
     {
         return children[sort_expression_child_index];
     }
@@ -46,19 +46,19 @@ public:
     }
 
     /// Returns true if sort node has with fill, false otherwise
-    [[nodiscard]] bool withFill() const
+    bool withFill() const
     {
         return with_fill;
     }
 
     /// Returns true if sort node has fill from, false otherwise
-    [[nodiscard]] bool hasFillFrom() const
+    bool hasFillFrom() const
     {
         return children[fill_from_child_index] != nullptr;
     }
 
     /// Get fill from
-    [[nodiscard]] const QueryTreeNodePtr & getFillFrom() const
+    const QueryTreeNodePtr & getFillFrom() const
     {
         return children[fill_from_child_index];
     }
@@ -70,13 +70,13 @@ public:
     }
 
     /// Returns true if sort node has fill to, false otherwise
-    [[nodiscard]] bool hasFillTo() const
+    bool hasFillTo() const
     {
         return children[fill_to_child_index] != nullptr;
     }
 
     /// Get fill to
-    [[nodiscard]] const QueryTreeNodePtr & getFillTo() const
+    const QueryTreeNodePtr & getFillTo() const
     {
         return children[fill_to_child_index];
     }
@@ -88,13 +88,13 @@ public:
     }
 
     /// Returns true if sort node has fill step, false otherwise
-    [[nodiscard]] bool hasFillStep() const
+    bool hasFillStep() const
     {
         return children[fill_step_child_index] != nullptr;
     }
 
     /// Get fill step
-    [[nodiscard]] const QueryTreeNodePtr & getFillStep() const
+    const QueryTreeNodePtr & getFillStep() const
     {
         return children[fill_step_child_index];
     }
@@ -106,13 +106,13 @@ public:
     }
 
     /// Returns true if sort node has fill staleness, false otherwise
-    [[nodiscard]] bool hasFillStaleness() const
+    bool hasFillStaleness() const
     {
         return children[fill_staleness_child_index] != nullptr;
     }
 
     /// Get fill staleness
-    [[nodiscard]] const QueryTreeNodePtr & getFillStaleness() const
+    const QueryTreeNodePtr & getFillStaleness() const
     {
         return children[fill_staleness_child_index];
     }
@@ -124,40 +124,40 @@ public:
     }
 
     /// Get collator
-    [[nodiscard]] const std::shared_ptr<Collator> & getCollator() const
+    const std::shared_ptr<Collator> & getCollator() const
     {
         return collator;
     }
 
     /// Get sort direction
-    [[nodiscard]] SortDirection getSortDirection() const
+    SortDirection getSortDirection() const
     {
         return sort_direction;
     }
 
     /// Get nulls sort direction
-    [[nodiscard]] std::optional<SortDirection> getNullsSortDirection() const
+    std::optional<SortDirection> getNullsSortDirection() const
     {
         return nulls_sort_direction;
     }
 
-    [[nodiscard]] QueryTreeNodeType getNodeType() const override
+    QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::SORT;
     }
 
-    [[nodiscard]] const std::string & getColumnName() const { return column_name; }
+    const std::string & getColumnName() const { return column_name; }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(HashState & hash_state, CompareOptions) const override;
 
-    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
+    QueryTreeNodePtr cloneImpl() const override;
 
-    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     static constexpr size_t sort_expression_child_index = 0;
