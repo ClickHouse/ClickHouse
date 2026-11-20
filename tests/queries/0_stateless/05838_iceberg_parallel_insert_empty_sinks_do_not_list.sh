@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 TABLE="t_${CLICKHOUSE_DATABASE}_${RANDOM}"
-TABLE_PATH="05629_iceberg_empty_sinks/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+TABLE_PATH="05838_iceberg_empty_sinks/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE} (k Int64) ENGINE = IcebergS3(s3_conn, filename = '${TABLE_PATH}')"
 
