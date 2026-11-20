@@ -9,6 +9,8 @@ from helpers.cluster import ClickHouseCluster
 # test stores such a definition by editing the metadata file of a detached object and attaching it back with the
 # short `ATTACH`, which replays the stored definition.
 
+KEEPER_FEATURE_FLAGS = ["filtered_list", "multi_read", "list_with_stat_and_data", "check_stat"]
+
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
@@ -16,13 +18,21 @@ node = cluster.add_instance(
     with_minio=True,
     # UNIQUE KEY reads and writes open a transaction, which needs Keeper with these features; S3Queue needs Keeper too.
     with_zookeeper=True,
-    keeper_required_feature_flags=["filtered_list", "multi_read", "list_with_stat_and_data", "check_stat"],
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
+    # A refreshable view in a `Replicated` database is coordinated under the default replica path, which uses these.
+    macros={"shard": "s1", "replica": "r1"},
     # The tests edit metadata files, which must be local.
     with_remote_database_disk=False,
 )
 
-# A second replica of a `Replicated` database, which must load the definitions the first one stored.
-replica = cluster.add_instance("replica", with_zookeeper=True)
+# A second replica of a `Replicated` database, which must load the definitions the first one stored. The Keeper feature
+# flags are a cluster-wide setting that every instance overwrites, so it repeats them.
+replica = cluster.add_instance(
+    "replica",
+    with_zookeeper=True,
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
+    macros={"shard": "s1", "replica": "r2"},
+)
 
 UK_SETTINGS = {"enable_unique_key": "1"}
 
