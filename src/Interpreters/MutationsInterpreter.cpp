@@ -1859,8 +1859,26 @@ void MutationsInterpreter::prepare(bool dry_run)
                     for (const auto & required_column : syntax_result->requiredSourceColumns())
                     {
                         auto resolved = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);
-                        if (resolved && columns_desc.hasPhysical(resolved->getNameInStorage()))
-                            dependencies.emplace(resolved->getNameInStorage(), ColumnDependency::TTL_EXPRESSION);
+                        if (!resolved)
+                            continue;
+
+                        const auto & name_in_storage = resolved->getNameInStorage();
+
+                        /// An `EPHEMERAL` column is a valid input of an ordinary `DEFAULT` expression
+                        /// (`y UInt64 DEFAULT e + 1 TTL c + INTERVAL ...` with `e ... EPHEMERAL`), but it is
+                        /// not stored, so it cannot be fed into the mutation block and `TTLTransform` cannot
+                        /// evaluate the reset expression: the mutation would be queued and never finish
+                        /// (`NOT_FOUND_COLUMN_IN_BLOCK`). Refuse the command up front instead.
+                        if (columns_desc.get(name_in_storage).default_desc.kind == ColumnDefaultKind::Ephemeral)
+                            throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                                "Refused to materialize column {} because it makes the mutation re-evaluate the column TTLs, "
+                                "and one of them resets column {} to its DEFAULT expression, which reads the EPHEMERAL "
+                                "column {}. An EPHEMERAL column is not stored, so the expression cannot be evaluated "
+                                "by a mutation",
+                                backQuote(command.column_name), backQuote(ttl_column_name), backQuote(name_in_storage));
+
+                        if (columns_desc.hasPhysical(name_in_storage))
+                            dependencies.emplace(name_in_storage, ColumnDependency::TTL_EXPRESSION);
                     }
                 }
 
