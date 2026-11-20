@@ -492,6 +492,30 @@ TEST_F(MetadataLocalDiskTest, TestValidSingleOperationsRemove)
     EXPECT_FALSE(metadata->existsFile("g.txt"));
 }
 
+TEST_F(MetadataLocalDiskTest, TestBlobsToRemoveRestoredAfterRestart)
+{
+    const std::string path = "/TestBlobsToRemoveRestoredAfterRestart";
+    auto metadata = getMetadataStorage(path);
+    metadata->startup();
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createMetadataFile("f.txt", {DB::StoredObject("blob", "f.txt", 100)});
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->unlinkFile("f.txt", /*if_exists=*/false, /*should_remove_objects=*/true);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    auto disk = getMetadataDisk(path);
+    auto restarted = std::make_shared<DB::MetadataStorageFromDisk>(disk, path, DB::createObjectStorageKeyGeneratorByTemplate("[a-z]{32}"),
+        std::make_unique<DB::PersistentRemovalQueue>(disk, std::string(DB::MetadataStorageFromDisk::SYSTEM_METADATA_DIR), /*compaction_threshold_=*/1000));
+    restarted->startup();
+
+    verifyBlobsToRemove(restarted, {"blob"});
+}
+
 TEST_F(MetadataLocalDiskTest, TestValidUnlinkMetadata)
 {
     auto metadata = getMetadataStorage("/TestValidUnlinkMetadata");
