@@ -35,13 +35,8 @@ Names expressionSourceColumns(
     if (!table_expression_data)
         return {};
 
-    /// kept alias columns are only in the selected list, expanded ones only register their base columns
-    Names result = table_expression_data->getColumnNames();
-    NameSet seen(result.begin(), result.end());
-    for (const auto & name : table_expression_data->getSelectedColumnsNames())
-        if (seen.insert(name).second)
-            result.push_back(name);
-    return result;
+    /// a kept alias is registered as selected and its base columns as not selected, an expanded one the other way round
+    return keep_alias_columns ? table_expression_data->getSelectedColumnsNames() : table_expression_data->getColumnNames();
 }
 
 }
