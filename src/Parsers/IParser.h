@@ -18,6 +18,7 @@ namespace DB
 
 struct LiteralTokenMap;
 struct FailedKeywordReadings;
+struct FailedSubqueryReadings;
 
 namespace ErrorCodes
 {
@@ -90,6 +91,9 @@ struct Expected
 
     /// Positions of CASE and INTERVAL tokens whose keyword reading failed in this parse; copies share it.
     std::shared_ptr<FailedKeywordReadings> failed_keyword_readings;
+
+    /// Positions of opening brackets where `ParserSubquery` failed in this parse; copies share it.
+    std::shared_ptr<FailedSubqueryReadings> failed_subquery_readings;
 
     /// 'description' should be statically allocated string.
     ALWAYS_INLINE void add(const char * current_pos, const char * description)
@@ -187,7 +191,7 @@ public:
     };
 
     /** Get the text of this parser parses. */
-    virtual const char * getName() const = 0;
+    [[nodiscard]] virtual const char * getName() const = 0;
 
     /** Parse piece of text from position `pos`, but not beyond end of line (`end` - position after end of line),
       * move pointer `pos` to the maximum position to which it was possible to parse,
@@ -236,14 +240,14 @@ public:
     /** If the parsed fragment should be highlighted in the query editor,
       * which type of highlighting to use?
       */
-    virtual Highlight highlight() const
+    [[nodiscard]] virtual Highlight highlight() const
     {
         return Highlight::none;
     }
 
     /// True for dialect parsers that read the raw query text themselves and use the SQL tokens
     /// only to find the end of the statement, so a token the SQL lexer rejects is not an error.
-    virtual bool consumesRawText() const
+    [[nodiscard]] virtual bool consumesRawText() const
     {
         return false;
     }

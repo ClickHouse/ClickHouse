@@ -20,7 +20,7 @@ public:
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
 
-    MergedStats getMergedStats() const override { return merged_data->getMergedStats(); }
+    [[nodiscard]] MergedStats getMergedStats() const override { return merged_data->getMergedStats(); }
 
     size_t prev_unequal_column = 0;
 
@@ -58,11 +58,15 @@ protected:
     /// runs (e.g. parts that each hold every key once) the detection is pure overhead.
     bool uses_runs_of_equal_keys = false;
 
+    /// Set by a derived algorithm whose merges keep at most one row per sort key: then two rows of one source
+    /// with a non-zero part level always have different keys (see `rowsHaveDifferentSortColumns`).
+    bool nonzero_level_parts_have_unique_keys = false;
+
     /// Whether some source (with a zero part level, read without a permutation) starts with
     /// enough runs of equal sort keys for skipping them to be cheaper than merging them row by
     /// row. A single duplicate is not enough: the probe for the end of a run runs on the rows
     /// outside runs too.
-    bool sourcesHaveRunsWorthSkipping() const;
+    [[nodiscard]] bool sourcesHaveRunsWorthSkipping() const;
 
     /// Set by a derived algorithm before `initialize` to also enable batch detection when `sourcesHaveLongBatchesOfUniqueKeys`.
     bool uses_batches_of_unique_keys = false;
@@ -72,7 +76,7 @@ protected:
     static constexpr size_t max_share_of_rows_to_check = 8;
 
     /// Whether most of the first rows come in batches of at least `min_batch_size_to_take` rows of sources with unique keys.
-    bool sourcesHaveLongBatchesOfUniqueKeys() const;
+    [[nodiscard]] bool sourcesHaveLongBatchesOfUniqueKeys() const;
 
     /// Whether the queue detects batches longer than one row (decided in `initialize`).
     /// A batch of more than one row is not by itself evidence that the detection ran: with a
@@ -92,17 +96,19 @@ protected:
 
     /// A rejected row still writes its row source entry, left skipped, so the gather stage stays
     /// in step with the rows that were read.
-    bool isRowFiltered(const RowRef & row) const
+    [[nodiscard]] bool isRowFiltered(const RowRef & row) const
     {
         const auto * mask = row.owned_chunk->row_filter_mask;
         return mask && !(*mask)[row.row_num];
     }
 
     void setRowRef(RowRef & row, SortCursor & cursor) { row.set(cursor, sources[cursor.impl->order].chunk); }
-    bool skipLastRowFor(size_t input_number) const { return sources[input_number].skip_last_row; }
+    [[nodiscard]] bool skipLastRowFor(size_t input_number) const { return sources[input_number].skip_last_row; }
 
-    /// A part with a non-zero level is taken to have no duplicate sorting keys.
-    bool sourceHasUniqueKeys(size_t source_num) const { return sources_origin_merge_tree_part_level[source_num] > 0; }
+    [[nodiscard]] bool sourceHasUniqueKeys(size_t source_num) const
+    {
+        return nonzero_level_parts_have_unique_keys && sources_origin_merge_tree_part_level[source_num] > 0;
+    }
 
     bool rowsHaveDifferentSortColumns(const RowRef & lhs, const RowRef & rhs)
     {
