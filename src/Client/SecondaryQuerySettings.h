@@ -23,9 +23,6 @@ struct Settings;
 ///   the shard otherwise takes the parser from the effective `dialect` of the authenticated user, which
 ///   its own profile may default to Kusto or PRQL. Sending a value the user already has is a no-op for
 ///   settings constraints, so this does not trip a profile that pins `dialect` as read-only.
-/// - An explicit `group_by_overflow_mode` other than `any` forbids the cap on groups of a trivial `GROUP BY ... LIMIT`
-///   (see `getTrivialGroupByLimit`), but the shard drops a value equal to its own, so it cannot tell that `throw` is
-///   explicit. Thus `optimize_trivial_group_by_limit_query` is disabled for the shard explicitly.
 ///
 /// The demotion runs first, so the `dialect` override is marked changed afterwards.
 void prepareSecondaryQuerySettings(Settings & settings);
@@ -48,5 +45,15 @@ void markAggregationMethodSettingsChanged(Settings & settings);
 /// legacy method, while the initiator takes the packed one, and the two methods put a 12-byte key into
 /// different buckets.
 bool aggregationMethodSettingsDifferFromInitiator(const Settings & initiator_settings, const Settings & settings);
+
+/// For the server of a secondary query. Returns whether the initiator passed `group_by_overflow_mode`
+/// (`initiator_settings`), and `settings`, the settings of the query after the server applied its settings
+/// constraints, have the same value but do not mark it as changed: the constraints drop a passed value that is
+/// equal to the current one. The server must mark it as changed again, because an explicit mode other than `any`
+/// forbids the cap on groups of a trivial `GROUP BY ... LIMIT` (see `getTrivialGroupByLimit`). Without the mark,
+/// the shard would cap the groups and suppress the `throw` of the user, for example when a nested `SETTINGS` clause
+/// or the profile of the remote user enables `optimize_trivial_group_by_limit_query`. A value that the
+/// constraints changed is not restored.
+bool explicitGroupByOverflowModeIsLost(const Settings & initiator_settings, const Settings & settings);
 
 }
