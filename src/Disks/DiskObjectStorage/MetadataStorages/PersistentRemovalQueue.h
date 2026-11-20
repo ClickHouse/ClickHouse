@@ -41,6 +41,7 @@ private:
     /// Returns true if compaction is needed (version mismatch or truncated entries).
     bool readLog();
     void appendToLog(EntryType entry_type, const StoredObjects & blobs);
+    void appendToLogImpl(EntryType entry_type, const StoredObjects & blobs);
     void compactLog();
 
     const DiskPtr disk;
@@ -53,6 +54,9 @@ private:
 
     /// Number of REMOVED entries in the log that haven't been compacted yet.
     size_t stale_entries = 0;
+
+    /// A failed append may leave an empty file or a partial entry in the log: it must be rewritten before the next append.
+    bool log_needs_repair = false;
 };
 
 }

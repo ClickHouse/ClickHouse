@@ -2,12 +2,18 @@
 
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PersistentRemovalQueue.h>
+#include <Common/FailPoint.h>
 #include <Common/getRandomASCIIString.h>
 
 #include <filesystem>
 #include <fstream>
 
 namespace fs = std::filesystem;
+
+namespace DB::FailPoints
+{
+    extern const char persistent_removal_queue_fail_append[];
+}
 
 namespace
 {
@@ -109,4 +115,21 @@ TEST_F(PersistentRemovalQueueTest, TornLastEntryIsDropped)
 
     auto queue = open();
     EXPECT_EQ(keys(*queue), (Keys{"key1", "key2", "key3"}));
+}
+
+TEST_F(PersistentRemovalQueueTest, LogIsRepairedAfterFailedAppend)
+{
+    {
+        auto queue = open();
+        DB::FailPointInjection::enableFailPoint(DB::FailPoints::persistent_removal_queue_fail_append);
+        queue->submitForRemoval(blobs({"key1"}));
+        DB::FailPointInjection::disableFailPoint(DB::FailPoints::persistent_removal_queue_fail_append);
+        EXPECT_TRUE(fs::exists(logPath()));
+        EXPECT_EQ(fs::file_size(logPath()), 0);
+
+        queue->submitForRemoval(blobs({"key2"}));
+    }
+
+    auto queue = open();
+    EXPECT_EQ(keys(*queue), (Keys{"key1", "key2"}));
 }
