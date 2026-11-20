@@ -36,27 +36,28 @@ When set to 1, allows queries such as:
 
 When set to 2, allows the above plus `SET`, `CREATE TEMPORARY TABLE` and `RESTORE`. A `RESTORE` can
 create a table and load data into it, so `readonly = 2` does not by itself stop a session from
-writing; `readonly = 1` refuses it.
+writing; `readonly = 1` refuses it. A temporary table with an `ENGINE` clause other than `Memory`, such
+as `File` or `URL`, needs the `CREATE ARBITRARY TEMPORARY TABLE` privilege and is refused at any value
+above 0.
 
 `BACKUP` is not restricted by `readonly` at any value: a session that has the privileges to back a
 table up can write a backup even at `readonly = 1`. Do not rely on `readonly` to prevent backups.
 
 Most table functions need the `CREATE TEMPORARY TABLE` privilege, so a `SELECT` that reads from one is
 refused at `readonly = 1` but not at `readonly = 2`. Some, such as `numbers`, are allowed in read-only
-mode.
+mode. `INSERT INTO FUNCTION` is refused at any value above 0, because it writes to the function's
+source rather than to a temporary table.
 
 For any value above 0, none of the following is permitted on a persistent table: write data queries
 (`INSERT`, `OPTIMIZE`, `DELETE`, `UPDATE`, `ALTER TABLE ... DELETE`, `ALTER TABLE ... UPDATE`) or DDL
-queries (`CREATE`, `ALTER TABLE`, `ALTER VIEW`, `RENAME`, `EXCHANGE`, `ATTACH`, `DETACH`, `DROP`,
-`TRUNCATE TABLE`). `SYSTEM` statements that require a privilege from the `SYSTEM` group, and `CREATE`, `ALTER`
+queries (`CREATE`, `ALTER TABLE`, `ALTER VIEW`, `ALTER DATABASE`, `RENAME`, `EXCHANGE`, `ATTACH`, `DETACH`,
+`DROP`, `TRUNCATE TABLE`). `SYSTEM` statements that require a privilege from the `SYSTEM` group, and `CREATE`, `ALTER`
 and `DROP` of users, roles, row policies, masking policies, quotas and settings profiles are not
-permitted either. Named collection management is an exception: `readonly` does not restrict
-`CREATE NAMED COLLECTION`, `ALTER NAMED COLLECTION` or `DROP NAMED COLLECTION`.
+permitted either. `KILL TRANSACTION` and named collection management (`CREATE NAMED COLLECTION`,
+`ALTER NAMED COLLECTION`, `DROP NAMED COLLECTION`) are refused too.
 
-Granting a privilege or a role with `GRANT` and revoking a role with `REVOKE` are refused too, but not every
-access management statement is: a local `REVOKE` of a privilege and `GRANT CURRENT GRANTS` are not gated by
-`readonly`, so a read-only session can still revoke a privilege it holds with grant option and propagate its
-own grants to another user. Revoking a privilege `ON CLUSTER` is refused.
+Changing grants is refused too, locally and `ON CLUSTER`: granting a privilege or a role with `GRANT`,
+granting privileges with `GRANT CURRENT GRANTS`, and revoking a privilege or a role with `REVOKE`.
 
 Temporary tables are exempt from both settings: a session that may create one may also `ALTER` it,
 insert into it and drop it.
@@ -87,10 +88,12 @@ tables, views, dictionaries, user-defined functions, workloads, resources and SQ
 Possible values:
 
 - 0 — Executing a query on a persistent object that needs any of the following privileges is
-  blocked: `CREATE DATABASE`, `DROP DATABASE`, `CREATE TABLE`, `CREATE VIEW`, `ALTER TABLE`,
-  `ALTER VIEW`, `DROP TABLE`, `DROP VIEW`, `TRUNCATE`, `CREATE DICTIONARY`, `DROP DICTIONARY`,
-  `CREATE FUNCTION`, `DROP FUNCTION`, `CREATE WORKLOAD`, `DROP WORKLOAD`, `CREATE RESOURCE`,
-  `DROP RESOURCE`, `CREATE HANDLER`, `ALTER HANDLER`, `DROP HANDLER`. `RENAME`, `EXCHANGE`,
+  blocked: `CREATE DATABASE`, `ALTER DATABASE`, `DROP DATABASE`, `CREATE TABLE`, `CREATE VIEW`,
+  `ALTER TABLE`, `ALTER VIEW`, `DROP TABLE`, `DROP VIEW`, `TRUNCATE`, `UNDROP TABLE`,
+  `CREATE DICTIONARY`, `DROP DICTIONARY`, `CREATE FUNCTION`, `DROP FUNCTION`, `CREATE WORKLOAD`,
+  `DROP WORKLOAD`, `CREATE RESOURCE`, `DROP RESOURCE`, `CREATE NAMED COLLECTION`,
+  `ALTER NAMED COLLECTION`, `DROP NAMED COLLECTION`, `CREATE HANDLER`, `ALTER HANDLER`,
+  `DROP HANDLER`. `RENAME`, `EXCHANGE`,
   `ATTACH` and `DETACH` need these privileges too, so they are blocked as well, except that
   `ALTER TABLE ... ATTACH PARTITION` and `ATTACH PART` need only `INSERT` and are not blocked by
   this setting, although `readonly` blocks them on a persistent table.
@@ -106,9 +109,7 @@ You cannot run `SET allow_ddl = 1` if `allow_ddl = 0` for the current session.
 
 `allow_ddl` does not restrict access management queries: `GRANT`, `REVOKE` and `CREATE`, `ALTER` and
 `DROP` of users, roles, row policies, masking policies, quotas and settings profiles are unaffected by
-it. `CREATE TEMPORARY TABLE` and named collection management are unaffected too, as are
-`ALTER DATABASE ... MODIFY SETTING`, `ALTER DATABASE ... MODIFY COMMENT` and `UNDROP TABLE`, which
-`readonly` does not restrict either. Inside a `CREATE` or `ALTER` of a user, a role or a settings
+it. `CREATE TEMPORARY TABLE` is unaffected too. Inside a `CREATE` or `ALTER` of a user, a role or a settings
 profile, a `SETTINGS allow_ddl = 1` clause is refused while the current session has `allow_ddl = 0`,
 and a `SETTINGS allow_ddl = 0` clause is accepted. An embedded setting is checked against the
 session's own settings constraints, which is also why `SET allow_ddl = 1` is refused.
@@ -121,7 +122,8 @@ Killing your own queries does not require the `KILL QUERY` privilege, so it work
 of `readonly` and `allow_ddl`. It does require `SELECT` on `system.processes`, except for
 `KILL QUERY WHERE query_id = '<id>'`, which cancels your own query with that id without reading that
 table. Killing a query that belongs to another user, and any `KILL QUERY ... ON CLUSTER`, require the
-`KILL QUERY` privilege, which `readonly = 1` and `readonly = 2` refuse.
+`KILL QUERY` privilege, which `readonly = 1` and `readonly = 2` refuse. `KILL TRANSACTION` always
+requires the `KILL TRANSACTION` privilege, which `readonly = 1` and `readonly = 2` refuse.
 </Info>
 
 ## Other relevant settings {#other-relevant-settings}
