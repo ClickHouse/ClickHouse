@@ -99,6 +99,9 @@ protected:
         const auto access = context->getAccess();
         const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
+        /// Positions of `total_rows`, `data_compressed_bytes` and `data_uncompressed_bytes` in the table structure.
+        const bool need_projection_sizes = column_mask[4] || column_mask[5] || column_mask[6];
+
         size_t rows_count = 0;
         while (rows_count < max_block_size)
         {
@@ -133,12 +136,23 @@ protected:
                     continue;
                 const auto & projections = metadata_snapshot->getProjections();
 
-                /// Same active-part snapshot as #70106. `StorageAlias::isMergeTree()` is true for an alias of a
-                /// MergeTree table, and that object is not a `MergeTreeData`, so only cast the real engine.
+                /// Collecting the parts is only needed for the size columns, and only when there is a projection to report.
                 MergeTreeData::DataPartsVector parts;
-                if (table->isMergeTree() && !table->as<StorageAlias>())
-                    parts = static_cast<const MergeTreeData &>(*table).getDataPartsVectorForInternalUsage(
-                        {MergeTreeData::DataPartState::Active}, nullptr);
+                if (need_projection_sizes && !projections.empty())
+                {
+                    /// An `Alias` reports the projections of the table at the end of its chain, so read the parts from there.
+                    StoragePtr data_table = table;
+                    if (const auto * alias = table->as<StorageAlias>())
+                    {
+                        const auto chain = alias->getTargetChain();
+                        data_table = DatabaseCatalog::instance().tryGetTable(StorageID(chain.back().first, chain.back().second), context);
+                    }
+
+                    /// `StorageAlias::isMergeTree` forwards to its target, so check the actual type.
+                    /// The end of a cyclic chain is an `Alias` and is skipped here.
+                    if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(data_table.get()))
+                        parts = merge_tree->getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, nullptr);
+                }
 
                 for (const auto & projection : projections)
                 {
