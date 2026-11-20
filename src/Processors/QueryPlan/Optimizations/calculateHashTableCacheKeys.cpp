@@ -22,7 +22,6 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
-#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/IStorage.h>
@@ -393,8 +392,7 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
 void calculateHashTableCacheKeys(
     const QueryPlan::Node & root,
     UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & cache_keys,
-    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & raw_hashes,
-    UnorderedSetWithMemoryTracking<const QueryPlan::Node *> * unidentified_sources)
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & raw_hashes)
 {
     struct Frame
     {
@@ -402,18 +400,6 @@ void calculateHashTableCacheKeys(
         size_t next_child = 0;
         // Hash state which steps should update with their own hashes
         SipHash hash{};
-    };
-
-    const auto track_unidentified_sources = [unidentified_sources](const QueryPlan::Node & node)
-    {
-        if (!unidentified_sources)
-            return;
-        bool unidentified = node.children.empty() && !typeid_cast<const ReadNothingStep *>(node.step.get())
-            && !dynamic_cast<const SourceStepWithFilter *>(node.step.get());
-        for (const auto * child : node.children)
-            unidentified |= unidentified_sources->contains(child);
-        if (unidentified)
-            unidentified_sources->insert(&node);
     };
 
     // We use addresses of `left` and `right`, so they should be stable
@@ -460,7 +446,6 @@ void calculateHashTableCacheKeys(
                     raw_hashes[&node] = raw;
                     cache_keys[&node] = raw;
 
-                    track_unidentified_sources(node);
                     stack.pop_back();
                 }
 
@@ -645,9 +630,6 @@ void calculateHashTableCacheKeys(
             frame.hash.update(calculateHashFromStep(*source));
         else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
             frame.hash.update(calculateHashFromStep(*read));
-        /// An empty read has no table identity: it shares a key only with other empty reads, whose builds are empty too.
-        else if (typeid_cast<const ReadNothingStep *>(node.step.get()))
-            frame.hash.update("ReadNothingStep");
         else if (const auto * transform = dynamic_cast<const ITransformingStep *>(node.step.get()))
         {
             // Completely ignore the ignored steps (i.e. the ones for which we return 0)
@@ -687,7 +669,6 @@ void calculateHashTableCacheKeys(
             cache_keys[&node] = raw;
         }
 
-        track_unidentified_sources(node);
         stack.pop_back();
     }
 }

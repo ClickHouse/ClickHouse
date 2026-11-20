@@ -91,7 +91,6 @@ struct RuntimeHashStatisticsContext
     /// built during reorder, where the post-reorder parent's contribution differs from
     /// whatever was originally stamped into `cache_keys` during the pre-reorder walk.
     UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> raw_hashes;
-    UnorderedSetWithMemoryTracking<const QueryPlan::Node *> unidentified_sources;
     StatsCollectingParams params;
 
     RuntimeHashStatisticsContext(const QueryPlanOptimizationSettings & optimization_settings, const QueryPlan::Node & root_node)
@@ -103,7 +102,7 @@ struct RuntimeHashStatisticsContext
     {
         if (optimization_settings.collect_hash_table_stats_during_joins)
         {
-            calculateHashTableCacheKeys(root_node, cache_keys, raw_hashes, &unidentified_sources);
+            calculateHashTableCacheKeys(root_node, cache_keys, raw_hashes);
         }
     }
 
@@ -147,7 +146,6 @@ struct RuntimeHashStatisticsContext
     {
         UInt64 right_key = 0;
         UInt64 output_key = 0;
-        bool right_sources_identified = false;
     };
 
     DerivedJoinCacheKeys deriveCacheKeysForNewJoin(
@@ -179,10 +177,6 @@ struct RuntimeHashStatisticsContext
         raw_hashes[&new_node] = raw_new;
         cache_keys[&new_node] = raw_new;
 
-        const bool right_sources_identified = !unidentified_sources.contains(right_child_node);
-        if (!right_sources_identified || unidentified_sources.contains(left_child_node))
-            unidentified_sources.insert(&new_node);
-
         /// Derive a key for the join output stats that takes the kind, strictness
         /// and non-equi conditions into account, in addition to the equi conditions
         /// covered by `calculateJoinStepCacheKeyContribution`.
@@ -198,7 +192,7 @@ struct RuntimeHashStatisticsContext
             condition.getNode()->updateHash(output_hash);
         }
 
-        return {right_key, output_hash.get64(), right_sources_identified};
+        return {right_key, output_hash.get64()};
     }
 };
 
@@ -1599,7 +1593,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             auto join_cache_keys = query_graph_builder.context->statistics_context
                 .deriveCacheKeysForNewJoin(left_child_node, right_child_node, new_node, *join_step);
             if (join_cache_keys.right_key)
-                join_step->setRightHashTableCacheKey(join_cache_keys.right_key, join_cache_keys.right_sources_identified);
+                join_step->setRightHashTableCacheKey(join_cache_keys.right_key);
             if (join_cache_keys.output_key)
                 join_step->setJoinOutputCacheKey(join_cache_keys.output_key);
 

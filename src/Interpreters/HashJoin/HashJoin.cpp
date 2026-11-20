@@ -1727,16 +1727,13 @@ HashJoin::~HashJoin()
     {
         if (build_phase_finished)
         {
-            /// An empty build is recorded only under a key that no other data shares: its `source_rows = 0` is the estimate of the next run.
-            const auto ht_size = getTotalRowCount();
-            if (stats_collecting_params.build.isCollectionAndUseEnabled() && (ht_size || stats_collecting_params.build_sources_identified))
+            /// Like `ConcurrentHashJoin`, a parallel build of a fixed-key map leaves no entry: it has nothing to preallocate.
+            if (stats_collecting_params.build.isCollectionAndUseEnabled() && data->type != Type::two_level_key8
+                && data->type != Type::two_level_key16)
             {
-                /// A non-empty parallel build of a fixed-key map has nothing to preallocate, so it only updates an existing entry.
-                const bool fixed_key_parallel = data->type == Type::two_level_key8 || data->type == Type::two_level_key16;
+                /// An empty build is recorded too: the next run takes `source_rows` as the row estimate of the right side.
                 getHashTablesStatistics<HashJoinEntry>().update(
-                    {.ht_size = ht_size, .source_rows = data->rows_to_join},
-                    stats_collecting_params.build,
-                    /*insert=*/!fixed_key_parallel || data->rows_to_join == 0);
+                    {.ht_size = getTotalRowCount(), .source_rows = data->rows_to_join}, stats_collecting_params.build);
             }
 
             if (stats_collecting_params.match.isCollectionAndUseEnabled() && probe_phase_finished && hash_table_matches.has_value())
