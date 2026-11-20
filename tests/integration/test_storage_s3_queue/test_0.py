@@ -3317,6 +3317,52 @@ def test_external_move_onto_the_source_itself_is_refused(started_cluster, move_e
     assert read_s3_object(started_cluster, bucket, source_key) == data
 
 
+def test_external_move_to_an_access_point_with_the_source_key_is_refused(started_cluster):
+    """An access point alias (`...-s3alias`) names the objects of a bucket whose name it does not contain, so a
+    prefixless move to it may be a move of every object onto itself. It is refused, as is a move onto the object itself.
+    MinIO has no access points; a bucket with such a name stands in for one."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = started_cluster.minio_bucket
+    alias_bucket = f"ap-{token}-s3alias"
+    table_name = f"move_to_access_point_{token}"
+    files_path = f"{table_name}_data"
+    source_key = f"{files_path}/part.csv"
+    data = b"1,2,3\n"
+    client = started_cluster.minio_client
+    # The MinIO client refuses to name a bucket like an access point alias, boto3 does not.
+    boto3_client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+    boto3_client.create_bucket(Bucket=alias_bucket)
+    put_s3_file_content(started_cluster, source_key, data)
+    last_modified = client.stat_object(bucket, source_key).last_modified
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        after_processing="move",
+        move_to_bucket=alias_bucket,
+    )
+    create_mv(node, table_name, f"{table_name}_dst")
+
+    wait_until(
+        lambda: node.contains_in_log(
+            f"Not moving object {source_key}: the move destination is the object itself"
+        )
+    )
+    assert int(node.query(f"SELECT count() FROM {table_name}_dst")) == 1
+    assert client.stat_object(bucket, source_key).last_modified == last_modified
+    assert read_s3_object(started_cluster, bucket, source_key) == data
+    assert boto3_client.list_objects_v2(Bucket=alias_bucket)["KeyCount"] == 0
+
+
 def test_unguarded_same_storage_move_deletes_only_the_copied_version(started_cluster):
     """A move inside the same bucket that preserves the path needs no destination guard, but its
     delete must still take only the version the copy consumed: a re-upload of the same bytes carries

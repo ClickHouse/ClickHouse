@@ -20,6 +20,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMoveDestinationAccess.h>
 #include <base/scope_guard.h>
+#include <Poco/String.h>
 
 #include <chrono>
 #include <thread>
@@ -480,6 +481,21 @@ static bool mayBeSameAzureBlob(const Azure::Core::Url & lhs, const Azure::Core::
 }
 #endif
 
+#if USE_AWS_S3
+/// Whether the bucket of `uri` may be addressed through an access point rather than by its own name. An access point
+/// alias (`...-s3alias`), an Object Lambda alias (`...--ol-s3`), an access point host (`...s3-accesspoint...`), an Object
+/// Lambda host (`...s3-object-lambda...`) and a Multi-Region Access Point host (`....mrap.accesspoint.s3-global...`) all
+/// name the objects of a bucket whose name they do not contain, so a comparison of bucket names cannot tell that the
+/// two are distinct.
+static bool mayBeS3AccessPoint(const S3::URI & uri)
+{
+    const String bucket = Poco::toLower(uri.bucket);
+    const String host = Poco::toLower(uri.uri.getHost());
+    return bucket.ends_with("-s3alias") || bucket.ends_with("--ol-s3") || host.contains("accesspoint")
+        || host.contains("object-lambda") || host.contains(".mrap.");
+}
+#endif
+
 static StoredObject applyMovePrefixIfPresent(const StoredObject & src, const String & move_prefix, bool preserve_path)
 {
     if (move_prefix.empty())
@@ -931,8 +947,10 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             /// its own key would be copied onto itself (the buffered copy re-uploads the same bytes, keeping its `ETag`) and
             /// then removed, so it is left in place instead. A bucket of the same name is taken as the source bucket whatever
             /// the endpoints are: distinct hosts or ports do not prove that the services are distinct (a host name and its IP
-            /// address, a CNAME, regional and dual-stack AWS endpoints all name the same bucket).
-            const bool destination_may_be_source_bucket = dst_uri.bucket == src_bucket;
+            /// address, a CNAME, regional and dual-stack AWS endpoints all name the same bucket). If either side is addressed
+            /// through an access point, its name does not identify the bucket, so it may be the source bucket as well.
+            const bool destination_may_be_source_bucket
+                = dst_uri.bucket == src_bucket || mayBeS3AccessPoint(dst_uri) || mayBeS3AccessPoint(s3_storage->getURI());
             for (const auto & object_from : objects)
             {
                 auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);
