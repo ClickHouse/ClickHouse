@@ -356,9 +356,10 @@ NO_INLINE size_t writeFloatTextFastPathFloat64Rounded(Float64 f64, int16_t exp, 
 
 }
 
+/// `ALWAYS_INLINE`: with ThinLTO, it is inlined into the callers in other modules, such as the loops formatting whole columns.
 template <typename T>
 requires is_floating_point<T>
-size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point)
+ALWAYS_INLINE size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point)
 {
     size_t result = 0;
 
