@@ -5682,8 +5682,7 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
         disk->moveDirectory(relative_data_path, new_table_path);
     }
 
-    /// A table that moves to a database without UUIDs gives its UUID up.
-    if (!getStorageID().hasUUID() || !new_table_id.hasUUID())
+    if (!getStorageID().hasUUID())
         getContext()->clearCaches();
 
     /// TODO: remove const_cast
@@ -5745,6 +5744,8 @@ void MergeTreeData::dropAllData()
     if (isStaticStorage())
     {
         LOG_INFO(log, "dropAllData: Skip cleanup due to all disks are either read-only or write-once");
+        /// The parts stay, but a table created again with this UUID must not find their cache entries.
+        clearCachesOfTable();
         return;
     }
 
