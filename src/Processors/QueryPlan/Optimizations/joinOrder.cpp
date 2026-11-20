@@ -20,6 +20,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <base/defines.h>
@@ -101,11 +102,18 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
         }
     }
 
-    /// Cap all NDVs at the estimated output rows.
+    /// Cap all NDVs at the estimated output rows. The estimate is not a proven row-count upper bound,
+    /// so an NDV reduced by it is no longer a proven upper bound either.
     if (cardinality_)
     {
         for (auto & [_, stats] : column_stats)
-            stats.num_distinct_values = std::min(stats.num_distinct_values, *cardinality_);
+        {
+            if (stats.num_distinct_values > *cardinality_)
+            {
+                stats.num_distinct_values = *cardinality_;
+                stats.ndv_provenance.add(EstimatedRowCountClamp);
+            }
+        }
     }
 }
 
@@ -137,6 +145,10 @@ void QueryGraph::buildColumnEquivalences()
         auto lhs_resolved = resolveInput(lhs);
         auto rhs_resolved = resolveInput(rhs);
         if (!lhs_resolved || !rhs_resolved)
+            continue;
+
+        /// Only an exact equality is transitive: for `FixedString` x and `String` y, z, `x = y AND x = z` does not imply `y = z`.
+        if (!JoinCommon::isExactJoinKeyEquality(lhs_resolved->getType(), rhs_resolved->getType()))
             continue;
 
         auto lhs_rel = lhs_resolved->getSourceRelations().getSingleBit();
@@ -243,6 +255,10 @@ static void cleanupJoinPredicates(
             auto lhs_resolved = resolveInput(lhs);
             auto rhs_resolved = resolveInput(rhs);
             if (!lhs_resolved || !rhs_resolved)
+                return false;
+
+            /// Same rule as in `buildColumnEquivalences`: such a predicate is neither redundant nor a source of equivalences.
+            if (!JoinCommon::isExactJoinKeyEquality(lhs_resolved->getType(), rhs_resolved->getType()))
                 return false;
 
             auto lhs_class = equiv.getClass(*lhs_resolved);
