@@ -21,7 +21,7 @@ SELECT '-- a projection part without a column read lazily';
 -- The projection stores the column the alias names. After the alias changes, the old projection part does not have the
 -- column the projection has now, so its rows, the lazily read column too, are read from the parent part.
 CREATE TABLE t_drift (id UInt64, k UInt64, b String, d String, c String ALIAS b, PROJECTION p (SELECT id, k, c ORDER BY id))
-ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 128;
+ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 128;
 SYSTEM STOP MERGES t_drift;
 INSERT INTO t_drift SELECT number, number % 100, 'before', 'after' FROM numbers(10000);
 ALTER TABLE t_drift MODIFY COLUMN c String ALIAS d;
