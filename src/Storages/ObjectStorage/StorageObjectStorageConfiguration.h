@@ -216,7 +216,7 @@ public:
 
     [[nodiscard]] virtual bool supportsFileIterator() const { return false; }
     [[nodiscard]] virtual bool supportsParallelInsert() const { return false; }
-    [[nodiscard]] virtual bool supportsInsertCommitSink() const { return false; }
+    [[nodiscard]] virtual bool supportsWriteSessionCommit() const { return false; }
     [[nodiscard]] virtual bool supportsWrites() const { return true; }
 
     [[nodiscard]] virtual bool supportsCreateFromExistingTableInCatalog() const { return false; }
@@ -267,10 +267,12 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write() is not implemented for configuration type {}", getTypeName());
     }
 
-    virtual ProcessorPtr createInsertCommitSink(
+    /// See `IStorage::beginWrite`. nullptr if the sinks from `write` finish their part of the insert themselves.
+    virtual StorageWriteSessionPtr beginWrite(
         SharedHeader /* sample_block */,
         const StorageID & /* table_id */,
         ObjectStoragePtr /* object_storage */,
+        const std::optional<FormatSettings> & /* format_settings */,
         ContextPtr /* context */,
         std::shared_ptr<DataLake::ICatalog> /* catalog */)
     {

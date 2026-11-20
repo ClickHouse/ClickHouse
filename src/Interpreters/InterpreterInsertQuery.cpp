@@ -36,7 +36,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Processors/Sinks/EmptySink.h>
-#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Sinks/InsertCommitSink.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
@@ -324,27 +324,14 @@ Block InterpreterInsertQuery::getSampleBlock(
     return res;
 }
 
-/// Without dependent views, the output of the sinks is the output of the insert, so it can go to the commit sink of the table.
-static ProcessorPtr createInsertCommitSink(
-    const InsertDependenciesBuilder & insert_dependencies, const StoragePtr & table, VectorWithMemoryTracking<Chain> & sink_chains, ContextPtr context)
+/// Receives the output of all the streams of the insert and commits its write sessions. nullptr if there is nothing to commit.
+static ProcessorPtr createInsertCommitSink(const InsertDependenciesBuilder & insert_dependencies, const VectorWithMemoryTracking<Chain> & sink_chains)
 {
-    if (insert_dependencies.isViewsInvolved())
+    auto sessions = insert_dependencies.getWriteSessionsToCommit();
+    if (sessions.empty())
         return nullptr;
 
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
-    auto commit_sink = table->createInsertCommitSink(metadata_snapshot, context);
-    if (!commit_sink)
-        return nullptr;
-
-    for (auto & chain : sink_chains)
-    {
-        for (auto & processor : chain.getProcessors())
-        {
-            if (auto * sink = dynamic_cast<SinkToStorage *>(processor.get()))
-                sink->setFinishedByCommitSink();
-        }
-    }
-    return commit_sink;
+    return std::make_shared<InsertCommitSink>(sink_chains.front().getOutputSharedHeader(), std::move(sessions));
 }
 
 static bool hasAggregateFunctions(const IAST * ast)
@@ -703,7 +690,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
 
     VectorWithMemoryTracking<Chain> sink_chains
         = insert_dependencies->createChainWithDependenciesForAllStreams(query.returning ? &returning_output : nullptr);
-    ProcessorPtr commit_sink = createInsertCommitSink(*insert_dependencies, table, sink_chains, context);
+    ProcessorPtr commit_sink = createInsertCommitSink(*insert_dependencies, sink_chains);
 
     pipeline.resize(insert_dependencies->getSinkStreamSize());
 
@@ -1209,7 +1196,7 @@ QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
     const Settings & settings = context_->getSettingsRef();
 
     auto sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams(returning_output);
-    auto commit_sink = createInsertCommitSink(*insert_dependencies, table, sink_chains, context_);
+    auto commit_sink = createInsertCommitSink(*insert_dependencies, sink_chains);
     const size_t sink_stream_size = insert_dependencies->getSinkStreamSize();
     chassert(sink_chains.size() == sink_stream_size);
     chassert(sink_stream_size >= 1);

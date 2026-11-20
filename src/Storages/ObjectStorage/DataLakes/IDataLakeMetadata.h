@@ -14,6 +14,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/IStorageWriteSession.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/prepareReadingFromFormat.h>
@@ -128,8 +129,8 @@ public:
 
     [[nodiscard]] virtual bool supportsWrites() const { return false; }
     [[nodiscard]] virtual bool supportsParallelInsert() const { return false; }
-    /// See `IStorage::supportsInsertCommitSink`.
-    [[nodiscard]] virtual bool supportsInsertCommitSink() const { return false; }
+    /// See `IStorage::supportsWriteSessionCommit`.
+    [[nodiscard]] virtual bool supportsWriteSessionCommit() const { return false; }
 
     /// Reads the incremental refreshable-MV cursor persisted in the current table snapshot (as stored),
     /// or nullopt if absent/unsupported. The write path commits it atomically with the appended data.
@@ -185,12 +186,13 @@ public:
         throwNotImplemented("write");
     }
 
-    /// See `IStorage::createInsertCommitSink`.
-    virtual ProcessorPtr createInsertCommitSink(
+    /// See `IStorage::beginWrite`. nullptr if the sinks from `write` finish their part of the insert themselves.
+    virtual StorageWriteSessionPtr beginWrite(
         SharedHeader /*sample_block*/,
         const StorageID & /*table_id*/,
         ObjectStoragePtr /*object_storage*/,
         StorageObjectStorageConfigurationPtr /*configuration*/,
+        const std::optional<FormatSettings> & /*format_settings*/,
         ContextPtr /*context*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/)
     {

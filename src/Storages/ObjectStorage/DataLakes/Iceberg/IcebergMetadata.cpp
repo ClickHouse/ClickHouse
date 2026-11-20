@@ -2199,18 +2199,37 @@ void IcebergMetadata::addDeleteTransformers(
     }
 }
 
-ProcessorPtr IcebergMetadata::createInsertCommitSink(
+std::shared_ptr<IcebergWriteSession> IcebergMetadata::createWriteSession(
+    SharedHeader sample_block,
+    const StorageID & table_id,
+    StorageObjectStorageConfigurationPtr configuration,
+    const std::optional<FormatSettings> & format_settings,
+    ContextPtr context,
+    std::shared_ptr<DataLake::ICatalog> catalog)
+{
+    if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg])
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Insert into iceberg is in beta. "
+            "To allow its usage, enable setting allow_insert_into_iceberg");
+    }
+
+    checkTableRootIsQueriedPath("INSERT");
+    return std::make_shared<IcebergWriteSession>(
+        object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id);
+}
+
+StorageWriteSessionPtr IcebergMetadata::beginWrite(
     SharedHeader sample_block,
     const StorageID & table_id,
     ObjectStoragePtr /*object_storage*/,
     StorageObjectStorageConfigurationPtr configuration,
+    const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
-    checkTableRootIsQueriedPath("INSERT");
-    auto committer = std::make_unique<IcebergInsertCommitter>(
-        object_storage, configuration, sample_block, context, catalog, persistent_components, table_id);
-    return std::make_shared<IcebergCommit>(sample_block, std::move(committer));
+    return createWriteSession(sample_block, table_id, configuration, format_settings, context, catalog);
 }
 
 SinkToStoragePtr IcebergMetadata::write(
@@ -2222,18 +2241,8 @@ SinkToStoragePtr IcebergMetadata::write(
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
-    if (context->getSettingsRef()[Setting::allow_insert_into_iceberg])
-    {
-        checkTableRootIsQueriedPath("INSERT");
-        return std::make_shared<IcebergStorageSink>(object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id);
-    }
-    else
-    {
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "Insert into iceberg is in beta. "
-            "To allow its usage, enable setting allow_insert_into_iceberg");
-    }
+    /// A session of one sink, which commits it.
+    return createWriteSession(sample_block, table_id, configuration, format_settings, context, catalog)->createSinkWithCommit();
 }
 
 void IcebergMetadata::drop(ContextPtr context)

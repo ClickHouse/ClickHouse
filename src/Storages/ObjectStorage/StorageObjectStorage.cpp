@@ -535,12 +535,12 @@ bool StorageObjectStorage::supportsParallelInsert() const
     return configuration->supportsParallelInsert();
 }
 
-bool StorageObjectStorage::supportsInsertCommitSink() const
+bool StorageObjectStorage::supportsWriteSessionCommit() const
 {
     /// Initialized like in `supportsParallelInsert`.
     if (configuration->isDataLakeConfiguration())
         configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
-    return configuration->supportsInsertCommitSink();
+    return configuration->supportsWriteSessionCommit();
 }
 
 std::shared_ptr<IDataLakeMetadata> StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
@@ -1070,21 +1070,52 @@ SinkToStoragePtr StorageObjectStorage::write(
         getPartitionedWriteAccessCheck());
 }
 
-ProcessorPtr StorageObjectStorage::createInsertCommitSink(const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+StorageWriteSessionPtr StorageObjectStorage::beginWrite(
+    const ASTPtr & query,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr local_context,
+    bool async_insert)
 {
-    return createInsertCommitSink(configuration, object_storage, storage_id, catalog, metadata_snapshot, local_context);
+    if (auto session = createWriteSession(configuration, object_storage, storage_id, format_settings, catalog, metadata_snapshot, local_context))
+        return session;
+    return IStorage::beginWrite(query, metadata_snapshot, local_context, async_insert);
 }
 
-ProcessorPtr StorageObjectStorage::createInsertCommitSink(
+static void checkWriteIsPossible(const StorageObjectStorageConfiguration & configuration)
+{
+    if (configuration.isArchive())
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table reads from an archive. Write into archive is not supported");
+    }
+
+    if (configuration.getRawPath().hasGlobsIgnorePlaceholders())
+    {
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Table is in readonly mode because of globs in path");
+    }
+
+    if (!configuration.supportsWrites())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
+}
+
+StorageWriteSessionPtr StorageObjectStorage::createWriteSession(
     const StorageObjectStorageConfigurationPtr & configuration,
     const ObjectStoragePtr & object_storage,
     const StorageID & storage_id,
+    const std::optional<FormatSettings> & format_settings,
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & local_context)
 {
+    if (!configuration->isDataLakeConfiguration())
+        return nullptr;
+
+    configuration->lazyInitializeIfNeeded(object_storage, local_context);
+    if (!configuration->supportsWriteSessionCommit())
+        return nullptr;
+
+    checkWriteIsPossible(*configuration);
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-    return configuration->createInsertCommitSink(sample_block, storage_id, object_storage, local_context, catalog);
+    return configuration->beginWrite(sample_block, storage_id, object_storage, format_settings, local_context, catalog);
 }
 
 SinkToStoragePtr StorageObjectStorage::createSink(
@@ -1102,18 +1133,7 @@ SinkToStoragePtr StorageObjectStorage::createSink(
 
     const auto raw_path = configuration->getRawPath();
 
-    if (configuration->isArchive())
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table reads from an archive. Write into archive is not supported");
-    }
-
-    if (raw_path.hasGlobsIgnorePlaceholders())
-    {
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Table is in readonly mode because of globs in path");
-    }
-
-    if (!configuration->supportsWrites())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
+    checkWriteIsPossible(*configuration);
 
     if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
         return configuration->write(sample_block, storage_id, object_storage, format_settings, local_context, catalog);

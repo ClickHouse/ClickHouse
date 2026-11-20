@@ -63,6 +63,8 @@ struct IcebergMetadataLogEntry
     std::optional<Int64> latest_sequence_number;
 };
 
+class IcebergWriteSession;
+
 class IcebergMetadata : public IDataLakeMetadata
 {
 public:
@@ -122,7 +124,7 @@ public:
 
     bool supportsWrites() const override { return true; }
     bool supportsParallelInsert() const override { return true; }
-    bool supportsInsertCommitSink() const override { return true; }
+    bool supportsWriteSessionCommit() const override { return true; }
 
     std::optional<String> getRefreshCursor(ContextPtr local_context) const override;
 
@@ -162,11 +164,12 @@ public:
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog) override;
 
-    ProcessorPtr createInsertCommitSink(
+    StorageWriteSessionPtr beginWrite(
         SharedHeader sample_block,
         const StorageID & table_id,
         ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationPtr configuration,
+        const std::optional<FormatSettings> & format_settings,
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog) override;
 
@@ -272,6 +275,14 @@ private:
     /// Refuse `operation` while the table root is deeper than the queried path, because anything
     /// scoped to the queried path reaches beyond this table there.
     void checkTableRootIsQueriedPath(std::string_view operation) const;
+
+    std::shared_ptr<IcebergWriteSession> createWriteSession(
+        SharedHeader sample_block,
+        const StorageID & table_id,
+        StorageObjectStorageConfigurationPtr configuration,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog);
 
     LoggerPtr log;
     const ObjectStoragePtr object_storage;

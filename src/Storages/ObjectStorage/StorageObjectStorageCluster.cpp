@@ -260,9 +260,16 @@ SinkToStoragePtr StorageObjectStorageCluster::write(
         getPartitionedWriteAccessCheck());
 }
 
-ProcessorPtr StorageObjectStorageCluster::createInsertCommitSink(const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+StorageWriteSessionPtr StorageObjectStorageCluster::beginWrite(
+    const ASTPtr & query,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr local_context,
+    bool async_insert)
 {
-    return StorageObjectStorage::createInsertCommitSink(configuration, object_storage, getStorageID(), catalog, metadata_snapshot, local_context);
+    if (auto session = StorageObjectStorage::createWriteSession(
+            configuration, object_storage, getStorageID(), format_settings, catalog, metadata_snapshot, local_context))
+        return session;
+    return IStorage::beginWrite(query, metadata_snapshot, local_context, async_insert);
 }
 
 bool StorageObjectStorageCluster::supportsParallelInsert() const
@@ -272,11 +279,11 @@ bool StorageObjectStorageCluster::supportsParallelInsert() const
     return configuration->supportsParallelInsert();
 }
 
-bool StorageObjectStorageCluster::supportsInsertCommitSink() const
+bool StorageObjectStorageCluster::supportsWriteSessionCommit() const
 {
     if (configuration->isDataLakeConfiguration())
         configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
-    return configuration->supportsInsertCommitSink();
+    return configuration->supportsWriteSessionCommit();
 }
 
 bool StorageObjectStorageCluster::supportsDelete() const

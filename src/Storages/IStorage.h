@@ -10,6 +10,7 @@
 #include <Storages/ColumnDependency.h>
 #include <Storages/ColumnSize.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/IStorageWriteSession.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/TableLockHolder.h>
@@ -560,15 +561,19 @@ public:
         ContextPtr /*context*/,
         bool /*async_insert*/);
 
-    /** Returns a sink which receives the output of all the parallel sinks returned by `write` for one `INSERT`
-      * and finishes the insert, e.g. commits everything the sinks wrote at once. If it is used, the sinks
-      * are told so with `SinkToStorage::setFinishedByCommitSink`.
-      * nullptr if each sink finishes its part of the insert itself.
+    /** Starts one `INSERT` into the table. The arguments are the same as in `write`.
+      * The session creates a sink for every stream of the insert, and its `commit` is called once
+      * after all of them finished, e.g. to commit everything the sinks wrote at once.
+      * By default, the sinks are the ones from `write`, which finish their part of the insert themselves, and `commit` does nothing.
       */
-    virtual ProcessorPtr createInsertCommitSink(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/) { return nullptr; }
+    virtual StorageWriteSessionPtr beginWrite(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        bool async_insert);
 
-    /// Whether `createInsertCommitSink` returns a sink, so the parallel sinks of an `INSERT` need it to finish the insert at once.
-    virtual bool supportsInsertCommitSink() const { return false; }
+    /// Whether the insert is finished by `commit` of the session from `beginWrite`, not by its sinks.
+    virtual bool supportsWriteSessionCommit() const { return false; }
 
     /** Checks on the initiator that the current user is allowed to insert into this table, in
       * addition to the `INSERT` privilege on the table name checked by the interpreter.

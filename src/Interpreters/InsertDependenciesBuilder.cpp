@@ -1124,15 +1124,27 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
         && ((deduplicate_blocks_in_dependent_materialized_views && any_dependent_target_dedup_hazard)
             || any_dependent_target_forwards_to_separate_context);
 
-    /// A table with a commit sink commits the insert at once. Parallel sinks do it through
-    /// `IStorage::createInsertCommitSink`, which is not used with dependent views.
-    const bool commit_sink_with_views_single_stream = isViewsInvolved() && init_storage->supportsInsertCommitSink();
+    /// A table with a session commit commits the insert at once. Parallel sinks do it through
+    /// the write session, which is not used with dependent views yet.
+    const bool session_commit_with_views_single_stream = isViewsInvolved() && init_storage->supportsWriteSessionCommit();
 
     if (all_sinks_support_parallel_insert
         && (settings[Setting::parallel_view_processing] || !isViewsInvolved())
         && !mv_dedup_single_stream
-        && !commit_sink_with_views_single_stream)
+        && !session_commit_with_views_single_stream)
         sink_stream_size = max_insert_threads;
+
+    /// The same arguments as for `IStorage::write` in `createSinkImpl`.
+    if (!skip_destination_table && !isViewsInvolved())
+        write_session = init_storage->beginWrite(
+            select_queries.at(root_view), metadata_snapshots.at(init_table_id), insert_contexts.at(root_view), async_insert);
+}
+
+std::vector<StorageWriteSessionPtr> InsertDependenciesBuilder::getWriteSessionsToCommit() const
+{
+    if (write_session && init_storage->supportsWriteSessionCommit())
+        return {write_session};
+    return {};
 }
 
 namespace
@@ -1902,7 +1914,11 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
     }
     else
     {
-        auto sink = inner_storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert);
+        /// The session is the one of the destination table, which is the only sink without views.
+        chassert(!write_session || inner_table_id == init_table_id);
+        auto sink = write_session
+            ? write_session->createSink()
+            : inner_storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert);
         sink->setRuntimeData(thread_groups.at(view_id));
         sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
         result.addSink(std::move(sink));

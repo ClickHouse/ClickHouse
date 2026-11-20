@@ -6,6 +6,7 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/StorageIDMaybeEmpty.h>
 #include <QueryPipeline/Chain.h>
+#include <Storages/IStorageWriteSession.h>
 #include <Storages/StorageSnapshot.h>
 
 #include <Common/Logger.h>
@@ -127,6 +128,9 @@ public:
     {
         return sink_stream_size;
     }
+
+    /// The write sessions to commit after all the streams have finished. Empty if the sinks finish the insert themselves.
+    std::vector<StorageWriteSessionPtr> getWriteSessionsToCommit() const;
 
     /// Whether a synchronous insert into `storage` would actually deduplicate blocks, i.e. some sink
     /// consults the deduplication block ids. For MergeTree-family engines this mirrors how
@@ -257,6 +261,8 @@ private:
     bool async_insert = false;
     bool skip_destination_table = false;
     size_t sink_stream_size = 1;
+    /// The session of the destination table. Not used with views: their sinks are not created from sessions yet.
+    StorageWriteSessionPtr write_session;
 
     /// When the insertion is made into a materialized view, the root_view is the view itself and dependent_views contains its inner table.
     /// When the insertion is made into a regular table (it is init_table_id), the root_view is {} / StorageID::createEmpty() and dependent_views contains init_table_id.

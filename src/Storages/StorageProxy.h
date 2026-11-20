@@ -40,7 +40,7 @@ public:
     bool supportedPrewhereColumnsIncludeSubcolumns() const override { return getNested()->supportedPrewhereColumnsIncludeSubcolumns(); }
     bool supportsReplication() const override { return getNested()->supportsReplication(); }
     bool supportsParallelInsert() const override { return getNested()->supportsParallelInsert(); }
-    bool supportsInsertCommitSink() const override { return getNested()->supportsInsertCommitSink(); }
+    bool supportsWriteSessionCommit() const override { return getNested()->supportsWriteSessionCommit(); }
     bool supportsDeduplication() const override { return getNested()->supportsDeduplication(); }
     bool noPushingToViewsOnInserts() const override { return getNested()->noPushingToViewsOnInserts(); }
     bool hasEvenlyDistributedRead() const override { return getNested()->hasEvenlyDistributedRead(); }
@@ -110,9 +110,13 @@ public:
         return getNested()->write(query, metadata_snapshot, context, async_insert);
     }
 
-    ProcessorPtr createInsertCommitSink(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override
+    StorageWriteSessionPtr beginWrite(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        bool async_insert) override
     {
-        return getNested()->createInsertCommitSink(metadata_snapshot, context);
+        return getNested()->beginWrite(query, metadata_snapshot, context, async_insert);
     }
 
     void checkInsertIsAllowed(ContextPtr context) const override { getNested()->checkInsertIsAllowed(context); }
