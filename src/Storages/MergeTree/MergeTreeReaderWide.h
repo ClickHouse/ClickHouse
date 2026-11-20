@@ -142,7 +142,7 @@ private:
     {
         CompressedBlockRanges ranges;
         /// Of `counted_compressed_blocks`, looked up at the first take.
-        CountedCompressedBlocks::File * counted = nullptr;
+        CountedCompressedBlocks::CountedRanges * counted = nullptr;
     };
     std::mutex ranges_read_mutex;
     std::unordered_map<String, StreamRangesRead> ranges_read;

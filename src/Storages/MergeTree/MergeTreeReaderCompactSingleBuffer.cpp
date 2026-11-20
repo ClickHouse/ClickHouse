@@ -52,10 +52,10 @@ std::optional<size_t> MergeTreeReaderCompactSingleBuffer::takeCompressedBytesRea
         return std::nullopt;
     }
 
-    if (!counted_file)
-        counted_file = &counted_compressed_blocks->getFile(
+    if (!counted_ranges)
+        counted_ranges = &counted_compressed_blocks->getCountedRanges(
             data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION);
-    return counted_compressed_blocks->take(*counted_file, ranges_read);
+    return counted_compressed_blocks->take(*counted_ranges, ranges_read);
 }
 
 void MergeTreeReaderCompactSingleBuffer::readGranule(

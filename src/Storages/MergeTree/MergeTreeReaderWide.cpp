@@ -1206,7 +1206,7 @@ std::optional<size_t> MergeTreeReaderWide::takeCompressedBytesRead()
         if (stream_ranges.ranges.empty())
             continue;
         if (!stream_ranges.counted)
-            stream_ranges.counted = &counted_compressed_blocks->getFile(
+            stream_ranges.counted = &counted_compressed_blocks->getCountedRanges(
                 data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + stream_name);
         bytes += counted_compressed_blocks->take(*stream_ranges.counted, stream_ranges.ranges);
     }

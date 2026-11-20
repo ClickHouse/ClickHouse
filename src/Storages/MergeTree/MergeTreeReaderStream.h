@@ -27,17 +27,17 @@ class CountedCompressedBlocks
 {
 public:
     /// The counted ranges of a file, merged, by their begin.
-    using File = std::map<size_t, size_t>;
+    using CountedRanges = std::map<size_t, size_t>;
 
     /// The counted ranges of the file at the path, valid as long as this object. A reader looks it up once by stream.
-    File & getFile(const String & path);
+    CountedRanges & getCountedRanges(const String & path);
 
     /// The bytes of the ranges in the file not counted yet, which become counted. Clears the ranges.
-    size_t take(File & file, CompressedBlockRanges & ranges);
+    size_t take(CountedRanges & counted_ranges, CompressedBlockRanges & ranges);
 
 private:
     std::mutex mutex;
-    std::unordered_map<String, File> counted TSA_GUARDED_BY(mutex);
+    std::unordered_map<String, CountedRanges> counted TSA_GUARDED_BY(mutex);
 };
 
 using CountedCompressedBlocksPtr = std::shared_ptr<CountedCompressedBlocks>;

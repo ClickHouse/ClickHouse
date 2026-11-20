@@ -331,14 +331,14 @@ ReadBuffer * MergeTreeReaderStream::getDataBuffer()
     return data_buffer;
 }
 
-CountedCompressedBlocks::File & CountedCompressedBlocks::getFile(const String & path)
+CountedCompressedBlocks::CountedRanges & CountedCompressedBlocks::getCountedRanges(const String & path)
 {
     std::lock_guard lock(mutex);
     /// References to the elements of an unordered map stay valid when it grows.
     return counted[path];
 }
 
-size_t CountedCompressedBlocks::take(File & file, CompressedBlockRanges & ranges)
+size_t CountedCompressedBlocks::take(CountedRanges & counted_ranges, CompressedBlockRanges & ranges)
 {
     std::lock_guard lock(mutex);
     size_t bytes = 0;
@@ -346,13 +346,13 @@ size_t CountedCompressedBlocks::take(File & file, CompressedBlockRanges & ranges
     {
         chassert(begin <= end);
         /// The first counted range that overlaps or touches the range.
-        auto it = file.upper_bound(begin);
-        if (it != file.begin() && std::prev(it)->second >= begin)
+        auto it = counted_ranges.upper_bound(begin);
+        if (it != counted_ranges.begin() && std::prev(it)->second >= begin)
             --it;
-        if (it == file.end() || it->first > end)
+        if (it == counted_ranges.end() || it->first > end)
         {
             bytes += end - begin;
-            file.emplace_hint(it, begin, end);
+            counted_ranges.emplace_hint(it, begin, end);
             continue;
         }
 
@@ -361,7 +361,7 @@ size_t CountedCompressedBlocks::take(File & file, CompressedBlockRanges & ranges
         const auto first = it;
         size_t covered = 0;
         size_t merged_end = end;
-        for (; it != file.end() && it->first <= end; ++it)
+        for (; it != counted_ranges.end() && it->first <= end; ++it)
         {
             if (it->second > begin && it->first < end)
                 covered += std::min(end, it->second) - std::max(begin, it->first);
@@ -369,12 +369,12 @@ size_t CountedCompressedBlocks::take(File & file, CompressedBlockRanges & ranges
         }
         bytes += end - begin - covered;
         first->second = merged_end;
-        file.erase(std::next(first), it);
+        counted_ranges.erase(std::next(first), it);
         if (begin < first->first)
         {
-            auto node = file.extract(first);
+            auto node = counted_ranges.extract(first);
             node.key() = begin;
-            file.insert(std::move(node));
+            counted_ranges.insert(std::move(node));
         }
     }
     ranges.clear();

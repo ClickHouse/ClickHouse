@@ -51,7 +51,7 @@ private:
     /// `CompressedReadBufferBase::setBlocksReadSink`.
     CompressedBlockRanges ranges_read;
     /// Of `counted_compressed_blocks`, looked up at the first take.
-    CountedCompressedBlocks::File * counted_file = nullptr;
+    CountedCompressedBlocks::CountedRanges * counted_ranges = nullptr;
 };
 
 }
