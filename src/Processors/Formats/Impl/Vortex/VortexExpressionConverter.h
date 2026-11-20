@@ -145,6 +145,8 @@ private:
     [[nodiscard]] VortexExpressionPtr convertOr(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
     [[nodiscard]] VortexExpressionPtr convertNot(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
     [[nodiscard]] VortexExpressionPtr convertComparison(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
+    /// `empty(s)` and `notEmpty(s)` of a `String` column: `s = ''` and `s != ''`.
+    [[nodiscard]] VortexExpressionPtr convertEmpty(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
     [[nodiscard]] VortexExpressionPtr convertIsNull(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
     [[nodiscard]] VortexExpressionPtr convertIsNotNull(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
     [[nodiscard]] VortexExpressionPtr convertIn(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
