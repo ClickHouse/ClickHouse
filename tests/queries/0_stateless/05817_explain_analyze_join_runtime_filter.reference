@@ -10,7 +10,7 @@ nullable key
 Runtime filter (disabled: too many keys for exact set)
 anti join
 Runtime filter (exact set, 1000 unique keys)
-Runtime filter (partial exact set, 1000 unique keys)
+Runtime filter (partial exact set)	1
 shared fixed hash map
 Runtime filter (shared fixed hash map, replaced exact set)
 Runtime filter (shared fixed hash map, replaced bloom filter)
