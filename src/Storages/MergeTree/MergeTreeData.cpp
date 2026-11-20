@@ -89,6 +89,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Planner/TableExpressionData.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/expressionSourceColumns.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Core/ConstantValue.h>
 #include <Interpreters/convertColumnToType.h>
@@ -6018,32 +6019,6 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
     }
 }
 
-/// Source columns an expression reads, resolved against `columns` via the query analyzer over a fake
-/// table. keep_alias_columns=false expands ALIAS chains to their base columns.
-Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context)
-{
-    if (!ast)
-        return {};
-
-    auto analysis_context = Context::createCopy(context);
-    auto expression = buildQueryTree(ast, analysis_context);
-
-    auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, columns);
-    auto table_node = std::make_shared<TableNode>(storage, analysis_context);
-
-    QueryAnalyzer analyzer(/*only_analyze=*/ true);
-    analyzer.resolve(expression, table_node, analysis_context);
-
-    auto global_planner_context
-        = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
-    auto planner_context = std::make_shared<PlannerContext>(analysis_context, global_planner_context, SelectQueryOptions{});
-    collectSetsAndSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
-
-    /// ALIAS columns are inlined above, so the physical columns their expressions read are the dependencies.
-    if (const auto * table_expression_data = planner_context->getTableExpressionDataOrNull(table_node))
-        return table_expression_data->getColumnNames();
-    return {};
-}
 
 }
 
