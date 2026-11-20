@@ -30,5 +30,8 @@ ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ILLEGAL_COLUMN
 alias policy after base rename	[1]
+-- a column bound only inside a folded constant counts too
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
 -- a database-wide policy counts too
 ALTER_OF_COLUMN_IS_FORBIDDEN

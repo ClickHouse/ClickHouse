@@ -1,5 +1,6 @@
 #include <Storages/expressionSourceColumns.h>
 
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
@@ -11,6 +12,32 @@
 
 namespace DB
 {
+
+namespace
+{
+
+/// folding turns e.g. toTypeName(c) into a constant, which keeps the folded expression, and that expression still binds c
+void collectFoldedSourceColumns(const QueryTreeNodePtr & node, PlannerContextPtr & planner_context, bool keep_alias_columns)
+{
+    /// a folded scalar subquery is not correlated, and a kept alias pins its own base columns
+    auto node_type = node->getNodeType();
+    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION || node_type == QueryTreeNodeType::COLUMN)
+        return;
+
+    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression())
+    {
+        auto source_expression = constant->getSourceExpression();
+        collectSourceColumns(source_expression, planner_context, keep_alias_columns);
+        collectFoldedSourceColumns(source_expression, planner_context, keep_alias_columns);
+        return;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child)
+            collectFoldedSourceColumns(child, planner_context, keep_alias_columns);
+}
+
+}
 
 Names expressionSourceColumns(
     const ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context, bool keep_alias_columns, const StorageID & table_id)
@@ -30,6 +57,7 @@ Names expressionSourceColumns(
     auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(analysis_context, global_planner_context, SelectQueryOptions{});
     collectSetsAndSourceColumns(expression, planner_context, keep_alias_columns);
+    collectFoldedSourceColumns(expression, planner_context, keep_alias_columns);
 
     const auto * table_expression_data = planner_context->getTableExpressionDataOrNull(table_node);
     if (!table_expression_data)

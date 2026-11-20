@@ -101,6 +101,15 @@ refused "ALTER TABLE ta DROP COLUMN tenant" ILLEGAL_COLUMN
 $CLICKHOUSE_CLIENT -q "ALTER TABLE ta RENAME COLUMN tenant TO tenant2"
 $CLICKHOUSE_CLIENT -q "SELECT 'alias policy after base rename', arraySort(groupArray(id)) FROM ta"
 
+echo "-- a column bound only inside a folded constant counts too"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tf (id UInt32, tenant UInt32, other UInt32) ENGINE = MergeTree ORDER BY id;
+CREATE ROW POLICY pf ON $DB.tf FOR SELECT USING toTypeName(tenant) = 'UInt32' TO CURRENT_USER;
+"
+refused "ALTER TABLE tf DROP COLUMN tenant" ALTER_OF_COLUMN_IS_FORBIDDEN
+refused "ALTER TABLE tf RENAME COLUMN tenant TO tenant_id" ALTER_OF_COLUMN_IS_FORBIDDEN
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tf DROP COLUMN other"
+
 echo "-- a database-wide policy counts too"
 $CLICKHOUSE_CLIENT -q "CREATE ROW POLICY pdb ON $DB.* FOR SELECT USING tenant = 1 TO CURRENT_USER"
 refused "ALTER TABLE t RENAME COLUMN tenant TO tenant2" ALTER_OF_COLUMN_IS_FORBIDDEN
@@ -114,6 +123,7 @@ DROP ROW POLICY pj ON $DB.tj;
 DROP ROW POLICY pn ON $DB.tn;
 DROP ROW POLICY pu ON $DB.tu;
 DROP ROW POLICY pa ON $DB.ta;
+DROP ROW POLICY pf ON $DB.tf;
 DROP FUNCTION $UDF;
 DROP TABLE t;
 DROP TABLE t2;
@@ -123,4 +133,5 @@ DROP TABLE tj;
 DROP TABLE tn;
 DROP TABLE tu;
 DROP TABLE ta;
+DROP TABLE tf;
 "
