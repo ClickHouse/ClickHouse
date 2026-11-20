@@ -276,6 +276,7 @@ IcebergRESTResponse makeUpdateTableError(
                 "CommitFailedException",
                 fmt::format("Table {}.{} was dropped or re-created concurrently, reload the table", joinNamespace(ns), table));
     }
+    UNREACHABLE();
 }
 
 struct TableChange
@@ -1019,6 +1020,7 @@ IcebergRESTResponse IcebergRESTCatalogService::handleStagedCreateCommit(
         case CreateTableResult::NamespaceMissing:
             return makeNoSuchNamespaceError(ns);
     }
+    UNREACHABLE();
 }
 
 /// Commits all table changes of one request together. Either every table moves or none does.
@@ -1095,6 +1097,7 @@ IcebergRESTResponse IcebergRESTCatalogService::handleRenameTable(const RoutedReq
                 "AlreadyExistsException",
                 fmt::format("Table already exists: {}.{}", joinNamespace(dest.ns), dest.name));
     }
+    UNREACHABLE();
 }
 
 /// Clients send scan and commit reports after each operation. The server has nothing to do with them yet.
@@ -1342,6 +1345,7 @@ IcebergRESTResponse IcebergRESTCatalogService::handleReplaceWarehouseCredential(
         case Result::Conflict:
             return makeConflictError("CommitFailedException", fmt::format("Warehouse {} was changed concurrently, retry", name));
     }
+    UNREACHABLE();
 }
 
 IcebergRESTResponse IcebergRESTCatalogService::handleDeleteWarehouse(const IcebergRESTRouteMatch & match, const Context & user_context) const
@@ -1360,6 +1364,7 @@ IcebergRESTResponse IcebergRESTCatalogService::handleDeleteWarehouse(const Icebe
         case Result::NotEmpty:
             return makeConflictError("WarehouseNotEmptyException", fmt::format("Warehouse {} is not empty. Drop its namespaces first", name));
     }
+    UNREACHABLE();
 }
 
 }
