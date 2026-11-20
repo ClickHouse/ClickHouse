@@ -163,6 +163,7 @@ public:
         addDataPaths();
         addDisks();
         addKeeper();
+        addDistributedCache();
         addLogs();
         addCertificates();
         addKerberosProfiles();
@@ -706,6 +707,38 @@ private:
                 return;
             }
         }
+    }
+
+    /// The working directory of every `<distributed_cache_server>` section, which the instance of the server creates
+    /// at startup, and the cache inside it. The certificates are read again when the configuration is reloaded, which
+    /// happens after the filesystem is isolated, and the client registry is initialized after it as well. The
+    /// distributed cache is only in ClickHouse Cloud, but its configuration is respected in every build, so that the
+    /// collector is the same everywhere.
+    void addDistributedCache()
+    {
+        /// The default of the `path` setting of the distributed cache server, for a section that does not name one.
+        constexpr auto default_path = "/var/lib/clickhouse-distributed-cache/";
+
+        for (const auto & section : getMultipleKeys("", "distributed_cache_server"))
+        {
+            /// As the settings of the distributed cache server read it, rather than with `getPathSetting`: this setting
+            /// keeps the whitespace around the value, and the directory is created with exactly this string.
+            const fs::path server_path = absolute(config.getString(section + ".path", default_path), runtime_directory);
+            add(server_path, Access::ReadWrite, fmt::format("`{}.path`", section));
+
+            /// The cache of the section, as `FileCacheSettings::loadFromConfig` resolves it: a relative path is joined
+            /// to the working directory as it is written, so it can leave it, and the default one can be a link
+            /// elsewhere. `planMounts` drops it when a mount of the working directory covers it already.
+            const std::string cache_key = section + ".cache.path";
+            add(config.has(cache_key) ? absolute(config.getString(cache_key), server_path) : server_path / "cache",
+                Access::ReadWrite, fmt::format("`{}`", cache_key));
+
+            for (const auto * name : {"tls_certificate_path", "tls_key_path"})
+                addKeyLocation(fmt::format("{}.{}", section, name), Access::ReadOnly, runtime_directory);
+        }
+
+        /// A single section, as the registry of the clients takes it, rather than one per server.
+        addKeyLocation("distributed_cache_client.certificate_chain_path", Access::ReadOnly, runtime_directory);
     }
 
     /// With the targets of the links, as a log file can be a link to another directory.

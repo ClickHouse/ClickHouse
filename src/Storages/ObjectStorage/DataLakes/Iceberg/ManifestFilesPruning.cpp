@@ -1,5 +1,6 @@
 #include <optional>
 #include "config.h"
+#include <IO/WriteHelpers.h>
 
 #if USE_AVRO
 
