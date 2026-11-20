@@ -1479,13 +1479,20 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
         return CommonExpressionExtractionResult{nullptr, std::move(common_exprs)};
     }
 
-    // There are at least two arguments in the passed-in OR expression, thus we either completely eliminated at least one arguments, or there should be at least 2 remaining arguments.
-    // The complete elimination is handled above, so at this point we can be sure there are at least 2 arguments.
-    chassert(new_or_arguments.size() >= 2);
-
     auto leading_exprs_end = std::stable_partition(
         common_exprs.begin(), common_exprs.end(), [&](const QueryTreeNodePtr & expr) { return leading_exprs_set.contains(keys(expr)); });
     size_t leading_common_expressions = leading_exprs_end - common_exprs.begin();
+
+    /// A condition kept in the disjuncts by the filter above is in every one of them, so the reduced disjuncts can all be one conjunction.
+    if (new_or_arguments.size() == 1)
+        return CommonExpressionExtractionResult{
+            .new_node = std::move(new_or_arguments.front()),
+            .common_expressions = std::move(common_exprs),
+            .leading_common_expressions = leading_common_expressions};
+
+    // There are at least two arguments in the passed-in OR expression, thus we either completely eliminated at least one arguments, or there should be at least 2 remaining arguments.
+    // The complete elimination is handled above, so at this point we can be sure there are at least 2 arguments.
+    chassert(new_or_arguments.size() >= 2);
 
     if (auto optimized_disjunction =  tryExtractCommonExpressionsInDisjunction(new_or_arguments, keys, context))
     {

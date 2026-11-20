@@ -24,6 +24,12 @@ SELECT count() FROM (SELECT number % 10 AS x, number % 7 AS y, toString(number) 
 WHERE s != 'zz' AND ((y > 5 AND x != 0) OR (x != 0 AND intDiv(10, x) > 1))
 SETTINGS short_circuit_function_evaluation_reorder_arguments = 0;
 
+SELECT count() FROM (SELECT number % 10 AS x, number % 7 AS y FROM numbers(10))
+WHERE (x != 0 AND y < 6 AND intDiv(10, x) > 0) OR (y < 6 AND x != 0 AND intDiv(10, x) > 0);
+
+SELECT count() FROM (SELECT number % 10 AS x, number % 7 AS y, toString(number) AS s FROM numbers(10))
+WHERE s != 'zz' AND ((x != 0 AND y < 6 AND intDiv(10, x) > 0) OR (y < 6 AND x != 0 AND intDiv(10, x) > 0));
+
 SELECT trim(line) FROM
 (
     EXPLAIN SYNTAX run_query_tree_passes = 1
@@ -45,5 +51,13 @@ SELECT trim(line) FROM
     EXPLAIN SYNTAX run_query_tree_passes = 1
     SELECT count() FROM (SELECT number % 10 AS x, number % 7 AS y FROM numbers(10))
     WHERE (x != 0 AND intDiv(10, x) > 0 AND y > 2) OR (x != 0 AND intDiv(10, x) > 0 AND y < 2)
+)
+ARRAY JOIN splitByChar('\n', explain) AS line WHERE line LIKE 'WHERE%';
+
+SELECT trim(line) FROM
+(
+    EXPLAIN SYNTAX run_query_tree_passes = 1
+    SELECT count() FROM (SELECT number % 10 AS x, number % 7 AS y FROM numbers(10))
+    WHERE (x != 0 AND y < 6 AND intDiv(10, x) > 0) OR (y < 6 AND x != 0 AND intDiv(10, x) > 0)
 )
 ARRAY JOIN splitByChar('\n', explain) AS line WHERE line LIKE 'WHERE%';
