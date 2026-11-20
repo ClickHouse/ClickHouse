@@ -225,13 +225,7 @@ void DataTypeTuple::insertDefaultInto(IColumn & column) const
     addElementSafe(elems, column, [&]
     {
         for (const auto & i : collections::range(0, elems.size()))
-        {
-            auto & element_column = extractElementColumn(column, i);
-            if (elems[i]->isDefaultInsertTrivial())
-                element_column.insertDefault();
-            else
-                elems[i]->insertDefaultInto(element_column);
-        }
+            elems[i]->insertDefaultInto(extractElementColumn(column, i));
     });
 }
 

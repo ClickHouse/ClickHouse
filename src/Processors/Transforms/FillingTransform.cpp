@@ -944,8 +944,6 @@ void FillingTransform::interpolate(const MutableColumns & result_columns, Block 
                     /// take value from last row of previous chunk if exists, else use default
                     if (last_row.size() > col_pos && !last_row[col_pos]->empty())
                         column->insertFrom(*last_row[col_pos], 0);
-                    else if (name_type.type->isDefaultInsertTrivial())
-                        column->insertDefault();
                     else
                         name_type.type->insertDefaultInto(*column);
                 }
@@ -975,13 +973,7 @@ static void insertTypeDefaults(const MutableColumnRawPtrs & dest, const VectorWi
 {
     chassert(dest.size() == positions.size());
     for (size_t i = 0, size = dest.size(); i < size; ++i)
-    {
-        const auto & type = header.getByPosition(positions[i]).type;
-        if (type->isDefaultInsertTrivial())
-            dest[i]->insertDefault();
-        else
-            type->insertDefaultInto(*dest[i]);
-    }
+        header.getByPosition(positions[i]).type->insertDefaultInto(*dest[i]);
 }
 
 void FillingTransform::insertFromFillingRow(
