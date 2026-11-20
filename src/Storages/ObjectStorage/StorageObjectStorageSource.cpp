@@ -6,6 +6,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
+#include <Common/FullyQualifiedObjectPath.h>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
@@ -2546,8 +2547,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 #if ENABLE_DISTRIBUTED_CACHE
     /// `auto` follows the decision for the other reads (the server setting `enable_read_through_distributed_cache`,
     /// overridden by `force_read_through_distributed_cache`), resolved into `read_through_distributed_cache`.
+    /// Not for a fully qualified path (`s3://bucket/key`, a data file of a Delta Lake shallow clone): the object storage
+    /// splits it into a bucket and a key, but the cache server would look it up as a key in the bucket of the connection.
     const auto & read_through_distributed_cache_setting = settings[Setting::table_engine_read_through_distributed_cache];
     if (!reads_explicit_object_version
+        && !trySplitFullyQualifiedObjectPath(object_info.getPath())
         && read_through_distributed_cache_setting.valueOr(effective_read_settings.read_through_distributed_cache)
         && distributedCacheCanServe(*object_storage, /* requested_explicitly */ read_through_distributed_cache_setting.valueOrNullopt().has_value())
         && DistributedCache::Registry::instance().isReady(
