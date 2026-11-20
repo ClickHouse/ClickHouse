@@ -513,7 +513,7 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
             result += fmt::format(
                 ", use_best_effort_in_schema_inference={}, bool_true_representation={}, bool_false_representation={},"
                 " null_representation={}, delimiter={}, tuple_delimiter={}, try_infer_numbers_from_strings={}, try_infer_strings_from_quoted_tuples={},"
-                " input_format_try_infer_exponent_floats={}",
+                " input_format_try_infer_exponent_floats={}, allow_single_quotes={}, allow_double_quotes={}",
                 settings.csv.use_best_effort_in_schema_inference,
                 settings.bool_true_representation,
                 settings.bool_false_representation,
@@ -522,7 +522,11 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
                 settings.csv.tuple_delimiter,
                 settings.csv.try_infer_numbers_from_strings,
                 settings.csv.try_infer_strings_from_quoted_tuples,
-                settings.try_infer_exponent_floats);
+                settings.try_infer_exponent_floats,
+                /// The quote flags decide how a CSV field is read in every format that uses the CSV escaping rule
+                /// (CSV, CustomSeparated, Template), so they belong to the shared key.
+                settings.csv.allow_single_quotes,
+                settings.csv.allow_double_quotes);
             break;
         case FormatSettings::EscapingRule::Quoted:
             result += fmt::format(
