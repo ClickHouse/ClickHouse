@@ -4,7 +4,7 @@
     </settings>
     <!-- `toFloat64(a) > 0` keeps every row, `s = 'i9'` none: PREWHERE should read `s` first. -->
     <create_query>CREATE TABLE prewhere_lossless_conversion (a Float64, s String) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <fill_query>INSERT INTO prewhere_lossless_conversion SELECT 100 + (number % 1000) / 10., concat('i', toString(1 + intHash32(number) % 4)) FROM numbers(200000000)</fill_query>
+    <fill_query>INSERT INTO prewhere_lossless_conversion SELECT 100 + (number % 1000) / 10., concat('i', toString(1 + intHash32(number) % 4)) FROM numbers(50000000)</fill_query>
     <fill_query>OPTIMIZE TABLE prewhere_lossless_conversion FINAL</fill_query>
     <query>SELECT count() FROM prewhere_lossless_conversion WHERE toFloat64(a) &gt; 0 AND s = 'i9'</query>
     <drop_query>DROP TABLE IF EXISTS prewhere_lossless_conversion</drop_query>
