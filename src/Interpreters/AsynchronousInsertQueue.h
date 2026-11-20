@@ -351,6 +351,10 @@ private:
         /// Keys with a flush in progress or with `waited_alone`. An insert with a key that waited alone and has no flush
         /// in progress is flushed at once: every earlier insert with the key is finished, and none is waiting to be batched.
         std::unordered_map<UInt128, KeyState> key_states TSA_GUARDED_BY(mutex);
+        /// Idle keys that waited alone are dropped when `key_states` reaches this size. Keys with a flush in progress stay,
+        /// so the size is then set to twice the number of keys left: the keys visited are paid for by the keys added since.
+        static constexpr size_t min_key_states_to_drop_idle = 10000;
+        size_t key_states_to_drop_idle TSA_GUARDED_BY(mutex) = min_key_states_to_drop_idle;
     };
 
     /// Times of the two most recent queue flushes.

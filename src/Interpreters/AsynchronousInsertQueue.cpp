@@ -1320,11 +1320,16 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num) TSA_NO_THR
                     {
                         /// Handed over by `pushDataChunk`, which has already updated the state of the key.
                     }
-                    else if (it->second.data->entries.size() == 1 && (*it->second.key.settings)[Setting::wait_for_async_insert])
+                    else if (it->second.data->entries.size() == 1 && (*it->second.key.settings)[Setting::wait_for_async_insert]
+                        && (*it->second.key.settings)[Setting::async_insert_use_adaptive_busy_timeout])
                     {
+                        /// Only inserts with the adaptive busy timeout are flushed without batching, so only their keys are kept.
                         /// ponytail: idle keys that stop inserting are only removed when there are many of them.
-                        if (shard.key_states.size() >= 10000)
+                        if (shard.key_states.size() >= shard.key_states_to_drop_idle)
+                        {
                             std::erase_if(shard.key_states, [](const auto & key_and_state) { return key_and_state.second.flushes_in_progress == 0; });
+                            shard.key_states_to_drop_idle = std::max(QueueShard::min_key_states_to_drop_idle, 2 * shard.key_states.size());
+                        }
                         auto & key_state = shard.key_states[key_hash];
                         key_state.waited_alone = true;
                         key_state.flushes_without_batching = 0;
