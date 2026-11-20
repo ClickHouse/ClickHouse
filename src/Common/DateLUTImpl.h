@@ -501,7 +501,7 @@ private:
     /// whole hour on it, but not before the change itself: the result never decreases and is at most an
     /// hour before `t`, also in the repeated or skipped part of the day. `t` must be inside the LUT range.
     template <typename DateOrTime>
-    NO_INLINE static DateOrTime roundDownToWallClockHour(DateOrTime t, const Values & values)
+    static DateOrTime roundDownToWallClockHour(DateOrTime t, const Values & values)
     {
         Time time = t - values.date;
         if (time >= values.time_at_offset_change())
@@ -1061,12 +1061,14 @@ public:
         if (static_cast<Time>(t) >= 0 && offset_is_whole_number_of_hours_during_epoch) [[likely]]
             return roundDownToMultiple(t, 3600);
 
-        if (static_cast<Time>(t) >= 0 && offset_change_is_whole_number_of_hours_during_epoch) [[likely]]
-            return roundDownFromDate(t, find(t).date, 3600);
-
+        /// No out-of-line call here: a call inside the per-row loop makes the compiler spill registers
+        /// and slows down zones such as `Asia/Kolkata` that take the `roundDownFromDate` path below.
         const Values & values = find(t);
+        if (static_cast<Time>(t) >= 0 && offset_change_is_whole_number_of_hours_during_epoch) [[likely]]
+            return roundDownFromDate(t, values.date, 3600);
+
         /// The amount is stored in quarters of an hour, so it is a whole number of hours when it is a multiple of 4.
-        if (values.amount_of_offset_change_value % static_cast<Int8>(3600 / Values::OffsetChangeFactor) != 0)
+        if (values.amount_of_offset_change_value % static_cast<Int8>(3600 / Values::OffsetChangeFactor) != 0) [[unlikely]]
             return roundDownToWallClockHour(t, values);
 
         return roundDownFromDate(t, values.date, 3600);
