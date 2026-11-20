@@ -28,6 +28,7 @@ MAX_DECREASE_MIB = 5
 WARN_HEADROOM_MIB = 64
 ALLOW_DECREASE_LABEL = "ci-relocation-headroom-ok"
 MASTER_COMMITS_TO_TRY = 10
+MASTER_WORKFLOW = "MasterCI"
 
 REACH = 1 << 31
 MIB = 1 << 20
@@ -67,29 +68,44 @@ def headroom(path):
     return {name: REACH - span for name, span in spans.items()}
 
 
+def master_report(sha, name):
+    """The decoded report `name` (a job or the workflow) of master `sha`, None when there is none."""
+    endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[Settings.S3_REPORT_BUCKET]
+    prefix = _Environment.get_s3_prefix_static(pr_number=0, branch="master", sha=sha, workflow_name=MASTER_WORKFLOW)
+    file_name = Path(Result.file_name_static(name)).name
+    try:
+        with urllib.request.urlopen(f"https://{endpoint}/{prefix}/{file_name}", timeout=10) as response:
+            data = response.read()
+    except urllib.error.HTTPError as e:
+        # The bucket is not listable, so S3 answers 403 for a missing report.
+        if e.code in (403, 404):
+            return None
+        raise
+    return json.loads(gzip.decompress(data) if data[:2] == b"\x1f\x8b" else data)
+
+
 def master_baseline(info):
-    """(commit, headroom, None) of the nearest commit of this run's master chain whose job reported it, else
-    (None, {}, the last lookup error other than a missing report)."""
-    error = None
+    """(commit, headroom, None, None) of the nearest commit of this run's master chain that reported it, else (None, {},
+    the lookup error or None, why a newer commit stopped the walk or None)."""
     for i, sha in enumerate((info.get_kv_data("master_track_commits_sha") or [])[:MASTER_COMMITS_TO_TRY]):
         try:
-            endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[Settings.S3_REPORT_BUCKET]
-            prefix = _Environment.get_s3_prefix_static(pr_number=0, branch="master", sha=sha, workflow_name="MasterCI")
-            file_name = Path(Result.file_name_static(info.job_name)).name
-            with urllib.request.urlopen(f"https://{endpoint}/{prefix}/{file_name}", timeout=10) as response:
-                data = response.read()
-            if data[:2] == b"\x1f\x8b":
-                data = gzip.decompress(data)
-            for result in json.loads(data).get("results", []):
+            report = master_report(sha, info.job_name)
+            if report is None:
+                # A commit is skipped only when MasterCI never ran this job there.
+                jobs = (master_report(sha, MASTER_WORKFLOW) or {}).get("results", [])
+                status = next((job.get("status") for job in jobs if job.get("name") == info.job_name), None)
+                if status in (None, Result.Status.SKIPPED):
+                    continue
+                return None, {}, None, f"{info.job_name} of master {sha[:12]} is {status}"
+            for result in report.get("results", []):
                 if result.get("name") == NAME and result.get("ext", {}).get("relocation_headroom"):
                     behind = f", {i} commits before this run's master parent" if i else ""
-                    return f"{sha[:12]}{behind}", result["ext"]["relocation_headroom"], None
+                    return f"{sha[:12]}{behind}", result["ext"]["relocation_headroom"], None, None
+            return None, {}, None, f"{info.job_name} of master {sha[:12]} reported no {NAME}"
         except Exception as e:
             print(f"No relocation headroom of master {sha}: {e}")
-            # The bucket is not listable, so S3 answers 403 for a missing report.
-            if not (isinstance(e, urllib.error.HTTPError) and e.code in (403, 404)):
-                error = e
-    return None, {}, error
+            return None, {}, e, None
+    return None, {}, None, None
 
 
 def check(build_dir, info):
@@ -97,10 +113,14 @@ def check(build_dir, info):
         measured = {binary: headroom(f"{build_dir}/{binary}") for binary in BINARIES}
     except Exception as e:
         return Result(name=NAME, status=Result.Status.ERROR, info=f"Failed to read the section headers: {e}")
-    base_commit, base, error = master_baseline(info)
+    base_commit, base, error, incomplete = master_baseline(info)
     lines = [
         "MiB left of the 2 GiB reach of 32-bit PC-relative references"
-        + (f", change vs master {base_commit}" if base_commit else ", no master baseline")
+        + (
+            f", change vs master {base_commit}"
+            if base_commit
+            else f", no master baseline: {incomplete}" if incomplete else ", no master baseline"
+        )
     ]
     decreases = []
     for binary, spans in measured.items():
@@ -117,15 +137,24 @@ def check(build_dir, info):
     lines.append(f"Lowest: {lowest / MIB:.2f} MiB ({binary}, {name}); warns below {WARN_HEADROOM_MIB} MiB")
     if lowest < WARN_HEADROOM_MIB * MIB:
         info.add_workflow_warning(
-            f"The relocation headroom of {binary} ({name}) is {lowest / MIB:.2f} MiB, below {WARN_HEADROOM_MIB} MiB:"
-            " shrink the code or the data before the link fails, see #126314"
+            f"The relocation headroom of {binary} ({name}) is {lowest / MIB:.2f} MiB, below {WARN_HEADROOM_MIB} MiB."
+            " Shrink the code or the data before the link fails, or switch x86-64 MSan to the large code model:"
+            " add -mcmodel=large to MSAN_FLAGS in cmake/sanitize.cmake and to the compiler-rt runtime in"
+            " contrib/compiler-rt-cmake/CMakeLists.txt (it filters the inherited flags), add -C code-model=large to the"
+            " MSan RUSTFLAGS in contrib/corrosion-cmake/CMakeLists.txt, and rework or drop this check"
+            " (ci/jobs/build_clickhouse.py), which measures the limits of the small code model."
+            " See https://github.com/ClickHouse/ClickHouse/issues/126314"
         )
     status, allowed = Result.Status.OK, False
     if decreases and max(decreases)[0] > MAX_DECREASE_MIB * MIB:
         decrease, binary, name = max(decreases)
         lines.append(f"{binary} ({name}) decreased by {decrease / MIB:.2f} MiB, more than {MAX_DECREASE_MIB} MiB")
         if info.pr_number > 0:
-            allowed = ALLOW_DECREASE_LABEL in info.pr_labels
+            # A sync pull request in the private repository carries the labels of the upstream pull request it
+            # mirrors as `upstream_pr_labels`, not as its own labels.
+            allowed = ALLOW_DECREASE_LABEL in info.pr_labels or ALLOW_DECREASE_LABEL in (
+                info.get_kv_data("upstream_pr_labels") or []
+            )
             status = Result.Status.OK if allowed else Result.Status.FAIL
             lines.append(
                 f"Allowed by the `{ALLOW_DECREASE_LABEL}` label"
@@ -138,8 +167,9 @@ def check(build_dir, info):
     text = "\n".join(lines)
     print(text)
     ext = {"relocation_headroom": measured}
-    # The label is not a build digest input, so a later commit must not reuse a success that only the label allowed.
-    if allowed:
+    # Neither the label nor master's report state is a build digest input, so a later commit must not reuse a success
+    # that only the label or a master commit without a usable report allowed.
+    if allowed or (info.pr_number > 0 and incomplete):
         ext["do_not_cache"] = True
     return Result(name=NAME, status=status, info=text, ext=ext)
 

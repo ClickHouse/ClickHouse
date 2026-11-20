@@ -10,8 +10,11 @@
 #include <Poco/JSON/Parser.h>
 
 #include <Common/randomSeed.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 
@@ -90,12 +93,15 @@ void setSnapshotTotals(
         }
         summary->set(field_name, std::to_string(*parent_value + added));
     };
-    /// Delete-family totals: a missing parent counter means "none", so treating it as 0 is safe;
-    /// with that reading a removal can only take the counter down to none, never below it.
+    /// Delete-family totals: a counter the parent omits is unknown, not "no deletes", so it stays absent.
     auto set_delete_total = [&](const char * field_name, Int64 added)
     {
-        const Int64 parent_value = readParentTotal(parent_snapshot, field_name).value_or(0);
-        summary->set(field_name, std::to_string(std::max<Int64>(0, parent_value + added)));
+        std::optional<Int64> parent_value = 0;
+        if (parent_snapshot)
+            parent_value = readParentTotal(parent_snapshot, field_name);
+        if (!parent_value.has_value())
+            return;
+        summary->set(field_name, std::to_string(std::max<Int64>(0, *parent_value + added)));
     };
     set_data_total(Iceberg::f_total_records, added_records);
     set_data_total(Iceberg::f_total_files_size, added_files_size);
@@ -105,38 +111,26 @@ void setSnapshotTotals(
     set_delete_total(Iceberg::f_total_equality_deletes, added_equality_deletes);
 }
 
+constexpr UInt32 max_iceberg_decimal_precision = 38;
+
 bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var new_type)
 {
-    if (old_type.isString() && new_type.isString() && old_type.extract<String>() == new_type.extract<String>())
-        return true;
-
-    if (new_type.isString() && new_type.extract<String>() == "long" &&
-        old_type.isString() && (old_type.extract<String>() == "long" ||  old_type.extract<String>() == "int"))
-    {
-        return true;
-    }
-
-    if (new_type.isString() && new_type.extract<String>() == "double" &&
-        old_type.isString() && (old_type.extract<String>() == "float" ||  old_type.extract<String>() == "double"))
-    {
-        return true;
-    }
-
-    {
-        auto old_complex_type = old_type.extract<Poco::JSON::Object::Ptr>();
-        auto new_complex_type = new_type.extract<Poco::JSON::Object::Ptr>();
-
-        if (old_complex_type && new_complex_type && old_complex_type->has("precision") && new_complex_type->has("precision") &&
-            (old_complex_type->getValue<Int32>("precision") <= new_complex_type->getValue<Int32>("precision") &&
-             old_complex_type->getValue<Int32>("scale") <= new_complex_type->getValue<Int32>("scale")))
-        {
-            return true;
-        }
-    }
-
-    return false;
+    /// A primitive type is a string, such as "long" or "decimal(9, 2)". A nested type is an object; changing it is not supported.
+    if (!old_type.isString() || !new_type.isString())
+        return false;
+    return Iceberg::IcebergSchemaProcessor::allowPrimitiveTypeConversion(old_type.extract<String>(), new_type.extract<String>());
 }
 
+}
+
+/// `last-column-id` written by some writers does not count nested field ids, so the ids of all schemas are taken into account too.
+Int32 getLastAssignedFieldId(const Poco::JSON::Object::Ptr & metadata_object)
+{
+    Int64 result = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
+    auto schemas = metadata_object->getArray(Iceberg::f_schemas);
+    for (UInt32 i = 0; i < schemas->size(); ++i)
+        result = std::max(result, Iceberg::IcebergSchemaProcessor::getMaxFieldId(schemas->getObject(i)->getArray(Iceberg::f_fields)));
+    return static_cast<Int32>(result);
 }
 
 MetadataGenerator::MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_)
@@ -339,6 +333,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         properties->set("write.merge.mode", "merge-on-read");
         properties->set("write.update.mode", "merge-on-read");
     }
+    Iceberg::setFormatVersion1SchemaAndPartitionSpec(metadata_object);
     return {new_snapshot, manifest_list_path};
 }
 
@@ -484,7 +479,7 @@ void MetadataGenerator::generateDropColumnMetadata(const String & column_name)
 
 void MetadataGenerator::generateAddColumnMetadata(const String & column_name, DataTypePtr type)
 {
-    if (!type->isNullable())
+    if (!type->isNullable() && !Iceberg::isIcebergVariantType(type))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow to add non-nullable columns");
     auto current_schema_id = metadata_object->getValue<Int32>(Iceberg::f_current_schema_id);
     metadata_object->set(Iceberg::f_current_schema_id, current_schema_id + 1);
@@ -511,14 +506,14 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} already exists", column_name);
     }
 
-    auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
     /// The new top-level field takes the next id; nested tuple/array/map
     /// children (when `type` is complex) take the ids after it via the shared
     /// `iter`. After getIcebergType `iter` is the max assigned id, which is what
     /// last-column-id must record so every added child gets a globally unique id.
-    Int32 new_field_id = last_column_id + 1;
+    Int32 new_field_id = getLastAssignedFieldId(metadata_object) + 1;
     Int32 iter = new_field_id;
     auto new_type = Iceberg::getIcebergType(type, iter);
+    Iceberg::checkIcebergTypeSupportedByFormatVersion(new_type.first, metadata_object->getValue<Int32>(Iceberg::f_format_version), column_name);
     metadata_object->set(Iceberg::f_last_column_id, iter);
 
     Poco::JSON::Object::Ptr new_field = new Poco::JSON::Object;
@@ -554,6 +549,7 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
     auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
 
     auto new_type = Iceberg::getIcebergType(type, last_column_id);
+    Iceberg::checkIcebergTypeSupportedByFormatVersion(new_type.first, metadata_object->getValue<Int32>(Iceberg::f_format_version), column_name);
     auto schema_fields = current_schema->getArray(Iceberg::f_fields);
 
     bool found = false;
@@ -562,12 +558,24 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
         auto current_field = schema_fields->getObject(i);
         if (current_field->getValue<String>(Iceberg::f_name) == column_name)
         {
-            if (!checkValidSchemaEvolution(current_field->get(Iceberg::f_type), new_type.first))
+            const auto old_field_type = current_field->get(Iceberg::f_type);
+            if (!checkValidSchemaEvolution(old_field_type, new_type.first))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow schema evolution to type {}", type->getPrettyName());
+
+            /// The Iceberg spec limits the precision of a decimal to 38. A table with a wider decimal
+            /// cannot be loaded by the readers that enforce it, so do not promote a column to such a type.
+            const auto nested_type = removeNullable(type);
+            if (isDecimal(nested_type) && getDecimalPrecision(*nested_type) > max_iceberg_decimal_precision
+                && old_field_type.convert<String>() != new_type.first.convert<String>())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Iceberg spec doesn't allow schema evolution to type {}: the maximum precision of an Iceberg decimal is {}",
+                    type->getPrettyName(),
+                    max_iceberg_decimal_precision);
 
             auto old_type = Iceberg::deepCopy(current_field);
             current_field->set(Iceberg::f_type, new_type.first);
-            if (!current_field->getValue<bool>(Iceberg::f_required) && !type->isNullable())
+            if (!current_field->getValue<bool>(Iceberg::f_required) && new_type.second)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow change type from nullable to non-nullable {}", type->getPrettyName());
 
             current_field->set(Iceberg::f_required, new_type.second);
