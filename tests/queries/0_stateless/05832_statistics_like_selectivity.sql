@@ -1,6 +1,6 @@
--- PREWHERE order follows the statistics estimate of `LIKE`: a pattern without wildcards on a `String` is estimated as an
--- equality, a pattern of only `%` (any haystack type) as matching every non-NULL value, and `startsWith`/`endsWith`,
--- which `LIKE 'p%'`/`LIKE '%s'` are rewritten to, as `LIKE`.
+-- PREWHERE order follows the statistics estimate of `LIKE`: a pattern without wildcards on a `String` (also with
+-- `ESCAPE`) is estimated as an equality, a pattern of only `%` (any haystack type) as matching every non-NULL value,
+-- and `startsWith`/`endsWith`, which `LIKE 'p%'`/`LIKE '%s'` are rewritten to, as `LIKE`.
 
 SET allow_statistics = 1, use_statistics = 1, materialize_statistics_on_insert = 1;
 SET min_marks_per_part_to_load_statistics = 0;
@@ -10,7 +10,7 @@ SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS tab;
 
 -- Compact parts: PREWHERE conditions are ordered by estimated rows alone.
-CREATE TABLE tab (x UInt64, s String, n Nullable(String), f Nullable(FixedString(4)), e Nullable(Enum8('a' = 1, 'b' = 2)), a Array(UInt64))
+CREATE TABLE tab (x UInt64, s String, n LowCardinality(Nullable(String)), f Nullable(FixedString(4)), e Nullable(Enum8('a' = 1, 'b' = 2)), a Array(UInt64))
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS auto_statistics_types = 'basic, uniq_v2', min_bytes_for_wide_part = 1000000000000, min_rows_for_wide_part = 1000000000000;
 
@@ -23,17 +23,25 @@ SELECT 'exact LIKE', position(p, 'like(') > 0 AND position(p, 'like(') < positio
     SELECT arrayStringConcat(extractAll(arrayStringConcat(groupArray(explain), '\n'), 'Prewhere filter column: ([^\n]+)'), ' | ') AS p
     FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE x < 50 AND s LIKE '1234'));
 
+SELECT 'exact LIKE ESCAPE', position(p, 'like(') > 0 AND position(p, 'like(') < position(p, 'less(') FROM (
+    SELECT arrayStringConcat(extractAll(arrayStringConcat(groupArray(explain), '\n'), 'Prewhere filter column: ([^\n]+)'), ' | ') AS p
+    FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE x < 50 AND s LIKE '12#%' ESCAPE '#'));
+
 SELECT 'exact NOT LIKE', position(p, 'less(') > 0 AND position(p, 'less(') < position(p, 'notLike(') FROM (
     SELECT arrayStringConcat(extractAll(arrayStringConcat(groupArray(explain), '\n'), 'Prewhere filter column: ([^\n]+)'), ' | ') AS p
-    FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE x < 9500 AND s NOT LIKE '1234'));
+    FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE x < 9950 AND s NOT LIKE '1234'));
 
 SELECT 'LIKE %', position(p, 'like(') > 0 AND position(p, 'like(') < position(p, 'less(') FROM (
     SELECT arrayStringConcat(extractAll(arrayStringConcat(groupArray(explain), '\n'), 'Prewhere filter column: ([^\n]+)'), ' | ') AS p
     FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE x < 500 AND n LIKE '%'));
 
-SELECT 'NOT LIKE %', position(p, 'notLike(') > 0 AND position(p, 'notLike(') < position(p, 'less(') FROM (
+SELECT 'ILIKE %', position(p, 'ilike(') > 0 AND position(p, 'ilike(') < position(p, 'less(') FROM (
     SELECT arrayStringConcat(extractAll(arrayStringConcat(groupArray(explain), '\n'), 'Prewhere filter column: ([^\n]+)'), ' | ') AS p
-    FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE x < 500 AND n NOT LIKE '%'));
+    FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE x < 500 AND n ILIKE '%'));
+
+SELECT 'NOT ILIKE %', position(p, 'notILike(') > 0 AND position(p, 'notILike(') < position(p, 'less(') FROM (
+    SELECT arrayStringConcat(extractAll(arrayStringConcat(groupArray(explain), '\n'), 'Prewhere filter column: ([^\n]+)'), ' | ') AS p
+    FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE x < 500 AND n NOT ILIKE '%'));
 
 SELECT 'prefix LIKE', position(p, 'startsWith(') > 0 AND position(p, 'startsWith(') < position(p, 'less(') FROM (
     SELECT arrayStringConcat(extractAll(arrayStringConcat(groupArray(explain), '\n'), 'Prewhere filter column: ([^\n]+)'), ' | ') AS p

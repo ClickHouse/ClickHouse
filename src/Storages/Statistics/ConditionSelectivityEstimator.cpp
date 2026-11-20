@@ -7,6 +7,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
+#include <Common/likePatternToRegexp.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -328,7 +329,8 @@ static bool tryExtractStringPatternAtom(
     const String & func_name,
     ConditionSelectivityEstimator::RPNElement & out)
 {
-    if (func.getArgumentsSize() != 2)
+    const size_t num_args = func.getArgumentsSize();
+    if (num_args != 2 && num_args != 3)
         return false;
 
     Field pattern;
@@ -344,7 +346,19 @@ static bool tryExtractStringPatternAtom(
     if (!isStringOrFixedString(haystack_type) && !isEnum(haystack_type))
         return false;
 
-    const String & pattern_value = pattern.safeGet<String>();
+    String pattern_value = pattern.safeGet<String>();
+    if (num_args == 3)
+    {
+        /// `LIKE pattern ESCAPE 'c'`: fold the escape character into the pattern, as `KeyCondition` does.
+        Field escape;
+        DataTypePtr escape_type;
+        if (!func.getArgumentAt(2).tryGetConstant(escape, escape_type) || !isString(escape_type))
+            return false;
+        const String & escape_str = escape.safeGet<String>();
+        if (escape_str.size() != 1 || static_cast<unsigned char>(escape_str[0]) > 0x7F)
+            return false;
+        pattern_value = likePatternWithCustomEscapeToLikePattern(pattern_value, escape_str[0]);
+    }
     Range range = Range::createWholeUniverseWithoutNull();
     if (func_name == "startsWith" || func_name == "endsWith")
     {
