@@ -70,7 +70,8 @@ $CLICKHOUSE_CLIENT --query "
     WHERE event_date >= yesterday()
       AND event_time >= now() - INTERVAL 10 MINUTE
       AND type = 'QueryFinish'
-      AND log_comment LIKE '05621\\_%'
+      AND log_comment IN ('05621_view_control', '05621_view_opt_out', '05621_execute_as_control',
+                          '05621_execute_as_opt_out', '05621_session_control', '05621_session_opt_out')
       AND current_database = currentDatabase()
     GROUP BY log_comment
     ORDER BY log_comment
