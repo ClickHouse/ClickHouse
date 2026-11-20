@@ -2650,6 +2650,37 @@ def test_relevance_groups_rows_by_query(started_cluster):
     instance.query("DROP TABLE relevance_pairs")
 
 
+def test_relevance_low_cardinality_document_per_row(started_cluster):
+    """A `LowCardinality` document column is scored row by row, not on its dictionary: every row,
+    duplicates included, is sent and counted, and no dictionary-only value is sent."""
+    documents = ["a", "b", "a", "a", "b"]
+    instance.query("DROP TABLE IF EXISTS relevance_lc")
+    instance.query(
+        "CREATE TABLE relevance_lc (id UInt32, d LowCardinality(String)) ENGINE = MergeTree ORDER BY id"
+    )
+    instance.query(
+        "INSERT INTO relevance_lc VALUES "
+        + ", ".join(f"({i}, '{d}')" for i, d in enumerate(documents))
+    )
+    qid = unique_query_id("relevance_lc")
+    result = instance.query(
+        "SELECT toTypeName(s), s FROM (SELECT aiRelevance('a', d, map('credentials', 'ai_rerank')) AS s "
+        "FROM relevance_lc ORDER BY id) SETTINGS max_threads = 1",
+        query_id=qid,
+    )
+    rows = [line.split("\t") for line in result.strip().splitlines()]
+    assert {type_name for type_name, _ in rows} == {"Nullable(Float32)"}
+    for (_, score), d in zip(rows, documents):
+        assert parse_nullable_float(score) == pytest.approx(
+            expected_rerank_score("a", d), abs=1e-4
+        )
+    assert json.loads(last_request()["body"])["documents"] == documents
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 1
+    assert int(events["rows_processed"]) == len(documents)
+    instance.query("DROP TABLE relevance_lc")
+
+
 def test_relevance_order_by_limit_across_blocks(started_cluster):
     """The intended usage: `ORDER BY aiRelevance(...) DESC LIMIT n` over pre-filtered candidates.
     Tiny blocks and batches spread the rows across many requests, and the global order must still be

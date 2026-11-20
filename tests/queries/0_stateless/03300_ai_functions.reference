@@ -206,6 +206,8 @@ aiRelevance
 Nullable(Float32)
 -- aiRelevance: return type with Nullable(String) operands
 Nullable(Float32)
+-- aiRelevance: return type with LowCardinality(String) document is not LowCardinality
+Nullable(Float32)
 -- aiRelevance: NULL / empty operands → NULL
 \N	a	\N
 q	\N	\N

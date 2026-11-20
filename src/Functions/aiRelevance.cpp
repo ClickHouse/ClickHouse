@@ -87,6 +87,12 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
+    /// Being deterministic in scope of query would otherwise enable executing on the dictionary of a
+    /// `LowCardinality` document column. That dictionary may be shared across blocks and hold values
+    /// absent from the current block, so we would send (and pay for) documents not present in the data,
+    /// and `AIRowsProcessed`/`AIRowsSkipped` would count distinct dictionary values instead of rows.
+    bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
+
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 

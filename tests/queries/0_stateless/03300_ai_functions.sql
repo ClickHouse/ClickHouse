@@ -818,6 +818,9 @@ SELECT toTypeName(aiRelevance('', 'a'));
 SELECT '-- aiRelevance: return type with Nullable(String) operands';
 SELECT toTypeName(aiRelevance(CAST(NULL, 'Nullable(String)'), CAST(NULL, 'Nullable(String)')));
 
+SELECT '-- aiRelevance: return type with LowCardinality(String) document is not LowCardinality';
+SELECT toTypeName(aiRelevance('q', materialize(toLowCardinality('a'))));
+
 SELECT '-- aiRelevance: NULL / empty operands → NULL';
 DROP TABLE IF EXISTS _03300_relevance_null;
 CREATE TABLE _03300_relevance_null (q Nullable(String), d Nullable(String)) ENGINE = Memory;
