@@ -2,11 +2,13 @@
 #include <memory>
 #include <optional>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnSet.h>
 #include <Core/Joins.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -238,12 +240,41 @@ static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::fu
 ///   result), so it reaches the replicas as a live function and each evaluates it itself.
 /// A set from a `Set` table is shipped by name instead, so one of a temporary table is unshippable too: a replica
 /// refuses a table of the temporary database with `DATABASE_ACCESS_DENIED`.
+/// A lambda body is serialized with the DAG, folded or not, so the sets it uses are checked too.
 /// `visited` holds the sets already checked: a set can be referenced from several places, and the sets nested in
 /// a set's plan are checked recursively.
+static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag, std::unordered_set<const FutureSetFromSubquery *> & visited);
+
+static bool foldedLambdaReferencesUnshippableSubquerySet(const IColumn & column, std::unordered_set<const FutureSetFromSubquery *> & visited)
+{
+    const auto * column_function = typeid_cast<const ColumnFunction *>(&column);
+    if (!column_function)
+        return false;
+
+    const auto * expression = typeid_cast<const FunctionExpression *>(column_function->getFunction().get());
+    if (expression && dagReferencesUnshippableSubquerySet(expression->getAcionsDAG(), visited))
+        return true;
+
+    for (const auto & captured : column_function->getCapturedColumns())
+        if (const auto * captured_constant = typeid_cast<const ColumnConst *>(captured.column.get()))
+            if (foldedLambdaReferencesUnshippableSubquerySet(captured_constant->getDataColumn(), visited))
+                return true;
+
+    return false;
+}
+
 static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag, std::unordered_set<const FutureSetFromSubquery *> & visited)
 {
     for (const auto & node : dag.getNodes())
     {
+        if (const auto * function_capture = typeid_cast<const FunctionCapture *>(node.function_base.get()))
+            if (dagReferencesUnshippableSubquerySet(function_capture->getAcionsDAG(), visited))
+                return true;
+
+        if (node.column && WhichDataType(node.result_type).isFunction()
+            && foldedLambdaReferencesUnshippableSubquerySet(node.column->getDataColumn(), visited))
+            return true;
+
         if (!node.column || !WhichDataType(node.result_type).isSet())
             continue;
         const auto * column_set = typeid_cast<const ColumnSet *>(node.column->getDataColumnPtr().get());

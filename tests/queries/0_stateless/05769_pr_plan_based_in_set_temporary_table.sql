@@ -34,5 +34,7 @@ SELECT count() FROM t_pr_in_tmp WHERE k IN (SELECT k FROM t_pr_in_tmp WHERE k IN
 SELECT count(), sum(v) FROM t_pr_in_tmp WHERE k IN tmp_pr_in_set;
 SELECT count() FROM t_pr_in_tmp WHERE k NOT IN tmp_pr_in_set;
 SELECT count() FROM t_pr_in_tmp WHERE k IN (SELECT k FROM t_pr_in_tmp WHERE k IN tmp_pr_in_set);
+-- The sets in the body of a lambda are shipped with it.
+SELECT count() FROM t_pr_in_tmp WHERE arrayExists(x -> x IN tmp_pr_in_set, [k]);
 
 DROP TABLE t_pr_in_tmp;
