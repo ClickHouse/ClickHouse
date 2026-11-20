@@ -57,7 +57,7 @@ SETTINGS merge_tree_min_rows_for_concurrent_read = 1,
 SETTINGS="--enable_analyzer=1 --automatic_parallel_replicas_mode=0 --enable_parallel_replicas=1 \
 --parallel_replicas_for_non_replicated_merge_tree=1 --max_parallel_replicas=3 \
 --cluster_for_parallel_replicas=test_cluster_one_shard_three_replicas_localhost \
---parallel_replicas_local_plan=1 --parallel_replicas_allow_view_over_mergetree=1 \
+--parallel_replicas_local_plan=1 --parallel_replicas_plan_based=0 --parallel_replicas_allow_view_over_mergetree=1 \
 --optimize_read_in_order=1 --max_threads=4 \
 --merge_tree_min_rows_for_concurrent_read=100000000 --merge_tree_min_bytes_for_concurrent_read=100000000 \
 --merge_tree_min_rows_for_concurrent_read_for_remote_filesystem=100000000 \
