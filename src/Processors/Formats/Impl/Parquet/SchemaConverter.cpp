@@ -1179,6 +1179,8 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     size_t primitive_start = primitive_columns.size();
     size_t output_start = output_columns.size();
     size_t skipped_unsupported_columns = 0;
+    /// The remaining elements of a skipped tuple are still traversed, to advance past its subtree.
+    bool skip_tuple = false;
     VectorWithMemoryTracking<String> element_names_in_file;
     std::optional<UnorderedSetWithMemoryTracking<Int64>> element_field_ids{std::in_place};
     for (size_t i = 0; i < size_t(node.element->num_children); ++i)
@@ -1203,7 +1205,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
         }
 
         const bool skip_map_element = node.schema_context == SchemaContext::MapTuple && node.map_element_to_skip == i;
-        const bool element_requested = node.requested && idx_in_output_tuple.has_value() && !skip_map_element;
+        const bool element_requested = node.requested && !skip_tuple && idx_in_output_tuple.has_value() && !skip_map_element;
 
         DataTypePtr element_type_hint;
         if (tuple_type_hint && idx_in_output_tuple.has_value() && element_requested)
@@ -1228,7 +1230,8 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
                     /// Remove previous elements.
                     primitive_columns.resize(primitive_start);
                     output_columns.resize(output_start);
-                    return;
+                    skip_tuple = true;
+                    continue;
                 }
                 else
                 {
@@ -1254,6 +1257,9 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
             }
         }
     }
+
+    if (skip_tuple)
+        return;
 
     /// Only for a struct that is the field of the mapper with its id: one with another id can have the same name.
     if (column_mapper && column_mapper->hasIcebergInitialDefaults() && node.element->__isset.field_id
