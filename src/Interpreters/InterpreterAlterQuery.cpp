@@ -507,7 +507,6 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             checkRowPoliciesBeforeAlter(table->getStorageID(), metadata_snapshot->getColumns(), *alter_commands, context);
             context->onQueryExecutionStarted();
             table->alter(*alter_commands, context, alter_lock, ddl_guard);
-            renameColumnsInRowPolicies(table->getStorageID(), metadata_snapshot->getColumns(), *alter_commands, context);
             /// The following segments must see the metadata this ALTER committed.
             if (auto metadata_cache = context->getQueryMetadataCache())
                 metadata_cache->clear();
