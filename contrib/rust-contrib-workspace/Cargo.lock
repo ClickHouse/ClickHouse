@@ -17,6 +17,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "_ch_rust_dwarf"
+version = "0.1.0"
+dependencies = [
+ "gimli",
+ "object 0.39.1",
+]
+
+[[package]]
 name = "_ch_rust_pco"
 version = "0.1.0"
 dependencies = [
@@ -68,6 +76,7 @@ version = "0.1.0"
 dependencies = [
  "_ch_rust_chdig",
  "_ch_rust_delta_kernel",
+ "_ch_rust_dwarf",
  "_ch_rust_pco",
  "_ch_rust_polyglot",
  "_ch_rust_prql",
@@ -3315,6 +3324,15 @@ dependencies = [
 
 [[package]]
 name = "object"
+version = "0.39.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e5a6c098c7a3b6547378093f5cc30bc54fd361ce711e05293a5cc589562739b"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
+name = "object"
 version = "0.40.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd229a0361b9d0d4396176e02d65897f487eebeab7caa6d443855ee152ca0b9c"
@@ -6440,7 +6458,7 @@ dependencies = [
  "log",
  "mach2",
  "memfd",
- "object",
+ "object 0.40.0",
  "once_cell",
  "postcard",
  "pulley-interpreter",
@@ -6487,7 +6505,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "indexmap",
  "log",
- "object",
+ "object 0.40.0",
  "postcard",
  "rustc-demangle",
  "semver",
@@ -6535,7 +6553,7 @@ dependencies = [
  "gimli",
  "itertools 0.14.0",
  "log",
- "object",
+ "object 0.40.0",
  "pulley-interpreter",
  "smallvec",
  "target-lexicon",
@@ -6582,7 +6600,7 @@ version = "50.0.1"
 dependencies = [
  "cranelift-codegen",
  "log",
- "object",
+ "object 0.40.0",
  "wasmtime-environ",
 ]
 
