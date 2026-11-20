@@ -38,9 +38,8 @@ SingleStatisticsDescription & SingleStatisticsDescription::operator=(SingleStati
         return *this;
 
     type = std::exchange(other.type, StatisticsType{});
-    ast = other.ast ? other.ast->clone() : nullptr;
+    ast = std::move(other.ast);
     is_implicit = other.is_implicit;
-    other.ast.reset();
 
     return *this;
 }

@@ -89,6 +89,47 @@ UInt64 sumNonNullStringBytes(const ColumnPtr & column)
     return 0;
 }
 
+/// The Field produced by `IColumn::insertDefault` for a column of `data_type`. It is the same for all
+/// columns of a type, and the statistics of all columns of a data part are loaded at once, so it is
+/// computed once per type. The cache outlives the tables, so the bytes it retains are bounded: types with a
+/// long name (e.g. an `Enum` with many labels) or a large default (e.g. of a wide `FixedString`) are not cached,
+/// and the cache is cleared when it has too many types.
+Field getColumnDefaultField(const DataTypePtr & data_type)
+{
+    static constexpr size_t max_cached_types = 10000;
+    static constexpr size_t max_cached_type_name_bytes = 256;
+    static constexpr size_t max_cached_default_bytes = 256;
+
+    static std::mutex mutex;
+    static std::unordered_map<String, Field> default_fields;
+
+    auto compute_default = [&]
+    {
+        auto default_col = data_type->createColumn();
+        default_col->insertDefault();
+        return std::pair{(*default_col)[0], default_col->byteSize()};
+    };
+
+    String type_name = data_type->getName();
+    if (type_name.size() > max_cached_type_name_bytes)
+        return compute_default().first;
+
+    {
+        std::lock_guard lock(mutex);
+        if (auto it = default_fields.find(type_name); it != default_fields.end())
+            return it->second;
+    }
+
+    auto [default_field, default_bytes] = compute_default();
+    if (default_bytes > max_cached_default_bytes)
+        return default_field;
+
+    std::lock_guard lock(mutex);
+    if (default_fields.size() >= max_cached_types)
+        default_fields.clear();
+    default_fields.emplace(std::move(type_name), default_field);
+    return default_field;
+}
 
 /// The `sum` aggregate function over a column type, shared by all statistics of that type: the statistics of every part
 /// are kept in memory, and a function object per statistics object would cost more than the state.
@@ -157,9 +198,7 @@ StatisticsBasic::StatisticsBasic(const SingleStatisticsDescription & description
 
     /// Compute the column-level default once so `estimateEqual` can compare against the same
     /// value that `build` counts via `IColumn::isDefaultAt`.
-    auto default_col = data_type->createColumn();
-    default_col->insertDefault();
-    column_default_field = (*default_col)[0];
+    column_default_field = getColumnDefaultField(data_type);
 
     is_nullable = isNullableOrLowCardinalityNullable(data_type_) || column_default_field.isNull();
 
