@@ -31,3 +31,9 @@ CREATE TABLE c (x String, `icebergTruncate(1, x)` String) ENGINE = IcebergLocal(
 INSERT INTO c VALUES ('b', 'a'), ('a', 'b');
 SELECT x, `icebergTruncate(1, x)` FROM c ORDER BY x;
 SELECT * FROM file(currentDatabase() || '/05838_iceberg_sort_key_named_like_column/c/data/*.parquet', Parquet) SETTINGS max_threads = 1;
+
+-- The partition source named like the key was read from the computed key.
+CREATE TABLE p (x String, `icebergTruncate(1, x)` String) ENGINE = IcebergLocal((SELECT path || 'p/' FROM iceberg_path), 'Parquet') PARTITION BY `icebergTruncate(1, x)` ORDER BY icebergTruncate(1, x);
+INSERT INTO p VALUES ('bb', 'k'), ('ab', 'k'), ('cc', 'm');
+SELECT x, `icebergTruncate(1, x)` FROM p ORDER BY x;
+SELECT arraySort(groupArray(x)) AS xs FROM p GROUP BY _path ORDER BY xs;

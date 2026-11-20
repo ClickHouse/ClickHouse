@@ -15,3 +15,8 @@ a	b
 b	a
 a	b
 b	a
+ab	k
+bb	k
+cc	m
+['ab','bb']
+['cc']
