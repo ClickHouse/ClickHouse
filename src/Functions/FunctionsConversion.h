@@ -23,6 +23,7 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -77,6 +78,7 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/IPv6ToBinary.h>
+#include <Common/StringUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/digits10.h>
@@ -1442,6 +1444,7 @@ struct ConvertThroughParsing
     static constexpr bool to_datetime = std::is_same_v<ToDataType, DataTypeDateTime>;
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
     static constexpr bool to_time64 = std::is_same_v<ToDataType, DataTypeTime64>;
+    static constexpr bool to_decimal = IsDataTypeDecimal<ToDataType> && !(to_datetime64 || to_time64);
 
     static bool isAllRead(ReadBuffer & in)
     {
@@ -1593,8 +1596,17 @@ struct ConvertThroughParsing
                 }
             }
 
-            ReadBufferFromMemory read_buffer(string_begin, string_size);
-            read_buffer.setPaddedStorage(*chars, current_offset, string_size);
+            std::string_view text(string_begin, string_size);
+            if constexpr (std::is_same_v<FromDataType, DataTypeFixedString> && to_decimal
+                && exception_mode != ConvertFromStringExceptionMode::Throw)
+            {
+                /// The non-throwing `Decimal` parser rejects any byte that is not part of the number,
+                /// including the zero padding of a `FixedString`. Every other parser stops at the padding,
+                /// and `isAllRead` skips it.
+                trimRight(text, '\0');
+            }
+            ReadBufferFromMemory read_buffer(text);
+            read_buffer.setPaddedStorage(*chars, current_offset, text.size());
 
             if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
             {
@@ -3432,7 +3444,7 @@ struct ConvertImpl
             /// Bool conversion
             if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
             {
-                if (isBool(result_type))
+                if (isBool(result_type) || isSimpleAggregateFunctionOfBool(*result_type))
                 {
                     convertToBool<FromFieldType>(vec_to, vec_from, input_rows_count);
                     RETURN_NULLABLE_IF_NEEDED(col_to);
@@ -3829,10 +3841,12 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
 ///
 /// - a date-time in a time zone with a UTC offset transition: in a fall-back hour two distinct
 ///   instants have the same local wall-clock representation;
-/// - a floating-point number, because every `NaN` payload is rendered as the same `nan`, while hash
-///   tables compare floating-point keys bitwise and keep distinct payloads apart;
+/// - a floating-point number, also as a `QBit` element, because every `NaN` payload is rendered as the
+///   same `nan`, while hash tables compare floating-point keys bitwise and keep distinct payloads apart;
 /// - a `Date32`, because day numbers out of the type range are saturated to `0000-01-01` and
 ///   `9999-12-31` when formatted (see `ToStringMonotonicity`);
+/// - a `Time` or `Time64`, saturated to `-999:59:59`..`999:59:59` when formatted;
+/// - a `DateTime64`, saturated to `0000-01-01`..`9999-12-31` when formatted;
 /// - a type-erased type such as `Variant`, `Dynamic` or `Object`, whose alternatives render into a
 ///   common text space: `toString(1::Variant(Int64, String))` equals `toString('1'::Variant(Int64, String))`;
 /// - a `Bool` when `bool_true_representation` and `bool_false_representation` coincide in `format_settings`.
@@ -3848,10 +3862,11 @@ inline bool renderingCollapsesDistinctValues(const DataTypePtr & type, const For
     {
         if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(&nested))
             collapses = collapses || !date_time->getTimeZone().hasFixedOffset();
-        else if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(&nested))
-            collapses = collapses || !date_time64->getTimeZone().hasFixedOffset();
-        else if (isFloat(nested) || isDate32(nested) || isVariant(nested) || isDynamic(nested) || isObject(nested))
+        else if (isFloat(nested) || isDate32(nested) || isDateTime64(nested) || isTime(nested) || isTime64(nested)
+                 || isVariant(nested) || isDynamic(nested) || isObject(nested))
             collapses = true;
+        else if (const auto * qbit = typeid_cast<const DataTypeQBit *>(&nested))
+            collapses = collapses || isFloat(qbit->getElementType());
         else if (isUInt8(nested) && nested.getName() == "Bool")
             collapses = collapses || format_settings.bool_true_representation == format_settings.bool_false_representation;
     };
@@ -6116,8 +6131,10 @@ private:
     template <typename ToDataType>
     WrapperType createWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const;
 
-    template <typename ToDataType>
-    WrapperType createBoolWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const;
+    /// Parses text with the text serialization of the result type. `requested_result_is_nullable` parses into
+    /// a `Nullable` result, in which `accurateCastOrNull` turns malformed input into NULL; otherwise it
+    /// throws.
+    WrapperType createStringParsingWrapper(bool requested_result_is_nullable) const;
 
     WrapperType createUInt8ToBoolWrapper(DataTypePtr from_type, DataTypePtr to_type) const;
 
@@ -6140,7 +6157,7 @@ private:
 
     ElementWrappers getElementWrappers(const DataTypes & from_element_types, const DataTypes & to_element_types) const;
 
-    WrapperType createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type) const;
+    WrapperType createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type, bool requested_result_is_nullable) const;
 
     WrapperType createQBitWrapper(const DataTypePtr & from_type_untyped, const DataTypeQBit & to_type) const;
 
@@ -6184,10 +6201,11 @@ private:
 
     WrapperType createVariantToVariantWrapper(const DataTypeVariant & from_variant, const DataTypeVariant & to_variant) const;
 
-    /// Create wrapper only if we support this conversion.
-    WrapperType createWrapperIfCanConvert(const DataTypePtr & from, const DataTypePtr & to) const;
+    /// Create wrapper only if we support this conversion. `report_failures_as_null` is as in
+    /// `prepareUnpackDictionaries`.
+    WrapperType createWrapperIfCanConvert(const DataTypePtr & from, const DataTypePtr & to, bool report_failures_as_null) const;
 
-    WrapperType createVariantToColumnWrapper(const DataTypeVariant & from_variant, const DataTypePtr & to_type) const;
+    WrapperType createVariantToColumnWrapper(const DataTypeVariant & from_variant, const DataTypePtr & to_type, bool report_failures_as_null) const;
 
     static ColumnPtr createVariantFromDescriptorsAndOneNonEmptyVariant(const DataTypes & variant_types, const ColumnPtr & discriminators, const ColumnPtr & variant, ColumnVariant::Discriminator variant_discr);
 
@@ -6195,10 +6213,11 @@ private:
 
     WrapperType createColumnToVariantWrapper(const DataTypePtr & from_type, const DataTypeVariant & to_variant) const;
 
-    /// Wrapper for conversion to/from Variant type
-    WrapperType createVariantWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type) const;
+    /// Wrapper for conversion to/from Variant type. `report_failures_as_null` is as in
+    /// `prepareUnpackDictionaries`.
+    WrapperType createVariantWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type, bool report_failures_as_null) const;
 
-    WrapperType createDynamicToColumnWrapper(const DataTypePtr &) const;
+    WrapperType createDynamicToColumnWrapper(const DataTypePtr &, bool report_failures_as_null) const;
 
     WrapperType createStringToDynamicThroughParsingWrapper() const;
 
@@ -6208,17 +6227,18 @@ private:
 
     WrapperType createDynamicToDynamicWrapper(const DataTypeDynamic & from_dynamic, const DataTypeDynamic & to_dynamic) const;
 
-    /// Wrapper for conversion to/from Dynamic type
-    WrapperType createDynamicWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type) const;
+    /// Wrapper for conversion to/from Dynamic type. `report_failures_as_null` is as in
+    /// `prepareUnpackDictionaries`.
+    WrapperType createDynamicWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type, bool report_failures_as_null) const;
 
     template <typename FieldType>
-    WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type) const;
+    WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type, bool requested_result_is_nullable) const;
 
     template <typename EnumTypeFrom, typename EnumTypeTo>
     void checkEnumToEnumConversion(const EnumTypeFrom * from_type, const EnumTypeTo * to_type) const;
 
     template <typename ColumnStringType, typename EnumType>
-    WrapperType createStringToEnumWrapper() const;
+    WrapperType createStringToEnumWrapper(bool requested_result_is_nullable) const;
 
     template <typename ColumnNumberType, typename EnumType>
     WrapperType createNumberToEnumWrapper() const;
@@ -6244,12 +6264,19 @@ private:
         };
     }
 
-    WrapperType prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const;
+    /// `report_failures_as_null` asks the conversion to report a value that it cannot convert as NULL in a
+    /// nullable result, even when `to_type` cannot hold NULL. Under `accurateCastOrNull`, a tuple asks this
+    /// of the conversions of its elements and takes the NULLs out into its own null map (see
+    /// `createTupleWrapper`). The elements of an array or a map could not keep such NULLs, so their
+    /// conversions are not asked and convert strictly.
+    WrapperType prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type, bool report_failures_as_null = false) const;
 
-    WrapperType prepareRemoveNullable(const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check) const;
+    WrapperType prepareRemoveNullable(
+        const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check, bool report_failures_as_null) const;
 
-    /// 'from_type' and 'to_type' are nested types in case of Nullable.
-    /// 'requested_result_is_nullable' is true if CAST to Nullable type is requested.
+    /// `from_type` and `to_type` have their outer `Nullable` wrappers removed.
+    /// `requested_result_is_nullable` includes declared nullable targets and intermediate
+    /// `accurateCastOrNull` results that use NULL to report conversion failures.
     WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const;
 };
 

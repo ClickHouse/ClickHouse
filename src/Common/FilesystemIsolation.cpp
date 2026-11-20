@@ -73,6 +73,7 @@ std::optional<FilesystemIsolationStatus> getFilesystemIsolationStatus()
 #include <IO/ReadHelpers.h>
 #include <base/defines.h>
 #include <base/scope_guard.h>
+#include <base/sleep.h>
 
 #include <Poco/Glob.h>
 
@@ -599,6 +600,20 @@ std::vector<std::string> getMountPointsInside(const std::string & path)
     return mount_points;
 }
 
+/// Sets `errno` on failure. Making a mount read-only fails with `EBUSY` while anything has write access to it, even a
+/// read through it that updates the access time, and new mounts are reachable from outside through `/proc/<pid>/root`.
+bool remountBind(const char * path, unsigned long flags) // NOLINT(google-runtime-int)
+{
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (0 != ::mount(nullptr, path, nullptr, MS_REMOUNT | MS_BIND | flags, nullptr))
+    {
+        if (errno != EBUSY || std::chrono::steady_clock::now() >= deadline)
+            return false;
+        sleepForMilliseconds(10);
+    }
+    return true;
+}
+
 /// Remounts the bind mount at `path` and every mount inside it with the flags `add`. A bind mount keeps the flags
 /// of the mount it is made from, and the kernel refuses to clear `MS_RDONLY`, `MS_NOSUID`, `MS_NODEV` and
 /// `MS_NOEXEC` of a mount that belongs to a more privileged user namespace, so these are carried over.
@@ -626,7 +641,7 @@ void addMountFlags(const std::string & path, unsigned long add) // NOLINT(google
         if (st.f_flag & ST_NOEXEC)
             flags |= MS_NOEXEC;
 
-        if (0 != ::mount(nullptr, mount_point.c_str(), nullptr, MS_REMOUNT | MS_BIND | flags, nullptr))
+        if (!remountBind(mount_point.c_str(), flags))
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot remount {} with the flags {:#x}", mount_point, flags);
     }
 }
@@ -699,7 +714,7 @@ void remountReadOnly(const std::string & path)
     /// of the access time are kept by a remount without them.
     for (const auto & mount : getMountsInside(path))
     {
-        if (0 != ::mount(nullptr, mount.mount_point.c_str(), nullptr, MS_REMOUNT | MS_BIND | MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC, nullptr))
+        if (!remountBind(mount.mount_point.c_str(), MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC))
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot remount {} read-only", mount.mount_point);
     }
 }
@@ -811,7 +826,6 @@ std::string probeNamespaces(bool with_user_namespace, uid_t uid, gid_t gid)
     return fmt::format("the process that checks whether the filesystem can be isolated terminated with the status {}", status);
 }
 
-#if defined(__GLIBC__)
 /// The services named in `/etc/nsswitch.conf`, such as `files`, `dns`, `systemd`, `sss`.
 std::vector<std::string> getNameServices()
 {
@@ -1116,7 +1130,6 @@ std::vector<std::string> getNameServiceSocketDirectories()
     }
     return directories;
 }
-#endif
 
 /// The files mapped into the process: its executable and, if it is not linked statically, the dynamic loader and
 /// the libraries.
@@ -1336,9 +1349,9 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     for (const auto & file : mapped_files)
         all_paths.push_back({file, FilesystemIsolationPath::Access::ReadOnly, "mapped into the process"});
     /// The libraries of the programs that are started later, with the links that name them, as for the mapped files.
-    /// Only with glibc: a build with musl is linked statically, as the programs it starts are.
+    /// Also when the server itself is linked statically: the programs it starts, such as a bridge or the interpreter
+    /// of an executable user-defined function, can be linked dynamically against the C library of the system.
     std::vector<std::string> executable_dependencies;
-#if defined(__GLIBC__)
     for (const auto & path : std::vector<FilesystemIsolationPath>(all_paths))
         if (path.executable)
             for (auto & dependency : getExecutableDependencies(path.path, mapped_files))
@@ -1346,17 +1359,21 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
                 all_paths.push_back({dependency, FilesystemIsolationPath::Access::ReadOnly, fmt::format("needed by {}", path.path)});
                 executable_dependencies.push_back(std::move(dependency));
             }
-#endif
-    if (const auto interpreter = getInterpreter())
-    {
+    const auto interpreter = getInterpreter();
+    if (interpreter)
         all_paths.push_back({*interpreter, FilesystemIsolationPath::Access::ReadOnly, "the dynamic loader of the executable"});
-#if defined(__GLIBC__)
+    /// For the dynamic loader and the C library of the server or of a program it starts: a glibc-linked bridge
+    /// loads the modules of the Name Service Switch itself, whatever the C library of the server is. They are looked
+    /// up also next to the libraries of the started programs, where their C library is.
+    if (interpreter || !executable_dependencies.empty())
+    {
         all_paths.push_back({"/etc/ld.so.cache", FilesystemIsolationPath::Access::ReadOnly, "the cache of the dynamic loader"});
-        for (auto & module : getNameServiceModules(mapped_files))
+        std::vector<std::string> loaded_files = mapped_files;
+        loaded_files.insert(loaded_files.end(), executable_dependencies.begin(), executable_dependencies.end());
+        for (auto & module : getNameServiceModules(loaded_files))
             all_paths.push_back({std::move(module), FilesystemIsolationPath::Access::ReadOnly, "a module of the Name Service Switch or a library it needs"});
         for (auto & directory : getNameServiceSocketDirectories())
             all_paths.push_back({std::move(directory), FilesystemIsolationPath::Access::ReadOnly, "the sockets of a service of the Name Service Switch"});
-#endif
     }
     const std::vector<Mount> mounts = planMounts(all_paths, traversal);
     for (auto & alias : getLibraryAliases(mapped_files))
@@ -1463,7 +1480,7 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     if (0 != ::rmdir(old_root))
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot remove {}", old_root);
 
-    if (0 != ::mount(nullptr, "/", nullptr, MS_REMOUNT | MS_BIND | MS_RDONLY | MS_NOSUID | MS_NODEV, nullptr))
+    if (!remountBind("/", MS_RDONLY | MS_NOSUID | MS_NODEV))
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot make the root of the isolated filesystem read-only");
 
     if (0 != ::chdir(working_directory.empty() ? "/" : working_directory.c_str()))
