@@ -53,14 +53,15 @@ Expression ((Project names + Projection))
 -- 3a. negative: missing NDV for the pushed join key (cardinality gate), classic shape
 GatherExchange
   Expression ((Project names + Projection))
-    Aggregating
-      Expression (Before GROUP BY)
-        ShuffleExchange
-          JoinLogical (Broadcast HashJoin )
-            Expression (Change column names to column identifiers)
-              ReadFromMergeTree (ParallelRead default.t_push_facts)
-            Expression (Change column names to column identifiers)
-              ReadFromMergeTree (ReplicatedRead default.t_push_dims)
+    MergingAggregated
+      ShuffleExchange
+        Aggregating
+          Expression (Before GROUP BY)
+            JoinLogical (Broadcast HashJoin )
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (ParallelRead default.t_push_facts)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (ReplicatedRead default.t_push_dims)
 -- 3b. negative: no guaranteed reduction from the composite key NDV (cardinality gate), classic shape
 Expression (Project names)
   Expression ((Before ORDER BY + Projection))
@@ -369,15 +370,16 @@ Expression ((Project names + Projection))
 -- 25. negative: ASOF JOIN never pushes
 GatherExchange
   Expression ((Project names + Projection))
-    Aggregating
-      Expression (Before GROUP BY)
-        ShuffleExchange
-          JoinLogical (Broadcast HashJoin )
-            Expression ((Apply runtime join filter + Change column names to column identifiers))
-              ReadFromMergeTree (ParallelRead default.t_push_facts)
-            BuildRuntimeFilter (Build runtime join filter on __table2.key)
-              Expression (Change column names to column identifiers)
-                ReadFromMergeTree (ReplicatedRead default.t_push_dims_multi)
+    MergingAggregated
+      ShuffleExchange
+        Aggregating
+          Expression (Before GROUP BY)
+            JoinLogical (Broadcast HashJoin )
+              Expression ((Apply runtime join filter + Change column names to column identifiers))
+                ReadFromMergeTree (ParallelRead default.t_push_facts)
+              BuildRuntimeFilter (Build runtime join filter on __table2.key)
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (ReplicatedRead default.t_push_dims_multi)
 -- 26. task-budget sanity: 3 joins under an aggregation must not exhaust the task limit
 Expression ((Project names + Projection))
   Aggregating

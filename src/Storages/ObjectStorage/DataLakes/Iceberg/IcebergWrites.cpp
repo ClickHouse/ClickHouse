@@ -91,6 +91,7 @@ namespace Setting
     extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
     extern const SettingsBool iceberg_insert_single_manifest_for_all_partitions;
     extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
+    extern const SettingsUInt64 iceberg_insert_max_data_files_in_upload;
 }
 
 namespace DataLakeStorageSetting
@@ -1414,6 +1415,8 @@ IcebergStorageSink::IcebergStorageSink(
     , sample_block(sample_block_)
     , committer(std::make_unique<IcebergInsertCommitter>(
           object_storage_, configuration_, sample_block_, context_, catalog_, persistent_table_components_, table_id_))
+    , data_file_uploads(object_storage_->supportParallelWrite()
+        ? context_->getSettingsRef()[Setting::iceberg_insert_max_data_files_in_upload] : 0)
     , object_storage(object_storage_)
     , context(context_)
     , format_settings(format_settings_)
@@ -1469,6 +1472,7 @@ void IcebergStorageSink::consume(Chunk & chunk)
                 context->getSettingsRef()[Setting::iceberg_insert_max_bytes_in_data_file],
                 committer->getSchema()->getArray(Iceberg::f_fields),
                 committer->getFileNamesGenerator(),
+                data_file_uploads,
                 committer->getPathResolver(),
                 object_storage,
                 context,
@@ -1561,6 +1565,8 @@ void IcebergStorageSink::finalizeBuffers()
 {
     for (auto & [_, files] : files_per_partition_key)
         files->writer.finalize();
+    /// Before the files are committed, here or by `IcebergCommit` after the output is finished.
+    data_file_uploads.finalize();
     releaseBuffers();
 
     /// The files went to `IcebergCommit` with the chunks, which keep them alive until it takes them.
@@ -1642,6 +1648,7 @@ void IcebergStorageSink::cancelBuffers()
 {
     for (auto & [_, files] : files_per_partition_key)
         files->writer.cancel();
+    data_file_uploads.cancel();
 }
 
 void IcebergInsertCommitter::removeDataFilesAndManifests()

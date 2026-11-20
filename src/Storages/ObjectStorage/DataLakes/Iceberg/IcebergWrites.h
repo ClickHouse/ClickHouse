@@ -304,6 +304,8 @@ private:
     SharedHeader sample_block;
     /// Commits the files of this sink, unless they are sent to `IcebergCommit`. Declared before the writers, which use its file names generator.
     std::unique_ptr<IcebergInsertCommitter> committer;
+    /// The uploads of the finished data files of this sink. Declared before the writers, which add their files to it.
+    DataFileUploads data_file_uploads;
     std::unordered_map<ChunkPartitioner::PartitionKey, IcebergPartitionFilesPtr, ChunkPartitioner::PartitionKeyHasher> files_per_partition_key;
     std::unordered_map<ChunkPartitioner::PartitionKey, std::vector<Field>, ChunkPartitioner::PartitionKeyHasher> last_fields_of_last_chunks;
     std::unordered_map<String, size_t> column_name_to_column_index;
