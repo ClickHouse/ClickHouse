@@ -2751,13 +2751,13 @@ static void finalizeMutatedPart(
     {
         if (isFullPartStorage(new_data_part->getDataPartStorage()))
         {
-            auto out = serializeStatisticsPacked(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings());
+            auto out = serializeStatisticsPacked(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings(), getStatisticsFileVersion(*new_data_part->storage.getSettings()));
             written_files.push_back(std::move(out));
         }
         /// Write statistics as separate compressed files in packed parts to avoid double buffering.
         else
         {
-            auto files = serializeStatisticsWide(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings());
+            auto files = serializeStatisticsWide(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings(), getStatisticsFileVersion(*new_data_part->storage.getSettings()));
             std::move(files.begin(), files.end(), std::back_inserter(written_files));
         }
     }
@@ -3983,7 +3983,7 @@ private:
         {
             index_granularity_ptr = createMergeTreeIndexGranularity(
                 ctx->source_part->rows_count,
-                ctx->source_part->getBytesUncompressedOnDisk(),
+                [&] { return ctx->source_part->getTotalColumnsReadSize().data_uncompressed; },
                 *ctx->data->getSettings(),
                 ctx->new_data_part->index_granularity_info,
                 /*blocks_are_granules=*/ false);
