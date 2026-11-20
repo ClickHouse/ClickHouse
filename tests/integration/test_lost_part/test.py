@@ -752,3 +752,44 @@ def test_missing_merge_result_and_source_on_start(start_cluster):
         )
     finally:
         node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def test_pending_mutation_after_lost_merge_result(start_cluster):
+    # A mutation that is waiting for the lost merge result must not be done until its rows are updated.
+    # Mutations are not assigned while `max_replicated_mutations_in_queue` is 0, so one stays pending.
+    table = "rmt_pending_mutation_lost_merge_result"
+    try:
+        create_merged_table([node1], table)
+        node1.query(f"ALTER TABLE {table} MODIFY SETTING max_replicated_mutations_in_queue = 0")
+        node1.query(f"ALTER TABLE {table} UPDATE v = v + 10 WHERE 1")
+
+        remove_part_dir_from_disk(node1, table, "all_0_1_1")
+        node1.restart_clickhouse()
+
+        assert_eq_with_retry(
+            node1,
+            f"SELECT count() FROM system.replication_queue WHERE database = 'default' AND table = '{table}'",
+            "0",
+            retry_count=120,
+            sleep_time=1,
+        )
+        assert (
+            node1.query(
+                f"SELECT is_done, length(parts_to_do_names) > 0 FROM system.mutations "
+                f"WHERE database = 'default' AND table = '{table}'"
+            )
+            == "0\t1\n"
+        )
+        assert node1.query(f"SELECT count(), sum(n), sum(v) FROM {table}") == "2\t3\t0\n"
+
+        node1.query(f"ALTER TABLE {table} MODIFY SETTING max_replicated_mutations_in_queue = 8")
+        assert_eq_with_retry(
+            node1,
+            f"SELECT is_done FROM system.mutations WHERE database = 'default' AND table = '{table}'",
+            "1",
+            retry_count=120,
+            sleep_time=1,
+        )
+        assert node1.query(f"SELECT count(), sum(n), sum(v) FROM {table}") == "2\t3\t20\n"
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
