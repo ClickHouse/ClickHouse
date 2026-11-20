@@ -309,7 +309,16 @@ private:
 };
 
 void removeImplicitStatistics(ColumnsDescription & columns);
-void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str);
+/// Adds the statistics types listed in `statistics_types_str` (the `auto_statistics_types` setting) as
+/// implicit statistics to every suitable column. If `assume_floats_distinct` is set, implicit `uniq` and
+/// `uniq_v2` are left out for the column types accepted by `canAssumeAllDistinctByType`;
+/// explicit statistics are never removed.
+void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str, bool assume_floats_distinct);
+
+/// True for `Float32` / `Float64`, also inside `Nullable`. False for `BFloat16` (at most 65536 distinct
+/// values) and for `LowCardinality(...)` (the dictionary makes a sketch cheap and hints at few distinct values).
+/// Values of such columns are almost always distinct, so no implicit uniq sketch is built for them.
+bool canAssumeAllDistinctByType(const DataTypePtr & type);
 
 /// Whether statistics record the exact minimum and maximum of a column of this type. Only
 /// numeric-like columns are tracked, and by both statistics types that store min/max: `minmax`

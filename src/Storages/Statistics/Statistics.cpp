@@ -1188,7 +1188,7 @@ void removeImplicitStatistics(ColumnsDescription & columns)
 }
 
 
-void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str)
+void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str, bool assume_floats_distinct)
 {
     if (statistics_types_str.empty())
         return;
@@ -1206,6 +1206,15 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
         stats_desc.data_type = column.type;
         stats_desc.types_to_desc = stats_ast_map;
         stats_desc = factory.cloneWithSupportedStatistics(stats_desc, column.type);
+
+        /// The values of such columns are almost always distinct, so a sketch costs CPU and memory on every
+        /// insert and merge without telling the optimizer much.
+        /// Only the implicit statistics are affected: explicit ones are already on the column.
+        if (assume_floats_distinct && canAssumeAllDistinctByType(column.type))
+        {
+            stats_desc.types_to_desc.erase(StatisticsType::Uniq);
+            stats_desc.types_to_desc.erase(StatisticsType::UniqV2);
+        }
 
         if (!stats_desc.empty())
         {
@@ -1225,6 +1234,16 @@ bool canStatisticsTrackMinMax(const DataTypePtr & data_type)
 bool canStatisticsTrackSum(const DataTypePtr & data_type)
 {
     return WhichDataType(data_type).isIntegerOrDecimal();
+}
+
+bool canAssumeAllDistinctByType(const DataTypePtr & type)
+{
+    if (!type)
+        return false;
+
+    /// `LowCardinality(Float*)` is not stripped, so it is rejected below: its dictionary makes a sketch cheap.
+    /// Not `isFloat`: it includes `BFloat16`, which has at most 65536 distinct values.
+    return WhichDataType(removeNullable(type)).isNativeFloat();
 }
 
 }
