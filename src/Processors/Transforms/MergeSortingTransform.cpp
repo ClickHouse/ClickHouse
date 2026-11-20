@@ -7,7 +7,9 @@
 #include <Processors/Transforms/BufferingFileTransforms.h>
 #include <Processors/Merges/DistinctSortedTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
@@ -20,6 +22,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char merge_sorting_transform_remerge_pause[];
 }
 
 MergeSortingTransform::MergeSortingTransform(
@@ -341,8 +348,22 @@ void MergeSortingTransform::remerge()
     size_t new_sum_rows_in_blocks = 0;
     size_t new_sum_bytes_in_blocks = 0;
 
-    while (auto chunk = remerge_sorter.read())
+    while (true)
     {
+        /// A pass merges every accumulated block, so it is not bounded by one output block, and
+        /// the `read` below would start another one; poll before each read, so a cancelled query
+        /// stops at the next block instead of finishing the pass. The check is
+        /// `CurrentThread::checkIfNotCancelled` and not `IProcessor::isCancelled`: the executor
+        /// also sets the processor flag for `CancelReason::CancelledByTimeout`
+        /// (`timeout_overflow_mode = 'break'`) and for `PartialResult`, where the query must still
+        /// return the rows it has.
+        FailPointInjection::pauseFailPoint(FailPoints::merge_sorting_transform_remerge_pause);
+        CurrentThread::checkIfNotCancelled();
+
+        auto chunk = remerge_sorter.read();
+        if (!chunk)
+            break;
+
         new_sum_rows_in_blocks += chunk.getNumRows();
         new_sum_bytes_in_blocks += chunk.allocatedBytes();
         new_chunks.emplace_back(std::move(chunk));

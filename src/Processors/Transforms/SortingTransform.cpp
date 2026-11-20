@@ -7,7 +7,9 @@
 #include <Columns/ColumnReplicated.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 
 
 namespace DB
@@ -17,6 +19,11 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char merge_sorter_cancel_pause[];
 }
 
 MergeSorter::MergeSorter(
@@ -33,6 +40,11 @@ MergeSorter::MergeSorter(
 
     for (size_t chunk_index = 0; chunk_index < chunks_size; ++chunk_index)
     {
+        /// Materializing the sparse, constant and replicated keys below is O(rows) per chunk,
+        /// and the constructor is called on the whole accumulated heap of a re-merge, so poll
+        /// once per chunk.
+        CurrentThread::checkIfNotCancelled();
+
         auto & chunk = chunks[chunk_index];
         if (chunk.getNumRows() == 0)
             continue;
@@ -98,6 +110,15 @@ size_t MergeSorter::calculateMaxMergedBlockSize(
 
 Chunk MergeSorter::read()
 {
+    /// One `read` merges a whole output block, which can take tens of milliseconds, and a
+    /// re-merge calls it in a loop over the whole accumulated heap; poll before the work, so a
+    /// cancelled query does not start another block. `CurrentThread::checkIfNotCancelled` and
+    /// not `IProcessor::isCancelled`: the executor also sets the processor flag for
+    /// `CancelReason::CancelledByTimeout` (`timeout_overflow_mode = 'break'`) and for
+    /// `PartialResult`, where the query must still return the rows it has.
+    FailPointInjection::pauseFailPoint(FailPoints::merge_sorter_cancel_pause);
+    CurrentThread::checkIfNotCancelled();
+
     if (chunks.empty())
         return Chunk();
 
