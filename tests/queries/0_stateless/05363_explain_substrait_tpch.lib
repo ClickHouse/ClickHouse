@@ -11,5 +11,5 @@ function explain_substrait_tpch()
     { echo "USE tpch;"; sed 's/^SELECT/EXPLAIN SUBSTRAIT SELECT/' "$CURDIR/../../benchmarks/tpc-h/queries/query_$1.sql"; } \
         | $CLICKHOUSE_CLIENT "${SETTINGS[@]}" --enable_substrait 1 --use_hash_table_stats_for_join_reordering 0 \
             --format TSVRaw --ignore-error --send_logs_level fatal 2>&1 \
-        | sed -n '/^(query:/,$d; /^[ {}]/p'
+        | sed -n '/^(query:/,$d; s/__set_[0-9]*_[0-9]*/__set/g; /^[ {}]/p'
 }
