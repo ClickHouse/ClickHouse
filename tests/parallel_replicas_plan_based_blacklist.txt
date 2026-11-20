@@ -44,6 +44,7 @@
 05175_time_series_table_functions_parallel_replicas
 
     The test greps EXPLAIN, and ReadFromParallelReplicas prints the whole shipped fragment in its description
+05137_join_fixed_string_zero_bytes_runtime_filter
 05141_hypothetical_projection_verdict_rules
 05175_hypothetical_projection_part_offset
 
@@ -83,3 +84,10 @@
 05019_group_by_top_k_compatibility
 05175_autopr_keep_cluster_engines
 05768_parallel_replicas_projections_settings_in_subquery
+
+    A plan-based parallel replica cannot find the tags collected by `timeSeriesStoreTags` (fix: https://github.com/ClickHouse/ClickHouse/pull/132565)
+    https://github.com/ClickHouse/ClickHouse/issues/131138
+05059_promql_empty_by_group
+05076_promql_label_manipulation_label_names
+05234_promql_result_timestamp_scale
+05320_promql_duplicate_series_one_to_one_matching
