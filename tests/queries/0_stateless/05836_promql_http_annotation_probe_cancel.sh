@@ -36,15 +36,16 @@ function request()
         --data-urlencode "database=${CLICKHOUSE_DATABASE}" --data-urlencode "table=ts" "$@" > "$OUT"
 }
 
-# Prints the status of the response, and the type and the exception code of the probe in the query log.
+# Prints the status of the response, whether its error has the expected text, and the type and the exception code
+# of the probe in the query log.
 function print_result()
 {
     local log_comment=$1
-    local error_name=$2
+    local error_text=$2
     python3 -c '
 import json, sys
 d = json.load(open(sys.argv[1]))
-print(d["status"], sys.argv[2] in d.get("error", ""))' "$OUT" "$error_name"
+print(d["status"], sys.argv[2] in d.get("error", ""))' "$OUT" "$error_text"
     for _ in {1..60}; do
         result=$($CLICKHOUSE_CLIENT -q "
 SYSTEM FLUSH LOGS query_log;
@@ -59,22 +60,22 @@ WHERE type != 'QueryStart' AND log_comment = '${log_comment}' AND query LIKE '%a
 echo "--- KILL QUERY of the request stops its running probe"
 query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_kill"
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT $FP"
-request --data-urlencode "query_id=${query_id}" --data-urlencode "log_comment=${query_id}" &
+request -H "X-ClickHouse-Query-Id: ${query_id}" --data-urlencode "log_comment=${query_id}" &
 timeout 60 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT $FP PAUSE"
 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '${query_id}' ASYNC FORMAT Null"
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FP"
 wait
-print_result "$query_id" QUERY_WAS_CANCELLED
+print_result "$query_id" "Query was cancelled"
 
 echo "--- the execution time limit of the request stops its running probe"
 query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_timeout"
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT $FP"
-request --data-urlencode "query_id=${query_id}" --data-urlencode "log_comment=${query_id}" --data-urlencode "max_execution_time=1" &
+request -H "X-ClickHouse-Query-Id: ${query_id}" --data-urlencode "log_comment=${query_id}" --data-urlencode "max_execution_time=1" &
 timeout 60 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT $FP PAUSE"
 sleep 1.5
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FP"
 wait
-print_result "$query_id" TIMEOUT_EXCEEDED
+print_result "$query_id" "Timeout exceeded"
 
 rm -f "$OUT"
 $CLICKHOUSE_CLIENT -q "DROP TABLE ts"
