@@ -6,6 +6,7 @@
     <query>SELECT workspace, timestamp FROM logs_in_set WHERE workspace IN ('0', '1', '2') ORDER BY timestamp DESC LIMIT 10 FORMAT Null</query>
     <query>SELECT workspace, timestamp FROM logs_in_set WHERE workspace IN ('0', '3') ORDER BY timestamp LIMIT 1000 FORMAT Null</query>
     <query>SELECT workspace, timestamp FROM logs_in_set WHERE workspace IN ('0', '1', '2') ORDER BY timestamp DESC LIMIT 10 SETTINGS use_query_condition_cache = 0 FORMAT Null</query>
+    <query>SELECT workspace, timestamp FROM logs_in_set WHERE workspace IN ('0', '1', '2') AND toUnixTimestamp64Nano(timestamp) % 100000000 = 7 ORDER BY timestamp DESC LIMIT 10 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS logs_in_set</drop_query>
 </test>

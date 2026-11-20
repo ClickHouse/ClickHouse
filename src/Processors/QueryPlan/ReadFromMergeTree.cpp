@@ -4802,6 +4802,15 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
                 analysis->parts_with_ranges, *split_values, context->getSettingsRef()[Setting::read_in_order_in_set_max_streams]))
             return false;
 
+        /// The streams stop after about a granule only if the rows of their ranges pass the whole filter, so the primary key
+        /// has to use all of it, on the first two key columns: a selective condition elsewhere would make the streams scan.
+        if (!indexes || !indexes->key_condition)
+            return false;
+        const auto & key_condition = indexes->key_condition->generateUnsubstituted();
+        if (key_condition.alwaysUnknownOrTrue() || key_condition.hasUnknownAtoms() || key_condition.hasMonotonicFunctionsChain()
+            || key_condition.getUsedKeyPrefixSize() > 2)
+            return false;
+
         read_in_order_split_values = std::move(split_values);
     }
 

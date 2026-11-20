@@ -5383,7 +5383,7 @@ Maximal size of block in bytes accumulated during aggregation in order of primar
 Minimal number of parts to read to run preliminary merge step during multithread reading in order of primary key.
 )", 0) \
     DECLARE(UInt64, read_in_order_in_set_max_streams, 8, R"(
-Allows reading in order of the sorting key when its first column is in a set of constants, like `WHERE k IN (1, 2) ORDER BY t LIMIT 10` for a table with `ORDER BY (k, t)`. Every value is read from every part by its own stream, and the streams are merged, so that the `LIMIT` stops the read early. This is the maximum number of such streams: with more of them, with more than 1000 values in the set, or if a stream would read less than 32 granules on average, the rows are read and sorted as usual. Used only for a query with `LIMIT`.
+Allows reading in order of the sorting key when its first column is in a set of constants, like `WHERE k IN (1, 2) ORDER BY t LIMIT 10` for a table with `ORDER BY (k, t)`. Every value is read from every part by its own stream, and the streams are merged, so that the `LIMIT` stops the read early. This is the maximum number of such streams: with more of them, with more than 1000 values in the set, or if a stream would read less than 32 granules on average, the rows are read and sorted as usual. The same if the query has a condition that the primary key cannot use, or one on a function of a key column or on a key column after the second one. Used only for a query with `LIMIT`.
 
 Possible values:
 

@@ -37,14 +37,21 @@ SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_or
 WHERE explain ILIKE '%Read in order by values%' OR explain ILIKE '%ReadType%' OR explain ILIKE '%Prefix sort description%';
 SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order WHERE v = 7 AND k IN ('1', '3', '5') ORDER BY v, cityHash64(ts) LIMIT 10 SETTINGS read_in_order_in_set_max_streams = 0)
 WHERE explain ILIKE '%Read in order by values%' OR explain ILIKE '%ReadType%' OR explain ILIKE '%Prefix sort description%';
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order WHERE v = 7 AND k IN ('1', '3', '5') ORDER BY v, ts LIMIT 10 SETTINGS read_in_order_in_set_max_streams = 0)
+WHERE explain ILIKE '%Read in order by values%' OR explain ILIKE '%ReadType%' OR explain ILIKE '%Prefix sort description%';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, v FROM t_in_set_order WHERE k IN ('0', '1', '2', '3', '4', '5', '6', 'none') ORDER BY ts LIMIT 500)
 WHERE explain ILIKE '%Read in order by values%';
-SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', '2') AND v % 3 = 0 ORDER BY ts DESC LIMIT 40)
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', '2') AND ts >= toDateTime64('2026-01-01 00:00:00.5', 9) ORDER BY ts DESC LIMIT 40)
 WHERE explain ILIKE '%Read in order by values%';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT ts, v FROM t_in_set_order WHERE k IN ('2', '4') ORDER BY ts LIMIT 30 SETTINGS max_block_size = 7)
 WHERE explain ILIKE '%Read in order by values%';
 -- WITH TIES keeps the usual plan.
 SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', 'x', 'y') ORDER BY ts LIMIT 5 WITH TIES)
+WHERE explain ILIKE '%Read in order by values%';
+-- A condition the primary key cannot use keeps the usual plan.
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', '2') AND v % 3 = 0 ORDER BY ts DESC LIMIT 40)
+WHERE explain ILIKE '%Read in order by values%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', '2') AND toUnixTimestamp64Nano(ts) % 1000 = 7 ORDER BY ts DESC LIMIT 40)
 WHERE explain ILIKE '%Read in order by values%';
 
 SELECT 'results';
@@ -55,8 +62,8 @@ SELECT
     (SELECT groupArray((k, ts, v)) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('0', '1', '2', '3', '4', '5', '6', 'none') ORDER BY ts LIMIT 500))
   = (SELECT groupArray((k, ts, v)) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('0', '1', '2', '3', '4', '5', '6', 'none') ORDER BY ts LIMIT 500) SETTINGS optimize_read_in_order = 0);
 SELECT
-    (SELECT groupArray((k, ts, v)) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', '2') AND v % 3 = 0 ORDER BY ts DESC LIMIT 40))
-  = (SELECT groupArray((k, ts, v)) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', '2') AND v % 3 = 0 ORDER BY ts DESC LIMIT 40) SETTINGS optimize_read_in_order = 0);
+    (SELECT groupArray((k, ts, v)) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', '2') AND ts >= toDateTime64('2026-01-01 00:00:00.5', 9) ORDER BY ts DESC LIMIT 40))
+  = (SELECT groupArray((k, ts, v)) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', '2') AND ts >= toDateTime64('2026-01-01 00:00:00.5', 9) ORDER BY ts DESC LIMIT 40) SETTINGS optimize_read_in_order = 0);
 SELECT
     (SELECT groupArray((ts, v)) FROM (SELECT ts, v FROM t_in_set_order WHERE k IN ('2', '4') ORDER BY ts LIMIT 30) SETTINGS max_block_size = 7)
   = (SELECT groupArray((ts, v)) FROM (SELECT ts, v FROM t_in_set_order WHERE k IN ('2', '4') ORDER BY ts LIMIT 30) SETTINGS optimize_read_in_order = 0, max_block_size = 7);
@@ -79,9 +86,10 @@ WHERE explain ILIKE '%Read in order by values%';
 SELECT
     (SELECT groupArray((k, ts, __read_in_order_key_value_filter)) FROM (SELECT k, ts, __read_in_order_key_value_filter FROM t_in_set_order_name WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 20))
   = (SELECT groupArray((k, ts, __read_in_order_key_value_filter)) FROM (SELECT k, ts, __read_in_order_key_value_filter FROM t_in_set_order_name WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 20) SETTINGS optimize_read_in_order = 0);
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, __read_in_order_key_value_filter FROM t_in_set_order_name WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 20 SETTINGS query_plan_optimize_lazy_materialization = 0) WHERE explain ILIKE '%Read in order by values%';
 SELECT
-    (SELECT groupArray((k, ts, __read_in_order_key_value_filter)) FROM (SELECT k, ts, __read_in_order_key_value_filter FROM t_in_set_order_name WHERE k IN ('1', '2') AND __read_in_order_key_value_filter != 'z' ORDER BY ts DESC LIMIT 20))
-  = (SELECT groupArray((k, ts, __read_in_order_key_value_filter)) FROM (SELECT k, ts, __read_in_order_key_value_filter FROM t_in_set_order_name WHERE k IN ('1', '2') AND __read_in_order_key_value_filter != 'z' ORDER BY ts DESC LIMIT 20) SETTINGS optimize_read_in_order = 0);
+    (SELECT groupArray((k, ts, __read_in_order_key_value_filter)) FROM (SELECT k, ts, __read_in_order_key_value_filter FROM t_in_set_order_name WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 20) SETTINGS query_plan_optimize_lazy_materialization = 0)
+  = (SELECT groupArray((k, ts, __read_in_order_key_value_filter)) FROM (SELECT k, ts, __read_in_order_key_value_filter FROM t_in_set_order_name WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 20) SETTINGS optimize_read_in_order = 0, query_plan_optimize_lazy_materialization = 0);
 
 -- The first key column with the name of the per-stream filter column.
 DROP TABLE IF EXISTS t_in_set_order_key_name;
