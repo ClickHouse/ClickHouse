@@ -148,7 +148,8 @@ private:
         HashMapWithSavedHash<std::string_view, IntervalMap<RangeStorageType>, DefaultHash<std::string_view>>>;
 
     template <typename Value>
-    using AttributeContainerType = std::conditional_t<std::is_same_v<Value, Array> || std::is_same_v<Value, Map> || std::is_same_v<Value, Object>, VectorWithMemoryTracking<Value>, PaddedPODArray<Value>>;
+    using AttributeContainerType = std::conditional_t<is_column_attribute_value<Value>, ColumnAttributeContainer<Value>,
+        std::conditional_t<std::is_same_v<Value, Object>, VectorWithMemoryTracking<Value>, PaddedPODArray<Value>>>;
 
     struct Attribute final
     {
@@ -761,7 +762,10 @@ void RangeHashedDictionary<dictionary_key_type>::calculateBytesAllocated()
 
             const auto & container = std::get<AttributeContainerType<ValueType>>(attribute.container);
 
-            bytes_allocated += container.size() * sizeof(ValueType);
+            if constexpr (is_column_attribute_value<ValueType>)
+                bytes_allocated += container.allocatedBytes();
+            else
+                bytes_allocated += container.size() * sizeof(ValueType);
 
             if (attribute.is_value_nullable)
                 bytes_allocated += ((*attribute.is_value_nullable).capacity() + 7) / 8;
@@ -792,7 +796,10 @@ typename RangeHashedDictionary<dictionary_key_type>::Attribute RangeHashedDictio
         using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
 
-        attribute.container = AttributeContainerType<ValueType>();
+        if constexpr (is_column_attribute_value<ValueType>)
+            attribute.container = AttributeContainerType<ValueType>(dictionary_attribute);
+        else
+            attribute.container = AttributeContainerType<ValueType>();
     };
 
     callOnDictionaryAttributeType(dictionary_attribute.underlying_type, type_call);
@@ -1057,31 +1064,40 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValue(Attribute & a
         using ValueType = DictionaryValueType<AttributeType>;
 
         auto & container = std::get<AttributeContainerType<ValueType>>(attribute.container);
-        container.emplace_back();
 
-        if (unlikely(attribute.is_value_nullable.has_value()))
+        /// `Array` and `Map` cannot be inside `Nullable`.
+        if constexpr (is_column_attribute_value<ValueType>)
         {
-            bool value_is_null = value.isNull();
-            attribute.is_value_nullable->emplace_back(value_is_null);
-
-            if (unlikely(value_is_null))
-                return;
-        }
-
-        ValueType value_to_insert;
-
-        if constexpr (std::is_same_v<AttributeType, String>)
-        {
-            const auto & string = value.safeGet<String>();
-            std::string_view string_ref = copyStringInArena(string_arena, string);
-            value_to_insert = string_ref;
+            container.insert(value);
         }
         else
         {
-            value_to_insert = static_cast<ValueType>(value.safeGet<ValueType>());
-        }
+            container.emplace_back();
 
-        container.back() = value_to_insert;
+            if (unlikely(attribute.is_value_nullable.has_value()))
+            {
+                bool value_is_null = value.isNull();
+                attribute.is_value_nullable->emplace_back(value_is_null);
+
+                if (unlikely(value_is_null))
+                    return;
+            }
+
+            ValueType value_to_insert;
+
+            if constexpr (std::is_same_v<AttributeType, String>)
+            {
+                const auto & string = value.safeGet<String>();
+                std::string_view string_ref = copyStringInArena(string_arena, string);
+                value_to_insert = string_ref;
+            }
+            else
+            {
+                value_to_insert = static_cast<ValueType>(value.safeGet<ValueType>());
+            }
+
+            container.back() = value_to_insert;
+        }
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);

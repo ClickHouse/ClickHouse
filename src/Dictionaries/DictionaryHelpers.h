@@ -351,6 +351,30 @@ public:
     }
 };
 
+template <typename Value>
+constexpr bool is_column_attribute_value = std::is_same_v<Value, Array> || std::is_same_v<Value, Map>;
+
+/// Stores `Array` and `Map` attribute values in one column. Keeping one `Field` per row costs a heap
+/// allocation per row, and each jemalloc slab of such small allocations needs a metadata header that is never freed.
+template <typename Value>
+class ColumnAttributeContainer
+{
+public:
+    explicit ColumnAttributeContainer(const DictionaryAttribute & dictionary_attribute)
+        : column(DictionaryAttributeColumnProvider<Value>::getColumn(dictionary_attribute, 0))
+    {
+    }
+
+    size_t size() const { return column->size(); }
+    size_t capacity() const { return column->capacity(); }
+    Value operator[](size_t index) const { return (*column)[index].template safeGet<Value>(); }
+    void insert(const Field & value) { column->insert(value); }
+    size_t allocatedBytes() const { return column->allocatedBytes(); }
+
+private:
+    IColumn::MutablePtr column;
+};
+
 /**
   * DictionaryDefaultValueExtractor used to simplify getting default value for IDictionary function `getColumn`.
   * Provides interface for getting default value with operator[];

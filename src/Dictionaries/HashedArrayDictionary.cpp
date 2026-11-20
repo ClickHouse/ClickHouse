@@ -461,8 +461,19 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::createAttributes()
             using ValueType = DictionaryValueType<AttributeType>;
 
             auto is_index_null = dictionary_attribute.is_nullable ? std::make_optional<VectorWithMemoryTracking<typename Attribute::RowsMask>>(configuration.shards) : std::nullopt;
+
+            AttributeContainerShardsType<ValueType> containers;
+            if constexpr (is_column_attribute_value<ValueType>)
+            {
+                containers.reserve(configuration.shards);
+                for (size_t shard = 0; shard < configuration.shards; ++shard)
+                    containers.emplace_back(dictionary_attribute);
+            }
+            else
+                containers.resize(configuration.shards);
+
             Attribute attribute{
-                .containers = AttributeContainerShardsType<ValueType>(configuration.shards),
+                .containers = std::move(containers),
                 .is_index_null = std::move(is_index_null),
                 .type = dictionary_attribute.underlying_type};
             attributes.emplace_back(std::move(attribute));
@@ -582,29 +593,38 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::blockToAttributes(cons
                 using AttributeValueType = DictionaryValueType<AttributeType>;
 
                 auto & attribute_container = std::get<AttributeContainerShardsType<AttributeValueType>>(attribute.containers)[shard];
-                attribute_container.emplace_back();
 
-                if (attribute_is_nullable)
+                /// `Array` and `Map` cannot be inside `Nullable`.
+                if constexpr (is_column_attribute_value<AttributeValueType>)
                 {
-                    (*attribute.is_index_null)[shard].emplace_back();
-
-                    if (column_value_to_insert.isNull())
-                    {
-                        (*attribute.is_index_null)[shard].back() = true;
-                        return;
-                    }
-                }
-
-                if constexpr (std::is_same_v<AttributeValueType, std::string_view>)
-                {
-                    String & value_to_insert = column_value_to_insert.safeGet<String>();
-                    std::string_view string_in_arena_reference = copyStringInArena(*string_arenas[shard], value_to_insert);
-                    attribute_container.back() = string_in_arena_reference;
+                    attribute_container.insert(column_value_to_insert);
                 }
                 else
                 {
-                    auto value_to_insert = static_cast<AttributeValueType>(column_value_to_insert.safeGet<AttributeValueType>());
-                    attribute_container.back() = value_to_insert;
+                    attribute_container.emplace_back();
+
+                    if (attribute_is_nullable)
+                    {
+                        (*attribute.is_index_null)[shard].emplace_back();
+
+                        if (column_value_to_insert.isNull())
+                        {
+                            (*attribute.is_index_null)[shard].back() = true;
+                            return;
+                        }
+                    }
+
+                    if constexpr (std::is_same_v<AttributeValueType, std::string_view>)
+                    {
+                        String & value_to_insert = column_value_to_insert.safeGet<String>();
+                        std::string_view string_in_arena_reference = copyStringInArena(*string_arenas[shard], value_to_insert);
+                        attribute_container.back() = string_in_arena_reference;
+                    }
+                    else
+                    {
+                        auto value_to_insert = static_cast<AttributeValueType>(column_value_to_insert.safeGet<AttributeValueType>());
+                        attribute_container.back() = value_to_insert;
+                    }
                 }
             };
 
@@ -1141,15 +1161,9 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::calculateBytesAllocate
             {
                 bytes_allocated += sizeof(AttributeContainerType<ValueType>);
 
-                if constexpr (std::is_same_v<ValueType, Array>)
+                if constexpr (is_column_attribute_value<ValueType>)
                 {
-                    /// It is not accurate calculations
-                    bytes_allocated += sizeof(Array) * container.size();
-                }
-                else if constexpr (std::is_same_v<ValueType, Map>)
-                {
-                    /// It is not accurate calculations
-                    bytes_allocated += sizeof(Map) * container.size();
+                    bytes_allocated += container.allocatedBytes();
                 }
                 else if constexpr (std::is_same_v<ValueType, Object>)
                 {
