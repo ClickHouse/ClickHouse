@@ -6,6 +6,7 @@
 #include <Core/Block.h>
 #include <Core/Joins.h>
 #include <Core/Names.h>
+#include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/Aggregator.h>
@@ -34,6 +35,12 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsBool apply_mutations_on_fly;
+extern const SettingsBool apply_patch_parts;
+}
 
 namespace ErrorCodes
 {
@@ -460,6 +467,13 @@ SubstraitPlanSerializer::convertReadFromMergeTree(const ReadFromMergeTree & read
         return blocked("FINAL is not supported");
     if (read.isQueryWithSampling())
         return blocked("SAMPLE is not supported");
+    if (!read.getReaderSettings().apply_deleted_mask)
+        return blocked("apply_deleted_mask = 0 is not supported");
+    const auto & settings = read.getContext()->getSettingsRef();
+    if (settings[Setting::apply_mutations_on_fly])
+        return blocked("apply_mutations_on_fly is not supported");
+    if (!settings[Setting::apply_patch_parts])
+        return blocked("apply_patch_parts = 0 is not supported");
     if (read.getPrewhereInfo() || read.getDeferredPrewhereInfo())
         return blocked("PREWHERE is not supported yet");
     if (read.getRowLevelFilter() || read.getDeferredRowLevelFilter())
