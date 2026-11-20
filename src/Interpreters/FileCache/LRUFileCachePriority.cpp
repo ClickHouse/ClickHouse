@@ -763,11 +763,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
 IFileCachePriority::PriorityDumpPtr LRUFileCachePriority::dump()
 {
     assertNotSealed("dump");
-    {
-        /// The caller wants the exact order. One pass is bounded, unlike repeating batches while hits keep coming.
-        auto write_lock = getPriorityGuard().writeLock();
-        applyPendingPriorityIncreases(std::nullopt, write_lock);
-    }
+    applyAllPendingPriorityIncreases();
     auto lock = getPriorityGuard().readLock();
     std::vector<FileSegmentInfo> res;
     FileCacheReserveStat stat{};
@@ -846,16 +842,18 @@ bool LRUFileCachePriority::tryIncreasePriority(
         return true;
     }
 
-    pending_priority_increases.allocateIfNeeded(batch_priority_increase_buffer_size.load(std::memory_order_relaxed));
-
     PendingPriorityIncrease increase{entry, lru_iterator.get()};
-    if (pending_priority_increases.tryAdd(increase, apply_priority_increases_notifier))
+    if (pending_priority_increases.tryAdd(
+            increase, batch_priority_increase_buffer_size.load(std::memory_order_relaxed), apply_priority_increases_notifier))
         return true;
 
-    /// The buffer is full: the cleanup task did not keep up. Wait for the write lock rather than lose the increase.
+    /// The buffer is full because the cleanup task did not keep up. Apply it if the queue is not locked, otherwise
+    /// lose this increase rather than wait, as without batching.
     ProfileEvents::increment(ProfileEvents::FilesystemCachePriorityIncreaseBufferFull);
     PriorityIncreases increases;
-    auto lock = getPriorityGuard().writeLock();
+    auto lock = getPriorityGuard().tryWriteLock();
+    if (!lock.owns_lock())
+        return false;
     pending_priority_increases.popBufferOfCurrentThread(increases);
     applyPriorityIncreases(increases, lock, &increase);
     return true;
@@ -890,7 +888,7 @@ void LRUFileCachePriority::applyPriorityIncreases(
         ProfileEvents::increment(ProfileEvents::FilesystemCacheAppliedPriorityIncreases, applied);
 }
 
-size_t LRUFileCachePriority::applyPendingPriorityIncreases(std::optional<size_t> max_increases, const CachePriorityGuard::WriteLock & lock)
+size_t LRUFileCachePriority::applyPendingPriorityIncreases(size_t max_increases, const CachePriorityGuard::WriteLock & lock)
 {
     PriorityIncreases increases;
     pending_priority_increases.pop(increases, max_increases);

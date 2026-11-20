@@ -1,49 +1,44 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <functional>
 #include <list>
 #include <memory>
-#include <optional>
-#include <boost/container/small_vector.hpp>
-#include <Common/CacheLine.h>
+#include <boost/container/static_vector.hpp>
 #include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 
 namespace DB
 {
 
-/// A cache hit whose move to the tail of an LRU queue is recorded but not applied yet.
 struct PendingPriorityIncrease
 {
     std::weak_ptr<IFileCachePriority::Entry> entry;
     std::list<IFileCachePriority::EntryPtr>::iterator iterator;
 };
 
-/// A batch of the default size stays on the stack, so popping one under the queue write lock does not allocate.
-using PriorityIncreases
-    = boost::container::small_vector<PendingPriorityIncrease, FILECACHE_DEFAULT_BATCH_PRIORITY_INCREASE_MAX_BATCH_SIZE>;
+/// Increases popped from `PendingPriorityIncreases`. On the stack, so that popping does not allocate.
+using PriorityIncreases = boost::container::static_vector<
+    PendingPriorityIncrease,
+    std::max(FILECACHE_MAX_BATCH_PRIORITY_INCREASE_MAX_BATCH_SIZE, FILECACHE_MAX_BATCH_PRIORITY_INCREASE_BUFFER_SIZE)>;
 
 /// Priority increases recorded by cache hits and not yet applied to the priority queue: lock-free ring buffers,
-/// as many as CPU cores, each thread always adding to the same one. Hits add without a lock, and increases are
-/// popped only under the queue write lock, so there is one reader and the lock is taken once per batch.
+/// as many as CPU cores, each thread always adding to the same one.
 class PendingPriorityIncreases
 {
 public:
+    PendingPriorityIncreases();
     ~PendingPriorityIncreases();
 
-    /// Allocates the buffers of `buffer_size` increases each on the first call, so a queue without hits
-    /// has none. Must be called before `tryAdd`.
-    void allocateIfNeeded(size_t buffer_size);
-
     /// Returns false, without moving from `increase`, if the buffer of the calling thread is full.
-    /// Calls `on_half_full` if it is set and this increase filled the buffer to half.
-    [[nodiscard]] bool tryAdd(PendingPriorityIncrease & increase, const std::function<void()> & on_half_full);
+    /// Calls `on_half_full` if it is set and this increase filled the buffer to half. The first call allocates
+    /// buffers of `buffer_size` increases each, so a queue without hits has none.
+    [[nodiscard]] bool tryAdd(PendingPriorityIncrease & increase, size_t buffer_size, const std::function<void()> & on_half_full);
 
-    /// Moves up to `max_increases` increases, or all of them if not set, to the end of `increases`. Increases of one
-    /// thread keep their order. Pops at most the buffers' capacity, so a call ends while hits keep adding.
-    /// Requires the queue write lock.
-    void pop(PriorityIncreases & increases, std::optional<size_t> max_increases);
+    /// Moves up to `max_increases` increases to the end of `increases`, as many as it has room for. Increases of
+    /// one thread keep their order. Pops at most the buffers' capacity, so a call ends while hits keep adding.
+    void pop(PriorityIncreases & increases, size_t max_increases);
 
     /// Same, for all the increases in the buffer which the calling thread adds to.
     void popBufferOfCurrentThread(PriorityIncreases & increases);
@@ -54,10 +49,11 @@ public:
 private:
     struct Buffers;
 
-    /// Read by every hit.
+    Buffers & getOrAllocateBuffers(size_t buffer_size);
+
+    /// Owns what `buffers` points to. Set once, by the hit which allocates the buffers.
+    std::unique_ptr<Buffers> allocated_buffers;
     std::atomic<Buffers *> buffers = nullptr;
-    /// Changed only under the queue write lock, on every pop.
-    alignas(CH_CACHE_LINE_SIZE) size_t first_buffer_to_pop = 0;
 };
 
 }

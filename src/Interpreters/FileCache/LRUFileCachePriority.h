@@ -321,8 +321,8 @@ private:
         const PriorityIncreases & increases,
         const CachePriorityGuard::WriteLock &,
         const PendingPriorityIncrease * current_hit = nullptr);
-    /// Pops up to `max_increases` pending increases, or all of them if not set, applies them and returns their number.
-    size_t applyPendingPriorityIncreases(std::optional<size_t> max_increases, const CachePriorityGuard::WriteLock &);
+    /// Pops up to `max_increases` pending increases, applies them and returns their number.
+    size_t applyPendingPriorityIncreases(size_t max_increases, const CachePriorityGuard::WriteLock &);
 };
 
 class LRUFileCachePriority::LRUIterator : public IFileCachePriority::Iterator

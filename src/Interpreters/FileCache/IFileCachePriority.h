@@ -412,8 +412,6 @@ public:
         invalidate_notifier = on_invalidate;
     }
 
-    /// See the `lru_batch_priority_increase*` cache settings. `buffer_size` takes effect only before the first hit.
-    /// Off by default for a priority which no cache configures, e.g. in unit tests.
     struct BatchPriorityIncreaseSettings
     {
         bool enabled = false;
@@ -429,8 +427,7 @@ public:
         batch_priority_increase_max_batch_size.store(settings.max_batch_size, std::memory_order_relaxed);
     }
 
-    /// Hook fired when pending priority increases should be applied (FileCache wakes its cleanup task,
-    /// which calls `applyAllPendingPriorityIncreases`). Set once on startup. Wrappers propagate it down.
+    /// Hook fired when pending priority increases should be applied. Set once on startup. Wrappers propagate it down.
     virtual void setApplyPriorityIncreasesNotifier(std::function<void()> notifier) { apply_priority_increases_notifier = notifier; }
 
     /// Remove up to `max_batch` invalidated entries (driven by `FileCache`'s cleanup task), each
@@ -438,8 +435,6 @@ public:
     /// Returns the number removed.
     virtual size_t removeInvalidatedEntries(size_t max_batch) = 0;
 
-    /// Apply the priority increases pending at the call, one batch per lock of the queue, so that hits and
-    /// inserts wait for at most one batch (driven by `FileCache`'s cleanup task).
     virtual void applyAllPendingPriorityIncreases() = 0;
 
     /// The number of priority increases recorded and not applied yet. Repeated hits of a thread on one entry make one.
