@@ -147,8 +147,6 @@ void fillBufferWithRandomPrintableASCIIBytes(char * __restrict data, size_t size
         data[pos + 1] = static_cast<char>(32 + ((rand2 * 95) >> 16));
         data[pos + 2] = static_cast<char>(32 + ((rand3 * 95) >> 16));
         data[pos + 3] = static_cast<char>(32 + ((rand4 * 95) >> 16));
-
-        /// NOTE gcc failed to vectorize this code (aliasing of char?)
     }
 
     if (pos < size)
