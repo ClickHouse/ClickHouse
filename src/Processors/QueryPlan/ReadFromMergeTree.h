@@ -835,7 +835,7 @@ private:
     mutable std::optional<Indexes> indexes;
 
     /// Names of the filter conditions `filter_actions_dag` was built from, as of the call that built it.
-    std::unordered_set<String> filter_actions_dag_conditions;
+    UnorderedSetWithMemoryTracking<String> filter_actions_dag_conditions;
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
