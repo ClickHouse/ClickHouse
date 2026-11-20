@@ -984,6 +984,7 @@ void disableSubstraitIncompatiblePlanning(const ContextMutablePtr & context)
     context->setSetting("optimize_functions_to_subcolumns", false); /// Should be possible in future.
     context->setSetting("optimize_trivial_count_query", false); /// I don't see how to serialize this right now.
     context->setSetting("correlated_subqueries_use_in_memory_buffer", false); /// No Substrait form for this.
+    context->setSetting("optimize_trivial_group_by_limit_query", false); /// Should be possible in future.
 }
 
 QueryPlanOptimizationSettings makeSubstraitCompatibleOptimizationSettings(const ContextPtr & context)
