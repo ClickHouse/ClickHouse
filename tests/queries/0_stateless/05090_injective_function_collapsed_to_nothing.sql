@@ -44,7 +44,7 @@ SELECT partitionId(a, n) AS k, count() FROM t_nullable_arg_key GROUP BY k ORDER 
 SELECT countIf(explain ILIKE '%concatAssumeInjective%') AS unwrapped_fn_nodes, countIf(explain ILIKE '%GROUP BY%') AS group_by_sections FROM (EXPLAIN QUERY TREE SELECT count() FROM t_nullable_arg_key GROUP BY concatAssumeInjective(a, 'x'::Nullable(String)));
 SELECT countIf(explain ILIKE '%function_name: toString%') AS unwrapped_fn_nodes, countIf(explain ILIKE '%GROUP BY%') AS group_by_sections FROM (EXPLAIN QUERY TREE SELECT count() FROM t_nullable_arg_key GROUP BY toString(n));
 DROP TABLE t_nullable_arg_key;
--- Array cannot be Nullable, so a NULL argument is evaluated as f(default): NULL and 0 must stay separate keys.
+-- Array cannot be Nullable, so a NULL argument is evaluated as `f(default)`: NULL and 0 share the key `[]`, so the key must not be unwrapped into `n`.
 DROP TABLE IF EXISTS t_injective_array_null;
 CREATE TABLE t_injective_array_null (n Nullable(UInt8), m UInt8) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_injective_array_null VALUES (NULL, 0), (0, 0), (0, 0), (1, 1);
