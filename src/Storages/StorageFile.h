@@ -132,6 +132,9 @@ public:
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
+    /// The columns taken from the hive-style partitions of the path (`/key=value/`), not from the data.
+    [[nodiscard]] const NamesAndTypesList & getHivePartitionColumnsToReadFromFilePath() const { return hive_partition_columns_to_read_from_file_path; }
+
     /// Things required for PREWHERE.
     bool supportsPrewhere() const override;
     bool canMoveConditionsToPrewhere() const override;

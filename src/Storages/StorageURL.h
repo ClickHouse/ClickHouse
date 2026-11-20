@@ -79,6 +79,9 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
+    /// The columns taken from the hive-style partitions of the path (`/key=value/`), not from the data.
+    [[nodiscard]] const NamesAndTypesList & getHivePartitionColumnsToReadFromFilePath() const { return hive_partition_columns_to_read_from_file_path; }
+
     static std::optional<time_t> tryGetLastModificationTime(
         const String & url,
         const HTTPHeaderEntries & headers,

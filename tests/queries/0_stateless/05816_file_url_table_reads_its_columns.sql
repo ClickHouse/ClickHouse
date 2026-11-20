@@ -46,6 +46,12 @@ SELECT '--- fewer given columns than a format that can read a subset of its colu
 CREATE TABLE t_fewer_subset (renamed String) AS file(currentDatabase() || '_05816.jsonl', 'JSONEachRow');
 SELECT renamed = '', _row_number FROM t_fewer_subset;
 
+SELECT '--- given columns of a file in a hive-style partition, which the inferred columns also have';
+SET use_hive_partitioning = 1;
+INSERT INTO FUNCTION file(currentDatabase() || '_05816_hive/key=7/data.csv', 'CSV', 'id UInt32, s String') SELECT number + 1, ['hello', 'world'][number + 1] FROM numbers(2);
+CREATE TABLE t_hive (id UInt32, s String) AS file(currentDatabase() || '_05816_hive/key=7/data.csv', 'CSV');
+SELECT * FROM t_hive ORDER BY id;
+
 SELECT '--- url';
 CREATE TABLE t_url (x UInt8, y String) AS url('http://127.0.0.1:8123/?query=SELECT+1,%27a%27+FORMAT+CSV', 'CSV');
 SELECT * FROM t_url;
@@ -62,4 +68,5 @@ DROP TABLE t_subcolumn;
 DROP TABLE t_dynamic_subcolumn;
 DROP TABLE t_fewer;
 DROP TABLE t_fewer_subset;
+DROP TABLE t_hive;
 DROP TABLE t_url;

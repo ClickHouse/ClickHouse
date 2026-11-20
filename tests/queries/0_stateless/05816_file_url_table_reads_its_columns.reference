@@ -26,6 +26,9 @@ world	2
 1	1
 --- fewer given columns than a format that can read a subset of its columns has
 1	0
+--- given columns of a file in a hive-style partition, which the inferred columns also have
+1	hello
+2	world
 --- url
 1	a
 1	a

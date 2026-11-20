@@ -2,6 +2,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <Storages/StorageFile.h>
+#include <Storages/StorageURL.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
@@ -143,8 +144,22 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
 
         const auto can_parse_data_with_stored_columns = [&]
         {
-            if (stored_columns.size() == metadata->columns.getOrdinary().size())
+            /// The inferred columns also have the columns of the hive-style partitions of the path, which are not in the data.
+            const NamesAndTypesList * partition_columns = nullptr;
+            if (const auto * storage_file = dynamic_cast<const StorageFile *>(storage.get()))
+                partition_columns = &storage_file->getHivePartitionColumnsToReadFromFilePath();
+            else if (const auto * storage_url = dynamic_cast<const IStorageURLBase *>(storage.get()))
+                partition_columns = &storage_url->getHivePartitionColumnsToReadFromFilePath();
+            size_t num_data_columns = 0;
+            for (const auto & inferred_column : metadata->columns.getOrdinary())
+            {
+                if (!partition_columns || !partition_columns->contains(inferred_column.name))
+                    ++num_data_columns;
+            }
+            if (stored_columns.size() == num_data_columns)
                 return true;
+            /// With the settings of the context that creates the storage, as `input_format_with_names_use_header` for
+            /// `CSVWithNames`, which a query could change, as for a table with these columns given as the structure argument.
             return format != "auto" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format, context);
         };
         if (has_other_column && !has_inferred_column && can_parse_data_with_stored_columns())
