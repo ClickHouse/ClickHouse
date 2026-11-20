@@ -216,7 +216,6 @@ StorageObjectStorage::StorageObjectStorage(
     , is_table_function(is_table_function_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
     , catalog(catalog_)
-    , storage_id(table_id_)
     , background_operations_assignee(*this, table_id_, BackgroundJobsAssignee::Type::DataProcessing, Context::getGlobalContextInstance())
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
@@ -264,7 +263,7 @@ StorageObjectStorage::StorageObjectStorage(
     {
         LOG_DEBUG(log, "Creating new storage{}", columns_in_table_or_function_definition.empty() ? "" : " with specified columns");
         configuration->create(
-            object_storage, context, columns_in_table_or_function_definition, partition_by_, order_by_, if_not_exists_, catalog, storage_id);
+            object_storage, context, columns_in_table_or_function_definition, partition_by_, order_by_, if_not_exists_, catalog, table_id_);
     }
 
     bool updated_configuration = false;
@@ -983,7 +982,7 @@ void StorageObjectStorage::read(
     configuration->modifyFormatSettings(modified_format_settings.value(), *local_context);
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
-        storage_id,
+        getStorageID(),
         object_storage,
         configuration,
         column_names,
@@ -1058,7 +1057,7 @@ SinkToStoragePtr StorageObjectStorage::write(
     }
 
     return createSink(
-        configuration, object_storage, storage_id, format_settings, catalog, metadata_snapshot, local_context,
+        configuration, object_storage, getStorageID(), format_settings, catalog, metadata_snapshot, local_context,
         getPartitionedWriteAccessCheck());
 }
 
@@ -1210,7 +1209,7 @@ void StorageObjectStorage::checkTableCanBeDropped(ContextPtr query_context) cons
 
 void StorageObjectStorage::drop()
 {
-    dropTable(configuration, catalog, storage_id);
+    dropTable(configuration, catalog, getStorageID());
 }
 
 void StorageObjectStorage::dropTable(
@@ -1414,7 +1413,7 @@ Pipe StorageObjectStorage::executeCommand(const String & command_name, const AST
     auto metadata = getExternalMetadata(context);
     if (!metadata)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by this storage", command_name);
-    return metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, storage_id);
+    return metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, getStorageID());
 }
 
 void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/, DDLGuardPtr & /*ddl_guard*/)
@@ -1425,6 +1424,7 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
     /// Do not interleave with the hive partitioning resolution, which also updates the metadata.
     std::lock_guard lock(hive_partitioning_resolution_mutex);
 
+    const auto table_id = getStorageID();
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
@@ -1455,7 +1455,7 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
             new_data_lake_order_by, metadata_to_store.columns, metadata_to_store.virtuals, context);
 
     /// Check that the resulting metadata does not exceed max_query_size before mutating external state.
-    checkMetadataDoesNotExceedMaxQuerySize(storage_id, metadata_to_store, context);
+    checkMetadataDoesNotExceedMaxQuerySize(table_id, metadata_to_store, context);
 
     if (params.isSettingsAlter())
     {
@@ -1463,14 +1463,14 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
         return;
     }
 
-    configuration->alter(object_storage, params, context, getStorageID(), catalog);
+    configuration->alter(object_storage, params, context, table_id, catalog);
 
     if (catalog)
         return;
 
     DatabaseCatalog::instance()
-        .getDatabase(storage_id.database_name)
-        ->alterTable(context, storage_id, metadata_to_store, /*validate_new_create_query=*/true);
+        .getDatabase(table_id.database_name)
+        ->alterTable(context, table_id, metadata_to_store, /*validate_new_create_query=*/true);
     data_lake_partition_by = new_data_lake_partition_by;
     data_lake_order_by = new_data_lake_order_by;
     setInMemoryMetadata(new_metadata);
@@ -1504,9 +1504,10 @@ void StorageObjectStorage::alterSettings(const StorageInMemoryMetadata & new_met
         configuration->setDataLakeSettings(global_context, std::move(new_settings));
         try
         {
+            const auto table_id = getStorageID();
             DatabaseCatalog::instance()
-                .getDatabase(storage_id.database_name)
-                ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
+                .getDatabase(table_id.database_name)
+                ->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
         }
         catch (...)
         {
