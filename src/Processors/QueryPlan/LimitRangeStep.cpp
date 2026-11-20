@@ -8,6 +8,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
