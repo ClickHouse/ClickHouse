@@ -11,12 +11,14 @@ DROP TABLE IF EXISTS probe_u8;
 DROP TABLE IF EXISTS probe_u8_si;
 DROP TABLE IF EXISTS probe_u8_null;
 DROP TABLE IF EXISTS probe_u16;
+DROP TABLE IF EXISTS probe_u16_set;
 DROP TABLE IF EXISTS probe_time;
 DROP TABLE IF EXISTS probe_dec;
 DROP TABLE IF EXISTS probe_tuple;
 DROP TABLE IF EXISTS probe_date32;
 DROP TABLE IF EXISTS build_true;
 DROP TABLE IF EXISTS build_false;
+DROP TABLE IF EXISTS build_two;
 DROP TABLE IF EXISTS build_u8;
 DROP TABLE IF EXISTS build_tokyo;
 DROP TABLE IF EXISTS build_dec;
@@ -40,6 +42,10 @@ INSERT INTO probe_u8_null SELECT if(number % 1000 = 7, NULL, intDiv(number, 16))
 CREATE TABLE probe_u16 (x UInt16) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 8;
 INSERT INTO probe_u16 SELECT number FROM numbers(4096);
 
+CREATE TABLE probe_u16_set (id UInt64, x UInt16, INDEX idx_x x TYPE set(0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8;
+INSERT INTO probe_u16_set SELECT number, number FROM numbers(4096);
+
 CREATE TABLE probe_time (d Date, t DateTime('UTC'), INDEX idx_t t TYPE bloom_filter GRANULARITY 1)
 ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 8;
 INSERT INTO probe_time SELECT toDate('2026-01-01') + intDiv(number, 16) AS d, toDateTime(d, 'UTC') FROM numbers(4096);
@@ -59,6 +65,10 @@ INSERT INTO build_true VALUES (true);
 
 CREATE TABLE build_false (flag Bool) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO build_false VALUES (false);
+
+-- `RowBinary` keeps the byte 2 in a `Bool` column.
+CREATE TABLE build_two (flag Bool) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO build_two SELECT * FROM format(RowBinary, 'flag Bool', unhex('02'));
 
 CREATE TABLE build_u8 (u UInt8) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO build_u8 VALUES (1);
@@ -121,6 +131,11 @@ SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_dat
 SELECT 'u16_u8_bool_build', count() FROM probe_u16 AS p JOIN build_false AS b ON CAST(p.x AS UInt8) = b.flag
 SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_data_read = 1, enable_join_seal_gated_reading = 0;
 
+-- The same with the byte 2 in the `Bool` build key and a `set` index: the JOIN compares the bytes.
+SELECT 'u16_u8_bool_byte_build_set', count() FROM probe_u16_set AS p JOIN build_two AS b ON CAST(p.x AS UInt8) = b.flag
+SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 1,
+    enable_join_seal_gated_reading = 0, log_comment = '05832_u16_u8_bool_byte_build_set';
+
 -- A `Date` key cast to `DateTime('UTC')`, compared with a `DateTime('Asia/Tokyo')` build key.
 SELECT 'date_utc_tokyo_build', count() FROM probe_time AS p JOIN build_tokyo AS b ON CAST(p.d AS DateTime('UTC')) = b.t
 SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_data_read = 1, enable_join_seal_gated_reading = 0;
@@ -144,19 +159,21 @@ SELECT log_comment, ProfileEvents['RuntimeFilterGranulesDropped'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND log_comment IN ('05832_bool_read', '05832_bool_read_range', '05832_date32_overflow', '05832_datetime_time_zone',
-        '05832_decimal_precision')
+        '05832_decimal_precision', '05832_u16_u8_bool_byte_build_set')
 ORDER BY log_comment;
 
 DROP TABLE probe_u8;
 DROP TABLE probe_u8_si;
 DROP TABLE probe_u8_null;
 DROP TABLE probe_u16;
+DROP TABLE probe_u16_set;
 DROP TABLE probe_time;
 DROP TABLE probe_dec;
 DROP TABLE probe_tuple;
 DROP TABLE probe_date32;
 DROP TABLE build_true;
 DROP TABLE build_false;
+DROP TABLE build_two;
 DROP TABLE build_u8;
 DROP TABLE build_tokyo;
 DROP TABLE build_dec;

@@ -1351,7 +1351,8 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
 
     if (exact_values)
     {
-        ColumnWithTypeAndName set_values(exact_values, target_type, "__runtime_filter_in_values_" + column_name);
+        /// The set takes the key's type: a `Bool` set would cast a `UInt8` key to `Bool`, which turns 2 into 1.
+        ColumnWithTypeAndName set_values(exact_values, key_casted.result_type, "__runtime_filter_in_values_" + column_name);
         auto future_set = std::make_shared<FutureSetFromTuple>(
             CityHash_v1_0_2::uint128{}, ASTPtr{}, ColumnsWithTypeAndName{set_values}, false, SizeLimits{});
         auto set_column = ColumnConst::create(ColumnSet::create(1, std::move(future_set)), 0);
