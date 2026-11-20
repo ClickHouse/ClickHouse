@@ -207,12 +207,6 @@ bool equals(const Field & lhs, const Field & rhs)
     }
 }
 
-/// An `Enum` compared with a string orders by the `Enum` value, and a cast from a string to an `Enum` reads a name.
-bool comparesEnumWithString(const DataTypePtr & left, const DataTypePtr & right)
-{
-    return comparesStringWithEnum(left, right) || comparesStringWithEnum(right, left);
-}
-
 ComparisonGraphCompareResult functionNameToCompareResult(const std::string & name)
 {
     using enum ComparisonGraphCompareResult;
@@ -391,11 +385,11 @@ std::optional<typename ComparisonGraph<Node>::Path> ComparisonGraph<Node>::findP
 template <ComparisonGraphNodeType Node>
 ComparisonGraphCompareResult ComparisonGraph<Node>::compare(const Node & left, const Node & right) const
 {
-    /// An `Enum` compared with a string orders by the `Enum` value. The graph has no relations in this order,
-    /// and it compares the constant bounds of the two sides by their `Field`s directly.
+    /// An `Enum` compared with a string orders by the `Enum` value, or by the name in an array. The graph has no
+    /// relations in these orders, and it compares the constant bounds of the two sides by their `Field`s directly.
     if constexpr (!with_ast)
     {
-        if (comparesEnumWithString(left->getResultType(), right->getResultType()))
+        if (mixesEnumAndString(left->getResultType(), right->getResultType()))
             return ComparisonGraphCompareResult::UNKNOWN;
     }
 
@@ -643,7 +637,7 @@ std::optional<Node> ComparisonGraph<Node>::getEqualConst(const Node & node) cons
         const auto & equal_constant = graph.vertices[index].getConstant();
 
         /// `CHECK e = n AND n = '9'` makes `e` equal to the number 9, but '9' cast to the `Enum` of `e` is the name '9'.
-        if (comparesEnumWithString(equal_constant->getResultType(), node->getResultType()))
+        if (mixesEnumAndString(equal_constant->getResultType(), node->getResultType()))
             return std::nullopt;
 
         /// `CHECK e = 1.0` gives `e` a `Float64` constant, which has no exact conversion to the `Enum` of `e`.

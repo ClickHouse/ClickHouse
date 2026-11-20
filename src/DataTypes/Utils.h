@@ -57,4 +57,19 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to);
   */
 bool comparesStringWithEnum(const DataTypePtr & string_side, const DataTypePtr & enum_side);
 
+/** Returns true if a comparison of `left` with `right` can meet an `Enum` on one side and a `String` or
+  * a `FixedString` on the other, as a whole or in aligned elements of arrays, maps and tuples. Such a pair
+  * does not compare in the order of two `Enum`s or of two strings: a scalar pair compares by the `Enum` value,
+  * an array pair by the name. `Nullable` and `LowCardinality` are looked through. A `Dynamic` or a `Variant`
+  * counts as both, because it can hold either.
+  *
+  * Examples:
+  * `Enum8('b' = 1, 'a' = 2)` and `String` returns true.
+  * `Array(String)` and `Array(Enum8('b' = 1, 'a' = 2))` returns true.
+  * `Map(String, Enum8('b' = 1, 'a' = 2))` and `Map(String, String)` returns true.
+  * `Tuple(String, UInt8)` and `Tuple(String, Enum8('b' = 1, 'a' = 2))` returns false.
+  * `Dynamic` and `Array(String)` returns true.
+  */
+bool mixesEnumAndString(const DataTypePtr & left, const DataTypePtr & right);
+
 }

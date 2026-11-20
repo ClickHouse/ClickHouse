@@ -313,16 +313,11 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
             if (!function_node || !relations.contains(function_node->getFunctionName()))
                 continue;
 
-            /// An `Enum` compared with a string orders by the `Enum` value, two strings order by name.
+            /// An `Enum` compared with a string orders by the `Enum` value, or by the name in an array, two `Enum`s by the value.
             /// The graph chains its relations and treats a constant by its `Field`, so such an atom is left out.
             const auto & arguments = function_node->getArguments().getNodes();
-            if (arguments.size() == 2)
-            {
-                const auto left_type = arguments[0]->getResultType();
-                const auto right_type = arguments[1]->getResultType();
-                if (comparesStringWithEnum(left_type, right_type) || comparesStringWithEnum(right_type, left_type))
-                    continue;
-            }
+            if (arguments.size() == 2 && mixesEnumAndString(arguments[0]->getResultType(), arguments[1]->getResultType()))
+                continue;
 
             constraints_for_graph.push_back(atom.node_with_hash.node);
         }

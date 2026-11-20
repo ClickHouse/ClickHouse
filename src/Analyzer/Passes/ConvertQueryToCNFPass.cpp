@@ -287,9 +287,7 @@ ComparisonGraphCompareResult mostStrict(const ComparisonGraphCompareResult left,
 
 bool comparesEnumWithString(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
 {
-    const auto left_type = left->getResultType();
-    const auto right_type = right->getResultType();
-    return comparesStringWithEnum(left_type, right_type) || comparesStringWithEnum(right_type, left_type);
+    return mixesEnumAndString(left->getResultType(), right->getResultType());
 }
 
 /// Create OR-group for 'indexHint'.

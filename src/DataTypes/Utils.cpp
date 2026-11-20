@@ -9,6 +9,8 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -426,6 +428,68 @@ bool comparesStringWithEnum(const DataTypePtr & string_side, const DataTypePtr &
     }
 
     return (string_carrier || isStringOrFixedString(string_type)) && (enum_carrier || isEnum(enum_type));
+}
+
+namespace
+{
+
+bool isEnumOrStringCarrier(const DataTypePtr & type)
+{
+    return isDynamic(type) || isVariant(type);
+}
+
+/// A `Map` compares as the array of its key-value tuples.
+DataTypePtr comparedShape(const DataTypePtr & type)
+{
+    auto shape = removeLowCardinalityAndNullable(type);
+    if (const auto * map = typeid_cast<const DataTypeMap *>(shape.get()))
+        return map->getNestedType();
+    return shape;
+}
+
+bool containsEnumOrString(const DataTypePtr & type)
+{
+    const auto shape = comparedShape(type);
+    if (isEnum(shape) || isStringOrFixedString(shape) || isEnumOrStringCarrier(shape))
+        return true;
+    if (const auto * array = typeid_cast<const DataTypeArray *>(shape.get()))
+        return containsEnumOrString(array->getNestedType());
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(shape.get()))
+        return std::ranges::any_of(tuple->getElements(), containsEnumOrString);
+    return false;
+}
+
+}
+
+bool mixesEnumAndString(const DataTypePtr & left, const DataTypePtr & right)
+{
+    const auto left_shape = comparedShape(left);
+    const auto right_shape = comparedShape(right);
+
+    /// A `Dynamic` or a `Variant` can hold an `Enum` or a string of any shape.
+    if (isEnumOrStringCarrier(left_shape) || isEnumOrStringCarrier(right_shape))
+        return containsEnumOrString(left_shape) && containsEnumOrString(right_shape);
+
+    const auto * left_array = typeid_cast<const DataTypeArray *>(left_shape.get());
+    const auto * right_array = typeid_cast<const DataTypeArray *>(right_shape.get());
+    if (left_array && right_array)
+        return mixesEnumAndString(left_array->getNestedType(), right_array->getNestedType());
+
+    const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left_shape.get());
+    const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right_shape.get());
+    if (left_tuple && right_tuple)
+    {
+        const auto & left_elements = left_tuple->getElements();
+        const auto & right_elements = right_tuple->getElements();
+        if (left_elements.size() != right_elements.size())
+            return false;
+        for (size_t i = 0; i < left_elements.size(); ++i)
+            if (mixesEnumAndString(left_elements[i], right_elements[i]))
+                return true;
+        return false;
+    }
+
+    return (isEnum(left_shape) && isStringOrFixedString(right_shape)) || (isStringOrFixedString(left_shape) && isEnum(right_shape));
 }
 
 }
