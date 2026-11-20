@@ -10,6 +10,7 @@
 
 #include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <Storages/NamedCollectionsHelpers.h>
 
@@ -57,7 +58,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         Block & sample_block,
         ContextPtr context,
         const std::string & /* default_database */,
-        bool /* created_from_ddl */)
+        bool created_from_ddl)
     {
         const auto config_prefix = root_config_prefix + ".mongodb";
         auto configuration = std::make_shared<MongoDBConfiguration>();
@@ -113,6 +114,10 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 
         configuration->checkHosts(context);
         configuration->checkCollection();
+
+        /// A DDL dictionary is loaded by the server with the global context, so no session setting can permit server credentials here.
+        if (created_from_ddl && context->getApplicationType() != Context::ApplicationType::LOCAL)
+            configuration->checkServerCredentialsForDictionary();
 
         return std::make_unique<MongoDBDictionarySource>(dict_struct, std::move(configuration), std::make_shared<const Block>(sample_block));
     };

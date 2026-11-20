@@ -29,6 +29,11 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
+#include "config.h"
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedSystemDatabase.h>
+#endif
+
 
 namespace DB
 {
@@ -99,6 +104,9 @@ BlockIO InterpreterDeleteQuery::execute()
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
 
     if (getContext()->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
+#if CLICKHOUSE_CLOUD
+        && !SharedSystemDatabase::isLocalDatabase(table_id.database_name)
+#endif
         && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Delete queries are prohibited");
 
@@ -153,7 +161,9 @@ BlockIO InterpreterDeleteQuery::execute()
         /// to analyze.
         MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, mutation_commands, getContext());
         MutationsInterpreter::Settings mutation_settings(false);
-        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
+        auto validation_context = Context::createCopy(getContext());
+        validation_context->setAnalyzingBackgroundExpressions(true);
+        MutationsInterpreter(table, metadata_snapshot, mutation_commands, validation_context, mutation_settings).validate();
         getContext()->onQueryExecutionStarted();
         table->mutate(mutation_commands, getContext());
         return {};

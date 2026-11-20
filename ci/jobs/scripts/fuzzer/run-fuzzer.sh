@@ -111,7 +111,7 @@ function configure
 EOL
 
 
-    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config) || echo "Failed to create log export config"
+    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config)
 }
 
 function collect_jemalloc_profiles
@@ -248,8 +248,9 @@ function fuzz
         # and clickhouse-server can do fork-exec, for example, to run some bridge.
         # Do not set nostop noprint for all signals, because some it may cause gdb to hang,
         # explicitly ignore non-fatal signals that are used by server.
-        # Number of SIGRTMIN can be determined only in runtime.
-        RTMIN=$(kill -l SIGRTMIN)
+        # The server uses SIGRTMIN for system.stack_trace. Its number is a property of the libc
+        # the server is linked with, not of this shell: 34 with glibc, 35 with musl (which
+        # reserves 34 for itself), so handle both.
         echo "
     set follow-fork-mode parent
     handle SIGHUP nostop noprint pass
@@ -259,7 +260,8 @@ function fuzz
     handle SIGTERM nostop noprint pass
     handle SIGUSR1 nostop noprint pass
     handle SIGUSR2 nostop noprint pass
-    handle SIG$RTMIN nostop noprint pass
+    handle SIG34 nostop noprint pass
+    handle SIG35 nostop noprint pass
     info signals
     continue
     backtrace full
