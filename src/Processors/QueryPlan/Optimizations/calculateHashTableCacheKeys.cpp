@@ -1,4 +1,7 @@
 #include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Analyzer/TableFunctionNode.h>
@@ -148,14 +151,14 @@ bool isByteTransparentTransform(const ITransformingStep & transform)
 /// `outputsAreRenamedInputs` below asks a neighbouring yes/no question - may this wrapper be skipped
 /// over entirely - and is stricter: it also rejects forwarding one input twice. This one answers what
 /// the permutation IS, which is what a key needs to tell two orderings of the same columns apart.
-std::optional<std::vector<size_t>> pureColumnPermutation(const ActionsDAG & dag)
+std::optional<VectorWithMemoryTracking<size_t>> pureColumnPermutation(const ActionsDAG & dag)
 {
-    std::unordered_map<const ActionsDAG::Node *, size_t> input_index;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> input_index;
     const auto & inputs = dag.getInputs();
     for (size_t i = 0; i < inputs.size(); ++i)
         input_index.emplace(inputs[i], i);
 
-    std::vector<size_t> result;
+    VectorWithMemoryTracking<size_t> result;
     result.reserve(dag.getOutputs().size());
     for (const auto * output : dag.getOutputs())
     {
@@ -388,8 +391,8 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
 /// imprecision for a simpler, cheaper key.
 void calculateHashTableCacheKeys(
     const QueryPlan::Node & root,
-    std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys,
-    std::unordered_map<const QueryPlan::Node *, UInt64> & raw_hashes)
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & cache_keys,
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & raw_hashes)
 {
     struct Frame
     {
@@ -400,7 +403,7 @@ void calculateHashTableCacheKeys(
     };
 
     // We use addresses of `left` and `right`, so they should be stable
-    std::list<Frame> stack;
+    ListWithMemoryTracking<Frame> stack;
     stack.push_back({.node = &root});
 
     while (!stack.empty())
@@ -670,15 +673,15 @@ void calculateHashTableCacheKeys(
     }
 }
 
-static void calculateHashTableCacheKeys(const QueryPlan::Node & root, std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys)
+static void calculateHashTableCacheKeys(const QueryPlan::Node & root, UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & cache_keys)
 {
-    std::unordered_map<const QueryPlan::Node *, UInt64> raw_hashes;
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> raw_hashes;
     calculateHashTableCacheKeys(root, cache_keys, raw_hashes);
 }
 
-std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root)
+UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root)
 {
-    std::unordered_map<const QueryPlan::Node *, UInt64> cache_keys;
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> cache_keys;
     calculateHashTableCacheKeys(root, cache_keys);
     return cache_keys;
 }
@@ -687,9 +690,9 @@ std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(
 /// So is the cutoff of each cap: the kept-keys one trims the tables to the cap, the per-stream one keeps whole blocks.
 static UInt64 mixGroupByCapsIntoKey(const QueryPlan::Node & aggregating_node, UInt64 key)
 {
-    std::vector<std::tuple<UInt64, UInt8, bool>> caps;
+    VectorWithMemoryTracking<std::tuple<UInt64, UInt8, bool>> caps;
     bool has_cap = false;
-    std::vector<const QueryPlan::Node *> stack{&aggregating_node};
+    VectorWithMemoryTracking<const QueryPlan::Node *> stack{&aggregating_node};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -753,9 +756,9 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
     /// NOT hash the plan: hashing serializes plan steps, and some steps that may appear in arbitrary
     /// queries are not serializable (e.g. `ORDER BY ... WITH FILL`, or `INSERT ... FROM INFILE`
     /// plans) and would throw. Only aggregating queries need a key.
-    std::vector<QueryPlan::Node *> aggregating_nodes;
+    VectorWithMemoryTracking<QueryPlan::Node *> aggregating_nodes;
     {
-        std::vector<QueryPlan::Node *> stack;
+        VectorWithMemoryTracking<QueryPlan::Node *> stack;
         stack.push_back(&root);
         while (!stack.empty())
         {
@@ -784,7 +787,7 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
 
     /// Compute every key before stamping any of them, so a key never depends on whether another
     /// (e.g. a nested) aggregation has already been stamped.
-    std::vector<std::pair<AggregatingStep *, UInt64>> keys_to_set;
+    VectorWithMemoryTracking<std::pair<AggregatingStep *, UInt64>> keys_to_set;
     for (auto * aggregating_node : aggregating_nodes)
     {
         /// Hash only the aggregation's own input subtree (this node as the root). This excludes the
