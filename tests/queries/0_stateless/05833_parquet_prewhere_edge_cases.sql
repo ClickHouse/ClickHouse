@@ -6,12 +6,13 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05833.parquet')
     SELECT number AS x, toString(number) AS s, (number, toString(number * 10))::Tuple(a UInt64, b String) AS t
     FROM numbers(100) SETTINGS output_format_parquet_row_group_size = 10;
 
--- The writer cuts row groups along the input chunks, so `max_block_size` is pinned too.
+-- The writer cuts row groups along the input chunks, so `max_block_size` is pinned too. Fewer bloom filter bits per value
+-- give false positives that change the pruning counts.
 INSERT INTO FUNCTION file(currentDatabase() || '_05833_pruning.parquet')
     SELECT number AS k, number * 2 AS e, toString(number) AS s FROM numbers(10000)
     SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000, output_format_parquet_data_page_size = 1024,
         output_format_parquet_batch_size = 100, output_format_parquet_write_page_index = 1,
-        output_format_parquet_write_bloom_filter = 1;
+        output_format_parquet_write_bloom_filter = 1, output_format_parquet_bloom_filter_bits_per_value = 10.5;
 
 -- { echoOn }
 
