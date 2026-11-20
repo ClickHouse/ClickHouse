@@ -93,6 +93,9 @@ public:
     /// and `AIRowsProcessed`/`AIRowsSkipped` would count distinct dictionary values instead of rows.
     [[nodiscard]] bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
+    /// Each batch is a paid HTTP call, so PREWHERE must evaluate it after the cheap conditions.
+    [[nodiscard]] bool isExpensive() const override { return true; }
+
     [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
