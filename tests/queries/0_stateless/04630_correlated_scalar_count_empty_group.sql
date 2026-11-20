@@ -122,8 +122,9 @@ SELECT sum(length(c))
 FROM (SELECT (SELECT repeat('x', if(count() = 0, 1000000, 1)) FROM numbers(1000) AS i WHERE i.number = o.number) AS c FROM numbers(1001) AS o)
 SETTINGS max_memory_usage = 100000000, max_threads = 1, max_block_size = 1000, correlated_subqueries_default_join_kind = 'left';
 
--- count(<Nullable column>) over a MergeTree table: optimize_functions_to_subcolumns would rewrite it to
--- sum(not(col.null)), but not in a correlated subquery, so the empty group is 0 with either setting.
+-- count(<Nullable column>) over a MergeTree table: optimize_functions_to_subcolumns rewrites it to
+-- countIf(not(col.null)) in a correlated subquery (sum(not(col.null)) elsewhere), so the empty group is 0 with
+-- either setting and only the null map is read.
 DROP TABLE IF EXISTS t04630_inner;
 DROP TABLE IF EXISTS t04630_outer;
 CREATE TABLE t04630_inner (k UInt8, v Nullable(Int32)) ENGINE = MergeTree ORDER BY k;
@@ -140,6 +141,10 @@ SELECT o.k, (SELECT count(i.v) FROM t04630_inner AS i WHERE i.k = o.k) AS c
 FROM t04630_outer AS o
 ORDER BY o.k
 SETTINGS optimize_functions_to_subcolumns = 1;
+
+SELECT countIf(explain LIKE '%function_name: countIf,%'), countIf(explain LIKE '%column_name: v.null,%'), countIf(explain LIKE '%column_name: v,%')
+FROM (EXPLAIN QUERY TREE SELECT o.k, (SELECT count(i.v) FROM t04630_inner AS i WHERE i.k = o.k) FROM t04630_outer AS o
+    SETTINGS optimize_functions_to_subcolumns = 1);
 
 DROP TABLE t04630_inner;
 DROP TABLE t04630_outer;

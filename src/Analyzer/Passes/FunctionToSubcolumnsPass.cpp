@@ -96,6 +96,7 @@ struct ColumnContext
     TableExpressionNodePtr column_source;
     ContextPtr context;
     SubcolumnSupportCache & subcolumn_support_cache;
+    bool in_correlated_subquery = false;
 };
 
 /// A column source is either a TableNode (`FROM t`) or a TableFunctionNode (`FROM file(...)`).
@@ -855,7 +856,8 @@ void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & fun
         {TypeIndex::Nullable, "count"},
         [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
         {
-            /// Replace `count(nullable_argument)` with `sum(not(nullable_argument.null))`
+            /// Replace `count(nullable_argument)` with `sum(not(nullable_argument.null))`, or with `countIf` in a correlated
+            /// subquery: the planner restores an empty correlated group of a count to 0, but keeps a sum NULL.
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
             if (sourceHasColumn(ctx.column_source, column.name)
                 || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
@@ -871,7 +873,7 @@ void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & fun
             resolveOrdinaryFunctionNodeByName(*function_node_not, "not", ctx.context);
 
             function_arguments_nodes = {std::move(function_node_not)};
-            resolveAggregateFunctionNodeByName(function_node, "sum");
+            resolveAggregateFunctionNodeByName(function_node, ctx.in_correlated_subquery ? "countIf" : "sum");
         },
     },
     {
@@ -1748,12 +1750,6 @@ private:
             return;
 
         auto transformer_key = std::make_pair(column.type->getTypeId(), function_node.getFunctionName());
-
-        /// The planner restores an empty correlated group of `count` to 0 but keeps `sum` NULL,
-        /// so `count(x)` must not become `sum(not(x.null))` in a correlated subquery.
-        if (transformer_key.first == TypeIndex::Nullable && transformer_key.second == "count" && correlated_columns.innermostIsCorrelated())
-            return;
-
         if (node_transformers.contains(transformer_key))
         {
             if (isMap(column.type) && !maps_on_storages_rejecting_subcolumns_in_prewhere.contains(qualified_name)
@@ -1894,7 +1890,7 @@ public:
             if (transformer_it != node_transformers.end()
                 && (transformer_it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(column_source.get())))
             {
-                ColumnContext ctx{std::move(column), column_source, getContext(), subcolumn_support_cache};
+                ColumnContext ctx{std::move(column), column_source, getContext(), subcolumn_support_cache, correlated_columns.innermostIsCorrelated()};
                 transformer_it->second(node, *function_node, ctx);
 
                 if (!result_type->equals(*node->getResultType()))
