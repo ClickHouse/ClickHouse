@@ -140,7 +140,7 @@ public:
     [[nodiscard]] size_t getStepIndex() const { return step_index.value; }
 
     /// Ids of the subqueries whose results this step consumes.
-    const std::vector<size_t> & getConsumedSubqueryIds() const { return consumed_subquery_ids; }
+    const VectorWithMemoryTracking<size_t> & getConsumedSubqueryIds() const { return consumed_subquery_ids; }
     void addConsumedSubqueryId(size_t id)
     {
         /// A step can reach the same set twice -- the index-analysis filter and the PREWHERE hold
@@ -304,7 +304,7 @@ private:
 
     /// See `getConsumedSubqueryIds`. Filled by a walk over the finished plan, after any copying of
     /// steps is done.
-    std::vector<size_t> consumed_subquery_ids;
+    VectorWithMemoryTracking<size_t> consumed_subquery_ids;
 };
 
 }

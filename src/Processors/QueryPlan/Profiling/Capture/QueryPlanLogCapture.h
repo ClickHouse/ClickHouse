@@ -9,7 +9,7 @@
 
 #include <mutex>
 #include <optional>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -140,7 +140,7 @@ private:
     /// Sub-plans finished before the query's own plan was captured, such as every scalar subquery,
     /// which runs during analysis. Moved into `captured` when it is taken; later ones are appended
     /// to it directly.
-    std::vector<CapturedSubPlan> pending_sub_plans TSA_GUARDED_BY(mutex);
+    VectorWithMemoryTracking<CapturedSubPlan> pending_sub_plans TSA_GUARDED_BY(mutex);
 
     /// The plan, as values. Taken when the structure is captured and valid from then on, so the
     /// plan itself is not kept: it belongs to the interpreter and dies whenever that does.

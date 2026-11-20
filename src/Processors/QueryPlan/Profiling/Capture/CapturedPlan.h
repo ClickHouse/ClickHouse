@@ -10,7 +10,7 @@
 #include <memory>
 #include <optional>
 #include <string_view>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -37,14 +37,14 @@ struct CapturedStep
     String id;
     String type;
     String description;
-    std::vector<String> details;
+    VectorWithMemoryTracking<String> details;
 
     /// Ids of this step's children, and of the roots of any plans it has already built
     /// (`getBuiltChildPlans`).
-    std::vector<String> children;
+    VectorWithMemoryTracking<String> children;
 
     /// Ids of the subqueries whose results this step reads.
-    std::vector<size_t> consumed_subquery_ids;
+    VectorWithMemoryTracking<size_t> consumed_subquery_ids;
 
     std::optional<AnalyzedStepData> statistics;
 
@@ -63,7 +63,7 @@ struct CapturedSubPlan
 
     /// Id of the root node
     String root_id;
-    std::vector<CapturedStep> nodes;
+    VectorWithMemoryTracking<CapturedStep> nodes;
 
     /// Totals for the sub-plan's own pipeline.
     std::optional<UInt64> execution_time_ns;
@@ -86,13 +86,13 @@ struct CapturedPlan
     /// Id of the root node
     String root_id;
     /// Output columns
-    std::vector<String> output;
+    VectorWithMemoryTracking<String> output;
     /// Execution totals
     std::optional<UInt64> execution_time_ns;
     std::optional<UInt64> max_threads;
 
-    std::vector<CapturedStep> nodes;
-    std::vector<CapturedSubPlan> sub_plans;
+    VectorWithMemoryTracking<CapturedStep> nodes;
+    VectorWithMemoryTracking<CapturedSubPlan> sub_plans;
 
     /// Reads a walked plan into a `CapturedPlan`. The walk gives the shape; each step is read
     /// here for what it says about itself.

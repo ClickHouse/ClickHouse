@@ -8,7 +8,8 @@
 #include <base/types.h>
 
 #include <memory>
-#include <set>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
@@ -214,7 +215,7 @@ std::unique_ptr<JSONBuilder::JSONMap> stepStatisticsToJSON(const AnalyzedStepDat
 }
 
 /// One node of a plan's `Nodes` array.
-JSONBuilder::ItemPtr capturedStepToJSON(const CapturedStep & step, const std::set<size_t> & captured_subquery_ids)
+JSONBuilder::ItemPtr capturedStepToJSON(const CapturedStep & step, const SetWithMemoryTracking<size_t> & captured_subquery_ids)
 {
     auto map = std::make_unique<JSONBuilder::JSONMap>();
 
@@ -241,7 +242,7 @@ JSONBuilder::ItemPtr capturedStepToJSON(const CapturedStep & step, const std::se
     /// document are linked. A subquery the step reads but whose plan was not captured -- a scalar
     /// served from the cache, say -- has no entry in `Plans` to point at, so it is not listed.
     /// Absent for the many steps that read none.
-    std::set<size_t> sub_plan_ids;
+    SetWithMemoryTracking<size_t> sub_plan_ids;
     for (size_t subquery_id : step.consumed_subquery_ids)
         if (captured_subquery_ids.contains(subquery_id))
             sub_plan_ids.insert(subquery_id);
@@ -263,7 +264,7 @@ JSONBuilder::ItemPtr capturedStepToJSON(const CapturedStep & step, const std::se
 }
 
 std::unique_ptr<JSONBuilder::JSONArray> capturedStepsToJSON(
-    const std::vector<CapturedStep> & steps, const std::set<size_t> & captured_subquery_ids)
+    const VectorWithMemoryTracking<CapturedStep> & steps, const SetWithMemoryTracking<size_t> & captured_subquery_ids)
 {
     auto nodes = std::make_unique<JSONBuilder::JSONArray>();
     for (const auto & step : steps)
@@ -272,7 +273,7 @@ std::unique_ptr<JSONBuilder::JSONArray> capturedStepsToJSON(
 }
 
 /// The entry of `Plans` for the query's own plan, which is always the first one.
-JSONBuilder::ItemPtr capturedQueryPlanToJSON(const CapturedPlan & captured, const std::set<size_t> & captured_subquery_ids)
+JSONBuilder::ItemPtr capturedQueryPlanToJSON(const CapturedPlan & captured, const SetWithMemoryTracking<size_t> & captured_subquery_ids)
 {
     auto entry = std::make_unique<JSONBuilder::JSONMap>();
     entry->add("Kind", "Query");
@@ -295,7 +296,7 @@ JSONBuilder::ItemPtr capturedQueryPlanToJSON(const CapturedPlan & captured, cons
 
 /// The entry of `Plans` for a subquery that ran outside the query's plan tree. `ExecutionTimeNs` is
 /// that subquery's own pipeline's -- it ran before the query's existed, so the two do not sum.
-JSONBuilder::ItemPtr capturedSubPlanToJSON(const CapturedSubPlan & sub_plan, const std::set<size_t> & captured_subquery_ids)
+JSONBuilder::ItemPtr capturedSubPlanToJSON(const CapturedSubPlan & sub_plan, const SetWithMemoryTracking<size_t> & captured_subquery_ids)
 {
     auto entry = std::make_unique<JSONBuilder::JSONMap>();
     entry->add("Kind", String(toString(sub_plan.kind)));
@@ -314,7 +315,7 @@ JSONBuilder::ItemPtr capturedSubPlanToJSON(const CapturedSubPlan & sub_plan, con
 
 JSONBuilder::ItemPtr capturedPlanToJSON(const CapturedPlan & captured)
 {
-    std::set<size_t> captured_subquery_ids;
+    SetWithMemoryTracking<size_t> captured_subquery_ids;
     for (const auto & sub_plan : captured.sub_plans)
         captured_subquery_ids.insert(sub_plan.subquery_id);
 

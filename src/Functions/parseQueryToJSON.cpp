@@ -56,6 +56,8 @@ public:
     [[nodiscard]] String getName() const override { return name; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// An empty string is not a query.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
     [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

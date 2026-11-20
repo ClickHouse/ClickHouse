@@ -139,7 +139,7 @@ void QueryPlanLogCapture::recordConsumedSubqueries(QueryPlan & plan)
         }
     };
 
-    std::vector<QueryPlan::Node *> stack;
+    VectorWithMemoryTracking<QueryPlan::Node *> stack;
     if (plan.isInitialized())
         stack.push_back(plan.getRootNode());
 
