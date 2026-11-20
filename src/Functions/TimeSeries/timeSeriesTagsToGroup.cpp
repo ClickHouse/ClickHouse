@@ -13,41 +13,43 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int THERE_IS_NO_QUERY;
 }
 
 /// Function timeSeriesTagsToGroup([('tag_name_1', 'tag_value_1'), ...], 'tag_name_2', 'tag_value_2', ...)
 /// returns a group assigned to the specified set of tags.
-class FunctionTimeSeriesTagsToGroup final : public IFunction, public WithContext
+class FunctionTimeSeriesTagsToGroup final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesTagsToGroup";
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTimeSeriesTagsToGroup>(context_); }
-    /// Defer query-context access to `executeImpl` so the function can be instantiated
-    /// without a query context (e.g. by `system.functions` which only needs to read
-    /// `getSignatureString`).
-    explicit FunctionTimeSeriesTagsToGroup(ContextPtr context_) : WithContext(context_) {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesTagsToGroup>(context); }
+    /// The creation context may expire before execution; without a query context only the signature is usable.
+    explicit FunctionTimeSeriesTagsToGroup(const ContextPtr & context)
+        : tags_collector(context->hasQueryContext() ? context->getQueryContext()->getTimeSeriesTagsCollector() : nullptr)
+    {
+    }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
     /// There should be 1 or more arguments.
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
     /// Function timeSeriesTagsToGroup uses information stored in the query context, it's deterministic in the scope of the current query.
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return true; }
 
     /// This function allows NULLs as a way to specify that some tags don't have values.
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
     /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
-    bool isStateful() const override { return true; }
+    [[nodiscard]] bool isStateful() const override { return true; }
 
     /// Disable constant folding: the per-query tags collector is not populated at analysis time.
-    bool isSuitableForConstantFolding() const override { return false; }
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Declarative signature — accepts an array of (tag_name, tag_value)
     /// pairs followed by zero or more loose (name, value) string pairs. The
@@ -57,7 +59,7 @@ public:
     /// repeated unit (the ellipsis-walk-back would otherwise fold the adjacent
     /// `Array(...) | Nothing` argument into it), so the accepted arities are
     /// `1 + 2 * N` and a call like `timeSeriesTagsToGroup([])` is valid.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Array(Tuple(String, String)) | Nothing,"
                " [T1 : MaybeNullable(StringOrFixedString | IsNothing),"
@@ -70,7 +72,7 @@ public:
     /// override below is authoritative (it runs the helper). Route the types-only path to it too,
     /// so the base `IFunction::getReturnTypeImpl(DataTypes)` fallback never applies the
     /// approximate signature string as a validator.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -79,7 +81,7 @@ public:
         return getReturnTypeImpl(columns);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
         return std::make_shared<DataTypeUInt64>();
@@ -97,26 +99,29 @@ public:
     }
 
     /// A dry run is used to compute headers / partial results during query planning
-    /// (e.g. constant folding in `tryMergeExpressions`). It must not access the per-query tags
-    /// collector via `getContext`: the context the function was created with may already have
-    /// expired by plan-optimization time, which would otherwise raise a `Context has expired`
-    /// logical error. The real group lookup only needs to happen at execution time, so the
-    /// dry run returns a column of the right type without consulting the collector.
-    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & result_type, size_t input_rows_count) const override
+    /// (e.g. constant folding in `tryMergeExpressions`). The real group lookup only needs to happen
+    /// at execution time, so the dry run returns a column of the right type without consulting
+    /// the collector.
+    [[nodiscard]] ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return result_type->createColumn()->cloneResized(input_rows_count);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
+        if (!tags_collector)
+            throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Function {} can be executed only in a query", name);
+
         auto tags_vector = TimeSeriesTagsFunctionHelpers::extractTagNamesAndValuesFromArguments(name, arguments, 0);
 
-        auto tags_collector = getContext()->getQueryContext()->getTimeSeriesTagsCollector();
         auto groups = tags_collector->getGroupForTags(tags_vector);
         chassert(groups.size() == input_rows_count);
 
         return TimeSeriesTagsFunctionHelpers::makeColumnForGroup(groups);
     }
+
+private:
+    const std::shared_ptr<ContextTimeSeriesTagsCollector> tags_collector;
 };
 
 

@@ -1,9 +1,9 @@
 ---
-description: 'ثبّت إصدارات ClickHouse المحلية وأدِرها باستخدام clickhousectl، واجهة سطر أوامر ClickHouse'
+description: 'ثبّت إصدارات ClickHouse المحلية وأدِرها باستخدام clickhousectl، واجهة سطر الأوامر لـ ClickHouse'
 keywords: ['ClickHouse', 'تثبيت', 'clickhousectl', 'CLI']
 sidebarTitle: 'clickhousectl (CLI)'
 slug: /install/clickhousectl
-title: 'التثبيت باستخدام ClickHouse CLI'
+title: 'التثبيت باستخدام واجهة سطر الأوامر لـ ClickHouse'
 hide_title: true
 doc_type: 'guide'
 ---
@@ -15,78 +15,196 @@ doc_type: 'guide'
   [Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/about).
 </Info>
 
-تساعدك ClickHouse CLI (`clickhousectl`) على تثبيت إصدارات ClickHouse المحلية
-وإدارتها، وبدء الخوادم، وتشغيل الاستعلامات.
+تتولى واجهة سطر الأوامر لـ ClickHouse (`clickhousectl`، واسمها البديل `chctl`) تثبيت إصدارات ClickHouse
+المحلية وإدارتها، وتشغيل خوادم ClickHouse وPostgres المحلية، وتنفيذ الاستعلامات،
+وإدارة ClickHouse Cloud. ترشدك هذه الصفحة خلال خطوات تثبيت واجهة سطر الأوامر،
+وتشغيل خادم ClickHouse محلي، والاتصال به.
+
+إذا كنت قد استخدمت البرنامج النصي لـ [التثبيت السريع](/ar/get-started/setup/self-managed/quick-install)،
+فإن `clickhousectl` مثبّتة لديك بالفعل. انتقل مباشرةً إلى
+[تثبيت ClickHouse](#cli-install-clickhouse).
 
 <Steps>
-  <Step title="تثبيت ClickHouse CLI" id="install-the-cli">
+  <Step title="ثبّت واجهة سطر الأوامر لـ ClickHouse" id="install-the-cli">
+    يدعم برنامج التثبيت النصي نظامي macOS وLinux على معماريتي x86&#95;64 وARM64:
+
     ```bash
-    curl https://clickhouse.com/cli | sh
+    curl -fsSL https://clickhouse.com/cli | sh
     ```
 
-    يُنشأ أيضًا الاسم المستعار `chctl` تلقائيًا لتسهيل الاستخدام.
+    يثبّت البرنامج النصي `clickhousectl` في `~/.local/bin` وينشئ بجانبه اسمًا بديلًا هو `chctl`.
+    إذا أشار البرنامج النصي إلى أن `~/.local/bin` غير مُدرج في متغير `PATH` لديك، فأضفه إليه،
+    ثم أضف السطر نفسه إلى ملف تعريف shell الخاص بك (`~/.bashrc`، `~/.zshrc`) ليسري في
+    الجلسات اللاحقة:
+
+    ```bash
+    export PATH="$HOME/.local/bin:$PATH"
+    ```
+
+    <Accordion title="طرق تثبيت أخرى">
+      | الأداة                                  | الأمر                           |
+      | --------------------------------------- | ------------------------------- |
+      | npm                                     | `npm install -g clickhousectl`  |
+      | uv                                      | `uv tool install clickhousectl` |
+      | pipx                                    | `pipx install clickhousectl`    |
+      | pip                                     | `pip install clickhousectl`     |
+      | cargo-binstall                          | `cargo binstall clickhousectl`  |
+      | Cargo، من الشيفرة المصدرية (Rust 1.94+) | `cargo install clickhousectl`   |
+
+      لا يُنشئ الاسمَ البديل `chctl` إلا برنامجُ التثبيت النصي وnpm.
+    </Accordion>
+
+    للتحقق من توفر إصدار أحدث من واجهة سطر الأوامر وتثبيته:
+
+    ```bash
+    clickhousectl update --check
+    clickhousectl update
+    ```
   </Step>
 
-  <Step title="تثبيت ClickHouse" id="cli-install-clickhouse">
-    ثبّت أحدث إصدار من ClickHouse واجعله الإصدار `default` لديك:
+  <Step title="ثبّت ClickHouse" id="cli-install-clickhouse">
+    ثبّت أحدث إصدار من ClickHouse واجعله الإصدار الافتراضي لديك:
 
     ```bash
     clickhousectl local use latest
     ```
 
-    يقوم `local use` بتثبيت الإصدار إذا لم يكن موجودًا بالفعل، ويضبطه
-    كإصدار `default`، وينشئ رابطًا رمزيًا `clickhouse` في `~/.local/bin` (ضمن `PATH`
-    لديك)، بحيث يمكنك تشغيل الملف التنفيذي `clickhouse` مباشرةً. وبذلك، ستعمل كما هي أي خطوة لاحقة في هذا الدليل
-    تستخدم أمر `clickhouse`.
+    يثبّت الأمر `local use` الإصدار إن لم يكن مثبّتًا مسبقًا، ويعيّنه إصدارًا افتراضيًا، وينشئ رابطًا رمزيًا باسم `clickhouse` في `~/.local/bin`، لتتمكّن من تشغيل
+    الملف التنفيذي لـ `clickhouse` مباشرةً. وبذلك تعمل أي خطوة لاحقة في هذه الوثائق تشغّل
+    الأمر `clickhouse` دون أي تعديل، شريطة أن يكون `~/.local/bin` مُدرجًا في متغير `PATH` لديك.
 
-    يمكنك أيضًا اختيار إصدار محدد:
+    يمكنك أيضًا اختيار أحدث إصدار ذي دعم طويل الأمد (LTS)، أو إصدار
+    محدد:
 
     ```bash
-    clickhousectl local use 26.5            # أحدث إصدار 26.5.x.x
-    clickhousectl local use 26.5.2.39       # الإصدار المحدد تمامًا
+    clickhousectl local use lts             # Latest LTS release
+    clickhousectl local use 26.8            # Latest 26.8.x.x release
+    clickhousectl local use 26.8.1.1760     # Exact version
+    ```
+
+    لمعرفة الإصدارات الفرعية المتاحة للتنزيل، والإصدارات المثبّتة لديك:
+
+    ```bash
+    clickhousectl local list --remote
+    clickhousectl local list
     ```
 
     <Info>
-      **use مقابل install**
+      **الأمر use مقابل الأمر install**
 
-      يقوم `clickhousectl local use <version>` بتثبيت إصدار *وجعله أيضًا* الإصدار
-      `default` لديك، مع تحديث الرابط الرمزي `clickhouse` على `PATH`. ولتنزيل إصدار
-      من دون تغيير الإصدار `default` أو تحديث الرابط الرمزي، استخدم
-      `clickhousectl local install <version>` بدلًا من ذلك.
+      يثبّت الأمر `clickhousectl local use <version>` الإصدار *ويجعله* الإصدار
+      الافتراضي لديك، مع تحديث الرابط الرمزي `clickhouse`. أما الأمر `clickhousectl local install <version>`
+      فيقتصر على تنزيل الإصدار؛ ولا يصبح هو الإصدار الافتراضي إلا إذا لم يكن لديك إصدار افتراضي
+      بعد، كما أنه لا يحدّث الرابط الرمزي. ولتعيين الإصدار الافتراضي دون إنشاء الرابط الرمزي أو
+      تحديثه، استخدم `clickhousectl local use <version> --no-global`.
     </Info>
   </Step>
 
-  <Step title="بدء clickhouse-server" id="cli-start-clickhouse-server">
+  <Step title="شغّل clickhouse-server" id="cli-start-clickhouse-server">
+    تحصر أداة `clickhousectl` نطاق الخوادم المحلية في الدليل الذي تشغّلها منه. أنشئ
+    دليلًا للمشروع وشغّل خادمًا فيه:
+
     ```bash
+    mkdir my-project && cd my-project
     clickhousectl local server start
     ```
 
-    يعمل الخادم في الخلفية. وللتحقق من أنه يعمل:
+    ```response
+    Server 'default' started in background (PID: 14705)
+      HTTP port: 8123
+      TCP port:  9000
+      Version:   26.9.1.1312
+    ```
+
+    يعمل الخادم في الخلفية ويحمل الاسم `default`. تُخزَّن بياناته في
+    `./.clickhouse/`، لذا شغّل أوامر `clickhousectl local` اللاحقة من الدليل
+    نفسه؛ إذ لا يبحث `clickhousectl` في الأدلة الأعلى. يستمع الخادم
+    على منفذ HTTP ‏`8123` ومنفذ TCP ‏`9000`، أو على منافذ متاحة أخرى إذا كانت هذه المنافذ مشغولة.
+    لتحديد المنافذ بنفسك، مرّر الخيارين `--http-port` و`--tcp-port`. ولتشغيل أكثر من
+    خادم، امنح كل خادم اسمًا خاصًا به، مثل `clickhousectl local server start dev`.
+
+    للتحقق من أن الخادم قيد التشغيل:
 
     ```bash
     clickhousectl local server list
     ```
+
+    ```response
+    | Name    | Status  | PID   | Version     | HTTP Port | TCP Port |
+    |---------|---------|-------|-------------|-----------|----------|
+    | default | running | 14705 | 26.9.1.1312 | 8123      | 9000     |
+
+    1 server, 1 running
+    ```
   </Step>
 
-  <Step title="بدء clickhouse-client" id="cli-start-clickhouse-client">
+  <Step title="شغّل clickhouse-client" id="cli-start-clickhouse-client">
+    اتصل بالخادم باستخدام `clickhouse-client` من الدليل نفسه:
+
     ```bash
     clickhousectl local client
     ```
 
-    سترى شيئًا مشابهًا لما يلي:
+    يتصل `local client` بالخادم المسمّى `default` ويستخدم إصدار
+    ClickHouse نفسه الذي يعمل به الخادم. للاتصال بخادم آخر، مرّر اسمه،
+    مثل `clickhousectl local client dev`. ستظهر لك مخرجات مشابهة لما يلي:
 
     ```response
-    ClickHouse client version 24.5.1.117 (official build).
+    ClickHouse client version 26.9.1.1312 (official build).
     Connecting to localhost:9000 as user default.
-    Connected to ClickHouse server version 24.5.1.
+    Connected to ClickHouse server version 26.9.1.
 
     local-host :)
     ```
 
-    أنت الآن جاهز لبدء إرسال أوامر SQL إلى ClickHouse!
+    أصبحت الآن جاهزًا لبدء إرسال أوامر SQL إلى ClickHouse! اكتب `exit` للخروج من
+    العميل.
+
+    لتنفيذ استعلام واحد دون فتح session تفاعلية، مرّر الخيار `-q`:
+
+    ```bash
+    clickhousectl local client -q "SELECT version()"
+    ```
 
     <Tip>
-      يرشدك [Quick Start](/ar/get-started/setup/install) خلال خطوات إنشاء الجداول وإدراج البيانات.
+      يرشدك دليل [إنشاء الجداول في ClickHouse](/ar/get-started/quickstarts/creating-tables) خطوةً بخطوة إلى إنشاء الجداول وإدراج البيانات فيها.
     </Tip>
   </Step>
+
+  <Step title="أوقف الخادم" id="cli-stop-clickhouse-server">
+    يظل الخادم قيد التشغيل في الخلفية إلى أن توقفه. ولإيقافه، نفّذ الأمر من
+    الدليل نفسه:
+
+    ```bash
+    clickhousectl local server stop
+    ```
+
+    لا يؤدي إيقاف الخادم إلى فقدان بياناته، إذ تظل محفوظة لحين تشغيله مجددًا باستخدام الأمر `clickhousectl local server start`.
+
+    <Warning>
+      يحذف الأمر `clickhousectl local server remove` بيانات الخادم المتوقف نهائيًا.
+    </Warning>
+  </Step>
 </Steps>
+
+## الخطوات التالية {#next-steps}
+
+* **شغّل Postgres محليًا.** بعد تشغيل Docker، ابدأ تشغيل خادم Postgres محلي
+  واتصل به باستخدام `psql`:
+
+  ```bash
+  clickhousectl local postgres start
+  clickhousectl local postgres client
+  ```
+
+* **اتصل بـ ClickHouse Cloud.** أنشئ حسابًا، أو سجّل الدخول إلى حساب
+  قائم. يمنحك تسجيل الدخول عبر المتصفح صلاحية القراءة فقط؛ أما إنشاء موارد Cloud أو تعديلها فيتطلب
+  مفتاح API، وسيطلبه منك الأمر `clickhousectl cloud auth login --interactive`.
+
+  ```bash
+  clickhousectl cloud auth signup
+  clickhousectl cloud auth login
+  ```
+
+* **تعرّف على بقية إمكانات واجهة سطر الأوامر.** راجع [مرجع clickhousectl](/ar/concepts/features/interfaces/cli)،
+  أو شغّل `clickhousectl --help`.

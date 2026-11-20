@@ -1,7 +1,7 @@
 ---
 title: 'Choose a service for your workload'
 sidebarTitle: 'Choose a service'
-description: 'Choose ClickHouse or Postgres services within ClickHouse Cloud for analytics or transactions, Managed ClickStack for observability, or chDB for local analysis.'
+description: 'Choose ClickHouse or Postgres services within ClickHouse Cloud for analytics or transactions, ClickHouse Observability for observability, or chDB for local analysis.'
 keywords: ['database selection', 'analytical database', 'transactional database', 'managed postgres', 'report history']
 doc_type: 'guide'
 ---
@@ -17,7 +17,7 @@ ClickHouse Cloud is the platform for managed services, including ClickHouse for 
 | Aggregations, filtering, and comparisons across large event or result histories | [ClickHouse service in ClickHouse Cloud](/products/cloud/getting-started/intro) | Representative queries, ingestion batches, data freshness, concurrent queries, and the design of updates or retries |
 | Transactional application state, such as orders, inventory reservations, or jobs whose state transitions require transactions and constraints | [ClickHouse Managed Postgres in ClickHouse Cloud](/products/managed-postgres/overview) | Transaction boundaries, constraints, indexes, connection management, and the service's supported features and availability |
 | Transactional application state plus analytical queries that need an independent serving system | [Postgres and ClickHouse services in ClickHouse Cloud](/products/managed-postgres/clickpipes) | Which tables need replication, acceptable replication lag, schema changes, and the cost and operation of two services |
-| A managed experience for searching and investigating application logs, metrics, and traces | [Managed ClickStack](/clickstack/getting-started/managed) | Instrumentation, telemetry ingestion, retention, and the observability workflows your team needs |
+| A managed experience for searching and investigating application logs, metrics, and traces | [ClickHouse Observability](/clickstack/observability/getting-started) | Instrumentation, telemetry ingestion, retention, and the observability workflows your team needs |
 | Analysis of files or in-memory data inside a local application or notebook | [chDB](/chdb/index) | Local resources and whether you need a separately hosted, shared database service |
 
 Check the linked product documentation for current availability, regions, and limitations. ClickHouse Managed Postgres is currently in public beta; see its [quickstart](/products/managed-postgres/quickstart).
@@ -64,4 +64,4 @@ For a managed deployment, also check:
 - Whether an intermittent analytical workload can tolerate the connection delay associated with [automatic idling](/products/cloud/features/autoscaling/idling).
 - The team's responsibility for schema design, application retries, query tuning, and cost controls, even when the service manages the infrastructure.
 
-For ClickHouse or Postgres services in ClickHouse Cloud, use the [ClickHouse CLI](/products/cloud/features/cli) to create and manage resources from a terminal. For Managed ClickStack and chDB, follow the product guides linked in the workload map.
+For ClickHouse or Postgres services in ClickHouse Cloud, use the [ClickHouse CLI](/products/cloud/features/cli) to create and manage resources from a terminal. For ClickHouse Observability and chDB, follow the product guides linked in the workload map.
