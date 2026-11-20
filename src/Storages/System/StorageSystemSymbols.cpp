@@ -53,19 +53,21 @@ namespace
 class SymbolsBlockSource final : public ISource
 {
 private:
-    SymbolIndex::SymbolIterator iterator;
-    bool iteration_finished = false;
+    using Iterator = std::vector<SymbolIndex::Symbol>::const_iterator;
+    Iterator it;
+    const Iterator end;
     std::vector<UInt8> columns_mask;
     UInt64 max_block_size;
 
 public:
     SymbolsBlockSource(
-        const SymbolIndex & symbol_index,
+        Iterator begin_,
+        Iterator end_,
         std::vector<UInt8> columns_mask_,
         Block header,
         UInt64 max_block_size_)
         : ISource(std::make_shared<const Block>(std::move(header)))
-        , iterator(symbol_index.iterateSymbols()), columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
+        , it(begin_), end(end_), columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
     {
     }
 
@@ -74,70 +76,52 @@ public:
 protected:
     Chunk generate() override
     {
-        if (iteration_finished)
+        if (it == end)
             return {};
 
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
 #if USE_XRAY
-        /// Loading the instrumentation map demangles every instrumented function, so do it only when an XRay column is read.
-        const bool read_xray_columns = columns_mask[1] || columns_mask[2];
-        const auto * instrumentation_functions = read_xray_columns ? &InstrumentationManager::instance().getFunctions() : nullptr;
+        const auto & instrumentation_functions = InstrumentationManager::instance().getFunctions();
 #endif
 
         size_t rows_count = 0;
-        while (rows_count < max_block_size)
+        while (rows_count < max_block_size && it != end)
         {
-            const SymbolIndex::Symbol * symbol = nullptr;
-            std::string_view symbol_name;
-            if (!iterator.next(symbol, symbol_name))
-            {
-                iteration_finished = true;
-                break;
-            }
-
             size_t src_index = 0;
             size_t res_index = 0;
 
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insertData(symbol_name.empty() ? "" : symbol_name.data(), symbol_name.size());
+                res_columns[res_index++]->insert(it->name);
 #if USE_XRAY
-            /// Demangling every symbol dominates the scan, so skip it unless an XRay column is read.
-            if (read_xray_columns)
-            {
-                const char * symbol_name_c_string = SymbolIndex::instance().getSymbolNameCString(*symbol);
-                const auto function_name = *symbol_name_c_string ? demangle(symbol_name_c_string) : String{};
-                const auto instrumentation_function = instrumentation_functions->get<InstrumentationManager::FunctionName>().find(function_name);
+            const auto function_name = demangle(it->name);
+            const auto instrumentation_function = instrumentation_functions.get<InstrumentationManager::FunctionName>().find(function_name);
 
-                /// Not every function is instrumented, so we need to look for those which are.
-                if (instrumentation_function != instrumentation_functions->get<InstrumentationManager::FunctionName>().end())
-                {
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(instrumentation_function->function_name);
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(instrumentation_function->function_id);
-                }
-                else
-                {
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(Field());
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(Field());
-                }
+            /// Not every function is instrumented, so we need to look for those which are.
+            if (instrumentation_function != instrumentation_functions.get<InstrumentationManager::FunctionName>().end())
+            {
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(instrumentation_function->function_name);
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(instrumentation_function->function_id);
             }
             else
-                src_index += 2;
+            {
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(Field());
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(Field());
+            }
 #endif
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(reinterpret_cast<uintptr_t>(symbol->offset_begin));
+                res_columns[res_index++]->insert(reinterpret_cast<uintptr_t>(it->offset_begin));
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(reinterpret_cast<uintptr_t>(symbol->offset_end));
+                res_columns[res_index++]->insert(reinterpret_cast<uintptr_t>(it->offset_end));
 
             ++rows_count;
+            ++it;
         }
 
-        if (!rows_count)
-            return {};
         return Chunk(std::move(res_columns), rows_count);
     }
 };
@@ -160,10 +144,10 @@ Pipe StorageSystemSymbols::read(
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
     auto [columns_mask, res_block] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
 
-    const auto & symbol_index = SymbolIndex::instance();
+    const auto & symbols = SymbolIndex::instance().symbols();
 
     return Pipe(std::make_shared<SymbolsBlockSource>(
-        symbol_index, std::move(columns_mask), std::move(res_block), max_block_size));
+        symbols.cbegin(), symbols.cend(), std::move(columns_mask), std::move(res_block), max_block_size));
 }
 
 }

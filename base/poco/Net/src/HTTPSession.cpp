@@ -226,53 +226,6 @@ int HTTPSession::write(const char* buffer, std::streamsize length)
 }
 
 
-int HTTPSession::fillBuffer()
-{
-	if (!_pBuffer)
-	{
-		_pBuffer = std::make_unique<char[]>(HTTP_DEFAULT_BUFFER_SIZE);
-		_pCurrent = _pEnd = _pBuffer.get();
-	}
-	const int unread = static_cast<int>(_pEnd - _pCurrent);
-	if (_pCurrent != _pBuffer.get())
-	{
-		std::memmove(_pBuffer.get(), _pCurrent, unread);
-		_pCurrent = _pBuffer.get();
-		_pEnd = _pCurrent + unread;
-	}
-	const int space = HTTP_DEFAULT_BUFFER_SIZE - unread;
-	if (space == 0)
-		return 0;
-	try
-	{
-		if (_receiveDataHooks)
-			_receiveDataHooks->atStart(space);
-		/// A negative result means that a non-blocking socket has nothing: `EAGAIN`, or
-		/// `ERR_SSL_WANT_READ` and `ERR_SSL_WANT_WRITE` for a TLS socket.
-		const int result = _socket.receiveBytes(_pEnd, space);
-		if (result < 0)
-		{
-			if (_receiveDataHooks)
-				_receiveDataHooks->atFail();
-			return 0;
-		}
-		if (_receiveDataHooks)
-			_receiveDataHooks->atFinish(result);
-		if (result == 0)
-			return -1;
-		_pEnd += result;
-		return result;
-	}
-	catch (Poco::Exception& exc)
-	{
-		if (_receiveDataHooks)
-			_receiveDataHooks->atFail();
-		setException(exc);
-		throw;
-	}
-}
-
-
 int HTTPSession::receive(char* buffer, int length)
 {
 	try

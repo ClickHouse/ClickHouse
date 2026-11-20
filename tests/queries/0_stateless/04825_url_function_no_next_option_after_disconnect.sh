@@ -136,7 +136,7 @@ wait $CLIENT_PID 2>/dev/null
 DELIVERED=0
 for _ in {1..120}; do
     $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
-    if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$QUERY_ID' AND logger_name = 'StorageURLSource' AND message LIKE 'The read has been cancelled%'") != 0 ]]; then
+    if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.text_log WHERE query_id = '$QUERY_ID' AND logger_name = 'StorageURLSource' AND message LIKE 'The read has been cancelled%'") != 0 ]]; then
         DELIVERED=1
         break
     fi

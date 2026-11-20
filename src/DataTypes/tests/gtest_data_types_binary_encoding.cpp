@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-#include <Formats/FormatSettings.h>
 #include <Columns/ColumnObject.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>

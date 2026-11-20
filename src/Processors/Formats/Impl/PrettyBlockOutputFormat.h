@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -49,7 +48,7 @@ protected:
     FormatSettings format_settings;
 
     using Widths = PODArray<size_t>;
-    using WidthsPerColumn = VectorWithMemoryTracking<Widths>;
+    using WidthsPerColumn = std::vector<Widths>;
 
     void write(Chunk chunk, PortKind port_kind);
     void writeChunk(const Chunk & chunk, PortKind port_kind);
@@ -123,7 +122,6 @@ private:
     std::atomic_bool has_background_exception{false};
     void writingThread();
     void stopThread();
-    void onCancel() noexcept override;
     void rethrowBackgroundExceptionIfAny();
 };
 

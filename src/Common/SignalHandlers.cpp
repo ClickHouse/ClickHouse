@@ -61,8 +61,6 @@ static std::atomic_flag handled_signals_were_reset;
 /// so we need to preserve the address for core dump analysis.
 static std::atomic<uintptr_t> saved_fault_address{0};
 static_assert(std::atomic<uintptr_t>::is_always_lock_free, "saved_fault_address must be lock-free for use in signal handlers");
-static std::atomic<const char *> saved_fault_access_type{nullptr};
-static_assert(std::atomic<const char *>::is_always_lock_free, "saved_fault_access_type must be lock-free for use in signal handlers");
 
 
 void call_default_signal_handler([[maybe_unused]] int sig)
@@ -142,10 +140,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
     if (sig == SIGSEGV || sig == SIGBUS || sig == SIGILL || sig == SIGFPE)
-    {
         saved_fault_address.store(reinterpret_cast<uintptr_t>(info->si_addr), std::memory_order_relaxed);
-        saved_fault_access_type.store(getFaultMemoryAccessType(sig, *info, *reinterpret_cast<const ucontext_t *>(context)).data(), std::memory_order_relaxed); /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    }
 
     if (sig != SIGTSTP)
         is_crashed.store(true, std::memory_order_relaxed);
@@ -426,39 +421,12 @@ SignalListener::SignalListener(BaseDaemon * daemon_, LoggerPtr log_, TerminateRe
 void SignalListener::run()
 {
     setThreadName(ThreadName::SIGNAL_LISTENER);
-    /// Pre-warm the symbol index and this thread's compact-name workspace so symbolizing a fatal signal
-    /// performs no allocations on the signal path. Mach-O binaries never carry the compact section, so on Darwin
-    /// this only builds the index.
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
-    if (daemon)
-    {
-        /// The daemon does not build the index at initialization, so this is the first time it is built,
-        /// and it can fail (for example, on a corrupted `clickhouse.debug` next to the executable).
-        /// The exception must not leave this thread: it would reach the Poco error handler, and the server
-        /// would be left without signal processing or hang in `std::terminate`. Instead, it is handed to the
-        /// main thread, which rethrows it from `waitForTerminationRequest` and exits with this error.
-        try
-        {
-            SymbolIndex::instance().warmUp();
-        }
-        catch (...)
-        {
-            /// Without the stack trace: symbolizing it would try to build the index again.
-            LOG_FATAL(log, "Cannot build the symbol index, the server will be terminated: {}", getCurrentExceptionMessage(false));
-            {
-                std::lock_guard lock(terminate_request_mutex);
-                symbol_index_exception = std::current_exception();
-            }
-            terminate_request_cv.notify_all();
-        }
-    }
-#endif
 
     if (daemon)
     {
         build_id = [this]{ return daemon->build_id; };
-        /// A daemon has read its build id during initialization (without the symbol index), so this is
-        /// a plain string that neither builds anything nor waits for anything.
+        /// A daemon has built the symbol index during initialization, so this is a plain string
+        /// that neither builds anything nor waits for anything.
         build_id_if_already_known = build_id;
     }
     else
@@ -590,7 +558,7 @@ void SignalListener::run()
 bool SignalListener::waitForTerminationRequest(std::chrono::milliseconds timeout)
 {
     std::unique_lock lock(terminate_request_mutex);
-    auto condition = [&] { return terminate_requested > 0 || symbol_index_exception; };
+    auto condition = [&] { return terminate_requested > 0; };
     bool res = true;
 
     /// condition_variable::wait_for probably doesn't check for overflow, so we can't just pass max() to it.
@@ -598,9 +566,6 @@ bool SignalListener::waitForTerminationRequest(std::chrono::milliseconds timeout
         terminate_request_cv.wait(lock, condition);
     else
         res = terminate_request_cv.wait_for(lock, timeout, condition);
-
-    if (symbol_index_exception)
-        std::rethrow_exception(symbol_index_exception);
 
     return res;
 }
@@ -811,7 +776,7 @@ try
     if (collectCrashLog)
     {
         const std::optional<UInt64> fault_address = getFaultAddress(sig, info);
-        const String fault_access_type{getFaultMemoryAccessType(sig, info, *context)};
+        const String fault_access_type = getFaultMemoryAccessType(sig, *context);
         const String si_code_description = getSignalCodeDescription(sig, info.si_code);
 
         collectCrashLog(

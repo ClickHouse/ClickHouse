@@ -2,6 +2,7 @@
 #include <Client/ClientBase.h>
 #include <Client/ReplxxLineReader.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/SignalHandlers.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/filesystemHelpers.h>
@@ -434,6 +435,19 @@ void DisksApp::initializeHistoryFile()
         history_file = config().getString("history-file");
     else
         history_file = home_path + "/.disks-file-history";
+
+    if (!history_file.empty() && !fs::exists(history_file))
+    {
+        try
+        {
+            FS::createFile(history_file);
+        }
+        catch (const ErrnoException & e)
+        {
+            if (e.getErrno() != EEXIST)
+                throw;
+        }
+    }
 
     history_max_entries = config().getUInt("history-max-entries", 1000000);
 }

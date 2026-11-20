@@ -1,13 +1,9 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
-#include <Core/Defines.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Formats/ColumnNameMaps.h>
 #include <DataTypes/IDataType.h>
 #include <IO/CompressionMethod.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
-#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <generated/parquet_types.h>
 #include <Common/PODArray.h>
 
@@ -31,7 +27,6 @@ struct WriteOptions
     bool output_datetime_as_uint32 = false;
     bool output_date_as_uint16 = false;
     bool output_enum_as_byte_array = false;
-    VariantSettings variant_settings;
 
     /// Note: the meaning of some compression methods here is different from
     /// wrapReadBufferWithCompressionMethod:
@@ -41,8 +36,6 @@ struct WriteOptions
     int compression_level = 3;
 
     size_t data_page_size = 1024 * 1024;
-    /// 0 = no limit.
-    size_t data_page_row_limit = 20000;
     size_t write_batch_size = 1024;
 
     bool use_dictionary_encoding = true;
@@ -50,9 +43,6 @@ struct WriteOptions
     /// If using dictionary, this encoding is used as a fallback when dictionary gets too big.
     /// Otherwise, this is used for everything.
     parq::Encoding::type encoding = parq::Encoding::PLAIN;
-    /// Encode `FLOAT` and `DOUBLE` columns with `ALP` instead of `encoding`, without a dictionary.
-    /// See `writeColumnImpl` for the reasoning.
-    bool use_alp_encoding = false;
 
     bool write_column_chunk_statistics = true;
     bool write_page_statistics = true;
@@ -82,9 +72,6 @@ struct WriteOptions
     size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
 
     bool write_geometadata = true;
-    /// Annotate the WKB-encoded geo columns (only written if `write_geometadata`) with the
-    /// `GEOMETRY` logical type and write `GeospatialStatistics` instead of min/max statistics.
-    bool write_geometry_logical_type = false;
 
     /// Write a named `Tuple` whose element names are fields of the `FILE` logical type as a
     /// `FILE`-annotated group. See getFileLogicalTypeElementTypes.
@@ -103,8 +90,8 @@ struct IcebergOptionality
     /// dotted path and must not add a second OPTIONAL level.
     bool owned_by_enclosing_nullable = false;
 
-    [[nodiscard]] bool isOptional(const String & path) const;
-    [[nodiscard]] bool isLocalTimestamp(const String & path) const;
+    bool isOptional(const String & path) const;
+    bool isLocalTimestamp(const String & path) const;
 };
 
 /// The unfolded bloom filter is sized for all values of the column chunk and its blocks are touched
@@ -141,10 +128,6 @@ struct ColumnChunkWriteState
     int compression_level = 3;
     Int64 datetime_multiplier = 1; // for converting e.g. seconds to milliseconds
     bool is_bool = false; // bool vs UInt8 have the same column type but are encoded differently
-    /// WKB values of a column with the `GEOMETRY` logical type. Its sort order is undefined, so no
-    /// min/max statistics (and hence no column index) are written; `GeospatialStatistics` are
-    /// written instead.
-    bool is_geometry = false;
 
     /// Repetition and definition levels. Produced by prepareColumnForWrite().
     /// def is empty iff max_def == 0, which means no arrays or nullables.
@@ -164,26 +147,26 @@ struct ColumnChunkWriteState
     ColumnChunkWriteState & operator=(ColumnChunkWriteState &&) = default;
 
     /// Estimated memory usage.
-    [[nodiscard]] size_t allocatedBytes() const;
+    size_t allocatedBytes() const;
 };
 
 struct RowGroupWithIndexes
 {
     parq::RowGroup row_group;
-    VectorWithMemoryTracking<ColumnChunkIndexes> column_indexes;
+    std::vector<ColumnChunkIndexes> column_indexes;
 };
 
 struct FileWriteState
 {
-    VectorWithMemoryTracking<RowGroupWithIndexes> completed_row_groups;
+    std::vector<RowGroupWithIndexes> completed_row_groups;
     RowGroupWithIndexes current_row_group;
     size_t row_groups_with_flushed_bloom_filter = 0;
     size_t unflushed_bloom_filter_bytes = 0;
     size_t offset = 0;
 };
 
-using SchemaElements = std::vector<parq::SchemaElement>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- moved into thrift `parq::FileMetaData::schema`
-using ColumnChunkWriteStates = VectorWithMemoryTracking<ColumnChunkWriteState>;
+using SchemaElements = std::vector<parq::SchemaElement>;
+using ColumnChunkWriteStates = std::vector<ColumnChunkWriteState>;
 
 /// Parquet file consists of row groups, which consist of column chunks.
 ///
@@ -217,14 +200,14 @@ using ColumnChunkWriteStates = VectorWithMemoryTracking<ColumnChunkWriteState>;
 /// Parquet schema is a tree of SchemaElements, flattened into a list in depth-first order.
 /// Leaf nodes correspond to physical columns of primitive types. Inner nodes describe logical
 /// groupings of those columns, e.g. tuples or structs.
-SchemaElements convertSchema(const Block & sample, const WriteOptions & options, const std::optional<ColumnNameToFieldId> & column_field_ids, const IcebergOptionality & iceberg_optionality = {});
+SchemaElements convertSchema(const Block & sample, const WriteOptions & options, const std::optional<std::unordered_map<String, Int64>> & column_field_ids, const IcebergOptionality & iceberg_optionality = {});
 
 /// `iceberg_optionality` must be passed identically on the schema and the data path: the reader
 /// derives its max definition level from the schema while the writer derives the level bit width
 /// from the state produced here, so a schema-only change would desynchronize them.
 void prepareColumnForWrite(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema = nullptr, const std::optional<ColumnNameToFieldId> & column_field_ids = std::nullopt,
+    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema = nullptr, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt,
     const IcebergOptionality & iceberg_optionality = {});
 
 void writeFileHeader(FileWriteState & file, WriteBuffer & out);

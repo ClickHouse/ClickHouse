@@ -36,14 +36,13 @@ bool throwsBadArguments(auto && action)
     }
 }
 
-/// The stream of a single changed setting ends with its value as a string, followed by the empty name that ends the
-/// stream. A value below 10 is one character, just before the terminating zero byte.
+/// The binary stream of a single changed setting ends with its value as a varint; a value below 128 is one byte.
 String serializeMaxBlockSize(UInt64 value)
 {
     QueryPlanSerializationSettings settings;
     settings[QueryPlanSerializationSetting::max_block_size] = value;
     WriteBufferFromOwnString out;
-    settings.write(out);
+    settings.writeChangedBinary(out);
     return out.str();
 }
 
@@ -58,20 +57,18 @@ TEST(QueryPlanSerializationSettings, MaxBlockSizeRejectsZeroOnAssignment)
 TEST(QueryPlanSerializationSettings, MaxBlockSizeRejectsZeroOnRead)
 {
     String stream = serializeMaxBlockSize(1);
-    ASSERT_GE(stream.size(), 2u);
-    ASSERT_EQ(stream.back(), '\0');
-    ASSERT_EQ(stream[stream.size() - 2], '1');
+    ASSERT_EQ(static_cast<unsigned char>(stream.back()), 1);
 
     QueryPlanSerializationSettings valid;
     ReadBufferFromString valid_in(stream);
-    valid.read(valid_in);
+    valid.readBinary(valid_in);
     EXPECT_EQ(valid[QueryPlanSerializationSetting::max_block_size], 1u);
 
-    stream[stream.size() - 2] = '0';
+    stream.back() = 0;
     QueryPlanSerializationSettings invalid;
     EXPECT_TRUE(throwsBadArguments([&]
     {
         ReadBufferFromString in(stream);
-        invalid.read(in);
+        invalid.readBinary(in);
     }));
 }

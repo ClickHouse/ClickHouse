@@ -139,10 +139,10 @@ void HTMLForm::load(const HTTPRequest& request, std::istream& requestBody, PartH
 	clear();
 
 	URI uri(request.getURI());
-	std::string_view query = uri.getRawQuery();
+	const std::string& query = uri.getRawQuery();
 	if (!query.empty())
 	{
-		std::istringstream istr{std::string(query)};
+		std::istringstream istr(query);
 		readUrl(istr);
 	}
 

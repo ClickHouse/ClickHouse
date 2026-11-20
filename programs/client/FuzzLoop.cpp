@@ -165,10 +165,10 @@ bool Client::processASTFuzzerStep(const String & query_to_execute, const ASTPtr 
     /// crashes the server before the message can even propagate back here.
     if (have_error
         && exception->code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-        exitOnOracleMismatch(parsed_query->formatWithSecretsOneLine(), exception->message());
+        exitOnOracleMismatch(parsed_query->formatForErrorMessage(), exception->message());
     if (have_error)
     {
-        fmt::print(stderr, "Error on processing query '{}': {}\n", parsed_query->formatWithSecretsOneLine(), exception->message());
+        fmt::print(stderr, "Error on processing query '{}': {}\n", parsed_query->formatForErrorMessage(), exception->message());
     }
     return tryToReconnect(1, 10);
 }
@@ -281,7 +281,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
         ASTPtr ast_to_process;
         try
         {
-            auto base_before_fuzz = fuzz_base->formatWithSecretsOneLine();
+            auto base_before_fuzz = fuzz_base->formatForErrorMessage();
 
             ast_to_process = fuzz_base->clone();
             // Run the original query as well.
@@ -298,8 +298,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
                     query_parameters.insert_or_assign(name, value);
             }
 
-            /// The fuzzer runs the text it formats, so the secrets stay in it.
-            query_to_execute = ast_to_process->formatWithSecretsOneLine();
+            query_to_execute = ast_to_process->formatForErrorMessage();
             if (fuzz_step > 0 && query_to_execute == base_before_fuzz)
             {
                 fmt::print(stderr, "Got boring AST\n");
@@ -339,7 +338,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
                     /// Dump into /dev/null, we are not interested in sending the results back to the client
                     insert_into->select = ast_to_process;
                     ast_to_process = insert_into;
-                    query_to_execute = ast_to_process->formatWithSecretsOneLine();
+                    query_to_execute = ast_to_process->formatForErrorMessage();
                 }
                 else
                 {
@@ -352,7 +351,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             /// `base_after_fuzz` should format from `ast_to_process`
             WriteBufferFromOwnString dump_before_fuzz;
             fuzz_base->dumpTree(dump_before_fuzz);
-            auto base_after_fuzz = fuzz_base->formatWithSecretsOneLine();
+            auto base_after_fuzz = fuzz_base->formatForErrorMessage();
 
             // Check that the source AST didn't change after fuzzing. This
             // helps debug AST cloning errors, where the cloned AST doesn't
@@ -484,7 +483,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             fuzzer.notifyQueryFailed(ast_to_process);
             have_error = false;
         }
-        else if (ast_to_process->formatWithSecretsOneLine().size() > 2000)
+        else if (ast_to_process->formatForErrorMessage().size() > 2000)
         {
             // ast too long, start from original ast
             fmt::print(stderr, "Current AST is too long, discarding it and using the original AST as a start\n");
@@ -520,7 +519,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
 
         try
         {
-            query_to_execute = query->formatWithSecretsOneLine();
+            query_to_execute = query->formatForErrorMessage();
             const auto res = processASTFuzzerStep(query_to_execute, query);
             if (!res)
                 return res;
@@ -949,8 +948,7 @@ bool Client::buzzHouse()
                          BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::DO_NOTHING;
 
                          rg.pickWeighted(
-                             /// `OPTIMIZE` drops all-zero `SummingMergeTree` rows that `SELECT ... FINAL` keeps
-                             {{15 * static_cast<uint32_t>(test_content && tbl.get().can_run_merges && !tbl.get().isSummingMergeTree(true)),
+                             {{15 * static_cast<uint32_t>(test_content && tbl.get().can_run_merges),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::OPTIMIZE; }},
                               {25 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::REATTACH; }},
                               {10 * static_cast<uint32_t>(fuzz_config->enable_backups && test_content),
@@ -1028,8 +1026,6 @@ bool Client::buzzHouse()
                                  BuzzHouse::SQLQueryToString(full_query, reload);
                                  fuzz_config->outf << full_query << std::endl;
                                  server_up &= processBuzzHouseQuery(full_query);
-                                 /// A failed reload keeps the previous version, which a reattach then drops.
-                                 qo.setIntermediateStepSuccess(!have_error);
                              },
                              [&](auto s)
                              { qo.dumpObjectIntermediateSteps(rg, gen, dict, BuzzHouse::SQLObject::DICTIONARY, s, intermediate_queries); },
