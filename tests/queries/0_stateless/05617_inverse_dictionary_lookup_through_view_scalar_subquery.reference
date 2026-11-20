@@ -4,3 +4,12 @@ attribute selected by a scalar subquery
 dictionary selected by a scalar subquery
 2
 2
+attribute of generic dictGet selected by a scalar subquery
+2
+2
+dictionary of generic dictGet selected by a scalar subquery
+2
+2
+scalar subquery outside of the column definition
+2
+2

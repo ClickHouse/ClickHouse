@@ -26,6 +26,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/Set.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -40,6 +41,12 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageView.h>
 #include <TableFunctions/ITableFunction.h>
+
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWithElement.h>
 
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
@@ -164,6 +171,59 @@ void collectRowPreservingTableExpressions(const QueryTreeNodePtr & node, std::un
     }
 }
 
+/// A view's inner query is resolved for inspection only (`QueryAnalyzer` with `only_analyze`), separately
+/// from the analysis done when the view is read. The definition is usable only if both agree on which
+/// dictionary and attribute every `dictGet` reads, and this is decided by the definition itself, before
+/// it is resolved. Two things make it unusable:
+///
+/// - A scalar subquery. It is not executed for inspection, but replaced by a placeholder holding the
+///   default value of its type (see `evaluateScalarSubqueryIfNeeded`). The placeholder does not describe
+///   what the view reads, and resolving an expression that depends on it can even throw: generic `dictGet`
+///   needs the dictionary to infer its return type, and fails on the placeholder dictionary name.
+///   A subquery is not scalar if it is a table expression, a CTE, or the set of an `IN` operator.
+///
+/// - A `dictGet` whose dictionary or attribute name is not a string literal. Each analysis folds such
+///   an expression on its own, so if it is not deterministic (`randConstant`, `now`) the rewritten filter
+///   can select the keys by another attribute than the one the view projects. The resolved tree cannot
+///   tell this reliably: the analyzer replaces a dictionary name by its database-qualified form, which
+///   drops the expression the name was folded from.
+bool dependsOnInspectionTimeValue(const ASTPtr & ast)
+{
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        if (isSupportedDictGetFunction(function->name))
+        {
+            if (!function->arguments || function->arguments->children.size() < 2)
+                return true;
+
+            for (size_t i = 0; i < 2; ++i)
+            {
+                const auto * literal = function->arguments->children[i]->as<ASTLiteral>();
+                if (!literal || literal->value.getType() != Field::Types::String)
+                    return true;
+            }
+        }
+        else if (functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() == 2)
+        {
+            const auto & arguments = function->arguments->children;
+            if (arguments[0]->as<ASTSubquery>() || dependsOnInspectionTimeValue(arguments[0]))
+                return true;
+            return dependsOnInspectionTimeValue(arguments[1]);
+        }
+    }
+
+    const bool children_are_table_subqueries = ast->as<ASTTableExpression>() || ast->as<ASTWithElement>();
+    for (const auto & child : ast->children)
+    {
+        if (!children_are_table_subqueries && child->as<ASTSubquery>())
+            return true;
+        if (dependsOnInspectionTimeValue(child))
+            return true;
+    }
+
+    return false;
+}
+
 /// Resolving a view's inner query (buildQueryTree + full QueryAnalyzer::resolve) is expensive, and
 /// enterImpl below is invoked once per allowed comparison node, so the same view can be inspected
 /// many times over for a single outer query (e.g. `WHERE a = 1 AND b = 2 AND c = 3`). Memoize by
@@ -189,26 +249,27 @@ tryResolveViewInnerQueryForInspection(const TableNode & table_node, const Contex
     {
         auto view_context = StorageView::getViewSubqueryContext(context, storage_snapshot);
 
-        ASTPtr view_ast = storage_snapshot->metadata->getSelectQuery().inner_query->clone();
-        QueryTreeNodePtr view_query_tree = buildQueryTree(view_ast, view_context);
+        const auto & inner_query = storage_snapshot->metadata->getSelectQuery().inner_query;
+        if (!dependsOnInspectionTimeValue(inner_query))
+        {
+            QueryTreeNodePtr view_query_tree = buildQueryTree(inner_query->clone(), view_context);
 
-        QueryAnalyzer view_analyzer(/*only_analyze_=*/true);
-        view_analyzer.resolve(view_query_tree, {}, view_context);
+            QueryAnalyzer view_analyzer(/*only_analyze_=*/true);
+            view_analyzer.resolve(view_query_tree, {}, view_context);
 
-        if (view_query_tree->as<QueryNode>())
-            result = view_query_tree;
+            if (view_query_tree->as<QueryNode>())
+                result = view_query_tree;
+        }
     }
 
     cache.emplace(&table_node, result);
     return result;
 }
 
-/// A view's inner query is resolved for inspection only (`QueryAnalyzer` with `only_analyze`), so its
-/// scalar subqueries are not executed: each one is replaced by a placeholder holding the default value
-/// of its type (see `evaluateScalarSubqueryIfNeeded`). A defining expression that depends on such a
-/// placeholder, e.g. a dictionary or attribute name selected by a scalar subquery, does not describe
-/// what the view reads at execution. Constant folding keeps the folded expression as the source
-/// expression of the resulting `ConstantNode`, so look through it as well.
+/// A subquery nested inside an inspected view is resolved for inspection only as well, and the view's
+/// definition is checked for scalar subqueries before it is resolved (see `dependsOnInspectionTimeValue`).
+/// This is the same check on the resolved defining expression of a column. Constant folding keeps the
+/// folded expression as the source expression of the resulting `ConstantNode`, so look through it as well.
 bool dependsOnScalarSubquery(const QueryTreeNodePtr & node)
 {
     if (!node)
