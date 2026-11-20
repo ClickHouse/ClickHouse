@@ -37,6 +37,14 @@ SETTINGS use_with_fill_by_sorting_prefix = 0;
 SELECT * FROM values('a Nullable(Int64), b Nullable(Int64)', (0, 1), (2, 3), (NULL, 4))
 ORDER BY a ASC NULLS LAST WITH FILL FROM 1, b WITH FILL;
 
+-- A filling row moved by STALENESS is not in the result yet and is still inserted
+SELECT * FROM values('a Int64, o Int64, b Int64', (1, 2, 0), (1, 2, 3), (1, 0, 1), (2, 0, 4))
+ORDER BY a WITH FILL, o DESC, b WITH FILL STEP 2 STALENESS 2;
+
+-- A STALENESS jump that does not move the filling row keeps it in the result
+SELECT * FROM values('a Int64, o Int64, b Int64', (1, 2, 2), (1, 1, 3), (1, 0, 1), (2, 0, 4))
+ORDER BY a WITH FILL, o DESC, b WITH FILL STEP 2 STALENESS 2;
+
 SELECT DISTINCT i FROM
 (
     SELECT * FROM values('i Nullable(Int64), k Int64', (1, 0), (3, 5), (NULL, -1), (NULL, 2))
