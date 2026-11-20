@@ -37,7 +37,7 @@ INSERT INTO lc_single_dict_repro
         if(intDiv(number, 32) % 2 = 0, 1, 0)
     FROM numbers(128 * 1024);
 
-SELECT 'parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 'lc_single_dict_repro' AND active;
+OPTIMIZE TABLE lc_single_dict_repro FINAL;
 "
 
 $CLICKHOUSE_CLIENT -q "

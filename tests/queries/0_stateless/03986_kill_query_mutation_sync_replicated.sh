@@ -53,21 +53,21 @@ alter_pid=$!
 
 wait_for_query_to_start "$query_id"
 
-# wait_for_query_to_start only proves the foreground ALTER reached system.processes. A non-empty
-# system.mutations.parts_in_progress_names means this mutation has a part queued for mutation, which
-# cannot happen before the ALTER created its mutation node, so the ALTER is in or entering the wait
-# that KILL QUERY has to cancel.
+# wait_for_query_to_start only proves the foreground ALTER reached system.processes; the
+# background mutation may still be queued at that point. Wait for an unambiguous "a part is
+# actively mutating" signal (system.mutations.parts_in_progress_names non-empty for this table)
+# so KILL QUERY lands in the middle of mutation execution, not while it is still queued.
 in_progress=0
 for _ in $(seq 1 600); do
     in_progress=$($CLICKHOUSE_CLIENT --query "
-        SELECT count() > 0 FROM system.mutations
+        SELECT count() FROM system.mutations
         WHERE database = '${CLICKHOUSE_DATABASE}' AND table = 't_kill_mutation'
           AND is_done = 0 AND notEmpty(parts_in_progress_names)
         SETTINGS use_query_cache = 0")
-    [[ "$in_progress" == "1" ]] && break
+    [[ "$in_progress" != "0" ]] && break
     sleep 0.1
 done
-if [[ "$in_progress" != "1" ]]; then
+if [[ "$in_progress" == "0" ]]; then
     echo "Mutation never entered an in-flight state (parts_in_progress_names stayed empty)" >&2
     exit 1
 fi

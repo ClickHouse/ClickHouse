@@ -10,7 +10,7 @@ namespace DB
 class ParserStreamSettings : public IParserBase
 {
 public:
-    [[nodiscard]] const char * getName() const override { return "STREAM Settings"; }
+    const char * getName() const override { return "STREAM Settings"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

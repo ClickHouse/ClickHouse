@@ -100,10 +100,9 @@ public:
     /// the path inherited from the collection, unless the operator marked that path as not overridable.
     static mysqlxx::SSLParams getSSLParams(const NamedCollection & named_collection);
 
-    /// Peels the trailing `ssl_ca_pem = '...'`, `ssl_cert_pem = '...'`, `ssl_key_pem = '...'` and
-    /// `ssl_key_passphrase = '...'` arguments off a positional argument list (the form without a named
-    /// collection) and removes them from `arguments`, so that the caller sees only the positional
-    /// arguments it knows about.
+    /// Peels the trailing `ssl_ca_pem = '...'`, `ssl_cert_pem = '...'` and `ssl_key_pem = '...'`
+    /// arguments off a positional argument list (the form without a named collection) and removes them
+    /// from `arguments`, so that the caller sees only the positional arguments it knows about.
     /// A path (`ssl_ca`, `ssl_cert`, `ssl_key`) is rejected here: it is only accepted from a named
     /// collection defined in the server configuration file, see `getSSLParams`.
     static mysqlxx::SSLParams extractSSLParamsFromArguments(ASTs & arguments, ContextPtr context_);
@@ -143,9 +142,9 @@ public:
     ReadFromMySQLStep(const ReadFromMySQLStep &) = default;
     ReadFromMySQLStep(ReadFromMySQLStep &&) = default;
 
-    [[nodiscard]] String getName() const override { return "ReadFromMySQL"; }
+    String getName() const override { return "ReadFromMySQL"; }
 
-    [[nodiscard]] QueryPlanStepPtr clone() const override
+    QueryPlanStepPtr clone() const override
     {
         return std::make_unique<ReadFromMySQLStep>(*this);
     }
