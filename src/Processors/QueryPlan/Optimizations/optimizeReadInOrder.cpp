@@ -1504,7 +1504,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
     return order_info;
 }
 
-/// `reads_by_values` is set if the storage reads every value of the first sorting key column by its own streams.
+/// Every value of the first sorting key column is read by its own streams only if `reads_by_values` is passed; it is set to true then.
 InputOrderInfoPtr buildInputOrderInfo(
     SortingStep & sorting,
     bool & apply_virtual_row,
@@ -1570,8 +1570,8 @@ InputOrderInfoPtr buildInputOrderInfo(
         if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.traversed_joins.empty())
             return nullptr;
 
-        /// Reading the values of a literal set by separate streams is not supported through a join.
-        const bool allow_split_by_values = find_reading_ctx.traversed_joins.empty();
+        /// Reading the values of a literal set by separate streams is done only if the caller asks for it, and not through a join.
+        const bool allow_split_by_values = reads_by_values && find_reading_ctx.traversed_joins.empty();
         auto order_info = buildInputOrderFromSortDescription(
             reading,
             fixed_columns,
@@ -2121,7 +2121,8 @@ InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
     return order_info.input_order;
 }
 
-void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+void optimizeReadInOrder(
+    QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings, bool allow_split_by_values)
 {
     if (node.children.size() != 1)
         return;
@@ -2167,10 +2168,19 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         }
 
         VectorWithMemoryTracking<ReadFromMergeTree *> virtual_row_readers;
+        bool any_child_reads_by_values = false;
         for (auto * child : union_node->children)
         {
             ReadFromMergeTree * child_virtual_row_reader = nullptr;
-            infos.push_back(buildInputOrderInfo(*sorting, apply_virtual_row, child_virtual_row_reader, *child, optimization_settings));
+            bool child_reads_by_values = false;
+            infos.push_back(buildInputOrderInfo(
+                *sorting,
+                apply_virtual_row,
+                child_virtual_row_reader,
+                *child,
+                optimization_settings,
+                allow_split_by_values ? &child_reads_by_values : nullptr));
+            any_child_reads_by_values |= child_reads_by_values;
             if (child_virtual_row_reader)
                 virtual_row_readers.push_back(child_virtual_row_reader);
 
@@ -2239,10 +2249,18 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         /// FinishSorting's `MergingSortedTransform` requires every input stream of the union
         /// to be sorted by `max_sort_descr`; the union must not concatenate (narrow) them.
         union_step->disableNarrowing();
+        /// Not with the streams of the values of the first key column, as below.
+        if (any_child_reads_by_values)
+            use_buffering = false;
         sorting->convertToFinishSorting(*max_sort_descr, use_buffering, apply_virtual_row);
     }
-    else if (bool reads_by_values = false;
-             auto order_info = buildInputOrderInfo(*sorting, apply_virtual_row, virtual_row_reader, *node.children.front(), optimization_settings, &reads_by_values))
+    else if (bool reads_by_values = false; auto order_info = buildInputOrderInfo(
+                 *sorting,
+                 apply_virtual_row,
+                 virtual_row_reader,
+                 *node.children.front(),
+                 optimization_settings,
+                 allow_split_by_values ? &reads_by_values : nullptr))
     {
         /// Use buffering only if have filter or don't have limit.
         /// Not with the streams of the values of the first key column: each of them would read a block ahead,

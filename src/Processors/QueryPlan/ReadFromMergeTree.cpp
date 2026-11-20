@@ -4793,7 +4793,7 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         if (!query_limit || query_info.input_order_info || prefix_size < 2 || isQueryWithFinal() || is_parallel_reading_from_replicas
             || output_each_partition_through_separate_port || context->getSettingsRef()[Setting::make_distributed_plan]
             || !context->getSettingsRef()[Setting::read_in_order_in_set_max_streams]
-            || storage_snapshot->metadata->getPrimaryKey().column_names.empty())
+            || storage_snapshot->metadata->getPrimaryKey().column_names.empty() || !projection_index_read_desc.read_ranges.empty())
             return false;
 
         const auto analysis = analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead();

@@ -37,26 +37,35 @@ SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_or
 WHERE explain ILIKE '%Read in order by values%' OR explain ILIKE '%ReadType%' OR explain ILIKE '%Prefix sort description%';
 SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order WHERE v = 7 AND k IN ('1', '3', '5') ORDER BY v, cityHash64(ts) LIMIT 10 SETTINGS read_in_order_in_set_max_streams = 0)
 WHERE explain ILIKE '%Read in order by values%' OR explain ILIKE '%ReadType%' OR explain ILIKE '%Prefix sort description%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, v FROM t_in_set_order WHERE k IN ('0', '1', '2', '3', '4', '5', '6', 'none') ORDER BY ts LIMIT 500)
+WHERE explain ILIKE '%Read in order by values%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', '2') AND v % 3 = 0 ORDER BY ts DESC LIMIT 40)
+WHERE explain ILIKE '%Read in order by values%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT ts, v FROM t_in_set_order WHERE k IN ('2', '4') ORDER BY ts LIMIT 30 SETTINGS max_block_size = 7)
+WHERE explain ILIKE '%Read in order by values%';
+-- WITH TIES keeps the usual plan.
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', 'x', 'y') ORDER BY ts LIMIT 5 WITH TIES)
+WHERE explain ILIKE '%Read in order by values%';
 
 SELECT 'results';
 SELECT
     (SELECT groupArray((k, ts, v)) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', '3', '5') ORDER BY ts DESC LIMIT 25))
-  = (SELECT groupArray((k, ts, v)) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', '3', '5') ORDER BY ts DESC LIMIT 25 SETTINGS optimize_read_in_order = 0));
+  = (SELECT groupArray((k, ts, v)) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', '3', '5') ORDER BY ts DESC LIMIT 25) SETTINGS optimize_read_in_order = 0);
 SELECT
     (SELECT groupArray((k, ts, v)) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('0', '1', '2', '3', '4', '5', '6', 'none') ORDER BY ts LIMIT 500))
-  = (SELECT groupArray((k, ts, v)) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('0', '1', '2', '3', '4', '5', '6', 'none') ORDER BY ts LIMIT 500 SETTINGS optimize_read_in_order = 0));
+  = (SELECT groupArray((k, ts, v)) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('0', '1', '2', '3', '4', '5', '6', 'none') ORDER BY ts LIMIT 500) SETTINGS optimize_read_in_order = 0);
 SELECT
     (SELECT groupArray((k, ts, v)) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', '2') AND v % 3 = 0 ORDER BY ts DESC LIMIT 40))
-  = (SELECT groupArray((k, ts, v)) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', '2') AND v % 3 = 0 ORDER BY ts DESC LIMIT 40 SETTINGS optimize_read_in_order = 0));
+  = (SELECT groupArray((k, ts, v)) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', '2') AND v % 3 = 0 ORDER BY ts DESC LIMIT 40) SETTINGS optimize_read_in_order = 0);
 SELECT
-    (SELECT groupArray((ts, v)) FROM (SELECT ts, v FROM t_in_set_order WHERE k IN ('2', '4') ORDER BY ts LIMIT 30 SETTINGS max_block_size = 7))
-  = (SELECT groupArray((ts, v)) FROM (SELECT ts, v FROM t_in_set_order WHERE k IN ('2', '4') ORDER BY ts LIMIT 30 SETTINGS optimize_read_in_order = 0));
+    (SELECT groupArray((ts, v)) FROM (SELECT ts, v FROM t_in_set_order WHERE k IN ('2', '4') ORDER BY ts LIMIT 30) SETTINGS max_block_size = 7)
+  = (SELECT groupArray((ts, v)) FROM (SELECT ts, v FROM t_in_set_order WHERE k IN ('2', '4') ORDER BY ts LIMIT 30) SETTINGS optimize_read_in_order = 0, max_block_size = 7);
 SELECT
     (SELECT groupArray((k, ts, v)) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', '3', '5') ORDER BY ts LIMIT 5, 20))
-  = (SELECT groupArray((k, ts, v)) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', '3', '5') ORDER BY ts LIMIT 5, 20 SETTINGS optimize_read_in_order = 0));
+  = (SELECT groupArray((k, ts, v)) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', '3', '5') ORDER BY ts LIMIT 5, 20) SETTINGS optimize_read_in_order = 0);
 SELECT
     (SELECT arraySort(groupArray((k, ts, v))) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', 'x', 'y') ORDER BY ts LIMIT 5 WITH TIES))
-  = (SELECT arraySort(groupArray((k, ts, v))) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', 'x', 'y') ORDER BY ts LIMIT 5 WITH TIES SETTINGS optimize_read_in_order = 0));
+  = (SELECT arraySort(groupArray((k, ts, v))) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', 'x', 'y') ORDER BY ts LIMIT 5 WITH TIES) SETTINGS optimize_read_in_order = 0);
 
 SELECT 'filter column name';
 -- A column of the read with the name of the per-stream filter column.
@@ -86,6 +95,19 @@ SELECT
     (SELECT groupArray((__read_in_order_key_value_filter, ts)) FROM (SELECT __read_in_order_key_value_filter, ts FROM t_in_set_order_key_name WHERE __read_in_order_key_value_filter IN ('1', '2') ORDER BY ts LIMIT 20))
   = (SELECT groupArray((__read_in_order_key_value_filter, ts)) FROM (SELECT __read_in_order_key_value_filter, ts FROM t_in_set_order_key_name WHERE __read_in_order_key_value_filter IN ('1', '2') ORDER BY ts LIMIT 20) SETTINGS optimize_read_in_order = 0);
 
+SELECT 'projection';
+DROP TABLE IF EXISTS t_in_set_order_proj;
+CREATE TABLE t_in_set_order_proj (k String, ts UInt64, v UInt64, PROJECTION p (SELECT * ORDER BY v))
+ENGINE = MergeTree ORDER BY (k, ts) SETTINGS index_granularity = 16, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_in_set_order_proj SELECT toString(number % 3), number, intDiv(number, 100) FROM numbers(30000);
+-- A projection reading fewer granules is chosen as without the split; without it the split is taken.
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, v FROM t_in_set_order_proj WHERE k IN ('1', '2') AND v = 1 ORDER BY ts LIMIT 2 SETTINGS optimize_use_projections = 1)
+WHERE explain ILIKE '%Read in order by values%';
+SELECT k, ts, v FROM t_in_set_order_proj WHERE k IN ('1', '2') AND v = 1 ORDER BY ts LIMIT 2 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, v FROM t_in_set_order_proj WHERE k IN ('1', '2') ORDER BY ts LIMIT 2 SETTINGS optimize_use_projections = 1)
+WHERE explain ILIKE '%Read in order by values%';
+
 DROP TABLE t_in_set_order_name;
 DROP TABLE t_in_set_order_key_name;
+DROP TABLE t_in_set_order_proj;
 DROP TABLE t_in_set_order;
