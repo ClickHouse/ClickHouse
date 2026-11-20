@@ -2797,7 +2797,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         Field max_value;
         bool initialized = false;
     };
-    std::vector<std::vector<PartitionMinMax>> partition_minmax;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<PartitionMinMax>> partition_minmax;
 
     /// If do_not_merge_across_partitions_select_final is true and num_streams > 1
     /// we will store lonely parts with level > 0 to use parallel select on them.
@@ -3130,7 +3130,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         /// (used by sequential partition optimization later).
         if (num_minmax_columns > 0)
         {
-            std::vector<PartitionMinMax> per_col(num_minmax_columns);
+            VectorWithMemoryTracking<PartitionMinMax> per_col(num_minmax_columns);
             for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)
             {
                 const auto & part = part_it->data_part;
@@ -3290,7 +3290,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         if (minmax_col_index)
         {
             /// Create sort permutation of partitions by their min values.
-            std::vector<size_t> perm(merging_pipes.size());
+            VectorWithMemoryTracking<size_t> perm(merging_pipes.size());
             std::iota(perm.begin(), perm.end(), 0);
 
             const size_t mm_idx = *minmax_col_index;
