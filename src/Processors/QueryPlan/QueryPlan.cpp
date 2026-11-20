@@ -422,7 +422,7 @@ JSONBuilder::ItemPtr QueryPlan::explainPlanSteps(const ExplainPlanOptions & opti
     auto steps = std::make_unique<JSONBuilder::JSONArray>();
 
     /// Pre-order: the inputs of a node and then its nested plans are pushed in reverse, so they are popped in order.
-    std::vector<const Node *> stack{root};
+    VectorWithMemoryTracking<const Node *> stack{root};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -1026,7 +1026,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     if (effective_settings.remove_redundant_sorting)
         QueryPlanOptimizations::tryRemoveRedundantSorting(root);
 
-    QueryPlanOptimizations::optimizeTreeFirstPass(effective_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTreeFirstPass(effective_settings, *root, nodes, *this);
     QueryPlanOptimizations::optimizeTreeSecondPass(effective_settings, *root, nodes, *this);
 
     /// Defer set/CTE expansion: a distributed plan builds the sets on the initiator and ships
@@ -1352,6 +1352,21 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
 //         if (!used.contains(node))
 //             throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} {} is not used", node->step->getName(), reinterpret_cast<const void *>(node));
 // }
+
+QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes, const QueryPlan & source_plan)
+{
+    auto new_plan = extractSubplan(root, nodes);
+
+    /// The subplan may be executed after `source_plan` has been consumed into a pipeline (e.g. the
+    /// right side of a `JOIN` converted to `IN` is built later as a set), so it must keep the same
+    /// execution limits and hold the same table locks, storage holders and interpreter contexts.
+    /// append copies the shared handles, so ownership is only shared, never moved out of the source.
+    new_plan.max_threads = source_plan.max_threads;
+    new_plan.concurrency_control = source_plan.concurrency_control;
+    new_plan.resources.append(source_plan.resources);
+
+    return new_plan;
+}
 
 QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes)
 {

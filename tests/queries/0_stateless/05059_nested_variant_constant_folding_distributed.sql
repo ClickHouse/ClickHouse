@@ -72,32 +72,54 @@ DROP TABLE t_variant_const_pushdown;
 -- The `OR`-to-`IN` rewrite builds the constant with its enclosing cast suppressed, so the member type has
 -- to be named there too, and the `DateTime` sibling has to keep crossing as a raw timestamp: as local
 -- date-time text it would be re-parsed an hour early in the DST overlap and the row below would be missed
--- through a secondary server while still matching on a single node. The `Variant` sits in an `Array`: a
--- tuple member that can hold NULL (`Variant` itself) makes the rewrite decline, because tuple `equals`
--- propagates the member's NULL while set membership does not.
+-- through a secondary server while still matching on a single node. The rewrite declines a `Variant`
+-- expression, and a tuple constant with a `Variant` member (it can hold NULL, which tuple `equals`
+-- propagates while set membership does not), so the two properties are checked on separate chains.
 DROP TABLE IF EXISTS t_variant_const_or_in;
-CREATE TABLE t_variant_const_or_in (x Tuple(DateTime('Europe/Berlin'), Array(Variant(UInt64)))) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_variant_const_or_in VALUES ((1698541800, [42])), ((1698538200, [41]));
+CREATE TABLE t_variant_const_or_in (x Tuple(DateTime('Europe/Berlin'), UInt64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_variant_const_or_in VALUES ((1698541800, 42)), ((1698538200, 41));
 
 SELECT count()
 FROM remote('127.0.0.1', currentDatabase(), t_variant_const_or_in)
-WHERE x = (toDateTime(1698541800, 'Europe/Berlin'), [42::UInt64::Variant(UInt64)])
-   OR x = (toDateTime(1000000000, 'Europe/Berlin'), [1::UInt64::Variant(UInt64)])
-   OR x = (toDateTime(1100000000, 'Europe/Berlin'), [2::UInt64::Variant(UInt64)])
+WHERE x = (toDateTime(1698541800, 'Europe/Berlin'), 42)
+   OR x = (toDateTime(1000000000, 'Europe/Berlin'), 1)
+   OR x = (toDateTime(1100000000, 'Europe/Berlin'), 2)
 SETTINGS prefer_localhost_replica = 0, optimize_min_equality_disjunction_chain_length = 3;
 
--- `count` stays 1 if the rewrite declines and each equality keeps its own cast, so assert the rewritten
--- predicate too: the `IN`, the named member and the `DateTime` sibling's raw timestamp together.
-SELECT countIf(explain ILIKE '%in(__table1.x, tuple(tuple(1698541800, array(_CAST(_CAST(42, ''UInt64''), ''Variant(UInt64)''%')
+-- `count` stays 1 if the rewrite declines, so assert the rewritten predicate too: the `IN` and the
+-- `DateTime` sibling's raw timestamp together.
+SELECT countIf(explain ILIKE '%in(__table1.x, ((1698541800, 42)%')
 FROM
 (
     EXPLAIN SYNTAX run_query_tree_passes = 1
     SELECT count()
     FROM remote('127.0.0.1', currentDatabase(), t_variant_const_or_in)
-    WHERE x = (toDateTime(1698541800, 'Europe/Berlin'), [42::UInt64::Variant(UInt64)])
-       OR x = (toDateTime(1000000000, 'Europe/Berlin'), [1::UInt64::Variant(UInt64)])
-       OR x = (toDateTime(1100000000, 'Europe/Berlin'), [2::UInt64::Variant(UInt64)])
+    WHERE x = (toDateTime(1698541800, 'Europe/Berlin'), 42)
+       OR x = (toDateTime(1000000000, 'Europe/Berlin'), 1)
+       OR x = (toDateTime(1100000000, 'Europe/Berlin'), 2)
     SETTINGS prefer_localhost_replica = 0, optimize_min_equality_disjunction_chain_length = 3
 );
 
 DROP TABLE t_variant_const_or_in;
+
+-- Only the constants carry the `Variant`, so the rewrite fires and the `IN` constant names the member type.
+DROP TABLE IF EXISTS t_variant_const_or_in_member;
+CREATE TABLE t_variant_const_or_in_member (x UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_variant_const_or_in_member VALUES (42), (41);
+
+SELECT count()
+FROM remote('127.0.0.1', currentDatabase(), t_variant_const_or_in_member)
+WHERE x = 42::UInt64::Variant(UInt64) OR x = 1::UInt64::Variant(UInt64) OR x = 2::UInt64::Variant(UInt64)
+SETTINGS prefer_localhost_replica = 0, optimize_min_equality_disjunction_chain_length = 3;
+
+SELECT countIf(explain ILIKE '%in(__table1.x, tuple(_CAST(_CAST(42, ''UInt64''), ''Variant(UInt64)'')%')
+FROM
+(
+    EXPLAIN SYNTAX run_query_tree_passes = 1
+    SELECT count()
+    FROM remote('127.0.0.1', currentDatabase(), t_variant_const_or_in_member)
+    WHERE x = 42::UInt64::Variant(UInt64) OR x = 1::UInt64::Variant(UInt64) OR x = 2::UInt64::Variant(UInt64)
+    SETTINGS prefer_localhost_replica = 0, optimize_min_equality_disjunction_chain_length = 3
+);
+
+DROP TABLE t_variant_const_or_in_member;

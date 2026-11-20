@@ -26,6 +26,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/castTypeToEither.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -49,6 +50,7 @@ namespace ProfileEvents
     extern const Event RuntimeFilterRowsPassed;
     extern const Event RuntimeFilterRowsSkipped;
     extern const Event RuntimeFilterBloomFilterBuildsSkipped;
+    extern const Event RuntimeFilterDenseBitsetsBuilt;
 }
 
 namespace DB
@@ -328,6 +330,33 @@ void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch &&
         process_batch(hash_pairs.data(), batch_size, start_row);
         start_row += batch_size;
     }
+}
+
+using DenseBitsetKeyDataTypes = TypeList<DataTypeUInt8, DataTypeUInt16, DataTypeInt8, DataTypeInt16>;
+
+/// Calls `op` with the keys of `column`, which must be a column of `type`.
+template <typename Op>
+void visitDenseBitsetKeys(const DataTypePtr & type, const ColumnPtr & column, Op && op)
+{
+    const ColumnPtr full_column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+    const bool visited = castTypeToEither(DenseBitsetKeyDataTypes{}, type.get(), [&](const auto & data_type)
+    {
+        const auto * typed_column = typeid_cast<const typename std::decay_t<decltype(data_type)>::ColumnType *>(full_column.get());
+        if (!typed_column)
+            return false;
+        op(typed_column->getData());
+        return true;
+    });
+    if (!visited)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Unexpected column {} of type {} in a dense bitset runtime filter", column->getName(), type->getName());
+}
+
+/// The bit of a key is its value as an unsigned integer of the same width.
+template <typename T>
+size_t denseBitsetIndex(T key)
+{
+    return static_cast<std::make_unsigned_t<T>>(key);
 }
 
 template <typename... Ts>
@@ -619,6 +648,72 @@ ApproximateSetRuntimeFilter ApproximateSetRuntimeFilter::deserialize(ReadBuffer 
     return filter;
 }
 
+bool DenseBitsetRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
+{
+    return castTypeToEither(DenseBitsetKeyDataTypes{}, data_type.get(), [](const auto &) { return true; });
+}
+
+DenseBitsetRuntimeFilter::DenseBitsetRuntimeFilter(const DataTypePtr & filter_column_target_type_)
+    : filter_column_target_type(filter_column_target_type_)
+    , words((1ULL << (8 * filter_column_target_type_->getSizeOfValueInMemory())) / 64, 0)
+{
+    chassert(isDataTypeSupported(filter_column_target_type));
+}
+
+void DenseBitsetRuntimeFilter::insert(const ColumnPtr & values)
+{
+    visitDenseBitsetKeys(filter_column_target_type, values, [&](const auto & keys)
+    {
+        for (const auto key : keys)
+        {
+            const size_t index = denseBitsetIndex(key);
+            words[index / 64] |= 1ULL << (index % 64);
+        }
+    });
+}
+
+void DenseBitsetRuntimeFilter::mergeFrom(const DenseBitsetRuntimeFilter & source)
+{
+    chassert(words.size() == source.words.size());
+    for (size_t i = 0; i < words.size(); ++i)
+        words[i] |= source.words[i];
+}
+
+ColumnPtr DenseBitsetRuntimeFilter::find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const
+{
+    auto result = ColumnUInt8::create(values.column->size());
+    auto & result_data = result->getData();
+    size_t passed = 0;
+    visitDenseBitsetKeys(filter_column_target_type, values.column, [&](const auto & keys)
+    {
+        for (size_t row = 0; row < keys.size(); ++row)
+        {
+            const size_t index = denseBitsetIndex(keys[row]);
+            const UInt8 found = (words[index / 64] >> (index % 64)) & 1;
+            result_data[row] = found;
+            passed += found;
+        }
+    });
+    rows_passed = passed;
+    return result;
+}
+
+ColumnPtr DenseBitsetRuntimeFilter::getValuesColumn() const
+{
+    ColumnPtr result;
+    castTypeToEither(DenseBitsetKeyDataTypes{}, filter_column_target_type.get(), [&](const auto & data_type)
+    {
+        using DataType = std::decay_t<decltype(data_type)>;
+        auto keys = DataType::ColumnType::create();
+        for (size_t word_index = 0; word_index < words.size(); ++word_index)
+            for (UInt64 word = words[word_index]; word != 0; word &= word - 1)
+                keys->insertValue(static_cast<typename DataType::FieldType>(word_index * 64 + std::countr_zero(word)));
+        result = std::move(keys);
+        return true;
+    });
+    return result;
+}
+
 bool AdaptiveSetRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
 {
     return ApproximateSetRuntimeFilter::isDataTypeSupported(data_type);
@@ -642,6 +737,7 @@ AdaptiveSetRuntimeFilter::AdaptiveSetRuntimeFilter(
 
 void AdaptiveSetRuntimeFilter::boundExactSetByKeyBytes()
 {
+    dense_bitset_allowed = false;
     if (auto * exact_filter = std::get_if<ExactFilter>(&filter))
         exact_filter->boundKeyBytes();
 }
@@ -666,6 +762,12 @@ void AdaptiveSetRuntimeFilter::insert(ColumnPtr values, Filter & filter_)
         return;
     }
 
+    if (auto * bitset_filter = std::get_if<DenseBitsetRuntimeFilter>(&filter_))
+    {
+        bitset_filter->insert(values);
+        return;
+    }
+
     auto * exact_filter = std::get_if<ExactFilter>(&filter_);
     if (!exact_filter || exact_filter->isFull())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of AdaptiveSetRuntimeFilter");
@@ -673,7 +775,23 @@ void AdaptiveSetRuntimeFilter::insert(ColumnPtr values, Filter & filter_)
     exact_filter->insert(std::move(values));
 
     if (exact_filter->isFull())
+        switchFromExactFilter(filter_);
+}
+
+void AdaptiveSetRuntimeFilter::switchFromExactFilter(Filter & filter_)
+{
+    if (dense_bitset_allowed && DenseBitsetRuntimeFilter::isDataTypeSupported(filter_column_target_type))
+        switchToDenseBitset(filter_);
+    else
         switchToApproximateFilter(filter_);
+}
+
+void AdaptiveSetRuntimeFilter::switchToDenseBitset(Filter & filter_)
+{
+    DenseBitsetRuntimeFilter bitset_filter(filter_column_target_type);
+    bitset_filter.insert(std::get<ExactFilter>(filter_).getValuesColumn());
+    filter_.emplace<DenseBitsetRuntimeFilter>(std::move(bitset_filter));
+    ProfileEvents::increment(ProfileEvents::RuntimeFilterDenseBitsetsBuilt);
 }
 
 void AdaptiveSetRuntimeFilter::finishInsert(RuntimeFilterEvaluationState & evaluation_state)
@@ -681,6 +799,7 @@ void AdaptiveSetRuntimeFilter::finishInsert(RuntimeFilterEvaluationState & evalu
     std::visit(
         Overloaded{
             [](ExactFilter & exact_filter) { exact_filter.finishInsert(); },
+            [](DenseBitsetRuntimeFilter &) {},
             [&](ApproximateSetRuntimeFilter & approximate_filter)
             { checkApproximateFilterWorthiness(evaluation_state, approximate_filter); },
             [&](KeySetDropped &) { evaluation_state.markKeySetDropped(); },
@@ -708,6 +827,7 @@ ColumnPtr AdaptiveSetRuntimeFilter::find(const ColumnWithTypeAndName & values, s
     return std::visit(
         Overloaded{
             [&](const ExactFilter & exact_filter) -> ColumnPtr { return exact_filter.find(values, rows_passed); },
+            [&](const DenseBitsetRuntimeFilter & bitset_filter) -> ColumnPtr { return bitset_filter.find(values, rows_passed); },
             [&](const ApproximateSetRuntimeFilter & approximate_filter) -> ColumnPtr
             { return approximate_filter.find(values, rows_passed); },
             [&](const KeySetDropped &) -> ColumnPtr
@@ -740,6 +860,13 @@ void AdaptiveSetRuntimeFilter::mergeFrom(const AdaptiveSetRuntimeFilter & source
     std::visit(
         Overloaded{
             [&](const ExactFilter & source_exact_filter) { insert(source_exact_filter.getValuesColumn(), filter); },
+            [&](const DenseBitsetRuntimeFilter & source_bitset_filter)
+            {
+                if (auto * bitset_filter = std::get_if<DenseBitsetRuntimeFilter>(&filter))
+                    bitset_filter->mergeFrom(source_bitset_filter);
+                else
+                    insert(source_bitset_filter.getValuesColumn(), filter);
+            },
             [&](const ApproximateSetRuntimeFilter & source_approximate_filter)
             {
                 if (auto * destination_approximate_filter = switchToApproximateFilter(filter))
@@ -762,10 +889,13 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
     if (std::holds_alternative<KeySetDropped>(filter_))
         return nullptr;
 
-    auto * exact_filter = std::get_if<ExactFilter>(&filter_);
-    if (!exact_filter)
+    ColumnPtr values;
+    if (const auto * exact_filter = std::get_if<ExactFilter>(&filter_))
+        values = exact_filter->getValuesColumn();
+    else if (const auto * bitset_filter = std::get_if<DenseBitsetRuntimeFilter>(&filter_))
+        values = bitset_filter->getValuesColumn();
+    else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of AdaptiveSetRuntimeFilter");
-    auto values = exact_filter->getValuesColumn();
 
     /// Only a filter that stays in one pipeline grows its bloom from statistics. A transported
     /// partial carries no hint: its bloom must match the plan geometry on every receiver and must
@@ -823,6 +953,10 @@ void AdaptiveSetRuntimeFilter::serialize(WriteBuffer & out)
         writeFieldBinary(range->left, out);
         writeFieldBinary(range->right, out);
     }
+
+    /// Unreachable: a transported partial never builds a dense bitset (see `boundExactSetByKeyBytes`).
+    if (std::holds_alternative<DenseBitsetRuntimeFilter>(filter))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to serialize a runtime filter with a dense bitset");
 
     if (const auto * approximate_filter = std::get_if<ApproximateSetRuntimeFilter>(&filter))
     {
