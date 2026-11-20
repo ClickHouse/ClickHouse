@@ -10267,7 +10267,7 @@ When the setting is enabled, the analyzer additionally:
 - lets a column qualifier span the parts of such a table name, so `ns.table.column` and
   `db.ns.table.column` refer to a column of table `ns.table`.
 )", EXPERIMENTAL, \
-        {"26.11", false, false, "New experimental setting for namespace-aware resolution of dotted table identifiers."}) \
+        {"26.12", false, false, "New experimental setting for namespace-aware resolution of dotted table identifiers."}) \
     DECLARE_WITH_ALIAS(Bool, allow_database_unity_catalog, false, R"(
 Allow database engine `DataLakeCatalog` with `catalog_type = 'unity'`
 
