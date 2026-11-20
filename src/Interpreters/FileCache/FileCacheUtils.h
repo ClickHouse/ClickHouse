@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <stdexcept>
 #include <base/arithmeticOverflow.h>
@@ -33,6 +35,14 @@ inline size_t roundUpToMultiple(size_t num, size_t multiple)
         throw std::overflow_error("FileCacheUtils::roundUpToMultiple: rounded-up value does not fit in size_t");
 
     return result;
+}
+
+/// `ratio` of `total`, rounded to the nearest integer and at most `total`
+/// (`static_cast<double>(total)` may round past `total`, and past the range of `long`).
+inline size_t getRatio(size_t total, double ratio)
+{
+    const double share = std::round(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0));
+    return share < static_cast<double>(total) ? static_cast<size_t>(share) : total;
 }
 
 }

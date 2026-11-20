@@ -3,6 +3,7 @@
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheKey.h>
+#include <Interpreters/FileCache/FileCacheUtils.h>
 #include <Interpreters/FileCache/Guards.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/SplitFileCachePriority.h>
@@ -18,13 +19,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-size_t getRatio(size_t total, double ratio)
-{
-    return std::min<size_t>(total, std::lround(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0)));
-}
-}
+using FileCacheUtils::getRatio;
 
 CachePriorityGuard & SplitFileCachePriority::getPriorityGuard() const
 {

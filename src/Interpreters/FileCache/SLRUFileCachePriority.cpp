@@ -2,6 +2,7 @@
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
+#include <Interpreters/FileCache/FileCacheUtils.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -37,13 +38,7 @@ namespace FailPoints
 
 namespace
 {
-    size_t getRatio(size_t total, double ratio, bool ceil = false)
-    {
-        if (ceil)
-            return static_cast<size_t>(std::ceil(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0)));
-        /// `static_cast<double>(total)` can round up, past `total`.
-        return std::min<size_t>(total, std::lround(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0)));
-    }
+    using FileCacheUtils::getRatio;
 
     size_t excess(size_t a, size_t b) { return a > b ? a - b : 0; }
 
