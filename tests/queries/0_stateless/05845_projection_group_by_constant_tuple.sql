@@ -1,3 +1,4 @@
+-- Random settings limits: optimize_use_projections=(1, 1)
 -- Projections that group by a tuple of constants.
 
 DROP TABLE IF EXISTS tab;
@@ -6,7 +7,7 @@ CREATE TABLE tab (x Int32, PROJECTION p (SELECT tuple(1, 2) GROUP BY tuple(1, 2)
 INSERT INTO tab VALUES (1), (2);
 INSERT INTO tab VALUES (3);
 SELECT x, count() FROM tab GROUP BY x ORDER BY x;
-SELECT tuple(1, 2) FROM tab GROUP BY tuple(1, 2);
+SELECT tuple(1, 2) FROM tab GROUP BY tuple(1, 2) SETTINGS force_optimize_projection_name = 'p';
 OPTIMIZE TABLE tab FINAL;
 SELECT rows FROM system.projection_parts WHERE database = currentDatabase() AND table = 'tab' AND active;
 SELECT column, type FROM system.projection_parts_columns WHERE database = currentDatabase() AND table = 'tab' AND active;
