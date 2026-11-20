@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-replicated-database, no-shared-merge-tree
-# no-replicated-database: `ATTACH TABLE ... AS [NOT] REPLICATED` is supported only for `Atomic` and `Ordinary` databases.
+# Tags: zookeeper, no-replicated-database, no-ordinary-database, no-shared-merge-tree
+# no-replicated-database, no-ordinary-database: `ATTACH TABLE ... AS [NOT] REPLICATED` is supported only for `Atomic` databases.
 # no-shared-merge-tree: the tables must keep the engines they are created with.
 
 # `ATTACH TABLE ... AS [NOT] REPLICATED` requires the `TABLE ENGINE` grant on the engine the table is converted to,

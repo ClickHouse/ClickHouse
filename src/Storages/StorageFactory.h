@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/Documentation.h>
-#include <Interpreters/SecretArgumentsSpec.h>
 #include <Common/NamePrompter.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/IAST_fwd.h>
@@ -64,13 +63,13 @@ public:
         const String & comment;
         bool is_restore_from_backup = false;
 
-        [[nodiscard]] ContextMutablePtr getContext() const;
-        [[nodiscard]] ContextMutablePtr getLocalContext() const;
+        ContextMutablePtr getContext() const;
+        ContextMutablePtr getLocalContext() const;
 
         /// A disk or a storage policy the table definition names. Refused, unless loading from existing metadata, when the
         /// query may not use it (see `DiskFromAST::ensureDiskIsAllowed`).
-        [[nodiscard]] DiskPtr getDisk(const String & name) const;
-        [[nodiscard]] StoragePolicyPtr getStoragePolicy(const String & name) const;
+        DiskPtr getDisk(const String & name) const;
+        StoragePolicyPtr getStoragePolicy(const String & name) const;
     };
 
     /// Analog of the IStorage::supports*() helpers
@@ -99,11 +98,6 @@ public:
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
         GetExportAccessFn * get_export_access_fn = nullptr;
-
-        /// Static over-approximation of IStorage::storesDataOnDisk(): set if the engine can ever store data locally.
-        bool stores_data_on_disk = false;
-        /// Whether the engine may back a temporary table (opt-in).
-        bool supports_temporary = false;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -112,12 +106,11 @@ public:
         CreatorFn creator_fn;
         StorageFeatures features;
         Documentation documentation;
-        SecretArgumentsSpec secret_arguments;
     };
 
     using Storages = std::unordered_map<std::string, Creator>;
 
-    [[nodiscard]] StoragePtr get(
+    StoragePtr get(
         const ASTCreateQuery & query,
         const String & relative_data_path,
         ContextMutablePtr local_context,
@@ -127,13 +120,9 @@ public:
         LoadingStrictnessLevel mode,
         bool is_restore_from_backup = false) const;
 
-    /// Throw if the CREATE query uses a clause that the table engine does not support. `get` runs the same checks.
-    void checkEngineFeatures(
-        const ASTCreateQuery & query, const ColumnsDescription & columns, LoadingStrictnessLevel mode, const ContextPtr & local_context) const;
-
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.
-    void registerStorage(const std::string & name, CreatorFn creator_fn, SecretArgumentsSpec secret_arguments, StorageFeatures features = StorageFeatures{
+    void registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features = StorageFeatures{
         .supports_settings = false,
         .supports_skipping_indices = false,
         .supports_projections = false,
@@ -148,22 +137,14 @@ public:
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
         .get_export_access_fn = nullptr,
-        .stores_data_on_disk = false,
-        .supports_temporary = false,
     }, Documentation documentation = {});
 
-    [[nodiscard]] const Storages & getAllStorages() const
+    const Storages & getAllStorages() const
     {
         return storages;
     }
 
-    [[nodiscard]] const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & name) const
-    {
-        auto it = storages.find(name);
-        return it == storages.end() ? nullptr : &it->second.secret_arguments;
-    }
-
-    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
         VectorWithMemoryTracking<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
@@ -172,7 +153,7 @@ public:
     }
 
     using FeatureMatcherFn = std::function<bool(StorageFeatures)>;
-    [[nodiscard]] std::vector<String> getAllRegisteredNamesByFeatureMatcherFn(FeatureMatcherFn feature_matcher_fn) const
+    std::vector<String> getAllRegisteredNamesByFeatureMatcherFn(FeatureMatcherFn feature_matcher_fn) const
     {
         std::vector<String> result;
         for (const auto& pair : storages)
@@ -181,37 +162,21 @@ public:
         return result;
     }
 
-    [[nodiscard]] std::optional<AccessTypeObjects::Source> getSourceAccessObject(const String & table_engine) const;
+    std::optional<AccessTypeObjects::Source> getSourceAccessObject(const String & table_engine) const;
 
-    [[nodiscard]] const StorageFeatures & getStorageFeatures(const String & storage_name) const;
-
-    /// Throws if storage cannot be temporary
-    void checkTemporaryTableEngine(const String & storage_name, const ContextPtr & context) const;
+    const StorageFeatures & getStorageFeatures(const String & storage_name) const;
 
     /// See `GetExportAccessFn`. For the engine of the table and the inner engines of a materialized view or a `TimeSeries`
     /// table. An unknown engine needs nothing here: creating it fails later.
-    [[nodiscard]] AccessRightsElements getExportAccess(const ASTCreateQuery & create) const;
+    AccessRightsElements getExportAccess(const ASTCreateQuery & create) const;
     /// The grants of every engine for which `changes` send the data elsewhere. It does not depend on the engine of the table,
     /// so `ALTER ... ON CLUSTER` can be authorized on an initiator that does not have the table or has another engine.
-    [[nodiscard]] AccessRightsElements getExportAccessOfAnyEngine(const SettingsChanges & changes) const;
+    AccessRightsElements getExportAccessOfAnyEngine(const SettingsChanges & changes) const;
 
 private:
     Storages storages;
 };
 
 void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types);
-
-/// Rejects a `SETTINGS` name that is neither a setting of this engine nor a query setting. Judges only a fresh definition.
-void checkStorageSettingNames(const StorageFactory::Arguments & args);
-
-/// Whether the definition is replayed (attach, DDL replay, Keeper recovery, Shared Catalog replay)
-/// rather than written by the user now. Refusing a replayed definition would block loading or retry forever.
-bool isReplayedTableDefinition(LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context);
-
-/// Rejects a definition of a table with its own unreplicated data on disk when `database_replicated_allow_only_replicated_engine`
-/// restricts the `Replicated` database it is created in. The same restriction as in `InterpreterCreateQuery::doCreateTable`
-/// (see `IStorage::hasUnreplicatedTableDataOnDisk`), for engines that must check it before the storage is constructed, because
-/// the construction itself has effects or can fail for an unrelated reason (e.g. schema inference opens the source).
-void throwIfUnreplicatedTableDataNotAllowed(const StorageFactory::Arguments & args);
 
 }

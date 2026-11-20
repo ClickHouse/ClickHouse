@@ -3,12 +3,9 @@
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
@@ -19,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -28,17 +26,24 @@ public:
     static constexpr auto name = "arrayReverse";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayReverse>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override { return "(Array(T)) -> Array(T)"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
+        if (!array_type)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be array.", getName());
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override;
+        return arguments[0];
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override;
 
 private:
     template <typename T>
@@ -46,10 +51,6 @@ private:
 
     static bool executeFixedString(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data);
     static bool executeString(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data);
-    static void executeData(const IColumn & src_data, const ColumnArray::Offsets & offsets, IColumn & res_data);
-    static bool executeTuple(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data);
-    static bool executeMap(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data);
-    static bool executeArray(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data);
     static bool executeGeneric(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data);
 };
 
@@ -70,15 +71,6 @@ ColumnPtr FunctionArrayReverse::executeImpl(const ColumnsWithTypeAndName & argum
 
     IColumn & res_data = res.getData();
 
-    executeData(src_data, offsets, res_data);
-    return res_ptr;
-}
-
-
-/// Reverses each array of `src_data` into the empty `res_data`. Tuples, maps and arrays of arrays are reversed
-/// recursively, so that their elements also go through the typed kernels and nested arrays are copied by ranges.
-void FunctionArrayReverse::executeData(const IColumn & src_data, const ColumnArray::Offsets & offsets, IColumn & res_data)
-{
     const ColumnNullable * src_nullable_col = typeid_cast<const ColumnNullable *>(&src_data);
     ColumnNullable * res_nullable_col = typeid_cast<ColumnNullable *>(&res_data);
 
@@ -90,25 +82,14 @@ void FunctionArrayReverse::executeData(const IColumn & src_data, const ColumnArr
         || executeNumber<UInt16>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<UInt32>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<UInt64>(*src_inner_col, offsets, *res_inner_col)
-        || executeNumber<UInt128>(*src_inner_col, offsets, *res_inner_col)
-        || executeNumber<UInt256>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Int8>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Int16>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Int32>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Int64>(*src_inner_col, offsets, *res_inner_col)
-        || executeNumber<Int128>(*src_inner_col, offsets, *res_inner_col)
-        || executeNumber<Int256>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Float32>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Float64>(*src_inner_col, offsets, *res_inner_col)
-        || executeNumber<Decimal32>(*src_inner_col, offsets, *res_inner_col)
-        || executeNumber<Decimal64>(*src_inner_col, offsets, *res_inner_col)
-        || executeNumber<Decimal128>(*src_inner_col, offsets, *res_inner_col)
-        || executeNumber<Decimal256>(*src_inner_col, offsets, *res_inner_col)
         || executeString(*src_inner_col, offsets, *res_inner_col)
         || executeFixedString(*src_inner_col, offsets, *res_inner_col)
-        || executeTuple(*src_inner_col, offsets, *res_inner_col)
-        || executeMap(*src_inner_col, offsets, *res_inner_col)
-        || executeArray(*src_inner_col, offsets, *res_inner_col)
         || executeGeneric(*src_inner_col, offsets, *res_inner_col);
 
     chassert(bool(src_nullable_col) == bool(res_nullable_col));
@@ -116,64 +97,11 @@ void FunctionArrayReverse::executeData(const IColumn & src_data, const ColumnArr
     if (src_nullable_col)
         if (!executeNumber<UInt8>(src_nullable_col->getNullMapColumn(), offsets, res_nullable_col->getNullMapColumn()))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of null map of the first argument of function {}",
-                src_nullable_col->getNullMapColumn().getName(), name);
+                src_nullable_col->getNullMapColumn().getName(), getName());
+
+    return res_ptr;
 }
 
-
-bool FunctionArrayReverse::executeTuple(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data)
-{
-    const auto * src_tuple = typeid_cast<const ColumnTuple *>(&src_data);
-    if (!src_tuple || src_tuple->tupleSize() == 0)
-        return false;
-
-    auto & res_tuple = assert_cast<ColumnTuple &>(res_data);
-    for (size_t i = 0; i < src_tuple->tupleSize(); ++i)
-        executeData(src_tuple->getColumn(i), src_offsets, res_tuple.getColumn(i));
-    return true;
-}
-
-bool FunctionArrayReverse::executeMap(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data)
-{
-    const auto * src_map = typeid_cast<const ColumnMap *>(&src_data);
-    if (!src_map)
-        return false;
-
-    executeData(src_map->getNestedColumn(), src_offsets, assert_cast<ColumnMap &>(res_data).getNestedColumn());
-    return true;
-}
-
-/// Arrays of arrays: copy each nested array by its range instead of element by element.
-bool FunctionArrayReverse::executeArray(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data)
-{
-    const auto * src_array = typeid_cast<const ColumnArray *>(&src_data);
-    if (!src_array)
-        return false;
-
-    const auto & src_nested_offsets = src_array->getOffsets();
-    const auto & src_nested = src_array->getData();
-    auto & res_array = assert_cast<ColumnArray &>(res_data);
-    auto & res_nested_offsets = res_array.getOffsets();
-    auto & res_nested = res_array.getData();
-
-    /// Not `reserve`: for nested arrays it reserves as many values as there are arrays, even if they are empty.
-    /// `prepareForSquashing` reserves every descendant by the size of the corresponding source column.
-    res_nested_offsets.reserve(src_nested_offsets.size());
-    res_nested.prepareForSquashing({src_array->getDataPtr()}, 1);
-
-    ColumnArray::Offset src_prev_offset = 0;
-    for (const auto src_offset : src_offsets)
-    {
-        for (ssize_t i = ssize_t(src_offset) - 1; i >= ssize_t(src_prev_offset); --i)
-        {
-            const size_t nested_offset = src_nested_offsets[i - 1];
-            const size_t nested_size = src_nested_offsets[i] - nested_offset;
-            res_nested.insertRangeFrom(src_nested, nested_offset, nested_size);
-            res_nested_offsets.push_back(res_nested_offsets.back() + nested_size);
-        }
-        src_prev_offset = src_offset;
-    }
-    return true;
-}
 
 bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data)
 {
@@ -200,12 +128,10 @@ bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const Column
 template <typename T>
 bool FunctionArrayReverse::executeNumber(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data)
 {
-    using ColVecType = ColumnVectorOrDecimal<T>;
-
-    if (const ColVecType * src_data_concrete = checkAndGetColumn<ColVecType>(&src_data))
+    if (const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data))
     {
         const PaddedPODArray<T> & src_vec = src_data_concrete->getData();
-        PaddedPODArray<T> & res_vec = typeid_cast<ColVecType &>(res_data).getData();
+        PaddedPODArray<T> & res_vec = typeid_cast<ColumnVector<T> &>(res_data).getData();
         res_vec.resize(src_data.size());
 
         size_t size = src_offsets.size();

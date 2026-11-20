@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Random settings limits: output_format_parquet_bloom_filter_bits_per_value=(10.5, None)
+# Tags: no-fasttest
+# no-fasttest: needs the Parquet format which is not built in fasttest.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
