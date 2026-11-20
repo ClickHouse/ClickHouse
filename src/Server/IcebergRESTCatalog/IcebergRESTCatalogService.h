@@ -11,6 +11,10 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
 
+#include <expected>
+#include <optional>
+#include <vector>
+
 namespace DB
 {
 
@@ -79,20 +83,59 @@ private:
     [[nodiscard]] IcebergRESTResponse handleTableExists(const RoutedRequest & request) const;
     [[nodiscard]] IcebergRESTResponse handleDropTable(const RoutedRequest & request) const;
     [[nodiscard]] IcebergRESTResponse handleUpdateTable(const RoutedRequest & request) const;
+    [[nodiscard]] IcebergRESTResponse handleCommitTransaction(const RoutedRequest & request) const;
     [[nodiscard]] IcebergRESTResponse handleRenameTable(const RoutedRequest & request) const;
     [[nodiscard]] IcebergRESTResponse handleReportMetrics(const RoutedRequest & request) const;
+
+    /// Warehouse management API (issue #127488).
+    [[nodiscard]] IcebergRESTResponse handleCreateWarehouse(const String & body, const Context & user_context) const;
+    [[nodiscard]] IcebergRESTResponse handleListWarehouses() const;
+    [[nodiscard]] IcebergRESTResponse handleGetWarehouse(const IcebergRESTRouteMatch & match) const;
+    [[nodiscard]] IcebergRESTResponse handleReplaceWarehouseCredential(
+        const IcebergRESTRouteMatch & match, const String & body, const Context & user_context) const;
+    [[nodiscard]] IcebergRESTResponse handleDeleteWarehouse(const IcebergRESTRouteMatch & match, const Context & user_context) const;
+
+    /// Finishes a stage-create: a commit with `assert-create` to a table that does not exist yet.
+    [[nodiscard]] IcebergRESTResponse handleStagedCreateCommit(
+        const RoutedRequest & request, const IcebergNamespaceName & ns, const String & table, const Poco::JSON::Array & updates) const;
 
     /// Reads the specified `metadata.json` file from object storage.
     [[nodiscard]] Poco::JSON::Object::Ptr readTableMetadata(const IcebergRESTCatalogWarehouse & warehouse, const IcebergTablePointer & pointer) const;
 
-    /// Writes the next `metadata.json` file to object storage. Then points the table to it in Keeper, with a version check.
-    [[nodiscard]] IcebergRESTResponse commitTableMetadata(
+    /// Writes the first metadata file and registers the table. Removes the file if the table is not registered.
+    [[nodiscard]] IcebergRESTCatalogWarehouse::CreateTableResult writeAndRegisterTable(
         const IcebergRESTCatalogWarehouse & warehouse,
         const IcebergNamespaceName & ns,
         const String & table,
         const IcebergTablePointer & pointer,
         const Poco::JSON::Object::Ptr & metadata,
         CompressionMethod compression_method) const;
+
+    /// One table of a commit after its requirements passed and its updates were applied in memory.
+    struct PreparedTableCommit
+    {
+        IcebergNamespaceName ns;
+        String table;
+        IcebergTablePointer current;
+        Poco::JSON::Object::Ptr metadata;
+        CompressionMethod compression_method = CompressionMethod::None;
+        /// Empty when `updates` was empty: nothing to write, nothing to move.
+        String new_location;
+    };
+
+    /// Checks requirements and applies updates in memory. Returns the error response on a client error.
+    [[nodiscard]] std::expected<PreparedTableCommit, IcebergRESTResponse> prepareTableCommit(
+        const IcebergRESTCatalogWarehouse & warehouse,
+        const IcebergNamespaceName & ns,
+        const String & table,
+        const IcebergTablePointer & pointer,
+        const Poco::JSON::Array & requirements,
+        const Poco::JSON::Array & updates) const;
+
+    /// Writes the new metadata files, then moves every table pointer in one Keeper multi with a version check.
+    /// Returns nullopt when the commit was applied. Otherwise removes the written files and returns the error response.
+    [[nodiscard]] std::optional<IcebergRESTResponse> commitPreparedTables(
+        const IcebergRESTCatalogWarehouse & warehouse, const std::vector<PreparedTableCommit> & prepared) const;
 
     LoggerPtr log;
     IcebergRESTCatalogWarehouseRegistryPtr warehouses;
