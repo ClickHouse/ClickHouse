@@ -162,6 +162,15 @@ bool ReadFromObjectStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAn
     return !info.columns_description.hasDefault(sort_column.name);
 }
 
+bool ReadFromObjectStorageStep::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const
+{
+    /// The format of a data lake is only the format new files are written in.
+    if (configuration->isDataLakeConfiguration())
+        return false;
+    return formatSkipsDataByStatistics(configuration->format, format_settings ? *format_settings : getFormatSettings(getContext()))
+        && info.canSkipDataByStatisticsOf(column);
+}
+
 void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
     info = updateFormatPrewhereInfo(info, prewhere_info_value);
@@ -320,6 +329,12 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         /// The amount of keys (zero) was probably underestimated.
         /// We will keep one stream for this particular case.
         num_streams = 1;
+    }
+
+    if (lazy_row_index_registry)
+    {
+        std::lock_guard lock(lazy_row_index_registry->mutex);
+        lazy_row_index_registry->main_read_streams = num_streams;
     }
 
     // here create for node -> query -> level thread pool
@@ -791,7 +806,9 @@ std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnly
         format_settings,
         std::move(*lazy_info),
         getContext(),
-        max_block_size);
+        max_block_size,
+        /*main_read_leaf_columns_=*/ countLeafColumns(info.format_header).value_or(1),
+        /*max_num_streams_=*/ max_num_streams);
 
     return lazy_step;
 }

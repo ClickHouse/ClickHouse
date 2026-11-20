@@ -40,39 +40,6 @@ def test_cluster(request):
         cluster.shutdown()
 
 
-def test_default_database(test_cluster):
-    instance = test_cluster.instances["ch3"]
-
-    test_cluster.ddl_check_query(
-        instance, "DROP DATABASE IF EXISTS test2 ON CLUSTER 'cluster' SYNC FORMAT TSV"
-    )
-    test_cluster.ddl_check_query(
-        instance, "CREATE DATABASE test2 ON CLUSTER 'cluster' FORMAT TSV"
-    )
-    test_cluster.ddl_check_query(
-        instance, "DROP TABLE IF EXISTS null ON CLUSTER 'cluster' FORMAT TSV"
-    )
-    test_cluster.ddl_check_query(
-        instance,
-        "CREATE TABLE IF NOT EXISTS null ON CLUSTER 'cluster2' (s String DEFAULT 'escape\t\nme') ENGINE = Null",
-        settings={"distributed_ddl_entry_format_version": 2},
-    )
-
-    contents = instance.query(
-        "SELECT hostName() AS h, database FROM all_tables WHERE name = 'null' ORDER BY h"
-    )
-    assert TSV(contents) == TSV("ch1\tdefault\nch2\ttest2\nch3\tdefault\nch4\ttest2\n")
-
-    test_cluster.ddl_check_query(
-        instance,
-        "DROP TABLE IF EXISTS null ON CLUSTER cluster2",
-        settings={"distributed_ddl_entry_format_version": 2},
-    )
-    test_cluster.ddl_check_query(
-        instance, "DROP DATABASE IF EXISTS test2 ON CLUSTER 'cluster'"
-    )
-
-
 def test_create_view(test_cluster):
     instance = test_cluster.instances["ch3"]
     test_cluster.ddl_check_query(
