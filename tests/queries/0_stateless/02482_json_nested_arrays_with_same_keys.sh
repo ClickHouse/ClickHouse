@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -19,8 +19,8 @@ echo '
             }
         ]
     }
-}' > 02482_object_data.jsonl
+}' > $CLICKHOUSE_TEST_UNIQUE_NAME.jsonl
 
-$CLICKHOUSE_LOCAL -q "select * from file(02482_object_data.jsonl, auto, 'obj JSON')"
+$CLICKHOUSE_LOCAL -q "select * from file('$CLICKHOUSE_TEST_UNIQUE_NAME.jsonl', auto, 'obj JSON')"
 
-rm 02482_object_data.jsonl
+rm $CLICKHOUSE_TEST_UNIQUE_NAME.jsonl
