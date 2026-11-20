@@ -2120,10 +2120,13 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
         const auto clusters_version = getContext()->getClustersVersion();
         FailPointInjection::pauseFailPoint(FailPoints::distributed_async_insert_queue_pause_after_version_snapshot);
 
+        /// One cluster object for the addresses and the pool. A later `getCluster` could already
+        /// be the next `ALTER CLUSTER` and would lend that generation's pool to this generation's addresses.
+        const auto cluster = getCluster();
         ClusterNodeData new_node;
-        new_node.addresses = parseAddresses(name);
+        new_node.addresses = parseAddresses(name, *cluster);
         new_node.clusters_version = clusters_version;
-        new_node.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(new_node.addresses, *this);
+        new_node.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(new_node.addresses, *cluster, *this);
         new_node.directory_queue = std::make_shared<DistributedAsyncInsertDirectoryQueue>(
             *this, disk, relative_data_path + name,
             new_node.connection_pool,
@@ -2139,15 +2142,15 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
     {
         /// If the node changes, only replace the connection pool of the existing queue. A new queue over the same
         /// directory would start a second sender, which could send a file that the old one is still sending.
-        auto addresses = parseAddresses(name);
+        const auto cluster = getCluster();
+        auto addresses = parseAddresses(name, *cluster);
         if (addresses_changed(node_data.addresses, addresses))
         {
-            /// Build the replacement pool before publishing the addresses. `createPool` calls
-            /// `getCluster` and throws if the cluster was dropped in between. Publishing first would
-            /// leave the saved addresses on the new endpoint and the queue pool on the old one; the
-            /// next refresh would see equal addresses, record the version, and keep sending to the
-            /// removed endpoint.
-            auto pool = DistributedAsyncInsertDirectoryQueue::createPool(addresses, *this);
+            /// Build the replacement pool from this same cluster before publishing the addresses.
+            /// `getCluster` throws if the cluster was dropped. Publishing the addresses first would
+            /// leave them on the new endpoint and the queue pool on the old one; the next refresh
+            /// would see equal addresses, record the version, and keep sending to the removed endpoint.
+            auto pool = DistributedAsyncInsertDirectoryQueue::createPool(addresses, *cluster, *this);
             node_data.addresses = std::move(addresses);
             node_data.connection_pool = std::move(pool);
             node_data.directory_queue->updatePool(node_data.connection_pool);
@@ -2167,13 +2170,12 @@ std::vector<DistributedAsyncInsertDirectoryQueue::Status> StorageDistributed::ge
     return statuses;
 }
 
-Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) const
+Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name, const Cluster & cluster) const
 {
     Cluster::Addresses addresses;
 
-    const auto & cluster = getCluster();
-    const auto & shards_info = cluster->getShardsInfo();
-    const auto & shards_addresses = cluster->getShardsAddresses();
+    const auto & shards_info = cluster.getShardsInfo();
+    const auto & shards_addresses = cluster.getShardsAddresses();
 
     auto address = Cluster::Address::tryParseFullString(name);
 

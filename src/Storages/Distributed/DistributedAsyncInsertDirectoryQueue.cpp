@@ -304,16 +304,17 @@ void DistributedAsyncInsertDirectoryQueue::run()
 }
 
 
-ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(const Cluster::Addresses & addresses, const StorageDistributed & storage)
+ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(
+    const Cluster::Addresses & addresses, const Cluster & cluster, const StorageDistributed & storage)
 {
-    const auto pool_factory = [&storage] (const Cluster::Address & address) -> ConnectionPoolPtr
+    const auto & shards_info = cluster.getShardsInfo();
+    const auto & shards_addresses = cluster.getShardsAddresses();
+
+    const auto pool_factory = [&] (const Cluster::Address & address) -> ConnectionPoolPtr
     {
-        /// `getCluster` throws once the cluster has been dropped. A caller that has already published
-        /// the new addresses would then keep the old pool while believing the destination changed.
+        /// The cluster snapshot is already fixed. An `ALTER CLUSTER` while this is paused must not
+        /// make the queue store that snapshot's addresses and another generation's pool.
         FailPointInjection::pauseFailPoint(FailPoints::distributed_async_insert_queue_pause_before_pool_cluster_lookup);
-        const auto & cluster = storage.getCluster();
-        const auto & shards_info = cluster->getShardsInfo();
-        const auto & shards_addresses = cluster->getShardsAddresses();
 
         /// Existing connections pool have a higher priority.
         for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
@@ -330,7 +331,14 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
                     address.port == replica_address.port &&
                     address.default_database == replica_address.default_database &&
                     address.secure == replica_address.secure &&
-                    address.bind_host == replica_address.bind_host)
+                    address.bind_host == replica_address.bind_host &&
+                    address.cluster == replica_address.cluster &&
+                    address.cluster_secret == replica_address.cluster_secret &&
+                    address.compression == replica_address.compression &&
+                    address.priority.value == replica_address.priority.value &&
+                    address.proto_send_chunked == replica_address.proto_send_chunked &&
+                    address.proto_recv_chunked == replica_address.proto_recv_chunked &&
+                    address.quota_key == replica_address.quota_key)
                 {
                     return shards_info[shard_index].per_replica_pools[replica_index];
                 }

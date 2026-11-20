@@ -60,7 +60,9 @@ public:
 
     ~DistributedAsyncInsertDirectoryQueue();
 
-    static ConnectionPoolWithFailoverPtr createPool(const Cluster::Addresses & addresses, const StorageDistributed & storage);
+    /// `cluster` is the snapshot the addresses were read from. The pool is taken from that object,
+    /// not from a later `StorageDistributed::getCluster`.
+    static ConnectionPoolWithFailoverPtr createPool(const Cluster::Addresses & addresses, const Cluster & cluster, const StorageDistributed & storage);
 
     void updatePath(const std::string & new_relative_path);
 
