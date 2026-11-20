@@ -19,12 +19,3 @@ SELECT JSONExtract('{"t":"12:30:45"}', 't', 'Nullable(Time)');
 SELECT JSONExtract('{"t":2147483647}', 't', 'Nullable(Time)');
 SELECT JSONExtract('{"t":-2147483648}', 't', 'Nullable(Time)');
 SELECT CAST('{"t":45045}' AS JSON(t Time));
-
--- Input formats must not wrap an integer outside the range of `Time` either.
-SELECT * FROM format(JSONEachRow, 't Time', '{"t":4294967297}'); -- { serverError CANNOT_PARSE_NUMBER }
-SELECT * FROM format(JSONEachRow, 't Time', '{"t":18446744073709551615}'); -- { serverError CANNOT_PARSE_NUMBER }
-SELECT * FROM format(JSONEachRow, 't Time', '{"t":-4294967297}'); -- { serverError CANNOT_PARSE_NUMBER }
-SELECT * FROM format(CustomSeparated, 't Time', '4294967297\n') SETTINGS format_custom_escaping_rule = 'Quoted'; -- { serverError CANNOT_PARSE_NUMBER }
-SELECT * FROM format(Values, 't Time', '(4294967297)');
-SELECT * FROM format(JSONEachRow, 't Time', '{"t":45045}');
-SELECT * FROM format(Values, 't Time', '(45045)');

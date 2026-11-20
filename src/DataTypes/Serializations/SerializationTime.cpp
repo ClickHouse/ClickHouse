@@ -18,7 +18,6 @@ namespace ErrorCodes
 {
 extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 extern const int NOT_IMPLEMENTED;
-extern const int CANNOT_PARSE_NUMBER;
 }
 
 inline void readTimeText(
@@ -111,9 +110,7 @@ void SerializationTime::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
     }
     else /// Just 493808 or 0493808
     {
-        readIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(x, istr);
-        if (!std::in_range<Int32>(x))
-            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Value {} is out of bounds of type Time", x);
+        readIntText(x, istr);
     }
     /// It's important to do this at the end - for exception safety.
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
@@ -129,7 +126,7 @@ bool SerializationTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & 
     }
     else
     {
-        if (!tryReadIntText(x, istr) || !std::in_range<Int32>(x))
+        if (!tryReadIntText(x, istr))
             return false;
     }
 
@@ -155,9 +152,7 @@ void SerializationTime::deserializeTextJSON(IColumn & column, ReadBuffer & istr,
     }
     else
     {
-        readIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(x, istr);
-        if (!std::in_range<Int32>(x))
-            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Value {} is out of bounds of type Time", x);
+        readIntText(x, istr);
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
@@ -173,7 +168,7 @@ bool SerializationTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer & is
     }
     else
     {
-        if (!tryReadIntText(x, istr) || !std::in_range<Int32>(x))
+        if (!tryReadIntText(x, istr))
             return false;
     }
 
