@@ -112,7 +112,7 @@ private:
     RuntimeFilterIndexAnalysisDescriptors join_runtime_filters_for_file_pruning;
     /// Built from `join_runtime_filters_for_file_pruning` by `createIterator`, for the file iterator.
     std::shared_ptr<const RuntimeFilterPruningPredicate> join_runtime_filter_predicate;
-    /// The same on the keys the format returns unchanged, for the format: it prunes by the statistics of the file's columns.
+    /// Its subset on the keys the format returns unchanged, for the format.
     std::shared_ptr<const RuntimeFilterPruningPredicate> format_join_runtime_filter_predicate;
 
     /// Memoized `getOrCreateDataLakeReadEstimate`, which walks the manifests; reset when the filter changes.
