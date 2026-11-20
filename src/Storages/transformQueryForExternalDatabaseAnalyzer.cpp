@@ -15,6 +15,8 @@
 #include <Columns/ColumnVariant.h>
 
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -78,34 +80,98 @@ std::optional<ColumnWithTypeAndName> unwrapCarrier(const ColumnPtr & column, con
     return unwrapCarrier(value, active_type);
 }
 
-}
-
-bool holdsEnumValue(const ColumnPtr & column, const DataTypePtr & type)
+template <typename IsLeaf>
+bool holdsValueOf(const ColumnPtr & column, const DataTypePtr & type, IsLeaf is_leaf)
 {
     auto value = unwrapCarrier(column, type);
     if (!value)
         return false;
 
-    if (isEnum(value->type))
+    if (is_leaf(value->type))
         return true;
 
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(value->type.get()))
     {
         const auto & tuple_column = assert_cast<const ColumnTuple &>(*value->column);
         for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
-            if (holdsEnumValue(tuple_column.getColumnPtr(i), tuple_type->getElement(i)))
+            if (holdsValueOf(tuple_column.getColumnPtr(i), tuple_type->getElement(i), is_leaf))
                 return true;
     }
     return false;
 }
 
+}
+
+bool holdsEnumValue(const ColumnPtr & column, const DataTypePtr & type)
+{
+    return holdsValueOf(column, type, [](const DataTypePtr & leaf_type) { return isEnum(leaf_type); });
+}
+
 namespace
 {
+
+bool holdsDateTimeValue(const ColumnPtr & column, const DataTypePtr & type)
+{
+    return holdsValueOf(column, type, [](const DataTypePtr & leaf_type) { return isDateTimeOrDateTime64(leaf_type); });
+}
 
 bool isStringOrNumber(const DataTypePtr & type)
 {
     auto value_type = removeLowCardinalityAndNullable(type);
     return isStringOrFixedString(value_type) || isNumber(value_type);
+}
+
+/// The zone the external database's rows of the date-time `type` are read in. Empty where the readers disagree: `MySQLSource`
+/// reads a `DateTime64` without an explicit zone in the session zone, the other readers in the zone the type holds.
+std::optional<std::string> rowsTimeZone(const DataTypePtr & type)
+{
+    const auto & mixin = dynamic_cast<const TimezoneMixin &>(*type);
+    const auto & zone = mixin.getTimeZone().getTimeZone();
+    if (!mixin.hasExplicitTimeZone() && isDateTime64(type) && DateLUT::instance().getTimeZone() != zone)
+        return {};
+    return zone;
+}
+
+/// `type`, a date-time, with the zone `zone` named explicitly: a type without an explicit zone is written in the session zone.
+DataTypePtr withTimeZone(const DataTypePtr & type, const std::string & zone)
+{
+    const auto & own = dynamic_cast<const TimezoneMixin &>(*type);
+    if (own.hasExplicitTimeZone() && own.getTimeZone().getTimeZone() == zone)
+        return type;
+    if (const auto * date_time64_type = typeid_cast<const DataTypeDateTime64 *>(type.get()))
+        return std::make_shared<DataTypeDateTime64>(date_time64_type->getScale(), zone);
+    return std::make_shared<DataTypeDateTime>(zone);
+}
+
+/// The type of an `IN` member for the key `type`, through `LowCardinality`, `Nullable` and `Tuple`, with each date-time in the
+/// zone its rows are read in. Sets `has_date_time` if the key holds a date-time; nullptr if one of them has no such zone.
+DataTypePtr memberTypeOf(const DataTypePtr & type, bool & has_date_time)
+{
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        return memberTypeOf(low_cardinality_type->getDictionaryType(), has_date_time);
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        auto nested = memberTypeOf(nullable_type->getNestedType(), has_date_time);
+        return nested ? makeNullable(nested) : nullptr;
+    }
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes elements;
+        for (const auto & element : tuple_type->getElements())
+        {
+            auto element_type = memberTypeOf(element, has_date_time);
+            if (!element_type)
+                return nullptr;
+            elements.push_back(std::move(element_type));
+        }
+        return tuple_type->hasExplicitNames() ? std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames())
+                                              : std::make_shared<DataTypeTuple>(elements);
+    }
+    if (!isDateTimeOrDateTime64(type))
+        return type;
+    has_date_time = true;
+    auto zone = rowsTimeZone(type);
+    return zone ? withTimeZone(type, *zone) : nullptr;
 }
 
 /// Table function arguments may hold identifiers and unresolved functions, which have no type.
@@ -117,10 +183,11 @@ bool hasResultType(const QueryTreeNodePtr & node)
 }
 
 /// Rewrites each `Enum` leaf of the size-1 constant `column` as a comparison with `operand_type` reads it: the name
-/// against a string, the value against a number. Empty if an `Enum` leaf faces another type.
-std::optional<ColumnWithTypeAndName> renderEnumLeaves(const ColumnPtr & column, const DataTypePtr & type, const DataTypePtr & operand_type)
+/// against a string, the value against a number. Gives each date-time leaf facing a date-time the zone the rows of the
+/// operand are read in (`rowsTimeZone`). Empty if an `Enum` leaf faces another type.
+std::optional<ColumnWithTypeAndName> renderLeaves(const ColumnPtr & column, const DataTypePtr & type, const DataTypePtr & operand_type)
 {
-    if (!holdsEnumValue(column, type))
+    if (!holdsEnumValue(column, type) && !holdsDateTimeValue(column, type))
         return ColumnWithTypeAndName{column, type, ""};
 
     auto value = unwrapCarrier(column, type);
@@ -134,7 +201,7 @@ std::optional<ColumnWithTypeAndName> renderEnumLeaves(const ColumnPtr & column, 
         DataTypes types;
         for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
         {
-            auto element = renderEnumLeaves(tuple_column.getColumnPtr(i), tuple_type->getElement(i), operand_tuple_type->getElement(i));
+            auto element = renderLeaves(tuple_column.getColumnPtr(i), tuple_type->getElement(i), operand_tuple_type->getElement(i));
             if (!element)
                 return {};
             columns.push_back(element->column);
@@ -144,6 +211,16 @@ std::optional<ColumnWithTypeAndName> renderEnumLeaves(const ColumnPtr & column, 
             ? std::make_shared<DataTypeTuple>(types, tuple_type->getElementNames())
             : std::make_shared<DataTypeTuple>(types);
         return ColumnWithTypeAndName{ColumnTuple::create(std::move(columns)), result_type, ""};
+    }
+
+    if (isDateTimeOrDateTime64(value->type))
+    {
+        std::optional<std::string> zone;
+        if (isDateTimeOrDateTime64(operand_value_type))
+            zone = rowsTimeZone(operand_value_type);
+        if (!zone)
+            return ColumnWithTypeAndName{column, type, ""};
+        return ColumnWithTypeAndName{value->column, withTimeZone(value->type, *zone), ""};
     }
 
     if (!isEnum(value->type) || !isStringOrNumber(operand_value_type))
@@ -226,7 +303,7 @@ public:
     {
         if (auto * function_node = node->as<FunctionNode>())
         {
-            renderEnumConstants(*function_node);
+            renderConstants(*function_node);
             return;
         }
 
@@ -250,8 +327,8 @@ public:
     }
 
 private:
-    /// A constant that holds an `Enum` value is written in the domain its operand is compared in.
-    void renderEnumConstants(FunctionNode & function_node) const
+    /// A constant that holds an `Enum` or a date-time value is written in the domain its operand is compared in.
+    void renderConstants(FunctionNode & function_node) const
     {
         auto & arguments = function_node.getArguments().getNodes();
         if (arguments.size() != 2 || !std::ranges::all_of(arguments, hasResultType))
@@ -279,8 +356,8 @@ private:
             return nullptr;
 
         const auto & column = constant_node->getColumn()->getDataColumnPtr();
-        auto rendered = renderEnumLeaves(column, constant_node->getResultType(), operand->getResultType());
-        if (!rendered || rendered->column == column)
+        auto rendered = renderLeaves(column, constant_node->getResultType(), operand->getResultType());
+        if (!rendered || (rendered->column == column && rendered->type == constant_node->getResultType()))
             return nullptr;
         return std::make_shared<ConstantNode>(ColumnConst::create(rendered->column, 1), rendered->type);
     }
@@ -289,7 +366,12 @@ private:
     [[nodiscard]] QueryTreeNodePtr renderInSet(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs) const
     {
         const auto * constant_node = rhs->as<ConstantNode>();
-        if (!constant_node || !holdsEnumValue(constant_node->getColumn()->getDataColumnPtr(), constant_node->getResultType()))
+        if (!constant_node)
+            return nullptr;
+        const auto & column = constant_node->getColumn()->getDataColumnPtr();
+        bool holds_enum = holdsEnumValue(column, constant_node->getResultType());
+        bool holds_date_time = holdsDateTimeValue(column, constant_node->getResultType());
+        if (!holds_enum && !holds_date_time)
             return nullptr;
 
         /// Keys as `getSetElementsForConstantValue` sees them: a one-element tuple stays packed. A `FixedString` key gets
@@ -298,16 +380,28 @@ private:
         const auto * lhs_tuple_type = typeid_cast<const DataTypeTuple *>(lhs_type.get());
         bool packed_key = lhs_tuple_type && lhs_tuple_type->getElements().size() == 1;
         DataTypes key_types = lhs_tuple_type && !lhs_tuple_type->getElements().empty() ? lhs_tuple_type->getElements() : DataTypes{lhs_type};
+        bool has_date_time_key = false;
+        bool has_other_key = false;
+        DataTypes member_types;
         for (auto & key_type : key_types)
         {
-            if (!isStringOrNumber(key_type))
-                return nullptr;
             if (isFixedString(removeLowCardinalityAndNullable(key_type)))
             {
                 DataTypePtr string_type = std::make_shared<DataTypeString>();
                 key_type = removeLowCardinality(key_type)->isNullable() ? makeNullable(string_type) : string_type;
             }
+            bool date_time_key = false;
+            auto member_type = memberTypeOf(key_type, date_time_key);
+            if (!member_type)
+                return nullptr;
+            date_time_key &= holds_date_time;
+            has_date_time_key |= date_time_key;
+            has_other_key |= !date_time_key && !isStringOrNumber(key_type);
+            member_types.push_back(std::move(member_type));
         }
+        /// Members typed with the keys are written as the text of any key type; untyped `Enum` members only for strings and numbers.
+        if (!has_date_time_key && (!holds_enum || has_other_key))
+            return nullptr;
         DataTypePtr set_lhs_type = lhs_tuple_type ? std::make_shared<DataTypeTuple>(key_types) : key_types.front();
 
         auto set = getSetElementsForConstantValue(set_lhs_type, constant_node->getColumn(), constant_node->getResultType(), set_params);
@@ -327,6 +421,16 @@ private:
             for (const auto & key_column : set)
                 key.push_back((*key_column.column)[row]);
             members.push_back(std::move(key));
+        }
+
+        if (has_date_time_key)
+        {
+            /// Typed with the keys, so a date-time member is written as text in the zone of its key.
+            DataTypePtr member_type = set.size() == 1 ? member_types.front() : std::make_shared<DataTypeTuple>(member_types);
+            if (members.size() == 1)
+                return std::make_shared<ConstantNode>(std::move(members.front()), member_type);
+            auto set_type = std::make_shared<DataTypeTuple>(DataTypes(members.size(), member_type));
+            return std::make_shared<ConstantNode>(Field(std::move(members)), std::move(set_type));
         }
 
         if (members.size() == 1)

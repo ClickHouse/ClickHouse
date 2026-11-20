@@ -89,7 +89,7 @@ private:
                 {"apply_id", std::make_shared<DataTypeUInt64>()},
                 {"apply_type", std::make_shared<DataTypeUInt8>()},
                 {"apply_status", std::make_shared<DataTypeUInt8>()},
-                {"create_time", std::make_shared<DataTypeDateTime>()},
+                {"create_time", std::make_shared<DataTypeDateTime>("UTC")},
                 {"field", std::make_shared<DataTypeString>()},
                 {"value", std::make_shared<DataTypeString>()},
                 {"a", std::make_shared<DataTypeUInt8>()},
@@ -442,6 +442,22 @@ TEST(TransformQueryForExternalDatabase, Issue7245)
     check(state, 1, {"apply_id", "apply_type", "apply_status", "create_time"},
           "SELECT apply_id FROM test.table WHERE apply_type = 2 AND create_time > addDays(toDateTime('2019-01-01 01:02:03', 'UTC'),-7) AND apply_status IN (3,4)",
           R"(SELECT "apply_id", "apply_type", "apply_status", "create_time" FROM "test"."table" WHERE ("apply_type" = 2) AND ("create_time" > '2018-12-25 01:02:03') AND ("apply_status" IN (3, 4)))");
+}
+
+TEST(TransformQueryForExternalDatabase, DateTimeConstantInColumnTimeZone)
+{
+    const State & state = State::instance();
+
+    checkNewAnalyzer(state, {"create_time"},
+        "SELECT create_time FROM test.table WHERE create_time = toDateTime('2019-01-01 10:02:03', 'Asia/Tokyo')",
+        R"(SELECT "create_time" FROM "test"."table" WHERE "create_time" = '2019-01-01 01:02:03')");
+    checkNewAnalyzer(state, {"create_time"},
+        "SELECT create_time FROM test.table WHERE create_time IN (toDateTime('2019-01-01 10:02:03', 'Asia/Tokyo'), toDateTime('2019-01-01 11:02:03', 'Asia/Tokyo'))",
+        R"(SELECT "create_time" FROM "test"."table" WHERE "create_time" IN ('2019-01-01 01:02:03', '2019-01-01 02:02:03'))");
+    checkNewAnalyzer(state, {"create_time", "b", "a"},
+        "SELECT create_time FROM test.table WHERE ((create_time, b), a) IN (((toDateTime('2019-01-01 10:02:03', 'Asia/Tokyo'), toDate('2019-01-01')), 1), ((toDateTime('2019-01-01 11:02:03', 'Asia/Tokyo'), toDate('2019-01-01')), 2))",
+        R"(SELECT "create_time", "b", "a" FROM "test"."table" WHERE (("create_time", "b"), "a") IN ((('2019-01-01 01:02:03', '2019-01-01'), 1), (('2019-01-01 02:02:03', '2019-01-01'), 2)))",
+        LiteralEscapingStyle::PostgreSQL);
 }
 
 TEST(TransformQueryForExternalDatabase, Aliases)
