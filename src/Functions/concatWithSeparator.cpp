@@ -1,14 +1,17 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
-#include <Formats/FormatSettings.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnStringHelpers.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/formatString.h>
 #include <IO/WriteHelpers.h>
-#include <DataTypes/Serializations/ISerialization.h>
 
 
 namespace DB
@@ -173,6 +176,98 @@ private:
     bool injective;
 };
 
+class ConcatWithSeparatorIgnoreNullsImpl final : public IFunction
+{
+public:
+    static constexpr auto name = "concatWithSeparatorIgnoreNulls";
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<ConcatWithSeparatorIgnoreNullsImpl>(); }
+
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
+
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(S : MaybeNullable(StringOrFixedString) | NULL, [Any], ...) -> selectIf(anyNullable(S), Nullable(String), String)";
+    }
+
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        const auto * separator_column = checkAndGetColumn<ColumnConst>(arguments.front().column.get());
+        if (!separator_column)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The first argument of function {} must be a constant separator", getName());
+
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
+        if (separator_column->isNullAt(0))
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+        const auto separator = separator_column->getDataAt(0);
+
+        struct Value
+        {
+            const IColumn * column;
+            SerializationPtr serialization;
+            bool is_constant;
+        };
+
+        VectorWithMemoryTracking<Value> values;
+        values.reserve(arguments.size() - 1);
+        bool all_constant = true;
+        for (size_t i = 1; i < arguments.size(); ++i)
+        {
+            const auto & argument = arguments[i];
+            const auto * constant = checkAndGetColumn<ColumnConst>(argument.column.get());
+            const bool is_string = isStringOrFixedString(removeNullable(argument.type));
+            values.push_back({
+                constant ? &constant->getDataColumn() : argument.column.get(),
+                is_string ? nullptr : argument.type->getDefaultSerialization(),
+                constant != nullptr});
+            all_constant &= constant != nullptr;
+        }
+
+        const size_t rows_to_write = all_constant ? 1 : input_rows_count;
+        auto strings = ColumnString::create();
+        ColumnStringHelpers::WriteHelper<ColumnString> writer(*strings, rows_to_write);
+        auto & buffer = writer.getWriteBuffer();
+        const FormatSettings format_settings;
+
+        for (size_t row = 0; row < rows_to_write; ++row)
+        {
+            bool has_value = false;
+            for (const auto & value : values)
+            {
+                const size_t value_row = value.is_constant ? 0 : row;
+                if (value.column->isNullAt(value_row))
+                    continue;
+
+                if (has_value)
+                    writeString(separator, buffer);
+                has_value = true;
+
+                if (value.serialization)
+                    value.serialization->serializeText(*value.column, value_row, buffer, format_settings);
+                else
+                    writeString(value.column->getDataAt(value_row), buffer);
+            }
+            writer.finishRow();
+        }
+        writer.finalize();
+
+        ColumnPtr result = std::move(strings);
+        if (result_type->isNullable())
+            result = makeNullable(result);
+        if (all_constant)
+            result = ColumnConst::create(std::move(result), input_rows_count);
+        return result;
+    }
+};
+
 }
 
 REGISTER_FUNCTION(ConcatWithSeparator)
@@ -255,8 +350,32 @@ GROUP BY concatWithSeparatorAssumeInjective('-', first_name, last_name);
     };
     FunctionDocumentation documentation_injective = {description_injective, syntax_injective, arguments_injective, {}, returned_value_injective, examples_injective, introduced_in, category};
 
+    FunctionDocumentation documentation_ignore_nulls = {
+        .description = R"(
+Concatenates the values in order with a constant separator, skipping top-level `NULL` values.
+Empty strings are kept. If no values are supplied or all values are `NULL`, a non-`NULL` separator yields `''`.
+Values of types other than `String` and `FixedString` are converted to strings using their default text serialization.
+)",
+        .syntax = "concatWithSeparatorIgnoreNulls(separator[, value1, value2, ...])",
+        .arguments = {
+            {"separator", "A constant `String` or `FixedString`, including nullable and low-cardinality forms, or the `NULL` literal.",
+                {"String", "FixedString", "Nullable(String)", "Nullable(FixedString)", "LowCardinality", "NULL"}},
+            {"value1, value2, ...", "Values to concatenate.", {"Any"}}
+        },
+        .returned_value = {
+            "Returns the concatenated string. The result is `Nullable(String)` if the separator type is nullable, including the `NULL` literal, and `String` otherwise. A `NULL` separator returns `NULL`.",
+            {"String", "Nullable(String)"}
+        },
+        .examples = {
+            {"Skip null values", "SELECT concatWithSeparatorIgnoreNulls(',', 'x', NULL, 'y') AS result", "x,y"}
+        },
+        .introduced_in = {26, 11},
+        .category = FunctionDocumentation::Category::String
+    };
+
     factory.registerFunction("concatWithSeparator", [](ContextPtr ctx){ return ConcatWithSeparatorImpl::create(ctx, "concatWithSeparator", false); }, documentation);
     factory.registerFunction("concatWithSeparatorAssumeInjective", [](ContextPtr ctx){ return ConcatWithSeparatorImpl::create(ctx, "concatWithSeparatorAssumeInjective", true); }, documentation_injective);
+    factory.registerFunction<ConcatWithSeparatorIgnoreNullsImpl>(documentation_ignore_nulls);
 
     /// Compatibility with Spark and MySQL:
     factory.registerAlias("concat_ws", "concatWithSeparator", FunctionFactory::Case::Insensitive);
