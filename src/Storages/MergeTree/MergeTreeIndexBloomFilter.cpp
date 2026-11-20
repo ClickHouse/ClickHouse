@@ -17,7 +17,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/Utils.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <IO/ReadBufferFromString.h>
@@ -44,7 +43,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool input_format_tsv_enum_as_number;
     extern const SettingsBool validate_enum_literals_in_operators;
 }
 
@@ -906,22 +904,15 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
         Field const_value;
         DataTypePtr const_type;
 
-        /// `=` reads a string as an `Enum` number under `input_format_tsv_enum_as_number`, the index reads it as a name.
-        auto equality_reads_enum_number = [&](const RPNBuilderTreeNode & key_argument)
-        {
-            return function_name == "equals" && getContext()->getSettingsRef()[Setting::input_format_tsv_enum_as_number]
-                && (!key_argument.getDAGNode() || comparesStringWithEnum(const_type, key_argument.getDAGNode()->result_type));
-        };
-
         if (rhs_argument.tryGetConstant(const_value, const_type))
         {
-            if (!equality_reads_enum_number(lhs_argument) && traverseTreeEquals(function_name, lhs_argument, const_type, const_value, out, parent))
+            if (traverseTreeEquals(function_name, lhs_argument, const_type, const_value, out, parent))
                 return true;
         }
         else if (lhs_argument.tryGetConstant(const_value, const_type) &&
             (function_name == "equals" || function_name == "has" || function_name == "hasAny"))
         {
-            if (!equality_reads_enum_number(rhs_argument) && traverseTreeEquals(function_name, rhs_argument, const_type, const_value, out, parent))
+            if (traverseTreeEquals(function_name, rhs_argument, const_type, const_value, out, parent))
                 return true;
         }
 
