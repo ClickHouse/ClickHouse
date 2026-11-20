@@ -1,4 +1,5 @@
 #include <Columns/ColumnArray.h>
+#include <Core/AccurateComparison.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -48,13 +49,20 @@ public:
         size_t pos2 = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const Int64 shingle_length = col_length->getInt(row);
-            if (shingle_length < 1)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shingle argument of function {} must be a positive integer.", getName());
-
             const size_t array_length = arr_offsets[row] - arr_offsets[row - 1];
-            if (static_cast<size_t>(shingle_length) > array_length)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shingle argument of function {} must less or equal than the array length.", getName());
+            const size_t shingle_length = Field::dispatch([&]<typename T>(const T & length) -> size_t
+            {
+                if constexpr (is_integer<T>)
+                {
+                    if (accurate::lessOp(length, 1))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shingle length must be a positive integer");
+                    if (accurate::greaterOp(length, array_length))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shingle length must not exceed the array length");
+                    return static_cast<size_t>(length);
+                }
+                else
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected an integer column for the shingle length");
+            }, (*col_length)[row]);
 
             for (size_t i = 0; i < array_length - shingle_length + 1; ++i)
             {
