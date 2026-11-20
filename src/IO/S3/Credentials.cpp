@@ -901,11 +901,7 @@ Aws::Auth::AWSCredentials SSOCredentialsProvider::GetAWSCredentials()
 {
     std::lock_guard lock(get_aws_credentials_mutex);
     if (IsSetNeedRefresh() || areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
-    {
-        /// The SDK reads token files during refresh.
-        Silk::ThreadModeScope thread_mode;
         Reload();
-    }
     return credentials;
 }
 
@@ -943,6 +939,10 @@ void SSOCredentialsProvider::Reload()
     auto profile = Aws::Config::GetCachedConfigProfile(profile_to_use);
     const auto access_token = [&]
     {
+        /// The SDK reads the token files here and may refresh the token of an SSO session, so this runs in thread mode,
+        /// while the request for the credentials below uses the cooperative transport of the fiber.
+        Silk::ThreadModeScope thread_mode;
+
         // If we have an SSO Session set, use the refreshed token.
         if (profile.IsSsoSessionSet())
         {
@@ -1046,7 +1046,9 @@ namespace
 {
 
 /// A copy of `Aws::Auth::ProfileConfigFileAWSCredentialsProvider` that serializes access with `Silk::FiberMutex` instead
-/// of the SDK `ReaderWriterLock` and reads the credentials file inside `Silk::ThreadModeScope`.
+/// of the SDK `ReaderWriterLock` and reads the credentials file inside `Silk::ThreadModeScope`. Overriding `Reload` of
+/// the SDK provider is not enough: the SDK holds its native lock across `Reload`, so a fiber would enter thread mode
+/// with that lock held, and a fiber that waits for it would block its scheduler thread.
 class ProfileConfigFileAWSCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
 {
 public:
@@ -1054,6 +1056,12 @@ public:
         : profile_to_use(Aws::Auth::GetConfigProfileName())
         , credentials_file_loader(Aws::Auth::ProfileConfigFileAWSCredentialsProvider::GetCredentialsProfileFilename())
     {
+        LOG_DEBUG(
+            getLogger("ProfileConfigFileAWSCredentialsProvider"),
+            "Setting provider to read credentials from {} for credentials file and {} for the config file, for use with profile {}",
+            Aws::Auth::ProfileConfigFileAWSCredentialsProvider::GetCredentialsProfileFilename(),
+            Aws::Auth::GetConfigProfileFilename(),
+            profile_to_use);
     }
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override
