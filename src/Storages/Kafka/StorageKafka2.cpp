@@ -1539,8 +1539,6 @@ void StorageKafka2::pollConsumerEvents(size_t idx)
 
 void StorageKafka2::drainEventsTask()
 {
-    /// Independent of the streaming and activation tasks: a blocked MV insert can keep the
-    /// streaming task inside streamToViews, a Keeper outage the activation task in partialShutdown.
     for (size_t idx = 0; idx < tasks.size(); ++idx)
         pollConsumerEvents(idx);
 

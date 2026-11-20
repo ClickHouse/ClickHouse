@@ -231,7 +231,6 @@ private:
 
     void threadFunc(size_t idx);
 
-    /// Serves librdkafka events of a consumer without acquiring it, so they don't pile up in its queue.
     void pollConsumerEvents(size_t idx);
 
     BackgroundSchedulePoolTaskHolder drain_task;
