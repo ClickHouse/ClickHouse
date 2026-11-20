@@ -3496,7 +3496,7 @@ void ReadFromMergeTree::buildOffsetAndSkipIndexConditions(
     /// The columns of the part-level minmax index of the partition key, by position. `PARTITION_KEY_ONLY` leaves out
     /// `_block_number` and `_block_offset`, which follow them.
     const Names partition_minmax_columns = metadata_snapshot->hasPartitionKey()
-        ? MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).getNames()
+        ? MergeTreeData::getMinMaxColumns(*metadata_snapshot, data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).getNames()
         : Names{};
 
     for (const auto & index : all_indexes)
