@@ -1348,11 +1348,17 @@ IcebergStorageSink::IcebergStorageSink(
 {
 }
 
-void IcebergStorageSink::initializeFromLatestMetadata()
+void IcebergStorageSink::readLatestMetadata()
 {
-    /// Resolve like the retry below, not through the pointer: a pointer can name a version behind
-    /// the newest committed one, and with no pointer a mixed-scheme listing must fail closed here
-    /// rather than let the first commit build on a file the table never committed.
+    /// The first read, on the first chunk, sets up how the data files are written. A later one, after a commit lost
+    /// to a concurrent commit, makes the newly committed metadata the base of the next attempt.
+    const bool is_retry = !metadata.isNull();
+
+    /// Resolve the latest version, not through the pointer: a pointer can name a version behind the newest committed
+    /// one, and with no pointer a mixed-scheme listing must fail closed rather than let a commit build on a file the
+    /// table never committed. The same holds for a table created with `iceberg_metadata_file_path` (e.g. for time-travel
+    /// reads): a commit advances past the newest committed version, not past the specified one, otherwise the retries
+    /// would keep regenerating the same target version and fail.
     auto [last_version, metadata_path, compression_method, catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
         catalog,
@@ -1367,6 +1373,9 @@ void IcebergStorageSink::initializeFromLatestMetadata()
         /* ignore_metadata_pointer_overrides */ true);
     base_catalog_metadata_location = std::move(catalog_metadata_location);
 
+    if (is_retry)
+        LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
+
     metadata = deepCopy(getMetadataJSONObject(
         metadata_path,
         object_storage,
@@ -1376,11 +1385,30 @@ void IcebergStorageSink::initializeFromLatestMetadata()
         compression_method,
         persistent_table_components.table_uuid));
     metadata_compression_method = compression_method;
-    filename_generator = FileNamesGenerator(
-        persistent_table_components.path_resolver.getTableLocation(),
-        /* use_uuid_in_metadata */ catalog != nullptr, metadata_compression_method, write_format);
 
+    if (!is_retry)
+        filename_generator = FileNamesGenerator(
+            persistent_table_components.path_resolver.getTableLocation(),
+            /* use_uuid_in_metadata */ catalog != nullptr, metadata_compression_method, write_format);
     filename_generator.setBaseMetadataFile(last_version, metadata_path);
+
+    const auto schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
+    if (is_retry && schema_id != current_schema_id)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata changed during write operation, try again");
+    current_schema_id = schema_id;
+
+    auto schemas = metadata->getArray(Iceberg::f_schemas);
+    for (size_t i = 0; i < schemas->size(); ++i)
+    {
+        if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+        {
+            current_schema = schemas->getObject(static_cast<UInt32>(i));
+        }
+    }
+
+    /// The partition spec and the sort order stay as on the first read. The data files and the manifests are already written with them.
+    if (is_retry)
+        return;
 
     if (metadata->has(Iceberg::f_properties))
     {
@@ -1391,16 +1419,6 @@ void IcebergStorageSink::initializeFromLatestMetadata()
 
     partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
     auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
-
-    current_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
-    auto schemas = metadata->getArray(Iceberg::f_schemas);
-    for (size_t i = 0; i < schemas->size(); ++i)
-    {
-        if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
-        {
-            current_schema = schemas->getObject(static_cast<UInt32>(i));
-        }
-    }
 
     sort_description = Iceberg::getSortingKeyDescriptionFromMetadata(metadata, sample_block->getNamesAndTypesList(), context, &sort_order_description);
     /// Files sorted by a key ClickHouse orders differently from Iceberg are sorted but not tagged.
@@ -1435,13 +1453,13 @@ IcebergStorageSink::~IcebergStorageSink()
 
 void IcebergStorageSink::consume(Chunk & chunk)
 {
-    if (isCancelled())
+    /// A parallel insert creates `max_insert_threads` sinks and many of them receive no data. Such a sink
+    /// commits nothing, so it does not read the latest metadata either, which lists the metadata directory.
+    if (isCancelled() || !chunk.hasRows())
         return;
 
-    /// A parallel insert creates `max_insert_threads` sinks and many of them may receive no data. Such a sink
-    /// commits nothing, so it does not look up the latest metadata either, which lists the metadata directory.
     if (!metadata)
-        initializeFromLatestMetadata();
+        readLatestMetadata();
 
     total_rows += chunk.getNumRows();
 
@@ -1602,7 +1620,7 @@ void IcebergStorageSink::finalizeBuffers()
             }
             waitBeforeCommitRetry(delay_ms);
 
-            rebaseOnLatestMetadata();
+            readLatestMetadata();
         }
 
         if (initializeMetadata())
@@ -1682,56 +1700,6 @@ void IcebergStorageSink::removeDataFilesAndManifests()
     }
 }
 
-void IcebergStorageSink::rebaseOnLatestMetadata()
-{
-    /// When retrying after a metadata conflict, we must read the actual latest
-    /// metadata version, not the explicitly specified one. If a table was created
-    /// with iceberg_metadata_file_path (e.g. for time-travel reads), the retry
-    /// loop must still discover the real latest version to advance past it.
-    /// Otherwise the loop keeps regenerating the same target version and fails.
-    auto [last_version, metadata_path, compression_method, catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
-        object_storage,
-        catalog,
-        table_id.getTableName(),
-        persistent_table_components.table_path,
-        *data_lake_settings,
-        persistent_table_components.metadata_cache,
-        context,
-        getLogger("IcebergWrites").get(),
-        persistent_table_components.table_uuid,
-        persistent_table_components.metadata_compression_method,
-        /* ignore_metadata_pointer_overrides */ true);
-    base_catalog_metadata_location = std::move(catalog_metadata_location);
-
-    LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
-
-    metadata_compression_method = compression_method;
-    filename_generator.setBaseMetadataFile(last_version, metadata_path);
-
-    metadata = deepCopy(getMetadataJSONObject(
-        metadata_path,
-        object_storage,
-        persistent_table_components.metadata_cache,
-        context,
-        getLogger("IcebergWrites"),
-        compression_method,
-        persistent_table_components.table_uuid));
-
-    auto new_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
-    if (new_schema_id != current_schema_id)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata changed during write operation, try again");
-
-    auto schemas = metadata->getArray(Iceberg::f_schemas);
-    for (size_t i = 0; i < schemas->size(); ++i)
-    {
-        if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
-        {
-            current_schema = schemas->getObject(static_cast<UInt32>(i));
-        }
-    }
-    /// The partition spec stays as on the first attempt. The manifests are already written with it.
-}
-
 bool IcebergStorageSink::initializeMetadata()
 {
     const auto & resolver = persistent_table_components.path_resolver;
@@ -1786,7 +1754,7 @@ bool IcebergStorageSink::initializeMetadata()
         if (!retry_because_of_metadata_conflict)
             removeDataFilesAndManifests();
 
-        /// After a conflict the caller rebases the next attempt with `rebaseOnLatestMetadata`.
+        /// After a conflict the caller rebases the next attempt with `readLatestMetadata`.
         best_effort_remove(storage_manifest_list_name);
     };
 

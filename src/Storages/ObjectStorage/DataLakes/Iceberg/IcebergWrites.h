@@ -229,12 +229,11 @@ private:
     void cancelBuffers();
     /// Best-effort removal of the written data files and manifests; never throws.
     void removeDataFilesAndManifests();
-    /// Reads the latest committed metadata, which the data files are written with. Called on the first chunk.
-    void initializeFromLatestMetadata();
+    /// Reads the latest committed metadata: on the first chunk to write the data files with it,
+    /// after a commit lost to a concurrent commit to make it the base of the next attempt.
+    void readLatestMetadata();
     /// One commit attempt. Returns false if the attempt lost to a concurrent commit.
     bool initializeMetadata();
-    /// Makes the latest committed metadata the base of the next commit attempt.
-    void rebaseOnLatestMetadata();
     /// Waits `delay_ms` before the next commit attempt. Throws if the insert is cancelled or runs out of time meanwhile.
     void waitBeforeCommitRetry(UInt64 delay_ms);
 
