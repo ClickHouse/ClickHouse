@@ -28,6 +28,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Common/CurrentMetrics.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <Common/CurrentThread.h>
@@ -897,6 +898,12 @@ bool ReadFromObjectStorageStep::sortingKeyIsComputableFromSourceHeader() const
     const auto & metadata = storage_snapshot->metadata;
     if (!metadata->hasSortingKey())
         return false;
+
+    /// A computed key element named like a column is taken for that column: by the analysis of the key when it also
+    /// reads the column, and by the merge of the files, which finds the key columns by name.
+    for (const auto & key : metadata->getSortingKey().expression_list_ast->children)
+        if (!key->as<ASTIdentifier>() && metadata->getColumns().has(key->getColumnName()))
+            return false;
 
     /// The key expression is analyzed once against every storage column, and this header is a
     /// projection of those same columns, so the expression is computable here exactly when the
