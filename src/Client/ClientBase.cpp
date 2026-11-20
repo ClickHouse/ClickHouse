@@ -2489,9 +2489,6 @@ void ClientBase::resetOutput()
 
     out_logs_buf.reset();
 
-    if (connection)
-        connection->onQueryOutputReleased();
-
     if (pager_cmd)
     {
         pager_cmd->in.close();
@@ -2507,6 +2504,9 @@ void ClientBase::resetOutput()
         setupSignalHandler();
     }
     pager_cmd = nullptr;
+
+    if (connection)
+        connection->onQueryOutputReleased();
 
     std_out->next();
 }

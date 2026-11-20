@@ -17,3 +17,10 @@ ${CLICKHOUSE_LOCAL} --send_logs_level trace --query "
     SELECT if(value < 4194304, 'OK', 'settled ' || toString(value) || ' bytes')
     FROM (SELECT sum(value) AS value FROM system.events WHERE event = 'QueryMemoryDriftSettledBytes');
 " 2>/dev/null | tail -n 1
+
+# The same for the pager, which keeps buffers of its own until the output is released.
+${CLICKHOUSE_LOCAL} --pager cat --query "
+    SELECT 1; SELECT 1; SELECT 1;
+    SELECT if(value < 4194304, 'OK', 'settled ' || toString(value) || ' bytes')
+    FROM (SELECT sum(value) AS value FROM system.events WHERE event = 'QueryMemoryDriftSettledBytes');
+" | tail -n 1
