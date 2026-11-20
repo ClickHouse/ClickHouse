@@ -55,6 +55,11 @@ ${CLICKHOUSE_LOCAL} --config-file "${CONFIG_FILE}" --query "
     SELECT count() FROM (SELECT number, hex(sipHash64(number)) FROM numbers(10000) SETTINGS use_query_cache = true, query_cache_on_disk_codec = 'NONE', query_cache_on_disk_cache_name = 'lru');
     SELECT event, value FROM system.events WHERE event LIKE 'QueryCacheOnDisk%' ORDER BY event;"
 
+echo "-- An entry bigger than the whole SLRU cache is not stored and leaves no file segments behind"
+${CLICKHOUSE_LOCAL} --config-file "${CONFIG_FILE}" --query "
+    SELECT count() FROM (SELECT number, hex(sipHash64(number)) FROM numbers(10000) SETTINGS use_query_cache = true, query_cache_on_disk_codec = 'NONE', query_cache_on_disk_cache_name = 'slru');
+    SELECT count() FROM system.filesystem_cache WHERE cache_name = 'slru';"
+
 echo "-- With the protected queue unused, an entry bigger than the probationary queue of an SLRU cache is stored and served"
 ${CLICKHOUSE_LOCAL} --config-file "${CONFIG_FILE}" --query "
     ${query} 'slru', query_cache_tag = 'a';
