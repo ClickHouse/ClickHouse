@@ -309,7 +309,8 @@ private:
 };
 
 void removeImplicitStatistics(ColumnsDescription & columns);
-void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str);
+void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str, bool assume_floats_distinct);
+bool canAssumeAllDistinctByType(const DataTypePtr & type);
 
 /// Whether statistics record the exact minimum and maximum of a column of this type. Only
 /// numeric-like columns are tracked, and by both statistics types that store min/max: `minmax`

@@ -35,6 +35,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 
@@ -1487,6 +1488,118 @@ TEST(Statistics, DeserializeV4BoundsOfAnotherType)
                 }
             }
         }
+    }
+}
+
+namespace
+{
+
+/// The statistics declared for a column, implicit ones are marked with `(auto)`, e.g. `basic(auto),uniq_v2`.
+String declaredStatistics(const ColumnsDescription & columns, const String & column_name)
+{
+    return columns.get(column_name).statistics.getNameForLogs();
+}
+
+/// Columns of every type the Float rule distinguishes, plus a Float64 column with an explicit `uniq_v2`.
+ColumnsDescription createColumnsForImplicitStatistics()
+{
+    const std::vector<std::pair<String, String>> name_and_types{
+        {"f32", "Float32"},
+        {"f64", "Float64"},
+        {"bf16", "BFloat16"},
+        {"nf64", "Nullable(Float64)"},
+        {"lcf64", "LowCardinality(Float64)"},
+        {"u64", "UInt64"},
+        {"s", "String"},
+    };
+
+    ColumnsDescription columns;
+    for (const auto & [name, type] : name_and_types)
+        columns.add(ColumnDescription(name, DataTypeFactory::instance().get(type)));
+
+    ColumnDescription explicit_uniq("f64_explicit", DataTypeFactory::instance().get("Float64"));
+    explicit_uniq.statistics.data_type = explicit_uniq.type;
+    explicit_uniq.statistics.types_to_desc.emplace(
+        StatisticsType::UniqV2,
+        SingleStatisticsDescription(StatisticsType::UniqV2, make_intrusive<ASTIdentifier>("uniq_v2"), /*is_implicit_=*/false));
+    columns.add(std::move(explicit_uniq));
+
+    return columns;
+}
+
+}
+
+TEST(Statistics, CanAssumeAllDistinctByType)
+{
+    auto can_assume = [](const String & type_name) { return canAssumeAllDistinctByType(DataTypeFactory::instance().get(type_name)); };
+
+    EXPECT_TRUE(can_assume("Float32"));
+    EXPECT_TRUE(can_assume("Float64"));
+    EXPECT_TRUE(can_assume("Nullable(Float32)"));
+    EXPECT_TRUE(can_assume("Nullable(Float64)"));
+
+    EXPECT_FALSE(can_assume("BFloat16"));
+    EXPECT_FALSE(can_assume("Nullable(BFloat16)"));
+    EXPECT_FALSE(can_assume("LowCardinality(Float64)"));
+    EXPECT_FALSE(can_assume("LowCardinality(Nullable(Float64))"));
+    EXPECT_FALSE(can_assume("UInt64"));
+    EXPECT_FALSE(can_assume("Decimal64(4)"));
+    EXPECT_FALSE(can_assume("String"));
+    EXPECT_FALSE(can_assume("Array(Float64)"));
+    EXPECT_FALSE(canAssumeAllDistinctByType(nullptr));
+}
+
+TEST(Statistics, AddImplicitStatisticsAssumeFloatsDistinct)
+{
+    /// `basic, uniq_v2`: the implicit `uniq_v2` is left out for Float32 / Float64 (also Nullable) only.
+    {
+        auto columns = createColumnsForImplicitStatistics();
+        addImplicitStatistics(columns, "basic, uniq_v2", /*assume_floats_distinct=*/true);
+
+        EXPECT_EQ(declaredStatistics(columns, "f32"), "basic(auto)");
+        EXPECT_EQ(declaredStatistics(columns, "f64"), "basic(auto)");
+        EXPECT_EQ(declaredStatistics(columns, "nf64"), "basic(auto)");
+        EXPECT_EQ(declaredStatistics(columns, "bf16"), "basic(auto),uniq_v2(auto)");
+        EXPECT_EQ(declaredStatistics(columns, "lcf64"), "basic(auto),uniq_v2(auto)");
+        EXPECT_EQ(declaredStatistics(columns, "u64"), "basic(auto),uniq_v2(auto)");
+        EXPECT_EQ(declaredStatistics(columns, "s"), "basic(auto),uniq_v2(auto)");
+        /// The explicit statistic is untouched.
+        EXPECT_EQ(declaredStatistics(columns, "f64_explicit"), "basic(auto),uniq_v2");
+    }
+
+    /// `uniq`: same for the older sketch. Float columns are left without implicit statistics.
+    {
+        auto columns = createColumnsForImplicitStatistics();
+        addImplicitStatistics(columns, "uniq", /*assume_floats_distinct=*/true);
+
+        EXPECT_EQ(declaredStatistics(columns, "f32"), "");
+        EXPECT_EQ(declaredStatistics(columns, "f64"), "");
+        EXPECT_EQ(declaredStatistics(columns, "nf64"), "");
+        EXPECT_EQ(declaredStatistics(columns, "bf16"), "Uniq(auto)");
+        EXPECT_EQ(declaredStatistics(columns, "lcf64"), "Uniq(auto)");
+        EXPECT_EQ(declaredStatistics(columns, "u64"), "Uniq(auto)");
+        EXPECT_EQ(declaredStatistics(columns, "s"), "Uniq(auto)");
+        EXPECT_EQ(declaredStatistics(columns, "f64_explicit"), "uniq_v2");
+    }
+
+    /// The setting is off: nothing is left out.
+    for (const String & types : {"basic, uniq_v2", "uniq"})
+    {
+        auto columns = createColumnsForImplicitStatistics();
+        addImplicitStatistics(columns, types, /*assume_floats_distinct=*/false);
+
+        const String expected = types == "uniq" ? "Uniq(auto)" : "basic(auto),uniq_v2(auto)";
+        for (const String & column_name : {"f32", "f64", "nf64", "bf16", "lcf64", "u64", "s"})
+            EXPECT_EQ(declaredStatistics(columns, column_name), expected) << column_name;
+        EXPECT_EQ(declaredStatistics(columns, "f64_explicit"), types == "uniq" ? "Uniq(auto),uniq_v2" : "basic(auto),uniq_v2");
+    }
+
+    /// Statistics other than uniq are not affected.
+    {
+        auto columns = createColumnsForImplicitStatistics();
+        addImplicitStatistics(columns, "basic, tdigest, uniq", /*assume_floats_distinct=*/true);
+        EXPECT_EQ(declaredStatistics(columns, "f64"), "TDigest(auto),basic(auto)");
+        EXPECT_EQ(declaredStatistics(columns, "u64"), "TDigest(auto),Uniq(auto),basic(auto)");
     }
 }
 

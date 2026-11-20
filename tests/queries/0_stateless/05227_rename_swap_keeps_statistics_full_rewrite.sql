@@ -14,10 +14,12 @@ DROP TABLE IF EXISTS t_swap_types_statistics SYNC;
 
 -- The two columns have different types: same-typed halves of a swap happen to land on a column of
 -- the type they were built for, which hides the problem.
+-- The Float64 column gets no implicit `uniq_v2` (`auto_statistics_assume_floats_distinct`), so the two columns also
+-- carry different sets of statistics.
 CREATE TABLE t_swap_types_statistics (a UInt64 STATISTICS(tdigest), b Float64 STATISTICS(tdigest), c UInt64)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_swap_types_statistics', 'r1')
 ORDER BY tuple() PARTITION BY tuple()
-SETTINGS auto_statistics_types = 'basic, uniq_v2', min_bytes_for_wide_part = 10485760, min_rows_for_wide_part = 1000000;
+SETTINGS auto_statistics_types = 'basic, uniq_v2', auto_statistics_assume_floats_distinct = 1, min_bytes_for_wide_part = 10485760, min_rows_for_wide_part = 1000000;
 
 INSERT INTO t_swap_types_statistics VALUES (1, 2.5, 3);
 
