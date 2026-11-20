@@ -143,8 +143,7 @@ DataTypePtr withTimeZone(const DataTypePtr & type, const std::string & zone)
     return std::make_shared<DataTypeDateTime>(zone);
 }
 
-/// The type of an `IN` member for the key `type`, through `LowCardinality`, `Nullable` and `Tuple`, with each date-time in the
-/// zone its rows are read in. Sets `has_date_time` if the key holds a date-time; nullptr if one of them has no such zone.
+/// The type of an `IN` member for the key `type`, each date-time in the zone its rows are read in; nullptr if that zone is unknown.
 DataTypePtr memberTypeOf(const DataTypePtr & type, bool & has_date_time)
 {
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
@@ -425,7 +424,6 @@ private:
 
         if (has_date_time_key)
         {
-            /// Typed with the keys, so a date-time member is written as text in the zone of its key.
             DataTypePtr member_type = set.size() == 1 ? member_types.front() : std::make_shared<DataTypeTuple>(member_types);
             if (members.size() == 1)
                 return std::make_shared<ConstantNode>(std::move(members.front()), member_type);
