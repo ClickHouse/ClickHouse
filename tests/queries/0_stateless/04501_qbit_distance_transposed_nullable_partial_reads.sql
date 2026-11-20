@@ -5,7 +5,6 @@
 -- Companion to 03375 / 04489 / 04494 (plain QBit partial reads) and 03374 (Nullable(QBit) storage).
 
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS qbit_nullable;
 CREATE TABLE qbit_nullable (id UInt32, vec Nullable(QBit(BFloat16, 16))) ENGINE = Memory;

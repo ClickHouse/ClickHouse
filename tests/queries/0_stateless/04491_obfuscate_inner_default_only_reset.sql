@@ -8,7 +8,6 @@
 -- `SETTINGS` also sets `obfuscate_seed = 'stable'`, making `hasSettingsChanges()` true and thereby
 -- bypassing the DEFAULT-only path exercised here.
 
-SET allow_experimental_analyzer = 1;
 SET obfuscate_markov_order = 0;
 
 -- The inner subquery's only setting is a DEFAULT reset (no `SETTINGS x = value`). The invalid session

@@ -32,7 +32,7 @@ DROP TABLE prewhere_sizes_pruned;
 -- Partition 3 keeps `j.b` tiny and `payload` large, every other partition stores a huge `j.b` and a tiny `payload`.
 -- Table-wide `j.b` dominates the queried bytes and stays in WHERE; measured on the single part left after pruning
 -- by `p = 3` it is the cheapest column and moves to PREWHERE together with `c`.
-SET enable_analyzer = 1, explain_query_plan_default = 'legacy';
+SET explain_query_plan_default = 'legacy';
 SET optimize_move_to_prewhere = 1, move_all_conditions_to_prewhere = 0;
 SET enable_multiple_prewhere_read_steps = 1, allow_reorder_prewhere_conditions = 0, query_plan_merge_filters = 1;
 SET optimize_functions_to_subcolumns = 0, query_plan_optimize_primary_key = 1, enable_parallel_replicas = 0;

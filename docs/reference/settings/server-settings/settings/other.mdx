@@ -163,7 +163,7 @@ You can configure multiple `<case>` sections.
 - If a data part matches multiple condition sets, ClickHouse uses the last matched condition set (the `<case>` sections are checked in order, and each matching one overrides the previous choice).
 
 <Note>
-If no conditions are met for a data part, ClickHouse uses the size-aware built-in default: `LZ4` below 100 MB and `ZSTD(3)` at or above it. As for the `min_part_size` conditions above, the size is the one known when the codec has to be chosen, before the data is written: `0` for a freshly inserted part, and the size of the source parts for a merge or a mutation. A rewrite that shrinks its input, such as a `TTL DELETE` or a collapsing merge, is therefore classified by the input size and can produce a part below the threshold that is still `ZSTD(3)`.
+If no conditions are met for a data part, ClickHouse uses the size-aware built-in default: `LZ4` below 100 MB and `ZSTD(3)` at or above it. As for the `min_part_size` conditions above, the size is the one known when the codec has to be chosen, before the data is written: the uncompressed size of the inserted block for a freshly inserted part, and the size of the source parts for a merge or a mutation. So small inserts are written with `LZ4`, and large inserts are written with `ZSTD(3)` right away. A rewrite that shrinks its input, such as a `TTL DELETE` or a collapsing merge, is therefore classified by the input size and can produce a part below the threshold that is still `ZSTD(3)`.
 </Note>
 
 **Example**
@@ -474,6 +474,62 @@ This setting specifies the cache path.
 <filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>
 ```
 
+## filesystem_isolation {#filesystem_isolation}
+
+<SettingsInfoBlock type="FilesystemIsolationMode" default_value="disabled" changeable_without_restart="No" />
+Whether the server isolates itself from the filesystem of the host at startup, keeping visible only the paths it needs, like a container does. An attacker who manages to run code inside the server process then finds no shell or other program to run, and cannot read or modify the files of the host outside the directories of the server.
+
+At startup, before it starts any thread, the server moves itself into a new [mount namespace](https://man7.org/linux/man-pages/man7/mount_namespaces.7.html) whose root is an empty read-only `tmpfs`, bind-mounts into it, at their usual locations, only the paths it needs, and removes the original root with `pivot_root`. What stays visible:
+
+- The paths from the configuration that the server writes: `path`, `tmp_path`, `user_files_path`, `format_schema_path`, `filesystem_caches_path`, the directories of the local disks and of the metadata of the other disks in `storage_configuration`, the directories of the log files, of the pid file and of `core_path`, the storage directories of the embedded Keeper, `access_control_path`, the paths of all the `local_directory` entries in `user_directories`, `user_defined_path`, `workload_path`, `named_collections_storage.path`, `backups.allowed_path`, the working directory of every `distributed_cache_server` section and the cache directory of each. They are mounted read-write, but with `noexec`, so that nothing written there can be executed.
+- The paths from the configuration that the server only reads, mounted read-only: the directory of the configuration file, the directories of the included files and of the targets of the symbolic links among the configuration files, `users_config`, `user_scripts_path` (programs in it can be executed), `top_level_domains_path`, `google_protos_path`, the directories of the TLS certificates and keys in `openSSL`, `grpc`, `ldap_servers`, of the certificate and the key of every `distributed_cache_server` section and of the certificate chain of `distributed_cache_client`, the Kerberos keytab, and the `clickhouse-odbc-bridge` program next to the server's executable, with its dynamic loader and the shared libraries it needs, as the dynamic loader finds them. The locations of the logs of the bridge (`logger.odbc_bridge_log`, `logger.odbc_bridge_errlog`, `logger.odbc_bridge_stdout`, `logger.odbc_bridge_stderr`) are writable.
+- The executable of the server and the shared libraries it is linked with, with the symbolic links next to them that name them (such as `libc.so.6`), and the directory of the heap profiles of jemalloc if its `prof_prefix` option is set.
+- What a program on Linux needs: `/proc` (with `/proc/sys`, `/proc/sysrq-trigger`, `/proc/bus`, `/proc/fs` and `/proc/irq` and the mounts inside them read-only, as in the containers of Docker), `/sys` (read-only), `/dev/null`, `/dev/zero`, `/dev/full`, `/dev/random`, `/dev/urandom`, a private instance of `devpts` at `/dev/pts` with `/dev/ptmx` for the pseudoterminals of the web terminal and the SSH server, the network configuration in `/etc` (`hosts`, `resolv.conf`, `nsswitch.conf`, `host.conf`, `gai.conf`, `services`, `protocols`), `/etc/passwd`, `/etc/group`, `/etc/localtime`, the time zone database and the CA certificates (`/etc/ssl`, `/etc/pki`, `/etc/ca-certificates`, `/usr/share/ca-certificates`, `/usr/local/share/ca-certificates`) with the targets of the links inside them, as in a CA directory given in `caConfig`, `/usr/lib/debug` for the symbols in stack traces, the socket of the service manager from the `NOTIFY_SOCKET` environment variable, and `/dev/log` if `logger.use_syslog` is enabled. If `/dev/log` is a symbolic link, as `/dev/log -> /run/systemd/journal/dev-log` with systemd, the directory of its target is visible, so that a socket recreated there by a restarted service is seen. A socket directly in `/dev` that the syslog daemon recreates when it restarts is not seen again until the server restarts, because the `/dev` of the host is not visible.
+- A private empty `/tmp`.
+- The paths listed in the `filesystem_isolation_paths` section of the configuration, with `<read_only>` and `<read_write>` elements.
+
+Symbolic links on the way to a path are recreated inside, and their targets are made visible as well. A directory that is a file's location in the configuration, such as that of a certificate, is mounted whole, so that a renewed file replaced by a new one is visible. If such a file is a symbolic link, as the certificates of Let's Encrypt are, the directories of the targets of the links are mounted as well. Writable directories that do not exist are created before the isolation, as the server would do anyway.
+
+Nothing else is visible, in particular no shell: [executable user defined functions](/sql-reference/functions/udf), executable dictionaries, the `executable` table function and the `Executable` table engine can run only programs that do not need anything outside the visible paths. To run a script, make its interpreter and the libraries it is linked with visible, for example:
+
+```xml
+<filesystem_isolation_paths>
+<read_only>/bin</read_only>
+<read_only>/usr/bin</read_only>
+<read_only>/lib</read_only>
+<read_only>/lib64</read_only>
+<read_only>/usr/lib</read_only>
+</filesystem_isolation_paths>
+```
+
+or disable the isolation. The same applies to a file that a table engine, a table function or a dictionary refers to by an absolute path outside of the visible paths. Drivers of executable user defined functions (`allow_experimental_executable_udf_drivers`) are not supported: `CREATE FUNCTION` with a driver is refused, because the programs that drivers generate are in `dynamic_user_defined_executable_functions_path`, which is writable and therefore not executable. The `clickhouse-odbc-bridge` runs inside the isolation too, so the ODBC drivers and their configuration (`/etc/odbc.ini`, `/etc/odbcinst.ini`) have to be made visible to use the `odbc` table function and dictionaries.
+
+If the process has `CAP_SYS_ADMIN`, it creates only a mount namespace and keeps the capabilities it uses, such as `CAP_NET_BIND_SERVICE`, `CAP_IPC_LOCK`, `CAP_SYS_NICE` and `CAP_NET_ADMIN`, dropping those that would let it undo the isolation (`CAP_SYS_ADMIN`, `CAP_SYS_CHROOT`, `CAP_SYS_PTRACE`, `CAP_DAC_READ_SEARCH`, `CAP_SETUID`, `CAP_SETGID`, `CAP_MKNOD`, `CAP_SYS_MODULE`, `CAP_SYS_RAWIO` and similar). Otherwise, it creates a user namespace as well, mapping only its own user and group to themselves, and loses all its capabilities, because they are not valid outside of the new user namespace: it can then no longer listen on a port below 1024, lock its executable in memory, raise the priority of threads, or collect the per-thread metrics of `taskstats`. A warning at startup names the lost capabilities. In both cases the server sets `PR_SET_NO_NEW_PRIVS`, and every mount is `nosuid`.
+
+Creating a user namespace without privileges is not always allowed: it is disabled by the `kernel.unprivileged_userns_clone` and `user.max_user_namespaces` sysctls on some systems, and Ubuntu since 24.04 allows it only to the programs with an AppArmor profile permitting it (see the `kernel.apparmor_restrict_unprivileged_userns` sysctl). Container runtimes such as Docker refuse it as well, unless the container has `CAP_SYS_ADMIN`. The server checks in a child process whether it can isolate itself before doing it, so a failure does not leave it in a namespace without its capabilities.
+
+The `/proc` of the host is visible inside, because a new one requires a new PID namespace. The watchdog process (`clickhouse-watchdog`) is forked after the isolation and runs inside it too. But through `/proc/<pid>/root`, `/proc/<pid>/cwd` and `/proc/<pid>/fd`, the server can reach the filesystem of the host as seen by any other process of the same user that runs outside of the isolation, so run nothing else under the user of the server: a dedicated user, as the packages create, is enough.
+
+The isolation is applied once, at startup, before the server starts any thread, and cannot be changed afterwards: a changed value or `filesystem_isolation_paths` in a reloaded configuration takes effect after a restart, and a path that comes from ZooKeeper through `from_zk` is not seen by it. It is applied before the [`seccomp`](/reference/settings/server-settings/settings/other#seccomp) filter, which refuses the system calls that would undo it.
+
+Possible values:
+
+- `disabled` - the server does not isolate the filesystem.
+- `best_effort` - the server isolates the filesystem if it is allowed to create the namespaces and to mount filesystems in them, and otherwise logs a warning with the reason and runs without the isolation.
+- `enforce` - the server isolates the filesystem, or does not start.
+
+A failure after the server has entered the new namespace, such as a path that cannot be mounted, stops the startup in both `best_effort` and `enforce` modes.
+
+`system.server_settings` reports the mode in force: `disabled` if the server runs without the isolation.
+
+The isolation is a facility of the Linux kernel. On other operating systems, `best_effort` logs a warning, and `enforce` does not let the server start.
+
+**Example**
+
+```xml
+<filesystem_isolation>best_effort</filesystem_isolation>
+```
+
 ## google_protos_path {#google_protos_path}
 
 <SettingsInfoBlock type="String" default_value="/usr/share/clickhouse/protos/" changeable_without_restart="No" />
@@ -513,8 +569,7 @@ A value of `0` means ClickHouse disables HSTS. If you set a positive number, the
 
 ## iceberg_manifest_decode_thread_pool_queue_size {#iceberg_manifest_decode_thread_pool_queue_size}
 
-<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
-The maximum number of jobs that can be scheduled on the thread pool for decoding Iceberg data manifest files.
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />The maximum number of jobs that can be scheduled on the thread pool for decoding Iceberg data manifest files. The setting is deprecated and has no effect: Iceberg manifest files are read on the IO thread pool.
 
 ## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
 
@@ -644,7 +699,7 @@ The location and format of log messages.
 | Key                    | Description                                                                                                                                                        |
 |------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `async` | When `true` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG           |
-| `async_queue_max_size` | When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped                       |
+| `async_queue_max_size` | When using async logging, the max amount of messages that will be kept in the queue waiting for flushing. Extra messages will be dropped                       |
 | `console` | Enable logging to the console. Set to `1` or `true` to enable. Default is `1` if ClickHouse does not run in daemon mode, `0` otherwise.                            |
 | `console_log_level` | Log level for console output. Defaults to `level`.                                                                                                                 |
 | `console_shutdown_log_level` | Shutdown level is used to set the console log level at server Shutdown.   
@@ -690,7 +745,7 @@ Column "Example" shows the output at `2023-07-06 18:32:07`.
 | `%e`         | Day of the month as a space-padded decimal number (range [1,31]). Single digit is preceded by a space.              | `&nbsp; 6`                 |
 | `%a`         | Abbreviated weekday name, e.g. Fri (locale dependent)                                                               | `Thu`                      |
 | `%A`         | Full weekday name, e.g. Friday (locale dependent)                                                                   | `Thursday`                 |
-| `%w`         | Weekday as a integer number with Sunday as 0 (range [0-6])                                                          | `4`                        |
+| `%w`         | Weekday as an integer number with Sunday as 0 (range [0-6])                                                          | `4`                        |
 | `%u`         | Weekday as a decimal number, where Monday is 1 (ISO 8601 format) (range [1-7])                                      | `4`                        |
 | `%H`         | Hour as a decimal number, 24 hour clock (range [00-23])                                                             | `18`                       |
 | `%I`         | Hour as a decimal number, 12 hour clock (range [01,12])                                                             | `06`                       |
@@ -984,10 +1039,10 @@ Keys for server/client settings:
 | `cipherList` | Supported OpenSSL encryptions.                                                                                                                                                                                                                                                                                                                                                                                                                                         | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`  |
 | `cipherSuites`     | Supported TLS 1.3 cipher suites in OpenSSL notation. An empty value leaves the OpenSSL default suites in place. `cipherList` only applies to TLS 1.2 and below. Suite names OpenSSL does not recognize are ignored; a value that leaves no recognized suite is an error and the TLS context fails to initialize.                                                                                                                                                       |                                            |
 | `disableProtocols` | Protocols that are not allowed to be used.                                                                                                                                                                                                                                                                                                                                                                                                                             |                                            |
-| `extendedVerification` | If enabled, verify that the certificate CN or SAN matches the peer hostname.                                                                                                                                                                                                                                                                                                                                                                                           | `false`                                    |
+| `extendedVerification` | If enabled, verify that the certificate CN or SAN matches the peer hostname.                                                                                                                                                                                                                                                                                                                                                                                           | `true` for `openSSL.client`, `false` for `openSSL.server` |
 | `fips` | Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.                                                                                                                                                                                                                                                                                                                                                                                 | `false`                                    |
 | `invalidCertificateHandler` | Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>` .                                                                                                                                                                                                                                                                           | `RejectCertificateHandler`                 |
-| `loadDefaultCAFile` | Wether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `/etc/ssl/cert.pem` (resp. the directory `/etc/ssl/certs`) or in file (resp. directory) specified by the environment variable `SSL_CERT_FILE` (resp. `SSL_CERT_DIR`).                                                                                                                                                                        | `true`                                     |
+| `loadDefaultCAFile` | Whether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `/etc/ssl/cert.pem` (resp. the directory `/etc/ssl/certs`) or in file (resp. directory) specified by the environment variable `SSL_CERT_FILE` (resp. `SSL_CERT_DIR`).                                                                                                                                                                        | `true`                                     |
 | `preferServerCiphers` | Client-preferred server ciphers.                                                                                                                                                                                                                                                                                                                                                                                                                                       | `false`                                    |
 | `privateKeyFile` | Path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.                                                                                                                                                                                                                                                                                                                                              |                                            |
 | `privateKeyPassphraseHandler` | Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.                                                                                                                                                                                                | `KeyConsoleHandler`                        |
@@ -1056,7 +1111,7 @@ Keys for server/client settings:
 
 ## openSSL.client.extendedVerification {#openssl.client.extendedverification}
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />If enabled, verify that the certificate CN or SAN matches the peer hostname.
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />If enabled, verify that the certificate CN or SAN matches the peer hostname.
 
 ## openSSL.client.fips {#openssl.client.fips}
 
@@ -1503,6 +1558,25 @@ ClickHouse will check the highest priority resolver type for the request protoco
 it will check the next highest priority resolver type, until it reaches the environment resolver.
 This also allows a mix of resolver types can be used.
 
+## quick_startup {#quick_startup}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
+Start up as fast as possible by skipping the optional work that the server does at startup:
+- `<mlock>` of the executable, as with `mlock_executable` = `false`;
+- remapping of the executable to huge pages, as with `remap_executable` = `false`;
+- the integrity check of the executable, as with `skip_binary_checksum_checks` = `true`;
+- the checks of the environment (such as the clock source, transparent huge pages, memory overcommit, kernel limits, delay accounting and disk readahead), which only produce warnings in `system.warnings`.
+
+The validation of the configuration is not skipped.
+
+The executable code is about 500 MiB, and both the `<mlock>` and the integrity check read all of it. On a cold page cache and a network disk, that takes several seconds, most of the startup time. It is useful where the server is often restarted, such as in tests, benchmarks and short-lived instances. The cost is that the code can be paged out under memory pressure, and a corrupted executable is not detected at startup.
+
+**Example**
+
+```xml
+<quick_startup>true</quick_startup>
+```
+
 ## remap_executable {#remap_executable}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
@@ -1633,6 +1707,10 @@ Example:
 </ssh_server>
 ```
 
+## stream_kafka_locks_refresh_polls {#stream_kafka_locks_refresh_polls}
+
+<SettingsInfoBlock type="UInt64" default_value="15" changeable_without_restart="Yes" />Number of polls after which a Kafka consumer with offsets in Keeper re-checks which partitions it owns
+
 ## table_engines_require_grant {#table_engines_require_grant}
 
 <CloudNotSupportedBadge/>
@@ -1670,7 +1748,7 @@ Additionally:
 
 | Setting | Description                                                                                                                                                                                                 | Default Value       |
 |---------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
-| `level` | Maximum Message Level (by default `Trace`) which will be stored in a table.                                                                                                                                 | `Trace`             |
+| `level` | Maximum message level stored in the table. When set explicitly, the root logger level is raised to at least this value, so `text_log` can be more verbose than the server log file (`logger.level`). When not set, messages up to the most verbose level of the configured log outputs (`logger.level`, `console_log_level`, `errorlog_level`, `syslog_level`) are stored. | `Trace` (limited by the other log outputs when not set) |
 
 **Example**
 

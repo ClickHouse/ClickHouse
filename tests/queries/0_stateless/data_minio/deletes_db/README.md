@@ -285,3 +285,123 @@ spark.stop()
 
 The resulting `/out/warehouse/default/eq_deletes_required_table` directory is copied here
 as is, except for the `.*.crc` files.
+
+## How is `eq_deletes_null_key_table` generated?
+
+The table has four optional columns `id INT, category STRING, name STRING, tag STRING` and one
+Parquet data file:
+
+| id | category | name | tag |
+|---|---|---|---|
+| 1 | marsupial | Koala | t |
+| 2 | toy | Teddy | t |
+| 3 | NULL | Grizzly | t |
+| 4 | NULL | Polar | t |
+| 4 | bear | Kodiak | t |
+| NULL | toy | Ghost | t |
+| NULL | NULL | Phantom | t |
+| 5 | toy | Doomed | NULL |
+
+Three Parquet equality delete files follow, one commit each: on `id` deleting `id = 2` (Teddy), on
+`(id, category)` deleting `(4, NULL)` (Polar only), and on `tag` deleting `tag = NULL` (Doomed). The
+Iceberg Java reader returns Ghost, Grizzly, Koala, Kodiak and Phantom.
+
+Generated with the Iceberg Java API (`iceberg-spark-runtime-4.1_2.13-1.11.0`) through the PySpark JVM
+gateway (Spark SQL cannot write equality deletes):
+
+``` python
+import glob
+import os
+
+from pyspark.sql import SparkSession
+
+WAREHOUSE = "/tmp/iceberg_warehouse"
+TABLE = "eq_deletes_null_key_table"
+
+jar = glob.glob(os.path.expanduser("~/.ivy2.5.2/jars/org.apache.iceberg_iceberg-spark-runtime-4.1_2.13-1.11.0.jar"))[0]
+spark = SparkSession.builder.master("local[1]").config("spark.jars", jar).getOrCreate()
+jvm = spark._jvm
+gateway = spark.sparkContext._gateway
+ice = jvm.org.apache.iceberg
+NestedField = getattr(ice.types, "Types$NestedField")
+IntegerType = getattr(ice.types, "Types$IntegerType")
+StringType = getattr(ice.types, "Types$StringType")
+PARQUET = getattr(ice.FileFormat, "PARQUET")
+
+catalog = ice.hadoop.HadoopCatalog(spark._jsc.hadoopConfiguration(), WAREHOUSE)
+names = gateway.new_array(jvm.String, 2)
+names[0] = "default"
+names[1] = TABLE
+ident = ice.catalog.TableIdentifier.of(names)
+
+fields = jvm.java.util.ArrayList()
+fields.add(NestedField.optional(1, "id", IntegerType.get()))
+fields.add(NestedField.optional(2, "category", StringType.get()))
+fields.add(NestedField.optional(3, "name", StringType.get()))
+fields.add(NestedField.optional(4, "tag", StringType.get()))
+props = jvm.java.util.HashMap()
+props.put("format-version", "2")
+table = catalog.createTable(ident, ice.Schema(fields), ice.PartitionSpec.unpartitioned(), props)
+
+
+def out(name):
+    path = table.locationProvider().newDataLocation(name)
+    return ice.encryption.EncryptedFiles.plainAsEncryptedOutput(table.io().newOutputFile(path))
+
+
+rows = [
+    (1, "marsupial", "Koala", "t"),
+    (2, "toy", "Teddy", "t"),
+    (3, None, "Grizzly", "t"),
+    (4, None, "Polar", "t"),
+    (4, "bear", "Kodiak", "t"),
+    (None, "toy", "Ghost", "t"),
+    (None, None, "Phantom", "t"),
+    (5, "toy", "Doomed", None),
+]
+data_writer = ice.data.GenericAppenderFactory(table.schema(), table.spec()).newDataWriter(out("data-0.parquet"), PARQUET, None)
+for i, c, n, t in rows:
+    record = ice.data.GenericRecord.create(table.schema())
+    record.setField("id", i)
+    record.setField("category", c)
+    record.setField("name", n)
+    record.setField("tag", t)
+    data_writer.write(record)
+data_writer.close()
+table.newAppend().appendFile(data_writer.toDataFile()).commit()
+
+# One RowDelta commit per equality delete file: (equality columns, file name, delete rows).
+deletes = [
+    (["id"], "eq-delete-id.parquet", [{"id": 2}]),
+    (["id", "category"], "eq-delete-id-category.parquet", [{"id": 4, "category": None}]),
+    (["tag"], "eq-delete-tag-null.parquet", [{"tag": None}]),
+]
+for cols, file_name, delete_rows in deletes:
+    table.refresh()
+    col_list = jvm.java.util.ArrayList()
+    for c in cols:
+        col_list.add(c)
+    delete_schema = table.schema().select(col_list)
+    equality_ids = gateway.new_array(jvm.int, len(cols))
+    for k, c in enumerate(cols):
+        equality_ids[k] = table.schema().findField(c).fieldId()
+    factory = ice.data.GenericAppenderFactory(table.schema(), table.spec(), equality_ids, delete_schema, None)
+    writer = factory.newEqDeleteWriter(out(file_name), PARQUET, None)
+    for delete_row in delete_rows:
+        record = ice.data.GenericRecord.create(delete_schema)
+        for k, v in delete_row.items():
+            record.setField(k, v)
+        writer.write(record)
+    writer.close()
+    table.newRowDelta().addDeletes(writer.toDeleteFile()).commit()
+
+# The rows the Iceberg Java reader returns after applying the deletes (the test reference).
+it = ice.data.IcebergGenerics.read(catalog.loadTable(ident)).build().iterator()
+while it.hasNext():
+    r = it.next()
+    print(r.getField("id"), r.getField("category"), r.getField("name"), r.getField("tag"))
+spark.stop()
+```
+
+The resulting `/tmp/iceberg_warehouse/default/eq_deletes_null_key_table` directory is copied here
+as is, except for the `.*.crc` files.

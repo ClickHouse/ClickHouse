@@ -56,8 +56,6 @@ SELECT '-- the defaulted column and the inputs of its expression are deferred; t
 SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT a, b, s, p FROM lazy_mat_hive_default ORDER BY k DESC LIMIT 3) WHERE explain LIKE '%Lazily read columns%';
 "
 
-# `enable_analyzer` is pinned because lazy materialization requires the analyzer
-# (see `QueryPlanOptimizationSettings`), and some CI configurations run with the old analyzer.
 # `s3_validate_etag_on_read` is pinned because for plain (non-data-lake) object storage the lazy
 # reread is only generation-safe on `S3` with the ETag-pinned GET.
 # `query_plan_max_limit_for_lazy_materialization` is pinned because the CI settings randomizer may
@@ -65,7 +63,6 @@ SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT a, b, s, p FROM lazy_mat_h
 for enabled in 1 0; do
     echo "-- query_plan_optimize_lazy_materialization_for_object_storage = $enabled"
     ${CLICKHOUSE_CLIENT} \
-        --enable_analyzer=1 \
         --use_hive_partitioning=1 \
         --s3_validate_etag_on_read=1 \
         --query_plan_optimize_lazy_materialization=1 \
@@ -75,7 +72,6 @@ for enabled in 1 0; do
 
     echo "-- a default over a hive partition column cannot be evaluated on any plan (pre-existing)"
     ${CLICKHOUSE_CLIENT} \
-        --enable_analyzer=1 \
         --use_hive_partitioning=1 \
         --s3_validate_etag_on_read=1 \
         --query_plan_optimize_lazy_materialization=1 \

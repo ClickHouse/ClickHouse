@@ -11,7 +11,6 @@ INSERT INTO t1 VALUES (1, 1);
 INSERT INTO t2 VALUES (1, 1);
 INSERT INTO t3 VALUES (1), (2);
 
-SET enable_analyzer = 1;
 SET make_distributed_plan = 1;
 SET enable_cascades_optimizer = 1;
 SET distributed_plan_execute_locally = 1;

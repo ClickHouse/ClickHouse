@@ -8,7 +8,7 @@ import time
 import threading
 
 from pathlib import Path
-from integration.helpers.client import Client
+from tests.integration.helpers.client import Client
 from pyiceberg.catalog import load_catalog
 from .kafkatest import KafkaHandler
 from .filetables import FileHandler
@@ -142,8 +142,8 @@ spark_properties = {
 
 
 def wait_for_port(host, port, timeout=90):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < timeout:
         try:
             with socket.create_connection((host, port), 1):
                 return True
@@ -445,7 +445,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.endpoint",
-                        f"http://{cluster.get_instance_ip('minio')}:{cluster.minio_s3_port}",
+                        f"http://{cluster.minio_ip}:{cluster.minio_port}",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
@@ -508,7 +508,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.endpoint",
-                        f"http://{cluster.get_instance_ip('minio')}:{cluster.minio_s3_port}",
+                        f"http://{cluster.minio_ip}:{cluster.minio_port}",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
@@ -566,7 +566,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.endpoint",
-                        f"http://{cluster.get_instance_ip('minio')}:{cluster.minio_s3_port}",
+                        f"http://{cluster.minio_ip}:{cluster.minio_port}",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
@@ -809,7 +809,7 @@ logger.jetty.level = warn
         # Load catalog if needed
         if next_lake == LakeFormat.Iceberg and next_storage == TableStorage.S3:
             params = {
-                "s3.endpoint": f"http://{cluster.get_instance_ip('minio')}:{cluster.minio_s3_port}",
+                "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
                 "s3.access-key-id": cluster.minio_access_key,
                 "s3.secret-access-key": cluster.minio_secret_key,
                 "s3.signing-region": "us-east-1",

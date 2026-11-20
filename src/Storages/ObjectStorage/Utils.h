@@ -3,18 +3,26 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Parsers/IAST_fwd.h>
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
 
 namespace DB
 {
 
 class IObjectStorage;
 
+/// The function returns a new key when `key` exists and `create_new_file_on_insert` is set. `check_new_key` is called
+/// on each candidate before it is looked up, so that a candidate outside the grant of the writer is refused before
+/// its existence can be observed.
 std::optional<std::string> checkAndGetNewFileOnInsertIfNeeded(
     const IObjectStorage & object_storage,
     const StorageObjectStorageConfiguration & configuration,
     const StorageObjectStorageQuerySettings & settings,
     const std::string & key,
-    size_t sequence_number);
+    size_t sequence_number,
+    const std::function<void(const std::string & new_key)> & check_new_key = {});
 
 void resolveSchemaAndFormat(
     ColumnsDescription & columns,
@@ -28,6 +36,10 @@ void resolveSchemaAndFormat(
 void validateSupportedColumns(
     ColumnsDescription & columns,
     const StorageObjectStorageConfiguration & configuration);
+
+/// Throws `ACCESS_DENIED` if the client of `object_storage` uses the server's own Azure identity or S3 credentials and
+/// the session of `context` may not. For entrypoints that do not refresh the client for the session, e.g. `ALTER` of a data lake.
+void checkSessionMayUseServerIdentity(const IObjectStorage & object_storage, const ContextPtr & context);
 
 /// An empty column name has no identifier to render it with, so it cannot survive analysis.
 void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string_view lake_name);

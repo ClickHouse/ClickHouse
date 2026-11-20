@@ -26,6 +26,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int INCORRECT_DATA;
     extern const int TOO_LARGE_STRING_SIZE;
 }
@@ -96,8 +97,13 @@ void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, co
 
     field = String();
     String & s = field.safeGet<String>();
-    s.resize(size);
-    istr.readStrict(s.data(), size);
+    if (size <= istr.available())
+    {
+        s.resize(size);
+        istr.readStrict(s.data(), size);
+        return;
+    }
+    readStringGrowing(s, size, istr);
 }
 
 
@@ -116,6 +122,20 @@ void SerializationString::serializeBinary(const IColumn & column, size_t row_num
     writeString(s, ostr);
 }
 
+
+void SerializationString::deserializeBinary(std::string_view & value, std::string_view & input, const FormatSettings & settings) const
+{
+    UInt64 size = 0;
+    const char * data = readVarUInt(size, input.data(), input.size());
+    checkStringSize(size, settings);
+
+    const size_t remaining = input.size() - (data - input.data());
+    if (size > remaining)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read a string of {} bytes, only {} bytes are left", size, remaining);
+
+    value = std::string_view(data, size);
+    input.remove_prefix(input.size() - remaining + size);
+}
 
 void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
@@ -943,16 +963,20 @@ void appendStringSizesToColumnStringOffsets(ColumnString & column_string, const 
 {
     auto & offsets = column_string.getOffsets();
 
-    offsets.reserve(offsets.size() + rows);
-
     /// The sizes come from a separate stream, so nothing bounds them by the data that follows them and
     /// their sum can overflow the offsets. A 128-bit accumulator cannot overflow, so one check of the
     /// total is enough: below it every offset is exact.
     unsigned __int128 offset = offsets.empty() ? 0 : offsets.back();
+
+    /// Resize once and write through a pointer: `push_back` checks the capacity on every row.
+    const size_t old_size = offsets.size();
+    offsets.resize(old_size + rows);
+    IColumn::Offset * out = offsets.data() + old_size;
+    const UInt64 * in = sizes + start;
     for (size_t i = 0; i < rows; ++i)
     {
-        offset += sizes[start + i];
-        offsets.push_back(static_cast<IColumn::Offset>(offset));
+        offset += in[i];
+        out[i] = static_cast<IColumn::Offset>(offset);
     }
 
     if (unlikely(offset > MAX_TOTAL_STRING_SIZE))

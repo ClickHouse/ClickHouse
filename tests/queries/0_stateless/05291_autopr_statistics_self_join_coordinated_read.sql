@@ -26,7 +26,6 @@ OPTIMIZE TABLE t_self_coord FINAL;
 
 CREATE TABLE t_self_coord_baseline (left_sum UInt64, right_sum UInt64) ENGINE = Memory;
 
-SET enable_analyzer = 1;
 -- The read has to be pruned by its own key condition only: a filter built from the other side at runtime
 -- would change how many bytes are read and make the comparison below about something else.
 SET enable_join_runtime_filters = 0;
