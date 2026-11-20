@@ -23,6 +23,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
+#include <Compression/CompressionCodecZSTD.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/hasNullable.h>
@@ -60,6 +61,7 @@
 #include <fmt/ranges.h>
 #include <lz4.h>
 #include <zlib.h>
+#include <zstd.h>
 
 #if USE_SNAPPY
 #include <snappy.h>
@@ -251,8 +253,14 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
             method = CompressionMethod::Brotli;
             break;
         case parq::CompressionCodec::ZSTD:
-            method = CompressionMethod::Zstd;
-            break;
+        {
+            size_t res = decompressZSTDWithPooledContext(data, compressed_size, out, uncompressed_size);
+            if (ZSTD_isError(res))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed ZSTD compressed page: {}", ZSTD_getErrorName(res));
+            if (res != uncompressed_size)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected uncompressed page size");
+            return;
+        }
         case parq::CompressionCodec::LZ4_RAW:
         {
             /// LZ4 block.
