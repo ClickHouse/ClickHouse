@@ -6,6 +6,8 @@
 #include <Common/DNSResolver.h>
 #include <Common/ErrnoException.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/logger_useful.h>
@@ -43,10 +45,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int FAULT_INJECTED;
     extern const int LOGICAL_ERROR;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
+}
+
+namespace FailPoints
+{
+    extern const char worker_control_loop_break_connection_fails[];
 }
 
 using namespace StatelessWorkerControlProtocol;
@@ -71,6 +79,33 @@ constexpr int SEND_FLAGS = 0;
 int socketErrorCode(int socket_errno)
 {
     return socket_errno == ETIMEDOUT ? ErrorCodes::SOCKET_TIMEOUT : ErrorCodes::NETWORK_ERROR;
+}
+
+/// Returns `exception` as the loss of the control connection to `description`.
+std::exception_ptr makeLostConnectionException(const String & description, std::exception_ptr exception)
+{
+    int code = 0;
+    String message;
+    try
+    {
+        std::rethrow_exception(exception);
+    }
+    catch (const Exception & e)
+    {
+        code = e.code();
+        message = e.message();
+    }
+    catch (const Poco::Exception & e)
+    {
+        code = ErrorCodes::NETWORK_ERROR;
+        message = e.displayText();
+    }
+    catch (...)
+    {
+        code = getCurrentExceptionCode();
+        message = getCurrentExceptionMessage(/*with_stacktrace=*/ false);
+    }
+    return std::make_exception_ptr(Exception(code, "Lost the control connection to stateless worker {}: {}", description, message));
 }
 
 }
@@ -373,11 +408,12 @@ void WorkerControlLoop::post(Command command)
 void WorkerControlLoop::run()
 {
     setThreadName(ThreadName::WORKER_CONTROL_LOOP);
-    try
+    std::array<epoll_event, MAX_EVENTS> events{};
+    auto next_tick = Clock::now() + TICK;
+    while (true)
     {
-        std::array<epoll_event, MAX_EVENTS> events{};
-        auto next_tick = Clock::now() + TICK;
-        while (true)
+        /// An error ends only the turn: the connections keep their state, and the next turn serves them again.
+        try
         {
             const auto left = std::chrono::ceil<std::chrono::milliseconds>(next_tick - Clock::now()).count();
             const size_t ready = epoll.getManyReady(MAX_EVENTS, events.data(), static_cast<int>(std::clamp<Int64>(left, 0, TICK.count())));
@@ -403,17 +439,17 @@ void WorkerControlLoop::run()
 
             if (Clock::now() >= next_tick)
             {
-                checkDeadlines();
                 next_tick = Clock::now() + TICK;
+                checkDeadlines();
             }
         }
-        breakAll(std::make_exception_ptr(Exception(ErrorCodes::ABORTED, "the server is shutting down")));
+        catch (...)
+        {
+            tryLogCurrentException(log, "A turn of the stateless worker control loop failed");
+        }
     }
-    catch (...)
-    {
-        tryLogCurrentException(log, "The stateless worker control loop failed");
-        breakAll(std::current_exception());
-    }
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+    breakAll(std::make_exception_ptr(Exception(ErrorCodes::ABORTED, "the server is shutting down")));
 }
 
 bool WorkerControlLoop::processCommands()
@@ -790,11 +826,19 @@ void WorkerControlLoop::checkDeadlines()
     }
 }
 
-void WorkerControlLoop::endConnection(Connection & connection, bool broken)
+void WorkerControlLoop::endConnection(Connection & connection, bool broken) noexcept
 {
     if (connection.registered_events != 0)
     {
-        epoll.remove(connection.fd);
+        try
+        {
+            epoll.remove(connection.fd);
+        }
+        catch (...)
+        {
+            /// Closing the socket below removes it from the epoll too.
+            tryLogCurrentException(log, "Cannot remove a control connection from the epoll");
+        }
         connection.registered_events = 0;
     }
     if (auto it = connections.find(connection.fd); it != connections.end() && it->second.get() == &connection)
@@ -809,79 +853,64 @@ void WorkerControlLoop::endConnection(Connection & connection, bool broken)
     connection.read_body = {};
 }
 
-void WorkerControlLoop::breakConnection(Connection & connection, std::exception_ptr exception)
+void WorkerControlLoop::breakConnection(Connection & connection, std::exception_ptr exception) noexcept
 {
-    int code = 0;
-    String message;
+    /// `exception` is often the query's memory limit, which must not keep the connection from ending.
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+    const bool was_open = connection.isOpen();
+    if (was_open)
+        endConnection(connection, /*broken=*/ true);
+
+    std::exception_ptr lost = exception;
     try
     {
-        std::rethrow_exception(exception);
-    }
-    catch (const Exception & e)
-    {
-        code = e.code();
-        message = e.message();
-    }
-    catch (const Poco::Exception & e)
-    {
-        code = ErrorCodes::NETWORK_ERROR;
-        message = e.displayText();
+        fiu_do_on(FailPoints::worker_control_loop_break_connection_fails,
+            { throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while breaking a control connection"); });
+        lost = makeLostConnectionException(connection.description, exception);
+        if (was_open)
+            LOG_DEBUG(log, "{} (query {})", getExceptionMessage(lost, /*with_stacktrace=*/ false), connection.params.unique_query_id);
+        else
+            /// A callback that ends the connection threw.
+            LOG_WARNING(log, "{}", getExceptionMessage(lost, /*with_stacktrace=*/ false));
     }
     catch (...)
     {
-        code = getCurrentExceptionCode();
-        message = getCurrentExceptionMessage(/*with_stacktrace=*/ false);
+        tryLogCurrentException(log, "Cannot describe a lost control connection");
     }
-    const auto lost = std::make_exception_ptr(
-        Exception(code, "Lost the control connection to stateless worker {}: {}", connection.description, message));
 
-    if (!connection.isOpen())
-    {
-        /// A callback that ends the connection threw.
-        LOG_WARNING(log, "{}", getExceptionMessage(lost, /*with_stacktrace=*/ false));
+    if (!was_open)
         return;
-    }
-
-    LOG_DEBUG(log, "{} (query {})", getExceptionMessage(lost, /*with_stacktrace=*/ false), connection.params.unique_query_id);
-    endConnection(connection, /*broken=*/ true);
     try
     {
         connection.notify([&](IWorkerControlHandler & handler) { handler.onBroken(lost); });
     }
     catch (...)
     {
-        tryLogCurrentException(log, fmt::format("The handler of the control connection of {} to {} failed",
-            connection.params.unique_query_id, connection.description));
+        tryLogCurrentException(log, "The handler of a lost control connection failed");
     }
 }
 
-void WorkerControlLoop::breakAll(std::exception_ptr reason)
+void WorkerControlLoop::breakAll(std::exception_ptr reason) noexcept
 {
     std::vector<Command> pending;
     {
         std::lock_guard lock(mutex);
-        shutdown_called = true;
         pending.swap(commands);
     }
 
-    std::vector<ConnectionPtr> remaining;
     for (const auto & command : pending)
-        if (command.kind == Command::Kind::Open)
-            remaining.push_back(command.connection);
-    for (const auto & [fd, connection] : connections)
-        remaining.push_back(connection);
-
-    for (const auto & connection : remaining)
     {
+        if (command.kind != Command::Kind::Open)
+            continue;
+        ThreadGroupSwitcher switcher(command.connection->params.thread_group, ThreadName::WORKER_CONTROL_LOOP);
+        breakConnection(*command.connection, reason);
+    }
+    while (!connections.empty())
+    {
+        const ConnectionPtr connection = connections.begin()->second;
+        connections.erase(connections.begin());
         ThreadGroupSwitcher switcher(connection->params.thread_group, ThreadName::WORKER_CONTROL_LOOP);
-        try
-        {
-            breakConnection(*connection, reason);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-        }
+        breakConnection(*connection, reason);
     }
 }
 

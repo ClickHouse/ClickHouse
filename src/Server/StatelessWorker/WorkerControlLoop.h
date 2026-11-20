@@ -131,10 +131,11 @@ private:
     /// Sends the queued frames until the socket is full or the turn's budget is spent, then sets the events it waits for.
     void flush(Connection & connection);
     void checkDeadlines();
-    void endConnection(Connection & connection, bool broken);
-    void breakConnection(Connection & connection, std::exception_ptr exception);
+    void endConnection(Connection & connection, bool broken) noexcept;
+    /// Ends the connection and calls `onBroken` unless it ended already.
+    void breakConnection(Connection & connection, std::exception_ptr exception) noexcept;
     /// Breaks every connection and those still to be opened with `reason`.
-    void breakAll(std::exception_ptr reason);
+    void breakAll(std::exception_ptr reason) noexcept;
     std::chrono::milliseconds timeoutOf(const OutgoingFrame & frame) const;
 
     const Timeouts timeouts;

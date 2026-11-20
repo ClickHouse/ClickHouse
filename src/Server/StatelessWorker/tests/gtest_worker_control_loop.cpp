@@ -11,8 +11,10 @@
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <base/scope_guard.h>
 
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SocketAddress.h>
@@ -29,6 +31,11 @@ namespace ProfileEvents
 {
     extern const Event DistributedPlanControlPings;
     extern const Event DistributedPlanControlSendBytes;
+}
+
+namespace DB::FailPoints
+{
+    extern const char worker_control_loop_break_connection_fails[];
 }
 
 namespace DB::ErrorCodes
@@ -565,6 +572,31 @@ TEST(WorkerControlLoop, LargeStartTasksIsWrittenWhileRepliesAreRead)
     connection->close();
     handler.expect(Event::Kind::Closed);
     EXPECT_TRUE(peer->closedByInitiator());
+}
+
+TEST(WorkerControlLoop, FailureWhileBreakingAConnectionKeepsTheLoop)
+{
+    FakeWorker fake_worker;
+    WorkerControlLoop loop(withoutPings());
+    FailPointInjection::enableFailPoint(FailPoints::worker_control_loop_break_connection_fails);
+    SCOPE_EXIT(FailPointInjection::disableFailPoint(FailPoints::worker_control_loop_break_connection_fails));
+
+    RecordingHandler handler;
+    auto connection = loop.open(makeParams(fake_worker.port(), "q1"), handler);
+    auto peer = fake_worker.accept();
+    peer->acceptHello();
+    handler.expect(Event::Kind::HelloAccepted);
+    peer->close();
+    handler.expect(Event::Kind::Broken);
+    EXPECT_FALSE(handler.next(300ms));
+
+    /// The loop still serves the connections of other queries.
+    RecordingHandler next_handler;
+    WorkerControlConnectionPtr next_connection;
+    ASSERT_NO_THROW(next_connection = loop.open(makeParams(fake_worker.port(), "q2"), next_handler));
+    auto next_peer = fake_worker.accept();
+    next_peer->acceptHello();
+    next_handler.expect(Event::Kind::HelloAccepted);
 }
 
 TEST(WorkerControlLoop, ShutdownBreaksTheConnections)
