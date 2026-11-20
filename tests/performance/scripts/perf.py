@@ -89,7 +89,6 @@ SAMPLED_SPLITS = 10000
 TIMEOUT_EXCEEDED = 159
 UNKNOWN_TABLE = 60
 UNKNOWN_DATABASE = 81
-COVERAGE_SETUP_MAX_QUERY_SECONDS = 30 * 60
 
 
 def stat_threshold(left_times, right_times):
@@ -144,6 +143,10 @@ parser.add_argument(
 parser.add_argument(
     "--coverage-warm-runs", type=int, default=1,
     help="Executions after the first execution in coverage mode (default 1).",
+)
+parser.add_argument(
+    "--coverage-cleanup-only", action="store_true",
+    help="Run only this XML's teardown on a restarted dedicated coverage server.",
 )
 # Explicitly decode files as UTF-8 because sometimes we have Russian characters in queries, and LANG=C is set.
 parser.add_argument(
@@ -348,6 +351,8 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
+if args.coverage_cleanup_only and not args.coverage_output:
+    parser.error("--coverage-cleanup-only requires --coverage-output")
 if args.coverage_output:
     if max(len(args.host), len(args.port)) != 1:
         parser.error("Coverage collection requires exactly one dedicated server")
@@ -997,11 +1002,9 @@ if args.coverage_output:
         # Scripts can start other processes whose coverage is not collected.
         print("skipped\tShell queries require subprocess coverage collection")
         sys.exit(0)
-    # LLVM instrumentation makes large fills slower. Wait past the server's
-    # setup or query limit so it can return its timeout exception.
-    driver_options["send_receive_timeout"] = max(
-        COVERAGE_SETUP_MAX_QUERY_SECONDS, args.prewarm_max_query_seconds
-    ) + 60
+    # Instrumented setup and queries share the wrapper's remaining shard budget.
+    # A release-query or socket timeout must not cut a coverage test short.
+    driver_options.update(send_receive_timeout=None, settings={"max_execution_time": 0})
 # Force settings_is_important to fail queries on unknown settings.
 all_connections = [
     clickhouse_driver.Client(**server, settings_is_important=True, **driver_options) for server in servers
@@ -1010,7 +1013,7 @@ all_connections = [
 reference = 0 if len(all_connections) > 1 else None
 
 coverage = None
-if args.coverage_output:
+if args.coverage_output and not args.coverage_cleanup_only:
     sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
     from perf_coverage import CoverageCollector
 
@@ -1018,7 +1021,7 @@ if args.coverage_output:
     # output formats, time limits) away from the collector and its exports.
     coverage = CoverageCollector(
         clickhouse_driver.Client(
-            **servers[0], send_receive_timeout=1800,
+            **servers[0], send_receive_timeout=None,
             settings={"max_execution_time": 0, "max_result_rows": 0, "max_result_bytes": 0},
         ),
         args.coverage_output, test_name, test_queries, args.coverage_warm_runs,
@@ -1235,6 +1238,10 @@ for i, s in enumerate(servers):
 
 reportStageEnd("connect")
 
+if args.coverage_cleanup_only:
+    setup_connections = list(range(len(all_connections)))
+    sys.exit(0 if teardown() else 1)
+
 # The servers are shared by all tests of the run, so undo a `SYSTEM STOP MERGES`
 # left by a previous test that did not reach its teardown.
 if args.stop_merges:
@@ -1270,6 +1277,8 @@ for conn_index, c in enumerate(all_connections):
         c.settings[s.tag] = s.text
     if args.table_engine:
         c.settings.update(iceberg_engine.SETTINGS)
+    if coverage:
+        c.settings["max_execution_time"] = 0
     # We have to perform a query to make sure the settings work. Otherwise an
     # unknown setting will lead to failing precondition check, and we will skip
     # the test, which is wrong.
@@ -1376,8 +1385,7 @@ if not args.use_existing_tables:
         for q, tolerate_on_reference in queries:
             try:
                 if coverage:
-                    # Override the normal profile's 300 s limit for setup only.
-                    connection.execute(q, settings={"max_execution_time": COVERAGE_SETUP_MAX_QUERY_SECONDS})
+                    connection.execute(q, settings={"max_execution_time": 0})
                 else:
                     connection.execute(q)
                 print(f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}")
@@ -1516,7 +1524,7 @@ for query_index in queries_to_run:
             execute_query_group(
                 all_connections[0], q_item["statements"],
                 f"{query_prefix}.coverage{run}",
-                {"max_execution_time": args.prewarm_max_query_seconds},
+                {"max_execution_time": 0},
             )
 
         coverage.collect_query(query_index, execute_coverage_query)
