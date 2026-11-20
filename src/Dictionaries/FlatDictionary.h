@@ -117,6 +117,32 @@ private:
         size_t capacity() const { return key_to_row.capacity(); }
         ColumnAttributeValue<Value> operator[](size_t key) const { return values[key_to_row[key]]; }
 
+        /// A key loaded again appends a new row, so remove the rows no key points to anymore.
+        void removeReplacedRows(const VectorWithMemoryTracking<bool> & is_key_loaded, size_t loaded_keys_count)
+        {
+            if (values.size() == loaded_keys_count)
+                return;
+
+            IColumn::Filter mask(values.size(), 0);
+            for (size_t key = 0; key < key_to_row.size(); ++key)
+                if (is_key_loaded[key])
+                    mask[key_to_row[key]] = 1;
+
+            PaddedPODArray<UInt64> new_rows(values.size());
+            UInt64 kept_rows = 0;
+            for (size_t row = 0; row < mask.size(); ++row)
+            {
+                new_rows[row] = kept_rows;
+                kept_rows += mask[row];
+            }
+
+            for (size_t key = 0; key < key_to_row.size(); ++key)
+                if (is_key_loaded[key])
+                    key_to_row[key] = new_rows[key_to_row[key]];
+
+            values.filter(mask, kept_rows);
+        }
+
         ColumnAttributeContainer<Value> values;
         PaddedPODArray<UInt64> key_to_row;
     };

@@ -315,7 +315,9 @@ public:
                 for (const auto & [path, type] : object_type->getTypedPaths())
                     typed_path_columns[path] = type->createColumn();
 
-                return ColumnObject::create(std::move(typed_path_columns), object_type->getMaxDynamicPaths(), object_type->getMaxDynamicTypes());
+                /// A dynamic path has a value for every row, so rows with different paths would cost rows x paths.
+                /// Without dynamic paths, all paths go to the shared data, which keeps only the paths of each row.
+                return ColumnObject::create(std::move(typed_path_columns), 0, object_type->getMaxDynamicTypes());
             }
 
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported Object attribute type.");
@@ -392,6 +394,7 @@ public:
     size_t size() const { return column->size(); }
     size_t capacity() const { return column->capacity(); }
     ColumnAttributeValue<Value> operator[](size_t index) const { return {*column, index}; }
+    void filter(const IColumn::Filter & mask, size_t result_size) { column = IColumn::mutate(column->filter(mask, result_size)); }
     /// A `Null` still takes a row to keep row numbers aligned; nullability is tracked by the layout.
     void insert(const Field & value)
     {

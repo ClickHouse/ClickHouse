@@ -543,6 +543,15 @@ void FlatDictionary::loadData()
     for (size_t i = 0; i < loaded_keys_size; ++i)
         element_count += loaded_keys[i];
 
+    for (auto & attribute : attributes)
+    {
+        std::visit([&](auto & container)
+        {
+            if constexpr (requires { container.removeReplacedRows(loaded_keys, element_count); })
+                container.removeReplacedRows(loaded_keys, element_count);
+        }, attribute.container);
+    }
+
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
 }
