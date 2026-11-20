@@ -53,6 +53,10 @@ struct WindowFunctionWorkspace
     // Will not be initialized for a pure window function.
     mutable AlignedBuffer aggregate_function_state;
 
+    /// False after the state is destroyed until it is created again, so a throwing `create` does not lead to a second
+    /// `destroy`.
+    bool aggregate_function_state_created = false;
+
     // Argument columns. Be careful, this is a per-block cache.
     VectorWithMemoryTracking<const IColumn *> argument_columns;
     UInt64 cached_block_number = std::numeric_limits<UInt64>::max();
