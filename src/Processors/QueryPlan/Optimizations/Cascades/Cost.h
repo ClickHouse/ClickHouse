@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/Logger.h>
 #include <base/types.h>
 #include <cmath>
@@ -60,7 +61,7 @@ struct CostConfig
     Float64 funnel_sequential_cost_per_row = 1.0; /// Gather/scatter push every row through one stream endpoint.
     Float64 merge_sequential_cost_per_row = 1.0;  /// N-way merge of sorted streams advances one cursor at a time.
 
-    String dump() const;
+    [[nodiscard]] String dump() const;
 };
 
 CostConfig parseCostConfig(const String & json_str);
@@ -71,7 +72,7 @@ struct Cost
     Float64 network = 0;    /// Bytes transferred over network.
     Float64 sequential = 0; /// Single-threaded phases (hash builds, merges).
 
-    Float64 total(const CostConfig & config) const
+    [[nodiscard]] Float64 total(const CostConfig & config) const
     {
         /// If any component is infinite the plan is impossible; return infinity directly. Multiplying
         /// first would let a zero weight turn `inf * 0` into NaN, and a NaN cost compares as neither
@@ -101,7 +102,7 @@ struct Cost
         return *this;
     }
 
-    String dump(const CostConfig & config) const;
+    [[nodiscard]] String dump(const CostConfig & config) const;
 };
 
 struct ExpressionCost
@@ -117,6 +118,7 @@ struct ExpressionCost
 class Memo;
 class GroupExpression;
 using GroupExpressionPtr = std::shared_ptr<GroupExpression>;
+using GroupExpressions = VectorWithMemoryTracking<GroupExpressionPtr>;
 
 using GroupId = size_t;
 
@@ -134,7 +136,7 @@ struct CostInputs
     const ExpressionStatistics & output_stats;
     /// Per-input statistics, aligned with the expression inputs; an entry is null when the
     /// input group has no derived statistics.
-    std::vector<const ExpressionStatistics *> input_stats;
+    VectorWithMemoryTracking<const ExpressionStatistics *> input_stats;
     /// Partitioned = node_count per node; replicated = 1 (each node does the full work).
     Float64 parallelism = 1.0;
     /// Node count of the expression's own distribution property.

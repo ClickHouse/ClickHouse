@@ -23,6 +23,7 @@
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <Storages/ColumnSize.h>
 
 
 #if defined(MEMORY_SANITIZER)
@@ -60,11 +61,18 @@ static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> processShortCirc
 static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> findReorderableShortCircuitArguments(
     const ActionsDAG & actions_dag, const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes);
 
-ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
+ExpressionActions::ExpressionActions(
+    ActionsDAG actions_dag_,
+    const ExpressionActionsSettings & settings_,
+    bool project_inputs_,
+    std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag)
     : actions_dag(std::move(actions_dag_))
     , project_inputs(project_inputs_)
     , settings(settings_)
 {
+    if (uncompiled_actions_dag)
+        uncompiled_actions_dag->reset();
+
     /// It's important to determine lazy executed nodes before compiling expressions.
     std::unordered_map<const ActionsDAG::Node *, size_t> short_circuit_eager_arguments;
     UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(
@@ -75,7 +83,7 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
 
 #if USE_EMBEDDED_COMPILER
     if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
-        actions_dag.compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes);
+        actions_dag.compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes, uncompiled_actions_dag);
 #endif
 
     UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> reorderable_short_circuit_arguments;
@@ -372,6 +380,15 @@ static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node, std::unord
     return res;
 }
 
+/// The column of a lazily executed function is passed through aliases as is, so the uses of an alias count instead of the alias.
+static size_t countConsumers(const ActionsDAG::Node * node, const ActionsDAGReverseInfo & reverse_info)
+{
+    size_t res = 0;
+    for (const auto * parent : reverse_info.nodes_info[reverse_info.reverse_index.at(node)].parents)
+        res += parent->type == ActionsDAG::ActionType::ALIAS ? countConsumers(parent, reverse_info) : 1;
+    return res;
+}
+
 static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> processShortCircuitFunctions(
     const ActionsDAG & actions_dag,
     ShortCircuitFunctionEvaluation short_circuit_function_evaluation,
@@ -556,6 +573,8 @@ void ExpressionActions::linearizeActions(
     for (const auto & node : nodes)
         data.push_back({.node = &node});
 
+    std::unordered_map<const Node *, bool> has_order_sensitive_functions_cache;
+
     /// There are independent queues for arrayJoin and other actions.
     /// We delay creation of arrayJoin as long as we can, so that they will be executed closer to end.
     std::queue<const Node *> ready_nodes;
@@ -631,6 +650,10 @@ void ExpressionActions::linearizeActions(
             action.short_circuit_argument_statistics = std::make_shared<ShortCircuitArgumentStatistics>();
         if (auto it = short_circuit_eager_arguments.find(node); it != short_circuit_eager_arguments.end())
             action.short_circuit_eager_argument = it->second;
+        /// A shared node is executed once for all its consumers, which must not change its values or side effects.
+        if (action.is_lazy_executed && countConsumers(node, reverse_info) >= 2
+            && !hasOrderSensitiveFunctions(node, has_order_sensitive_functions_cache))
+            action.is_shared_lazy_executed = true;
 
         for (const auto & parent : cur_info.parents)
         {
@@ -886,7 +909,8 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ false,
                     /*allow_lazy_replicated_captures_=*/ false,
                     action.short_circuit_argument_statistics,
-                    action.short_circuit_eager_argument);
+                    action.short_circuit_eager_argument,
+                    action.is_shared_lazy_executed ? action.node : nullptr);
             else
             {
                 ProfileEvents::increment(ProfileEvents::FunctionExecute);
@@ -1253,6 +1277,34 @@ NameAndTypePair ExpressionActions::getSmallestColumn(const NamesAndTypesList & c
 
     if (!min_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No available columns");
+
+    return result;
+}
+
+NameAndTypePair ExpressionActions::getCheapestColumnToRead(
+    const NamesAndTypesList & columns, const std::unordered_map<std::string, ColumnSize> & column_sizes, bool skip_subcolumns)
+{
+    std::optional<std::tuple<size_t, size_t, size_t>> min_cost;
+    NameAndTypePair result;
+
+    for (const auto & column : columns)
+    {
+        auto it = column_sizes.find(column.name);
+        if (it == column_sizes.end())
+            continue;
+
+        size_t type_size = column.type->haveMaximumSizeOfValue() ? column.type->getMaximumSizeOfValueInMemory() : 100;
+        std::tuple<size_t, size_t, size_t> cost{it->second.data_compressed, type_size, it->second.data_uncompressed};
+
+        if (!min_cost || cost < *min_cost)
+        {
+            min_cost = cost;
+            result = column;
+        }
+    }
+
+    if (!min_cost)
+        return getSmallestColumn(columns, skip_subcolumns);
 
     return result;
 }
