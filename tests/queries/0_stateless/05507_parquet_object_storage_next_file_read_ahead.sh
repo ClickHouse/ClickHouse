@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
+# Random settings limits: input_format_parquet_use_offset_index=(1, 1); output_format_parquet_row_group_size_bytes=(536870912, None); output_format_parquet_data_page_size=(1048576, None); output_format_parquet_max_dictionary_size=(1048576, None); output_format_parquet_compression_method=('zstd', 'zstd')
 # Tag no-fasttest: needs MinIO
 
 # A source of an object storage reads its Parquet files one after another. From its third file on, while it reads a file,
