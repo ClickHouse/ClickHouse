@@ -3,21 +3,21 @@
 #include <Columns/IColumn.h>
 #include <Common/ColumnsHashing/HashMethod.h>
 #include <Common/PODArray.h>
-#include <Common/VectorWithMemoryTracking.h>
+
+#include <memory>
+#include <vector>
 
 
-namespace DB
+namespace DB::ColumnsHashing
 {
 
-/// The key of a row in the `hashed` and `two_level_hashed` maps: `ColumnsHashing::hash128` of its key columns. The build
-/// and the probe of one map can see different column types for one key, for example `Tuple(LowCardinality(String))` and
-/// `Tuple(String)`, so every way of building a key must give exactly `hash128`.
-class HashedJoinKey
+/// `hash128` of the rows of `key_columns`, many rows at once where the bytes that `hash128` hashes can be copied.
+class Hash128ManyRows
 {
 public:
-    explicit HashedJoinKey(const ColumnRawPtrs & key_columns_);
+    explicit Hash128ManyRows(const ColumnRawPtrs & key_columns_);
 
-    [[nodiscard]] UInt128 build(size_t row) const { return ColumnsHashing::hash128(row, key_columns.size(), key_columns); }
+    [[nodiscard]] UInt128 build(size_t row) const { return hash128(row, key_columns.size(), key_columns); }
 
     /// Sets `keys[i - begin]` to `build(i)` for the rows [begin, end). The keys of the rows `i` with `skip[i] != 0` may be
     /// left unset. `skip` may be nullptr, then no row is skipped.
@@ -50,7 +50,7 @@ private:
     };
 
     /// Appends the parts of `column`. Returns false if `buildRange` cannot copy the bytes that `hash128` hashes for it.
-    static bool addParts(const IColumn & column, VectorWithMemoryTracking<Part> & parts);
+    static bool addParts(const IColumn & column, std::vector<Part> & parts);
     /// These set `keys[i]` to `build(row_at(i))` for `i` in [0, num_rows), for at most 256 rows.
     template <typename RowAt>
     void buildFixedRows(RowAt row_at, size_t num_rows, UInt128 * __restrict keys);
@@ -59,12 +59,44 @@ private:
 
     ColumnRawPtrs key_columns;
     Layout layout = Layout::PerRow;
-    VectorWithMemoryTracking<Part> parts;
+    std::vector<Part> parts;
     /// The total size of the fixed-width parts.
     size_t fixed_size = 0;
     /// The rows that `buildFixedRows` and `buildRows` copy. The kernel reads up to 8 bytes before a row shorter than 8
     /// bytes and up to 7 bytes past a row, and the padding of a `PaddedPODArray` allows that.
     PaddedPODArray<UInt8> buffer;
+};
+
+/// The `hash128` of the rows [0, end) of `key_columns` for a caller that reads them in ascending order: `get` hashes the
+/// next `chunk_rows` rows through `Hash128ManyRows::buildRange` when it reaches a row past the hashed ones. A row below the
+/// current chunk, and every row of a key that `Hash128ManyRows` hashes per row, is hashed alone. The caller must not `get`
+/// a row that `skip` marks, see `Hash128ManyRows::buildRange`.
+class Hash128InOrder
+{
+public:
+    static constexpr size_t chunk_rows = 256;
+
+    Hash128InOrder(const ColumnRawPtrs & key_columns, size_t end_, const UInt8 * skip_ = nullptr);
+
+    UInt128 get(size_t row)
+    {
+        if (row - ready_begin < ready_size)
+            return hashes[row - ready_begin];
+        if (!hashes)
+            return key.build(row);
+        return hashNext(row);
+    }
+
+private:
+    UInt128 hashNext(size_t row);
+
+    Hash128ManyRows key;
+    const UInt8 * skip;
+    size_t end;
+    size_t ready_begin = 0;
+    size_t ready_size = 0;
+    /// `chunk_rows` keys, or null if `key` hashes each row alone.
+    std::unique_ptr<UInt128[]> hashes;
 };
 
 }

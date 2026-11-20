@@ -7,7 +7,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsHash128.h>
+#include <Common/ColumnsHashing/Hash128ManyRows.h>
 #include <Common/HashTable/ClearableHashSet.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>

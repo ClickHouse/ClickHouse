@@ -1,4 +1,5 @@
 #include <Common/Arena.h>
+#include <Common/ColumnsHashing/Hash128ManyRows.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
@@ -41,7 +42,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/HashedJoinKey.h>
 
 namespace DB
 {
@@ -152,11 +152,11 @@ inline UInt128 sipHash128AtRowConsistentWithEquals(const IColumn & column, size_
     return h.get128();
 }
 
-/// `sipHash128AtRowConsistentWithEquals` of every row, many rows at once. Empty where `HashedJoinKey` hashes each row
+/// `sipHash128AtRowConsistentWithEquals` of every row, many rows at once. Empty where `Hash128ManyRows` hashes each row
 /// alone, and for a `Nullable` float column.
 PaddedPODArray<UInt128> sipHash128OfRowsConsistentWithEquals(const IColumn & column, bool normalize_float_zero)
 {
-    if (!HashedJoinKey({&column}).buildsManyRowsAtOnce())
+    if (!ColumnsHashing::Hash128ManyRows({&column}).buildsManyRowsAtOnce())
         return {};
 
     MutableColumnPtr normalized;
@@ -182,7 +182,7 @@ PaddedPODArray<UInt128> sipHash128OfRowsConsistentWithEquals(const IColumn & col
 
     const IColumn & values = normalized ? *normalized : column;
     PaddedPODArray<UInt128> hashes(values.size());
-    HashedJoinKey({&values}).buildRange(0, values.size(), hashes.data(), nullptr);
+    ColumnsHashing::Hash128ManyRows({&values}).buildRange(0, values.size(), hashes.data(), nullptr);
     return hashes;
 }
 

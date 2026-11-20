@@ -1,12 +1,12 @@
 #pragma once
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Common/ColumnsHashing.h>
+#include <Common/ColumnsHashing/Hash128ManyRows.h>
 #include <Common/HashTable/Prefetching.h>
 #include <Common/SipHash.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/HashedJoinKey.h>
 #include <base/PackedStringRef.h>
 
 #include <algorithm>
@@ -378,6 +378,24 @@ private:
 
 template <typename KeyGetter>
 concept PreparedKeyGetter = std::derived_from<KeyGetter, PreparedJoinKeys<KeyGetter>>;
+
+/// The key of a row in the `hashed` and `two_level_hashed` maps: `ColumnsHashing::hash128` of its key columns. The build
+/// and the probe of one map can see different column types for one key, for example `Tuple(LowCardinality(String))` and
+/// `Tuple(String)`, so every way of building a key must give exactly `hash128`.
+class HashedJoinKey
+{
+public:
+    explicit HashedJoinKey(const ColumnRawPtrs & key_columns) : rows(key_columns) {}
+
+    [[nodiscard]] UInt128 build(size_t row) const { return rows.build(row); }
+
+    /// Sets `keys[i - begin]` to `build(i)` for the rows [begin, end). The keys of the rows `i` with `skip[i] != 0` may be
+    /// left unset.
+    void buildRange(size_t begin, size_t end, UInt128 * __restrict keys, const UInt8 * skip) { rows.buildRange(begin, end, keys, skip); }
+
+private:
+    ColumnsHashing::Hash128ManyRows rows;
+};
 
 /// Key getter of `hashed` and `two_level_hashed`. It builds the `HashedJoinKey` of a row, or reads keys built ahead, see
 /// `PreparedJoinKeys`.

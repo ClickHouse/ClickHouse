@@ -1,6 +1,5 @@
 #pragma once
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnsHash128.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -8,6 +7,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/ColumnsHashing/Hash128ManyRows.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/VectorWithMemoryTracking.h>
 

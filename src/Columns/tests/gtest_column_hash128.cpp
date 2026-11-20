@@ -10,15 +10,14 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
-#include <Columns/ColumnsHash128.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/HashedJoinKey.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/Arena.h>
 #include <Common/ColumnsHashing.h>
+#include <Common/ColumnsHashing/Hash128ManyRows.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Common/tests/gtest_global_register.h>
@@ -740,7 +739,7 @@ TEST(ColumnsHashing, Hash128ManyRowsAtOnce)
         for (size_t row = 0; row < rows; ++row)
             expected[row] = ColumnsHashing::hash128(row, key_columns.size(), key_columns);
 
-        /// Few skipped rows (every 16th) and many (all but every 3rd), see the two paths of `HashedJoinKey::buildRange`.
+        /// Few skipped rows (every 16th) and many (all but every 3rd), see the two paths of `Hash128ManyRows::buildRange`.
         std::vector<UInt8> few_skipped(rows);
         std::vector<UInt8> many_skipped(rows);
         for (size_t row = 0; row < rows; ++row)
@@ -749,7 +748,7 @@ TEST(ColumnsHashing, Hash128ManyRowsAtOnce)
             many_skipped[row] = row % 3 != 0;
         }
 
-        HashedJoinKey hashed_key(key_columns);
+        ColumnsHashing::Hash128ManyRows hashed_key(key_columns);
         std::vector<UInt128> hashes(rows);
         std::vector<size_t> bounds = {0, 1, 7, 8, 9, 255, 256, 257, rows};
         std::erase_if(bounds, [rows](size_t bound) { return bound > rows; });

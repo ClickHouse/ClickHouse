@@ -1,8 +1,8 @@
 #include <memory>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>
-#include <Columns/ColumnsHash128.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/ColumnsHashing/Hash128ManyRows.h>
 #include <Common/assert_cast.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
