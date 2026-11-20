@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
+# Random settings limits: output_format_parquet_data_page_size=(65536, None)
 # - no-fasttest: writes and reads Parquet files
 
 # ORDER BY ... LIMIT over Parquet: a row group admitted before the top-K threshold excluded it is
@@ -62,19 +63,20 @@ done | ${CLICKHOUSE_CLIENT} | paste - - - | uniq -c | awk '{$1 = $1; print}'
 
 echo "-- row groups excluded while their data waits are not read"
 # 2 parsing threads admit 3 row groups before there is a threshold, and the decoding stage then runs one
-# batch at a time, so the 2nd and 3rd ones wait behind the 20 row subgroups of the 1st one. Without the
-# late check at most 40 - 3 = 37 row groups are skipped. The race is repeated until it is won, at most 20 times.
-# The sort column has one page per row group: a skipped row group reads none, so skipped plus read pages is 40.
+# batch at a time, so the 2nd and 3rd ones wait behind the 20 row subgroups of the 1st one. The sort column
+# has one page per row group, so without the late check at least 3 pages are read. The race is repeated
+# until it is won, at most 20 times.
 late_skip()
 {
     for _ in $(seq 1 20); do
         result=$(run_query "$1")
-        if [ "$(event ParquetTopKSkippedRowGroups)" -ge 38 ]; then
-            echo "${result}, skipped plus read pages: $(($(event ParquetTopKSkippedRowGroups) + $(event ParquetReadPages)))"
+        pages=$(event ParquetReadPages)
+        if [ "${pages}" -ge 1 ] && [ "${pages}" -le 2 ]; then
+            echo "${result}, read 1 or 2 pages"
             return
         fi
     done
-    echo "no read skipped 38 row groups"
+    echo "no read read 1 or 2 pages"
 }
 late_skip "SELECT k FROM ${FILE} ORDER BY k LIMIT 3
     SETTINGS max_threads = 1, max_parsing_threads = 2, input_format_parquet_max_block_size = 100,
