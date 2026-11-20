@@ -25,7 +25,7 @@ class StatelessTaskExecutor
 {
 public:
     explicit StatelessTaskExecutor(size_t max_queries_);
-    virtual ~StatelessTaskExecutor() = default;
+    virtual ~StatelessTaskExecutor();
 
     enum Result
     {
@@ -96,6 +96,8 @@ public:
     /// Ignores unknown ids.
     void cancelTasks(const Strings & task_ids);
     void forgetTasks(const Strings & task_ids);
+    /// Forgets each task that has ended, and each running one when it ends. Ignores unknown ids.
+    void forgetTasksWhenEnded(const Strings & task_ids);
 
     void shutdown();
 
@@ -160,6 +162,8 @@ private:
         /// Keys the query's `WorkerQueryController`.
         String unique_query_id;
         StatusChangeNotifierPtr changes;
+        /// Set by `forgetTasksWhenEnded`, under `tasks_mutex`.
+        bool forget_when_ended = false;
     };
 
     using TaskStatePtr = std::shared_ptr<TaskState>;
@@ -177,6 +181,8 @@ private:
     bool tryRegisterTaskLocked(const String & unique_task_id, const TaskStatePtr & task_state) TSA_REQUIRES(tasks_mutex);
     /// Removes a task from `tasks`; false for an unknown one.
     bool eraseTaskLocked(const String & unique_task_id) TSA_REQUIRES(tasks_mutex);
+    /// Called by a task after its promise: forgets it if `forgetTasksWhenEnded` asked for that.
+    void onTaskEnded(const String & unique_task_id, const TaskStatePtr & task_state) noexcept;
     void dropControllerIfIdleLocked(std::unordered_map<String, WorkerQueryControllerPtr>::iterator controller) TSA_REQUIRES(tasks_mutex);
 
     /// Schedules a registered task in `thread_pool`; `trace_context_` is the dispatch request's.

@@ -515,6 +515,7 @@ static struct InitFiu
     ONCE(distributed_plan_delay_root_cause_report) \
     ONCE(distributed_plan_delay_failed_task_release) \
     PAUSEABLE(stateless_worker_pause_before_start_task) \
+    PAUSEABLE_ONCE(stateless_worker_pause_task_before_setup) \
     ONCE(worker_control_loop_break_connection_fails) \
     ONCE(worker_control_loop_open_fails_after_post) \
     REGULAR(distributed_plan_runtime_filter_receive_branch_fails_before_connect) \

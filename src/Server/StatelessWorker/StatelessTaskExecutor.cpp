@@ -44,6 +44,7 @@ namespace FailPoints
 {
     extern const char distributed_plan_delay_root_cause_report[];
     extern const char distributed_plan_delay_failed_task_release[];
+    extern const char stateless_worker_pause_task_before_setup[];
 }
 
 namespace Setting
@@ -123,6 +124,19 @@ StatelessTaskExecutor::StatelessTaskExecutor(size_t max_queries_)
         CurrentMetrics::StatelessWorkerThreadsScheduled,
         GlobalThreadPool::instance().getMaxThreads(), /*max_free_threads=*/ 0, /*queue_size=*/ 0)
 {
+}
+
+StatelessTaskExecutor::~StatelessTaskExecutor()
+{
+    /// Before the members are destroyed: a task calls `onTaskEnded` after its promise.
+    try
+    {
+        thread_pool.wait();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("StatelessTaskExecutor"));
+    }
 }
 
 struct StatelessTaskExecutor::TaskSetup
@@ -283,15 +297,16 @@ void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStat
         changes->notify();
     };
 
-    auto task_function = [unique_task_id, task_description = std::move(task_description_), distributed_query_id = unique_temp_file_path,
+    auto task_function = [this, unique_task_id, task_description = std::move(task_description_), distributed_query_id = unique_temp_file_path,
         collectors = task_state->collectors, trace_context = std::move(trace_context_), logs_queue_slot = task_state->logs_queue,
-        cancellation = task_state->cancellation, changes = task_state->changes, task_promise, update_progress, report_failure] mutable
+        cancellation = task_state->cancellation, changes = task_state->changes, task_state, task_promise, update_progress, report_failure] mutable
     {
         /// The promise must be fulfilled strictly after the last log line of this task:
         /// `currentStatus` treats a ready future as a terminal state
         std::optional<TaskFailure> task_failure;
         try
         {
+            FailPointInjection::pauseFailPoint(FailPoints::stateless_worker_pause_task_before_setup);
             /// Set up here rather than before the dispatch reply, so the reply waits only for the description.
             /// Setup and QueryScope creation can throw, hence the outer try-catch.
             auto [query_context, object_storage, object_storage_path, logs_queue, client_logs_level]
@@ -339,6 +354,7 @@ void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStat
         }
         task_promise->set_value(task_failure);
         changes->notify();
+        onTaskEnded(unique_task_id, task_state);
     };
 
     try
@@ -472,6 +488,37 @@ void StatelessTaskExecutor::forgetTasks(const Strings & task_ids)
     std::lock_guard lock(tasks_mutex);
     for (const auto & task_id : task_ids)
         eraseTaskLocked(task_id);
+}
+
+void StatelessTaskExecutor::forgetTasksWhenEnded(const Strings & task_ids)
+{
+    std::lock_guard lock(tasks_mutex);
+    for (const auto & task_id : task_ids)
+    {
+        auto it = tasks.find(task_id);
+        if (it == tasks.end())
+            continue;
+        /// A task that ends after this check sees the flag, as it takes the lock after its promise.
+        if (it->second->completion_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+            eraseTaskLocked(task_id);
+        else
+            it->second->forget_when_ended = true;
+    }
+}
+
+void StatelessTaskExecutor::onTaskEnded(const String & unique_task_id, const TaskStatePtr & task_state) noexcept
+{
+    try
+    {
+        std::lock_guard lock(tasks_mutex);
+        auto it = tasks.find(unique_task_id);
+        if (it != tasks.end() && it->second == task_state && task_state->forget_when_ended)
+            eraseTaskLocked(unique_task_id);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("StatelessTaskExecutor"), "Cannot forget an ended task");
+    }
 }
 
 bool StatelessTaskExecutor::tryRegisterTaskLocked(const String & unique_task_id, const TaskStatePtr & task_state)

@@ -11,6 +11,8 @@
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <Core/ProtocolDefines.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <base/scope_guard.h>
 
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/StreamSocket.h>
@@ -18,6 +20,12 @@
 
 #include <chrono>
 #include <memory>
+#include <thread>
+
+namespace DB::FailPoints
+{
+    extern const char stateless_worker_pause_task_before_setup[];
+}
 
 namespace DB::ErrorCodes
 {
@@ -124,6 +132,29 @@ ControlHello makeHello(const String & unique_query_id, const String & user = "",
         .password = password,
         .initiator = "gtest",
     };
+}
+
+/// A batch of one task of the stage `main`, whose plan the task never reads in these tests.
+StartTasks makeStartTasks(UInt64 request_id, const String & task_id)
+{
+    DistributedQueryTaskBatch::Task task;
+    task.task.task_id = task_id;
+    StartTasks request;
+    request.request_id = request_id;
+    request.temp_path = "gtest";
+    request.batch.initial_query_id = "gtest";
+    request.batch.stages.push_back({"main", std::make_shared<const String>("plan"), {task}});
+    return request;
+}
+
+/// Returns the status of `task_id` on a new connection of `unique_query_id`, or the refusal of its hello.
+String taskStatus(UInt16 port, const String & unique_query_id, const String & task_id)
+{
+    Initiator initiator(port);
+    if (const auto reply = initiator.hello(makeHello(unique_query_id)); reply.code != 0)
+        return reply.message;
+    initiator.send(GetStatuses{.request_id = 1, .wait_milliseconds = 0, .task_ids = {task_id}});
+    return initiator.receive<GetStatusesReply>().entries.at(0).status.status;
 }
 
 }
@@ -347,6 +378,43 @@ TEST(WorkerControlServer, ShutdownClosesTheConnections)
     Initiator late(worker.port());
     EXPECT_EQ(late.hello(makeHello("q2")).code, ErrorCodes::ABORTED);
     EXPECT_TRUE(late.closedByWorker());
+}
+
+TEST(WorkerControlServer, TaskThatOutlivesTheReclaimIsForgottenWhenItEnds)
+{
+    FailPointInjection::enableFailPoint(FailPoints::stateless_worker_pause_task_before_setup);
+    SCOPE_EXIT(FailPointInjection::disableFailPoint(FailPoints::stateless_worker_pause_task_before_setup));
+    const StatelessWorkerControlServer::Limits limits{.max_queries = 1, .max_sessions = 4, .reclaim_timeout = 300ms};
+    auto control_server = std::make_shared<StatelessWorkerControlServer>(limits, [] { return InterserverCredentialsPtr{}; });
+    Worker worker(control_server);
+
+    {
+        Initiator initiator(worker.port());
+        ASSERT_EQ(initiator.hello(makeHello("q1")).code, 0);
+        initiator.send(makeStartTasks(1, "t"));
+        ASSERT_EQ(initiator.receive<StartTasksReply>().code, 0);
+        /// The task is held before it can see the cancellation of the reclaim.
+        FailPointInjection::waitForPause(FailPoints::stateless_worker_pause_task_before_setup);
+    }
+    /// The reclaim of the closed connection gives up on the task.
+    ASSERT_TRUE(control_server->waitForSessions(std::chrono::steady_clock::now() + 10s));
+
+    FailPointInjection::disableFailPoint(FailPoints::stateless_worker_pause_task_before_setup);
+    String status;
+    const auto deadline = std::chrono::steady_clock::now() + 10s;
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        status = taskStatus(worker.port(), "q1", "q1::t");
+        if (status == "Unknown task")
+            break;
+        std::this_thread::sleep_for(50ms);
+    }
+    /// The ended task is forgotten, so its query no longer holds the only slot.
+    EXPECT_EQ(status, "Unknown task");
+    ASSERT_TRUE(control_server->waitForSessions(std::chrono::steady_clock::now() + 10s));
+    Initiator other_query(worker.port());
+    const auto reply = other_query.hello(makeHello("q2"));
+    EXPECT_EQ(reply.code, 0) << reply.message;
 }
 
 TEST(WorkerControlServer, ExchangeServerWithoutControlServerAnswersError)

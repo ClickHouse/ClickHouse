@@ -505,9 +505,11 @@ void StatelessWorkerControlServer::Session::reclaimTasks()
     }
 
     executor.forgetTasks(ended);
-    if (!running.empty())
-        LOG_WARNING(log, "{} tasks of {} still run {} ms after they were cancelled for their closed control connection, so they keep the "
-            "query's slot: {}", running.size(), unique_query_id, server.limits.reclaim_timeout.count(), fmt::join(running, ", "));
+    if (running.empty())
+        return;
+    executor.forgetTasksWhenEnded(running);
+    LOG_WARNING(log, "{} tasks of {} still run {} ms after they were cancelled for their closed control connection, so they keep the "
+        "query's slot until they end: {}", running.size(), unique_query_id, server.limits.reclaim_timeout.count(), fmt::join(running, ", "));
 }
 
 StatelessWorkerControlServer::StatelessWorkerControlServer(Limits limits_, CredentialsGetter get_credentials_)
