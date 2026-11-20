@@ -108,8 +108,12 @@ IFileCachePriority::observeFilesystemCache(
     iterate(query_max_elements, query_max_total_size, query_order, QueueEntryType::None, result);
     if (result.isCancelled())
         return {};
+
     if (query_order != IterationOrder::RANDOM)
+    {
+        chassert(result.total_size <= query_max_total_size);
         return std::move(result.infos);
+    }
 
     /// We ignore query_max_total_size in the sampling process because we would favor elements at the start of the default iteration order (hereby coldest)
     /// That's why we shuffle so we don't always remove same segments
