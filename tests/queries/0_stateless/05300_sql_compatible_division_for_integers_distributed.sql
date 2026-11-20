@@ -1,6 +1,5 @@
 -- Tags: distributed
 
-SET enable_analyzer = 1;
 SET prefer_localhost_replica = 0;
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;

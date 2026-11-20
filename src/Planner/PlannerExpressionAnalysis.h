@@ -79,7 +79,7 @@ public:
         return projection_analysis_result;
     }
 
-    bool hasWhere() const
+    [[nodiscard]] bool hasWhere() const
     {
         return where_analysis_result.filter_actions != nullptr;
     }
@@ -94,7 +94,7 @@ public:
         where_analysis_result = std::move(where_analysis_result_);
     }
 
-    bool hasAggregation() const
+    [[nodiscard]] bool hasAggregation() const
     {
         return !aggregation_analysis_result.aggregation_keys.empty() || !aggregation_analysis_result.aggregate_descriptions.empty()
             || !aggregation_analysis_result.grouping_sets_parameters_list.empty();
@@ -110,7 +110,7 @@ public:
         aggregation_analysis_result = std::move(aggregation_analysis_result_);
     }
 
-    bool hasHaving() const
+    [[nodiscard]] bool hasHaving() const
     {
         return having_analysis_result.filter_actions != nullptr;
     }
@@ -125,7 +125,7 @@ public:
         having_analysis_result = std::move(having_analysis_result_);
     }
 
-    bool hasWindow() const
+    [[nodiscard]] bool hasWindow() const
     {
         return !window_analysis_result.window_descriptions.empty();
     }
@@ -140,7 +140,7 @@ public:
         window_analysis_result = std::move(window_analysis_result_);
     }
 
-    bool hasQualify() const
+    [[nodiscard]] bool hasQualify() const
     {
         return qualify_analysis_result.filter_actions != nullptr;
     }
@@ -155,7 +155,7 @@ public:
         qualify_analysis_result = std::move(qualify_analysis_result_);
     }
 
-    bool hasSort() const
+    [[nodiscard]] bool hasSort() const
     {
         return sort_analysis_result.before_order_by_actions != nullptr;
     }
@@ -170,7 +170,7 @@ public:
         sort_analysis_result = std::move(sort_analysis_result_);
     }
 
-    bool hasLimitBy() const
+    [[nodiscard]] bool hasLimitBy() const
     {
         return limit_by_analysis_result.before_limit_by_actions != nullptr;
     }
@@ -185,7 +185,7 @@ public:
         limit_by_analysis_result = std::move(limit_by_analysis_result_);
     }
 
-    bool hasLimitRange() const
+    [[nodiscard]] bool hasLimitRange() const
     {
         return limit_range_analysis_result.before_limit_range_actions != nullptr;
     }

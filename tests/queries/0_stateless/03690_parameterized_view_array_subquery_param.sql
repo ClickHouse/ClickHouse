@@ -2,7 +2,6 @@
 -- optimization keeps unfolded (`Array`, `Tuple`, `LowCardinality`, ...). Such a value used
 -- to stay a `__getScalar` reference instead of a literal, so it was not collected as a view
 -- parameter and the query failed with `UNKNOWN_QUERY_PARAMETER`. See issue #68041.
-SET enable_analyzer = 1;
 -- Pin the scalar subquery optimization on: with it disabled the value would fold to a literal
 -- through the pre-existing path, so the regression cases below must run with it enabled.
 SET enable_scalar_subquery_optimization = 1;
@@ -87,17 +86,13 @@ SELECT count() FROM (EXPLAIN SYNTAX SELECT * FROM pv_array(AccountIds = (SELECT 
 -- A top-level string literal used to be stored as raw bytes, but `ReplaceQueryParameterVisitor`
 -- reads it back with `deserializeTextEscaped`, so a value with a tab / newline / backslash was
 -- truncated or mis-parsed and the query returned wrong rows or threw `BAD_QUERY_PARAMETER`.
--- Exercise both AST-path entry points: legacy execution (`enable_analyzer = 0`, via
--- `Context::executeTableFunction`) and `EXPLAIN SYNTAX`, for both `String` and `LowCardinality(String)`.
+-- Exercise the `EXPLAIN SYNTAX` AST-path entry point, for both `String` and `LowCardinality(String)`.
 INSERT INTO pv_lc_data VALUES (5, 'c\nd') (6, 'e\\f');
 DROP TABLE IF EXISTS pv_str_data;
 CREATE TABLE pv_str_data (id Int32, s String) ENGINE = Memory;
 INSERT INTO pv_str_data VALUES (10, 'p\tq') (11, 'r\ns') (12, 't\\u');
 DROP VIEW IF EXISTS pv_str_scalar;
 CREATE VIEW pv_str_scalar AS SELECT * FROM pv_str_data WHERE s = {ss : String};
-
-SELECT 'direct literal param, legacy analyzer';
-SET enable_analyzer = 1;
 
 SELECT 'direct literal param, EXPLAIN SYNTAX';
 SELECT count() FROM (EXPLAIN SYNTAX SELECT * FROM pv_lc(nm = 'a\tb')) WHERE explain LIKE '%a\\tb%';

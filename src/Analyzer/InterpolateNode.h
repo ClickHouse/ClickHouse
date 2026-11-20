@@ -23,7 +23,7 @@ public:
     explicit InterpolateNode(std::shared_ptr<IdentifierNode> expression_, QueryTreeNodePtr interpolate_expression_);
 
     /// Get expression to interpolate
-    const QueryTreeNodePtr & getExpression() const
+    [[nodiscard]] const QueryTreeNodePtr & getExpression() const
     {
         return children[expression_child_index];
     }
@@ -35,7 +35,7 @@ public:
     }
 
     /// Get interpolate expression
-    const QueryTreeNodePtr & getInterpolateExpression() const
+    [[nodiscard]] const QueryTreeNodePtr & getInterpolateExpression() const
     {
         return children[interpolate_expression_child_index];
     }
@@ -46,12 +46,12 @@ public:
         return children[interpolate_expression_child_index];
     }
 
-    QueryTreeNodeType getNodeType() const override
+    [[nodiscard]] QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::INTERPOLATE;
     }
 
-    const std::string & getExpressionName() const { return expression_name; }
+    [[nodiscard]] const std::string & getExpressionName() const { return expression_name; }
 
     /// Positions of the projection columns named `expression_name` that are the target, not a source column of that name.
     const std::vector<size_t> & getProjectionColumnIndexes() const { return projection_column_indexes; }
@@ -61,13 +61,13 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(HashState & hash_state, CompareOptions) const override;
 
-    QueryTreeNodePtr cloneImpl() const override;
+    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
     /// Initial name from column identifier.
     std::string expression_name;
