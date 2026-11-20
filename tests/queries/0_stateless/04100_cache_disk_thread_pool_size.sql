@@ -12,6 +12,7 @@ SETTINGS disk = disk(
     type = cache,
     name = '04100_cache_disk_thread_pool_size',
     max_size = '16Mi',
+    max_file_segment_size = '4Mi',
     path = 'cache_thread_pool_size_test/',
     thread_pool_size = 32,
     disk = 's3_disk');

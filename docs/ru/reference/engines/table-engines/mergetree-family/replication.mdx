@@ -135,9 +135,7 @@ ZooKeeper не используется при выполнении запрос
 
 Система отслеживает синхронность данных на репликах и способна восстанавливаться после сбоев. Переключение при отказе выполняется автоматически (при небольших различиях в данных) или полуавтоматически (когда данные различаются слишком сильно, что может указывать на ошибку конфигурации).
 
-<div id="creating-replicated-tables">
-  ## Создание таблиц с репликацией
-</div>
+## Создание таблиц с репликацией {#creating-replicated-tables}
 
 <Note>
   В ClickHouse Cloud репликация выполняется автоматически.
@@ -147,9 +145,7 @@ ZooKeeper не используется при выполнении запрос
   Не используйте `ReplicatedMergeTree` и не указывайте параметры репликации, так как репликацией управляет платформа.
 </Note>
 
-<div id="replicatedmergetree-parameters">
-  ### Параметры Replicated*MergeTree
-</div>
+### Параметры Replicated*MergeTree {#replicatedmergetree-parameters}
 
 | Параметр           | Описание                                                                                                   |
 | ------------------ | ---------------------------------------------------------------------------------------------------------- |
@@ -247,9 +243,7 @@ ORDER BY x;
 
 Чтобы удалить реплику, выполните `DROP TABLE`. Однако будет удалена только одна реплика — та, которая находится на сервере, где вы выполняете запрос.
 
-<div id="recovery-after-failures">
-  ## Восстановление после сбоев
-</div>
+## Восстановление после сбоев {#recovery-after-failures}
 
 Если ClickHouse Keeper недоступен в момент запуска сервера, реплицируемые таблицы переходят в режим только для чтения. Система периодически пытается подключиться к ClickHouse Keeper.
 
@@ -273,9 +267,7 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 Затем перезапустите сервер. При запуске сервер удаляет эти флаги и запускает восстановление.
 
-<div id="recovery-after-complete-data-loss">
-  ## Восстановление после полной потери данных
-</div>
+## Восстановление после полной потери данных {#recovery-after-complete-data-loss}
 
 Если все данные и метаданные исчезли с одного из серверов, выполните следующие шаги для восстановления:
 
@@ -290,17 +282,15 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 Во время восстановления ограничения на пропускную способность сети отсутствуют. Учитывайте это, если одновременно восстанавливаете много реплик.
 
-<div id="converting-from-mergetree-to-replicatedmergetree">
-  ## Преобразование из MergeTree в ReplicatedMergeTree
-</div>
+## Преобразование из MergeTree в ReplicatedMergeTree {#converting-from-mergetree-to-replicatedmergetree}
 
 Термин `MergeTree` мы используем для обозначения всех движков таблиц семейства `MergeTree family`, аналогично `ReplicatedMergeTree`.
 
 Если у вас есть таблица `MergeTree`, для которой репликация была настроена вручную, её можно преобразовать в реплицируемую таблицу. Это может понадобиться, если вы уже накопили большой объём данных в таблице `MergeTree` и теперь хотите включить репликацию.
 
-Оператор [ATTACH TABLE ... AS REPLICATED](/ru/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree) позволяет присоединить отсоединённую таблицу `MergeTree` как `ReplicatedMergeTree`.
+Оператор [ATTACH TABLE ... AS REPLICATED](/ru/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree) позволяет подключить отсоединённую таблицу `MergeTree` как `ReplicatedMergeTree`.
 
-Таблица `MergeTree` может быть автоматически преобразована при перезапуске сервера, если в каталоге данных таблицы (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` для базы данных `Atomic`) установлен флаг `convert_to_replicated`.
+Таблица `MergeTree` может быть автоматически преобразована при перезапуске сервера, если в каталоге данных таблицы (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` для базы данных `Atomic` или `/data/database_name/table_name/` для базы данных `Ordinary`) установлен флаг `convert_to_replicated`.
 Создайте пустой файл `convert_to_replicated`, и при следующем перезапуске сервера таблица будет загружена как реплицированная.
 
 Этот запрос можно использовать, чтобы получить путь к данным таблицы. Если у таблицы несколько путей к данным, нужно использовать первый из них.
@@ -310,6 +300,10 @@ SELECT data_paths FROM system.tables WHERE table = 'table_name' AND database = '
 ```
 
 Обратите внимание, что таблица ReplicatedMergeTree будет создана со значениями настроек `default_replica_path` и `default_replica_name`.
+Для базы данных `Ordinary` при преобразовании генерируется UUID, и `default_replica_path` однократно раскрывается с его подстановкой.
+Раскрытый путь сохраняется как есть, и при каждой загрузке таблицы он сопоставляется с текущим значением `default_replica_path`, чтобы найти znode с именем UUID, который `DROP TABLE` удаляет вместе с таблицей. Если позже изменить `default_replica_path`, таблица по-прежнему будет загружаться, но `DROP TABLE` удалит только собственный znode таблицы, а родительский znode с именем UUID останется в ZooKeeper — его придётся удалить вручную.
+`{database}` и `{table}` в `default_replica_name` раскрываются в сохранённое имя реплики так же, как это делает `CREATE TABLE`, поэтому таблицу по-прежнему можно переименовать.
+`{uuid}` в `default_replica_name` не поддерживается ни при каком способе преобразования.
 Чтобы создать такую таблицу на других репликах, потребуется явно указать её путь в первом аргументе движка `ReplicatedMergeTree`. Чтобы узнать этот путь, можно использовать следующий запрос.
 
 ```sql
@@ -324,9 +318,7 @@ SELECT zookeeper_path FROM system.replicas WHERE table = 'table_name';
 Переместите данные из старой таблицы в подкаталог `detached` внутри каталога с данными новой таблицы (`/var/lib/clickhouse/data/db_name/table_name/`).
 Затем выполните `ALTER TABLE ATTACH PARTITION` на одной из реплик, чтобы добавить эти части в рабочий набор.
 
-<div id="converting-from-replicatedmergetree-to-mergetree">
-  ## Преобразование ReplicatedMergeTree в MergeTree
-</div>
+## Преобразование ReplicatedMergeTree в MergeTree {#converting-from-replicatedmergetree-to-mergetree}
 
 Используйте оператор [ATTACH TABLE ... AS NOT REPLICATED](/ru/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree), чтобы подключить отсоединённую таблицу `ReplicatedMergeTree` как `MergeTree` на одном сервере.
 
@@ -339,9 +331,7 @@ SELECT zookeeper_path FROM system.replicas WHERE table = 'table_name';
 
 После этого вы можете запустить сервер, создать таблицу `MergeTree`, переместить данные в её каталог, а затем перезапустить сервер.
 
-<div id="recovery-when-metadata-in-the-zookeeper-cluster-is-lost-or-damaged">
-  ## Восстановление при потере или повреждении метаданных в кластере ClickHouse Keeper
-</div>
+## Восстановление при потере или повреждении метаданных в кластере ClickHouse Keeper {#recovery-when-metadata-in-the-zookeeper-cluster-is-lost-or-damaged}
 
 Если данные в ClickHouse Keeper были утеряны или повреждены, их можно сохранить, переместив в таблицу без репликации, как описано выше.
 

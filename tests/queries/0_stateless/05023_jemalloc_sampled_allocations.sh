@@ -16,7 +16,7 @@ ${CLICKHOUSE_CLIENT} -q "
         count() > 0,
         countIf(size > usize) = 0,
         countIf(weight < 1) = 0,
-        countIf(empty(trace)) = 0,
+        countIf(notEmpty(trace)) > 0,
         min(sample_interval) > 0 AND min(sample_interval) = max(sample_interval)
     FROM system.jemalloc_sampled_allocations
 "

@@ -1,0 +1,11 @@
+<clickhouse>
+    <!-- helpers/0_common_instance_config.xml removes query_thread_log; put it back, because
+         test_backup_on_cluster_internal_writer_fsyncs reads the per-thread ProfileEvents of an
+         internal backup, whose work runs on a detached thread after its query row is closed.
+         log_query_threads still defaults to 0, so no other case starts writing rows here. -->
+    <query_thread_log replace="replace">
+        <database>system</database>
+        <table>query_thread_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </query_thread_log>
+</clickhouse>

@@ -9,24 +9,23 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} --enable_analyzer=1 << 'SQL'
+${CLICKHOUSE_CLIENT} << 'SQL'
 DROP FUNCTION IF EXISTS wasm_disj_det;
 DROP FUNCTION IF EXISTS wasm_disj_nondet;
 DELETE FROM system.webassembly_modules WHERE name = 'identity_disj_test';
 SQL
 
-${CLICKHOUSE_CLIENT} --enable_analyzer=1 \
+${CLICKHOUSE_CLIENT}\
     --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'identity_disj_test', code FROM input('code String') FORMAT RawBlob" \
     < "${CUR_DIR}/wasm/identity_int.wasm"
 
-${CLICKHOUSE_CLIENT} --enable_analyzer=1 << 'SQL'
+${CLICKHOUSE_CLIENT} << 'SQL'
 SET webassembly_udf_max_fuel = 100000000;
 SET explain_query_plan_default = 'legacy';
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET use_join_disjunctions_push_down = 1;
 -- The plan assertions below sort the matched lines: the order in which the plan prints the filter
 -- above the join, the pre-filters below it and the `PREWHERE` steps depends on which side the join

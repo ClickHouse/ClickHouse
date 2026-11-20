@@ -195,10 +195,11 @@ def wait_for_partitions_claimed(instance, tables, num_partitions, timeout=240):
 
 def wait_for_shard_partitions(instance, table, timeout=240):
     """
-    Return the set of partition ids currently held by `table`'s consumers, waiting until it
-    holds at least one. The affinity check cares about *which* partitions a replica holds,
-    not how many -- unlike the count, shard membership is not affected by convergence or by
-    temporary locks, since the affinity filter runs before anything is locked.
+    Return the set of partition ids currently held by `table`'s consumers, waiting up to
+    `timeout` for a non-empty result and returning an empty set if none arrives. The
+    affinity check cares about *which* partitions a replica holds, not how many -- unlike
+    the count, shard membership is not affected by convergence or by temporary locks, since
+    the affinity filter runs before anything is locked.
     """
     start = time.time()
     while time.time() - start < timeout:
@@ -210,7 +211,7 @@ def wait_for_shard_partitions(instance, table, timeout=240):
         if raw and raw != "[]":
             return set(int(x) for x in raw.strip("[]").split(",") if x.strip())
         time.sleep(2)
-    pytest.fail(f"{table} never acquired any partition within {timeout}s")
+    return set()
 
 
 @pytest.mark.parametrize(
@@ -321,23 +322,32 @@ def test_permanent_lock_quota(
 
 def test_multi_consumer_with_partition_affinity(kafka_cluster):
     """
-    Affinity shrinks P without shrinking N, which is exactly what drives a cluster
-    into the P < R*N regime. 8 partitions, kafka_shard_count=2, two replicas per
-    shard, kafka_num_consumers=4.
+    Affinity shrinks P without shrinking N, so the quota must be computed from the shard's
+    partition count, not the topic's. 16 partitions, kafka_shard_count=2, two replicas per
+    shard, kafka_num_consumers=2.
 
-    Each shard sees P_shard = 4 and R_shard = 2  ->  node_quota = max(4/2, 1) = 2
-     split over 4 consumers -> 1, 1, 0, 0         ->  2 locks per replica, 8 total.
+    Each shard sees P_shard = 8 and R_shard = 2  ->  node_quota = max(8/2, 1) = 4
+     split over 2 consumers -> 2, 2               ->  4 permanent locks per replica.
 
-    Fails on master, where max(4/2, 1) = 2 per consumer x 4 consumers lets a single
+    Fails on master, where max(8/2, 1) = 4 per consumer x 2 consumers lets a single
     replica take an entire shard.
+
+    Only upper bounds are asserted. A replica may legitimately hold nothing for a while --
+    its shard peer can hold node_quota permanent locks plus one temporary lock per consumer
+    and release them slowly.
+
+    That ceiling, node_quota + num_consumers = 6, is below the shard's 8, which is what
+    makes it worth asserting: on master a replica takes all 8 and trips it. At 8 partitions
+    and 4 consumers it would be 6 against a shard of 4 and could never trip. Keep
+    node_quota + num_consumers below P_shard when changing these numbers.
     """
     admin = k.get_admin_client(kafka_cluster)
-    topic_name = "quota_affinity_8p"
+    topic_name = "quota_affinity_16p"
     keeper_path = f"/clickhouse/test/{topic_name}"
-    num_partitions = 8
+    num_partitions = 16
     shard_count = 2
-    num_consumers = 4
-    expected_node_quota = 2
+    num_consumers = 2
+    expected_node_quota = 4
 
     k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
     with k.existing_kafka_topic(admin, topic_name):
@@ -387,7 +397,7 @@ def test_multi_consumer_with_partition_affinity(kafka_cluster):
                 total = sum(q[0] for q in quotas)
                 assert total == expected_node_quota, (
                     f"{replica}: sum of per-consumer quotas = {total}, expected "
-                    f"{expected_node_quota} (P_shard 4 / R_shard 2); quotas = {quotas}"
+                    f"{expected_node_quota} (P_shard 8 / R_shard 2); quotas = {quotas}"
                 )
 
                 for _can_lock, nq, ar, _nc, idx in quotas:
@@ -407,15 +417,154 @@ def test_multi_consumer_with_partition_affinity(kafka_cluster):
                 # counts are sensitive to convergence timing: `assignments` merges permanent
                 # and temporary locks (KeeperHandlingConsumer::getStat), and while a replica
                 # that registered first sheds its surplus the partitions it releases are
-                # briefly picked up as temporary locks by its shard peer. That transient
-                # shows up as e.g. [0,0,1,2] against a node_quota of 2.
+                # briefly picked up as temporary locks by its shard peer.
                 effective = shard_num - 1
                 held = wait_for_shard_partitions(instance, table)
-                assert held, f"{replica} holds no partitions"
                 assert all(pid % shard_count == effective for pid in held), (
                     f"{replica} (shard {shard_num}) holds partitions from another shard: "
                     f"{sorted(held)} -- the affinity filter must be applied before locking"
                 )
+                assert len(held) <= expected_node_quota + num_consumers, (
+                    f"{replica} (shard {shard_num}) holds {len(held)} partitions "
+                    f"{sorted(held)}, above the ceiling of node_quota "
+                    f"({expected_node_quota}) + num_consumers ({num_consumers})"
+                )
+
+
+TMP_QUOTA_LOG_RE = re.compile(
+    r"The consumer can take (\d+) temporary locks in the current round "
+    r"\(available=(\d+), idx=(\d+)\)"
+)
+
+# The inverted shrink condition reset a quota of 1 to 0 in the next round, so it never
+# produced two consecutive non-zero quotas. Longer runs are not guaranteed: the four replicas
+# share one schedule, so their rounds can overlap and re-contest the three leftover partitions
+# every round (quotas 1, 2, 0, 1, 2, 0, ...).
+REQUIRED_NONZERO_RUN = 2
+
+
+def collect_tmp_quota_sequences(instance, tables, consumer_idx=0):
+    """
+    Return {table: [(quota, available), ...]} in log order for one consumer of each table.
+
+    `lockTemporaryLocksLocked` logs the line in every round, including the rounds that reset
+    the quota to zero (no available partitions, or a replica without locks). Those rounds
+    must be observed: otherwise the old alternating 1, 0, 1, 0, ... pattern under
+    fluctuating availability would look like a run of consecutive non-zero quotas.
+    """
+    sequences = {table: [] for table in tables}
+    log = instance.grep_in_log("temporary locks in the current round")
+    for line in log.splitlines():
+        match = TMP_QUOTA_LOG_RE.search(line)
+        if not match:
+            continue
+        quota, available, idx = (int(x) for x in match.groups())
+        if idx != consumer_idx:
+            continue
+        for table in tables:
+            if table in line:
+                sequences[table].append((quota, available))
+                break
+    return sequences
+
+
+def longest_nonzero_run(sequence):
+    """Length of the longest streak of consecutive rounds with a non-zero quota."""
+    best = current = 0
+    for quota, _available in sequence:
+        current = current + 1 if quota > 0 else 0
+        best = max(best, current)
+    return best
+
+
+def test_temporary_lock_quota_is_retained_across_rounds(kafka_cluster):
+    """
+    A consumer must be able to keep its temporary-lock quota across rounds.
+
+    `lockTemporaryLocksLocked` grows the quota by one per round, capped at the number of
+    available partitions, and shrinks it only when it exceeds that number. Before the fix
+    the shrink condition was inverted, so a quota of 1 was always pushed back to 0 and the
+    quota alternated 1, 0, 1, 0, ... -- a consumer held a temporary lock only every other
+    round, and every reacquisition moved the partition to another replica and rewound it.
+
+    The absolute quota value is deliberately not asserted: the leftover partitions
+    (P mod R) are fewer than the replicas competing for them, so even the fixed code
+    converges to 1 here. The run length is what separates the two behaviours.
+
+    11 partitions over 4 replicas: node_quota = max(11/4, 1) = 2 pins 8 partitions and
+    leaves 3 for temporary locks. Every replica holds permanent locks, which keeps
+    `has_replica_without_locks` false -- otherwise the quota is forced to 0 before the
+    adjustment runs.
+    """
+    admin = k.get_admin_client(kafka_cluster)
+    topic_name = "tmp_quota_11p_4r"
+    keeper_path = f"/clickhouse/test/{topic_name}"
+    num_partitions = 11
+    replicas = [f"r{i}" for i in range(1, 5)]
+    tables = [f"kafka_tmp_{replica}" for replica in replicas]
+    timeout = 300
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        for p in range(num_partitions):
+            k.kafka_produce(kafka_cluster, topic_name,
+                            [json.dumps({"key": p, "value": 1})], retries=5)
+
+        # Phase 1: register all replicas before any of them consumes, so each one computes
+        # node_quota against the full replica set.
+        #
+        # The quota is only adjusted on the slow path of `prepareToPoll`, once every
+        # LOCKS_REFRESH_POLLS (15) polls. The short timeouts keep a round at a few seconds;
+        # with the defaults it would be minutes per round.
+        instance.query("\n".join(
+            create_kafka_table(
+                table_name=table,
+                topic_name=topic_name,
+                consumer_group=topic_name,
+                keeper_path=keeper_path,
+                replica_name=replica,
+                settings={
+                    "kafka_num_consumers": 1,
+                    "kafka_poll_timeout_ms": 50,
+                    "kafka_consumer_reschedule_ms": 100,
+                    "kafka_flush_interval_ms": 500,
+                },
+            )
+            for table, replica in zip(tables, replicas)
+        ))
+        wait_for_replicas_registered(kafka_cluster, keeper_path, len(replicas))
+
+        # Phase 2: start consuming. The 8 permanent locks settle first, then the remaining
+        # 3 partitions drive the temporary-lock quota.
+        instance.query("\n".join(
+            attach_materialized_view(table) for table in tables
+        ))
+
+        start = time.time()
+        sequences = {}
+        while time.time() - start < timeout:
+            sequences = collect_tmp_quota_sequences(instance, tables)
+            if any(longest_nonzero_run(seq) >= REQUIRED_NONZERO_RUN
+                   for seq in sequences.values()):
+                return
+            time.sleep(2)
+
+        observed = "; ".join(
+            f"{table}: quotas={[q for q, _a in seq]} available={[a for _q, a in seq]}"
+            for table, seq in sequences.items()
+        )
+        rounds = max((len(seq) for seq in sequences.values()), default=0)
+        if rounds < REQUIRED_NONZERO_RUN:
+            pytest.fail(
+                f"Only {rounds} temporary-lock quota rounds were logged within {timeout}s, "
+                f"so the quota logic was never exercised and the test proves nothing: "
+                f"{observed}"
+            )
+        pytest.fail(
+            f"No consumer kept a non-zero temporary-lock quota for {REQUIRED_NONZERO_RUN} "
+            f"consecutive rounds, i.e. the quota still collapses after every increase: "
+            f"{observed}"
+        )
 
 
 if __name__ == "__main__":

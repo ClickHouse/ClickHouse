@@ -231,9 +231,7 @@ La section des handlers personnalisés suit le même format que
 Les modifications apportées à la section des handlers personnalisés sont détectées lors du rechargement de la config, et le point de terminaison
 correspondant est automatiquement redémarré.
 
-<div id="default-session-user-per-endpoint">
-  ### Utilisateur de session par défaut par point de terminaison
-</div>
+### Utilisateur de session par défaut par point de terminaison {#default-session-user-per-endpoint}
 
 Lorsqu’un client se connecte sans spécifier de nom d’utilisateur (par exemple, une requête HTTP
 sans le paramètre `user`, ou un paquet `Hello` du protocole natif avec un nom d’utilisateur
@@ -279,13 +277,11 @@ en particulier, un `default_session_user` vide ne les rejette pas. Ce paramètre
 protocole `interserver` : les connexions interserveur sont authentifiées à l&#39;aide du secret du cluster
 et de l&#39;utilisateur initial, et n&#39;utilisent jamais l&#39;utilisateur de session `default`.
 
-<div id="some-modules-can-contain-specific-for-its-layer-parameters">
-  ### Spécification de paramètres supplémentaires pour la couche
-</div>
+### Spécification de paramètres supplémentaires pour la couche {#some-modules-can-contain-specific-for-its-layer-parameters}
 
 Certains modules peuvent inclure des paramètres de couche supplémentaires. Par exemple, la couche TLS
 permet de spécifier un fichier de clé privée (`privateKeyFile`) et un fichier de certificat (`certificateFile`)
-comme suit :
+comme suit :
 
 ```xml
 <protocols>
@@ -307,3 +303,7 @@ comme suit :
 
 </protocols>
 ```
+
+Une couche TLS peut également définir `cipherList` et `cipherSuites`, mais ces paramètres ne prennent effet que si la couche
+dispose de son propre `privateKeyFile` (et de son propre `certificateFile`, si le certificat se trouve dans un fichier distinct). Un
+`cipherSuites` non vide dans une couche qui ne les définit pas provoque une erreur au démarrage.

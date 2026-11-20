@@ -35,7 +35,7 @@ TEST(DistinctSpillLayout, KeepsEmittedFlagConstantThroughSorting)
                 ? layout.prepareSuppressionChunk(std::move(columns))
                 : layout.prepareInputChunk(Chunk(std::move(columns), keys.size()), /*first_arrival_number=*/ 0);
             const auto & header = suppression ? layout.getSuppressionRunHeader() : layout.getInputRunHeader();
-            const size_t flag_pos = header->getPositionByName(layout.getRunSortDescription().back().column_name);
+            const size_t flag_pos = header->getPositionByName(layout.getFlagColumnName());
             const ColumnPtr initial_flag = chunk.getColumns()[flag_pos];
             EXPECT_EQ(initial_flag->size(), keys.size());
 
@@ -58,7 +58,7 @@ TEST(DistinctSpillLayout, KeepsEmittedFlagConstantThroughSorting)
 
             Chunks runs;
             runs.emplace_back(block.getColumns(), block.rows());
-            MergeSorter sorter(header, std::move(runs), layout.getRunSortDescription(), 65536, 0);
+            MergeSorter sorter(header, std::move(runs), layout.getKeySortDescription(), 65536, 0);
             auto merged = sorter.read();
             const auto & merged_keys = assert_cast<const ColumnUInt64 &>(*merged.getColumns()[0]).getData();
             EXPECT_EQ((std::vector<UInt64>{merged_keys.begin(), merged_keys.end()}), (std::vector<UInt64>{1, 2, 3}));
@@ -111,6 +111,32 @@ TEST(DistinctSpillLayout, SuppressionContainsOnlyRetainedKeys)
             for (size_t row = 0; row < 2; ++row)
                 EXPECT_TRUE(retained_keys.compareAt(row, 0, ordinary_keys, 1) == 0
                     || retained_keys.compareAt(row, 1, ordinary_keys, 1) == 0);
+        }
+    }
+}
+
+TEST(DistinctSpillLayout, ServiceColumnsMatchActualAllocation)
+{
+    const auto header = std::make_shared<const Block>(Block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "key")});
+    for (const auto representation : {DistinctKeyRepresentation::Columns, DistinctKeyRepresentation::Hash128})
+    {
+        for (const bool ordered : {false, true})
+        {
+            DistinctSpillLayout layout(header, {0}, representation, ordered);
+            for (const size_t rows : {0, 1, 256, 65536})
+            {
+                SCOPED_TRACE(::testing::Message() << "representation=" << static_cast<int>(representation)
+                    << ", ordered=" << ordered << ", rows=" << rows);
+                Chunk input(Columns{ColumnUInt64::create(rows, UInt64{0})}, rows);
+                auto prepared = layout.prepareInputChunk(std::move(input), 0);
+                size_t actual_bytes = 0;
+                /// Exclude the original key and the constant emitted flag; only dense service columns
+                /// scale with the input row count.
+                for (size_t pos = 1; pos + 1 < prepared.getNumColumns(); ++pos)
+                    actual_bytes += prepared.getColumns()[pos]->allocatedBytes();
+                EXPECT_EQ(DistinctSpillLayout::estimateServiceColumnsMemory(rows, representation, ordered), actual_bytes);
+            }
         }
     }
 }

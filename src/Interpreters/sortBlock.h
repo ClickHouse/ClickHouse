@@ -11,6 +11,10 @@ class Block;
 class SortDescription;
 using IColumnPermutation = PaddedPODArray<size_t>;
 
+/// Estimates permutation and scratch memory for `sortBlock` and `sortBlockAndDeduplicate`.
+/// Input columns and their reordered copies are excluded and must be accounted for separately.
+size_t estimateSortingWorkspace(size_t rows);
+
 /// Sort one block by `description`. If limit != 0, then the partial sort of the first `limit` rows is produced.
 void sortBlock(Block & block, const SortDescription & description, UInt64 limit = 0, IColumn::PermutationSortStability stability = IColumn::PermutationSortStability::Unstable);
 

@@ -82,6 +82,11 @@ public:
         return data->getDataAt(0);
     }
 
+    bool supportsGetDataAt() const override
+    {
+        return data->supportsGetDataAt();
+    }
+
     UInt64 get64(size_t) const override
     {
         return data->get64(0);
@@ -128,7 +133,11 @@ public:
     void doInsertRangeFrom(const IColumn & src, size_t /*start*/, size_t length) override
 #endif
     {
-        chassert(!typeid_cast<const ColumnConst *>(&src) || data->compareAt(0, 0, *typeid_cast<const ColumnConst &>(src).data, -1) == 0);
+        /// `data` is shared with `ColumnConst` instances cloned via `cut`, etc.,
+        /// so dereferencing the non-const `WrappedPtr` would fail the
+        /// `use_count() == 1` assertion. `compareAt` is a const method, so
+        /// access via the underlying immutable pointer.
+        chassert(!typeid_cast<const ColumnConst *>(&src) || std::as_const(*this).data->compareAt(0, 0, *typeid_cast<const ColumnConst &>(src).data, -1) == 0);
         s += length;
     }
 
