@@ -204,8 +204,8 @@ SELECT count() FROM (EXPLAIN QUERY TREE SELECT id FROM file('${BYTES}') WHERE ha
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT id, mapKeys(m) FROM file('${BYTES}') WHERE id > 5 ORDER BY id LIMIT 3) WHERE explain ILIKE '%m.keys%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT id, mapKeys(m) FROM file('${BYTES}')) WHERE explain ILIKE '%m.keys%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT mapKeys(m) FROM t_05509_filter SETTINGS additional_table_filters = {'t_05509_filter': 'id > 1'})) WHERE explain ILIKE '%m.keys%';
-SELECT count() FROM (EXPLAIN SELECT id, mapKeys(m) FROM file('${BYTES}') ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10) WHERE explain ILIKE '%LazilyReadFromFile%';
-SELECT count() FROM (EXPLAIN SELECT id, mapKeys(m) FROM t_05509_bytes ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10) WHERE explain ILIKE '%LazilyReadFromObjectStorage%';
+SELECT count() FROM (EXPLAIN SELECT id, mapKeys(m) FROM file('${BYTES}') ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_optimize_lazy_materialization_for_file = 1, query_plan_max_limit_for_lazy_materialization = 10) WHERE explain ILIKE '%LazilyReadFromFile%';
+SELECT count() FROM (EXPLAIN SELECT id, mapKeys(m) FROM t_05509_bytes ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_optimize_lazy_materialization_for_object_storage = 1, query_plan_max_limit_for_lazy_materialization = 10) WHERE explain ILIKE '%LazilyReadFromObjectStorage%';
 "
 
 echo "decompressed bytes"
