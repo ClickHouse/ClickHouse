@@ -107,11 +107,23 @@ public:
     Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
+    /// A key may be loaded several times; each load appends a row and repoints the key.
     template <typename Value>
-    using ContainerType = std::conditional_t<
-        std::is_same_v<Value, Array> || std::is_same_v<Value, Map> || std::is_same_v<Value, Object>,
-        VectorWithMemoryTracking<Value>,
-        PaddedPODArray<Value>>;
+    struct ColumnAttributeKeyToRow
+    {
+        explicit ColumnAttributeKeyToRow(const DictionaryAttribute & dictionary_attribute) : values(dictionary_attribute) {}
+
+        size_t size() const { return key_to_row.size(); }
+        size_t capacity() const { return key_to_row.capacity(); }
+        ColumnAttributeValue<Value> operator[](size_t key) const { return values[key_to_row[key]]; }
+
+        ColumnAttributeContainer<Value> values;
+        PaddedPODArray<UInt64> key_to_row;
+    };
+
+    template <typename Value>
+    using ContainerType = std::conditional_t<is_column_attribute_value<Value>, ColumnAttributeKeyToRow<Value>,
+        std::conditional_t<std::is_same_v<Value, Object>, VectorWithMemoryTracking<Value>, PaddedPODArray<Value>>>;
 
     using NullableSet = HashSet<UInt64, DefaultHash<UInt64>, HashTableGrower<>>;
 

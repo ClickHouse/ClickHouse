@@ -406,26 +406,14 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
-        if constexpr (std::is_same_v<ValueType, Array>)
+        if constexpr (is_column_attribute_value<ValueType>)
         {
             auto * out = column.get();
 
             getItemsInternalImpl<ValueType, false>(
                 attribute,
                 key_to_index,
-                [&](size_t, const ColumnAttributeValue<Array> & value, bool)
-                {
-                    value.insertInto(*out);
-                });
-        }
-        else if constexpr (std::is_same_v<ValueType, Map>)
-        {
-            auto * out = column.get();
-
-            getItemsInternalImpl<ValueType, false>(
-                attribute,
-                key_to_index,
-                [&](size_t, const ColumnAttributeValue<Map> & value, bool)
+                [&](size_t, const ColumnAttributeValue<ValueType> & value, bool)
                 {
                     value.insertInto(*out);
                 });

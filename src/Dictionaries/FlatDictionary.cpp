@@ -95,19 +95,12 @@ ColumnPtr FlatDictionary::getColumn(
         {
             IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
 
-            if constexpr (std::is_same_v<ValueType, Array>)
+            if constexpr (is_column_attribute_value<ValueType>)
             {
                 auto * out = column.get();
 
                 getItemsShortCircuitImpl<ValueType, false>(
-                    attribute, ids, [&](size_t, const Array & value, bool) { out->insert(value); }, default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                auto * out = column.get();
-
-                getItemsShortCircuitImpl<ValueType, false>(
-                    attribute, ids, [&](size_t, const Map & value, bool) { out->insert(value); }, default_mask);
+                    attribute, ids, [&](size_t, const ColumnAttributeValue<ValueType> & value, bool) { value.insertInto(*out); }, default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, Object>)
             {
@@ -171,24 +164,14 @@ ColumnPtr FlatDictionary::getColumn(
             DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(
                 dictionary_attribute.null_value, default_values_column);
 
-            if constexpr (std::is_same_v<ValueType, Array>)
+            if constexpr (is_column_attribute_value<ValueType>)
             {
                 auto * out = column.get();
 
                 getItemsImpl<ValueType, false>(
                     attribute,
                     ids,
-                    [&](size_t, const Array & value, bool) { out->insert(value); },
-                    default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                auto * out = column.get();
-
-                getItemsImpl<ValueType, false>(
-                    attribute,
-                    ids,
-                    [&](size_t, const Map & value, bool) { out->insert(value); },
+                    [&](size_t, const ColumnAttributeValue<ValueType> & value, bool) { value.insertInto(*out); },
                     default_value_extractor);
             }
             else if constexpr (std::is_same_v<ValueType, Object>)
@@ -605,15 +588,9 @@ void FlatDictionary::calculateBytesAllocated()
             const auto & container = std::get<ContainerType<ValueType>>(attribute.container);
             bytes_allocated += sizeof(ContainerType<ValueType>);
 
-            if constexpr (std::is_same_v<ValueType, Array>)
+            if constexpr (is_column_attribute_value<ValueType>)
             {
-                /// It is not accurate calculations
-                bytes_allocated += sizeof(Array) * container.size();
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                /// It is not accurate calculations
-                bytes_allocated += sizeof(Map) * container.size();
+                bytes_allocated += container.values.allocatedBytes() + container.key_to_row.allocated_bytes();
             }
             else if constexpr (std::is_same_v<ValueType, Object>)
             {
@@ -659,7 +636,10 @@ FlatDictionary::Attribute FlatDictionary::createAttribute(const DictionaryAttrib
         using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
 
-        attribute.container.emplace<ContainerType<ValueType>>(configuration.initial_array_size, ValueType());
+        if constexpr (is_column_attribute_value<ValueType>)
+            attribute.container.emplace<ContainerType<ValueType>>(dictionary_attribute).key_to_row.resize_fill(configuration.initial_array_size, 0);
+        else
+            attribute.container.emplace<ContainerType<ValueType>>(configuration.initial_array_size, ValueType());
     };
 
     callOnDictionaryAttributeType(dictionary_attribute.underlying_type, type_call);
@@ -755,7 +735,9 @@ void FlatDictionary::resize(Attribute & attribute, UInt64 key)
         const size_t elements_count = key + 1; //id=0 -> elements_count=1
         loaded_keys.resize(elements_count, false);
 
-        if constexpr (std::is_same_v<T, Array> || std::is_same_v<T, Map> || std::is_same_v<T, Object>)
+        if constexpr (is_column_attribute_value<T>)
+            container.key_to_row.resize_fill(elements_count, 0);
+        else if constexpr (std::is_same_v<T, Object>)
             container.resize(elements_count, T{});
         else
             container.resize_fill(elements_count, T{});
@@ -772,26 +754,37 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
 
         resize<ValueType>(attribute, key);
 
-        if (attribute.is_nullable_set && value.isNull())
-        {
-            attribute.is_nullable_set->insert(key);
-            loaded_keys[key] = true;
-            return;
-        }
-
-        auto & attribute_value = value.safeGet<AttributeType>();
-
         auto & container = std::get<ContainerType<ValueType>>(attribute.container);
-        loaded_keys[key] = true;
 
-        if constexpr (std::is_same_v<ValueType, std::string_view>)
+        /// `Array` and `Map` cannot be inside `Nullable`.
+        if constexpr (is_column_attribute_value<ValueType>)
         {
-            auto arena_value = copyStringInArena(string_arena, attribute_value);
-            container[key] = arena_value;
+            const size_t row = container.values.size();
+            container.values.insert(value);
+            container.key_to_row[key] = row;
+            loaded_keys[key] = true;
         }
         else
         {
-            container[key] = static_cast<ValueType>(attribute_value);
+            if (attribute.is_nullable_set && value.isNull())
+            {
+                attribute.is_nullable_set->insert(key);
+                loaded_keys[key] = true;
+                return;
+            }
+
+            auto & attribute_value = value.safeGet<AttributeType>();
+            loaded_keys[key] = true;
+
+            if constexpr (std::is_same_v<ValueType, std::string_view>)
+            {
+                auto arena_value = copyStringInArena(string_arena, attribute_value);
+                container[key] = arena_value;
+            }
+            else
+            {
+                container[key] = static_cast<ValueType>(attribute_value);
+            }
         }
     };
 

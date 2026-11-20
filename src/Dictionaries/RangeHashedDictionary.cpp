@@ -57,19 +57,12 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
         {
             IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
 
-            if constexpr (std::is_same_v<ValueType, Array>)
+            if constexpr (is_column_attribute_value<ValueType>)
             {
                 auto * out = column.get();
 
                 getItemsShortCircuitImpl<ValueType, false>(
-                    attribute, modified_key_columns, [&](size_t, const ColumnAttributeValue<Array> & value, bool) { value.insertInto(*out); }, default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                auto * out = column.get();
-
-                getItemsShortCircuitImpl<ValueType, false>(
-                    attribute, modified_key_columns, [&](size_t, const ColumnAttributeValue<Map> & value, bool) { value.insertInto(*out); }, default_mask);
+                    attribute, modified_key_columns, [&](size_t, const ColumnAttributeValue<ValueType> & value, bool) { value.insertInto(*out); }, default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, Object>)
             {
@@ -136,27 +129,14 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
             DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(
             dictionary_attribute.null_value, default_values_column);
 
-            if constexpr (std::is_same_v<ValueType, Array>)
+            if constexpr (is_column_attribute_value<ValueType>)
             {
                 auto * out = column.get();
 
                 getItemsImpl<ValueType, false>(
                     attribute,
                     modified_key_columns,
-                    [&](size_t, const ColumnAttributeValue<Array> & value, bool)
-                    {
-                        value.insertInto(*out);
-                    },
-                    default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                auto * out = column.get();
-
-                getItemsImpl<ValueType, false>(
-                    attribute,
-                    modified_key_columns,
-                    [&](size_t, const ColumnAttributeValue<Map> & value, bool)
+                    [&](size_t, const ColumnAttributeValue<ValueType> & value, bool)
                     {
                         value.insertInto(*out);
                     },
