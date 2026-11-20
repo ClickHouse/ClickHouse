@@ -25,6 +25,11 @@
 
 #include <algorithm>
 
+#include "config.h"
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedSystemDatabase.h>
+#endif
+
 namespace DB
 {
 
@@ -126,14 +131,12 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     /// `{_partition_id}` tables as wildcard (see `initPartitionStrategy`).
     configuration->is_create_query = args.mode == LoadingStrictnessLevel::CREATE;
 
-    /// Server-internal log-pipeline object storage tables live in the `system` database and are named
-    /// `<log>_s3` (the plain S3 engine sink) or `<log>_s3queue`. Users cannot create tables there, so this is a
-    /// safe internal marker. These tables must never abort server startup when server-managed credentials are
-    /// restricted: force the anonymous-load fallback in `getClient` even if the operator disabled
-    /// `s3_load_table_anonymously_if_credentials_restricted`. Their bootstrap re-credentials the client afterwards.
-    if (args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE
-        && (args.table_id.table_name.ends_with("_s3") || args.table_id.table_name.ends_with("_s3queue")))
+#if CLICKHOUSE_CLOUD
+    /// The tables of the system log pipeline must never abort the startup when server-managed credentials are
+    /// restricted. The catalog builds the current ones with the server credentials.
+    if (SharedSystemDatabase::isPipelineTable(args.table_id))
         configuration->force_anonymous_load_fallback = true;
+#endif
 
     auto storage = std::make_shared<StorageObjectStorage>(
         configuration,
@@ -158,7 +161,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     {
         auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
         auto metadata = *metadata_snapshot;
-        metadata.settings_changes = args.storage_def->settings->ptr();
+        metadata.setSettingsChanges(args.storage_def->settings->ptr());
         storage->setInMemoryMetadata(metadata);
     }
 
@@ -195,8 +198,15 @@ This engine provides an integration with [Azure Blob Storage](https://azure.micr
 ## Create table {#create-table}
 
 ```sql
+-- Account key
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
-    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file, extra_credentials(client_id=, tenant_id=)])
+    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file])
+    [PARTITION BY expr]
+    [SETTINGS ...]
+
+-- Workload identity (mutually exclusive with account_name / account_key)
+CREATE TABLE azure_blob_storage_table (name String, value UInt32)
+    ENGINE = AzureBlobStorage(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression, partition_strategy, partition_columns_in_data_file])
     [PARTITION BY expr]
     [SETTINGS ...]
 ```
@@ -214,7 +224,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 - `compression` — Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. By default, it will autodetect compression by file extension. (same as setting to `auto`). For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).
 - `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `wildcard`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 - `partition_columns_in_data_file` - Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
-- `extra_credentials` - Use `client_id` and `tenant_id` for authentication. If extra_credentials are provided, they are given priority over `account_name` and `account_key`.
+- `extra_credentials` - Use `client_id` and `tenant_id` for Azure workload identity authentication. Mutually exclusive with `account_name` / `account_key`, and requires `storage_account_url` (not `connection_string`).
 
 **Example**
 
@@ -318,7 +328,9 @@ select _path, * from azure_table;
 [Azure Blob Storage Table Function](/reference/functions/table-functions/azureBlobStorage)
 )DOCS_MD",
         .syntax = "ENGINE = AzureBlobStorage(connection_string | storage_account_url, container_name, blobpath, "
-            "[account_name, account_key,] format [, compression])",
+            "[account_name, account_key,] format [, compression])\n"
+            "ENGINE = AzureBlobStorage(storage_account_url, container_name, blobpath, "
+            "extra_credentials(client_id=, tenant_id=), format [, compression])",
         .related = {"S3", "HDFS"}});
 }
 #endif
@@ -1604,7 +1616,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 The settings which are stored only in the table definition, and not in the Iceberg metadata, can be changed for an existing table with `ALTER TABLE ... MODIFY SETTING` and `ALTER TABLE ... RESET SETTING`:
 
 - the lookup of the metadata file: `iceberg_use_version_hint`, `iceberg_recent_metadata_file_by_last_updated_ms_field` and `iceberg_metadata_async_prefetch_period_ms`;
-- the background compaction and the cleanup after it: `allow_experimental_iceberg_compaction`, `enable_cleanup_old_data_files_compaction` (or its alias `allow_experimental_cleanup_old_data_files_compaction`), `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_compaction_max_rows_in_data_file`, `iceberg_compaction_max_bytes_in_data_file`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction` and `iceberg_data_file_size_upper_threshold_compaction`.
+- the background compaction and the cleanup after it: `allow_experimental_iceberg_compaction`, `enable_cleanup_old_data_files_compaction` (or its alias `allow_experimental_cleanup_old_data_files_compaction`), `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction`, `iceberg_compaction_max_bytes_to_merge` and `iceberg_compaction_max_rows_to_merge`.
 
 The new values take effect for subsequent queries and are stored in the table definition. The background jobs of the table are stopped while the settings are changed and started again with the new settings, so switching `allow_experimental_iceberg_compaction` off stops the background compaction of the table, and switching it on starts it. Other settings cannot be modified, and a settings change cannot be combined with other `ALTER` commands in one query. Tables of a `DataLakeCatalog` database do not support modifying settings.
 
@@ -2509,8 +2521,13 @@ ENGINE = DeltaLake(gcs_creds, url = 'https://storage.googleapis.com/<bucket>/<pa
 **Syntax**
 
 ```sql
+-- Account key
 CREATE TABLE table_name
-ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+ENGINE = DeltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+
+-- Workload identity (mutually exclusive with account_name / account_key)
+CREATE TABLE table_name
+ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression])
 ```
 
 **Arguments**
@@ -2521,6 +2538,33 @@ ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpa
 - `blobpath` — Path to the Delta Lake table within the container
 - `account_name` — Azure storage account name
 - `account_key` — Azure storage account key
+- `extra_credentials` — Optional alternative to `account_name` / `account_key`. Use `client_id` and `tenant_id` for Azure workload identity authentication. Cannot be combined with account credentials. This is not the S3 `role_arn` form of `extra_credentials`.
+
+Engine parameters can be specified using [Named Collections](/concepts/features/configuration/server-config/named-collections). Named collections accept the same `client_id` and `tenant_id` keys.
+
+**Workload identity**
+
+The delta-kernel Azure path also requires environment variables:
+
+- `AZURE_FEDERATED_TOKEN_FILE` — required (the projected token file, e.g. on AKS)
+- `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` — required unless passed via `extra_credentials` or a named collection
+- `AZURE_AUTHORITY_HOST` — optional
+
+Workload identity uses the server's own identity, so it is refused by default: each session that creates or queries the table needs `allow_server_credentials_in_user_queries` enabled, either with `SET` or in its settings profile.
+
+```sql
+SET allow_server_credentials_in_user_queries = 1;
+
+CREATE NAMED COLLECTION azure_wi AS
+    storage_account_url = 'https://<account>.blob.core.windows.net',
+    container = 'mycontainer',
+    blob_path = 'path/to/table',
+    client_id = '<client-id>',
+    tenant_id = '<tenant-id>';
+
+CREATE TABLE azureDeltaLake
+ENGINE = DeltaLakeAzure(azure_wi)
+```
 
 </Tab>
 </Tabs>
@@ -2541,7 +2585,6 @@ Delta Lake writes are a Beta feature disabled by default and must be enabled wit
 <Note>
 Writing using the table engine is supported only through delta kernel.
 Writes work for S3 and GCS, and for Azure from version 26.9.
-Azure workload identity authentication (`extra_credentials(client_id = ..., tenant_id = ...)`) is not supported by delta kernel.
 </Note>
 
 ### Data cache {#data-cache}
@@ -2631,7 +2674,8 @@ The `DeltaLake` table engine and table function support data caching, the same a
         },
         Documentation{
             .description = "Provides an integration with existing Delta Lake tables stored in Microsoft Azure Blob Storage, supporting both reads and writes (writes from version 26.9).",
-            .syntax = "ENGINE = DeltaLakeAzure(connection_string | storage_account_url, container_name, blobpath)",
+            .syntax = "ENGINE = DeltaLakeAzure(connection_string | storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])\n"
+                      "ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression])",
             .related = {"DeltaLake"}});
 #    endif
     factory.registerStorage(
