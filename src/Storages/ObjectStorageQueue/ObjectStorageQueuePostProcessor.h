@@ -109,6 +109,7 @@ private:
     /// Removes the source only while it still holds the generation the copy consumed.
     void removeCopiedSource(const StoredObject & object, const SourceGeneration & consumed) const;
     void reportMoveCollision(const StoredObject & source, const StoredObject & destination) const;
+    void reportSelfMove(const StoredObject & source) const;
 
     /// Move processed objects to another prefix. Each of the three rethrows the first
     /// `FILE_CHANGED_DURING_READ` / `S3_OBJECT_CHANGED_DURING_READ` once the whole batch is handled (see `process`).

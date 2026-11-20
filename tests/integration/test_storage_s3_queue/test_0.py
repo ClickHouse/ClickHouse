@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 import boto3
 import pytest
 from minio.commonconfig import ENABLED, Tags
+from minio.credentials import StaticProvider
+from minio.minioadmin import MinioAdmin
 from minio.versioningconfig import VersioningConfig
 
 from helpers.client import QueryRuntimeException
@@ -3251,6 +3253,59 @@ def test_external_move_writes_with_the_move_credentials(started_cluster):
     assert count_minio_objects(started_cluster, destination_bucket, "") == 0
     assert read_s3_object(started_cluster, started_cluster.minio_bucket, source_key) == data
     assert moved_objects(node) == moved_before
+
+
+def test_external_move_onto_the_source_itself_is_refused(started_cluster):
+    """A prefixless move to the source bucket with other keys maps every object onto itself. Copying it onto itself
+    (the buffered copy keeps the `ETag` of the same bytes) and then removing the source would lose it, so it stays."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = started_cluster.minio_bucket
+    table_name = f"move_onto_itself_{token}"
+    files_path = f"{table_name}_data"
+    source_key = f"{files_path}/part.csv"
+    data = b"1,2,3\n"
+    put_s3_file_content(started_cluster, source_key, data)
+    client = started_cluster.minio_client
+    last_modified = client.stat_object(bucket, source_key).last_modified
+
+    # Other keys for the move, so that it cannot use the native copy and re-uploads the bytes it reads.
+    move_access_key = f"mover{token}"
+    move_secret_key = f"mover-secret-{token}"
+    admin = MinioAdmin(
+        endpoint=f"{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        credentials=StaticProvider(
+            started_cluster.minio_access_key, started_cluster.minio_secret_key
+        ),
+        secure=False,
+    )
+    admin.user_add(move_access_key, move_secret_key)
+    admin.attach_policy(["readwrite"], user=move_access_key)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        after_processing="move",
+        move_to_bucket=bucket,
+        additional_settings={
+            "after_processing_move_access_key_id": move_access_key,
+            "after_processing_move_secret_access_key": move_secret_key,
+        },
+    )
+    create_mv(node, table_name, f"{table_name}_dst")
+
+    wait_until(
+        lambda: node.contains_in_log(
+            f"Not moving object {source_key}: the move destination is the object itself"
+        )
+    )
+    assert int(node.query(f"SELECT count() FROM {table_name}_dst")) == 1
+    # Nothing was written over the source.
+    assert client.stat_object(bucket, source_key).last_modified == last_modified
+    assert read_s3_object(started_cluster, bucket, source_key) == data
 
 
 def test_unguarded_same_storage_move_deletes_only_the_copied_version(started_cluster):

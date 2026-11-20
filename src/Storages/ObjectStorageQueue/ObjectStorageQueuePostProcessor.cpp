@@ -21,6 +21,9 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMoveDestinationAccess.h>
 #include <base/scope_guard.h>
 
+#include <Poco/String.h>
+#include <Poco/URI.h>
+
 #include <chrono>
 #include <thread>
 #include <unordered_set>
@@ -459,6 +462,43 @@ void ObjectStorageQueuePostProcessor::reportMoveCollision(const StoredObject & s
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMoveCollisions);
 }
 
+void ObjectStorageQueuePostProcessor::reportSelfMove(const StoredObject & source) const
+{
+    LOG_ERROR(
+        log,
+        "Not moving object {}: the move destination is the object itself; leaving it in place "
+        "(set `after_processing_move_prefix` or move to another bucket or container)",
+        source.remote_path);
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMoveCollisions);
+}
+
+#if USE_AWS_S3
+/// Whether a bucket of the same name at these two endpoints may be the same bucket. Fails closed: the endpoints are
+/// taken as different only when they are known to be, because copying an object onto itself and then removing the
+/// source loses it.
+static bool mayBeSameS3Service(std::string_view lhs_endpoint, std::string_view rhs_endpoint)
+{
+    const Poco::URI lhs{String(lhs_endpoint)};
+    const Poco::URI rhs{String(rhs_endpoint)};
+    const String lhs_host = Poco::toLower(lhs.getHost());
+    const String rhs_host = Poco::toLower(rhs.getHost());
+    /// Bucket names are global in AWS: all its (regional, dual-stack, ...) endpoints name the same bucket.
+    auto is_aws = [](const String & host) { return host.ends_with(".amazonaws.com") || host.ends_with(".amazonaws.com.cn"); };
+    if (is_aws(lhs_host) && is_aws(rhs_host))
+        return true;
+    return lhs_host == rhs_host && lhs.getPort() == rhs.getPort();
+}
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+/// Whether two blob clients may address the same blob. Fails closed, see `mayBeSameS3Service`.
+static bool mayBeSameAzureBlob(const Azure::Core::Url & lhs, const Azure::Core::Url & rhs)
+{
+    return Poco::toLower(lhs.GetHost()) == Poco::toLower(rhs.GetHost()) && lhs.GetPort() == rhs.GetPort()
+        && lhs.GetPath() == rhs.GetPath();
+}
+#endif
+
 static StoredObject applyMovePrefixIfPresent(const StoredObject & src, const String & move_prefix, bool preserve_path)
 {
     if (move_prefix.empty())
@@ -599,11 +639,17 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
         {
             const auto & object_from = objects[objects_index];
             auto destination = applyMovePrefixIfPresent(object_from, move_prefix, preserve_path);
+            /// A flattening prefix can map an object to its own key (`a/x` with the prefix `a`), and a copy onto itself
+            /// followed by the removal of the source would lose it.
+            const bool is_self_move = destination.remote_path == object_from.remote_path;
             /// Two objects of one batch can map to the same key while nothing is there yet, which no
             /// destination precondition can see: the second one is a collision all the same.
-            if (!destinations.insert(destination.remote_path).second)
+            if (is_self_move || !destinations.insert(destination.remote_path).second)
             {
-                reportMoveCollision(object_from, destination);
+                if (is_self_move)
+                    reportSelfMove(object_from);
+                else
+                    reportMoveCollision(object_from, destination);
                 /// The shortcut must not hide a source rewritten after it was ingested: the rewrite has to reach `process`.
                 try
                 {
@@ -900,12 +946,22 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             std::unordered_set<String> destinations;
             ChangedGeneration changed_generation;
             const String src_bucket = s3_storage->getObjectsNamespace();
+            /// The destination can be the source bucket (e.g. a prefixless move to it with other keys). An object moved onto
+            /// its own key would be copied onto itself (the buffered copy re-uploads the same bytes, keeping its `ETag`) and
+            /// then removed, so it is left in place instead.
+            const bool destination_may_be_source_bucket = dst_uri.bucket == src_bucket
+                && mayBeSameS3Service(
+                    std::string_view(src_client->getInitialEndpoint()), std::string_view(dst_client->getInitialEndpoint()));
             for (const auto & object_from : objects)
             {
                 auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);
-                if (!destinations.insert(object_to.remote_path).second)
+                const bool is_self_move = destination_may_be_source_bucket && object_to.remote_path == object_from.remote_path;
+                if (is_self_move || !destinations.insert(object_to.remote_path).second)
                 {
-                    reportMoveCollision(object_from, object_to);
+                    if (is_self_move)
+                        reportSelfMove(object_from);
+                    else
+                        reportMoveCollision(object_from, object_to);
                     /// The shortcut must not hide a source rewritten after it was ingested: the rewrite has to reach `process`.
                     try
                     {
@@ -1124,9 +1180,16 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
             for (const auto & object_from : objects)
             {
                 auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);
-                if (!destinations.insert(object_to.remote_path).second)
+                /// See the comment in `moveS3Objects`: a blob moved onto itself would be lost.
+                const bool is_self_move = mayBeSameAzureBlob(
+                    Azure::Core::Url(src_client->GetBlobClient(object_from.remote_path).GetUrl()),
+                    Azure::Core::Url(dst_client->GetBlobClient(object_to.remote_path).GetUrl()));
+                if (is_self_move || !destinations.insert(object_to.remote_path).second)
                 {
-                    reportMoveCollision(object_from, object_to);
+                    if (is_self_move)
+                        reportSelfMove(object_from);
+                    else
+                        reportMoveCollision(object_from, object_to);
                     /// The shortcut must not hide a source rewritten after it was ingested: the rewrite has to reach `process`.
                     try
                     {
