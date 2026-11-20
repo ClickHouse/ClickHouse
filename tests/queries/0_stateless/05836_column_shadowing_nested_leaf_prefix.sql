@@ -14,7 +14,7 @@ SETTINGS index_granularity = 1, share_nested_offsets = 1,
 
 INSERT INTO t_shadow_leaf (id, a, `a.x`) VALUES (1, '{"x":{"y":[11,22]}}', 5);
 
-SELECT column FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_shadow_leaf' AND active ORDER BY name;
+SELECT column FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_shadow_leaf' AND active ORDER BY column;
 SELECT id, `a.x`, `a.x.y`, `a.x.y.size0`, toJSONString(a) FROM t_shadow_leaf ORDER BY id;
 SELECT count() FROM t_shadow_leaf WHERE length(`a.x.y`) = 0;
 SELECT countIf(length(`a.x.y`) = 0) FROM t_shadow_leaf;
