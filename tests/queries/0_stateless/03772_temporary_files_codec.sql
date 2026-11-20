@@ -1,8 +1,8 @@
--- Tags: long, no-flaky-check
-SET max_bytes_before_external_sort = '100K';
+-- Tags: long
+SET max_bytes_before_external_sort = '1M';
 SET max_bytes_ratio_before_external_sort = 0;
 SET max_block_size = DEFAULT;
-SET max_bytes_before_external_group_by = '100K';
+SET max_bytes_before_external_group_by = '1M';
 SET max_bytes_ratio_before_external_group_by = 0;
 SET group_by_two_level_threshold = '100K';
 SET group_by_two_level_threshold_bytes = '50M';
@@ -30,7 +30,7 @@ SELECT key, sum(val) FROM (SELECT number AS key, number as val FROM numbers(2_00
 SETTINGS log_comment='03772_temporary_files_codec/agg', temporary_files_codec = 'NONE'
 FORMAT Null;
 
-SET max_bytes_before_external_join = '2M';
+SET max_bytes_in_join = '1M';
 SET join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 32, grace_hash_join_max_buckets = 32;
 
 SELECT * FROM (SELECT number AS key, number as val FROM numbers(200_000)) t1
@@ -46,8 +46,6 @@ SETTINGS log_comment='03772_temporary_files_codec/grace_join', temporary_files_c
 FORMAT Null;
 
 SET join_algorithm = 'partial_merge';
--- Partial merge join spills on the size limits, not on the hash-join spill threshold.
-SET max_bytes_in_join = '1M';
 
 SELECT * FROM (SELECT number AS key, number as val FROM numbers(200_000)) t1
 JOIN (SELECT number AS key FROM numbers(200_000)) t2

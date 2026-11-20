@@ -6,9 +6,6 @@
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/Types.h>
 #include <filesystem>
-#include <optional>
-#include <utility>
-#include <vector>
 
 namespace Poco
 {
@@ -41,7 +38,7 @@ using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransac
 struct HostID
 {
     String host_name;
-    UInt16 port{};
+    UInt16 port;
 
     HostID() = default;
 
@@ -123,9 +120,6 @@ struct DDLTaskBase
     bool is_circular_replicated = false;
     bool execute_on_single_replica = false;
 
-    /// Set when the initial query runs as the submitting user, see `QueryFlags::run_as_submitting_user`.
-    ContextPtr submitting_user_context;
-
     Coordination::Requests ops;
     ExecutionStatus execution_status;
     bool was_executed = false;
@@ -137,12 +131,6 @@ struct DDLTaskBase
     virtual ~DDLTaskBase() = default;
 
     virtual void parseQueryFromEntry(ContextPtr context);
-
-    /// The initiator's user and its roles, resolved on this host, when
-    /// `distributed_ddl_use_initial_user_and_roles` preserves them for the execution of the entry.
-    /// `std::nullopt` when that server setting is disabled, when the entry carries no user, or - only if
-    /// `throw_if_not_found` is false - when the user or one of the roles does not exist on this host.
-    std::optional<std::pair<UUID, std::vector<UUID>>> resolveInitiatorUserAndRoles(ContextPtr from_context, bool throw_if_not_found) const;
     void formatRewrittenQuery(ContextPtr context);
 
     virtual String getShardID() const = 0;
@@ -287,7 +275,7 @@ public:
     void commit();
 
     /// (It would be nice to assert something like the following:
-    ///    chassert(isExecuted() || std::uncaught_exceptions() || ops.empty());
+    ///    assert(isExecuted() || std::uncaught_exceptions() || ops.empty());
     ///  But we can't do it because it would cause rare false positives because
     ///  ZooKeeperMetadataTransaction can be inside a weak_ptr
     ///  (in QueryStatus -> WithContext -> Context -> ContextData), enabling the following
@@ -302,10 +290,6 @@ public:
     ///      is called with std::uncaught_exceptions() == 0.)
     ~ZooKeeperMetadataTransaction() = default;
 };
-
-/// Whether the query re-executes a DDL that its initiator already validated and committed: an entry of a `Replicated`
-/// database queue, or a Shared Catalog replay (marked in the client info, not in a metadata transaction).
-bool isSecondaryDDLReplay(const ContextPtr & context);
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name);
 

@@ -2,6 +2,8 @@
 
 #if USE_PARQUET
 
+#include <Common/VectorWithMemoryTracking.h>
+#include <base/unaligned.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <DataTypes/DataTypeString.h>
@@ -19,9 +21,9 @@
 #include <arrow/api.h>
 #include <arrow/status.h>
 #include <parquet/file_reader.h>
-#include <parquet/size_statistics.h>
 #include <parquet/statistics.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <DataTypes/NestedUtils.h>
 
 
@@ -31,6 +33,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 static NamesAndTypesList getHeaderForParquetMetadata()
@@ -95,21 +99,14 @@ static NamesAndTypesList getHeaderForParquetMetadata()
                                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
                                  Names{"num_values", "null_count", "distinct_count", "min", "max"}),
                              std::make_shared<DataTypeInt64>(),
-                             DataTypeFactory::instance().get("Bool"),
-                             std::make_shared<DataTypeTuple>(
-                                 DataTypes{
-                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-                                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
-                                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
-                                 Names{"unencoded_byte_array_data_bytes", "repetition_level_histogram", "definition_level_histogram"}),
                          },
-                         Names{"name", "path", "total_compressed_size", "total_uncompressed_size", "have_statistics", "statistics", "bloom_filter_bytes", "have_size_statistics", "size_statistics"}))},
+                         Names{"name", "path", "total_compressed_size", "total_uncompressed_size", "have_statistics", "statistics", "bloom_filter_bytes"}))},
              Names{"file_offset", "num_columns", "num_rows", "total_uncompressed_size", "total_compressed_size", "columns"}))},
     };
     return names_and_types;
 }
 
-static void checkHeader(const Block & header)
+void checkHeader(const Block & header)
 {
     auto expected_names_and_types = getHeaderForParquetMetadata();
     std::unordered_map<String, DataTypePtr> name_to_type;
@@ -135,12 +132,89 @@ static void checkHeader(const Block & header)
     }
 }
 
+static std::shared_ptr<arrow::Buffer> readAt(arrow::io::RandomAccessFile & file, int64_t position, int64_t nbytes)
+{
+    auto buffer = file.ReadAt(position, nbytes);
+    if (!buffer.ok())
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read Parquet metadata: {}", buffer.status().ToString());
+    if ((*buffer)->size() != nbytes)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read Parquet metadata: unexpected end of file");
+    return *buffer;
+}
+
+/// Arrow builds the schema tree recursively (`parquet::schema::Unflatten`, `parquet::SchemaDescriptor`),
+/// so a deeply nested schema exhausts the stack. Unlike the native Parquet reader, which has `checkStackSize`
+/// as a backstop, the recursion in Arrow cannot be guarded, so the depth is always limited by this ceiling,
+/// even if `max_parser_depth` is raised or set to 0 (unlimited). In a release build, Arrow exhausts
+/// an 8 MiB stack at a depth between 30000 and 100000; frames are several times larger in sanitizer
+/// and debug builds, and the ceiling leaves a wide margin for them.
+static constexpr size_t MAX_SCHEMA_DEPTH_FOR_ARROW = 1000;
+
+/// Check the nesting depth of the schema with a non-recursive walk before giving the footer to Arrow,
+/// with the same limit as the native Parquet reader (`max_parser_depth`), capped by `MAX_SCHEMA_DEPTH_FOR_ARROW`.
+static void checkSchemaDepth(arrow::io::RandomAccessFile & file, const FormatSettings & format_settings)
+{
+    const size_t max_parser_depth = format_settings.max_parser_depth;
+    const size_t max_depth = (max_parser_depth == 0) ? MAX_SCHEMA_DEPTH_FOR_ARROW : std::min(max_parser_depth, MAX_SCHEMA_DEPTH_FOR_ARROW);
+
+    auto file_size_or_error = file.GetSize();
+    if (!file_size_or_error.ok())
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read Parquet metadata: {}", file_size_or_error.status().ToString());
+    const int64_t file_size = *file_size_or_error;
+
+    /// Leave invalid and encrypted files (with the "PARE" magic) to Arrow, which reports a proper error.
+    if (file_size < 12)
+        return;
+    auto tail = readAt(file, file_size - 8, 8);
+    if (memcmp(tail->data() + 4, "PAR1", 4) != 0)
+        return;
+    const int64_t metadata_size = unalignedLoadLittleEndian<uint32_t>(tail->data());
+    if (metadata_size > file_size - 8)
+        return;
+
+    auto footer = readAt(file, file_size - 8 - metadata_size, metadata_size);
+    Parquet::parq::FileMetaData metadata;
+    Parquet::deserializeThriftStruct(metadata, reinterpret_cast<const char *>(footer->data()), footer->size());
+
+    /// The schema is a depth-first list of elements where a group element is followed by its `num_children` children.
+    /// The stack holds the number of children still to come for each group the walk is in.
+    VectorWithMemoryTracking<int64_t> children_left;
+    for (const auto & element : metadata.schema)
+    {
+        while (!children_left.empty() && children_left.back() == 0)
+            children_left.pop_back();
+        if (!children_left.empty())
+            --children_left.back();
+        else if (&element != &metadata.schema.front())
+            break; /// Elements after the root are invalid, Arrow reports it.
+
+        if (element.__isset.num_children && element.num_children > 0)
+        {
+            children_left.push_back(element.num_children);
+            if (children_left.size() > max_depth)
+            {
+                if (max_depth == MAX_SCHEMA_DEPTH_FOR_ARROW)
+                    throw Exception(
+                        ErrorCodes::TOO_DEEP_RECURSION,
+                        "Parquet schema is nested deeper than the limit ({}) of the `ParquetMetadata` format",
+                        max_depth);
+                throw Exception(
+                    ErrorCodes::TOO_DEEP_RECURSION,
+                    "Parquet schema is nested deeper than the limit ({}). It can be raised with the setting "
+                    "'max_parser_depth', but a very deeply nested schema is rarely intentional",
+                    max_depth);
+            }
+        }
+    }
+}
+
 static std::shared_ptr<parquet::FileMetaData> getFileMetadata(
     ReadBuffer & in,
     const FormatSettings & format_settings,
     std::atomic<int> & is_stopped)
 {
     auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
+    checkSchemaDepth(*arrow_file, format_settings);
     return parquet::ReadMetaData(arrow_file);
 }
 
@@ -364,45 +438,8 @@ void ParquetMetadataInputFormat::fillColumnChunksMetadata(const std::unique_ptr<
         else
             tuple_column.getColumn(5).insertDefault();
         assert_cast<ColumnInt64 &>(tuple_column.getColumn(6)).insertValue(column_chunk_metadata->bloom_filter_length().value_or(0));
-        /// A file written before SizeStatistics existed, or by a writer that omits it, has no size
-        /// statistics at all; that is not the same as a column whose histograms are legitimately
-        /// empty, so the presence is reported separately.
-        auto size_statistics = column_chunk_metadata->size_statistics();
-        assert_cast<ColumnUInt8 &>(tuple_column.getColumn(7)).insertValue(size_statistics != nullptr);
-        fillColumnSizeStatistics(size_statistics, tuple_column.getColumn(8));
     }
     array_column.getOffsets().push_back(tuple_column.size());
-}
-
-void ParquetMetadataInputFormat::fillColumnSizeStatistics(
-    const std::shared_ptr<parquet::SizeStatistics> & size_statistics, IColumn & column)
-{
-    auto & size_statistics_column = assert_cast<ColumnTuple &>(column);
-
-    auto & unencoded_bytes = assert_cast<ColumnNullable &>(size_statistics_column.getColumn(0));
-    if (size_statistics && size_statistics->unencoded_byte_array_data_bytes.has_value())
-    {
-        assert_cast<ColumnUInt64 &>(unencoded_bytes.getNestedColumn())
-            .insertValue(static_cast<UInt64>(*size_statistics->unencoded_byte_array_data_bytes));
-        unencoded_bytes.getNullMapData().push_back(false);
-    }
-    else
-    {
-        unencoded_bytes.insertDefault();
-    }
-
-    auto insert_histogram = [&](const std::vector<int64_t> & histogram, IColumn & histogram_column)
-    {
-        auto & array_column = assert_cast<ColumnArray &>(histogram_column);
-        auto & data_column = assert_cast<ColumnUInt64 &>(array_column.getData());
-        for (const auto level_count : histogram)
-            data_column.insertValue(static_cast<UInt64>(level_count));
-        array_column.getOffsets().push_back(data_column.size());
-    };
-
-    static const std::vector<int64_t> empty_histogram;
-    insert_histogram(size_statistics ? size_statistics->repetition_level_histogram : empty_histogram, size_statistics_column.getColumn(1));
-    insert_histogram(size_statistics ? size_statistics->definition_level_histogram : empty_histogram, size_statistics_column.getColumn(2));
 }
 
 template <typename T>
@@ -544,7 +581,6 @@ NamesAndTypesList ParquetMetadataSchemaReader::readSchema()
     return getHeaderForParquetMetadata();
 }
 
-void registerInputFormatParquetMetadata(FormatFactory & factory);
 void registerInputFormatParquetMetadata(FormatFactory & factory)
 {
     factory.registerRandomAccessInputFormat(
@@ -558,153 +594,8 @@ void registerInputFormatParquetMetadata(FormatFactory & factory)
            FormatFilterInfoPtr) -> InputFormatPtr
         { return std::make_shared<ParquetMetadataInputFormat>(buf, std::make_shared<const Block>(sample), settings); });
     factory.markFormatSupportsSubsetOfColumns("ParquetMetadata");
-
-    factory.setDocumentation("ParquetMetadata", Documentation{
-        .description = R"DOCS_MD(
-## Description {#description}
-
-Special format for reading Parquet file metadata (https://parquet.apache.org/docs/file-format/metadata/). It always outputs one row with the next structure/content:
-- `num_columns` - the number of columns
-- ``num_rows` - the total number of rows
-- `num_row_groups` - the total number of row groups
-- `format_version` - parquet format version, always 1.0 or 2.6
-- `total_uncompressed_size` - total uncompressed bytes size of the data, calculated as the sum of total_byte_size from all row groups
-- `total_compressed_size` - total compressed bytes size of the data, calculated as the sum of total_compressed_size from all row groups
-- `columns` - the list of columns metadata with the next structure:
-  - `name` - column name
-  - `path` - column path (differs from name for nested column)
-  - `max_definition_level` - maximum definition level
-  - `max_repetition_level` - maximum repetition level
-  - `physical_type` - column physical type
-  - `logical_type` - column logical type
-  - `compression` - compression used for this column
-  - `total_uncompressed_size` - total uncompressed bytes size of the column, calculated as the sum of total_uncompressed_size of the column from all row groups
-  - `total_compressed_size` - total compressed bytes size of the column,  calculated as the sum of total_compressed_size of the column from all row groups
-  - `space_saved` - percent of space saved by compression, calculated as (1 - total_compressed_size/total_uncompressed_size).
-  - `encodings` - the list of encodings used for this column
-- `row_groups` - the list of row groups metadata with the next structure:
-  - `num_columns` - the number of columns in the row group
-  - `num_rows` - the number of rows in the row group
-  - `total_uncompressed_size` - total uncompressed bytes size of the row group
-  - `total_compressed_size` - total compressed bytes size of the row group
-  - `columns` - the list of column chunks metadata with the next structure:
-    - `name` - column name
-    - `path` - column path
-    - `total_compressed_size` - total compressed bytes size of the column
-    - `total_uncompressed_size` - total uncompressed bytes size of the row group
-    - `have_statistics` - boolean flag that indicates if column chunk metadata contains column statistics
-    - `statistics` - column chunk statistics (all fields are NULL if have_statistics = false) with the next structure:
-      - `num_values` - the number of non-null values in the column chunk
-      - `null_count` - the number of NULL values in the column chunk
-      - `distinct_count` - the number of distinct values in the column chunk
-      - `min` - the minimum value of the column chunk
-      - `max` - the maximum column of the column chunk
-    - `have_size_statistics` - boolean flag that indicates if column chunk metadata contains size statistics
-    - `size_statistics` - column chunk size statistics (all fields are NULL or empty if have_size_statistics = false) with the next structure:
-      - `unencoded_byte_array_data_bytes` - the total size of the unencoded byte array values as recorded in the footer, NULL when the writer did not record it
-      - `repetition_level_histogram` - the number of values at each repetition level as recorded in the footer, empty when the writer did not record it
-      - `definition_level_histogram` - the number of values at each definition level as recorded in the footer, empty when the writer did not record it
-
-## Example usage {#example-usage}
-
-Example:
-
-```sql
-SELECT * 
-FROM file(data.parquet, ParquetMetadata) 
-FORMAT PrettyJSONEachRow
-```
-
-```json
-{
-    "num_columns": "2",
-    "num_rows": "100000",
-    "num_row_groups": "2",
-    "format_version": "2.6",
-    "metadata_size": "577",
-    "total_uncompressed_size": "282436",
-    "total_compressed_size": "26633",
-    "columns": [
-        {
-            "name": "number",
-            "path": "number",
-            "max_definition_level": "0",
-            "max_repetition_level": "0",
-            "physical_type": "INT32",
-            "logical_type": "Int(bitWidth=16, isSigned=false)",
-            "compression": "LZ4",
-            "total_uncompressed_size": "133321",
-            "total_compressed_size": "13293",
-            "space_saved": "90.03%",
-            "encodings": [
-                "RLE_DICTIONARY",
-                "PLAIN",
-                "RLE"
-            ]
-        },
-        {
-            "name": "concat('Hello', toString(modulo(number, 1000)))",
-            "path": "concat('Hello', toString(modulo(number, 1000)))",
-            "max_definition_level": "0",
-            "max_repetition_level": "0",
-            "physical_type": "BYTE_ARRAY",
-            "logical_type": "None",
-            "compression": "LZ4",
-            "total_uncompressed_size": "149115",
-            "total_compressed_size": "13340",
-            "space_saved": "91.05%",
-            "encodings": [
-                "RLE_DICTIONARY",
-                "PLAIN",
-                "RLE"
-            ]
-        }
-    ],
-    "row_groups": [
-        {
-            "num_columns": "2",
-            "num_rows": "65409",
-            "total_uncompressed_size": "179809",
-            "total_compressed_size": "14163",
-            "columns": [
-                {
-                    "name": "number",
-                    "path": "number",
-                    "total_compressed_size": "7070",
-                    "total_uncompressed_size": "85956",
-                    "have_statistics": true,
-                    "statistics": {
-                        "num_values": "65409",
-                        "null_count": "0",
-                        "distinct_count": null,
-                        "min": "0",
-                        "max": "999"
-                    }
-                },
-                {
-                    "name": "concat('Hello', toString(modulo(number, 1000)))",
-                    "path": "concat('Hello', toString(modulo(number, 1000)))",
-                    "total_compressed_size": "7093",
-                    "total_uncompressed_size": "93853",
-                    "have_statistics": true,
-                    "statistics": {
-                        "num_values": "65409",
-                        "null_count": "0",
-                        "distinct_count": null,
-                        "min": "Hello0",
-                        "max": "Hello999"
-                    }
-                }
-            ]
-        },
-        ...
-    ]
-}
-```
-)DOCS_MD"});
 }
 
-void registerParquetMetadataSchemaReader(FormatFactory & factory);
 void registerParquetMetadataSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
@@ -723,8 +614,6 @@ void registerParquetMetadataSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatParquetMetadata(FormatFactory &);
-void registerParquetMetadataSchemaReader(FormatFactory &);
 void registerInputFormatParquetMetadata(FormatFactory &)
 {
 }

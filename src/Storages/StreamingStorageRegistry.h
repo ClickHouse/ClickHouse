@@ -82,11 +82,6 @@ public:
 
     std::unordered_map<std::string, FilesMetadataPtr> getAll();
 
-    /// Whether a metadata object is still registered under `key` (the factory
-    /// key as returned by `getAll`). Used to tell a concurrently dropped queue
-    /// from genuinely broken metadata.
-    bool isRegistered(const std::string & key);
-
 private:
     struct MetadataWithRefCount
     {

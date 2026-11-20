@@ -1,4 +1,4 @@
-{% for enable_analyzer in [1] -%}
+{% for enable_analyzer in [0, 1] -%}
 
 SET enable_analyzer = {{ enable_analyzer }};
 SET join_algorithm = 'hash';

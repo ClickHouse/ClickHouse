@@ -19,7 +19,7 @@ ${CLICKHOUSE_CURL} -sS "${CH_URL}?buffer_size=WRONG&buffer_size=0" -d "$query"
 
 query="SELECT number as x, throwIf(number > 3) FROM numbers(100) format JSONCompactEachRow"
 
-CH_URL="${CH_URL}?enable_analyzer=1&http_write_exception_in_output_format=1&max_block_size=1&output_format_parallel_formatting=0"
+CH_URL="${CH_URL}?enable_analyzer=0&http_write_exception_in_output_format=1&max_block_size=1&output_format_parallel_formatting=0"
 
 echo "wait_end_of_query=0 -- receive partial result and exception"
 ${CLICKHOUSE_CURL} -qsS "${CH_URL}&wait_end_of_query=0" -d "$query" | sed "s/(version .*)//" | sed 's/DB::Exception://g'

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/Chunk.h>
@@ -11,7 +9,6 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Common/HashTable/HashSet.h>
 
-#include <unordered_map>
 #include <unordered_set>
 
 namespace DB
@@ -65,14 +62,14 @@ namespace DB
 /// Has several inputs and single output.
 /// Read from inputs chunks with partially aggregated data, group them by bucket number
 ///  and write data from single bucket as single chunk.
-class GroupingAggregatedTransform final : public IProcessor
+class GroupingAggregatedTransform : public IProcessor
 {
 public:
     GroupingAggregatedTransform(const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_);
     String getName() const override { return "GroupingAggregatedTransform"; }
 
 protected:
-    Status prepare(const UpdatedInputPorts & updated_input_ports, const UpdatedOutputPorts &) override;
+    Status prepare(const PortNumbers & updated_input_ports, const PortNumbers &) override;
     void work() override;
 
 private:
@@ -85,9 +82,9 @@ private:
     std::vector<std::vector<Int32>> input_out_of_order_buckets; /// Out of order bucket ids for each input.
     std::unordered_map<Int32, size_t> out_of_order_buckets; /// Mapping bucket_id -> number of inputs delayed that bucket.
 
-    MapWithMemoryTracking<Int32, VectorWithMemoryTracking<Chunk>> chunks_map; /// bucket -> chunks
-    VectorWithMemoryTracking<Chunk> overflow_chunks;
-    VectorWithMemoryTracking<Chunk> single_level_chunks;
+    std::map<Int32, Chunks> chunks_map; /// bucket -> chunks
+    Chunks overflow_chunks;
+    Chunks single_level_chunks;
     Int32 current_bucket = 0; /// Currently processing bucket.
     Int32 next_bucket_to_push = 0; /// Always <= current_bucket.
     bool has_two_level = false;
@@ -95,20 +92,10 @@ private:
     bool all_inputs_finished = false;
     bool initialized_index_to_input = false;
     std::vector<InputPorts::iterator> index_to_input;
-    std::unordered_map<const InputPort *, uint64_t> input_port_to_index;
     HashSet<uint64_t> wait_input_ports_numbers;
-
-    /// Ids of the buckets already pushed, to check that none of them is pushed twice.
-    std::unordered_set<Int32> pushed_buckets;
 
     /// Add chunk read from input to chunks_map, overflow_chunks or single_level_chunks according to it's chunk info.
     void addChunk(Chunk chunk, size_t input);
-    /// Drop the out of order buckets reported by an input which has finished, they cannot arrive anymore.
-    void forgetOutOfOrderBucketsOfInput(size_t input);
-    /// Ids of the buckets smaller than `bucket` which still can be pushed after it.
-    std::vector<Int32> getDelayedBucketsBefore(Int32 bucket) const;
-    /// Whether no input which can still send something is at `bucket` or before it.
-    bool everyLiveInputIsPastBucket(Int32 bucket);
     /// Push chunks if all inputs has single level.
     bool tryPushSingleLevelData();
     /// Push chunks from ready bucket if has one.
@@ -116,17 +103,15 @@ private:
     /// Push overflow chunks if has any.
     bool tryPushOverflowData();
     /// Push chunks from bucket to output port.
-    void pushData(VectorWithMemoryTracking<Chunk> chunks, Int32 bucket, bool is_overflows);
+    void pushData(Chunks chunks, Int32 bucket, bool is_overflows);
 };
 
 /// Merge aggregated data from single bucket.
-class MergingAggregatedBucketTransform final : public ISimpleTransform
+class MergingAggregatedBucketTransform : public ISimpleTransform
 {
 public:
     explicit MergingAggregatedBucketTransform(
-        AggregatingTransformParamsPtr params,
-        const SortDescription & required_sort_description_ = {},
-        RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_ = nullptr);
+        AggregatingTransformParamsPtr params, const SortDescription & required_sort_description_ = {});
     String getName() const override { return "MergingAggregatedBucketTransform"; }
 
 protected:
@@ -135,14 +120,12 @@ protected:
 private:
     AggregatingTransformParamsPtr params;
     const SortDescription required_sort_description;
-    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
 };
 
 /// Has several inputs and single output.
 /// Read from inputs merged bucket with aggregated data, sort them by bucket number and write to output.
-/// Presumption: inputs return chunks with increasing bucket number (except for the buckets reported as delayed,
-/// see `input_out_of_order_buckets`), there is at most one chunk per bucket.
-class SortingAggregatedTransform final : public IProcessor
+/// Presumption: inputs return chunks with increasing bucket number, there is at most one chunk per bucket.
+class SortingAggregatedTransform : public IProcessor
 {
 public:
     SortingAggregatedTransform(size_t num_inputs, AggregatingTransformParamsPtr params);
@@ -157,26 +140,16 @@ private:
     std::map<Int32, Chunk> chunks;
     Chunk overflow_chunk;
 
-    /// Out of order buckets reported by the last chunk read from each input.
-    /// They are used to re-calculate the same information for the chunks we push, because this transform
-    /// can also produce buckets out of order (it just cannot delay a bucket which was not delayed by an input).
-    std::vector<std::vector<Int32>> input_out_of_order_buckets;
-    std::unordered_set<Int32> pushed_buckets;
-
-    /// Ids of the buckets smaller than `bucket` which still can be pushed after it.
-    std::vector<Int32> getDelayedBucketsBefore(Int32 bucket) const;
-
     bool tryPushChunk();
     void addChunk(Chunk chunk, size_t from_input);
 };
 
 struct ChunksToMerge : public ChunkInfoCloneable<ChunksToMerge>
 {
-    std::shared_ptr<VectorWithMemoryTracking<Chunk>> chunks;
+    std::shared_ptr<Chunks> chunks;
     Int32 bucket_num = -1;
     bool is_overflows = false;
     UInt64 chunk_num = 0; // chunk number in order of generation, used during memory bound merging to restore chunks order
-    std::vector<Int32> out_of_order_buckets; // buckets with smaller id-s which still can be pushed after this one
 };
 
 class Pipe;

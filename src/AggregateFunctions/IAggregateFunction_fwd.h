@@ -1,13 +1,12 @@
 #pragma once
 
 #include <memory>
-
-#include <Common/VectorWithMemoryTracking.h>
+#include <vector>
 
 namespace DB
 {
 using AggregateDataPtr = char *;
-using AggregateDataPtrs = VectorWithMemoryTracking<AggregateDataPtr>;
+using AggregateDataPtrs = std::vector<AggregateDataPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 using ConstAggregateDataPtr = const char *;
 
 class IAggregateFunction;

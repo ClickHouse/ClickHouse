@@ -14,10 +14,8 @@ SELECT accurateCastOrNull('{"d" : "2020-01-01"}', 'JSON') AS json, dynamicType(j
 SELECT 'CAST with input_format_try_infer_dates=0';
 SELECT CAST('{"d" : "2020-01-01"}', 'JSON') AS json, dynamicType(json.d) SETTINGS input_format_try_infer_dates=0, input_format_try_infer_datetimes=0;
 
--- Test that accurateCastOrDefault applies timezone substitution from DateTime source
-SELECT 'accurateCastOrDefault timezone substitution';
-SELECT toTypeName(accurateCastOrDefault(toDateTime('2020-01-01', 'Europe/Moscow'), 'DateTime'));
-SELECT toTypeName(accurateCastOrDefault(toDateTime('2020-01-01', 'Europe/Moscow'), 'DateTime64'));
+-- The time zone substitution performed by `CAST` on `master` is not part of this branch,
+-- so the corresponding checks of the original test are omitted here.
 
 -- Test that accurateCastOrDefault respects DataTypeValidationSettings (forbidden types)
 SELECT accurateCastOrDefault('hello', 'FixedString(1000)') SETTINGS allow_suspicious_fixed_string_types=0; -- { serverError ILLEGAL_COLUMN }

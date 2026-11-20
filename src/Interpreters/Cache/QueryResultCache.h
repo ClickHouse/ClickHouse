@@ -18,32 +18,14 @@ namespace DB
 
 struct Settings;
 
+/// Does AST contain non-deterministic functions like rand() and now()?
+bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
+
+/// Does AST contain system tables like "system.processes"?
+bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
+
 class QueryResultCacheWriter;
 class QueryResultCacheReader;
-
-class QueryResultCacheOnDisk;
-using QueryResultCacheOnDiskPtr = std::shared_ptr<const QueryResultCacheOnDisk>;
-
-/// Is the in-memory query result cache enabled for writes by the settings and able to store entries under the server configuration?
-bool canWriteToQueryResultCacheInMemory(ContextPtr context);
-
-/// Is the on-disk query result cache `on_disk_cache` (nullptr if there is none) enabled for writes by the settings and able to store
-/// entries under the server configuration (the maximum entry size of the query result cache applies to both backends)?
-bool canWriteToQueryResultCacheOnDisk(ContextPtr context, QueryResultCacheOnDiskPtr on_disk_cache);
-
-/// Can any backend of the query result cache store the result of the query? A configured but unavailable on-disk backend does not count,
-/// and neither does an in-memory cache with zero limits.
-bool hasQueryResultCacheWriteBackend(ContextPtr context, QueryResultCacheOnDiskPtr on_disk_cache);
-
-/// Checks that query cache can be used for query.
-/// Only use the query cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
-/// Throws if ast contains non-deterministic functions or system tables and appropriate handling setting is set to throw.
-/// `on_disk_cache` is the on-disk query result cache backend resolved for the query (nullptr if there is none): the checks must apply
-/// only if some backend actually accepts writes (see `hasQueryResultCacheWriteBackend`).
-/// When skip_context_check is true, the context's canUseQueryResultCache flag is not checked.
-/// This is used for explicit per-subquery opt-in where the subquery has SETTINGS use_query_cache = true
-/// but the outer query context may not have the flag set.
-bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, QueryResultCacheOnDiskPtr on_disk_cache, bool skip_context_check = false);
 
 /// Maps queries to query results. Useful to avoid repeated query calculation.
 ///
@@ -103,7 +85,7 @@ public:
         /// The SELECT query as plain string, displayed in SYSTEM.QUERY_CACHE. Stored explicitly, i.e. not constructed from the AST, for the
         /// sole reason that QueryResultCache-related SETTINGS are pruned from the AST (see removeQueryResultCacheSettings()) which would otherwise look
         /// ugly in SYSTEM.QUERY_CACHE.
-        String query_string;
+        const String query_string;
 
         /// ID of the query.
         const String query_id;
@@ -112,9 +94,6 @@ public:
         /// This member has currently no use besides that SYSTEM.QUERY_CACHE can populate the 'tag' column conveniently without having to
         /// compute the tag from the query AST.
         const String tag;
-
-        /// Is it subquery entry? Displayed in SYSTEM.QUERY_CACHE.
-        const bool is_subquery;
 
         /// Ctor to construct a Key for writing into query result cache.
         Key(ASTPtr ast_,
@@ -126,16 +105,14 @@ public:
             bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> created_at_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
-            bool is_compressed,
-            bool is_subquery_);
+            bool is_compressed);
 
         /// Ctor to construct a Key for reading from query result cache (this operation only needs the AST + user name).
         Key(ASTPtr ast_,
             const String & current_database,
             const Settings & settings,
             const String & query_id_,
-            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
-            bool is_subquery_);
+            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
 
         bool operator==(const Key & other) const;
     };
@@ -178,20 +155,10 @@ public:
         bool squash_partial_results,
         size_t max_block_size,
         size_t max_query_result_cache_size_in_bytes_quota,
-        size_t max_query_result_cache_entries_quota,
-        bool write_to_memory_cache = true,
-        QueryResultCacheOnDiskPtr on_disk_cache = nullptr);
+        size_t max_query_result_cache_entries_quota);
 
     void clear(const std::optional<String> & tag);
 
-    /// Can the in-memory cache store an entry at all under the current server configuration? It can not if one of its limits is 0,
-    /// e.g. in `clickhouse-local` or with `query_cache.max_size_in_bytes = 0`.
-    bool canStoreEntries() const;
-
-    /// Do the maximum entry sizes allow any entry? A limit of 0 means that nothing may be cached, in both backends.
-    bool entrySizeLimitsAllowEntries() const;
-
-    size_t maxSizeInBytes() const;
     size_t sizeInBytes() const;
     size_t count() const;
 
@@ -256,13 +223,9 @@ private:
     const std::chrono::milliseconds min_query_runtime;
     const bool squash_partial_results;
     const size_t max_block_size;
-    const bool write_to_memory_cache; /// if false, the result is written only to the on-disk cache
-    const QueryResultCacheOnDiskPtr on_disk_cache; /// nullptr if the result is not written to the on-disk cache
     Cache::MappedPtr query_result TSA_GUARDED_BY(mutex) = std::make_shared<QueryResultCache::Entry>();
-    bool skip_memory_insert = false; /// (set in the ctor, then accessed only in finalizeWrite)
-    bool skip_disk_insert = false; /// (set in the ctor, then accessed only in finalizeWrite)
-    std::atomic<bool> skip_insert = false; /// both of the above: don't even buffer the result
-    std::atomic<bool> was_finalized = false;
+    std::atomic<bool> skip_insert = false;
+    bool was_finalized = false;
     LoggerPtr logger = getLogger("QueryResultCache");
 
     QueryResultCacheWriter(
@@ -272,9 +235,7 @@ private:
         size_t max_entry_size_in_rows_,
         std::chrono::milliseconds min_query_runtime_,
         bool squash_partial_results_,
-        size_t max_block_size_,
-        bool write_to_memory_cache_,
-        QueryResultCacheOnDiskPtr on_disk_cache_);
+        size_t max_block_size_);
 
     friend class QueryResultCache; /// for createWriter()
 };
@@ -286,20 +247,7 @@ class QueryResultCacheReader
 public:
     using Cache = QueryResultCache::Cache;
 
-    /// Where the reader looked the query result up. Only determines which profile events are incremented.
-    enum class Source
-    {
-        Memory,
-        OnDisk
-    };
-
     bool hasCacheEntryForKey(bool update_profile_events = true) const;
-
-    /// Records the overall outcome of the query result cache lookup in `QueryCacheHits` / `QueryCacheMisses`. Must be called
-    /// exactly once per query that probes the cache, after every enabled backend has been probed, so that these events keep
-    /// describing the query result cache as a whole (see `QueryCacheOnDiskHits` / `QueryCacheOnDiskMisses` for the on-disk
-    /// backend alone).
-    static void recordProbeResult(bool has_entry);
 
     /// Must only be called if hasCacheEntryForKey is true
     std::chrono::time_point<std::chrono::system_clock> entryCreatedAt();
@@ -312,21 +260,7 @@ public:
 
 private:
     QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &);
-
-    /// Ctor for a cache miss from the given source.
-    explicit QueryResultCacheReader(Source source_);
-
-    /// Ctor for a cache hit served by the on-disk query result cache.
-    QueryResultCacheReader(
-        Source source_,
-        SharedHeader header,
-        QueryResultCache::Entry && entry,
-        std::chrono::time_point<std::chrono::system_clock> created_at_,
-        std::chrono::time_point<std::chrono::system_clock> expires_at_);
-
     void buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
-
-    Source source = Source::Memory;
 
     std::unique_ptr<SourceFromChunks> source_from_chunks;
     std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
@@ -338,7 +272,6 @@ private:
     LoggerPtr logger = getLogger("QueryResultCache");
 
     friend class QueryResultCache; /// for createReader()
-    friend class QueryResultCacheOnDisk; /// for the on-disk ctors
 };
 
 

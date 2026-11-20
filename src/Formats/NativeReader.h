@@ -3,6 +3,7 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/IndexForNativeFormat.h>
 #include <Formats/MarkInCompressedFile.h>
+#include <Common/PODArray.h>
 #include <Core/Block.h>
 #include <Core/BlockMissingValues.h>
 #include <DataTypes/Serializations/ISerialization.h>
@@ -44,7 +45,8 @@ public:
         const Block & header_,
         UInt64 server_revision_,
         std::optional<FormatSettings> format_settings_ = std::nullopt,
-        BlockMissingValues * block_missing_values_ = nullptr);
+        BlockMissingValues * block_missing_values_ = nullptr,
+        ISerialization::KindSet allowed_kinds_ = default_allowed_kinds);
 
     /// For cases when we have an index. It allows to skip columns. Only columns specified in the index will be read.
     NativeReader(ReadBuffer & istr_, UInt64 server_revision_,
@@ -59,7 +61,7 @@ public:
 
     static void readData(
         const ISerialization & serialization,
-        IColumn & column,
+        ColumnPtr & column,
         ReadBuffer & istr,
         const FormatSettings * format_settings,
         size_t rows,

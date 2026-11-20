@@ -21,7 +21,7 @@ WITH RECURSIVE search_tree AS (
     FROM tree t, search_tree st
     WHERE t.link = st.id
 )
-SELECT * FROM search_tree ORDER BY ALL;
+SELECT * FROM search_tree;
 
 SELECT '--';
 
@@ -34,7 +34,7 @@ WITH RECURSIVE search_tree AS (
     FROM tree t, search_tree st
     WHERE t.link = st.id
 )
-SELECT * FROM search_tree ORDER BY ALL;
+SELECT * FROM search_tree;
 
 DROP TABLE tree;
 
@@ -159,7 +159,7 @@ SELECT * FROM
         SELECT * FROM x)
       )
   SELECT * FROM q LIMIT 24
-) ORDER BY id, parent_department, name SETTINGS max_threads = 1;
+) ORDER BY id, parent_department, name;
 
 SELECT * FROM
 (
@@ -174,6 +174,6 @@ SELECT * FROM
         SELECT * FROM x)
       )
   SELECT * FROM q LIMIT 32
-) ORDER BY id, parent_department, name SETTINGS max_threads = 1;
+) ORDER BY id, parent_department, name;
 
 -- { echoOff }
