@@ -1121,10 +1121,11 @@ def test_request_payer(started_cluster):
     assert "BAD_ARGUMENTS" in node.query_and_get_error(
         read, settings={"s3_request_payer": "owner"}
     )
+    assert denied(node.query_and_get_error(read, settings={"s3_request_payer": "none"}))
 
     # The `request_payer` key of an endpoint section (without keys in the query and under the default restriction)
-    # and of a disk. Both take precedence over the setting, so `owner` must not reach them.
-    owner = {"s3_request_payer": "owner"}
+    # and of a disk. Both take precedence over the setting, so `none` must not reach them.
+    no_payer = {"s3_request_payer": "none"}
     endpoint = f"{base}/requester_pays_endpoint/b.csv"
     disk = f"disk(type = s3, endpoint = '{base}/request_payer_disk/', access_key_id = 'minio', secret_access_key = '{minio_secret_key}'"
     create = "CREATE TABLE t_request_payer_disk (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS disk = "
@@ -1132,22 +1133,23 @@ def test_request_payer(started_cluster):
     try:
         node.query(
             f"INSERT INTO FUNCTION s3('{endpoint}', 'CSV', 'x UInt64') SELECT number FROM numbers(10) SETTINGS s3_truncate_on_insert = 1",
-            settings=owner,
+            settings=no_payer,
         )
         node.query(
             f"CREATE TABLE t_request_payer ENGINE = S3('{endpoint}', 'CSV')",
-            settings=owner,
+            settings=no_payer,
         )
         assert (
-            node.query("SELECT count() FROM t_request_payer", settings=owner) == "10\n"
+            node.query("SELECT count() FROM t_request_payer", settings=no_payer)
+            == "10\n"
         )
-        node.query(f"{create}{disk}, request_payer = 'requester')", settings=owner)
+        node.query(f"{create}{disk}, request_payer = 'requester')", settings=no_payer)
         node.query(
             "INSERT INTO t_request_payer_disk SELECT number FROM numbers(100)",
-            settings=owner,
+            settings=no_payer,
         )
         assert (
-            node.query("SELECT count() FROM t_request_payer_disk", settings=owner)
+            node.query("SELECT count() FROM t_request_payer_disk", settings=no_payer)
             == "100\n"
         )
 

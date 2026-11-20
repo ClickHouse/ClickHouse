@@ -726,7 +726,7 @@ SETTINGS s3_request_payer = 'requester'
 Peak memory usage: 192.27 KiB.
 ```
 
-Passing the parameter `headers('x-amz-request-payer' = 'requester')` to the s3 function works as well.
+Passing the parameter `headers('x-amz-request-payer' = 'requester')` to the `s3` function works as well.
 
 ## Resolving relative URLs {#resolving-relative-urls}
 

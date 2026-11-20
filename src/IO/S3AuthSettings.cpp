@@ -15,11 +15,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 #define CLIENT_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, connect_timeout_ms, S3::DEFAULT_CONNECT_TIMEOUT_MS, "", 0) \
     DECLARE(UInt64, request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, "", 0) \
@@ -32,7 +27,7 @@ namespace ErrorCodes
     DECLARE(Bool, use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, "", 0) \
     DECLARE(Bool, is_virtual_hosted_style, false, "", 0) \
     DECLARE(Bool, gcs_issue_compose_request, false, "", 0) \
-    DECLARE(String, request_payer, "", "", 0) \
+    DECLARE(S3RequestPayer, request_payer, S3RequestPayer::NONE, "", 0) \
     DECLARE(S3UriStyle, uri_style, S3UriStyle::AUTO, "", 0)
 
 #define AUTH_SETTINGS(DECLARE, ALIAS) \
@@ -266,15 +261,8 @@ NormalizedHTTPHeaderEntries S3AuthSettings::getHeaders() const
 
 HTTPHeaderEntries S3AuthSettings::getRequestPayerHeaders() const
 {
-    const String & request_payer = (*this)[S3AuthSetting::request_payer].value;
-    if (request_payer.empty())
+    if ((*this)[S3AuthSetting::request_payer] == S3RequestPayer::NONE)
         return {};
-
-    if (request_payer != "requester")
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Unsupported value '{}' of the S3 setting `request_payer` (`s3_request_payer`), the only supported value is 'requester'",
-            request_payer);
 
     return {{"x-amz-request-payer", "requester"}};
 }
