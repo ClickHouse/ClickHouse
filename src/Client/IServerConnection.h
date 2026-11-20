@@ -170,7 +170,10 @@ public:
     /// Used by LocalConnection to enable cancellation during query analysis.
     virtual void setCancelCallback(std::function<bool()>) {}
 
-    /// The client has released its output for the query that ended (format and buffers).
+    /// The client created an output (format and buffers) for the result of the current query.
+    virtual void onQueryOutputCreated() {}
+
+    /// The client has released that output.
     virtual void onQueryOutputReleased() {}
 };
 

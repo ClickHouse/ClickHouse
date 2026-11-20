@@ -92,6 +92,9 @@ struct LocalQueryState
     Stopwatch after_send_profile_events;
 
     QueryScope query_scope_holder;
+
+    /// The client created an output for the result, which the query allocates and the client releases after it ends.
+    bool client_output_created = false;
 };
 
 
@@ -135,6 +138,12 @@ public:
     void setDefaultDatabase(const String & database) override;
 
     void setCancelCallback(std::function<bool()> callback) override { is_cancelled_callback = std::move(callback); }
+
+    void onQueryOutputCreated() override
+    {
+        if (state)
+            state->client_output_created = true;
+    }
 
     void onQueryOutputReleased() override { finished_query_scope = {}; }
 

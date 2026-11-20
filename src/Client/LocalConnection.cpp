@@ -752,7 +752,8 @@ void LocalConnection::finishQuery()
     }
 
     state->io.onFinish();
-    finished_query_scope = std::move(state->query_scope_holder);
+    if (state->client_output_created)
+        finished_query_scope = std::move(state->query_scope_holder);
     state.reset();
     last_sent_snapshots.clear();
 }
@@ -1061,7 +1062,8 @@ Packet LocalConnection::receivePacket()
             packet.exception.reset(state->exception->clone());
             next_packet_type.reset();
             /// An exception is the last packet of the query, as `EndOfStream` is.
-            finished_query_scope = std::move(state->query_scope_holder);
+            if (state->client_output_created)
+                finished_query_scope = std::move(state->query_scope_holder);
             state.reset();
             last_sent_snapshots.clear();
             break;

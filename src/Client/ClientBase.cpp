@@ -1056,6 +1056,9 @@ try
     {
         output_buffer_canceled = false;
 
+        if (connection)
+            connection->onQueryOutputCreated();
+
         /// Ignore all results when fuzzing as they can be huge.
         if (query_fuzzer_runs)
         {
