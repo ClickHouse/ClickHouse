@@ -328,7 +328,8 @@ bool asksForRawBytes(const RequestedType & requested)
 
 /// Whether the field at the dotted `path` carries a requested subcolumn below it together with a requested
 /// column that encloses that subcolumn (e.g. `t` and `t.s` for the struct `t`, or `t.u` and `t.u.s` for the
-/// struct `t`, where `t` itself is not requested), and one of these columns asks for a raw-byte conversion.
+/// struct `t`, where `t` itself is not requested), or a subcolumn below it requested several times with
+/// different types (`t.s String` and `T.S IPv6`), and one of these columns asks for a raw-byte conversion.
 /// Each such column is taken from the one decoded column, whose leaves then keep their bytes (see
 /// `RecordBatchDecoder::rawByteTarget`) and are converted after decoding.
 bool carriesNestedRequests(const String & path, const RequestedTypes * types)
@@ -339,7 +340,9 @@ bool carriesNestedRequests(const String & path, const RequestedTypes * types)
     {
         if (!isRequestedBelow(path, name))
             continue;
-        bool enclosed = false;
+        /// A name requested several times with different types (`t.s String` and `T.S IPv6`) is taken by
+        /// several columns from the one decoded field, as a subcolumn and its enclosing column are.
+        bool enclosed = requested.shared;
         bool converts = asksForRawBytes(requested);
         for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
         {

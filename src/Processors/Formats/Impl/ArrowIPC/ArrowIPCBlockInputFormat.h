@@ -57,6 +57,10 @@ private:
     void prepareReader();
     void prepareStreamReader();
     void prepareFileReader();
+    /// Re-merges the requested types of each normalized name shared by several header columns (see
+    /// `shared_requested_header_types`) once the schema is known, so that a named and an unnamed `Tuple`
+    /// are matched with the fields of the struct as the decoder matches them.
+    void resolveSharedRequestedTypes();
     void collectDictionaryFields(const ArrowIPC::ArrowFields & fields);
     /// Decodes the values of one `DictionaryBatch` with `batch_decoder` and registers them in `dictionaries`
     /// under the batch's id, once for each position of a field encoding that dictionary (`dictionary_uses`).
@@ -95,6 +99,9 @@ private:
     /// `date32` mapped (at any nesting) to a numeric target is read as the raw `Int32` day number without
     /// the `Date32` range check, matching the Apache Arrow library reader's numeric type-hint behavior.
     ArrowIPC::RequestedTypes requested_field_target_types;
+    /// The distinct types of the header columns that share a normalized name (`RequestedType::shared`), in
+    /// header order, for `resolveSharedRequestedTypes`.
+    UnorderedMapWithMemoryTracking<String, DataTypes> shared_requested_header_types;
     /// For each Arrow dictionary id the requested columns reference, the positions of the fields encoding it
     /// with the requested type hint each resolves there (see `RecordBatchDecoder::collectDictionaryUses`),
     /// computed from the requested header before any dictionary batch is decoded. A DictionaryBatch whose id

@@ -176,4 +176,30 @@ $CLICKHOUSE_LOCAL -q "SELECT map('abcdefghijklmnop', toUInt8(7)) AS t FORMAT Arr
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(IPv6, UInt8), \`t.key_6162:6364:6566:6768:696a:6b6c:6d6e:6f70\` UInt8')"
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.key_6162:6364:6566:6768:696a:6b6c:6d6e:6f70\` UInt8, t Map(IPv6, UInt8)')"
 
+echo "case-insensitive names of a subcolumn of a null struct row"
+$CLICKHOUSE_LOCAL -q "SELECT CAST(if(number = 1, NULL, tuple('abcdefghijklmnop')) AS Nullable(Tuple(s String))) AS t FROM numbers(2) FORMAT ArrowStream SETTINGS enable_nullable_tuple_type = 1" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.s\` String, \`T.S\` IPv6') SETTINGS input_format_arrow_case_insensitive_column_matching = 1, enable_nullable_tuple_type = 0"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`T.S\` IPv6, \`t.s\` String') SETTINGS input_format_arrow_case_insensitive_column_matching = 1, enable_nullable_tuple_type = 0"
+
+echo "case-insensitive names with a date inside named and unnamed structs"
+$CLICKHOUSE_LOCAL -q "SELECT CAST(tuple(d) AS Tuple(d Date32)) AS t FROM format(RowBinary, 'd Date32', unhex('c0c62d00')) FORMAT ArrowStream" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 'T Tuple(String), t Tuple(d Int32)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Tuple(d Int32), T Tuple(String)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 'T Tuple(Int32), t Tuple(d String)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
+
+echo "map of maps without the requested key"
+$CLICKHOUSE_LOCAL -q "SELECT map(toUInt8(1), map(toUInt8(number + 1), 'abcdefghijklmnop')) AS t FROM numbers(2) FORMAT ArrowStream" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(UInt8, Map(UInt8, IPv6)), \`t.values.key_1\` Array(IPv6)')"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.values.key_1\` Array(IPv6), t Map(UInt8, Map(UInt8, IPv6))')"
+
+echo "map lookup of a dotted key"
+$CLICKHOUSE_LOCAL -q "SELECT map(if(number = 0, 'a.b', 'c.d'), 'abcdefghijklmnop') AS t FROM numbers(2) FORMAT ArrowStream" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(String, IPv6), \`t.key_a.b\` IPv6')"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.key_a.b\` IPv6, t Map(String, IPv6)')"
+
+echo "map lookup of a raw-byte key requested through the keys"
+$CLICKHOUSE_LOCAL -q "SELECT map('abcdefghijklmnop', toUInt8(7)) AS t FORMAT ArrowStream" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.keys\` Array(IPv6), \`t.key_6162:6364:6566:6768:696a:6b6c:6d6e:6f70\` UInt8')"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.key_6162:6364:6566:6768:696a:6b6c:6d6e:6f70\` UInt8, \`t.keys\` Array(IPv6)')"
+
 rm -f "$file"

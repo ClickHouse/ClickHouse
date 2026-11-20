@@ -122,3 +122,25 @@ array of maps without the requested key
 map lookup of a raw-byte key
 {'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7}	7
 7	{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7}
+case-insensitive names of a subcolumn of a null struct row
+abcdefghijklmnop	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+	::
+6162:6364:6566:6768:696a:6b6c:6d6e:6f70	abcdefghijklmnop
+::	
+case-insensitive names with a date inside named and unnamed structs
+('9999-12-31')	(3000000)
+(3000000)	('9999-12-31')
+(3000000)	('9999-12-31')
+map of maps without the requested key
+{1:{1:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}}	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+{1:{2:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}}	['::']
+['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']	{1:{1:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}}
+['::']	{1:{2:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}}
+map lookup of a dotted key
+{'a.b':'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+{'c.d':'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}	::
+6162:6364:6566:6768:696a:6b6c:6d6e:6f70	{'a.b':'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}
+::	{'c.d':'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}
+map lookup of a raw-byte key requested through the keys
+['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']	7
+7	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
