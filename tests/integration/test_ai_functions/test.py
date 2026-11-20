@@ -2739,6 +2739,33 @@ def test_relevance_low_cardinality_document_per_row(started_cluster):
     instance.query("DROP TABLE relevance_lc")
 
 
+def test_relevance_array_join_replicated_document_per_row(started_cluster):
+    """`ARRAY JOIN` with lazy replication makes the document a `ColumnReplicated`. It is scored row by
+    row, not on its nested rows: every replicated row is sent and counted."""
+    instance.query("DROP TABLE IF EXISTS relevance_replicated")
+    instance.query("CREATE TABLE relevance_replicated (d String) ENGINE = Memory")
+    instance.query("INSERT INTO relevance_replicated VALUES ('a'), ('b')")
+    qid = unique_query_id("relevance_replicated")
+    result = instance.query(
+        "SELECT d, i, aiRelevance('a', d, map('credentials', 'ai_rerank')) "
+        "FROM relevance_replicated ARRAY JOIN [1, 2, 3] AS i ORDER BY d, i",
+        query_id=qid,
+        settings={"enable_lazy_columns_replication": 1, "max_threads": 1},
+    )
+    rows = [line.split("\t") for line in result.strip().splitlines()]
+    assert [(d, int(i)) for d, i, _ in rows] == [(d, i) for d in "ab" for i in (1, 2, 3)]
+    for d, _, score in rows:
+        assert parse_nullable_float(score) == pytest.approx(
+            expected_rerank_score("a", d), abs=1e-4
+        )
+    assert json.loads(last_request()["body"])["documents"] == ["a", "a", "a", "b", "b", "b"]
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 1
+    assert int(events["rows_processed"]) == 6
+    assert int(events["rows_skipped"]) == 0
+    instance.query("DROP TABLE relevance_replicated")
+
+
 def test_relevance_order_by_limit_across_blocks(started_cluster):
     """The intended usage: `ORDER BY aiRelevance(...) DESC LIMIT n` over pre-filtered candidates.
     Tiny blocks and batches spread the rows across many requests, and the global order must still be

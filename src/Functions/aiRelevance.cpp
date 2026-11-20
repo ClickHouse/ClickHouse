@@ -93,6 +93,12 @@ public:
     /// and `AIRowsProcessed`/`AIRowsSkipped` would count distinct dictionary values instead of rows.
     [[nodiscard]] bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
+    /// Likewise, being deterministic in scope of query would execute on the nested rows of a `ColumnReplicated`
+    /// argument (produced by `ARRAY JOIN` and joins with `enable_lazy_columns_replication`) and replicate the
+    /// scores, so each document would be sent once rather than per row, and the row counters would count nested
+    /// rows. `executeImpl` reads the replicated column row by row through its indexes instead.
+    [[nodiscard]] bool useDefaultImplementationForReplicatedColumns() const override { return false; }
+
     /// Each batch is a paid HTTP call, so PREWHERE must evaluate it after the cheap conditions.
     [[nodiscard]] bool isExpensive() const override { return true; }
 
