@@ -186,8 +186,7 @@ char * writeShortestFloatText(Float64 x, char * buffer);
 char * writeShortestFloatText(Float32 x, char * buffer);
 }
 
-/// Only the choice of the path is inline, and each path is one call, so that `writeFloatText` stays small enough
-/// to be inlined into the loops that format whole columns.
+/// Only the path choice is inline and each path is one call, so `writeFloatText` stays small enough to inline into column loops.
 template <typename T>
 requires is_floating_point<T>
 ALWAYS_INLINE inline size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point)
