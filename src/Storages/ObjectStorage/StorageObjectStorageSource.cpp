@@ -2305,7 +2305,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 [&](const SharedHeader & header)
                 {
                     return std::make_shared<AddingDefaultsTransform>(
-                        header, read_from_format_info.columns_description, *input_format, context_, hive_columns);
+                        header, read_from_format_info.columns_description, *input_format, context_,
+                        read_from_format_info.hive_partition_columns_read_by_defaults, hive_columns);
                 });
         }
 

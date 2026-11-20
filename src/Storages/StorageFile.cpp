@@ -2438,7 +2438,7 @@ Chunk StorageFileSource::generate()
                 builder.addSimpleTransform([&](const SharedHeader & header)
                 {
                     return std::make_shared<AddingDefaultsTransform>(
-                        header, columns_description, *input_format, getContext(), hive_columns);
+                        header, columns_description, *input_format, getContext(), hive_partition_columns_read_by_defaults, hive_columns);
                 });
             }
 

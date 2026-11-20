@@ -6,6 +6,7 @@ INSERT INTO FUNCTION file(currentDatabase() || '/k=abc/f.csv', LineAsString, 's 
 INSERT INTO FUNCTION file(currentDatabase() || '/k=abc/full.jsonl', LineAsString, 's String') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('{"c0":1,"d":"x"}');
 INSERT INTO FUNCTION file(currentDatabase() || '/k=abc/full.csv', LineAsString, 's String') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('1,x');
 INSERT INTO FUNCTION file(currentDatabase() || '/nokey/full.jsonl', LineAsString, 's String') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('{"c0":2,"d":"y"}');
+INSERT INTO FUNCTION file(currentDatabase() || '/k=abc/q=bad/f.csv', LineAsString, 's String') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('1,');
 INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/k=abc/f.jsonl', format = LineAsString, structure = 's String') SETTINGS s3_truncate_on_insert = 1 VALUES ('{"c0":1}'), ('{"c0":2,"d":"x"}');
 
 SET use_hive_partitioning = 1;
@@ -25,3 +26,6 @@ SELECT count() FROM file(currentDatabase() || '/k=abc/full.csv', CSV, 'c0 Int32,
 SELECT d, e FROM file(currentDatabase() || '/k=abc/full.jsonl', JSONEachRow, 'c0 Int32, k UInt32, d String DEFAULT toString(k), e UInt8 DEFAULT 1');
 SELECT d, e FROM file(currentDatabase() || '/{k=abc,nokey}/full.jsonl', JSONEachRow, 'c0 Int32, k String, d String DEFAULT k, e UInt8 DEFAULT 1') ORDER BY d;
 SELECT d FROM file(currentDatabase() || '/k=abc/f.jsonl', JSONEachRow, 'c0 Int32, k UInt32, d String DEFAULT toString(k)'); -- { serverError TYPE_MISMATCH }
+
+-- The path supplies `k`, so its own `DEFAULT` is not evaluated and `q` is not read.
+SELECT d FROM file(currentDatabase() || '/k=abc/q=bad/f.csv', CSV, 'c0 Int32, k String DEFAULT toString(q), q UInt32, d String DEFAULT k');

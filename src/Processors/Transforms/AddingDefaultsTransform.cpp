@@ -157,9 +157,9 @@ static String getColumnOfSubcolumn(const ColumnsDescription & columns, const Str
 }
 
 /// Columns that the default of `column_name` reads: directly, through a subcolumn, or through columns absent from
-/// `header`, whose defaults are inlined into the evaluation.
+/// `available_columns`, whose defaults are inlined into the evaluation.
 static NameSet getColumnsReadByDefault(
-    const String & column_name, const ColumnsDescription & columns, const ColumnDefaults & column_defaults, const Block & header)
+    const String & column_name, const ColumnsDescription & columns, const ColumnDefaults & column_defaults, const Block & available_columns)
 {
     NameSet result;
     NameSet visited{column_name};
@@ -178,7 +178,7 @@ static NameSet getColumnsReadByDefault(
                 continue;
 
             result.insert(name);
-            if (header.has(name))
+            if (available_columns.has(name))
                 continue;
             if (auto it = column_defaults.find(name); it != column_defaults.end())
                 expressions.push_back(it->second.expression);
@@ -193,6 +193,7 @@ AddingDefaultsTransform::AddingDefaultsTransform(
     const ColumnsDescription & columns_,
     IInputFormat & input_format_,
     ContextPtr context_,
+    const NamesAndTypesList & extra_inputs_,
     GetExtraInputs get_extra_inputs_)
     : ISimpleTransform(header, header, true)
     , columns(columns_)
@@ -200,7 +201,10 @@ AddingDefaultsTransform::AddingDefaultsTransform(
     , input_format(input_format_)
     , context(context_)
     , get_extra_inputs(std::move(get_extra_inputs_))
+    , available_columns(*header)
 {
+    for (const auto & column : extra_inputs_)
+        available_columns.insert({column.type->createColumn(), column.type, column.name});
 }
 
 
@@ -271,7 +275,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     for (const auto & [col_name, col_idx] : columns_needing_defaults)
     {
         NameSet deps;
-        for (const auto & read : getColumnsReadByDefault(col_name, columns, column_defaults, header))
+        for (const auto & read : getColumnsReadByDefault(col_name, columns, column_defaults, available_columns))
         {
             if (columns_needing_defaults_set.contains(read))
                 deps.insert(read);
@@ -281,9 +285,6 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     }
 
     const ColumnsWithTypeAndName extra_inputs = get_extra_inputs ? get_extra_inputs(read_by_defaults, num_rows) : ColumnsWithTypeAndName{};
-    Block available_columns = header;
-    for (const auto & column : extra_inputs)
-        available_columns.insert(column.cloneEmpty());
 
     /// Process columns in dependency order (topological sort).
     /// In each iteration, process columns whose dependencies have all been satisfied.
