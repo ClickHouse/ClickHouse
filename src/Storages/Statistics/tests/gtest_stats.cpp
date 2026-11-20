@@ -1213,7 +1213,8 @@ TEST(Statistics, DeserializeV4BoundsOfAnotherType)
         auto data_type = DataTypeFactory::instance().get(test_case.type_name);
         for (auto type : {StatisticsType::MinMax, StatisticsType::Basic})
         {
-            ReadBufferFromString rb(make_v4_file(data_type->getName(), type, test_case.min, test_case.max));
+            const String file = make_v4_file(data_type->getName(), type, test_case.min, test_case.max);
+            ReadBufferFromString rb(file);
             auto loaded = ColumnStatistics::deserialize(rb, data_type);
             ASSERT_TRUE(loaded != nullptr);
             EXPECT_EQ(loaded->getStats().contains(type), test_case.kept) << test_case.type_name << " " << statisticsTypeToString(type);
