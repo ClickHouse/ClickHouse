@@ -23,9 +23,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// Data of the root node. Bump on any layout change so old data is refused, not misread.
-constexpr auto FORMAT_MARKER = "IcebergRESTCatalog\nformat_version: 2";
-
 constexpr size_t MAX_UPDATE_RETRIES = 10;
 
 /// Keeper limits path depth and node data size. The handler maps `BAD_ARGUMENTS` to a 400 response.
@@ -103,41 +100,16 @@ KeeperIcebergRESTCatalogStore::KeeperIcebergRESTCatalogStore(zkutil::GetZooKeepe
 
 zkutil::ZooKeeperPtr KeeperIcebergRESTCatalogStore::getZooKeeper() const
 {
-    /// Cheap on the hot path. Only a new session pays for `sync` and `initRoot`.
+    /// Cheap on the hot path. Only a new session pays for `sync`.
     std::lock_guard lock(mutex);
     auto zookeeper = get_zookeeper();
-    if (zookeeper != initialized_zookeeper)
+    if (zookeeper != synced_zookeeper)
     {
         /// A new session may talk to another replica. Avoid reading stale state.
         zookeeper->sync(root_path);
-        initRoot(zookeeper);
-        /// Remember the session only after it passed the check, so a failed check is repeated.
-        initialized_zookeeper = zookeeper;
+        synced_zookeeper = zookeeper;
     }
     return zookeeper;
-}
-
-void KeeperIcebergRESTCatalogStore::initRoot(const zkutil::ZooKeeperPtr & zookeeper) const
-{
-    zookeeper->createAncestors(root_path);
-
-    Coordination::Requests ops;
-    ops.emplace_back(zkutil::makeCreateRequest(root_path, FORMAT_MARKER, zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(root_path + "/namespaces", "", zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(root_path + "/tables_by_uuid", "", zkutil::CreateMode::Persistent));
-    Coordination::Responses responses;
-    const auto code = zookeeper->tryMulti(ops, responses);
-    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
-        zkutil::KeeperMultiException::check(code, ops, responses);
-
-    const auto marker = zookeeper->get(root_path);
-    if (marker != FORMAT_MARKER)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Iceberg REST catalog data at {} has an unsupported format: expected {}, found {}",
-            root_path,
-            FORMAT_MARKER,
-            marker);
 }
 
 String KeeperIcebergRESTCatalogStore::namespacePath(const IcebergNamespaceName & name) const
@@ -180,7 +152,8 @@ String KeeperIcebergRESTCatalogStore::tableGuardPath(const IcebergNamespaceName 
     return tablePath(name, table) + "/" + uuid;
 }
 
-bool KeeperIcebergRESTCatalogStore::createNamespace(const IcebergNamespaceName & name, const std::map<String, String> & properties)
+KeeperIcebergRESTCatalogStore::CreateNamespaceResult
+KeeperIcebergRESTCatalogStore::createNamespace(const IcebergNamespaceName & name, const std::map<String, String> & properties)
 {
     auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::createNamespace");
     /// Validates the whole name before any parent is created.
@@ -198,10 +171,12 @@ bool KeeperIcebergRESTCatalogStore::createNamespace(const IcebergNamespaceName &
         Coordination::Responses responses;
         const auto code = zookeeper->tryMulti(ops, responses);
         if (code == Coordination::Error::ZNODEEXISTS)
-            return false;
+            return CreateNamespaceResult::NamespaceExists;
+        if (code == Coordination::Error::ZNONODE)
+            return CreateNamespaceResult::ParentMissing;
 
         zkutil::KeeperMultiException::check(code, ops, responses);
-        return true;
+        return CreateNamespaceResult::Created;
     };
 
     /// Keep the tree walkable from the root.
@@ -430,21 +405,36 @@ KeeperIcebergRESTCatalogStore::RenameTableResult KeeperIcebergRESTCatalogStore::
         namespacePath(source_ns));
 }
 
-KeeperIcebergRESTCatalogStore::UpdateTableResult KeeperIcebergRESTCatalogStore::updateTable(
-    const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected, const IcebergTablePointer & new_pointer)
+KeeperIcebergRESTCatalogStore::UpdateTablesResult KeeperIcebergRESTCatalogStore::updateTables(const std::vector<TableUpdate> & updates)
 {
-    auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::updateTable");
-    /// The uuid node pins the table identity. A table re-created under the same name has another uuid, so the set misses it.
+    auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::updateTables");
     auto zookeeper = getZooKeeper();
-    const auto path = tableUuidPath(expected.uuid);
-    const auto code = zookeeper->trySet(path, new_pointer.metadata_location, expected.version.toInt32());
+    /// The uuid node pins the table identity. A table re-created under the same name has another uuid, so the set misses it.
+    Coordination::Requests ops;
+    ops.reserve(updates.size());
+    for (const auto & update : updates)
+    {
+        const auto path = tableUuidPath(update.expected.uuid);
+        const auto version = update.expected.version.toInt32();
+        if (update.new_pointer.metadata_location.empty())
+            ops.emplace_back(zkutil::makeCheckRequest(path, version));
+        else
+            ops.emplace_back(zkutil::makeSetRequest(path, update.new_pointer.metadata_location, version));
+    }
+
+    Coordination::Responses responses;
+    const auto code = zookeeper->tryMulti(ops, responses);
+    if (code == Coordination::Error::ZOK)
+        return {};
+
+    /// Keeper stops at the first failed operation, so one index names the table that blocked the whole multi.
+    const size_t index = zkutil::getFailedOpIndex(code, responses);
     if (code == Coordination::Error::ZBADVERSION)
-        return UpdateTableResult::VersionMismatch;
+        return {UpdateTableResult::VersionMismatch, index};
     if (code == Coordination::Error::ZNONODE)
-        return zookeeper->exists(tablePath(ns, table)) ? UpdateTableResult::UuidMismatch : UpdateTableResult::TableMissing;
-    if (code != Coordination::Error::ZOK)
-        throw zkutil::KeeperException::fromPath(code, path);
-    return UpdateTableResult::Updated;
+        return {UpdateTableResult::UuidNodeMissing, index};
+    zkutil::KeeperMultiException::check(code, ops, responses);
+    return {};
 }
 
 }

@@ -143,6 +143,7 @@ public:
     /// Unlike `.null`/`.size0`, a tuple element is a real leaf in the file, so the format can serve
     /// `t.x` on its own and prune on it.
     bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
+    bool supportsOptimizationToMapKeysAndValuesSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
@@ -170,6 +171,9 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
+    /// Renaming the files read (`rename_files_after_processing`) is a write to the source.
+    static void checkAccessForRenamingFiles(const ContextPtr & context);
+
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
@@ -182,7 +186,7 @@ public:
         const ReadFromFormatInfo & info,
         const ContextPtr & context,
         size_t max_block_size,
-        std::vector<FileLazyMaterializingRows::FileRows> files);
+        VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files);
 
 protected:
     friend class StorageFileSource;
@@ -275,7 +279,8 @@ public:
             const NamesAndTypesList & hive_columns_,
             const ContextPtr & context_,
             bool distributed_processing_ = false,
-            String archive_member_path_ = {});
+            String archive_member_path_ = {},
+            std::optional<FormatSettings> format_settings_ = std::nullopt);
 
         String next();
 
@@ -314,6 +319,7 @@ private:
         ExpressionActionsPtr deferred_filter_actions;
         NamesAndTypesList virtual_columns;
         NamesAndTypesList hive_columns;
+        const std::optional<FormatSettings> format_settings;
         /// A known archive member is part of the user-visible `_path` / `_file` value, although
         /// this iterator must open the outer archive file.
         const String archive_member_path;
@@ -492,6 +498,8 @@ private:
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
     SerializationInfoByName serialization_hints;
+    NameSet map_columns_read_by_keys;
+    NameSet map_columns_read_by_values;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
     UInt64 max_block_size;
@@ -527,6 +535,8 @@ public:
 
     bool supportsMinMaxFromStatistics() const override;
     void setMinMaxFromStatistics() override { read_min_max_from_statistics = true; }
+
+    bool canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const override;
 
     ReadFromFile(
         const Names & column_names_,

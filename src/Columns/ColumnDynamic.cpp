@@ -922,15 +922,22 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
         auto value = getSharedVariant().getDataAt(variant_col.offsetAt(n));
         ReadBufferFromMemory buf(value);
         auto type = decodeDataType(buf);
-        hash.update(type->getName());
+        updateHashWithTypeName(hash, type->getName());
         auto tmp_column = type->createColumn();
         type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, getFormatSettings());
         tmp_column->updateHashWithValue(0, hash);
         return;
     }
 
-    hash.update(variant_info.variant_names[discr]);
+    updateHashWithTypeName(hash, variant_info.variant_names[discr]);
     variant_col.getVariantByGlobalDiscriminator(discr).updateHashWithValue(variant_col.offsetAt(n), hash);
+}
+
+void ColumnDynamic::updateHashWithTypeName(SipHash & hash, std::string_view type_name)
+{
+    hash.update(UInt8(0));
+    hash.update(type_name.size());
+    hash.update(type_name);
 }
 
 void ColumnDynamic::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
@@ -1279,7 +1286,7 @@ struct ColumnDynamic::ComparatorBase
     {
     }
 
-    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         return parent.compareAt(lhs, rhs, parent, nan_direction_hint);
     }
@@ -1423,6 +1430,19 @@ void ColumnDynamic::getAllTypeNamesInto(UnorderedSetWithMemoryTracking<String> &
     }
 }
 
+namespace
+{
+
+const ColumnDynamic & getSourceDynamicColumn(const IColumn & source, const ColumnDynamic & column, std::string_view operation)
+{
+    const auto * source_dynamic = typeid_cast<const ColumnDynamic *>(&source);
+    if (!source_dynamic)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for {} of {} is not Dynamic, but {}", operation, column.getName(), source.getName());
+    return *source_dynamic;
+}
+
+}
+
 void ColumnDynamic::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     checkStackSize();
@@ -1481,7 +1501,7 @@ void ColumnDynamic::prepareVariantsForSquashing(const VectorWithMemoryTracking<C
     };
 
     for (const auto & source_column : source_columns)
-        add_variants(assert_cast<const ColumnDynamic &>(*source_column));
+        add_variants(getSourceDynamicColumn(*source_column, *this, "squashing"));
 
     /// Add variants from this dynamic column.
     add_variants(*this);
@@ -1592,7 +1612,8 @@ void ColumnDynamic::chooseDynamicStructureForMerge(const VectorWithMemoryTrackin
 
     for (const auto & source_column : source_columns)
     {
-        const auto & source_dynamic = assert_cast<const ColumnDynamic &>(*source_column);
+        /// The remaining loops over `source_columns` rely on this check.
+        const auto & source_dynamic = getSourceDynamicColumn(*source_column, *this, "merge");
         const auto & source_variant_column = source_dynamic.getVariantColumn();
         const auto & source_variant_info = source_dynamic.getVariantInfo();
         const auto & source_variants = assert_cast<const DataTypeVariant &>(*source_variant_info.variant_type).getVariants();
@@ -1702,7 +1723,7 @@ void ColumnDynamic::takeExactDynamicStructureFrom(const IColumn & source)
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "takeExactDynamicStructureFrom should be called only on empty Dynamic column");
 
-    const auto & source_dynamic = assert_cast<const ColumnDynamic &>(source);
+    const auto & source_dynamic = getSourceDynamicColumn(source, *this, "dynamic structure");
     variant_column = source_dynamic.getVariantColumn().cloneEmpty();
     variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
     variant_info = source_dynamic.getVariantInfo();
@@ -1765,7 +1786,8 @@ void ColumnDynamic::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking
     UnorderedMapWithMemoryTracking<String, size_t> shared_variant_candidates;
     for (const auto & source_column : source_columns)
     {
-        const auto & source_dynamic = assert_cast<const ColumnDynamic &>(*source_column);
+        /// The later loop over `source_columns` relies on this check.
+        const auto & source_dynamic = getSourceDynamicColumn(*source_column, *this, "statistics");
         const auto & source_statistics = source_dynamic.getOrCalculateStatistics();
 
         /// For variant statistics: if the variant is in our dynamic structure, add directly;
