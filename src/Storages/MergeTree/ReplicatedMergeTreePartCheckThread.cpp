@@ -543,8 +543,18 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPartAndFix(
             /// A merge result that was lost while all of its source parts are intact everywhere does not need to be
             /// replaced. This must come before the search below: replicas that lost the same merge result see each
             /// other's source parts and would hope for each other to merge them forever.
-            if (storage.tryDropFetchOfLostMergeResult(storage.getZooKeeper(), part_name))
+            auto drop_outcome = storage.tryDropFetchOfLostMergeResult(storage.getZooKeeper(), part_name);
+            if (drop_outcome == LostMergeResultDrop::Dropped)
                 break;
+            if (drop_outcome == LostMergeResultDrop::RetryLater)
+            {
+                constexpr time_t retry_drop_after_seconds = 5;
+                if (recheck_after)
+                    *recheck_after = retry_drop_after_seconds;
+                else
+                    enqueuePart(part_name, retry_drop_after_seconds);
+                break;
+            }
 
             bool found_something = searchForMissingPartOnOtherReplicas(part_name);
             if (found_something)

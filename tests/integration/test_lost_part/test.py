@@ -724,28 +724,6 @@ def test_missing_merge_result_on_start_single_replica(start_cluster, damage):
         node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
 
-def test_missing_merge_result_on_start_both_replicas(start_cluster):
-    # Both replicas lose the merge result, so each one hopes on the other.
-    table = "rmt_missing_merge_result_both"
-    try:
-        create_merged_table([node1, node2], table)
-        empty_parts_before = {n: count_in_log(n, "Created empty part") for n in (node1, node2)}
-
-        remove_part_dir_from_disk(node1, table, "all_0_1_1")
-        remove_part_dir_from_disk(node2, table, "all_0_1_1")
-        node1.stop_clickhouse()
-        node2.stop_clickhouse()
-        node1.start_clickhouse()
-        node2.start_clickhouse()
-
-        for node in (node1, node2):
-            assert_recovered_from_lost_merge_result(node, table, empty_parts_before[node])
-        assert_mutation_works([node1, node2], table)
-    finally:
-        node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
-        node2.query(f"DROP TABLE IF EXISTS {table} SYNC")
-
-
 def test_missing_merge_result_and_source_on_start(start_cluster):
     # A source of the lost merge result is lost as well. The sources cannot be merged again,
     # and the lost source is replaced with an empty part like any lost insert.

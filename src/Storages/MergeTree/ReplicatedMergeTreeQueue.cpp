@@ -1440,7 +1440,7 @@ bool ReplicatedMergeTreeQueue::checkReplaceRangeCanBeRemoved(const MergeTreePart
     return number_of_covered_parts == entry_ptr->replace_range_entry->new_part_names.size();
 }
 
-bool ReplicatedMergeTreeQueue::removeGetPartOfLostMergeResult(
+LostMergeResultDrop ReplicatedMergeTreeQueue::removeGetPartOfLostMergeResult(
     zkutil::ZooKeeperPtr zookeeper, const String & part_name, const std::vector<MergeTreePartInfo> & source_parts, Coordination::Requests ops)
 {
     std::optional<time_t> min_unprocessed_insert_time_changed;
@@ -1455,8 +1455,10 @@ bool ReplicatedMergeTreeQueue::removeGetPartOfLostMergeResult(
         {
             return entry->type == LogEntry::GET_PART && entry->new_part_name == part_name && entry->source_replica.empty();
         });
-        if (it == queue.end() || (*it)->currently_executing)
-            return false;
+        if (it == queue.end())
+            return LostMergeResultDrop::NotDropped;
+        if ((*it)->currently_executing)
+            return LostMergeResultDrop::RetryLater;
 
         znode_name = (*it)->znode_name;
         ops.emplace_back(zkutil::makeRemoveRequest(fs::path(replica_path) / "queue" / znode_name, -1));
@@ -1466,7 +1468,7 @@ bool ReplicatedMergeTreeQueue::removeGetPartOfLostMergeResult(
         if (code == Coordination::Error::ZBADVERSION)
         {
             LOG_INFO(log, "Log, replicas or replica state changed, will not remove entry {} for {}", znode_name, part_name);
-            return false;
+            return LostMergeResultDrop::RetryLater;
         }
         zkutil::KeeperMultiException::check(code, ops, responses);
 
@@ -1482,14 +1484,21 @@ bool ReplicatedMergeTreeQueue::removeGetPartOfLostMergeResult(
         current_parts.remove(part_name);
         for (const auto & source_part_info : source_parts)
         {
-            current_parts.tryAddPart(source_part_info);
-            virtual_parts.tryAddPart(source_part_info);
+            auto current_outcome = current_parts.tryAddPart(source_part_info);
+            auto virtual_outcome = virtual_parts.tryAddPart(source_part_info);
+            chassert(current_outcome == ActiveDataPartSet::AddPartOutcome::Added);
+            chassert(virtual_outcome == ActiveDataPartSet::AddPartOutcome::Added);
+            UNUSED(current_outcome, virtual_outcome);
+
+            /// Inserting the lost part took the sources out of the mutations' parts to do. Mutations that are
+            /// newer than the sources still have to be applied to them.
+            addPartToMutations(source_part_info.getPartNameAndCheckFormat(format_version), source_part_info);
         }
     }
 
     notifySubscribers(queue_size, &znode_name);
     updateTimesInZooKeeper(zookeeper, min_unprocessed_insert_time_changed, max_processed_insert_time_changed);
-    return true;
+    return LostMergeResultDrop::Dropped;
 }
 
 void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
