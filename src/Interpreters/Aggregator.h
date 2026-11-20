@@ -258,8 +258,8 @@ public:
             static constexpr size_t max_k = 100000;
 
             size_t k = 0;                           /// the query's LIMIT K (heap capacity)
-            std::vector<int> directions;            /// per-column ORDER BY directions
-            std::vector<int> nulls_directions;      /// per-column NULLS/NaNs directions
+            VectorWithMemoryTracking<int> directions;       /// per-column ORDER BY directions
+            VectorWithMemoryTracking<int> nulls_directions; /// per-column NULLS/NaNs directions
             size_t key_columns = 0;                 /// leading GROUP BY columns the heap ranks on
             UInt64 observation_rows = 65536;        /// rows before the pure-overhead freeze check; 0 disables it (see the group_by_top_k_optimization_* settings)
             bool shared_boundary = true;            /// let the per-thread sets skip against the tightest boundary published by any thread
@@ -278,6 +278,12 @@ public:
         /// distributed query must agree on this value for two-level bucket exchange to be correct;
         /// that is why it also matters for merge-only aggregators (`convertBlockToTwoLevel`).
         bool enable_packed_string_keys = true;
+
+        /// Use the `KeysAndPackedStringHashTable`-based hash tables for fixed-width keys and one non-nullable
+        /// `String` key (`keys32_packed_string`, `keys64_packed_string`, `keys128_packed_string`); if false, fall
+        /// back to `prealloc_serialized`. As for `enable_packed_string_keys`, the methods hash keys differently,
+        /// so all participants of a distributed query must agree on this value.
+        bool enable_fixed_and_packed_string_keys = true;
 
         /// Set for aggregation in order (`AggregatingInOrderTransform`). In that mode a fresh
         /// aggregation-method state is constructed for every contiguous run of equal order-key
@@ -387,6 +393,7 @@ public:
             bool enable_parallel_single_level_merge_,
             bool enable_parallel_single_level_merge_by_index_,
             bool enable_packed_string_keys_,
+            bool enable_fixed_and_packed_string_keys_,
             bool enable_adaptive_aggregator_,
             UInt64 adaptive_aggregator_freeze_threshold_,
             UInt64 adaptive_aggregator_freeze_threshold_bytes_,
@@ -402,7 +409,8 @@ public:
             size_t max_block_size_,
             float min_hit_rate_to_use_consecutive_keys_optimization_,
             bool serialize_string_with_zero_byte_,
-            bool enable_packed_string_keys_);
+            bool enable_packed_string_keys_,
+            bool enable_fixed_and_packed_string_keys_);
 
         [[nodiscard]] Params cloneWithKeys(const Names & keys_, bool only_merge_ = false) const
         {
@@ -824,6 +832,13 @@ private:
 
     HashMethodContextPtr aggregation_state_cache;
 
+    /// The method of `mergeBlocks`, which merges with a better hash function where the chosen method has one
+    /// (see `chooseMergeBlocksMethod`), and the context of its hashing states: the two methods can differ in
+    /// the type of the state, as `keys64_packed_string` does from its replacement
+    /// `prealloc_serialized_hash64`.
+    AggregatedDataVariants::Type merge_blocks_method = AggregatedDataVariants::Type::EMPTY;
+    HashMethodContextPtr merge_blocks_state_cache;
+
     AggregateFunctionsPlainPtrs aggregate_functions;
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
@@ -1158,16 +1173,19 @@ private:
         bool all_keys_are_const,
         MemoryTracker * local_memory_tracker) const;
 
-    /// Collects the misses of a block whose records carry no aggregate arguments into the producer's batch: those of an
-    /// aggregation by a lone `count` (`with_count`) and those of one without aggregate functions. A row whose key the
-    /// local table holds is a hit, which with `with_count` adds one to the key's inline count. The other rows become
-    /// records, and the repeats of a missed key combine into its record, which with `with_count` counts the rows it
-    /// combines. A run of one key goes into one record, and while a trial shows that it pays, so do the later rows of
-    /// the key found through a per-partition cache. A batch whose kept key bytes reach their bound is staged by
-    /// `stage_misses` in the middle of the block (see `adaptive_miss_batch_max_key_bytes`); the rest of the misses and
-    /// the probe results are left to the caller. Returns the number of local hits.
+    /// Collects the misses of a block whose records carry no aggregate arguments into the producer's batch:
+    /// those of an aggregation by a lone `count` (`with_count`) and those of one without aggregate functions.
+    /// A row whose key the local table holds is a hit, which with `with_count` adds one to the key's inline
+    /// count. A row of the NULL key that the method keeps in a slot of its own takes no lookup and is only
+    /// counted (see `AdaptiveAggregationProducer::FrozenState`). The other rows become records, and the
+    /// repeats of a missed key combine into its record, which with `with_count` counts the rows it combines.
+    /// A run of one key goes into one record, and while a trial shows that it pays, so do the later rows of
+    /// the key found through a per-partition cache. A batch whose kept key bytes reach their bound is staged
+    /// by `stage_misses` in the middle of the block (see `adaptive_miss_batch_max_key_bytes`); the rest of
+    /// the misses, the rows of the NULL key and the recording of the probe results are left to the caller.
+    /// Returns the hits and the rows of the NULL key.
     template <bool with_count, typename RecordKey, typename LocalMethod, typename State, typename StageMisses>
-    size_t collectCombinedMisses(
+    AdaptiveLocalProbes collectCombinedMisses(
         LocalMethod & local_method,
         State & find_state,
         size_t row_begin,
@@ -1175,6 +1193,22 @@ private:
         Arena & scratch_pool,
         AdaptiveAggregationProducer & adaptive,
         bool bypass_local_probe,
+        const StageMisses & stage_misses) const;
+
+    /// The probe/staging loop of a block whose records carry aggregate arguments, the counterpart of `collectCombinedMisses`.
+    /// With `record_places` it stores the place of every row in `places_data`, null for a miss. A NULL key goes to its slot
+    /// (`emplace_null_key`) without a lookup and needs a place, so without `record_places` the block has no such rows.
+    template <bool record_places, typename RecordKey, typename LocalMethod, typename State, typename EmplaceNullKey, typename StageMisses>
+    AdaptiveLocalProbes collectArgumentMisses(
+        LocalMethod & local_method,
+        State & local_find_state,
+        size_t row_begin,
+        size_t row_end,
+        Arena & scratch_pool,
+        AdaptiveAggregationProducer & adaptive,
+        bool bypass_local_probe,
+        AggregateDataPtr * places_data,
+        const EmplaceNullKey & emplace_null_key,
         const StageMisses & stage_misses) const;
 
     /// Appends the producer's batch of misses to its partitions in the format that `visitStagedRecordFormat` selects
@@ -1254,6 +1288,13 @@ private:
     /// `task.places` and `task.source_slots` for `mergeSourceStates`.
     template <typename Method, typename Table, typename ForEachCell, typename Filter>
     void adoptSourceCells(Table & table, const ForEachCell & for_each_cell, const Filter & filter, AdaptiveMergeTask & task) const;
+
+    /// Takes the NULL keys of the sources of a merge unit into `table` as `adoptSourceCells` takes their
+    /// cells, for a method that keeps the key in a slot of its own (see `keeps_null_key_slot`).
+    /// `for_each_source_table(f)` calls `f(source_table)` for every source table whose slot holds the key.
+    /// The caller calls it after `adoptSourceCells`, which resets `task.places` and `task.source_slots`.
+    template <typename Method, typename Table, typename ForEachSourceTable>
+    void adoptSourceNullKeys(Table & table, const ForEachSourceTable & for_each_source_table, AdaptiveMergeTask & task) const;
 
     /// The first pass of a count-first unit: counts the unit's groups exactly in `counting_table`, from its source
     /// cells that `for_each_cell` visits (see `adoptSourceCells`), the records in memory of every partition
@@ -1831,6 +1872,7 @@ private:
         Arena * aggregates_pool,
         Method & method,
         Table & data,
+        const HashMethodContextPtr & state_cache,
         AggregateDataPtr overflow_row,
         LastElementCacheStats & consecutive_keys_cache_stats,
         bool no_more_keys,
@@ -1844,6 +1886,7 @@ private:
         Arena * aggregates_pool,
         Method & method,
         Table & data,
+        const HashMethodContextPtr & state_cache,
         AggregateDataPtr overflow_row,
         LastElementCacheStats & consecutive_keys_cache_stats,
         bool no_more_keys,

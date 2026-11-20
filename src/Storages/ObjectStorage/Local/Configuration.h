@@ -61,7 +61,7 @@ public:
 
     [[nodiscard]] Path getRawPath() const override { return path; }
     void setRawPath(const Path & p) override { path = p; }
-    [[nodiscard]] const String & getRawURI() const override { return path.path; }
+    [[nodiscard]] std::string_view getRawURI() const override { return path.path; }
 
     [[nodiscard]] String getNamespace() const override { return ""; }
     [[nodiscard]] String getDataSourceDescription() const override { return ""; }
