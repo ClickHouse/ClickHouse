@@ -47,6 +47,17 @@ String removeEscapedSlashes(const String & json_str);
 
 String stringifyJSON(const Poco::Dynamic::Var & json, unsigned indent = 0);
 
+/// Reject a write whose input header does not match the current Iceberg schema (full schema,
+/// names + types, not just count) so a stale attached table cannot commit data files under the
+/// wrong field ids. Also rejects a null current_schema. Used by INSERT, UPDATE and OPTIMIZE.
+/// With `allow_missing_fields` the input may omit fields, and its columns are matched by name.
+void validateInputSchemaMatchesCurrentIcebergSchema(
+    const Iceberg::IcebergSchemaProcessorPtr & schema_processor,
+    Poco::JSON::Object::Ptr current_schema,
+    Int32 current_schema_id,
+    const NamesAndTypesList & input_columns,
+    bool allow_missing_fields);
+
 /// Per-file column statistics carried over verbatim from a source manifest entry during a manifest-only rewrite.
 struct DataFileColumnStatistics
 {

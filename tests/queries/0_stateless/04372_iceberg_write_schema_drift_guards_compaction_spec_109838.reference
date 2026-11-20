@@ -1,0 +1,18 @@
+ICEBERG_SPECIFICATION_VIOLATION
+NO_LEAK
+BAD_ARGUMENTS
+1	x	0
+2	x	0
+NOT_IMPLEMENTED
+881	448755
+NOT_IMPLEMENTED
+['main', 't']
+[1,3]
+NOT_IMPLEMENTED
+['main']
+[2]
+NOT_IMPLEMENTED
+['main']
+[2,3]
+['append', 'append', 'append'] [('max-snapshot-age-ms', 86400000), ('min-snapshots-to-keep', 10), ('type', 'branch')]
+1
