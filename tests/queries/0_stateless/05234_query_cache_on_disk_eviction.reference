@@ -9,9 +9,10 @@ QueryCacheOnDiskMisses	3
 10000
 10000
 QueryCacheOnDiskMisses	2
--- An entry which does not fit into the probationary queue of an SLRU cache is not stored and leaves no file segments behind
-0
-QueryCacheOnDiskMisses	2
+-- With the protected queue unused, an entry bigger than the probationary queue of an SLRU cache is stored and served
+1
+QueryCacheOnDiskHits	1
+QueryCacheOnDiskMisses	1
 -- SYSTEM DROP FILESYSTEM CACHE '<name>' removes the entries
 0
 QueryCacheOnDiskHits	1
