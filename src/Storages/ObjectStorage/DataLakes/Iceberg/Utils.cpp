@@ -2516,7 +2516,6 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
             ExpressionAnalyzer(key_ast, syntax_result, context).getActions(false)->execute(key_block);
 
             auto key_column = key_block.getByName(sort_column_name);
-            /// Appended after the payload under a name that no block column has.
             while (block.has(key_column.name))
                 key_column.name = "_" + key_column.name;
             sort_column_name = key_column.name;

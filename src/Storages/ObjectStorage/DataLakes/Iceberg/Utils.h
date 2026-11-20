@@ -217,7 +217,7 @@ Poco::JSON::Array::Ptr getDefaultSortOrderFields(const Poco::JSON::Object::Ptr &
 /// If `sort_description` is set, it receives the order over the key columns `sortBlockByKeyDescription` appends, NULLs placed per `null-order`.
 KeyDescription getSortingKeyDescriptionFromMetadata(
     Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context, SortDescription * sort_description = nullptr);
-/// Appends the key columns of `sort_description` under names no block column has, gives them to `result_sort_description` and sorts the block by it.
+/// Sorts the block by the key `sort_description`, appending computed key columns under names no block column has; `result_sort_description` is pointed at the sort columns.
 void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, SortDescription & result_sort_description, ContextPtr context);
 
 void forEachAvroEntry(
