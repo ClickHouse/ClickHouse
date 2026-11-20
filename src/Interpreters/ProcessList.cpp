@@ -6,6 +6,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
@@ -118,6 +120,56 @@ static bool isUnlimitedQuery(const IAST * ast)
     }
 
     return false;
+}
+
+bool isMetadataQuery(const IAST & ast)
+{
+    switch (ast.getQueryKind())
+    {
+        case IAST::QueryKind::Drop: /// Also DETACH and TRUNCATE
+        case IAST::QueryKind::Undrop:
+        case IAST::QueryKind::Rename:
+        case IAST::QueryKind::Move: /// MOVE of access entities
+        case IAST::QueryKind::Grant:
+        case IAST::QueryKind::Revoke:
+        case IAST::QueryKind::System:
+            return true;
+        case IAST::QueryKind::Create: /// Also ATTACH
+        {
+            /// A `SELECT` (also of a view) is analyzed and a table function is read to infer the structure.
+            const auto * create = ast.as<ASTCreateQuery>();
+            return !create || (!create->select && !create->as_table_function);
+        }
+        case IAST::QueryKind::Alter:
+        {
+            const auto * alter = ast.as<ASTAlterQuery>();
+            if (!alter || !alter->command_list)
+                return true;
+            for (const auto & child : alter->command_list->children)
+            {
+                const auto * command = child->as<ASTAlterCommand>();
+                if (!command)
+                    continue;
+                switch (command->type)
+                {
+                    /// Copy parts in the query.
+                    case ASTAlterCommand::MOVE_PARTITION:
+                    case ASTAlterCommand::REPLACE_PARTITION: /// Also ATTACH PARTITION ... FROM
+                    case ASTAlterCommand::FETCH_PARTITION:
+                    case ASTAlterCommand::ATTACH_PARTITION:
+                    case ASTAlterCommand::FREEZE_PARTITION:
+                    case ASTAlterCommand::FREEZE_ALL:
+                    case ASTAlterCommand::EXECUTE_COMMAND:
+                        return false;
+                    default:
+                        break;
+                }
+            }
+            return true;
+        }
+        default:
+            return false;
+    }
 }
 
 ProcessList::EntryPtr ProcessList::insert(
