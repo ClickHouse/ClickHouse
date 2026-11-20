@@ -66,6 +66,13 @@ struct StatisticsUtils
     /// accumulator, and anything replaces a `NaN` accumulator. A `NULL` `value` is ignored.
     static void updateMin(Field & accumulator, const Field & value);
     static void updateMax(Field & accumulator, const Field & value);
+
+    /// The type of `path` of the `JSON` type `json_type`: the type of a typed path, else the type of the dynamic paths.
+    static DataTypePtr getJSONPathType(const IDataType & json_type, const String & path);
+    /// Calls `callback` with each path of the `JSON` column `column`, except typed paths of type `JSON`, and the values of
+    /// the path. For a path stored in shared data, these are only the values of the rows that have it.
+    static void forEachJSONPath(
+        const IColumn & column, const IDataType & json_type, const std::function<void(const String &, const DataTypePtr &, const ColumnPtr &)> & callback);
 };
 
 class IStatistics;
@@ -119,6 +126,9 @@ public:
     /// Makes this empty statistics object compatible with `other` (see `isCompatibleWith`), e.g. adopts
     /// the set of sub-statistics of `other` deserialized from an older format.
     virtual void copyStructureFrom(const IStatistics &) {}
+
+    /// The statistics of the same type of each subcolumn, e.g. of each path of a `JSON` column.
+    [[nodiscard]] virtual std::map<String, StatisticsPtr> getSubcolumnStatistics() const { return {}; }
 
 protected:
     /// The memory allocated by a `Field` outside of the `Field` itself.
@@ -210,6 +220,8 @@ public:
     [[nodiscard]] const StatsMap & getStats() const { return stats; }
     [[nodiscard]] bool structureEquals(const ColumnStatistics & other) const;
     [[nodiscard]] std::shared_ptr<ColumnStatistics> cloneEmpty() const;
+    /// The statistics of each subcolumn, see `IStatistics::getSubcolumnStatistics`.
+    [[nodiscard]] std::map<String, std::shared_ptr<ColumnStatistics>> getSubcolumnStatistics() const;
 
 private:
     friend class MergeTreeStatisticsFactory;

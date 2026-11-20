@@ -1455,6 +1455,15 @@ std::shared_ptr<StatisticsCacheCell> IMergeTreeDataPart::loadStatisticsFile(
     }
 }
 
+/// The `JSON` column of which `name` is a path: the statistics of the paths are in the statistics of the column.
+static std::optional<String> tryGetJSONColumnOfPath(const String & name, const ColumnsDescription & all_columns)
+{
+    auto column = all_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+    if (column && column->isSubcolumn() && isObject(column->getTypeInStorage()))
+        return column->getNameInStorage();
+    return {};
+}
+
 std::vector<std::pair<String, const ColumnDescription *>> IMergeTreeDataPart::getStatisticsFilesToLoad(
     const NameSet & required_columns, const PackedFilesReader * packed_reader) const
 {
@@ -1486,6 +1495,8 @@ std::vector<std::pair<String, const ColumnDescription *>> IMergeTreeDataPart::ge
             /// `optimize_functions_to_subcolumns=1`, keep stats for the parent column in that case.
             if (required_column.ends_with(".null"))
                 probe(required_column.substr(0, required_column.size() - std::string_view(".null").size()));
+            if (auto json_column = tryGetJSONColumnOfPath(required_column, all_columns))
+                probe(*json_column);
         }
     }
     else
@@ -1703,6 +1714,8 @@ bool IMergeTreeDataPart::areStatisticsCached(const NameSet & required_columns, c
         /// `loadStatistics` also loads the statistics of the parent column of a `.null` subcolumn.
         if (column_name.ends_with(".null")
             && !is_cached(column_name.substr(0, column_name.size() - std::string_view(".null").size())))
+            return false;
+        if (auto json_column = tryGetJSONColumnOfPath(column_name, all_columns); json_column && !is_cached(*json_column))
             return false;
     }
 

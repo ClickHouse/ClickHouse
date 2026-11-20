@@ -55,6 +55,7 @@ public:
 
     [[nodiscard]] bool isCompatibleWith(const IStatistics & other) const override;
     void copyStructureFrom(const IStatistics & other) override;
+    [[nodiscard]] std::map<String, StatisticsPtr> getSubcolumnStatistics() const override { return {paths.begin(), paths.end()}; }
 
     [[nodiscard]] bool hasNumericMinMax() const { return tracks_numeric; }
     [[nodiscard]] bool hasStringLengthAvg() const { return tracks_string; }
@@ -80,6 +81,10 @@ public:
     [[nodiscard]] Field getSum() const;
 
 private:
+    StatisticsBasic & getOrCreatePath(const String & path, const DataTypePtr & path_type);
+    /// Counts the rows that a path does not have as its NULLs.
+    void addMissingRowsToPaths();
+
     Field min; /// null Field means "not initialized" (e.g. all values seen so far were NULL)
     Field max; /// null Field means "not initialized"
     UInt64 string_total_bytes = 0;
@@ -103,6 +108,11 @@ private:
     /// the sum, or merged with such statistics.
     struct Sum;
     std::unique_ptr<Sum> sum;
+
+    /// Whether these are the statistics of a `JSON` column that also have the statistics of each of its paths: only for
+    /// `basic` declared explicitly.
+    bool tracks_paths = false;
+    std::map<String, std::shared_ptr<StatisticsBasic>> paths;
 };
 
 bool basicStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);

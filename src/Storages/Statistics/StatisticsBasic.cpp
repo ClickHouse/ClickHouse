@@ -44,6 +44,7 @@ enum BasicFeatureMask : UInt8
     StringLengthSum = 1u << 1,
     DefaultCount = 1u << 2,
     ExactSum = 1u << 3,
+    PathStatistics = 1u << 4,
 };
 
 const NullMap * tryGetNullMap(const IColumn & column)
@@ -165,6 +166,8 @@ StatisticsBasic::StatisticsBasic(const SingleStatisticsDescription & description
 
     if (canStatisticsTrackSum(data_type_))
         sum = std::make_unique<Sum>(getSumFunction(data_type));
+
+    tracks_paths = isObject(data_type_) && !description.is_implicit;
 }
 
 StatisticsBasic::~StatisticsBasic() = default;
@@ -204,6 +207,37 @@ void StatisticsBasic::build(const ColumnPtr & column)
     }
 
     row_count += column_size;
+
+    if (tracks_paths)
+    {
+        StatisticsUtils::forEachJSONPath(*column, *data_type, [&](const String & path, const DataTypePtr & path_type, const ColumnPtr & values)
+        {
+            getOrCreatePath(path, path_type).build(values);
+        });
+        addMissingRowsToPaths();
+    }
+}
+
+StatisticsBasic & StatisticsBasic::getOrCreatePath(const String & path, const DataTypePtr & path_type)
+{
+    auto & path_stats = paths[path];
+    if (!path_stats)
+        path_stats = std::make_shared<StatisticsBasic>(stat, path_type);
+    return *path_stats;
+}
+
+void StatisticsBasic::addMissingRowsToPaths()
+{
+    for (const auto & [_, path_stats] : paths)
+    {
+        if (path_stats->row_count < row_count)
+        {
+            /// Only a path of a type whose default is not NULL is in every row, a typed path.
+            chassert(path_stats->is_nullable);
+            path_stats->default_count += row_count - path_stats->row_count;
+            path_stats->row_count = row_count;
+        }
+    }
 }
 
 void StatisticsBasic::merge(const StatisticsPtr & other_stats)
@@ -235,6 +269,13 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
         sum.reset();
 
     row_count += other->row_count;
+
+    if (tracks_paths)
+    {
+        for (const auto & [path, other_path_stats] : other->paths)
+            getOrCreatePath(path, StatisticsUtils::getJSONPathType(*data_type, path)).merge(other_path_stats);
+        addMissingRowsToPaths();
+    }
 }
 
 void StatisticsBasic::build(UInt64 rows, const Field & min_value, const Field & max_value, std::optional<UInt64> null_count)
@@ -278,6 +319,8 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         mask |= BasicFeatureMask::DefaultCount;
     if (sum)
         mask |= BasicFeatureMask::ExactSum;
+    if (tracks_paths)
+        mask |= BasicFeatureMask::PathStatistics;
     writeIntBinary(mask, buf);
 
     if (tracks_numeric)
@@ -291,10 +334,21 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         writeIntBinary(default_count, buf);
     if (sum)
         sum->function.function->serialize(sum->state, buf);
+    if (tracks_paths)
+    {
+        writeVarUInt(paths.size(), buf);
+        for (const auto & [path, path_stats] : paths)
+        {
+            writeStringBinary(path, buf);
+            path_stats->serialize(buf);
+        }
+    }
 }
 
 std::optional<UInt64> StatisticsBasic::getSerializedSize() const
 {
+    if (tracks_paths)
+        return std::nullopt;
     UInt64 size = sizeof(row_count) + sizeof(UInt8);
     if (tracks_numeric)
         size += getFieldBinarySize(min) + getFieldBinarySize(max);
@@ -307,7 +361,7 @@ std::optional<UInt64> StatisticsBasic::getSerializedSize() const
     return size;
 }
 
-void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
+void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion version)
 {
     readIntBinary(row_count, buf);
 
@@ -329,11 +383,25 @@ void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*vers
     if (has_default_count)
         readIntBinary(default_count, buf);
 
-    /// The sum is the last field, so a type that does not track it may leave it unread.
+    /// The sum is the last field of a type that tracks it, so a type that does not track it may leave it unread.
     if (!(mask & BasicFeatureMask::ExactSum))
         sum.reset();
     else if (sum)
         sum->function.function->deserialize(sum->state, buf);
+
+    /// After the sum, which a `JSON` column does not track.
+    tracks_paths = (mask & BasicFeatureMask::PathStatistics) != 0 && isObject(data_type);
+    if (tracks_paths)
+    {
+        UInt64 num_paths = 0;
+        readVarUInt(num_paths, buf);
+        for (UInt64 i = 0; i < num_paths; ++i)
+        {
+            String path;
+            readStringBinary(path, buf);
+            getOrCreatePath(path, StatisticsUtils::getJSONPathType(*data_type, path)).deserialize(buf, version);
+        }
+    }
 }
 
 Field StatisticsBasic::getSum() const
@@ -393,6 +461,10 @@ size_t StatisticsBasic::allocatedBytes() const
     size_t bytes = sizeof(*this) + fieldAllocatedBytes(min) + fieldAllocatedBytes(max) + fieldAllocatedBytes(column_default_field);
     if (sum)
         bytes += sizeof(Sum);
+    /// A node of `std::map` holds the value and three pointers and a color.
+    for (const auto & [path, path_stats] : paths)
+        bytes += sizeof(decltype(paths)::value_type) + 4 * sizeof(void *) + path.capacity() + path_stats->allocatedBytes()
+            + path_stats->descriptionAllocatedBytes();
     return bytes;
 }
 
@@ -453,7 +525,8 @@ bool StatisticsBasic::isCompatibleWith(const IStatistics & other) const
         return false;
     return tracks_numeric == other_basic->tracks_numeric
         && tracks_string == other_basic->tracks_string
-        && has_default_count == other_basic->has_default_count;
+        && has_default_count == other_basic->has_default_count
+        && tracks_paths == other_basic->tracks_paths;
 }
 
 void StatisticsBasic::copyStructureFrom(const IStatistics & other)
@@ -465,6 +538,7 @@ void StatisticsBasic::copyStructureFrom(const IStatistics & other)
     tracks_numeric = other_basic->tracks_numeric;
     tracks_string = other_basic->tracks_string;
     has_default_count = other_basic->has_default_count;
+    tracks_paths = other_basic->tracks_paths;
 }
 
 bool basicStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & /*data_type*/)

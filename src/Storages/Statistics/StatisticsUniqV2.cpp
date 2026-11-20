@@ -2,8 +2,10 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnsNumber.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -29,6 +31,8 @@ StatisticsUniqV2::StatisticsUniqV2(const SingleStatisticsDescription & descripti
         "uniqCombined64", NullsAction::IGNORE_NULLS, {data_type}, Array{UNIQ_COMBINED_PRECISION}, properties);
     data = arena->alignedAlloc(collector->sizeOfData(), collector->alignOfData());
     collector->create(data);
+    if (isObject(data_type))
+        json_type = data_type;
 }
 
 StatisticsUniqV2::~StatisticsUniqV2()
@@ -55,13 +59,45 @@ void StatisticsUniqV2::build(const ColumnPtr & column)
         raw_column_ptr = column.get();
     }
 
-    collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &raw_column_ptr, nullptr);
+    if (const auto * dynamic_column = typeid_cast<const ColumnDynamic *>(raw_column_ptr))
+    {
+        /// `Dynamic` is not `Nullable`, so the collector would count `NULL` as a value.
+        auto is_not_null = ColumnUInt8::create(dynamic_column->size());
+        for (size_t i = 0; i < dynamic_column->size(); ++i)
+            is_not_null->getData()[i] = !dynamic_column->isNullAt(i);
+        const IColumn * columns[] = {raw_column_ptr, is_not_null.get()};
+        collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, columns, nullptr, /*if_argument_pos=*/1);
+    }
+    else
+        collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &raw_column_ptr, nullptr);
+
+    if (json_type)
+        StatisticsUtils::forEachJSONPath(*column, *json_type, [&](const String & path, const DataTypePtr & path_type, const ColumnPtr & values)
+        {
+            if (auto * path_stats = tryGetOrCreatePath(path, path_type))
+                path_stats->build(values);
+        });
+}
+
+StatisticsUniqV2 * StatisticsUniqV2::tryGetOrCreatePath(const String & path, const DataTypePtr & path_type)
+{
+    auto it = paths.find(path);
+    if (it == paths.end())
+    {
+        if (!isDynamic(path_type) && !uniqV2StatisticsValidator(stat, path_type))
+            return nullptr;
+        it = paths.emplace(path, std::make_shared<StatisticsUniqV2>(stat, path_type)).first;
+    }
+    return it->second.get();
 }
 
 void StatisticsUniqV2::merge(const StatisticsPtr & other_stats)
 {
     const StatisticsUniqV2 * other = typeid_cast<const StatisticsUniqV2 *>(other_stats.get());
     collector->merge(data, other->data, arena.get());
+    for (const auto & [path, other_path_stats] : other->paths)
+        if (auto * path_stats = tryGetOrCreatePath(path, StatisticsUtils::getJSONPathType(*json_type, path)))
+            path_stats->merge(other_path_stats);
 }
 
 size_t StatisticsUniqV2::allocatedBytes() const
@@ -73,7 +109,12 @@ size_t StatisticsUniqV2::allocatedBytes() const
     NullWriteBuffer serialized;
     collector->serialize(data, serialized);
     serialized.finalize();
-    return sizeof(*this) + sizeof(Arena) + arena->allocatedBytes() + 4 * serialized.count();
+    size_t res = sizeof(*this) + sizeof(Arena) + arena->allocatedBytes() + 4 * serialized.count();
+    /// A node of `std::map` holds the value and three pointers and a color.
+    for (const auto & [path, path_stats] : paths)
+        res += sizeof(decltype(paths)::value_type) + 4 * sizeof(void *) + path.capacity() + path_stats->allocatedBytes()
+            + path_stats->descriptionAllocatedBytes();
+    return res;
 }
 
 bool StatisticsUniqV2::isCompatibleWith(const IStatistics & other) const
@@ -91,9 +132,19 @@ void StatisticsUniqV2::serialize(WriteBuffer & buf)
     else
         writeBinary(false, buf);
     collector->serialize(data, buf);
+
+    if (json_type)
+    {
+        writeVarUInt(paths.size(), buf);
+        for (const auto & [path, path_stats] : paths)
+        {
+            writeStringBinary(path, buf);
+            path_stats->serialize(buf);
+        }
+    }
 }
 
-void StatisticsUniqV2::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
+void StatisticsUniqV2::deserialize(ReadBuffer & buf, StatisticsFileVersion version)
 {
     bool is_null = false;
     readBinary(is_null, buf);
@@ -108,6 +159,20 @@ void StatisticsUniqV2::deserialize(ReadBuffer & buf, StatisticsFileVersion /*ver
             is_null, collector_is_nullable);
 
     collector->deserialize(data, buf);
+
+    if (json_type)
+    {
+        UInt64 num_paths = 0;
+        readVarUInt(num_paths, buf);
+        for (UInt64 i = 0; i < num_paths; ++i)
+        {
+            String path;
+            readStringBinary(path, buf);
+            auto path_stats = std::make_shared<StatisticsUniqV2>(stat, StatisticsUtils::getJSONPathType(*json_type, path));
+            path_stats->deserialize(buf, version);
+            paths.emplace(std::move(path), std::move(path_stats));
+        }
+    }
 }
 
 UInt64 StatisticsUniqV2::estimateCardinality() const
@@ -126,11 +191,12 @@ UInt64 StatisticsUniqV2::estimateCardinality() const
     return cardinality;
 }
 
-bool uniqV2StatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
+bool uniqV2StatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
 {
     DataTypePtr inner_data_type = removeNullable(data_type);
     inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type) || isUUID(inner_data_type);
+    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type) || isUUID(inner_data_type)
+        || (isObject(data_type) && !description.is_implicit);
 }
 
 StatisticsPtr uniqV2StatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)

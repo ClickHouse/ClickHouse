@@ -1,9 +1,11 @@
 #include <Storages/Statistics/Statistics.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnObject.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -23,6 +25,7 @@
 #include <Storages/Statistics/StatisticsUniqV2.h>
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
+#include <Common/assert_cast.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
 
@@ -75,6 +78,40 @@ void StatisticsUtils::updateMax(Field & accumulator, const Field & value)
         accumulator = value;
     else if (!isNaNField(value) && accumulator < value)
         accumulator = value;
+}
+
+DataTypePtr StatisticsUtils::getJSONPathType(const IDataType & json_type, const String & path)
+{
+    const auto & object_type = assert_cast<const DataTypeObject &>(json_type);
+    if (auto it = object_type.getTypedPaths().find(path); it != object_type.getTypedPaths().end())
+        return it->second;
+    return object_type.getDynamicType();
+}
+
+void StatisticsUtils::forEachJSONPath(
+    const IColumn & column, const IDataType & json_type, const std::function<void(const String &, const DataTypePtr &, const ColumnPtr &)> & callback)
+{
+    const auto full_column = column.convertToFullColumnIfConst();
+    const auto & object_column = assert_cast<const ColumnObject &>(*full_column);
+
+    for (const auto & [path, path_column] : object_column.getTypedPaths())
+        if (auto path_type = getJSONPathType(json_type, path); !isObject(path_type))
+            callback(path, path_type, path_column);
+    for (const auto & [path, path_column] : object_column.getDynamicPaths())
+        callback(path, getJSONPathType(json_type, path), path_column);
+
+    const auto dynamic_type = assert_cast<const DataTypeObject &>(json_type).getDynamicType();
+    std::map<std::string_view, MutableColumnPtr> shared_data_paths;
+    const auto [shared_data_path_names, shared_data_values] = object_column.getSharedDataPathsAndValues();
+    for (size_t i = 0; i < shared_data_path_names->size(); ++i)
+    {
+        auto & path_column = shared_data_paths[shared_data_path_names->getDataAt(i)];
+        if (!path_column)
+            path_column = dynamic_type->createColumn();
+        ColumnObject::deserializeValueFromSharedData(shared_data_values, i, *path_column);
+    }
+    for (auto & [path, path_column] : shared_data_paths)
+        callback(String(path), dynamic_type, std::move(path_column));
 }
 
 std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & data_type)
@@ -311,6 +348,29 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::cloneEmpty() const
     {
         if (auto it = stats.find(type); it != stats.end())
             single_stats->copyStructureFrom(*it->second);
+    }
+    return result;
+}
+
+std::map<String, std::shared_ptr<ColumnStatistics>> ColumnStatistics::getSubcolumnStatistics() const
+{
+    std::map<String, std::shared_ptr<ColumnStatistics>> result;
+    for (const auto & [type, single_stats] : stats)
+    {
+        for (auto & [subcolumn, subcolumn_stats] : single_stats->getSubcolumnStatistics())
+        {
+            auto it = result.find(subcolumn);
+            if (it == result.end())
+            {
+                ColumnStatisticsDescription subcolumn_desc;
+                subcolumn_desc.data_type = stats_desc.data_type->tryGetSubcolumnType(subcolumn);
+                if (!subcolumn_desc.data_type)
+                    continue;
+                it = result.emplace(subcolumn, std::make_shared<ColumnStatistics>(subcolumn_desc)).first;
+                it->second->rows = rows;
+            }
+            it->second->stats.emplace(type, std::move(subcolumn_stats));
+        }
     }
     return result;
 }

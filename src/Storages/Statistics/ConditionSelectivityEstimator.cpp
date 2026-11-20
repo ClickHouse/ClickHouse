@@ -117,7 +117,7 @@ static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const Co
     if (!metadata)
         return true;
 
-    const auto * column = metadata->getColumns().tryGet(column_name);
+    const auto column = metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
     if (!column)
         return false;
 
@@ -400,7 +400,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
         {
             /// `isNull(col)` / `isNotNull(col)` — populate the corresponding null-check set.
             column_name = func.getArgumentAt(0).getColumnName();
-            if (metadata && !metadata->getColumns().tryGet(column_name))
+            if (metadata && !tryGetColumnType(metadata, column_name))
                 return false;
             atom_it->second(out, column_name, Field{});
             return true;
@@ -464,7 +464,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     /// branch further down. Use that same default here, so that crossing the limit cannot
                     /// change the estimate for such an atom - and skip the size-based path, which would
                     /// otherwise read `set_size / <no cardinality>` as "matches everything".
-                    if (metadata && !metadata->getColumns().tryGet(lhs_name))
+                    if (metadata && !tryGetColumnType(metadata, lhs_name))
                     {
                         const Float64 equal_factor = getEqualFactor(set_type, columns[0]->size());
                         out.selectivity.true_sel = negative ? 1.0 - equal_factor : equal_factor;
@@ -542,10 +542,28 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
 
             if (metadata)
             {
-                const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
-                if (column_desc)
-                    column_type = removeLowCardinalityAndNullable(column_desc->type);
-                else
+                auto type = tryGetColumnType(metadata, column_name);
+                if (type)
+                    column_type = removeLowCardinalityAndNullable(type);
+
+                /// The values of a `Dynamic` column have several types, and so may the literals compared with it, so the
+                /// ranges of two atoms on it may not compare: an equality is estimated alone, any other atom like one on an expression.
+                if (column_type && isDynamic(column_type))
+                {
+                    if (!set_for_ranges && (func_name == "equals" || func_name == "notEquals"))
+                    {
+                        Selectivity selectivity{getEqualFactor(const_type), 0};
+                        if (auto it = column_estimators.find(column_name);
+                            it != column_estimators.end() && isCompatibleStatistics(metadata, it->second.stats, column_name))
+                            selectivity = it->second.estimateRanges(PlainRanges(Range(const_value)));
+                        out.selectivity = func_name == "equals" ? selectivity : selectivity.applyNot();
+                        out.finalized = true;
+                        return false;
+                    }
+                    type = nullptr;
+                }
+
+                if (!type)
                 {
                     /// Not a real column (e.g. a function expression like lower(col) or toDecimal64(col, 3)).
                     /// Skip range analysis to avoid bad cast when merging ranges of incompatible Field types.
@@ -738,7 +756,29 @@ void ConditionSelectivityEstimatorBuilder::setCardinality(const String & column_
 
 ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const
 {
-    return has_data ? estimator : nullptr;
+    if (!has_data)
+        return nullptr;
+
+    /// The statistics of a subcolumn, a path of a `JSON` column, estimate the conditions on it.
+    std::vector<std::pair<String, ColumnStatisticsPtr>> subcolumn_estimators;
+    for (const auto & [column_name, column_estimator] : estimator->column_estimators)
+        for (auto & [subcolumn, stats] : column_estimator.stats->getSubcolumnStatistics())
+            subcolumn_estimators.emplace_back(column_name + "." + subcolumn, std::move(stats));
+    for (auto & [name, stats] : subcolumn_estimators)
+        estimator->column_estimators.emplace(std::move(name), ConditionSelectivityEstimator::ColumnEstimator{std::move(stats)});
+
+    return estimator;
+}
+
+DataTypePtr ConditionSelectivityEstimator::tryGetColumnType(const StorageMetadataPtr & metadata, const String & name) const
+{
+    const auto & columns = metadata->getColumns();
+    if (const auto * column = columns.tryGet(name))
+        return column->type;
+    if (column_estimators.contains(name))
+        if (auto subcolumn = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name))
+            return subcolumn->type;
+    return nullptr;
 }
 
 ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::applyNot() const
