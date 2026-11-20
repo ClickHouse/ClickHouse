@@ -346,6 +346,13 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"api_key = 'test-key'"
         )
         instance.query(
+            f"CREATE NAMED COLLECTION ai_rerank_hang AS "
+            f"provider = 'cohere', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v2/rerank_hang', "
+            f"model = 'test-rerank-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
             f"CREATE NAMED COLLECTION ai_rerank_error AS "
             f"provider = 'cohere', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v2/rerank_error', "
@@ -3666,6 +3673,25 @@ def test_cancelled_query_does_not_wait_for_other_queries_requests(started_cluste
         # Fails with `NOTHING_TO_KILL` when the query was already killed above.
         instance.query_and_get_answer_with_error(f"KILL QUERY WHERE query_id = '{qid_a}' SYNC")
         _set_ai_thread_pool_size(1000)
+
+
+def test_relevance_timeout_does_not_wait_for_request_in_flight(started_cluster):
+    """`aiRelevance` waits for its request like the other AI functions: it fails on `max_execution_time`
+    while `/v2/rerank_hang` still holds the request, rather than once the provider answers."""
+    _reset_concurrency()
+    error = instance.query_and_get_error(
+        "SELECT aiRelevance('q', toString(number), map('credentials', 'ai_rerank_hang')) FROM numbers(1) FORMAT Null",
+        settings={"max_execution_time": 1, "ai_function_max_retries": 0},
+    )
+    assert "TIMEOUT_EXCEEDED" in error
+    stats = _concurrency_stats()
+    assert stats["requests"] == 1
+    assert stats["in_flight"] == 1, "the query waited for the provider to answer"
+    # The abandoned request owns its documents and finishes on its own. Wait for it, so that it does not
+    # count as in flight in later tests.
+    wait_condition(
+        _concurrency_stats, lambda stats: stats["in_flight"] == 0, max_attempts=100, delay=0.1
+    )
 
 
 def test_shutdown_after_cancelling_query_with_request_in_flight(started_cluster):

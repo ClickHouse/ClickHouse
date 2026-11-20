@@ -8,10 +8,11 @@ Endpoints:
       `aiTranslate`'s `instructions` argument is forwarded in the prompt, or that the
       `Authorization` header is omitted when the named collection has no `api_key`).
       Header names are lower-cased for case-insensitive lookup.
-  GET  /concurrency                  — returns JSON `{"requests": N, "max_concurrency": M}` describing
-      the requests the slow endpoints below have served since the last `/reset-concurrency`, where
-      `max_concurrency` is the highest number that were ever being served at the same moment. Used
-      to assert that `ai_function_max_concurrent_requests_per_thread` controls how many requests are in flight.
+  GET  /concurrency                  — returns JSON `{"requests": N, "in_flight": F, "max_concurrency": M}`
+      describing the requests the slow endpoints below have served since the last `/reset-concurrency`,
+      where `in_flight` is the number being served right now and `max_concurrency` is the highest number
+      that were ever being served at the same moment. Used to assert that
+      `ai_function_max_concurrent_requests_per_thread` controls how many requests are in flight.
   GET  /reset-concurrency            — zeroes the counters above
   POST /v1/chat/slow                 — like `/v1/chat/completions`, but sleeps SLOW_RESPONSE_SECONDS
       before answering, so overlapping requests are observable in `/concurrency`.
@@ -83,6 +84,8 @@ Endpoints:
   POST /v2/rerank_dup_index          — like `/v2/rerank` but every result reuses `index` 0,
       exercising the duplicate-index rejection path.
   POST /v2/rerank_error              — always returns HTTP 500 (used for rerank errors)
+  POST /v2/rerank_hang               — like `/v2/rerank`, but sleeps HANG_RESPONSE_SECONDS first, so a
+      request is still in flight when the query that sent it is cancelled.
   POST /v2/rerank_tokens             — like `/v2/rerank`, for a Cohere-compatible endpoint that bills by
       tokens: `meta.billed_units` also carries `input_tokens` (`len(query) + sum(len(documents))`)
       and `output_tokens` (the number of results).
@@ -355,6 +358,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             with _LOCK:
                 snapshot = {
                     "requests": CONCURRENCY["requests"],
+                    "in_flight": CONCURRENCY["in_flight"],
                     "max_concurrency": CONCURRENCY["max_concurrency"],
                 }
             self._send_json(200, snapshot)
@@ -643,6 +647,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if parsed.path == "/v2/rerank":
             self._send_json(200, make_rerank_response(body))
+            return
+
+        if parsed.path == "/v2/rerank_hang":
+            self._serve_slowly(lambda: make_rerank_response(body), HANG_RESPONSE_SECONDS)
             return
 
         if parsed.path == "/v2/rerank_dup_index":

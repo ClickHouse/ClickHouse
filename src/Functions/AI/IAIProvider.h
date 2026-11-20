@@ -154,9 +154,9 @@ struct AIRerankRequest : AIRequest
     /// The query the documents are ranked against.
     String query;
 
-    /// Documents to rank. Zero-copy views into the input `ColumnString`; the provider copies them into
-    /// the HTTP body. Response results reference these by their position in this vector.
-    VectorWithMemoryTracking<std::string_view> documents;
+    /// Documents to rank. Owned, so the request task may outlive the query that submitted it, e.g. after
+    /// the query is cancelled while waiting. Response results reference these by their position in this vector.
+    VectorWithMemoryTracking<String> documents;
 
     /// Model identifier as specified in the parameter map or the named collection (e.g. "rerank-v3.5").
     String model;

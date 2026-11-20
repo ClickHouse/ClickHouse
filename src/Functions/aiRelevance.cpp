@@ -234,10 +234,10 @@ public:
                 ai_rerank_request.initial_query_id = getContext()->getClientInfo().initial_query_id;
                 ai_rerank_request.documents.reserve(batch_end - batch_start);
                 for (size_t k = batch_start; k < batch_end; ++k)
-                    ai_rerank_request.documents.push_back(document_column.getDataAt(group.rows[k]));
+                    ai_rerank_request.documents.emplace_back(document_column.getDataAt(group.rows[k]));
 
-                /// Wait for this batch before releasing the input columns backing its document views.
-                auto ai_rerank_response = submitAIRequest(provider, std::move(ai_rerank_request), policy, quota_tracker).get();
+                auto request = submitAIRequest(provider, std::move(ai_rerank_request), policy, quota_tracker);
+                auto ai_rerank_response = waitForAIRequest(request, *quota_tracker);
                 if (!ai_rerank_response)
                 {
                     rows_skipped += batch_end - batch_start;
