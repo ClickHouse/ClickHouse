@@ -1290,8 +1290,7 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> takeNewConditionsOn(c
         [&](const ActionsDAG::Node * condition)
         {
             /// below the step a copy runs for each row, also for the rows that the other conditions reject, and folds a constant key without short-circuit
-            return cannotThrow(condition) && !isSensitiveToEvaluationCount(ActionsDAG::cloneSubDAG({condition}, false))
-                && ActionsDAG::getInputsReadByRepresentation(*condition).empty()
+            return cannotThrow(condition) && ActionsDAG::getInputsReadByRepresentation(*condition).empty()
                 && step.getConditionsCopiedBelow().insert(condition->result_name).second;
         });
 
@@ -1309,6 +1308,10 @@ static size_t tryCopyKeyConditionsBelow(QueryPlan::Node * filter_node, QueryPlan
         return 0;
 
     const auto & filter = assert_cast<const FilterStep &>(*filter_node->step);
+    /// with a copy below the step the filter runs on fewer rows
+    if (isSensitiveToEvaluationCount(filter.getExpression()))
+        return 0;
+
     auto key_conditions = takeNewConditionsOn(keysWithRejectedSubtotals(*step, filter), filter, *step);
     if (!key_conditions)
         return 0;

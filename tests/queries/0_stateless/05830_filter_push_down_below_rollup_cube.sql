@@ -91,7 +91,7 @@ SELECT k, count() AS c FROM (SELECT toNullable(toInt64(1)) AS k FROM numbers(10)
 SELECT k, count() AS c FROM (SELECT toInt64(1) AS k FROM numbers(0)) GROUP BY ROLLUP(k) HAVING intDiv(10, k - 1) > 0 ORDER BY ALL;
 SELECT k, count() AS c FROM (SELECT toInt64(1) AS k FROM numbers(0)) GROUP BY CUBE(k) HAVING intDiv(10, k - 1) > 0 ORDER BY ALL;
 
-SELECT 'only the conditions without side effects';
+SELECT 'not pushed: a filter with side effects';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k) HAVING id = 4 AND id + sleepEachRow(0) = 4) WHERE explain LIKE '%Condition:%';
 -- a copy below the step sleeps 4 seconds in one block and throws
 SELECT k, count() FROM (SELECT toUInt64(1) AS k FROM numbers(40)) GROUP BY ROLLUP(k) HAVING k = 1 AND k + sleepEachRow(0.1) = 1 ORDER BY ALL SETTINGS max_threads = 1, max_block_size = 1000;
