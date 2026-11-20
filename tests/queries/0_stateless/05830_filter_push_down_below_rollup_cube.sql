@@ -96,6 +96,9 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id, k, sum(v) FROM t_r
 -- a copy below the step sleeps 4 seconds in one block and throws
 SELECT k, count() FROM (SELECT toUInt64(1) AS k FROM numbers(40)) GROUP BY ROLLUP(k) HAVING k = 1 AND k + sleepEachRow(0.1) = 1 ORDER BY ALL SETTINGS max_threads = 1, max_block_size = 1000;
 SELECT k, count() FROM (SELECT toUInt64(1) AS k FROM numbers(40)) GROUP BY CUBE(k) HAVING k = 1 AND k + sleepEachRow(0.1) = 1 ORDER BY ALL SETTINGS max_threads = 1, max_block_size = 1000;
+-- the filter sleeps 4 seconds in the block of 40 groups and throws; a copy of `k = 1` below the step leaves 1 group
+SELECT k, count() FROM (SELECT number + 1 AS k FROM numbers(40)) GROUP BY ROLLUP(k) HAVING k + sleepEachRow(0.1) > 0 AND k = 1 ORDER BY ALL SETTINGS max_threads = 1, max_block_size = 1000, function_sleep_max_microseconds_per_block = 3000000; -- { serverError TOO_SLOW }
+SELECT k, count() FROM (SELECT number + 1 AS k FROM numbers(40)) GROUP BY CUBE(k) HAVING k + sleepEachRow(0.1) > 0 AND k = 1 ORDER BY ALL SETTINGS max_threads = 1, max_block_size = 1000, function_sleep_max_microseconds_per_block = 3000000; -- { serverError TOO_SLOW }
 
 SELECT 'not pushed: a condition that reads the representation of a key';
 -- below the aggregation the key is a constant, above it the key is a full column
