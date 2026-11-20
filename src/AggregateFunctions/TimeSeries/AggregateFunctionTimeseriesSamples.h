@@ -226,10 +226,11 @@ private:
     }
 
     /// Collapses each equal-timestamp run of a sorted buffer into one sample with `timeseriesMaxValueForDuplicateTimestamp`.
-    /// Samples before `from` are already unique.
-    static void deduplicateSorted(Buffer & buf, size_t from = 0)
+    /// Samples before `start_pos` are already unique.
+    static void deduplicateSorted(Buffer & buf, size_t start_pos = 0)
     {
-        size_t last_unique = from == 0 ? 0 : from - 1;
+        chassert(start_pos <= buf.size());
+        size_t last_unique = start_pos == 0 ? 0 : start_pos - 1;
         for (size_t i = last_unique + 1; i < buf.size(); ++i)
         {
             if (buf[i].first == buf[last_unique].first)
@@ -241,27 +242,35 @@ private:
             buf.resize(last_unique + 1);
     }
 
-    /// Sorts the tail `[unsorted_begin, size)` of a buffer whose prefix `[0, unsorted_begin)` is sorted and unique, and merges the tail into the prefix.
-    static void sortBuffer(Buffer & buf, size_t unsorted_begin)
+    /// Sorts the tail `[start_pos, size)` of a buffer whose prefix `[0, start_pos)` is sorted and unique, and merges the tail into the prefix.
+    static void sortBuffer(Buffer & buf, size_t start_pos = 0)
     {
-        ::sort(buf.begin() + unsorted_begin, buf.end(), lessByTimestamp);
-
-        /// A tail that lies entirely before the prefix, such as an older part read after a newer one, is moved in front of it.
-        if ((buf.end() - 1)->first < buf.begin()->first)
-        {
-            deduplicateSorted(buf, unsorted_begin);
-            std::rotate(buf.begin(), buf.begin() + unsorted_begin, buf.end());
-            return;
-        }
-
-        mergeSortedTail(buf, unsorted_begin);
+        chassert(start_pos <= buf.size());
+        ::sort(buf.begin() + start_pos, buf.end(), lessByTimestamp);
+        mergeSortedTail(buf, start_pos);
     }
 
     /// Merges the sorted tail `[tail_begin, size)` into the sorted and unique prefix `[0, tail_begin)` in place.
     static void mergeSortedTail(Buffer & buf, size_t tail_begin)
     {
-        std::inplace_merge(buf.begin(), buf.begin() + tail_begin, buf.end(), lessByTimestamp);
-        deduplicateSorted(buf);
+        chassert(tail_begin <= buf.size());
+        if (tail_begin == buf.size())
+            return;
+
+        /// A tail that lies entirely before the prefix, such as an older part read after a newer one, is deduplicated and moved in front of it.
+        if ((buf.end() - 1)->first < buf.begin()->first)
+        {
+            deduplicateSorted(buf, tail_begin);
+            std::rotate(buf.begin(), buf.begin() + tail_begin, buf.end());
+            return;
+        }
+
+        /// The prefix samples before `merge_begin` are less than every sample of the tail, so they keep their positions,
+        /// and the merge and the deduplication start at `merge_begin`.
+        auto tail = buf.begin() + tail_begin;
+        auto merge_begin = std::lower_bound(buf.begin(), tail, *tail, lessByTimestamp);
+        std::inplace_merge(merge_begin, tail, buf.end(), lessByTimestamp);
+        deduplicateSorted(buf, merge_begin - buf.begin());
     }
 
     /// Restores the invariant in place after out-of-order `add`s; no-op in the common (already sorted) case.
