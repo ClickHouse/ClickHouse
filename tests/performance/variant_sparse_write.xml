@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: JSON and Variant columns have no Iceberg equivalent. -->
     <create_query>CREATE TABLE t_sparse_write_json (json JSON) ENGINE = MergeTree ORDER BY tuple() SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1</create_query>
     <create_query>CREATE TABLE t_sparse_write_json_dst (json JSON) ENGINE = MergeTree ORDER BY tuple() SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1</create_query>
     <create_query>CREATE TABLE t_sparse_write_variant (v Variant(UInt64, String, Float64)) ENGINE = MergeTree ORDER BY tuple()</create_query>
