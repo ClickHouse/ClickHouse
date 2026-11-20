@@ -26,14 +26,16 @@ $CLICKHOUSE_CLIENT -q "DETACH DATABASE \`$DB\` SYNC"
 $CLICKHOUSE_CLIENT -q "ATTACH DATABASE \`$DB\`"
 
 # `prefer_localhost_replica = 0` makes the query connect to the local server, so the status request is sent.
+# `serialize_query_plan = 0`: the remote server resolves the tables of a serialized query plan without the access checks
+# of the interpreter, so the query would succeed and load the table regardless of the status request.
 # The initiator reports the `ACCESS_DENIED` of the remote server in different ways (e.g. with hedged requests, as a failed
 # connection), so only the failure is checked. Without the check, the table would be loaded before the query fails.
-$CLICKHOUSE_CLIENT --prefer_localhost_replica 0 -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}.rt" > /dev/null 2>&1 && echo "no rights: succeeded" || echo "no rights: failed"
+$CLICKHOUSE_CLIENT --prefer_localhost_replica 0 --serialize_query_plan 0 -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}.rt" > /dev/null 2>&1 && echo "no rights: succeeded" || echo "no rights: failed"
 $CLICKHOUSE_CLIENT -q "SELECT 'no rights', is_loaded FROM system.tables WHERE database = '$DB' AND name = 'r'"
 
 # With the right, the table is loaded.
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON \`$DB\`.r TO \`$USER\`"
-$CLICKHOUSE_CLIENT --prefer_localhost_replica 0 -q "SELECT 'granted', count() FROM ${CLICKHOUSE_DATABASE}.rt"
+$CLICKHOUSE_CLIENT --prefer_localhost_replica 0 --serialize_query_plan 0 -q "SELECT 'granted', count() FROM ${CLICKHOUSE_DATABASE}.rt"
 $CLICKHOUSE_CLIENT -q "SELECT 'granted', is_loaded FROM system.tables WHERE database = '$DB' AND name = 'r'"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE \`$DB\` SYNC"
