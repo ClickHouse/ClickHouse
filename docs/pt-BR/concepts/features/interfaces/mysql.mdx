@@ -7,8 +7,6 @@ title: 'Interface MySQL'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 O ClickHouse oferece suporte ao MySQL wire protocol. Isso permite que determinados clientes que não têm conectores nativos do ClickHouse usem o protocolo MySQL, e essa compatibilidade foi validada com as seguintes ferramentas de BI:
 
 * [Looker Studio](/pt-BR/integrations/connectors/data-visualization/looker-studio-and-clickhouse)
@@ -37,23 +35,55 @@ Se o seu caso de uso envolver uma ferramenta específica que não tenha um drive
 
 <br />
 
-<Image img="/images/interfaces/mysql0.webp" alt="Tela de credenciais - Prompt" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Tela de credenciais - Prompt](/images/interfaces/mysql0.webp)
+
+</Frame>
+
+</div>
 
 2. Altere o menu suspenso `Connect with` para `MySQL`.
 
 <br />
 
-<Image img="/images/interfaces/mysql1.webp" alt="Tela de credenciais - MySQL selecionado" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Tela de credenciais - MySQL selecionado](/images/interfaces/mysql1.webp)
+
+</Frame>
+
+</div>
 
 3. Ative o botão para habilitar a interface MySQL para este serviço específico. Isso vai expor a porta `3306` para esse serviço e exibir a tela de conexão MySQL, que inclui seu nome de usuário MySQL exclusivo. A senha será a mesma do usuário padrão do serviço.
 
 <br />
 
-<Image img="/images/interfaces/mysql2.webp" alt="Tela de credenciais - MySQL habilitado" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Tela de credenciais - MySQL habilitado](/images/interfaces/mysql2.webp)
+
+</Frame>
+
+</div>
 
 Copie a string de conexão MySQL exibida.
 
-<Image img="/images/interfaces/mysql3.webp" alt="Tela de credenciais - String de conexão" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Tela de credenciais - String de conexão](/images/interfaces/mysql3.webp)
+
+</Frame>
+
+</div>
 
 <div id="creating-multiple-mysql-users-in-clickhouse-cloud">
   ## Criando vários usuários MySQL no ClickHouse Cloud

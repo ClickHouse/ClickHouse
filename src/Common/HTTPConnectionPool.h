@@ -43,7 +43,7 @@ public:
 
     /// can throw Poco::Net::Exception, DB::NetException, DB::Exception
     virtual ConnectionPtr getConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time) = 0;
-    virtual const Metrics & getMetrics() const = 0;
+    [[nodiscard]] virtual const Metrics & getMetrics() const = 0;
     virtual ~IHTTPConnectionPoolForEndpoint() = default;
 
     IHTTPConnectionPoolForEndpoint(const IHTTPConnectionPoolForEndpoint &) = delete;
@@ -67,10 +67,10 @@ enum class HTTPConnectionGroupType : uint8_t
 /// which defines limits and metrics.
 enum class HTTPConnectionTransport : uint8_t
 {
-    /// Poco sockets: I/O blocks the calling thread.
-    Blocking,
-    /// Silk sockets: I/O suspends the calling fiber, a plain thread waits through a proxy fiber.
-    Cooperative,
+    /// Poco sockets: waiting for I/O in a fiber holds its scheduler thread, so the other fibers of the thread do not run.
+    FiberUnaware,
+    /// Silk sockets: waiting for I/O suspends the calling fiber, a plain thread waits through a proxy fiber.
+    FiberAware,
 };
 
 class HTTPConnectionPools
@@ -99,7 +99,7 @@ public:
         std::vector<uint64_t> storage;
         std::vector<uint64_t> http;
 
-        bool empty() const { return disk.empty() && storage.empty() && http.empty(); }
+        [[nodiscard]] bool empty() const { return disk.empty() && storage.empty() && http.empty(); }
     };
 
     HTTPConnectionPools(const HTTPConnectionPools &) = delete;
@@ -115,16 +115,16 @@ public:
     /// Whether the group holds at least `soft_limit` connections, in use and idle together. Above
     /// the soft limit the pool economizes connections: idle ones expire sooner, and readers that
     /// consult this stop keeping a connection open between reads.
-    bool isSoftLimitReached(HTTPConnectionGroupType type) const;
+    [[nodiscard]] bool isSoftLimitReached(HTTPConnectionGroupType type) const;
     void setSocketBufferSizes(SocketBufferSizes disk, SocketBufferSizes storage, SocketBufferSizes http, SocketBufferSizes amber);
-    SocketBufferSizes getSocketBufferSizes(HTTPConnectionGroupType type) const;
+    [[nodiscard]] SocketBufferSizes getSocketBufferSizes(HTTPConnectionGroupType type) const;
     void dropCache();
 
     IHTTPConnectionPoolForEndpoint::Ptr getPool(
         HTTPConnectionGroupType type,
         const Poco::URI & uri,
         const ProxyConfiguration & proxy_configuration,
-        HTTPConnectionTransport transport = HTTPConnectionTransport::Blocking);
+        HTTPConnectionTransport transport = HTTPConnectionTransport::FiberUnaware);
 
     /// Collect socket inodes of all tracked HTTP connections, grouped by pool type.
     /// Inodes are cached snapshots updated on connect, reconnect, and keep-alive store.
