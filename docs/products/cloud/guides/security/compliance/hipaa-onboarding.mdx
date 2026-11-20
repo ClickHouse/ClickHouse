@@ -102,14 +102,14 @@ If migration from standard to HIPAA compliant regions is required, follow these 
 
 1. Select the service to be migrated.
 2. Click **Backups** on the left.
-3. Before migrating the production service, test the process by taking a backup and restoring it to a HIPAA-compliant region using a throwaway service. Record the duration of the backup, restoration, and validation steps to estimate the expected downtime.
-4. Pause all writes to the service, including ClickPipes, ingestion jobs, and application writers. Downtime begins at this point.
-5. Create a new backup and wait for it to complete.
-6. In the **Backups** section, locate the new backup and select its three-dot menu.
-7. Select a HIPAA-compliant **Region type**, then restore the backup.
-8. After the restoration is complete, run queries to verify the schemas and record counts. Also verify users, grants, dictionaries, and ClickPipes.
-9. Update applications and ingestion sources to use the new service, then resume writes. Downtime ends once the writers are operating successfully.
-10. Retain the old service for 1–7 days after a successful cutover, then delete it. Deleting a service is irreversible and also deletes its backups.
+3. Test first: take a backup and restore it to a HIPAA compliant region on a throwaway service, recording how long each takes. This is your expected downtime.
+4. Stop all inserts into the service: ClickPipes, ingestion jobs, application writers. (downtime starts here)
+5. Run a backup and wait for it to complete.
+6. On the new backup, select the three dots on the left.
+7. Select the **Region type** to restore the backup to a HIPAA compliant region.
+8. Once the restoration is complete, run a few queries to verify the schemas and record counts are as expected. Also check users, grants, dictionaries and ClickPipes.
+9. Repoint applications and ingestion to the new service and resume inserts. (downtime ends here)
+10. Delete the old service after 1–7 days, not immediately, termination is irreversible and takes its backups with it.
 
 <Info>
 **Restrictions**
