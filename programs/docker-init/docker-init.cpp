@@ -98,7 +98,7 @@ int runCommand(const std::vector<std::string> & args)
 }
 
 /// Run a command, capture its stdout, return {exit_code, output_lines}.
-std::pair<int, std::vector<std::string>> captureCommand(const std::vector<std::string> & args)
+std::pair<int, std::vector<std::string>> captureCommand(const std::vector<std::string> & args, const std::string & stdin_path = {})
 {
     int pipefd[2];
     if (pipe(pipefd) < 0)
@@ -118,6 +118,19 @@ std::pair<int, std::vector<std::string>> captureCommand(const std::vector<std::s
         if (dup2(pipefd[1], STDOUT_FILENO) < 0)
             _exit(127);
         (void)close(pipefd[1]);
+
+        if (!stdin_path.empty())
+        {
+            const int fd = open(stdin_path.c_str(), O_RDONLY);
+            if (fd < 0)
+                _exit(127);
+            if (fd != STDIN_FILENO)
+            {
+                if (dup2(fd, STDIN_FILENO) < 0)
+                    _exit(127);
+                (void)close(fd);
+            }
+        }
 
         /// Suppress stderr to avoid noise from --try extractions.
         int devnull = open("/dev/null", O_WRONLY);
@@ -444,11 +457,12 @@ bool manageClickHouseUser(
             return s;
         };
 
+        /// Read through stdin: a path would also merge the `users.d` and `conf.d` next to the file.
         auto [c1, original] = captureCommand({
             g_clickhouse_binary, "extract-from-config",
-            "--config-file", abs_users_xml,
+            "--config-file", "/dev/stdin",
             "--key", "users.default", "--try",
-        });
+        }, abs_users_xml);
         auto [c2, processed] = captureCommand({
             g_clickhouse_binary, "extract-from-config",
             "--config-file", config_file,
