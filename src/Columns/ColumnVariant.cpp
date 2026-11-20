@@ -1996,15 +1996,25 @@ void ColumnVariant::validateState(bool allow_logical_error) const
         actual_variant_sizes[i] = variants[i]->size();
 
     VectorWithMemoryTracking<size_t> expected_variant_sizes(variants.size(), 0);
-    for (size_t i = 0; i != local_discriminators_data.size(); ++i)
+    const size_t num_rows = local_discriminators_data.size();
+    for (size_t i = 0; i != num_rows;)
     {
-        auto local_discr = local_discriminators_data[i];
-        if (local_discr != NULL_DISCRIMINATOR)
+        if (num_rows - i >= DISCRIMINATORS_BLOCK_SIZE && isBlockOfNullDiscriminators(local_discriminators_data.data() + i))
         {
-            checkDiscriminatorValue(local_discr, variants.size(), allow_logical_error);
-            ++expected_variant_sizes[local_discr];
-            if (offsets_data[i] >= actual_variant_sizes[local_discr])
-                throw Exception(allow_logical_error ? ErrorCodes::LOGICAL_ERROR : ErrorCodes::INCORRECT_DATA, "Offset at position {} is {}, but variant {} ({}) has size {}", i, offsets_data[i], static_cast<UInt32>(local_discr), variants[local_discr]->getName(), variants[local_discr]->size());
+            i += DISCRIMINATORS_BLOCK_SIZE;
+            continue;
+        }
+        size_t block_end = std::min(num_rows, i + DISCRIMINATORS_BLOCK_SIZE);
+        for (; i != block_end; ++i)
+        {
+            auto local_discr = local_discriminators_data[i];
+            if (local_discr != NULL_DISCRIMINATOR)
+            {
+                checkDiscriminatorValue(local_discr, variants.size(), allow_logical_error);
+                ++expected_variant_sizes[local_discr];
+                if (offsets_data[i] >= actual_variant_sizes[local_discr])
+                    throw Exception(allow_logical_error ? ErrorCodes::LOGICAL_ERROR : ErrorCodes::INCORRECT_DATA, "Offset at position {} is {}, but variant {} ({}) has size {}", i, offsets_data[i], static_cast<UInt32>(local_discr), variants[local_discr]->getName(), variants[local_discr]->size());
+            }
         }
     }
 

@@ -24,6 +24,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Columns/IColumn.h>
 #include <bitset>
+#include <cstring>
 
 namespace DB
 {
@@ -45,6 +46,56 @@ static void checkDiscriminatorValue(ColumnVariant::Discriminator discr, size_t n
             native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
             "Invalid discriminator value {} (num_variants = {})",
             static_cast<UInt32>(discr), num_variants);
+}
+
+/// Checks discriminators [begin, end) and adds the number of rows of each variant among them to variant_limits.
+static void countVariantRows(
+    const ColumnVariant::Discriminator * discriminators, size_t begin, size_t end, std::vector<size_t> & variant_limits, bool native_format)
+{
+    size_t i = begin;
+    while (i != end)
+    {
+        if (end - i >= ColumnVariant::DISCRIMINATORS_BLOCK_SIZE && ColumnVariant::isBlockOfNullDiscriminators(discriminators + i))
+        {
+            i += ColumnVariant::DISCRIMINATORS_BLOCK_SIZE;
+            continue;
+        }
+
+        size_t block_end = std::min(end, i + ColumnVariant::DISCRIMINATORS_BLOCK_SIZE);
+        for (; i != block_end; ++i)
+        {
+            ColumnVariant::Discriminator discr = discriminators[i];
+            if (discr != ColumnVariant::NULL_DISCRIMINATOR)
+            {
+                checkDiscriminatorValue(discr, variant_limits.size(), native_format);
+                ++variant_limits[discr];
+            }
+        }
+    }
+}
+
+/// Fills offsets [begin, end) for discriminators [begin, end): 0 for NULL, otherwise the next position
+/// in the variant, taken from variant_offsets and advanced.
+static void fillVariantOffsets(
+    const ColumnVariant::Discriminator * discriminators, ColumnVariant::Offset * offsets, size_t begin, size_t end, std::vector<size_t> & variant_offsets)
+{
+    size_t i = begin;
+    while (i != end)
+    {
+        if (end - i >= ColumnVariant::DISCRIMINATORS_BLOCK_SIZE && ColumnVariant::isBlockOfNullDiscriminators(discriminators + i))
+        {
+            memset(offsets + i, 0, ColumnVariant::DISCRIMINATORS_BLOCK_SIZE * sizeof(ColumnVariant::Offset));
+            i += ColumnVariant::DISCRIMINATORS_BLOCK_SIZE;
+            continue;
+        }
+
+        size_t block_end = std::min(end, i + ColumnVariant::DISCRIMINATORS_BLOCK_SIZE);
+        for (; i != block_end; ++i)
+        {
+            ColumnVariant::Discriminator discr = discriminators[i];
+            offsets[i] = discr == ColumnVariant::NULL_DISCRIMINATOR ? 0 : variant_offsets[discr]++;
+        }
+    }
 }
 
 UInt128 SerializationVariant::getHash(const VariantSerializations & variant_serializations_, const String & variant_name_)
@@ -618,17 +669,8 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     if (variant_limits.empty())
     {
         variant_limits.resize(variant_serializations.size(), 0);
-        auto & discriminators_data = col.getLocalDiscriminators();
-
-        for (size_t i = discriminators_offset ; i != discriminators_data.size(); ++i)
-        {
-            ColumnVariant::Discriminator discr = discriminators_data[i];
-            if (discr != ColumnVariant::NULL_DISCRIMINATOR)
-            {
-                checkDiscriminatorValue(discr, variant_limits.size(), settings.native_format);
-                ++variant_limits[discr];
-            }
-        }
+        const auto & discriminators_data = col.getLocalDiscriminators();
+        countVariantRows(discriminators_data.data(), discriminators_offset, discriminators_data.size(), variant_limits, settings.native_format);
     }
 
     /// Current variant sizes are the start offsets for the values read in the current range.
@@ -682,20 +724,18 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     else if (num_non_empty_variants == 1 && variant_limits[last_non_empty_discr] == num_new_offsets)
     {
         size_t first_offset = variant_offsets[last_non_empty_discr];
+        size_t offsets_start = offsets.size();
+        offsets.resize(offsets_start + num_new_offsets);
+        auto * new_offsets = offsets.data() + offsets_start;
         for (size_t i = 0; i != num_new_offsets; ++i)
-            offsets.push_back(first_offset + i);
+            new_offsets[i] = first_offset + i;
     }
     /// Otherwise iterate through discriminators and fill offsets accordingly.
     else
     {
-        for (size_t i = offsets.size(); i != discriminators_data.size(); ++i)
-        {
-            ColumnVariant::Discriminator discr = discriminators_data[i];
-            if (discr == ColumnVariant::NULL_DISCRIMINATOR)
-                offsets.emplace_back();
-            else
-                offsets.push_back(variant_offsets[discr]++);
-        }
+        size_t offsets_start = offsets.size();
+        offsets.resize(discriminators_data.size());
+        fillVariantOffsets(discriminators_data.data(), offsets.data(), offsets_start, discriminators_data.size(), variant_offsets);
     }
 
     col.validateState(/*allow_logical_error=*/ !settings.native_format);
@@ -746,15 +786,7 @@ std::vector<size_t> SerializationVariant::deserializeCompactDiscriminators(
                 throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
                     "Cannot read all discriminators in Variant granule. Expected: {}, got: {}", limit_in_granule, num_read);
 
-            for (size_t i = start; i != discriminators_data.size(); ++i)
-            {
-                ColumnVariant::Discriminator discr = discriminators_data[i];
-                if (discr != ColumnVariant::NULL_DISCRIMINATOR)
-                {
-                    checkDiscriminatorValue(discr, variant_limits.size(), settings.native_format);
-                    ++variant_limits[discr];
-                }
-            }
+            countVariantRows(discriminators_data.data(), start, discriminators_data.size(), variant_limits, settings.native_format);
         }
 
         state.remaining_rows_in_granule -= limit_in_granule;
