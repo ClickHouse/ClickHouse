@@ -693,14 +693,14 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
                 auto * out = column.get();
 
                 getItemsShortCircuitImpl<ValueType, false>(
-                    attribute, keys_object, [&](const size_t, const Array & value, bool) { out->insert(value); }, default_mask);
+                    attribute, keys_object, [&](const size_t, const ColumnAttributeValue<Array> & value, bool) { value.insertInto(*out); }, default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, Map>)
             {
                 auto * out = column.get();
 
                 getItemsShortCircuitImpl<ValueType, false>(
-                    attribute, keys_object, [&](const size_t, const Map & value, bool) { out->insert(value); }, default_mask);
+                    attribute, keys_object, [&](const size_t, const ColumnAttributeValue<Map> & value, bool) { value.insertInto(*out); }, default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, Object>)
             {
@@ -774,7 +774,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
                 getItemsImpl<ValueType, false>(
                     attribute,
                     keys_object,
-                    [&](const size_t, const Array & value, bool) { out->insert(value); },
+                    [&](const size_t, const ColumnAttributeValue<Array> & value, bool) { value.insertInto(*out); },
                     default_value_extractor);
             }
             else if constexpr (std::is_same_v<ValueType, Map>)
@@ -784,7 +784,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
                 getItemsImpl<ValueType, false>(
                     attribute,
                     keys_object,
-                    [&](const size_t, const Map & value, bool) { out->insert(value); },
+                    [&](const size_t, const ColumnAttributeValue<Map> & value, bool) { value.insertInto(*out); },
                     default_value_extractor);
             }
             else if constexpr (std::is_same_v<ValueType, Object>)

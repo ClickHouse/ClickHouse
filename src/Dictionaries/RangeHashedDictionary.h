@@ -241,7 +241,7 @@ private:
     static Attribute createAttribute(const DictionaryAttribute & dictionary_attribute);
 
     template <typename ValueType>
-    using ValueSetterFunc = std::function<void(size_t, const ValueType &, bool)>;
+    using ValueSetterFunc = std::function<void(size_t, const AttributeLookupValue<ValueType> &, bool)>;
 
     template <typename ValueType, bool is_nullable, typename DefaultValueExtractor>
     void getItemsImpl(
@@ -413,9 +413,9 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
             getItemsInternalImpl<ValueType, false>(
                 attribute,
                 key_to_index,
-                [&](size_t, const Array & value, bool)
+                [&](size_t, const ColumnAttributeValue<Array> & value, bool)
                 {
-                    out->insert(value);
+                    value.insertInto(*out);
                 });
         }
         else if constexpr (std::is_same_v<ValueType, Map>)
@@ -425,9 +425,9 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
             getItemsInternalImpl<ValueType, false>(
                 attribute,
                 key_to_index,
-                [&](size_t, const Map & value, bool)
+                [&](size_t, const ColumnAttributeValue<Map> & value, bool)
                 {
-                    out->insert(value);
+                    value.insertInto(*out);
                 });
         }
         else if constexpr (std::is_same_v<ValueType, Object>)
@@ -833,7 +833,7 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsInternalImpl(
             );
         }
 
-        AttributeType value = container[container_index];
+        AttributeLookupValue<AttributeType> value = container[container_index];
 
         if constexpr (is_nullable)
         {

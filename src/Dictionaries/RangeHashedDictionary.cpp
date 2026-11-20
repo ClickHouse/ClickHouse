@@ -62,14 +62,14 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                 auto * out = column.get();
 
                 getItemsShortCircuitImpl<ValueType, false>(
-                    attribute, modified_key_columns, [&](size_t, const Array & value, bool) { out->insert(value); }, default_mask);
+                    attribute, modified_key_columns, [&](size_t, const ColumnAttributeValue<Array> & value, bool) { value.insertInto(*out); }, default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, Map>)
             {
                 auto * out = column.get();
 
                 getItemsShortCircuitImpl<ValueType, false>(
-                    attribute, modified_key_columns, [&](size_t, const Map & value, bool) { out->insert(value); }, default_mask);
+                    attribute, modified_key_columns, [&](size_t, const ColumnAttributeValue<Map> & value, bool) { value.insertInto(*out); }, default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, Object>)
             {
@@ -143,9 +143,9 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                 getItemsImpl<ValueType, false>(
                     attribute,
                     modified_key_columns,
-                    [&](size_t, const Array & value, bool)
+                    [&](size_t, const ColumnAttributeValue<Array> & value, bool)
                     {
-                        out->insert(value);
+                        value.insertInto(*out);
                     },
                     default_value_extractor);
             }
@@ -156,9 +156,9 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                 getItemsImpl<ValueType, false>(
                     attribute,
                     modified_key_columns,
-                    [&](size_t, const Map & value, bool)
+                    [&](size_t, const ColumnAttributeValue<Map> & value, bool)
                     {
-                        out->insert(value);
+                        value.insertInto(*out);
                     },
                     default_value_extractor);
             }

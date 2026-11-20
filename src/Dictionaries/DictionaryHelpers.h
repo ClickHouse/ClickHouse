@@ -354,6 +354,30 @@ public:
 template <typename Value>
 constexpr bool is_column_attribute_value = std::is_same_v<Value, Array> || std::is_same_v<Value, Map>;
 
+/// Passed to lookup callbacks for `Array` and `Map` attributes: a row of the stored column, or a default value.
+/// Copying the row with `insertFrom` avoids building a `Field` for every found key.
+template <typename Value>
+struct ColumnAttributeValue
+{
+    ColumnAttributeValue(const IColumn & column_, size_t row_) : column(&column_), row(row_) {}
+    ColumnAttributeValue(Value default_value_) : default_value(std::move(default_value_)) {} /// NOLINT(google-explicit-constructor)
+
+    void insertInto(IColumn & out) const
+    {
+        if (column)
+            out.insertFrom(*column, row);
+        else
+            out.insert(default_value);
+    }
+
+    const IColumn * column = nullptr;
+    size_t row = 0;
+    Value default_value;
+};
+
+template <typename Value>
+using AttributeLookupValue = std::conditional_t<is_column_attribute_value<Value>, ColumnAttributeValue<Value>, Value>;
+
 /// Stores `Array` and `Map` attribute values in one column. Keeping one `Field` per row costs a heap
 /// allocation per row, and each jemalloc slab of such small allocations needs a metadata header that is never freed.
 template <typename Value>
@@ -367,7 +391,7 @@ public:
 
     size_t size() const { return column->size(); }
     size_t capacity() const { return column->capacity(); }
-    Value operator[](size_t index) const { return (*column)[index].template safeGet<Value>(); }
+    ColumnAttributeValue<Value> operator[](size_t index) const { return {*column, index}; }
     void insert(const Field & value) { column->insert(value); }
     size_t allocatedBytes() const { return column->allocatedBytes(); }
 
