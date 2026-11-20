@@ -2474,6 +2474,12 @@ void writeColumnChunkBody(
                     s.primitive_column));
             break;
 
+        case TypeIndex::MacAddress:
+            writeColumnImpl<Int64Type>(
+                s, options, out, ConverterNumeric<ColumnVector<MacAddress>, Int64, UInt64>(
+                    s.primitive_column));
+            break;
+
         case TypeIndex::String:
             if (s.is_geometry)
                 writeColumnImpl<ByteArrayType>(

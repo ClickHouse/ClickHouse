@@ -1,0 +1,33 @@
+Arrow round-trip, native writer/reader
+1	00:1a:2b:3c:4d:5e
+2	ff:ff:ff:ff:ff:ff
+3	00:00:00:00:00:00
+Arrow round-trip, Apache Arrow library
+1	00:1a:2b:3c:4d:5e
+2	ff:ff:ff:ff:ff:ff
+3	00:00:00:00:00:00
+Parquet round-trip
+1	00:1a:2b:3c:4d:5e
+2	ff:ff:ff:ff:ff:ff
+3	00:00:00:00:00:00
+ORC round-trip
+1	00:1a:2b:3c:4d:5e
+2	ff:ff:ff:ff:ff:ff
+3	00:00:00:00:00:00
+Avro round-trip
+1	00:1a:2b:3c:4d:5e
+2	ff:ff:ff:ff:ff:ff
+3	00:00:00:00:00:00
+MsgPack round-trip
+1	00:1a:2b:3c:4d:5e
+2	ff:ff:ff:ff:ff:ff
+3	00:00:00:00:00:00
+BSONEachRow round-trip
+1	00:1a:2b:3c:4d:5e
+2	ff:ff:ff:ff:ff:ff
+3	00:00:00:00:00:00
+JSONExtract
+00:1a:2b:3c:4d:5e
+00:00:00:00:00:00
+generateRandom produces varied values that keep the 48-bit invariant
+1000	1	1
