@@ -1,4 +1,5 @@
 #include <DataTypes/Utils.h>
+#include <Columns/IColumn.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -392,6 +393,12 @@ MutableColumnPtr createColumnWithInsertedDefault(const IDataType & type)
     auto column = type.createColumn();
     type.insertDefaultInto(*column);
     return column;
+}
+
+bool isInsertedDefault(const Field & value, const IDataType & type)
+{
+    auto column = createColumnWithInsertedDefault(type);
+    return column->tryInsert(value) && column->compareAt(0, 1, *column, /*nan_direction_hint=*/ 1) == 0;
 }
 
 }

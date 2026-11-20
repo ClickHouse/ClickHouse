@@ -1684,8 +1684,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                         return false;
                 }
                 /// A missing key reads the inserted default, e.g. the first value of each `Enum` in a `Tuple`.
-                else if (tryConvertFieldToType(value_field, *map_value_type, value_type.get(), {}, /* strict */ true)
-                    == (*createColumnWithInsertedDefault(*map_value_type))[0])
+                else if (isInsertedDefault(
+                             tryConvertFieldToType(value_field, *map_value_type, value_type.get(), {}, /* strict */ true), *map_value_type))
                     return false;
             }
 

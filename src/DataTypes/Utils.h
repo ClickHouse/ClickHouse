@@ -9,6 +9,10 @@ namespace DB
 /// One row of the value `insertDefaultInto` inserts, which a missing `Map` key reads; for `Date32` it is not `getDefault`.
 MutableColumnPtr createColumnWithInsertedDefault(const IDataType & type);
 
+/// Whether `value`, a `Field` of `type`, is the value `insertDefaultInto` inserts, compared as column values
+/// (a `Bool` column reads back `UInt64` while a converted constant is a `Bool` field).
+bool isInsertedDefault(const Field & value, const IDataType & type);
+
 /// The default of `type` as a `ColumnType::ValueType`; for an `Enum` it is the first value, not zero.
 template <typename ColumnType>
 typename ColumnType::ValueType getTypeDefaultValue(const IDataType & type)
