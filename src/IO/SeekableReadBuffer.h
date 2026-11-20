@@ -53,10 +53,10 @@ public:
     /// used in CachedOnDiskReadBufferFromFile from multiple threads (because
     /// it first releases the buffer, and then do logging, and so other thread
     /// can already call seek() which will lead to data-race).
-    [[nodiscard]] virtual size_t getFileOffsetOfBufferEnd() const;
+    virtual size_t getFileOffsetOfBufferEnd() const;
 
     /// If true, setReadUntilPosition() guarantees that eof will be reported at the given position.
-    [[nodiscard]] virtual bool supportsRightBoundedReads() const { return false; }
+    virtual bool supportsRightBoundedReads() const { return false; }
 
     /// Returns true if seek() actually works, false if seek() will always throw (or make subsequent
     /// nextImpl() calls throw).
@@ -110,14 +110,10 @@ public:
     /// any memory copy.
     ///
     /// Thread safety: same rules as readBigAt — multiple concurrent calls are allowed.
-    [[nodiscard]] virtual VectorWithMemoryTracking<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const;
+    virtual VectorWithMemoryTracking<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const;
 
     /// Whether readBigAtRetainCells is available. Only true when an in-memory page cache is in use.
-    [[nodiscard]] virtual bool supportsReadAtRetainCells() const { return false; }
-
-    /// Whether reads go through the userspace page cache, which reads whole cache cells
-    /// (page_cache_block_size) rather than only the requested range. Wrappers forward it.
-    [[nodiscard]] virtual bool readsThroughPageCache() const { return false; }
+    virtual bool supportsReadAtRetainCells() const { return false; }
 
     /// We do some tricks to avoid seek cost. E.g we read more data and than ignore it (see remote_read_min_bytes_for_seek).
     /// Sometimes however seek is basically free because underlying read buffer wasn't yet initialised (or re-initialised after reset).
@@ -132,7 +128,7 @@ public:
 
 using SeekableReadBufferPtr = std::shared_ptr<SeekableReadBuffer>;
 
-/// Wraps a reference to a SeekableReadBuffer into a unique pointer to SeekableReadBuffer.
+/// Wraps a reference to a SeekableReadBuffer into an unique pointer to SeekableReadBuffer.
 /// This function is like wrapReadBufferReference() but for SeekableReadBuffer.
 std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferReference(SeekableReadBuffer & ref);
 std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferPointer(SeekableReadBufferPtr ptr);
@@ -140,8 +136,5 @@ std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferPointer(SeekableReadBu
 /// Helper for implementing readBigAt().
 /// Updates *out_bytes_copied after each call to the callback, as well as at the end.
 void copyFromIStreamWithProgressCallback(std::istream & istr, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, size_t * out_bytes_copied, bool * out_cancelled = nullptr);
-
-/// The same for a ReadBuffer source.
-void copyFromReadBufferWithProgressCallback(ReadBuffer & in, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, size_t * out_bytes_copied, bool * out_cancelled = nullptr);
 
 }

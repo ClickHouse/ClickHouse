@@ -6,6 +6,8 @@ title: 'Integrating Google Cloud Storage with ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
+
 The GCS ClickPipe provides a fully-managed and resilient way to ingest data from Google Cloud Storage (GCS). It supports both **one-time** and **continuous ingestion** with exactly-once semantics.
 
 GCS ClickPipes can be deployed and managed manually using the ClickPipes UI, as well as programmatically using [OpenAPI](/integrations/clickpipes/programmatic-access/openapi) and [Terraform](/integrations/clickpipes/programmatic-access/terraform).
@@ -43,7 +45,7 @@ See [Configuring unordered mode for continuous ingestion](/integrations/clickpip
 It's possible to configure a GCS ClickPipe to ingest files that don't have an implicit order by setting up a [Google Cloud Pub/Sub](https://docs.cloud.google.com/storage/docs/pubsub-notifications) subscription that receives notifications from the bucket. This allows ClickPipes to listen for object created events and ingest any new files regardless of the file naming convention.
 
 <Note>
-Unordered mode is **not** supported for public buckets. It requires service account authentication, using either an uploaded key or GCP workload identity, and a [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) subscription connected to the bucket.
+Unordered mode is **not** supported for public buckets. It requires **Service Account** authentication and a [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) subscription connected to the bucket.
 </Note>
 
 In this mode, the GCS ClickPipe does an initial load of **all files** in the selected path, and then listens for `OBJECT_FINALIZE` notifications via the Pub/Sub subscription that match the specified path. Any message for a previously seen file, file not matching the path, or event of a different type will be **ignored**. To ingest only files delivered through the subscription, enable **Skip initial load**. When enabled, ClickPipes skips the initial scan of existing files in the selected path and processes only files delivered through the Pub/Sub subscription.
@@ -115,23 +117,11 @@ When using [unordered mode](#continuous-ingestion-any-order), the service accoun
 
 Service Account authentication is required when using [unordered mode](#continuous-ingestion-any-order) with Pub/Sub notifications. Select **Service Account** as the authentication method and upload the service account key JSON file.
 
-#### GCP workload identity (Beta) {#gcp-workload-identity}
-
-Follow the [GCP workload identity guide](/integrations/clickpipes/security/gcp-workload-identity) to retrieve the managed service account from the ClickPipes service context. Grant it `roles/storage.objectViewer` on the source bucket, and create the pipe with `SERVICE_ACCOUNT_WORKLOAD_IDENTITY` authentication. For unordered ingestion, also grant it `roles/pubsub.subscriber` and `roles/pubsub.viewer` on the existing notification subscription and use its fully-qualified name: `projects/<project-id>/subscriptions/<subscription-id>`.
-
 #### HMAC credentials {#hmac-credentials}
 
 To use [HMAC keys](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) to authenticate, choose `Credentials` under **Authentication method** when setting up your ClickPipe connection. Then, provide the access key (e.g., `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) and secret key (e.g., `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) under `Access key` and `Secret key`, respectively.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![HMAC credentials for GCS ClickPipes](/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp" alt="HMAC credentials for GCS ClickPipes" size="lg" border/>
 
 Follow [this guide](/integrations/connectors/data-sources/gcs#create-a-service-account-hmac-key-and-secret) to create a service account with an HMAC key.
 
@@ -165,15 +155,7 @@ ClickPipes provides sensible defaults that cover the requirements of most use ca
 | `Parallel view processing`         | false         | Whether to enable pushing to attached views [concurrently instead of sequentially](/reference/settings/session-settings/parallel#parallel_view_processing). |
 | `Use cluster function`             | true          | Whether to process files in parallel across multiple nodes. |
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Advanced settings for ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Advanced settings for ClickPipes" size="lg" border/>
 
 ### Scaling {#scaling}
 

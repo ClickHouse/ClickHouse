@@ -146,7 +146,7 @@ void ASTUpdateQuery::readJSON(const Poco::JSON::Object & json)
                 "'partition' and 'partitions' cannot be set at the same time during AST JSON deserialization");
         children.push_back(partitions);
     }
-    predicate = r.readExpressionChild("predicate");
+    predicate = r.readChild("predicate");
     if (!predicate)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`Update` AST requires 'predicate' during AST JSON deserialization");

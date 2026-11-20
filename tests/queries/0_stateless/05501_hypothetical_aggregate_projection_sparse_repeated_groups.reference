@@ -1,9 +1,0 @@
-parts before the merge: 21
-Baseline (after PK + partition + existing indexes):
-marks: 9
-With p (aggregate projection, hypothetical):
-marks: 12
-marks_span: 7 to 16
-verdict: too close to call
-real projection part: Wide, 500 rows, 9 marks
-real: 9 marks

@@ -1,7 +1,7 @@
 PROJECT_NAME = "ClickHouse"
 PROJECT_SLUG = "clickhouse"
 MAIN_BRANCH = "master"
-PRAKTIKA_BASE_VENV = "praktika-runtime-0.0.1"
+PRAKTIKA_BASE_VENV = "praktika-runtime-0.1.8"
 
 S3_BUCKET_NAME = "clickhouse-builds"
 S3_REPORT_BUCKET_NAME = "clickhouse-test-reports"
@@ -25,8 +25,6 @@ DOCKER_BUILD_AMD_RUNS_ON = RunnerLabels.AMD_TINY
 
 CACHE_S3_PATH = f"{S3_BUCKET_NAME}/ci_ch_cache"
 ENABLE_SUBMODULE_CACHE = True
-ENABLE_S3_REPO_SNAPSHOT = True
-ENABLE_PR_EPHEMERAL_MERGE_COMMIT = True
 S3_REPORT_BUCKET = S3_REPORT_BUCKET_NAME
 S3_BUCKET_TO_HTTP_ENDPOINT = {
     S3_BUCKET_NAME: S3_BUCKET_HTTP_ENDPOINT,
@@ -68,6 +66,7 @@ DEFAULT_LOCAL_TEST_WORKFLOW = "pull_request.py"
 READY_FOR_MERGE_CUSTOM_STATUS_NAME = "Mergeable Check"
 
 CI_DB_READ_USER = "play"
+CI_DB_READ_URL = "https://play.clickhouse.com"
 
 EVENT_FEED_S3_PATH = "clickhouse-test-reports-private/slack_feed"
 CLOUD_INFRASTRUCTURE_CONFIG_PATH = "./ci/infrastructure/projects.py"

@@ -22,6 +22,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace
@@ -34,18 +35,24 @@ class FunctionIsNotNull final : public IFunction
 public:
     static constexpr auto name = "isNotNull";
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionIsNotNull>();
+        return std::make_shared<FunctionIsNotNull>(context->getSettingsRef()[Setting::allow_experimental_analyzer]);
     }
 
-    [[nodiscard]] std::string getName() const override
+    explicit FunctionIsNotNull(bool use_analyzer_) : use_analyzer(use_analyzer_) {}
+
+    std::string getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
+        /// (column IS NULL) triggers a bug in old analyzer when it is replaced to constant.
+        if (!use_analyzer)
+            return nullptr;
+
         /// SELECT arrayFilter(x -> (x IS NOT NULL), []) can trigger `defaultImplementationForNothing()`
         /// which will give return type Nothing. We cannot create constant column of type Nothing so return nullptr.
         if (isNothing(result_type))
@@ -61,19 +68,19 @@ public:
         return result_type->createColumnConst(1, UInt8(1));
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        return "(Any) -> UInt8";
+        return std::make_shared<DataTypeUInt8>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & elem = arguments[0];
 
@@ -116,7 +123,7 @@ public:
     }
 
 #if USE_EMBEDDED_COMPILER
-    [[nodiscard]] bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
+    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
 
     llvm::Value *
     compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const override
@@ -140,6 +147,7 @@ private:
             res[i] = !null_map[i];
     }
 
+    bool use_analyzer;
 };
 }
 

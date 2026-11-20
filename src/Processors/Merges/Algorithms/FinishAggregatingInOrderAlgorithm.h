@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Core/SortDescription.h>
@@ -47,12 +46,12 @@ public:
         size_t max_block_size_bytes_,
         size_t limit_hint_ = 0);
 
-    [[nodiscard]] const char * getName() const override { return "FinishAggregatingInOrderAlgorithm"; }
+    const char * getName() const override { return "FinishAggregatingInOrderAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
-    [[nodiscard]] MergedStats getMergedStats() const override { return {.bytes = accumulated_bytes, .rows = accumulated_rows, .blocks = chunk_num}; }
+    MergedStats getMergedStats() const override { return {.bytes = accumulated_bytes, .rows = accumulated_rows, .blocks = chunk_num}; }
 
 private:
     Chunk prepareToMerge();
@@ -77,7 +76,7 @@ private:
         State(const Chunk & chunk, const SortDescriptionWithPositions & description, Int64 total_bytes_);
         State() = default;
 
-        [[nodiscard]] bool isValid() const { return current_row < num_rows; }
+        bool isValid() const { return current_row < num_rows; }
     };
 
     size_t num_inputs;
@@ -88,10 +87,10 @@ private:
 
     Inputs current_inputs;
 
-    VectorWithMemoryTracking<State> states;
-    VectorWithMemoryTracking<size_t> inputs_to_update;
+    std::vector<State> states;
+    std::vector<size_t> inputs_to_update;
 
-    Chunks chunks;
+    std::vector<Chunk> chunks;
     UInt64 chunk_num = 0;
     size_t accumulated_rows = 0;
     size_t accumulated_bytes = 0;

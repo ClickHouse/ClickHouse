@@ -1,0 +1,147 @@
+---
+slug: /native-protocol/client
+title: '原生客户端数据包'
+description: '原生协议客户端'
+doc_type: '参考'
+keywords: ['客户端数据包', '原生协议客户端', '协议数据包', '客户端通信', 'TCP 客户端']
+---
+
+| 值 | 名称                | 描述      |
+| - | ----------------- | ------- |
+| 0 | [Hello](#hello)   | 开始客户端握手 |
+| 1 | [Query](#query)   | 查询请求    |
+| 2 | [Data](#data)     | 含数据的块   |
+| 3 | [Cancel](#cancel) | 取消查询    |
+| 4 | [Ping](#ping)     | Ping 请求 |
+| 5 | TableStatus       | 表状态请求   |
+
+`Data` 包可以压缩。
+
+<div id="hello">
+  ## Hello
+</div>
+
+例如，我们使用支持 `54451` 协议版本的 `Go Client` v1.10，
+并希望使用 `default` 用户和 `secret` 密码连接到 `default` 数据库。
+
+| 字段                   | 类型      | 值             | 描述       |
+| -------------------- | ------- | ------------- | -------- |
+| client&#95;name      | String  | `"Go Client"` | 客户端实现名称  |
+| version&#95;major    | UVarInt | `1`           | 客户端主版本号  |
+| version&#95;minor    | UVarInt | `10`          | 客户端次版本号  |
+| protocol&#95;version | UVarInt | `54451`       | TCP 协议版本 |
+| database             | String  | `"default"`   | 数据库名称    |
+| username             | String  | `"default"`   | 用户名      |
+| password             | String  | `"secret"`    | 密码       |
+
+<div id="protocol-version">
+  ### 协议版本
+</div>
+
+协议版本指客户端的 TCP 协议版本。
+
+通常它等于最新的兼容服务器修订版本，但
+不要将其与后者混为一谈。
+
+<div id="defaults">
+  ### 默认值
+</div>
+
+所有值都应**显式设置**，服务端没有默认值。
+在客户端，默认使用 `"default"` 数据库、`"default"` 用户名和 `""` (空字符串) 密码。
+
+<div id="query">
+  ## 查询
+</div>
+
+| 字段              | 类型                    | 值          | 描述              |
+| --------------- | --------------------- | ---------- | --------------- |
+| query&#95;id    | String                | `1ff-a123` | 查询 ID，可为 UUIDv4 |
+| client&#95;info | [客户端信息](#client-info) | 见类型        | 客户端信息           |
+| settings        | [设置](#settings)       | 见类型        | 设置列表            |
+| secret          | String                | `secret`   | 服务器间共享密钥        |
+| [stage](#stage) | UVarInt               | `2`        | 执行至查询阶段         |
+| compression     | UVarInt               | `0`        | 禁用=0，启用=1       |
+| body            | String                | `SELECT 1` | 查询文本            |
+
+<div id="client-info">
+  ### 客户端信息
+</div>
+
+| 字段                       | 类型              | 描述                           |
+| ------------------------ | --------------- | ---------------------------- |
+| query&#95;kind           | byte            | None=0，Initial=1，Secondary=2 |
+| initial&#95;user         | String          | 初始用户                         |
+| initial&#95;query&#95;id | String          | 初始查询 ID                      |
+| initial&#95;address      | String          | 初始地址                         |
+| initial&#95;time         | Int64           | 初始时间                         |
+| interface                | byte            | TCP=1，HTTP=2                 |
+| os&#95;user              | String          | 操作系统用户                       |
+| client&#95;hostname      | String          | 客户端主机名                       |
+| client&#95;name          | String          | 客户端名称                        |
+| version&#95;major        | UVarInt         | 客户端主版本号                      |
+| version&#95;minor        | UVarInt         | 客户端次版本号                      |
+| protocol&#95;version     | UVarInt         | 客户端协议版本                      |
+| quota&#95;key            | String          | 配额键                          |
+| distributed&#95;depth    | UVarInt         | Distributed 深度               |
+| version&#95;patch        | UVarInt         | 客户端补丁版本                      |
+| otel                     | Bool            | 包含 trace 字段                  |
+| trace&#95;id             | FixedString(16) | trace ID                     |
+| span&#95;id              | FixedString(8)  | span ID                      |
+| trace&#95;state          | String          | trace 状态                     |
+| trace&#95;flags          | Byte            | trace 标志                     |
+
+<div id="settings">
+  ### 设置
+</div>
+
+| 字段        | 类型     | 值                 | 描述     |
+| --------- | ------ | ----------------- | ------ |
+| key       | String | `send_logs_level` | 设置的键名  |
+| value     | String | `trace`           | 设置的值   |
+| important | Bool   | `true`            | 是否可以忽略 |
+
+编码为列表，空的 key 和 value 表示列表结束。
+
+<div id="stage">
+  ### 阶段
+</div>
+
+| 值 | 名称                 | 描述              |
+| - | ------------------ | --------------- |
+| 0 | FetchColumns       | 仅拉取列类型          |
+| 1 | WithMergeableState | 到可合并状态为止        |
+| 2 | Complete           | 直到完全完成 (应为默认值)  |
+
+<div id="data">
+  ## Data
+</div>
+
+| 字段      | 类型                  | 描述      |
+| ------- | ------------------- | ------- |
+| info    | BlockInfo           | 编码后的块信息 |
+| columns | UVarInt             | 列数      |
+| rows    | UVarInt             | 行数      |
+| columns | [[]Column](#column) | 带数据的列   |
+
+<div id="column">
+  ### 列
+</div>
+
+| 字段   | 类型     | 值               | 描述  |
+| ---- | ------ | --------------- | --- |
+| name | String | `foo`           | 列名  |
+| type | String | `DateTime64(9)` | 列类型 |
+| data | bytes  | ~               | 列数据 |
+
+<div id="cancel">
+  ## Cancel
+</div>
+
+无数据包主体。服务器应取消该查询。
+
+<div id="ping">
+  ## Ping
+</div>
+
+无数据包主体。服务器应[返回 pong](/zh/resources/develop-contribute/native-protocol/server#pong)。
