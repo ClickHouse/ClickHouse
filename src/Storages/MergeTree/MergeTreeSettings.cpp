@@ -2522,7 +2522,7 @@ identifies a row. If enabled:
 Disable it only while some replicas still run an older version: replicas with different values write different merged parts
 and apply lightweight updates to different rows.
 )", 0, \
-        {"26.11", false, true, "New setting. Merges persist `_block_number` together with `_block_offset`, and `_block_offset` stored without `_block_number` in a part of several blocks is ignored. The previous value keeps the old behavior for rolling upgrades."}) \
+        {"26.12", false, true, "New setting. Merges persist `_block_number` together with `_block_offset`, and `_block_offset` stored without `_block_number` in a part of several blocks is ignored. The previous value keeps the old behavior for rolling upgrades."}) \
     DECLARE(MergeTreePartMinMaxIndexColumns, part_minmax_index_columns, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY, R"(
 Selects which columns the per-part min-max index covers. Each value enables an additional group of columns on top of the previous one.
 
