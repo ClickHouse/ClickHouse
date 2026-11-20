@@ -44,7 +44,8 @@ Names expressionSourceColumns(
     const ColumnsDescription & columns,
     const ContextPtr & context,
     bool keep_alias_columns,
-    const StorageSnapshotPtr & storage_snapshot)
+    const StorageSnapshotPtr & storage_snapshot,
+    const std::optional<StorageID> & table_id)
 {
     if (!ast)
         return {};
@@ -52,8 +53,8 @@ Names expressionSourceColumns(
     auto analysis_context = Context::createCopy(context);
     auto expression = buildQueryTree(ast, analysis_context);
 
-    auto table_id = storage_snapshot ? storage_snapshot->storage.getStorageID() : StorageID{"dummy", "dummy"};
-    auto storage = std::make_shared<StorageDummy>(table_id, columns, storage_snapshot);
+    auto name = table_id ? *table_id : (storage_snapshot ? storage_snapshot->storage.getStorageID() : StorageID{"dummy", "dummy"});
+    auto storage = std::make_shared<StorageDummy>(name, columns, storage_snapshot);
     auto table_node = std::make_shared<TableNode>(storage, analysis_context);
 
     QueryAnalyzer analyzer(/*only_analyze=*/ true);
