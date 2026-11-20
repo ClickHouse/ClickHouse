@@ -969,7 +969,11 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
     )
-    stateless_tests_flaky_mq_jobs = common_ft_job_config.parametrize(
+    # The non-sanitizer (`amd_binary`) stateless flaky check. Runs only in the
+    # pull request workflow, alongside the sanitizer flaky checks above, so a
+    # test that is only too slow or only flaky without a sanitizer is caught in
+    # the PR. See `ci/workflows/pull_request.py`.
+    stateless_tests_flaky_amd_binary_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_binary, flaky check",
             runs_on=RunnerLabels.AMD_MEDIUM,
